@@ -18,9 +18,10 @@ const Channels: React.FC = () => {
   const fetchChannels = async () => {
     setLoading(true);
     try {
-      const data = await (request.get('/channels') as unknown as Promise<Channel[]>);
-      setChannels(data);
+      const resp = await (request.get('/channels') as unknown as Promise<{ data: Channel[] }>);
+      setChannels(resp.data);
     } catch (e) {
+
       console.error(e);
     } finally {
       setLoading(false);

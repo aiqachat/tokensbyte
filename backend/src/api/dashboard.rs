@@ -46,11 +46,12 @@ pub async fn get_stats(
         .fetch_one(&state.db.pool)
         .await?;
 
-    let today_requests: i64 = sqlx::query_scalar::<_, i64>(&format!("{}{} AND created_at >= date('now')", stats_sql, if stats_sql.contains("WHERE") { " AND" } else { " WHERE" }))
+    let today_requests: i64 = sqlx::query_scalar::<_, i64>(&format!("{}{} created_at >= date('now')", stats_sql, if stats_sql.contains("WHERE") { " AND" } else { " WHERE" }))
         .fetch_one(&state.db.pool).await?;
         
-    let today_cost: f64 = sqlx::query_scalar::<_, Option<f64>>(&format!("{}{} AND created_at >= date('now')", cost_sql, if cost_sql.contains("WHERE") { " AND" } else { " WHERE" }))
+    let today_cost: f64 = sqlx::query_scalar::<_, Option<f64>>(&format!("{}{} created_at >= date('now')", cost_sql, if cost_sql.contains("WHERE") { " AND" } else { " WHERE" }))
         .fetch_one(&state.db.pool).await?.unwrap_or(0.0);
+
 
 
 

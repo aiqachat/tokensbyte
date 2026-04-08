@@ -37,7 +37,9 @@ const App: React.FC = () => {
           }
         >
           <Route index element={<Dashboard />} />
+          <Route path="dashboard" element={<Dashboard />} />
           <Route path="channels" element={<Channels />} />
+
           <Route path="tokens" element={<Tokens />} />
           <Route path="logs" element={<Logs />} />
           <Route path="redemptions" element={<AdminRoute><Redemptions /></AdminRoute>} />

@@ -27,6 +27,8 @@ async fn main() -> anyhow::Result<()> {
     let config_data = AppConfig::from_env();
     let database = Database::new(&config_data.database_url).await?;
     database.run_migrations().await?;
+    database.seed_admin(&config_data).await?;
+
     
     let state = Arc::new(AppState {
         db: database,

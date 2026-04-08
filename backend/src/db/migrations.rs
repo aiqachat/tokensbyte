@@ -10,9 +10,11 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
             balance REAL NOT NULL DEFAULT 0.0,
+            user_group TEXT NOT NULL DEFAULT 'default',
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+
         )"#
     )
     .execute(pool)
@@ -52,6 +54,9 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
             quota_used REAL NOT NULL DEFAULT 0,
             allowed_models TEXT NOT NULL DEFAULT '[]',
             allowed_ips TEXT NOT NULL DEFAULT '',
+            ip_whitelist TEXT,
+            rps_limit INTEGER DEFAULT 0,
+            rpm_limit INTEGER DEFAULT 0,
             expires_at TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -60,6 +65,7 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
+
 
     // Logs table
     sqlx::query(
@@ -84,19 +90,23 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
 
     // Redemption codes table
     sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS redemption_codes (
+        r#"CREATE TABLE IF NOT EXISTS redemptions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
             code TEXT NOT NULL UNIQUE,
-            amount REAL NOT NULL DEFAULT 0.0,
-            used_by TEXT REFERENCES users(id),
+            quota REAL NOT NULL,
+            is_used INTEGER DEFAULT 0,
             used_at TEXT,
-            expires_at TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            used_by TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )"#
     )
     .execute(pool)
     .await?;
+
+
+
 
     // System settings table (key-value store)
     sqlx::query(
@@ -112,9 +122,6 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_tokens_key ON api_tokens(token_key)")
         .execute(pool)
         .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_tokens_user ON api_tokens(user_id)")
-        .execute(pool)
-        .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_logs_user ON logs(user_id)")
         .execute(pool)
         .await?;
@@ -124,6 +131,13 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_channels_status ON channels(status)")
         .execute(pool)
         .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_redemption_code ON redemptions(code)")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_redemption_is_used ON redemptions(is_used)")
+        .execute(pool)
+        .await?;
+
 
     tracing::info!("Database migrations completed successfully");
     Ok(())

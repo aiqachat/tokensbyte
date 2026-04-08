@@ -19,12 +19,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
     let admin_routes = Router::new()
         .route("/users", get(users::list_users).post(users::create_user))
-        .route("/users/:id", put(users::update_user).delete(users::delete_user))
+        .route("/users/{id}", put(users::update_user).delete(users::delete_user))
         .route("/channels", post(channels::create_channel))
-        .route("/channels/:id", put(channels::update_channel).delete(channels::delete_channel))
-        .route("/channels/:id/test", post(channels::test_channel))
+        .route("/channels/{id}", put(channels::update_channel).delete(channels::delete_channel))
+        .route("/channels/{id}/test", post(channels::test_channel))
         .route("/redemptions", get(redemptions::list_redemptions).post(redemptions::generate_redemptions))
-        .route("/redemptions/:id", delete(redemptions::delete_redemption))
+        .route("/redemptions/{id}", delete(redemptions::delete_redemption))
         .route("/tokens/all", get(tokens::list_all_tokens))
         .layer(axum_middleware::from_fn(admin_middleware));
 
@@ -32,9 +32,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/dashboard", get(dashboard::get_stats))
         .route("/channels", get(channels::list_channels))
         .route("/tokens", get(tokens::list_tokens).post(tokens::create_token))
-        .route("/tokens/:id", put(tokens::update_token).delete(tokens::delete_token))
+        .route("/tokens/{id}", put(tokens::update_token).delete(tokens::delete_token))
         .route("/logs", get(logs::list_logs))
         .route("/redemptions/redeem", post(redemptions::redeem_code))
+
         .merge(admin_routes)
         .layer(axum_middleware::from_fn_with_state(state.clone(), auth_middleware));
 

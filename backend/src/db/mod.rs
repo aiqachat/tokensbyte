@@ -55,9 +55,10 @@ impl Database {
             let password_hash = auth::hash_password(&config.admin_password)?;
             let id = uuid::Uuid::new_v4().to_string();
             sqlx::query(
-                r#"INSERT INTO users (id, username, email, password_hash, role, balance, is_active, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, 'admin', 100.0, 1, datetime('now'), datetime('now'))"#
+                r#"INSERT INTO users (id, username, email, password_hash, role, balance, user_group, is_active, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 'admin', 100.0, 'default', 1, datetime('now'), datetime('now'))"#
             )
+
             .bind(&id)
             .bind(&config.admin_username)
             .bind(format!("{}@tokensbyte.local", &config.admin_username))
