@@ -1,0 +1,62 @@
+[package]
+name = "tokensbyte-server"
+version = "0.1.0"
+edition = "2021"
+description = "TokensByte - Next-gen LLM API Distribution & Management Platform"
+
+[dependencies]
+# Web framework
+axum = { version = "0.8", features = ["ws", "multipart"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "postgres", "chrono", "uuid", "json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP client (for upstream providers)
+reqwest = { version = "0.12", features = ["json", "stream", "gzip"] }
+eventsource-stream = "0.2"
+
+# Auth
+jsonwebtoken = "9"
+argon2 = "0.5"
+rand = "0.8"
+
+# Config
+dotenvy = "0.15"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Encryption (for API keys)
+aes-gcm = "0.10"
+base64 = "0.22"
+
+# Utils
+async-trait = "0.1"
+thiserror = "2"
+anyhow = "1"
+bytes = "1"
+pin-project-lite = "0.2"
+regex = "1"
+governor = "0.7"
+dashmap = "6"
+
+

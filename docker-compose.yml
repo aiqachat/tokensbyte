@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tokensbyte-backend
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3300
+      - DATABASE_URL=sqlite:/data/tokensbyte.db?mode=rwc
+      - JWT_SECRET=tokensbyte-change-me
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin
+      - REGISTER_ENABLED=true
+    volumes:
+      - ./data:/data
+    ports:
+      - "3300:3300"
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tokensbyte-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  data:
