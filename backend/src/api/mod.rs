@@ -8,12 +8,13 @@ use crate::AppState;
 use crate::middleware::{auth_middleware, admin_middleware, api_key_middleware};
 
 pub mod auth;
-mod channels;
-mod tokens;
-mod users;
-mod logs;
-mod dashboard;
-mod redemptions;
+pub mod channels;
+pub mod dashboard;
+pub mod logs;
+pub mod models;
+pub mod redemptions;
+pub mod tokens;
+pub mod users;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
@@ -23,6 +24,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/channels", post(channels::create_channel))
         .route("/channels/{id}", put(channels::update_channel).delete(channels::delete_channel))
         .route("/channels/{id}/test", post(channels::test_channel))
+        .route("/models", post(models::create_model))
+        .route("/models/{id}", put(models::update_model).delete(models::delete_model))
         .route("/redemptions", get(redemptions::list_redemptions).post(redemptions::generate_redemptions))
         .route("/redemptions/{id}", delete(redemptions::delete_redemption))
         .route("/tokens/all", get(tokens::list_all_tokens))
@@ -31,6 +34,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let management_routes = Router::new()
         .route("/dashboard", get(dashboard::get_stats))
         .route("/channels", get(channels::list_channels))
+        .route("/models", get(models::list_models))
         .route("/tokens", get(tokens::list_tokens).post(tokens::create_token))
         .route("/tokens/{id}", put(tokens::update_token).delete(tokens::delete_token))
         .route("/logs", get(logs::list_logs))
@@ -38,6 +42,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
         .merge(admin_routes)
         .layer(axum_middleware::from_fn_with_state(state.clone(), auth_middleware));
+
 
 
 

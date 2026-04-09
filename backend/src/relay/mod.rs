@@ -35,24 +35,49 @@ pub async fn chat_completions(
     } else {
         let response = provider.chat_completions(&state.http_client, &channel, &request).await?;
         
-        // 5. Billing with Group Multiplier
+        // 5. Billing with Custom Model Rates & Group Multipliers
         let prompt_tokens = response.usage.as_ref().map(|u| u.prompt_tokens).unwrap_or(0);
         let completion_tokens = response.usage.as_ref().map(|u| u.completion_tokens).unwrap_or(0);
-        let total_tokens = prompt_tokens + completion_tokens;
         
         let user: crate::models::User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
             .bind(&token.user_id)
             .fetch_one(&state.db.pool)
             .await?;
 
-        let mut multiplier = 1.0;
-        if user.user_group == "vip" {
-            multiplier = 0.8; // 20% discount for VIP
-        } else if user.user_group == "partner" {
-            multiplier = 0.5; // 50% discount for Partner
-        }
+        // Fetch model config from DB
+        let db_model: Option<crate::models::Model> = sqlx::query_as("SELECT * FROM models WHERE model_id = ? AND is_active = 1")
+            .bind(&request.model)
+            .fetch_optional(&state.db.pool)
+            .await?;
 
-        let quota_used = (total_tokens as f64 / 1000.0) * multiplier;
+        let quota_used = match db_model {
+            Some(m) => {
+                let multiplier = m.get_multiplier_for_group(&user.user_group);
+                match m.billing_type.as_str() {
+                    "requests" => m.fixed_rate * multiplier,
+                    "duration" => {
+                        // Assuming latency_ms is recorded or passed. 
+                        // For non-streaming, we can use the time elapsed if we had a start time.
+                        // For now, let's use a default or look for latency in the future implementation.
+                        0.0 // Placeholder for duration billing
+                    },
+                    _ => { // default: tokens
+                        ((prompt_tokens as f64 * m.prompt_rate + completion_tokens as f64 * m.completion_rate) / 1000.0) * multiplier
+                    }
+                }
+            },
+            None => {
+                // Fallback to default pricing if model not managed
+                let total_tokens = prompt_tokens + completion_tokens;
+                let mut multiplier = 1.0;
+                if user.user_group == "vip" {
+                    multiplier = 0.8;
+                } else if user.user_group == "partner" {
+                    multiplier = 0.5;
+                }
+                (total_tokens as f64 / 1000.0) * multiplier
+            }
+        };
         
         sqlx::query(
             "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = datetime('now') WHERE id = ?"
@@ -61,6 +86,7 @@ pub async fn chat_completions(
         .bind(token.id)
         .execute(&state.db.pool)
         .await?;
+
 
         // 6. Record Log
         sqlx::query(

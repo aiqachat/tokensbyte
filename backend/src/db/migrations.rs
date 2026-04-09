@@ -118,6 +118,27 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    // Models table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS models (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            model_id TEXT NOT NULL UNIQUE,
+            billing_type TEXT NOT NULL DEFAULT 'tokens', -- tokens, requests, duration
+            prompt_rate REAL NOT NULL DEFAULT 0.0,
+            completion_rate REAL NOT NULL DEFAULT 0.0,
+            fixed_rate REAL NOT NULL DEFAULT 0.0,
+            duration_rate REAL NOT NULL DEFAULT 0.0,
+            group_ratios TEXT NOT NULL DEFAULT '{}', -- JSON object for group discounts
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+
     // Create indexes
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_tokens_key ON api_tokens(token_key)")
         .execute(pool)
