@@ -150,6 +150,7 @@ const UserLevels: React.FC = () => {
         rowKey="id"
         loading={loading}
         pagination={false}
+        scroll={{ x: 'max-content' }}
       />
 
       <Modal

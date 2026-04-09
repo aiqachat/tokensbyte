@@ -5,6 +5,8 @@ pub struct Model {
     pub id: i64,
     pub name: String,
     pub model_id: String,
+    pub provider_id: Option<i32>,
+    pub type_id: Option<i32>,
     pub billing_type: String, // tokens, requests, duration
     pub prompt_rate: f64,     // Price per 1k tokens
     pub completion_rate: f64, // Price per 1k tokens
@@ -14,6 +16,39 @@ pub struct Model {
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ModelProvider {
+    pub id: i32,
+    pub name: String,
+    pub sort_order: i32,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ModelType {
+    pub id: i32,
+    pub name: String,
+    pub sort_order: i32,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct ClassificationCount {
+    pub id: Option<i32>,
+    pub name: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ClassificationsResponse {
+    pub providers: Vec<ClassificationCount>,
+    pub types: Vec<ClassificationCount>,
 }
 
 impl Model {
@@ -31,6 +66,8 @@ impl Model {
 pub struct CreateModelRequest {
     pub name: String,
     pub model_id: String,
+    pub provider_id: Option<i32>,
+    pub type_id: Option<i32>,
     pub billing_type: String,
     #[serde(default)]
     pub prompt_rate: f64,
@@ -48,6 +85,8 @@ pub struct CreateModelRequest {
 pub struct UpdateModelRequest {
     pub name: Option<String>,
     pub model_id: Option<String>,
+    pub provider_id: Option<i32>,
+    pub type_id: Option<i32>,
     pub billing_type: Option<String>,
     pub prompt_rate: Option<f64>,
     pub completion_rate: Option<f64>,
@@ -61,4 +100,11 @@ pub struct UpdateModelRequest {
 pub struct ModelListResponse {
     pub data: Vec<Model>,
     pub total: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClassificationRequest {
+    pub name: String,
+    pub sort_order: i32,
+    pub is_active: bool,
 }

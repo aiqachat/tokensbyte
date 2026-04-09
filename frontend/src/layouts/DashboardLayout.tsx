@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import request from '../utils/request';
-import { Layout, Menu, Button, Space, Typography, ConfigProvider, theme } from 'antd';
+import { Layout, Menu, Button, Space, Typography, ConfigProvider, theme, Grid } from 'antd';
 import {
   DashboardOutlined,
   ControlOutlined,
@@ -14,6 +14,8 @@ import {
   LogoutOutlined,
   AppstoreOutlined,
   SettingOutlined,
+  WalletOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
@@ -24,6 +26,7 @@ import useAuthStore from '../store/auth';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
+const { useBreakpoint } = Grid;
 
 interface DashboardLayoutProps {
   isUserEnd?: boolean;
@@ -32,6 +35,7 @@ interface DashboardLayoutProps {
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) => {
   const { t, i18n } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
+  const screens = useBreakpoint();
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
@@ -98,6 +102,21 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     },
   ];
 
+  if (isUserEnd) {
+    menuItems.push(
+      {
+        key: '/wallet',
+        icon: <WalletOutlined style={{ fontSize: '18px' }} />,
+        label: <Link to="/wallet">{t('menu.wallet')}</Link>,
+      },
+      {
+        key: '/profile',
+        icon: <UserOutlined style={{ fontSize: '18px' }} />,
+        label: <Link to="/profile">{t('menu.profile')}</Link>,
+      }
+    );
+  }
+
   if (!isUserEnd && user?.role === 'admin') {
     menuItems.push(
       {
@@ -136,12 +155,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         label: t('menu.settings'),
         children: [
           {
-            key: '/admin0755/settings?tab=1',
-            label: <Link to="/admin0755/settings">{t('menu.basic_settings')}</Link>,
+            key: '/admin0755/settings?tab=basic',
+            label: <Link to="/admin0755/settings?tab=basic">{t('menu.basic_settings')}</Link>,
           },
           {
-            key: '/admin0755/settings?tab=2',
-            label: <Link to="/admin0755/settings">{t('menu.currency_settings')}</Link>,
+            key: '/admin0755/settings?tab=currency',
+            label: <Link to="/admin0755/settings?tab=currency">{t('menu.currency_settings')}</Link>,
           }
         ]
       }
@@ -176,14 +195,24 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           collapsed={collapsed} 
           theme="dark" 
           width={240}
+          breakpoint="lg"
+          collapsedWidth={screens.xs ? 0 : 80}
+          onBreakpoint={(broken) => {
+            if (broken) setCollapsed(true);
+          }}
           style={{ 
             boxShadow: '2px 0 8px 0 rgba(29,35,41,.05)',
             zIndex: 10,
+            position: screens.xs ? 'fixed' : 'relative',
+            height: '100vh',
+            left: 0,
+            top: 0,
+            bottom: 0,
           }}
         >
           <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
             <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-              {collapsed ? 'TB' : siteName}
+              {(collapsed && !screens.xs) ? 'TB' : siteName}
             </Title>
 
           </div>
@@ -193,34 +222,82 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             selectedKeys={[location.pathname]}
             items={menuItems}
             style={{ border: 'none', background: 'transparent', marginTop: 8 }}
+            onClick={() => {
+              if (screens.xs) setCollapsed(true);
+            }}
           />
         </Sider>
-        <Layout>
-          <Header style={{ padding: 0, background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: 24, boxShadow: '0 1px 4px rgba(0,21,41,.08)' }}>
-            <Button
-              type="text"
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              style={{ fontSize: '16px', width: 64, height: 64, color: '#fff' }}
-            />
-            <Space size="large">
+        <Layout style={{ marginLeft: (screens.xs || collapsed) ? 0 : 0 }}>
+          <Header style={{ 
+            padding: 0, 
+            background: '#141414', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between', 
+            paddingRight: screens.xs ? 8 : 24, 
+            boxShadow: '0 1px 4px rgba(0,21,41,.08)' 
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <Button
+                type="text"
+                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                onClick={() => setCollapsed(!collapsed)}
+                style={{ fontSize: '16px', width: 64, height: 64, color: '#fff' }}
+              />
+              {screens.xs && (
+                <Title level={5} style={{ color: '#fff', margin: 0, marginLeft: 8 }}>
+                  {siteName}
+                </Title>
+              )}
+            </div>
+            
+            <Space size={screens.xs ? "small" : "large"}>
               <Dropdown menu={{ items: langItems }} placement="bottomRight">
                 <Button type="text" icon={<GlobalOutlined />} style={{ color: '#fff' }}>
-                  {i18n.language === 'zh' ? '中文' : 'EN'}
+                  {!screens.xs && (i18n.language === 'zh' ? '中文' : 'EN')}
                 </Button>
               </Dropdown>
-              <span style={{ color: '#fff' }}>
-                <Title level={5} style={{ margin: 0, color: '#fff' }}>{user?.username} ({user?.role})</Title>
-              </span>
-              <Button type="primary" danger icon={<LogoutOutlined />} onClick={handleLogout}>
-                {t('common.logout')}
+              {!screens.xs && (
+                <span style={{ color: '#fff' }}>
+                  <Title level={5} style={{ margin: 0, color: '#fff' }}>{user?.username}</Title>
+                </span>
+              )}
+              <Button 
+                type="primary" 
+                danger 
+                icon={<LogoutOutlined />} 
+                onClick={handleLogout}
+                size={screens.xs ? "middle" : "middle"}
+              >
+                {!screens.xs && t('common.logout')}
               </Button>
             </Space>
 
           </Header>
-          <Content style={{ margin: '24px 16px', padding: 24, minHeight: 280, background: '#000', borderRadius: 12, overflow: 'initial' }}>
+          <Content style={{ 
+            margin: screens.xs ? '12px 8px' : '24px 16px', 
+            padding: screens.xs ? 12 : 24, 
+            minHeight: 280, 
+            background: '#000', 
+            borderRadius: 12, 
+            overflow: 'auto' 
+          }}>
             <Outlet />
           </Content>
+          {screens.xs && !collapsed && (
+            <div 
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0,0,0,0.5)',
+                zIndex: 9,
+              }}
+              onClick={() => setCollapsed(true)}
+            />
+          )}
         </Layout>
       </Layout>
     </ConfigProvider>

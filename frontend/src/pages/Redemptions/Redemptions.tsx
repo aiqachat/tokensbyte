@@ -154,6 +154,7 @@ const Redemptions: React.FC = () => {
         columns={columns}
         rowKey="id"
         loading={loading}
+        scroll={{ x: 'max-content' }}
       />
 
       <Modal

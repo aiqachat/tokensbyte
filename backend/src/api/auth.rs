@@ -60,12 +60,14 @@ pub async fn register(
     // 2. Hash password and insert
     let password_hash = auth::hash_password(&request.password)?;
     let user_id = uuid::Uuid::new_v4().to_string();
+    let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
 
     sqlx::query(
-        r#"INSERT INTO users (id, username, email, password_hash, role, balance, is_active)
-           VALUES (?, ?, ?, ?, 'user', ?, 1)"#
+        r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
+           VALUES (?, ?, ?, ?, ?, 'user', ?, 1)"#
     )
     .bind(&user_id)
+    .bind(&uid)
     .bind(&request.username)
     .bind(&request.email)
     .bind(&password_hash)

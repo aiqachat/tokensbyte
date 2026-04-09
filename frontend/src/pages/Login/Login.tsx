@@ -48,7 +48,13 @@ const Login: React.FC = () => {
       background: '#000',
       backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
     }}>
-      <Card style={{ width: 400, borderRadius: 16, background: '#141414', border: '1px solid #303030' }}>
+      <Card style={{ 
+        width: 'min(400px, 92vw)', 
+        borderRadius: 16, 
+        background: '#141414', 
+        border: '1px solid #303030',
+        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
+      }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <Space direction="vertical">
             <RocketOutlined style={{ fontSize: 48, color: '#1677ff' }} />

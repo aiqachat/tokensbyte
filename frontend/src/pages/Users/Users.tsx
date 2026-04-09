@@ -80,6 +80,12 @@ const Users: React.FC = () => {
 
   const columns = [
     {
+      title: t('users.uid'),
+      dataIndex: 'uid',
+      key: 'uid',
+      render: (text: string) => <Text code style={{ color: '#fff' }}>{text}</Text>,
+    },
+    {
       title: t('users.username'),
       dataIndex: 'username',
       key: 'username',
@@ -162,6 +168,7 @@ const Users: React.FC = () => {
         rowKey="id"
         loading={loading}
         pagination={{ pageSize: 10 }}
+        scroll={{ x: 'max-content' }}
       />
 
       <Modal

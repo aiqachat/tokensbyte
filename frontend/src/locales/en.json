@@ -4,6 +4,13 @@
     "cancel": "Cancel",
     "ok": "OK",
     "refresh": "Refresh",
+    "all": "All",
+    "manage": "Manage",
+    "select_placeholder": "Select",
+    "close": "Close",
+    "add": "Add",
+    "edit": "Edit",
+    "name": "Name",
     "actions": "Actions",
     "edit": "Edit",
     "delete": "Delete",
@@ -20,7 +27,9 @@
     "warning": "Warning",
     "confirm_delete": "Are you sure you want to delete this?",
     "logout": "Logout",
-    "admin_title": "TokensByte Admin"
+    "admin_title": "TokensByte Admin",
+    "currency_unit": "Credits",
+    "not_set": "Not Set"
   },
   "menu": {
     "dashboard": "Dashboard",
@@ -33,8 +42,10 @@
     "user_list": "User List",
     "user_levels": "User Levels",
     "settings": "Site Settings",
-    "basic_settings": "Basic Settings",
-    "currency_settings": "Currency Settings"
+    "basic_settings": "Basic",
+    "currency_settings": "Currency",
+    "wallet": "My Wallet",
+    "profile": "Personal Center"
   },
   "dashboard": {
     "title": "System Overview",
@@ -78,7 +89,8 @@
     "balance": "Balance",
     "group": "Group",
     "joined": "Joined",
-    "password_hint": "Password (leave blank to keep current)"
+    "password_hint": "Password (leave blank to keep current)",
+    "uid": "User UID"
   },
   "tokens": {
     "title": "API Tokens",
@@ -123,9 +135,15 @@
     "title": "Model Management",
     "add_model": "Add Model",
     "edit_model": "Edit Model",
-    "model_name": "Model Name",
-    "model_id": "Model ID (Identifier)",
+    "model_name": "Name",
+    "model_id": "Model ID",
+    "provider": "Provider",
+    "type": "Type",
+    "manage_providers": "Manage Providers",
+    "manage_types": "Manage Types",
+    "sort_order": "Sort Order",
     "billing_type": "Billing Type",
+    "rates": "Rates",
     "type_tokens": "Token-based",
     "type_token": "Token-based",
     "type_requests": "Per-request",
@@ -165,5 +183,33 @@
     "created_at": "Created At",
     "delete_confirm": "Are you sure you want to delete this level? Default level cannot be deleted.",
     "success": "Success"
+  },
+  "profile": {
+    "title": "Personal Center",
+    "account": "Login Account",
+    "nickname": "Nickname",
+    "password": "Set Password",
+    "email": "Email Address",
+    "mobile": "Mobile Number",
+    "wechat": "WeChat Login",
+    "edit": "Modify",
+    "bind": "Bind",
+    "unbind": "Unbind",
+    "bound": "Bound",
+    "not_bound": "Not Bound",
+    "not_enabled": "Not Enabled",
+    "edit_success": "Modified Successfully"
+  },
+  "wallet": {
+    "title": "My Wallet",
+    "balance": "Balance",
+    "recharge": "Recharge Now",
+    "total_consumption": "Total Consumption",
+    "total_calls": "Total Calls",
+    "success_calls": "Success Calls",
+    "recharge_records": "Recharge Records",
+    "amount": "Amount",
+    "remark": "Remark",
+    "time": "Time"
   }
 }

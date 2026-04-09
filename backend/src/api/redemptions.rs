@@ -124,6 +124,16 @@ pub async fn redeem_code(
         .execute(&mut *tx)
         .await?;
 
+    // 4. Create recharge record
+    sqlx::query(
+        "INSERT INTO recharge_records (user_id, amount, remark) VALUES (?, ?, ?)"
+    )
+    .bind(&user_id)
+    .bind(redemption.quota)
+    .bind(format!("Redemption: {}", redemption.name))
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
 
     Ok(Json(serde_json::json!({

@@ -1,12 +1,79 @@
+// Types for the TokensByte frontend
+
 export interface User {
   id: string;
+  uid: string;
   username: string;
   email: string;
+  nickname?: string;
+  mobile?: string;
+  wechat_id?: string;
   role: 'admin' | 'user';
   balance: number;
   user_group: string;
   is_active: boolean;
   created_at: string;
+}
+
+export interface ModelModel {
+  id: number;
+  name: string;
+  model_id: string;
+  provider_id?: number;
+  type_id?: number;
+  billing_type: string;
+  prompt_rate: number;
+  completion_rate: number;
+  fixed_rate: number;
+  duration_rate: number;
+  group_ratios: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface ModelProvider {
+  id: number;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModelType {
+  id: number;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClassificationCount {
+  id: number | null;
+  name: string;
+  count: number;
+}
+
+export interface ClassificationsResponse {
+  providers: ClassificationCount[];
+  types: ClassificationCount[];
+}
+
+export interface RechargeRecord {
+  id: number;
+  user_id: string;
+  amount: number;
+  remark?: string;
+  created_at: string;
+}
+
+export interface WalletStats {
+  balance: number;
+  total_consumption: number;
+  total_calls: number;
+  success_calls: number;
 }
 
 export interface Channel {

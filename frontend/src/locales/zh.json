@@ -4,6 +4,13 @@
     "cancel": "取消",
     "ok": "确定",
     "refresh": "刷新",
+    "all": "全部",
+    "manage": "管理",
+    "select_placeholder": "请选择",
+    "close": "关闭",
+    "add": "添加",
+    "edit": "编辑",
+    "name": "名称",
     "actions": "操作",
     "edit": "编辑",
     "delete": "删除",
@@ -20,7 +27,9 @@
     "warning": "警告",
     "confirm_delete": "确定要删除吗？",
     "logout": "退出登录",
-    "admin_title": "TokensByte管理后台"
+    "admin_title": "TokensByte管理后台",
+    "currency_unit": "元",
+    "not_set": "未设置"
   },
   "menu": {
     "dashboard": "控制台",
@@ -33,8 +42,10 @@
     "user_list": "用户列表",
     "user_levels": "用户等级",
     "settings": "站点设置",
-    "basic_settings": "站点基础设置",
-    "currency_settings": "货币功能设置"
+    "basic_settings": "基础设置",
+    "currency_settings": "货币设置",
+    "wallet": "我的钱包",
+    "profile": "个人中心"
   },
   "dashboard": {
     "title": "系统概览",
@@ -78,7 +89,8 @@
     "balance": "余额",
     "group": "分组",
     "joined": "加入时间",
-    "password_hint": "密码 (留空保持不变)"
+    "password_hint": "密码 (留空保持不变)",
+    "uid": "用户 UID"
   },
   "tokens": {
     "title": "令牌管理",
@@ -123,9 +135,15 @@
     "title": "模型管理",
     "add_model": "添加模型",
     "edit_model": "编辑模型",
-    "model_name": "模型名称",
-    "model_id": "模型标识 (ID)",
-    "billing_type": "计费模式",
+    "model_name": "名称",
+    "model_id": "模型 ID",
+    "provider": "服务商",
+    "type": "类型",
+    "manage_providers": "管理服务商",
+    "manage_types": "管理类型",
+    "sort_order": "排序权重",
+    "billing_type": "计费类型",
+    "rates": "费率",
     "type_tokens": "按 Token 计费",
     "type_token": "按 Token 计费",
     "type_requests": "按次计费",
@@ -165,5 +183,33 @@
     "created_at": "创建时间",
     "delete_confirm": "确定要删除该等级吗？默认等级不可删除。",
     "success": "操作成功"
+  },
+  "profile": {
+    "title": "个人中心",
+    "account": "登录账号",
+    "nickname": "当前昵称",
+    "password": "设定密码",
+    "email": "邮箱账号",
+    "mobile": "手机账号",
+    "wechat": "微信登录",
+    "edit": "修改",
+    "bind": "绑定",
+    "unbind": "解绑",
+    "bound": "已绑定",
+    "not_bound": "未绑定",
+    "not_enabled": "未开启",
+    "edit_success": "修改成功"
+  },
+  "wallet": {
+    "title": "我的钱包",
+    "balance": "余额",
+    "recharge": "立即充值",
+    "total_consumption": "累计消耗",
+    "total_calls": "总调用次数",
+    "success_calls": "成功调用",
+    "recharge_records": "充值记录",
+    "amount": "金额 (元)",
+    "remark": "备注",
+    "time": "时间"
   }
 }

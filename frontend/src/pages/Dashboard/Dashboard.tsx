@@ -133,6 +133,7 @@ const Dashboard: React.FC = () => {
               size="middle"
               loading={loading}
               locale={{ emptyText: t('dashboard.no_data') }}
+              scroll={{ x: 'max-content' }}
             />
           </Card>
         </Col>

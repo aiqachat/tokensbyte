@@ -1,25 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Divider } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import { type ModelModel, type ClassificationsResponse, type ModelProvider, type ModelType, type ClassificationCount } from '../../types';
+import ClassificationFilter from '../../components/Models/ClassificationFilter';
+import ClassificationManager from '../../components/Models/ClassificationManager';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
-
-interface ModelModel {
-  id: number;
-  name: string;
-  model_id: string;
-  billing_type: string;
-  prompt_rate: number;
-  completion_rate: number;
-  fixed_rate: number;
-  duration_rate: number;
-  group_ratios: string;
-  is_active: boolean;
-  created_at: string;
-}
 
 const Models: React.FC = () => {
   const { t } = useTranslation();
@@ -30,10 +19,23 @@ const Models: React.FC = () => {
   const [billingType, setBillingType] = useState('tokens');
   const [form] = Form.useForm();
 
+  // Classification State
+  const [classStats, setClassStats] = useState<ClassificationsResponse>({ providers: [], types: [] });
+  const [allProviders, setAllProviders] = useState<ModelProvider[]>([]);
+  const [allTypes, setAllTypes] = useState<ModelType[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<number | null>(null);
+  const [selectedType, setSelectedType] = useState<number | null>(null);
+  const [isProviderManagerVisible, setIsProviderManagerVisible] = useState(false);
+  const [isTypeManagerVisible, setIsTypeManagerVisible] = useState(false);
+
   const fetchModels = async () => {
     setLoading(true);
     try {
-      const resp = await (request.get('/models') as unknown as Promise<{ data: ModelModel[] }>);
+      const params = {
+        provider_id: selectedProvider,
+        type_id: selectedType,
+      };
+      const resp = await (request.get('/models', { params }) as unknown as Promise<{ data: ModelModel[] }>);
       setModels(resp.data);
     } catch (e) {
       console.error(e);
@@ -42,8 +44,27 @@ const Models: React.FC = () => {
     }
   };
 
+  const fetchClassifications = async () => {
+    try {
+      const stats = await (request.get('/classifications/stats') as any);
+      setClassStats(stats);
+      
+      const providers = await (request.get('/model-providers') as any);
+      setAllProviders(providers.filter((p: any) => p.is_active));
+      
+      const types = await (request.get('/model-types') as any);
+      setAllTypes(types.filter((t: any) => t.is_active));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchModels();
+  }, [selectedProvider, selectedType]);
+
+  useEffect(() => {
+    fetchClassifications();
   }, []);
 
   const handleAdd = () => {
@@ -56,7 +77,6 @@ const Models: React.FC = () => {
   const handleEdit = (record: ModelModel) => {
     setEditingModel(record);
     setBillingType(record.billing_type);
-
     form.setFieldsValue(record);
     setIsModalVisible(true);
   };
@@ -66,6 +86,7 @@ const Models: React.FC = () => {
       await request.delete(`/models/${id}`);
       message.success(t('common.success'));
       fetchModels();
+      fetchClassifications();
     } catch (e) {
       console.error(e);
     }
@@ -75,16 +96,26 @@ const Models: React.FC = () => {
     try {
       if (editingModel) {
         await request.put(`/models/${editingModel.id}`, values);
-        message.success(t('common.success'));
       } else {
         await request.post('/models', values);
-        message.success(t('common.success'));
       }
+      message.success(t('common.success'));
       setIsModalVisible(false);
       fetchModels();
+      fetchClassifications();
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const getProviderName = (id?: number) => {
+    const p = classStats.providers.find(p => p.id === id);
+    return p ? p.name : null;
+  };
+
+  const getTypeName = (id?: number) => {
+    const t = classStats.types.find(t => t.id === id);
+    return t ? t.name : null;
   };
 
   const columns = [
@@ -92,7 +123,15 @@ const Models: React.FC = () => {
       title: t('models.model_name'),
       dataIndex: 'name',
       key: 'name',
-      render: (text: string) => <Text strong>{text}</Text>,
+      render: (text: string, record: ModelModel) => (
+        <Space direction="vertical" size={0}>
+          <Text strong>{text}</Text>
+          <Space size={4}>
+            {record.provider_id && <Tag color="default" style={{ fontSize: '10px' }}>{getProviderName(record.provider_id)}</Tag>}
+            {record.type_id && <Tag color="blue" style={{ fontSize: '10px' }}>{getTypeName(record.type_id)}</Tag>}
+          </Space>
+        </Space>
+      ),
     },
     {
       title: t('models.model_id'),
@@ -110,7 +149,7 @@ const Models: React.FC = () => {
       },
     },
     {
-      title: 'Rates',
+      title: t('models.rates'),
       key: 'rates',
       render: (_: any, record: ModelModel) => {
         if (record.billing_type === 'tokens') {
@@ -151,22 +190,37 @@ const Models: React.FC = () => {
     },
   ];
 
+  const totalModelsCount = classStats.providers.reduce((acc, curr) => acc + curr.count, 0);
+
   return (
     <Card bordered={false}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
         <Title level={2} style={{ margin: 0 }}>{t('models.title')}</Title>
         <Space>
-          <Button icon={<SyncOutlined />} onClick={fetchModels}>{t('common.refresh')}</Button>
+          <Button icon={<SyncOutlined />} onClick={() => { fetchModels(); fetchClassifications(); }}>{t('common.refresh')}</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('models.add_model')}</Button>
         </Space>
       </div>
+
+      <ClassificationFilter
+        providers={classStats.providers}
+        types={classStats.types}
+        selectedProvider={selectedProvider}
+        selectedType={selectedType}
+        onProviderChange={setSelectedProvider}
+        onTypeChange={setSelectedType}
+        onManageProviders={() => setIsProviderManagerVisible(true)}
+        onManageTypes={() => setIsTypeManagerVisible(true)}
+        totalModels={totalModelsCount}
+      />
 
       <Table
         dataSource={models}
         columns={columns}
         rowKey="id"
         loading={loading}
-        pagination={{ pageSize: 10 }}
+        pagination={{ pageSize: 12 }}
+        scroll={{ x: 'max-content' }}
       />
 
       <Modal
@@ -186,6 +240,27 @@ const Models: React.FC = () => {
             <Col span={12}>
               <Form.Item name="model_id" label={t('models.model_id')} rules={[{ required: true }]}>
                 <Input placeholder="e.g. gpt-4o" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="provider_id" label={t('models.provider')}>
+                <Select placeholder={t('common.select_placeholder')} allowClear>
+                  {allProviders.map(p => (
+                    <Option key={p.id} value={p.id}>{p.name}</Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="type_id" label={t('models.type')}>
+                <Select placeholder={t('common.select_placeholder')} allowClear>
+                  {allTypes.map(t => (
+                    <Option key={t.id} value={t.id}>{t.name}</Option>
+                  ))}
+                </Select>
               </Form.Item>
             </Col>
           </Row>
@@ -233,6 +308,20 @@ const Models: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+      <ClassificationManager
+        type="provider"
+        visible={isProviderManagerVisible}
+        onClose={() => setIsProviderManagerVisible(false)}
+        onUpdate={fetchClassifications}
+      />
+
+      <ClassificationManager
+        type="type"
+        visible={isTypeManagerVisible}
+        onClose={() => setIsTypeManagerVisible(false)}
+        onUpdate={fetchClassifications}
+      />
     </Card>
   );
 };

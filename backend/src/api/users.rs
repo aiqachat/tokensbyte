@@ -37,12 +37,14 @@ pub async fn create_user(
 
     let password_hash = auth::hash_password(&request.password)?;
     let user_id = uuid::Uuid::new_v4().to_string();
+    let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
 
     sqlx::query(
-        r#"INSERT INTO users (id, username, email, password_hash, role, balance, is_active)
-           VALUES (?, ?, ?, ?, 'user', 0.0, 1)"#
+        r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
+           VALUES (?, ?, ?, ?, ?, 'user', 0.0, 1)"#
     )
     .bind(&user_id)
+    .bind(&uid)
     .bind(&request.username)
     .bind(&request.email)
     .bind(&password_hash)
@@ -68,27 +70,54 @@ pub async fn update_user(
         .await?
         .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
+    let old_balance = user.balance;
+
     if let Some(username) = request.username { user.username = username; }
     if let Some(email) = request.email { user.email = email; }
     if let Some(password) = request.password { user.password_hash = auth::hash_password(&password)?; }
+    if let Some(nickname) = request.nickname { user.nickname = Some(nickname); }
+    if let Some(mobile) = request.mobile { user.mobile = Some(mobile); }
+    if let Some(wechat_id) = request.wechat_id { user.wechat_id = Some(wechat_id); }
     if let Some(role) = request.role { user.role = role; }
     if let Some(balance) = request.balance { user.balance = balance; }
+    if let Some(user_group) = request.user_group { user.user_group = user_group; }
     if let Some(is_active) = request.is_active { user.is_active = is_active; }
 
+    let mut tx = state.db.pool.begin().await?;
+
     sqlx::query(
-        r#"UPDATE users SET username = ?, email = ?, password_hash = ?, role = ?, 
-           balance = ?, is_active = ?, updated_at = datetime('now')
+        r#"UPDATE users SET username = ?, email = ?, password_hash = ?, 
+           nickname = ?, mobile = ?, wechat_id = ?,
+           role = ?, balance = ?, user_group = ?, is_active = ?, updated_at = datetime('now')
            WHERE id = ?"#
     )
     .bind(&user.username)
     .bind(&user.email)
     .bind(&user.password_hash)
+    .bind(&user.nickname)
+    .bind(&user.mobile)
+    .bind(&user.wechat_id)
     .bind(&user.role)
     .bind(user.balance)
+    .bind(&user.user_group)
     .bind(user.is_active)
     .bind(&id)
-    .execute(&state.db.pool)
+    .execute(&mut *tx)
     .await?;
+
+    if user.balance > old_balance {
+        let diff = user.balance - old_balance;
+        sqlx::query(
+            "INSERT INTO recharge_records (user_id, amount, remark) VALUES (?, ?, ?)"
+        )
+        .bind(&id)
+        .bind(diff)
+        .bind("Administrator Adjustment")
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
 
     Ok(Json(user))
 }

@@ -11,12 +11,14 @@ pub mod auth;
 pub mod channels;
 pub mod dashboard;
 pub mod logs;
+pub mod model_classifications;
 pub mod models;
 pub mod redemptions;
 pub mod settings;
 pub mod tokens;
-pub mod users;
+pub mod user;
 pub mod user_levels;
+pub mod users;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
@@ -28,6 +30,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/channels/{id}/test", post(channels::test_channel))
         .route("/models", post(models::create_model))
         .route("/models/{id}", put(models::update_model).delete(models::delete_model))
+        .route("/model-providers", get(model_classifications::list_providers).post(model_classifications::create_provider))
+        .route("/model-providers/{id}", put(model_classifications::update_provider).delete(model_classifications::delete_provider))
+        .route("/model-types", get(model_classifications::list_types).post(model_classifications::create_type))
+        .route("/model-types/{id}", put(model_classifications::update_type).delete(model_classifications::delete_type))
+        .route("/classifications/stats", get(model_classifications::get_classifications_stats))
         .route("/redemptions", get(redemptions::list_redemptions).post(redemptions::generate_redemptions))
         .route("/redemptions/{id}", delete(redemptions::delete_redemption))
         .route("/tokens/all", get(tokens::list_all_tokens))
@@ -44,6 +51,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/tokens/{id}", put(tokens::update_token).delete(tokens::delete_token))
         .route("/logs", get(logs::list_logs))
         .route("/redemptions/redeem", post(redemptions::redeem_code))
+        
+        .route("/user/profile", get(user::get_profile).put(user::update_profile))
+        .route("/user/wallet", get(user::get_wallet_stats))
+        .route("/user/recharge_records", get(user::list_recharge_records))
 
         .merge(admin_routes)
         .layer(axum_middleware::from_fn_with_state(state.clone(), auth_middleware));

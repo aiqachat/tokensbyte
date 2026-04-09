@@ -9,16 +9,53 @@ use crate::AppState;
 use crate::error::AppResult;
 use crate::models::{Model, CreateModelRequest, UpdateModelRequest, ModelListResponse};
 
+#[derive(Debug, serde::Deserialize)]
+pub struct ModelQuery {
+    pub provider_id: Option<i32>,
+    pub type_id: Option<i32>,
+}
+
 pub async fn list_models(
     State(state): State<Arc<AppState>>,
+    axum::extract::Query(query): axum::extract::Query<ModelQuery>,
 ) -> AppResult<Json<ModelListResponse>> {
-    let models: Vec<Model> = sqlx::query_as("SELECT * FROM models ORDER BY id DESC")
-        .fetch_all(&state.db.pool)
-        .await?;
+    let mut sql = "SELECT * FROM models WHERE 1=1".to_string();
+    if query.provider_id.is_some() {
+        sql.push_str(" AND provider_id = ?");
+    }
+    if query.type_id.is_some() {
+        sql.push_str(" AND type_id = ?");
+    }
+    sql.push_str(" ORDER BY id DESC");
+
+    let mut q = sqlx::query_as::<_, Model>(&sql);
+    if let Some(pid) = query.provider_id {
+        q = q.bind(pid);
+    }
+    if let Some(tid) = query.type_id {
+        q = q.bind(tid);
+    }
+
+    let models = q.fetch_all(&state.db.pool).await?;
     
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM models")
-        .fetch_one(&state.db.pool)
-        .await?;
+    // Total count for the filtered list
+    let mut count_sql = "SELECT COUNT(*) FROM models WHERE 1=1".to_string();
+    if query.provider_id.is_some() {
+        count_sql.push_str(" AND provider_id = ?");
+    }
+    if query.type_id.is_some() {
+        count_sql.push_str(" AND type_id = ?");
+    }
+    
+    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
+    if let Some(pid) = query.provider_id {
+        cq = cq.bind(pid);
+    }
+    if let Some(tid) = query.type_id {
+        cq = cq.bind(tid);
+    }
+    
+    let total = cq.fetch_one(&state.db.pool).await?;
 
     Ok(Json(ModelListResponse { data: models, total }))
 }
@@ -30,12 +67,14 @@ pub async fn create_model(
     let group_ratios = serde_json::to_string(&req.group_ratios.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     
     let id = sqlx::query(
-        r#"INSERT INTO models (name, model_id, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, group_ratios, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+        r#"INSERT INTO models (name, model_id, provider_id, type_id, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, group_ratios, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
            RETURNING id"#
     )
     .bind(&req.name)
     .bind(&req.model_id)
+    .bind(req.provider_id)
+    .bind(req.type_id)
     .bind(&req.billing_type)
     .bind(req.prompt_rate)
     .bind(req.completion_rate)
@@ -64,6 +103,12 @@ pub async fn update_model(
     }
     if let Some(model_id) = &req.model_id {
         sqlx::query("UPDATE models SET model_id = ? WHERE id = ?").bind(model_id).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(pid) = req.provider_id {
+        sqlx::query("UPDATE models SET provider_id = ? WHERE id = ?").bind(pid).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(tid) = req.type_id {
+        sqlx::query("UPDATE models SET type_id = ? WHERE id = ?").bind(tid).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(bt) = &req.billing_type {
         sqlx::query("UPDATE models SET billing_type = ? WHERE id = ?").bind(bt).bind(id).execute(&state.db.pool).await?;

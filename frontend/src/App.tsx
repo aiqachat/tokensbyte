@@ -12,6 +12,8 @@ import Users from './pages/Users/Users';
 import UserLevels from './pages/Users/UserLevels';
 import Logs from './pages/Logs/Logs';
 import Redemptions from './pages/Redemptions/Redemptions';
+import Profile from './pages/Profile/Profile';
+import Wallet from './pages/Wallet/Wallet';
 import Settings from './pages/admin/Settings';
 import useAuthStore from './store/auth';
 
@@ -42,6 +44,8 @@ const App: React.FC = () => {
           <Route index element={<Dashboard />} />
           <Route path="tokens" element={<Tokens />} />
           <Route path="logs" element={<Logs />} />
+          <Route path="wallet" element={<Wallet />} />
+          <Route path="profile" element={<Profile />} />
         </Route>
 
         {/* System End Routes (/admin0755) */}

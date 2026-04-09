@@ -43,30 +43,58 @@ impl Database {
         migrations::run(&self.pool).await
     }
 
+    pub async fn generate_unique_uid(&self) -> anyhow::Result<String> {
+        use rand::Rng;
+        let mut prefix = 100;
+        loop {
+            // Try 10 times with the current prefix
+            for _ in 0..10 {
+                let suffix: u32 = {
+                    let mut rng = rand::thread_rng();
+                    rng.gen_range(0..10_000_000)
+                };
+                let uid = format!("{}{:07}", prefix, suffix);
+                
+                let count: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE uid = ?")
+                    .bind(&uid)
+                    .fetch_one(&self.pool)
+                    .await?;
+                
+                if count == 0 {
+                    return Ok(uid);
+                }
+            }
+            // If we're here, we had 10 collisions (highly unlikely) or the space is crowded
+            prefix += 1;
+        }
+    }
+
     pub async fn seed_admin(&self, config: &AppConfig) -> anyhow::Result<()> {
         // Check if admin exists
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM users WHERE role = 'admin')"
+        let exists_count: i32 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM users WHERE role = 'admin'"
         )
         .fetch_one(&self.pool)
         .await?;
 
-        if !exists {
+        if exists_count == 0 {
             let password_hash = auth::hash_password(&config.admin_password)?;
             let id = uuid::Uuid::new_v4().to_string();
+            let uid = self.generate_unique_uid().await?;
+            
             sqlx::query(
-                r#"INSERT INTO users (id, username, email, password_hash, role, balance, user_group, is_active, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, 'admin', 100.0, 'default', 1, datetime('now'), datetime('now'))"#
+                r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, user_group, is_active, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 'admin', 100.0, 'default', 1, datetime('now'), datetime('now'))"#
             )
-
             .bind(&id)
+            .bind(&uid)
             .bind(&config.admin_username)
             .bind(format!("{}@tokensbyte.local", &config.admin_username))
             .bind(&password_hash)
             .execute(&self.pool)
             .await?;
 
-            tracing::info!("Default admin user '{}' created", config.admin_username);
+            tracing::info!("Default admin user '{}' created with UID {}", config.admin_username, uid);
         }
 
         Ok(())
