@@ -66,14 +66,32 @@ pub async fn chat_completions(
                         0.0 // Placeholder for duration billing
                     },
                     _ => { // default: tokens
-                        ((prompt_tokens as f64 * m.prompt_rate + completion_tokens as f64 * m.completion_rate) / 1000.0) * discount
+                        let mut p_rate = m.prompt_rate;
+                        let mut c_rate = m.completion_rate;
+
+                        if m.billing_rule == "tiered" {
+                            let tiers: Vec<crate::models::PricingTier> = serde_json::from_str(&m.pricing_tiers).unwrap_or_default();
+                            // Sort tiers by max_tokens and find the first one that fits
+                            let mut sorted_tiers = tiers;
+                            sorted_tiers.sort_by_key(|t| t.max_tokens);
+                            for tier in sorted_tiers {
+                                if prompt_tokens <= tier.max_tokens {
+                                    p_rate = tier.prompt_rate;
+                                    c_rate = tier.completion_rate;
+                                    break;
+                                }
+                            }
+                        }
+
+                        let divisor = 1_000_000.0;
+                        ((prompt_tokens as f64 * p_rate + completion_tokens as f64 * c_rate) / divisor) * discount
                     }
                 }
             },
             None => {
-                // Fallback to default pricing ($1/1k tokens) if model not managed
+                // Fallback to default pricing ($1/1M tokens) if model not managed
                 let total_tokens = prompt_tokens + completion_tokens;
-                (total_tokens as f64 / 1000.0) * discount
+                (total_tokens as f64 / 1_000_000.0) * discount
             }
         };
         

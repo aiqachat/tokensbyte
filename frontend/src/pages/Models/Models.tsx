@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Radio } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
 import { type ModelModel, type ClassificationsResponse, type ModelProvider, type ModelType, type ClassificationCount } from '../../types';
 import ClassificationFilter from '../../components/Models/ClassificationFilter';
 import ClassificationManager from '../../components/Models/ClassificationManager';
@@ -12,6 +13,8 @@ const { Option } = Select;
 
 const Models: React.FC = () => {
   const { t } = useTranslation();
+  const { settings } = useSettingsStore();
+  const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [models, setModels] = useState<ModelModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -75,9 +78,19 @@ const Models: React.FC = () => {
   };
 
   const handleEdit = (record: ModelModel) => {
+    let tiers = [];
+    try {
+      tiers = JSON.parse(record.pricing_tiers || '[]');
+    } catch (e) {
+      console.error('Failed to parse tiers', e);
+    }
+    
     setEditingModel(record);
     setBillingType(record.billing_type);
-    form.setFieldsValue(record);
+    form.setFieldsValue({
+      ...record,
+      pricing_tiers: tiers
+    });
     setIsModalVisible(true);
   };
 
@@ -94,6 +107,14 @@ const Models: React.FC = () => {
 
   const handleSave = async (values: any) => {
     try {
+      // If rule is standard, ensure tiers is empty or handled
+      if (values.billing_rule === 'standard') {
+        values.pricing_tiers = [];
+      }
+      
+      // Site-wide standard: Million tokens
+      values.billing_unit = '1M';
+      
       if (editingModel) {
         await request.put(`/models/${editingModel.id}`, values);
       } else {
@@ -129,6 +150,7 @@ const Models: React.FC = () => {
           <Space size={4}>
             {record.provider_id && <Tag color="default" style={{ fontSize: '10px' }}>{getProviderName(record.provider_id)}</Tag>}
             {record.type_id && <Tag color="blue" style={{ fontSize: '10px' }}>{getTypeName(record.type_id)}</Tag>}
+            {record.billing_rule === 'tiered' && <Tag color="gold" style={{ fontSize: '10px' }}>{t('models.rule_tiered')}</Tag>}
           </Space>
         </Space>
       ),
@@ -153,16 +175,20 @@ const Models: React.FC = () => {
       key: 'rates',
       render: (_: any, record: ModelModel) => {
         if (record.billing_type === 'tokens') {
+            const unitSuffix = '/1M';
+            if (record.billing_rule === 'tiered') {
+                return <Text type="warning" style={{ fontSize: '12px' }}>{t('models.rule_tiered')}</Text>;
+            }
             return (
               <Space direction="vertical" size={0}>
-                <Text type="secondary" style={{ fontSize: '12px' }}>P: ${record.prompt_rate}</Text>
-                <Text type="secondary" style={{ fontSize: '12px' }}>C: ${record.completion_rate}</Text>
+                <Text type="secondary" style={{ fontSize: '12px' }}>P: {currencySymbol}{record.prompt_rate}{unitSuffix}</Text>
+                <Text type="secondary" style={{ fontSize: '12px' }}>C: {currencySymbol}{record.completion_rate}{unitSuffix}</Text>
               </Space>
             );
         } else if (record.billing_type === 'requests') {
-            return <Text type="secondary">${record.fixed_rate}</Text>;
+            return <Text type="secondary">{currencySymbol}{record.fixed_rate}</Text>;
         } else {
-            return <Text type="secondary">${record.duration_rate}/s</Text>;
+            return <Text type="secondary">{currencySymbol}{record.duration_rate}/s</Text>;
         }
       }
     },
@@ -266,26 +292,96 @@ const Models: React.FC = () => {
           </Row>
 
           <Form.Item name="billing_type" label={t('models.billing_type')} rules={[{ required: true }]}>
-            <Select onChange={(v) => setBillingType(v)}>
-              <Option value="tokens">{t('models.type_tokens')}</Option>
-              <Option value="requests">{t('models.type_requests')}</Option>
-              <Option value="duration">{t('models.type_duration')}</Option>
-            </Select>
+            <Radio.Group optionType="button" buttonStyle="solid" onChange={(e) => setBillingType(e.target.value)}>
+              <Radio value="tokens">{t('models.type_tokens')}</Radio>
+              <Radio value="requests">{t('models.type_requests')}</Radio>
+              <Radio value="duration">{t('models.type_duration')}</Radio>
+            </Radio.Group>
           </Form.Item>
 
           {billingType === 'tokens' && (
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item name="prompt_rate" label={t('models.prompt_rate')} rules={[{ required: true }]}>
-                  <InputNumber style={{ width: '100%' }} precision={6} step={0.00001} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item name="completion_rate" label={t('models.completion_rate')} rules={[{ required: true }]}>
-                  <InputNumber style={{ width: '100%' }} precision={6} step={0.00001} />
-                </Form.Item>
-              </Col>
-            </Row>
+            <>
+              <Form.Item name="billing_rule" label={t('models.billing_rule')} initialValue="standard">
+                <Radio.Group optionType="button" buttonStyle="solid">
+                  <Radio value="standard">{t('models.rule_standard')}</Radio>
+                  <Radio value="tiered">{t('models.rule_tiered')}</Radio>
+                </Radio.Group>
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prev, curr) => prev.billing_rule !== curr.billing_rule}>
+                {({ getFieldValue }) => {
+                  const rule = getFieldValue('billing_rule');
+                  const unitLabel = t('models.prompt_rate');
+                  const unitLabelComp = t('models.completion_rate');
+
+                  if (rule === 'standard') {
+                    return (
+                      <Row gutter={16}>
+                        <Col span={12}>
+                          <Form.Item name="prompt_rate" label={unitLabel} rules={[{ required: true }]}>
+                            <InputNumber style={{ width: '100%' }} precision={6} />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item name="completion_rate" label={unitLabelComp} rules={[{ required: true }]}>
+                            <InputNumber style={{ width: '100%' }} precision={6} />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    );
+                  } else {
+                    return (
+                      <div style={{ 
+                        background: '#141414', 
+                        padding: '20px', 
+                        borderRadius: '12px', 
+                        marginBottom: '24px',
+                        border: '1px solid #303030'
+                      }}>
+                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>{t('models.pricing_tiers')}</Title>
+                        <Form.List name="pricing_tiers" initialValue={[]}>
+                          {(fields, { add, remove }) => (
+                            <>
+                              {fields.map(({ key, name, ...restField }) => (
+                                <Row key={key} gutter={12} align="middle" style={{ marginBottom: 12 }}>
+                                  <Col span={9}>
+                                    <Form.Item {...restField} name={[name, 'max_tokens']} rules={[{ required: true, message: '' }]} noStyle>
+                                      <InputNumber placeholder={t('models.context_limit')} style={{ width: '100%' }} />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={6}>
+                                    <Form.Item {...restField} name={[name, 'prompt_rate']} rules={[{ required: true }]} noStyle>
+                                      <InputNumber placeholder={t('models.input_rate')} style={{ width: '100%' }} precision={6} />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={6}>
+                                    <Form.Item {...restField} name={[name, 'completion_rate']} rules={[{ required: true }]} noStyle>
+                                      <InputNumber placeholder={t('models.output_rate')} style={{ width: '100%' }} precision={6} />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={3} style={{ textAlign: 'right' }}>
+                                    <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
+                                  </Col>
+                                </Row>
+                              ))}
+                              <Button 
+                                type="dashed" 
+                                onClick={() => add()} 
+                                block 
+                                icon={<PlusOutlined />}
+                                style={{ marginTop: 8, height: '40px' }}
+                              >
+                                {t('models.add_tier')}
+                              </Button>
+                            </>
+                          )}
+                        </Form.List>
+                      </div>
+                    );
+                  }
+                }}
+              </Form.Item>
+            </>
           )}
 
           {billingType === 'requests' && (

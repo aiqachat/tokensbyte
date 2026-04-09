@@ -150,6 +150,21 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         ]
       },
       {
+        key: 'finance-management-group',
+        icon: <WalletOutlined style={{ fontSize: '18px' }} />,
+        label: t('menu.finance'),
+        children: [
+          {
+            key: '/admin0755/finance/recharges',
+            label: <Link to="/admin0755/finance/recharges">{t('menu.finance_recharges')}</Link>,
+          },
+          {
+            key: '/admin0755/finance/orders',
+            label: <Link to="/admin0755/finance/orders">{t('menu.finance_orders')}</Link>,
+          }
+        ]
+      },
+      {
         key: 'settings-group',
         icon: <SettingOutlined style={{ fontSize: '18px' }} />,
         label: t('menu.settings'),

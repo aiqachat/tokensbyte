@@ -4,7 +4,7 @@ use axum::{
 };
 use std::sync::Arc;
 use crate::AppState;
-use crate::models::{User, CreateUserRequest, UpdateUserRequest, UserListResponse};
+use crate::models::{User, CreateUserRequest, UpdateUserRequest, UserListResponse, RechargeRequest};
 use crate::error::{AppError, AppResult};
 use crate::auth;
 
@@ -130,4 +130,42 @@ pub async fn delete_user(
     sqlx::query("DELETE FROM users WHERE id = ?").bind(id).execute(&state.db.pool).await?;
 
     Ok(Json(serde_json::json!({ "success": true })))
+}
+pub async fn recharge_user(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(request): Json<RechargeRequest>,
+) -> AppResult<Json<User>> {
+    let mut tx = state.db.pool.begin().await?;
+
+    let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    let new_balance = user.balance + request.amount;
+    let remark = request.remark.unwrap_or_else(|| "Administrator Adjustment".to_string());
+
+    sqlx::query("UPDATE users SET balance = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(new_balance)
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("INSERT INTO recharge_records (user_id, amount, remark) VALUES (?, ?, ?)")
+        .bind(&id)
+        .bind(request.amount)
+        .bind(&remark)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    let updated_user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        .bind(&id)
+        .fetch_one(&state.db.pool)
+        .await?;
+
+    Ok(Json(updated_user))
 }

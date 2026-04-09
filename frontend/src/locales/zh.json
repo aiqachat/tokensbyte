@@ -29,7 +29,8 @@
     "logout": "退出登录",
     "admin_title": "TokensByte管理后台",
     "currency_unit": "元",
-    "not_set": "未设置"
+    "not_set": "未设置",
+    "search_placeholder": "输入关键词搜索..."
   },
   "menu": {
     "dashboard": "控制台",
@@ -41,6 +42,9 @@
     "users": "用户管理",
     "user_list": "用户列表",
     "user_levels": "用户等级",
+    "finance": "财务管理",
+    "finance_recharges": "充值明细",
+    "finance_orders": "订单明细",
     "settings": "站点设置",
     "basic_settings": "基础设置",
     "currency_settings": "货币设置",
@@ -90,7 +94,12 @@
     "group": "分组",
     "joined": "加入时间",
     "password_hint": "密码 (留空保持不变)",
-    "uid": "用户 UID"
+    "uid": "用户 UID",
+    "recharge": "余额调整",
+    "adjustment_amount": "调整金额",
+    "adjustment_type": "调整方式",
+    "remark": "备注",
+    "recharge_success": "余额已更新"
   },
   "tokens": {
     "title": "令牌管理",
@@ -148,13 +157,26 @@
     "type_token": "按 Token 计费",
     "type_requests": "按次计费",
     "type_duration": "按时长计费",
-    "prompt_rate": "提示费率 (每 1k)",
-    "completion_rate": "补全费率 (每 1k)",
+    "prompt_rate": "输入费率 (每 1M)",
+    "completion_rate": "输出费率 (每 1M)",
     "fixed_rate": "固定费率 (单次)",
     "duration_rate": "时长费率 (每秒)",
     "group_ratios": "分组折扣",
     "group_name": "分组名称",
-    "ratio": "折扣倍率 (如 0.8 为 8 折)"
+    "ratio": "折扣倍率 (如 0.8 为 8 折)",
+    "billing_rule": "计费规则",
+    "billing_unit": "计费单位",
+    "rule_standard": "标准计费",
+    "rule_tiered": "阶梯计费 (按上下文)",
+    "unit_1k": "每 1k Token",
+    "unit_1M": "每百万 Token",
+    "pricing_tiers": "阶梯费率",
+    "context_limit": "上下文上限 (≤ Tokens)",
+    "add_tier": "添加阶梯",
+    "input_rate": "输入费率",
+    "output_rate": "输出费率",
+    "prompt_rate_M": "输入费率 (每 1M)",
+    "completion_rate_M": "输出费率 (每 1M)"
   },
   "settings": {
     "title": "站点设置",
@@ -211,5 +233,17 @@
     "amount": "金额 (元)",
     "remark": "备注",
     "time": "时间"
+  },
+  "finance": {
+    "recharge_title": "充值明细",
+    "order_title": "订单明细",
+    "amount": "金额",
+    "remark": "备注",
+    "tokens": "Token 数",
+    "cost": "消费金额",
+    "status": "状态",
+    "user_info": "用户信息",
+    "username": "用户名",
+    "uid": "用户 UID"
   }
 }

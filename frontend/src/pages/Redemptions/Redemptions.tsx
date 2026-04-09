@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
 import type { Redemption } from '../../types';
 import dayjs from 'dayjs';
 
@@ -21,6 +22,8 @@ interface GenerateResponse {
 
 const Redemptions: React.FC = () => {
   const { t } = useTranslation();
+  const { settings } = useSettingsStore();
+  const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -106,7 +109,7 @@ const Redemptions: React.FC = () => {
       title: t('redemptions.quota'),
       dataIndex: 'quota',
       key: 'quota',
-      render: (q: number) => <Text strong>${q.toFixed(2)}</Text>,
+      render: (q: number) => <Text strong>{currencySymbol}{q.toFixed(2)}</Text>,
     },
     {
       title: t('redemptions.status'),
@@ -170,7 +173,7 @@ const Redemptions: React.FC = () => {
           <Form.Item name="count" label={t('common.count')} rules={[{ required: true }]}>
             <InputNumber min={1} max={100} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="quota" label={t('redemptions.quota') + " ($)"} rules={[{ required: true }]}>
+          <Form.Item name="quota" label={`${t('redemptions.quota')} (${currencySymbol})`} rules={[{ required: true }]}>
             <InputNumber min={0.01} style={{ width: '100%' }} />
           </Form.Item>
         </Form>

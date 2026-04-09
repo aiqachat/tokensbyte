@@ -15,6 +15,12 @@ export interface User {
   created_at: string;
 }
 
+export interface PricingTier {
+  max_tokens: number;
+  prompt_rate: number;
+  completion_rate: number;
+}
+
 export interface ModelModel {
   id: number;
   name: string;
@@ -27,6 +33,9 @@ export interface ModelModel {
   fixed_rate: number;
   duration_rate: number;
   group_ratios: string;
+  billing_rule: string;
+  billing_unit: string;
+  pricing_tiers: string; // JSON string from backend
   is_active: boolean;
   created_at: string;
   updated_at?: string;
@@ -150,4 +159,23 @@ export interface DashboardStats {
     total_tokens: number;
     total_cost: number;
   }[];
+}
+
+export interface SiteSettings {
+  name: string;
+  title: string;
+  keywords: string;
+  description: string;
+}
+
+export interface CurrencySettings {
+  default_currency: string;
+  currency_symbol: string;
+  currency_unit: string;
+  token_ratio: number;
+}
+
+export interface AllSettings {
+  site: SiteSettings;
+  currency: CurrencySettings;
 }

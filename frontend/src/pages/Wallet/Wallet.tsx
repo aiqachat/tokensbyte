@@ -3,6 +3,7 @@ import { Card, Typography, Row, Col, Table, Button, Space, Statistic, Tag } from
 import { WalletOutlined, ShoppingCartOutlined, SwapOutlined, CheckCircleOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
 import type { WalletStats, RechargeRecord } from '../../types';
 import dayjs from 'dayjs';
 
@@ -10,6 +11,9 @@ const { Title, Text } = Typography;
 
 const Wallet: React.FC = () => {
   const { t } = useTranslation();
+  const { settings } = useSettingsStore();
+  const currencySymbol = settings?.currency?.currency_symbol || '$';
+  const currencyUnit = settings?.currency?.currency_unit || '元';
   const [stats, setStats] = useState<WalletStats | null>(null);
   const [records, setRecords] = useState<RechargeRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +50,7 @@ const Wallet: React.FC = () => {
       key: 'amount',
       render: (amount: number) => (
         <Text style={{ color: amount > 0 ? '#52c41a' : '#ff4d4f', fontWeight: 'bold' }}>
-          {amount > 0 ? `+${amount.toFixed(2)}` : amount.toFixed(2)}
+          {amount > 0 ? '+' : '-'}{currencySymbol}{Math.abs(amount).toFixed(2)}
         </Text>
       ),
     },
@@ -80,9 +84,9 @@ const Wallet: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <Title level={1} style={{ margin: 0, color: '#fff', fontSize: '48px' }}>
-              {stats?.balance.toFixed(6) || '0.000000'}
+              {currencySymbol}{stats?.balance.toFixed(6) || '0.000000'}
             </Title>
-            <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: '18px' }}>{t('common.currency_unit') || '元'}</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: '18px' }}>{currencyUnit}</Text>
           </div>
           <Button 
             type="default" 

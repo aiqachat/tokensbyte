@@ -59,6 +59,12 @@ pub struct RechargeRecord {
     pub created_at: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RechargeRequest {
+    pub amount: f64,
+    pub remark: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct WalletStats {
     pub balance: f64,

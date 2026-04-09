@@ -62,13 +62,34 @@ pub async fn list_models(
 
 pub async fn create_model(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<CreateModelRequest>,
+    Json(mut req): Json<CreateModelRequest>,
 ) -> AppResult<Json<Model>> {
+    req.name = req.name.trim().to_string();
+    req.model_id = req.model_id.trim().to_string();
+
+    if req.name.is_empty() || req.model_id.is_empty() {
+        return Err(crate::error::AppError::BadRequest("名称和模型 ID 不能为空".to_string()));
+    }
+
+    // Check for duplicate name or model_id
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM models WHERE name = ? OR model_id = ?")
+        .bind(&req.name)
+        .bind(&req.model_id)
+        .fetch_optional(&state.db.pool)
+        .await?;
+    
+    if exists.is_some() {
+        return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
+    }
+
     let group_ratios = serde_json::to_string(&req.group_ratios.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
+    let billing_rule = req.billing_rule.unwrap_or_else(|| "standard".to_string());
+    let billing_unit = req.billing_unit.unwrap_or_else(|| "1k".to_string());
+    let pricing_tiers = serde_json::to_string(&req.pricing_tiers.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
     
     let id = sqlx::query(
-        r#"INSERT INTO models (name, model_id, provider_id, type_id, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, group_ratios, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        r#"INSERT INTO models (name, model_id, provider_id, type_id, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, group_ratios, billing_rule, billing_unit, pricing_tiers, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
            RETURNING id"#
     )
     .bind(&req.name)
@@ -81,6 +102,9 @@ pub async fn create_model(
     .bind(req.fixed_rate)
     .bind(req.duration_rate)
     .bind(&group_ratios)
+    .bind(&billing_rule)
+    .bind(&billing_unit)
+    .bind(&pricing_tiers)
     .fetch_one(&state.db.pool)
     .await?
     .get::<i64, _>("id");
@@ -96,8 +120,53 @@ pub async fn create_model(
 pub async fn update_model(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
-    Json(req): Json<UpdateModelRequest>,
+    Json(mut req): Json<UpdateModelRequest>,
 ) -> AppResult<Json<Model>> {
+    // Basic trimming if fields are provided
+    if let Some(name) = &mut req.name {
+        *name = name.trim().to_string();
+        if name.is_empty() {
+            return Err(crate::error::AppError::BadRequest("名称不能为空".to_string()));
+        }
+    }
+    if let Some(model_id) = &mut req.model_id {
+        *model_id = model_id.trim().to_string();
+        if model_id.is_empty() {
+            return Err(crate::error::AppError::BadRequest("模型 ID 不能为空".to_string()));
+        }
+    }
+
+    // Check for duplicate name or model_id (collision with OTHER models)
+    if let (Some(name), Some(mid)) = (&req.name, &req.model_id) {
+        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM models WHERE (name = ? OR model_id = ?) AND id != ?")
+            .bind(name)
+            .bind(mid)
+            .bind(id)
+            .fetch_optional(&state.db.pool)
+            .await?;
+        if exists.is_some() {
+            return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
+        }
+    } else if let Some(name) = &req.name {
+        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM models WHERE name = ? AND id != ?")
+            .bind(name)
+            .bind(id)
+            .fetch_optional(&state.db.pool)
+            .await?;
+        if exists.is_some() {
+            return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
+        }
+    } else if let Some(mid) = &req.model_id {
+        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM models WHERE model_id = ? AND id != ?")
+            .bind(mid)
+            .bind(id)
+            .fetch_optional(&state.db.pool)
+            .await?;
+        if exists.is_some() {
+            return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
+        }
+    }
+
     if let Some(name) = &req.name {
         sqlx::query("UPDATE models SET name = ? WHERE id = ?").bind(name).bind(id).execute(&state.db.pool).await?;
     }
@@ -128,6 +197,16 @@ pub async fn update_model(
     if let Some(gr) = &req.group_ratios {
         let gr_str = serde_json::to_string(gr).unwrap_or_else(|_| "{}".to_string());
         sqlx::query("UPDATE models SET group_ratios = ? WHERE id = ?").bind(&gr_str).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(rule) = &req.billing_rule {
+        sqlx::query("UPDATE models SET billing_rule = ? WHERE id = ?").bind(rule).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(unit) = &req.billing_unit {
+        sqlx::query("UPDATE models SET billing_unit = ? WHERE id = ?").bind(unit).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(tiers) = &req.pricing_tiers {
+        let tiers_str = serde_json::to_string(tiers).unwrap_or_else(|_| "[]".to_string());
+        sqlx::query("UPDATE models SET pricing_tiers = ? WHERE id = ?").bind(&tiers_str).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(active) = req.is_active {
         sqlx::query("UPDATE models SET is_active = ? WHERE id = ?").bind(active).bind(id).execute(&state.db.pool).await?;

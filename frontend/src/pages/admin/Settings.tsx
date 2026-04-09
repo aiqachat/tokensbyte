@@ -3,6 +3,7 @@ import { Card, Form, Input, Button, InputNumber, message, Typography, Space } fr
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
 
 const { Title, Text } = Typography;
 
@@ -22,6 +23,7 @@ interface CurrencySettings {
 
 const Settings: React.FC = () => {
   const { t } = useTranslation();
+  const { updateStoreSettings } = useSettingsStore();
   const [searchParams] = useSearchParams();
   const tab = searchParams.get('tab') || 'basic';
   const isCurrencyMode = tab === 'currency';
@@ -68,8 +70,11 @@ const Settings: React.FC = () => {
         };
       }
 
-      await request.post('/settings', payload);
+      const updatedSettings = await (request.post('/settings', payload) as any);
       message.success(t('settings.save_success'));
+      
+      // Update global store
+      updateStoreSettings(updatedSettings);
       
       if (payload.site?.title) {
           document.title = payload.site.title;

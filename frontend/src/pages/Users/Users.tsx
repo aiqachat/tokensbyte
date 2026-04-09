@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
 import type { User } from '../../types';
 import dayjs from 'dayjs';
 
@@ -11,12 +12,17 @@ const { Option } = Select;
 
 const Users: React.FC = () => {
   const { t } = useTranslation();
+  const { settings } = useSettingsStore();
+  const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [users, setUsers] = useState<User[]>([]);
   const [userLevels, setUserLevels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isRechargeModalVisible, setIsRechargeModalVisible] = useState(false);
+  const [rechargingUser, setRechargingUser] = useState<User | null>(null);
   const [form] = Form.useForm();
+  const [rechargeForm] = Form.useForm();
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -78,6 +84,27 @@ const Users: React.FC = () => {
     }
   };
 
+  const handleRechargeClick = (record: User) => {
+    setRechargingUser(record);
+    rechargeForm.setFieldsValue({
+      amount: 0,
+      remark: '',
+    });
+    setIsRechargeModalVisible(true);
+  };
+
+  const handleRechargeSave = async (values: any) => {
+    if (!rechargingUser) return;
+    try {
+      await request.post(`/users/${rechargingUser.id}/recharge`, values);
+      message.success(t('users.recharge_success'));
+      setIsRechargeModalVisible(false);
+      fetchUsers();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const columns = [
     {
       title: t('users.uid'),
@@ -120,7 +147,7 @@ const Users: React.FC = () => {
       title: t('users.balance'),
       dataIndex: 'balance',
       key: 'balance',
-      render: (val: number) => `$${val.toFixed(2)}`,
+      render: (val: number) => `${currencySymbol}${val.toFixed(2)}`,
     },
     {
       title: t('common.status'),
@@ -143,6 +170,11 @@ const Users: React.FC = () => {
       key: 'actions',
       render: (_: unknown, record: User) => (
         <Space>
+          <Button 
+            icon={<WalletOutlined />} 
+            style={{ color: '#52c41a', borderColor: '#52c41a' }}
+            onClick={() => handleRechargeClick(record)} 
+          />
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
             <Button icon={<DeleteOutlined />} danger disabled={record.role === 'admin'} />
@@ -197,7 +229,7 @@ const Users: React.FC = () => {
               <Option value="admin">Admin</Option>
             </Select>
           </Form.Item>
-          <Form.Item name="balance" label={t('users.balance') + " ($)"} initialValue={0}>
+          <Form.Item name="balance" label={`${t('users.balance')} (${currencySymbol})`} initialValue={0}>
             <InputNumber style={{ width: '100%' }} precision={2} />
           </Form.Item>
           <Form.Item name="user_group" label={t('users.group')} initialValue="default">
@@ -212,6 +244,39 @@ const Users: React.FC = () => {
               <Option value={true}>{t('common.active')}</Option>
               <Option value={false}>{t('common.disabled')}</Option>
             </Select>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={t('users.recharge')}
+        open={isRechargeModalVisible}
+        onCancel={() => setIsRechargeModalVisible(false)}
+        onOk={() => rechargeForm.submit()}
+        width={400}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text type="secondary">{t('users.username')}: </Text>
+          <Text strong>{rechargingUser?.username}</Text>
+          <br />
+          <Text type="secondary">{t('users.balance')}: </Text>
+          <Text strong style={{ color: '#1677ff' }}>{currencySymbol}{rechargingUser?.balance.toFixed(2)}</Text>
+        </div>
+        <Form form={rechargeForm} layout="vertical" onFinish={handleRechargeSave}>
+          <Form.Item 
+            name="amount" 
+            label={t('users.adjustment_amount')} 
+            rules={[{ required: true, message: 'Please enter amount' }]}
+            initialValue={0}
+          >
+            <InputNumber 
+              style={{ width: '100%' }} 
+              precision={2} 
+              placeholder={t('finance.amount')}
+            />
+          </Form.Item>
+          <Form.Item name="remark" label={t('users.remark')}>
+            <Input.TextArea rows={2} placeholder={t('users.remark')} />
           </Form.Item>
         </Form>
       </Modal>

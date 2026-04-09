@@ -214,7 +214,7 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS models (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
+            name TEXT NOT NULL UNIQUE,
             model_id TEXT NOT NULL UNIQUE,
             provider_id INTEGER REFERENCES model_providers(id),
             type_id INTEGER REFERENCES model_types(id),
@@ -224,6 +224,9 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
             fixed_rate REAL NOT NULL DEFAULT 0.0,
             duration_rate REAL NOT NULL DEFAULT 0.0,
             group_ratios TEXT NOT NULL DEFAULT '{}', -- JSON object for group discounts
+            billing_rule TEXT NOT NULL DEFAULT 'standard', -- standard, tiered
+            billing_unit TEXT NOT NULL DEFAULT '1k', -- 1k, 1M
+            pricing_tiers TEXT NOT NULL DEFAULT '[]', -- JSON array of tiers
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -233,7 +236,7 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
     .await?;
 
     // Add columns to models table if they don't exist
-    for col in &["provider_id", "type_id"] {
+    for col in &["provider_id", "type_id", "billing_rule", "billing_unit", "pricing_tiers"] {
         let count: i32 = sqlx::query_scalar(
             &format!("SELECT count(*) FROM pragma_table_info('models') WHERE name='{}'", col)
         )
@@ -244,8 +247,27 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
             sqlx::query(&format!("ALTER TABLE models ADD COLUMN {}", col))
                 .execute(pool)
                 .await?;
+            
+            // Set defaults for newly added columns
+            if col == &"billing_rule" {
+                sqlx::query("UPDATE models SET billing_rule = 'standard' WHERE billing_rule IS NULL").execute(pool).await?;
+            } else if col == &"billing_unit" {
+                sqlx::query("UPDATE models SET billing_unit = '1k' WHERE billing_unit IS NULL").execute(pool).await?;
+            } else if col == &"pricing_tiers" {
+                sqlx::query("UPDATE models SET pricing_tiers = '[]' WHERE pricing_tiers IS NULL").execute(pool).await?;
+            }
         }
     }
+
+    // Create unique index for model name (for existing installations)
+    sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_models_name ON models(name)")
+        .execute(pool)
+        .await?;
+    
+    // Create unique index for model_id (for existing installations)
+    sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_models_model_id ON models(model_id)")
+        .execute(pool)
+        .await?;
 
 
     // Create indexes

@@ -29,7 +29,8 @@
     "logout": "Logout",
     "admin_title": "TokensByte Admin",
     "currency_unit": "Credits",
-    "not_set": "Not Set"
+    "not_set": "Not Set",
+    "search_placeholder": "Search..."
   },
   "menu": {
     "dashboard": "Dashboard",
@@ -41,6 +42,9 @@
     "users": "User Management",
     "user_list": "User List",
     "user_levels": "User Levels",
+    "finance": "Finance",
+    "finance_recharges": "Recharge Details",
+    "finance_orders": "Order Details",
     "settings": "Site Settings",
     "basic_settings": "Basic",
     "currency_settings": "Currency",
@@ -90,7 +94,12 @@
     "group": "Group",
     "joined": "Joined",
     "password_hint": "Password (leave blank to keep current)",
-    "uid": "User UID"
+    "uid": "User UID",
+    "recharge": "Balance Adjustment",
+    "adjustment_amount": "Adjustment Amount",
+    "adjustment_type": "Adjustment Type",
+    "remark": "Remark",
+    "recharge_success": "Balance Updated"
   },
   "tokens": {
     "title": "API Tokens",
@@ -148,13 +157,26 @@
     "type_token": "Token-based",
     "type_requests": "Per-request",
     "type_duration": "Duration-based",
-    "prompt_rate": "Prompt Rate (per 1k)",
-    "completion_rate": "Completion Rate (per 1k)",
+    "prompt_rate": "Input Rate (per 1M)",
+    "completion_rate": "Output Rate (per 1M)",
     "fixed_rate": "Fixed Rate (per call)",
     "duration_rate": "Duration Rate (per sec)",
     "group_ratios": "Group Discounts",
     "group_name": "Group Name",
-    "ratio": "Multiplier (e.g. 0.8 for 20% off)"
+    "ratio": "Multiplier (e.g. 0.8 for 20% off)",
+    "billing_rule": "Billing Rule",
+    "billing_unit": "Billing Unit",
+    "rule_standard": "Standard Pricing",
+    "rule_tiered": "Tiered Pricing (Context-Based)",
+    "unit_1k": "Per 1k Tokens",
+    "unit_1M": "Per Million Tokens",
+    "pricing_tiers": "Pricing Tiers",
+    "context_limit": "Context Limit (<= Tokens)",
+    "add_tier": "Add Tier",
+    "input_rate": "Input Rate",
+    "output_rate": "Output Rate",
+    "prompt_rate_M": "Input Rate (per 1M)",
+    "completion_rate_M": "Output Rate (per 1M)"
   },
   "settings": {
     "title": "Site Settings",
@@ -211,5 +233,17 @@
     "amount": "Amount",
     "remark": "Remark",
     "time": "Time"
+  },
+  "finance": {
+    "recharge_title": "Recharge Details",
+    "order_title": "Order Details",
+    "amount": "Amount",
+    "remark": "Remark",
+    "tokens": "Tokens",
+    "cost": "Cost",
+    "status": "Status",
+    "user_info": "User Information",
+    "username": "Username",
+    "uid": "User UID"
   }
 }

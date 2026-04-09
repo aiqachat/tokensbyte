@@ -13,9 +13,19 @@ pub struct Model {
     pub fixed_rate: f64,      // Price per request
     pub duration_rate: f64,   // Price per second
     pub group_ratios: String, // JSON object string: {"default": 1.0, "vip": 0.8}
+    pub billing_rule: String, // standard, tiered
+    pub billing_unit: String, // 1k, 1M
+    pub pricing_tiers: String, // JSON array of tiers
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PricingTier {
+    pub max_tokens: i32,
+    pub prompt_rate: f64,
+    pub completion_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -79,6 +89,9 @@ pub struct CreateModelRequest {
     pub duration_rate: f64,
     #[serde(default)]
     pub group_ratios: Option<std::collections::HashMap<String, f64>>,
+    pub billing_rule: Option<String>,
+    pub billing_unit: Option<String>,
+    pub pricing_tiers: Option<Vec<PricingTier>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,6 +106,9 @@ pub struct UpdateModelRequest {
     pub fixed_rate: Option<f64>,
     pub duration_rate: Option<f64>,
     pub group_ratios: Option<std::collections::HashMap<String, f64>>,
+    pub billing_rule: Option<String>,
+    pub billing_unit: Option<String>,
+    pub pricing_tiers: Option<Vec<PricingTier>>,
     pub is_active: Option<bool>,
 }
 

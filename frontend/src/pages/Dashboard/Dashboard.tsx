@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
 import type { DashboardStats, RequestLog } from '../../types';
 import dayjs from 'dayjs';
 
@@ -15,6 +16,8 @@ const { Title, Text } = Typography;
 
 const Dashboard: React.FC = () => {
   const { t } = useTranslation();
+  const { settings } = useSettingsStore();
+  const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -62,7 +65,7 @@ const Dashboard: React.FC = () => {
       title: t('dashboard.estimated_cost'),
       dataIndex: 'cost',
       key: 'cost',
-      render: (val: number) => `$${val.toFixed(4)}`,
+      render: (val: number) => `${currencySymbol}${val.toFixed(4)}`,
     },
     {
       title: t('common.status'),
@@ -104,7 +107,7 @@ const Dashboard: React.FC = () => {
             <Statistic
               title={t('dashboard.estimated_cost')}
               value={stats?.total_cost || 0}
-              prefix={<DollarOutlined />}
+              prefix={currencySymbol}
               precision={4}
               valueStyle={{ color: '#faad14' }}
             />
@@ -150,7 +153,7 @@ const Dashboard: React.FC = () => {
                     <div style={{ width: '100%' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <Tag color="blue">{item.model}</Tag>
-                        <Text strong>${item.total_cost.toFixed(4)}</Text>
+                        <Text strong>{currencySymbol}{item.total_cost.toFixed(4)}</Text>
                       </div>
                       <Progress percent={Math.round(percentage)} size="small" status="active" />
                     </div>

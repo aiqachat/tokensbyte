@@ -19,12 +19,14 @@ pub mod tokens;
 pub mod user;
 pub mod user_levels;
 pub mod users;
+pub mod finance;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
     let admin_routes = Router::new()
         .route("/users", get(users::list_users).post(users::create_user))
         .route("/users/{id}", put(users::update_user).delete(users::delete_user))
+        .route("/users/{id}/recharge", post(users::recharge_user))
         .route("/channels", post(channels::create_channel))
         .route("/channels/{id}", put(channels::update_channel).delete(channels::delete_channel))
         .route("/channels/{id}/test", post(channels::test_channel))
@@ -41,6 +43,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/settings", get(settings::get_settings).post(settings::update_settings))
         .route("/user_levels", get(user_levels::list_user_levels).post(user_levels::create_user_level))
         .route("/user_levels/{id}", put(user_levels::update_user_level).delete(user_levels::delete_user_level))
+        .route("/finance/recharges", get(finance::list_recharges))
+        .route("/finance/orders", get(finance::list_orders))
         .layer(axum_middleware::from_fn(admin_middleware));
 
     let management_routes = Router::new()

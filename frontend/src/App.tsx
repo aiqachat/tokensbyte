@@ -14,8 +14,12 @@ import Logs from './pages/Logs/Logs';
 import Redemptions from './pages/Redemptions/Redemptions';
 import Profile from './pages/Profile/Profile';
 import Wallet from './pages/Wallet/Wallet';
+import RechargeRecords from './pages/Finance/RechargeRecords';
+import OrderDetails from './pages/Finance/OrderDetails';
 import Settings from './pages/admin/Settings';
 import useAuthStore from './store/auth';
+import useSettingsStore from './store/settings';
+import { useEffect } from 'react';
 
 const PrivateRoute = ({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) => {
   const { token, user } = useAuthStore();
@@ -25,6 +29,12 @@ const PrivateRoute = ({ children, adminOnly = false }: { children: React.ReactNo
 };
 
 const App: React.FC = () => {
+  const { fetchSettings } = useSettingsStore();
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
   return (
     <Router>
       <Routes>
@@ -66,6 +76,8 @@ const App: React.FC = () => {
           <Route path="redemptions" element={<Redemptions />} />
           <Route path="users" element={<Users />} />
           <Route path="user-levels" element={<UserLevels />} />
+          <Route path="finance/recharges" element={<RechargeRecords />} />
+          <Route path="finance/orders" element={<OrderDetails />} />
           <Route path="settings" element={<Settings />} />
         </Route>
 

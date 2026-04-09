@@ -85,14 +85,31 @@ pub async fn handle_chat_stream(
             Some(m) => {
                 match m.billing_type.as_str() {
                     "requests" => m.fixed_rate * discount,
-                    _ => { // tokens or duration (duration not implemented)
-                        ((total_prompt_tokens as f64 * m.prompt_rate + total_completion_tokens as f64 * m.completion_rate) / 1000.0) * discount
+                    _ => { // tokens or duration
+                        let mut p_rate = m.prompt_rate;
+                        let mut c_rate = m.completion_rate;
+
+                        if m.billing_rule == "tiered" {
+                            let tiers: Vec<crate::models::PricingTier> = serde_json::from_str(&m.pricing_tiers).unwrap_or_default();
+                            let mut sorted_tiers = tiers;
+                            sorted_tiers.sort_by_key(|t| t.max_tokens);
+                            for tier in sorted_tiers {
+                                if total_prompt_tokens <= tier.max_tokens {
+                                    p_rate = tier.prompt_rate;
+                                    c_rate = tier.completion_rate;
+                                    break;
+                                }
+                            }
+                        }
+
+                        let divisor = 1_000_000.0;
+                        ((total_prompt_tokens as f64 * p_rate + total_completion_tokens as f64 * c_rate) / divisor) * discount
                     }
                 }
             },
             None => {
                 let total_tokens = total_prompt_tokens + total_completion_tokens;
-                (total_tokens as f64 / 1000.0) * discount
+                (total_tokens as f64 / 1_000_000.0) * discount
             }
         };
         
