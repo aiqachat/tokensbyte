@@ -6,6 +6,7 @@ import {
   DollarOutlined,
   KeyOutlined,
 } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import type { DashboardStats, RequestLog } from '../../types';
 import dayjs from 'dayjs';
@@ -13,15 +14,14 @@ import dayjs from 'dayjs';
 const { Title, Text } = Typography;
 
 const Dashboard: React.FC = () => {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchStats = async () => {
     try {
       const data = await (request.get<DashboardStats>('/dashboard') as unknown as Promise<DashboardStats>);
-
       setStats(data);
-
     } catch (error) {
       console.error(error);
     } finally {
@@ -37,13 +37,13 @@ const Dashboard: React.FC = () => {
 
   const columns = [
     {
-      title: 'Time',
+      title: t('dashboard.recent_activity_time', { defaultValue: 'Time' }),
       dataIndex: 'created_at',
       key: 'created_at',
       render: (text: string) => dayjs(text).format('MM-DD HH:mm:ss'),
     },
     {
-      title: 'Model',
+      title: t('channels.type'),
       dataIndex: 'model',
       key: 'model',
       render: (text: string) => <Tag color="blue">{text}</Tag>,
@@ -59,13 +59,13 @@ const Dashboard: React.FC = () => {
       ),
     },
     {
-      title: 'Cost',
+      title: t('dashboard.estimated_cost'),
       dataIndex: 'cost',
       key: 'cost',
       render: (val: number) => `$${val.toFixed(4)}`,
     },
     {
-      title: 'Status',
+      title: t('common.status'),
       dataIndex: 'status_code',
       key: 'status_code',
       render: (code: number) => (
@@ -76,13 +76,13 @@ const Dashboard: React.FC = () => {
 
   return (
     <div>
-      <Title level={2} style={{ marginBottom: 24 }}>System Overview</Title>
+      <Title level={2} style={{ marginBottom: 24 }}>{t('dashboard.title')}</Title>
       
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>
           <Card bordered={false} loading={loading}>
             <Statistic
-              title="Total Requests"
+              title={t('dashboard.total_requests')}
               value={stats?.total_requests || 0}
               prefix={<ThunderboltOutlined />}
               valueStyle={{ color: '#1677ff' }}
@@ -92,7 +92,7 @@ const Dashboard: React.FC = () => {
         <Col xs={24} sm={12} lg={6}>
           <Card bordered={false} loading={loading}>
             <Statistic
-              title="Total Tokens"
+              title={t('dashboard.total_tokens')}
               value={stats?.total_tokens || 0}
               prefix={<RocketOutlined />}
               valueStyle={{ color: '#52c41a' }}
@@ -102,7 +102,7 @@ const Dashboard: React.FC = () => {
         <Col xs={24} sm={12} lg={6}>
           <Card bordered={false} loading={loading}>
             <Statistic
-              title="Estimated Cost"
+              title={t('dashboard.estimated_cost')}
               value={stats?.total_cost || 0}
               prefix={<DollarOutlined />}
               precision={4}
@@ -113,7 +113,7 @@ const Dashboard: React.FC = () => {
         <Col xs={24} sm={12} lg={6}>
           <Card bordered={false} loading={loading}>
             <Statistic
-              title="Active Tokens"
+              title={t('dashboard.active_tokens')}
               value={stats?.active_tokens || 0}
               prefix={<KeyOutlined />}
               valueStyle={{ color: '#13c2c2' }}
@@ -124,7 +124,7 @@ const Dashboard: React.FC = () => {
 
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         <Col lg={16} xs={24}>
-          <Card title="Recent Activity" bordered={false} extra={<Text type="secondary">Auto-refresh: 30s</Text>}>
+          <Card title={t('dashboard.recent_activity')} bordered={false} extra={<Text type="secondary">{t('dashboard.auto_refresh')}</Text>}>
             <Table
               dataSource={stats?.recent_logs || []}
               columns={columns}
@@ -132,14 +132,16 @@ const Dashboard: React.FC = () => {
               pagination={false}
               size="middle"
               loading={loading}
+              locale={{ emptyText: t('dashboard.no_data') }}
             />
           </Card>
         </Col>
         <Col lg={8} xs={24}>
-          <Card title="Model Distribution (by Cost)" bordered={false} style={{ height: '100%' }}>
+          <Card title={t('dashboard.model_distribution')} bordered={false} style={{ height: '100%' }}>
             <List
               dataSource={stats?.model_stats || []}
               loading={loading}
+              locale={{ emptyText: t('dashboard.no_data') }}
               renderItem={(item) => {
                 const percentage = stats?.total_cost ? (item.total_cost / stats.total_cost) * 100 : 0;
                 return (
@@ -163,3 +165,4 @@ const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
+

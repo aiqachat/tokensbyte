@@ -3,6 +3,7 @@ import { Card, Form, Input, Button, Typography, Space, message } from 'antd';
 import { UserOutlined, LockOutlined, RocketOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import axios, { AxiosError } from 'axios';
+import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/auth';
 import type { User } from '../../types';
 
@@ -14,6 +15,7 @@ interface LoginResponse {
 }
 
 const Login: React.FC = () => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { setToken, setUser } = useAuthStore();
@@ -25,16 +27,17 @@ const Login: React.FC = () => {
       const { token, user } = response.data;
       setToken(token);
       setUser(user);
-      message.success('Welcome back, ' + user.username);
+      message.success(t('login.welcome') + ', ' + user.username);
       navigate('/dashboard');
     } catch (error) {
       console.error(error);
       const axiosError = error as AxiosError<{ error: { message: string } }>;
-      message.error(axiosError.response?.data?.error?.message || 'Login failed');
+      message.error(axiosError.response?.data?.error?.message || t('common.error'));
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div style={{
@@ -61,23 +64,24 @@ const Login: React.FC = () => {
         >
           <Form.Item
             name="username"
-            rules={[{ required: true, message: 'Please input your username!' }]}
+            rules={[{ required: true, message: t('login.username') }]}
           >
-            <Input prefix={<UserOutlined />} placeholder="Username" />
+            <Input prefix={<UserOutlined />} placeholder={t('login.username')} />
           </Form.Item>
 
           <Form.Item
             name="password"
-            rules={[{ required: true, message: 'Please input your password!' }]}
+            rules={[{ required: true, message: t('login.password') }]}
           >
-            <Input.Password prefix={<LockOutlined />} placeholder="Password" />
+            <Input.Password prefix={<LockOutlined />} placeholder={t('login.password')} />
           </Form.Item>
 
           <Form.Item>
             <Button type="primary" htmlType="submit" block loading={loading}>
-              Sign In
+              {t('login.sign_in')}
             </Button>
           </Form.Item>
+
         </Form>
       </Card>
     </div>

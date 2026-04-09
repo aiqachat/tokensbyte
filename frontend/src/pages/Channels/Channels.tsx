@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col } from 'antd';
-
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import type { Channel } from '../../types';
 
@@ -9,7 +9,9 @@ const { Title, Text } = Typography;
 const { Option } = Select;
 
 const Channels: React.FC = () => {
+  const { t } = useTranslation();
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
@@ -21,15 +23,24 @@ const Channels: React.FC = () => {
       const resp = await (request.get('/channels') as unknown as Promise<{ data: Channel[] }>);
       setChannels(resp.data);
     } catch (e) {
-
       console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchModels = async () => {
+    try {
+      const resp = await (request.get('/models') as unknown as Promise<{ data: any[] }>);
+      setAvailableModels(resp.data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchChannels();
+    fetchModels();
   }, []);
 
   const handleAdd = () => {
@@ -42,7 +53,6 @@ const Channels: React.FC = () => {
     setEditingChannel(record);
     form.setFieldsValue({
       ...record,
-      models: record.models.join('\n'),
       model_mapping: JSON.stringify(record.model_mapping, null, 2),
     });
     setIsModalVisible(true);
@@ -51,7 +61,7 @@ const Channels: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await request.delete(`/channels/${id}`);
-      message.success('Channel deleted');
+      message.success(t('common.success'));
       fetchChannels();
     } catch (e) {
       console.error(e);
@@ -60,34 +70,32 @@ const Channels: React.FC = () => {
 
   const handleTest = async (id: number) => {
     try {
-      message.loading({ content: 'Testing channel...', key: 'test' });
+      message.loading({ content: t('common.loading'), key: 'test' });
       const resp = await (request.post(`/channels/${id}/test`, {}) as unknown as Promise<{ success: boolean; message: string }>);
       if (resp.success) {
-        message.success({ content: 'Channel working correctly!', key: 'test' });
+        message.success({ content: t('channels.test_success'), key: 'test' });
       } else {
-        message.error({ content: `Test failed: ${resp.message}`, key: 'test' });
+        message.error({ content: `${t('channels.test_failed')}: ${resp.message}`, key: 'test' });
       }
     } catch (e) {
       console.error(e);
-      message.error({ content: 'Test failed', key: 'test' });
+      message.error({ content: t('channels.test_failed'), key: 'test' });
     }
   };
 
-  const handleSave = async (values: { models: string; model_mapping?: string; [key: string]: unknown }) => {
-
+  const handleSave = async (values: { models: string[]; model_mapping?: string; [key: string]: unknown }) => {
     const data = {
       ...values,
-      models: values.models?.split('\n').filter((m: string) => m.trim()) || [],
       model_mapping: values.model_mapping ? JSON.parse(values.model_mapping) : {},
     };
 
     try {
       if (editingChannel) {
         await request.put(`/channels/${editingChannel.id}`, data);
-        message.success('Channel updated');
+        message.success(t('common.success'));
       } else {
         await request.post('/channels', data);
-        message.success('Channel created');
+        message.success(t('common.success'));
       }
       setIsModalVisible(false);
       fetchChannels();
@@ -98,42 +106,41 @@ const Channels: React.FC = () => {
 
   const columns = [
     {
-      title: 'Name',
+      title: t('channels.name'),
       dataIndex: 'name',
       key: 'name',
       render: (text: string) => <Text strong>{text}</Text>,
     },
     {
-      title: 'Type',
+      title: t('channels.type'),
       dataIndex: 'provider_type',
       key: 'provider_type',
       render: (type: string) => <Tag color="purple">{type}</Tag>,
     },
     {
-      title: 'Base URL',
+      title: t('channels.base_url'),
       dataIndex: 'base_url',
       key: 'base_url',
       render: (url: string) => <Text code>{url || 'Default'}</Text>,
     },
     {
-      title: 'Status',
+      title: t('common.status'),
       dataIndex: 'status',
       key: 'status',
       render: (status: number) => (
         <Tag color={status === 1 ? 'success' : 'error'}>
-          {status === 1 ? 'Active' : 'Disabled'}
+          {status === 1 ? t('common.active') : t('common.disabled')}
         </Tag>
       ),
     },
     {
-      title: 'Actions',
+      title: t('common.actions'),
       key: 'actions',
       render: (_: unknown, record: Channel) => (
-
         <Space>
-          <Button onClick={() => handleTest(record.id)}>Test</Button>
+          <Button onClick={() => handleTest(record.id)}>{t('common.test')}</Button>
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-          <Popconfirm title="Delete channel?" onConfirm={() => handleDelete(record.id)}>
+          <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
             <Button icon={<DeleteOutlined />} danger />
           </Popconfirm>
         </Space>
@@ -144,10 +151,10 @@ const Channels: React.FC = () => {
   return (
     <Card bordered={false}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>Channel Management</Title>
+        <Title level={2} style={{ margin: 0 }}>{t('channels.title')}</Title>
         <Space>
-          <Button icon={<SyncOutlined />} onClick={fetchChannels}>Refresh</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>Add Channel</Button>
+          <Button icon={<SyncOutlined />} onClick={fetchChannels}>{t('common.refresh')}</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('channels.add_channel')}</Button>
         </Space>
       </div>
 
@@ -160,7 +167,7 @@ const Channels: React.FC = () => {
       />
 
       <Modal
-        title={editingChannel ? 'Edit Channel' : 'Add Channel'}
+        title={editingChannel ? t('channels.edit_channel') : t('channels.add_channel')}
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         onOk={() => form.submit()}
@@ -169,12 +176,12 @@ const Channels: React.FC = () => {
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="name" label="Channel Name" rules={[{ required: true }]}>
+              <Form.Item name="name" label={t('channels.name')} rules={[{ required: true }]}>
                 <Input placeholder="e.g. OpenAI Primary" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="provider_type" label="Provider" rules={[{ required: true }]}>
+              <Form.Item name="provider_type" label={t('channels.type')} rules={[{ required: true }]}>
                 <Select placeholder="Select Provider">
                   <Option value="openai">OpenAI</Option>
                   <Option value="anthropic">Anthropic</Option>
@@ -186,16 +193,20 @@ const Channels: React.FC = () => {
             </Col>
           </Row>
 
-          <Form.Item name="base_url" label="Base URL (Optional)">
+          <Form.Item name="base_url" label={t('channels.base_url')}>
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
 
-          <Form.Item name="api_key" label="API Key" rules={[{ required: true }]}>
+          <Form.Item name="api_key" label={t('channels.api_key')} rules={[{ required: true }]}>
             <Input.Password placeholder="sk-..." />
           </Form.Item>
 
-          <Form.Item name="models" label="Models (one per line)" rules={[{ required: true }]}>
-            <Input.TextArea rows={4} placeholder="gpt-4\ngpt-3.5-turbo" />
+          <Form.Item name="models" label={t('channels.models')} rules={[{ required: true }]}>
+            <Select mode="multiple" placeholder="Select Models">
+                {availableModels.map((m) => (
+                    <Option key={m.model_id} value={m.model_id}>{m.name} ({m.model_id})</Option>
+                ))}
+            </Select>
           </Form.Item>
 
           <Form.Item name="model_mapping" label="Model Mapping (JSON, optional)">
@@ -204,20 +215,20 @@ const Channels: React.FC = () => {
 
           <Row gutter={16}>
             <Col span={8}>
-              <Form.Item name="priority" label="Priority" initialValue={0}>
+              <Form.Item name="priority" label={t('channels.priority')} initialValue={0}>
                 <InputNumber style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="weight" label="Weight" initialValue={1}>
+              <Form.Item name="weight" label={t('channels.weight')} initialValue={1}>
                 <InputNumber style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="status" label="Status" initialValue={1}>
+              <Form.Item name="status" label={t('common.status')} initialValue={1}>
                 <Select>
-                  <Option value={1}>Enabled</Option>
-                  <Option value={0}>Disabled</Option>
+                  <Option value={1}>{t('common.enabled')}</Option>
+                  <Option value={0}>{t('common.disabled')}</Option>
                 </Select>
               </Form.Item>
             </Col>
@@ -228,4 +239,6 @@ const Channels: React.FC = () => {
   );
 };
 
+
 export default Channels;
+
