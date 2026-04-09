@@ -6,6 +6,7 @@ pub mod redemption;
 pub mod model;
 pub mod settings;
 pub mod user_level;
+pub mod verification;
 
 pub use user::*;
 pub use channel::*;
@@ -15,6 +16,7 @@ pub use redemption::*;
 pub use model::*;
 pub use settings::*;
 pub use user_level::*;
+pub use verification::*;
 
 pub use user::User;
 pub use channel::Channel;

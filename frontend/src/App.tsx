@@ -1,6 +1,8 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login/Login';
+import Register from './pages/Login/Register';
+import ForgotPassword from './pages/Login/ForgotPassword';
 import AdminLogin from './pages/AdminLogin/AdminLogin';
 import DashboardLayout from './layouts/DashboardLayout';
 import Dashboard from './pages/Dashboard/Dashboard';
@@ -40,6 +42,8 @@ const App: React.FC = () => {
       <Routes>
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/admin0755" element={<AdminLogin />} />
 
         {/* User End Routes (Default) */}

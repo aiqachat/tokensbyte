@@ -90,3 +90,23 @@ pub struct UserListResponse {
     pub data: Vec<User>,
     pub total: i64,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct SendCodeRequest {
+    pub email: String,
+    pub purpose: String, // register, reset_password
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EmailRegisterRequest {
+    pub email: String,
+    pub code: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordRequest {
+    pub email: String,
+    pub code: String,
+    pub new_password: String,
+}

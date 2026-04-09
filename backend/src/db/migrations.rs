@@ -164,6 +164,25 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    // Verification codes table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS verification_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            code TEXT NOT NULL,
+            purpose TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Create index for verification codes
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_verification_email_code ON verification_codes(email, code)")
+        .execute(pool)
+        .await?;
+
     // Seed default user level if not exists
     sqlx::query(
         r#"INSERT OR IGNORE INTO user_levels (name, group_key, discount, description)

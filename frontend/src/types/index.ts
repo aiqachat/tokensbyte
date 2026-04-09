@@ -175,7 +175,24 @@ export interface CurrencySettings {
   token_ratio: number;
 }
 
+export interface RegistrationSettings {
+  enable_username_registration: boolean;
+  enable_email_registration: boolean;
+  enable_password_recovery: boolean;
+}
+
+export interface SMTPSettings {
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  from_address: string;
+  from_name: string;
+}
+
 export interface AllSettings {
   site: SiteSettings;
   currency: CurrencySettings;
+  registration: RegistrationSettings;
+  smtp: SMTPSettings;
 }

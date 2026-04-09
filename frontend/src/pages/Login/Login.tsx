@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Card, Form, Input, Button, Typography, Space, message } from 'antd';
 import { UserOutlined, LockOutlined, RocketOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import axios, { AxiosError } from 'axios';
 import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/auth';
@@ -87,6 +87,11 @@ const Login: React.FC = () => {
               {t('login.sign_in')}
             </Button>
           </Form.Item>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: -12 }}>
+            <Link to="/register">{t('auth.register_link')}</Link>
+            <Link to="/forgot-password">{t('auth.forgot_password_link')}</Link>
+          </div>
 
         </Form>
       </Card>

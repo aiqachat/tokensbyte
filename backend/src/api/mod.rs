@@ -69,7 +69,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // 2. Auth APIs (Public)
     let auth_routes = Router::new()
         .route("/login", post(auth::login))
-        .route("/register", post(auth::register));
+        .route("/register", post(auth::register))
+        .route("/send-code", post(auth::send_code))
+        .route("/register-email", post(auth::register_email))
+        .route("/reset-password", post(auth::reset_password));
 
     // 3. Relay APIs (OpenAI Compatible)
     let relay_routes = Router::new()
