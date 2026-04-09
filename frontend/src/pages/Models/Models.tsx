@@ -56,13 +56,8 @@ const Models: React.FC = () => {
   const handleEdit = (record: ModelModel) => {
     setEditingModel(record);
     setBillingType(record.billing_type);
-    const gr = JSON.parse(record.group_ratios || '{}');
-    const group_ratios_list = Object.entries(gr).map(([group_name, ratio]) => ({ group_name, ratio }));
 
-    form.setFieldsValue({
-      ...record,
-      group_ratios_list,
-    });
+    form.setFieldsValue(record);
     setIsModalVisible(true);
   };
 
@@ -77,24 +72,12 @@ const Models: React.FC = () => {
   };
 
   const handleSave = async (values: any) => {
-    const group_ratios: Record<string, number> = {};
-    if (values.group_ratios_list) {
-      values.group_ratios_list.forEach((item: any) => {
-        if (item.group_name) group_ratios[item.group_name] = item.ratio;
-      });
-    }
-
-    const data = {
-      ...values,
-      group_ratios,
-    };
-
     try {
       if (editingModel) {
-        await request.put(`/models/${editingModel.id}`, data);
+        await request.put(`/models/${editingModel.id}`, values);
         message.success(t('common.success'));
       } else {
-        await request.post('/models', data);
+        await request.post('/models', values);
         message.success(t('common.success'));
       }
       setIsModalVisible(false);
@@ -241,49 +224,6 @@ const Models: React.FC = () => {
               <InputNumber style={{ width: '100%' }} precision={6} />
             </Form.Item>
           )}
-
-          <Divider orientation="left">{t('models.group_ratios')}</Divider>
-          <Form.List name="group_ratios_list">
-            {(fields, { add, remove }) => (
-              <>
-                {fields.map(({ key, name, ...restField }) => (
-                  <Row key={key} gutter={16} align="bottom">
-                    <Col span={12}>
-                      <Form.Item
-                        {...restField}
-                        name={[name, 'group_name']}
-                        label={key === 0 ? t('models.group_name') : ''}
-                        rules={[{ required: true }]}
-                      >
-                        <Input placeholder="e.g. vip" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item
-                        {...restField}
-                        name={[name, 'ratio']}
-                        label={key === 0 ? t('models.ratio') : ''}
-                        rules={[{ required: true }]}
-                        initialValue={1.0}
-                      >
-                        <InputNumber style={{ width: '100%' }} step={0.1} min={0} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={4}>
-                      <Form.Item>
-                        <Button type="link" danger onClick={() => remove(name)} icon={<DeleteOutlined />} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                ))}
-                <Form.Item>
-                  <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
-                    {t('common.add')}
-                  </Button>
-                </Form.Item>
-              </>
-            )}
-          </Form.List>
 
           <Form.Item name="is_active" label={t('common.status')} valuePropName="checked" initialValue={true}>
             <Select>

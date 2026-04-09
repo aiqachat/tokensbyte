@@ -12,6 +12,7 @@ const { Option } = Select;
 const Users: React.FC = () => {
   const { t } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
+  const [userLevels, setUserLevels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -22,6 +23,9 @@ const Users: React.FC = () => {
     try {
       const resp = await (request.get('/users') as unknown as Promise<{ data: User[] }>);
       setUsers(resp.data);
+      
+      const levelsResp = await (request.get('/user_levels') as unknown as Promise<{ data: any[] }>);
+      setUserLevels(levelsResp.data);
     } catch (e) {
       console.error(e);
     } finally {
@@ -191,9 +195,9 @@ const Users: React.FC = () => {
           </Form.Item>
           <Form.Item name="user_group" label={t('users.group')} initialValue="default">
             <Select>
-              <Option value="default">Default</Option>
-              <Option value="vip">VIP</Option>
-              <Option value="partner">Partner</Option>
+              {userLevels.map(level => (
+                <Option key={level.id} value={level.group_key}>{level.name}</Option>
+              ))}
             </Select>
           </Form.Item>
           <Form.Item name="is_active" label={t('common.status')} initialValue={true}>

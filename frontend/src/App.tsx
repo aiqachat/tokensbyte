@@ -9,8 +9,10 @@ import Models from './pages/Models/Models';
 import Tokens from './pages/Tokens/Tokens';
 
 import Users from './pages/Users/Users';
+import UserLevels from './pages/Users/UserLevels';
 import Logs from './pages/Logs/Logs';
 import Redemptions from './pages/Redemptions/Redemptions';
+import Settings from './pages/admin/Settings';
 import useAuthStore from './store/auth';
 
 const PrivateRoute = ({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) => {
@@ -59,6 +61,8 @@ const App: React.FC = () => {
           <Route path="logs" element={<Logs />} />
           <Route path="redemptions" element={<Redemptions />} />
           <Route path="users" element={<Users />} />
+          <Route path="user-levels" element={<UserLevels />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
 
         {/* Fallback */}

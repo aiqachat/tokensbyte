@@ -35,14 +35,22 @@ pub async fn chat_completions(
     } else {
         let response = provider.chat_completions(&state.http_client, &channel, &request).await?;
         
-        // 5. Billing with Custom Model Rates & Group Multipliers
+        // 5. Billing with Custom Model Rates & User Level Discounts
         let prompt_tokens = response.usage.as_ref().map(|u| u.prompt_tokens).unwrap_or(0);
         let completion_tokens = response.usage.as_ref().map(|u| u.completion_tokens).unwrap_or(0);
         
-        let user: crate::models::User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
-            .bind(&token.user_id)
-            .fetch_one(&state.db.pool)
-            .await?;
+        // Fetch user and their level discount in one query
+        let user_info: (String, f64) = sqlx::query_as(
+            "SELECT u.user_group, COALESCE(ul.discount, 1.0) as discount 
+             FROM users u 
+             LEFT JOIN user_levels ul ON u.user_group = ul.group_key 
+             WHERE u.id = ?"
+        )
+        .bind(&token.user_id)
+        .fetch_one(&state.db.pool)
+        .await?;
+
+        let (_user_group, discount) = user_info;
 
         // Fetch model config from DB
         let db_model: Option<crate::models::Model> = sqlx::query_as("SELECT * FROM models WHERE model_id = ? AND is_active = 1")
@@ -52,30 +60,20 @@ pub async fn chat_completions(
 
         let quota_used = match db_model {
             Some(m) => {
-                let multiplier = m.get_multiplier_for_group(&user.user_group);
                 match m.billing_type.as_str() {
-                    "requests" => m.fixed_rate * multiplier,
+                    "requests" => m.fixed_rate * discount,
                     "duration" => {
-                        // Assuming latency_ms is recorded or passed. 
-                        // For non-streaming, we can use the time elapsed if we had a start time.
-                        // For now, let's use a default or look for latency in the future implementation.
                         0.0 // Placeholder for duration billing
                     },
                     _ => { // default: tokens
-                        ((prompt_tokens as f64 * m.prompt_rate + completion_tokens as f64 * m.completion_rate) / 1000.0) * multiplier
+                        ((prompt_tokens as f64 * m.prompt_rate + completion_tokens as f64 * m.completion_rate) / 1000.0) * discount
                     }
                 }
             },
             None => {
-                // Fallback to default pricing if model not managed
+                // Fallback to default pricing ($1/1k tokens) if model not managed
                 let total_tokens = prompt_tokens + completion_tokens;
-                let mut multiplier = 1.0;
-                if user.user_group == "vip" {
-                    multiplier = 0.8;
-                } else if user.user_group == "partner" {
-                    multiplier = 0.5;
-                }
-                (total_tokens as f64 / 1000.0) * multiplier
+                (total_tokens as f64 / 1000.0) * discount
             }
         };
         

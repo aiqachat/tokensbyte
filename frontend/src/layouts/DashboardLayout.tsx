@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import request from '../utils/request';
 import { Layout, Menu, Button, Space, Typography, ConfigProvider, theme } from 'antd';
 import {
   DashboardOutlined,
@@ -12,6 +13,7 @@ import {
   GlobalOutlined,
   LogoutOutlined,
   AppstoreOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
@@ -33,7 +35,27 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+  const [siteName, setSiteName] = useState(isUserEnd ? 'TokensByte' : t('common.admin_title'));
 
+
+  useEffect(() => {
+    fetchGlobalSettings();
+  }, []);
+
+  const fetchGlobalSettings = async () => {
+    try {
+      const response = await (request.get('/settings') as any);
+      const { site } = response;
+      if (site.title) {
+        document.title = site.title;
+      }
+      if (site.name && isUserEnd) {
+        setSiteName(site.name);
+      }
+    } catch (error) {
+      console.error('Failed to fetch global settings:', error);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -58,20 +80,20 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     },
   ];
 
-  const menuItems = [
+  const menuItems: MenuProps['items'] = [
     {
       key: isUserEnd ? '/' : '/admin0755/dashboard',
-      icon: <DashboardOutlined />,
+      icon: <DashboardOutlined style={{ fontSize: '18px' }} />,
       label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{t('menu.dashboard')}</Link>,
     },
     {
       key: isUserEnd ? '/tokens' : '/admin0755/tokens',
-      icon: <KeyOutlined />,
+      icon: <KeyOutlined style={{ fontSize: '18px' }} />,
       label: <Link to={isUserEnd ? '/tokens' : '/admin0755/tokens'}>{t('menu.tokens')}</Link>,
     },
     {
       key: isUserEnd ? '/logs' : '/admin0755/logs',
-      icon: <BarsOutlined />,
+      icon: <BarsOutlined style={{ fontSize: '18px' }} />,
       label: <Link to={isUserEnd ? '/logs' : '/admin0755/logs'}>{t('menu.logs')}</Link>,
     },
   ];
@@ -80,23 +102,48 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     menuItems.push(
       {
         key: '/admin0755/channels',
-        icon: <ControlOutlined />,
+        icon: <ControlOutlined style={{ fontSize: '18px' }} />,
         label: <Link to="/admin0755/channels">{t('menu.channels')}</Link>,
       },
       {
         key: '/admin0755/models',
-        icon: <AppstoreOutlined />,
+        icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
         label: <Link to="/admin0755/models">{t('menu.models')}</Link>,
       },
       {
         key: '/admin0755/redemptions',
-        icon: <GiftOutlined />,
+        icon: <GiftOutlined style={{ fontSize: '18px' }} />,
         label: <Link to="/admin0755/redemptions">{t('menu.redemptions')}</Link>,
       },
       {
-        key: '/admin0755/users',
-        icon: <TeamOutlined />,
-        label: <Link to="/admin0755/users">{t('menu.users')}</Link>,
+        key: 'user-management-group',
+        icon: <TeamOutlined style={{ fontSize: '18px' }} />,
+        label: t('menu.users'),
+        children: [
+          {
+            key: '/admin0755/users',
+            label: <Link to="/admin0755/users">{t('menu.user_list')}</Link>,
+          },
+          {
+            key: '/admin0755/user-levels',
+            label: <Link to="/admin0755/user-levels">{t('menu.user_levels')}</Link>,
+          }
+        ]
+      },
+      {
+        key: 'settings-group',
+        icon: <SettingOutlined style={{ fontSize: '18px' }} />,
+        label: t('menu.settings'),
+        children: [
+          {
+            key: '/admin0755/settings?tab=1',
+            label: <Link to="/admin0755/settings">{t('menu.basic_settings')}</Link>,
+          },
+          {
+            key: '/admin0755/settings?tab=2',
+            label: <Link to="/admin0755/settings">{t('menu.currency_settings')}</Link>,
+          }
+        ]
       }
     );
   }
@@ -110,13 +157,33 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           colorPrimary: '#1677ff',
           borderRadius: 8,
         },
+        components: {
+          Layout: {
+            siderBg: '#141414',
+          },
+          Menu: {
+            itemHeight: 50,
+            iconSize: 20,
+            itemMarginInline: 12,
+          }
+        }
       }}
     >
       <Layout style={{ minHeight: '100vh' }}>
-        <Sider trigger={null} collapsible collapsed={collapsed} theme="dark">
-          <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0' }}>
+        <Sider 
+          trigger={null} 
+          collapsible 
+          collapsed={collapsed} 
+          theme="dark" 
+          width={240}
+          style={{ 
+            boxShadow: '2px 0 8px 0 rgba(29,35,41,.05)',
+            zIndex: 10,
+          }}
+        >
+          <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
             <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-              {collapsed ? 'TB' : (isUserEnd ? 'TokensByte' : t('common.admin_title'))}
+              {collapsed ? 'TB' : siteName}
             </Title>
 
           </div>
@@ -125,10 +192,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             mode="inline"
             selectedKeys={[location.pathname]}
             items={menuItems}
+            style={{ border: 'none', background: 'transparent', marginTop: 8 }}
           />
         </Sider>
         <Layout>
-          <Header style={{ padding: 0, background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: 24 }}>
+          <Header style={{ padding: 0, background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: 24, boxShadow: '0 1px 4px rgba(0,21,41,.08)' }}>
             <Button
               type="text"
               icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}

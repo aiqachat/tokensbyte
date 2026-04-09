@@ -13,8 +13,10 @@ pub mod dashboard;
 pub mod logs;
 pub mod models;
 pub mod redemptions;
+pub mod settings;
 pub mod tokens;
 pub mod users;
+pub mod user_levels;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
@@ -29,6 +31,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/redemptions", get(redemptions::list_redemptions).post(redemptions::generate_redemptions))
         .route("/redemptions/{id}", delete(redemptions::delete_redemption))
         .route("/tokens/all", get(tokens::list_all_tokens))
+        .route("/settings", get(settings::get_settings).post(settings::update_settings))
+        .route("/user_levels", get(user_levels::list_user_levels).post(user_levels::create_user_level))
+        .route("/user_levels/{id}", put(user_levels::update_user_level).delete(user_levels::delete_user_level))
         .layer(axum_middleware::from_fn(admin_middleware));
 
     let management_routes = Router::new()

@@ -118,6 +118,29 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    // User levels table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS user_levels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            group_key TEXT NOT NULL UNIQUE,
+            discount REAL NOT NULL DEFAULT 1.0,
+            description TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Seed default user level if not exists
+    sqlx::query(
+        r#"INSERT OR IGNORE INTO user_levels (name, group_key, discount, description)
+           VALUES ('默认用户', 'default', 1.0, '普通用户，无折扣')"#
+    )
+    .execute(pool)
+    .await?;
+
     // Models table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS models (

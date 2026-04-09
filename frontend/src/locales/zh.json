@@ -29,7 +29,12 @@
     "tokens": "令牌管理",
     "logs": "日志查询",
     "redemptions": "兑换管理",
-    "users": "用户管理"
+    "users": "用户管理",
+    "user_list": "用户列表",
+    "user_levels": "用户等级",
+    "settings": "站点设置",
+    "basic_settings": "站点基础设置",
+    "currency_settings": "货币功能设置"
   },
   "dashboard": {
     "title": "系统概览",
@@ -132,5 +137,33 @@
     "group_ratios": "分组折扣",
     "group_name": "分组名称",
     "ratio": "折扣倍率 (如 0.8 为 8 折)"
+  },
+  "settings": {
+    "title": "站点设置",
+    "basic_tab": "基础设置",
+    "currency_tab": "货币功能",
+    "site_name": "站点名称",
+    "site_title": "站点 Title",
+    "site_keywords": "站点 Keywords",
+    "site_description": "站点 Description",
+    "default_currency": "默认货币",
+    "currency_symbol": "货币符号",
+    "currency_unit": "货币单位",
+    "token_ratio": "Token 兑换比例",
+    "save_success": "设置保存成功",
+    "currency_hint": "1 USD = N Tokens"
+  },
+  "user_levels": {
+    "title": "用户等级",
+    "add_level": "添加等级",
+    "edit_level": "编辑等级",
+    "name": "等级名称",
+    "group_key": "分组标识",
+    "discount": "折扣倍率",
+    "discount_hint": "折扣倍率 (如 0.8 表示 8 折)",
+    "description": "说明",
+    "created_at": "创建时间",
+    "delete_confirm": "确定要删除该等级吗？默认等级不可删除。",
+    "success": "操作成功"
   }
 }

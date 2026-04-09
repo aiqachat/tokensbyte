@@ -29,7 +29,12 @@
     "tokens": "Tokens",
     "logs": "Logs",
     "redemptions": "Redemptions",
-    "users": "Users"
+    "users": "User Management",
+    "user_list": "User List",
+    "user_levels": "User Levels",
+    "settings": "Site Settings",
+    "basic_settings": "Basic Settings",
+    "currency_settings": "Currency Settings"
   },
   "dashboard": {
     "title": "System Overview",
@@ -132,5 +137,33 @@
     "group_ratios": "Group Discounts",
     "group_name": "Group Name",
     "ratio": "Multiplier (e.g. 0.8 for 20% off)"
+  },
+  "settings": {
+    "title": "Site Settings",
+    "basic_tab": "Basic",
+    "currency_tab": "Currency",
+    "site_name": "Site Name",
+    "site_title": "Site Title",
+    "site_keywords": "Site Keywords",
+    "site_description": "Site Description",
+    "default_currency": "Default Currency",
+    "currency_symbol": "Currency Symbol",
+    "currency_unit": "Currency Unit",
+    "token_ratio": "Token Ratio",
+    "save_success": "Settings saved successfully",
+    "currency_hint": "1 USD = N Tokens"
+  },
+  "user_levels": {
+    "title": "User Levels",
+    "add_level": "Add Level",
+    "edit_level": "Edit Level",
+    "name": "Level Name",
+    "group_key": "Group Key",
+    "discount": "Discount Multiplier",
+    "discount_hint": "e.g. 0.8 for 20% off",
+    "description": "Description",
+    "created_at": "Created At",
+    "delete_confirm": "Are you sure you want to delete this level? Default level cannot be deleted.",
+    "success": "Success"
   }
 }

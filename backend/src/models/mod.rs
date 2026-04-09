@@ -4,6 +4,8 @@ pub mod api_token;
 pub mod log;
 pub mod redemption;
 pub mod model;
+pub mod settings;
+pub mod user_level;
 
 pub use user::*;
 pub use channel::*;
@@ -11,6 +13,8 @@ pub use api_token::*;
 pub use log::*;
 pub use redemption::*;
 pub use model::*;
+pub use settings::*;
+pub use user_level::*;
 
 pub use user::User;
 pub use channel::Channel;

@@ -62,8 +62,39 @@ pub async fn handle_chat_stream(
         // Finalize billing
         let _ = tx.send(Ok("data: [DONE]\n\n".to_string())).await;
         
-        // TODO: Implement accurate token counting from provider usage fields if available
-        let cost = (total_prompt_tokens + total_completion_tokens) as f64 / 1000.0;
+        // Fetch billing info
+        let user_info: Result<(String, f64), sqlx::Error> = sqlx::query_as(
+            "SELECT u.user_group, COALESCE(ul.discount, 1.0) as discount 
+             FROM users u 
+             LEFT JOIN user_levels ul ON u.user_group = ul.group_key 
+             WHERE u.id = ?"
+        )
+        .bind(&token.user_id)
+        .fetch_one(&state.db.pool)
+        .await;
+
+        let discount = user_info.map(|(_, d)| d).unwrap_or(1.0);
+
+        let db_model: Option<crate::models::Model> = sqlx::query_as("SELECT * FROM models WHERE model_id = ? AND is_active = 1")
+            .bind(&model)
+            .fetch_optional(&state.db.pool)
+            .await
+            .unwrap_or(None);
+
+        let cost = match db_model {
+            Some(m) => {
+                match m.billing_type.as_str() {
+                    "requests" => m.fixed_rate * discount,
+                    _ => { // tokens or duration (duration not implemented)
+                        ((total_prompt_tokens as f64 * m.prompt_rate + total_completion_tokens as f64 * m.completion_rate) / 1000.0) * discount
+                    }
+                }
+            },
+            None => {
+                let total_tokens = total_prompt_tokens + total_completion_tokens;
+                (total_tokens as f64 / 1000.0) * discount
+            }
+        };
         
         let _ = record_usage(&state, &token, &channel, &model, total_prompt_tokens, total_completion_tokens, cost).await;
     });

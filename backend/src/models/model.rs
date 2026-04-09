@@ -32,10 +32,15 @@ pub struct CreateModelRequest {
     pub name: String,
     pub model_id: String,
     pub billing_type: String,
+    #[serde(default)]
     pub prompt_rate: f64,
+    #[serde(default)]
     pub completion_rate: f64,
+    #[serde(default)]
     pub fixed_rate: f64,
+    #[serde(default)]
     pub duration_rate: f64,
+    #[serde(default)]
     pub group_ratios: Option<std::collections::HashMap<String, f64>>,
 }
 
