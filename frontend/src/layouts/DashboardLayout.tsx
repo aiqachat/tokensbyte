@@ -103,6 +103,21 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     },
   ];
 
+  // For Admin login, initial menu items need to be filtered too if not super admin
+  if (!isUserEnd && user?.role === 'admin' && user.permissions) {
+     // Filter top level items
+     const initialKeys = ['dashboard', 'tokens', 'logs'];
+     // Replace menuItems with only allowed ones
+     const filteredInitial = [];
+     if (user.permissions.includes('dashboard')) filteredInitial.push(menuItems[0]);
+     if (user.permissions.includes('tokens')) filteredInitial.push(menuItems[1]);
+     if (user.permissions.includes('logs')) filteredInitial.push(menuItems[2]);
+     
+     // Reset menuItems to filtered version
+     menuItems.length = 0;
+     menuItems.push(...filteredInitial);
+  }
+
   if (isUserEnd) {
     menuItems.push(
       {
@@ -119,18 +134,33 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   }
 
   if (!isUserEnd && user?.role === 'admin') {
-    menuItems.push(
-      {
+    const hasPermission = (key: string) => {
+      if (!user.permissions) return true; // Super admin
+      return user.permissions.includes(key);
+    };
+
+    if (hasPermission('dashboard')) {
+      // dashboard is already at index 0, but we might want to consolidate menu items here
+    }
+
+    if (hasPermission('channels')) {
+      menuItems.push({
         key: '/admin0755/channels',
         icon: <ControlOutlined style={{ fontSize: '18px' }} />,
         label: <Link to="/admin0755/channels">{t('menu.channels')}</Link>,
-      },
-      {
+      });
+    }
+
+    if (hasPermission('models')) {
+      menuItems.push({
         key: '/admin0755/models',
         icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
         label: <Link to="/admin0755/models">{t('menu.models')}</Link>,
-      },
-      {
+      });
+    }
+
+    if (hasPermission('marketing')) {
+      menuItems.push({
         key: 'marketing-management-group',
         icon: <NotificationOutlined style={{ fontSize: '18px' }} />,
         label: t('menu.marketing'),
@@ -144,23 +174,38 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/marketing/registration-gifts">{t('menu.registration_gifts')}</Link>,
           }
         ]
-      },
-      {
+      });
+    }
+
+    if (hasPermission('users')) {
+      const userItems = [
+        {
+          key: '/admin0755/users',
+          label: <Link to="/admin0755/users">{t('menu.user_list')}</Link>,
+        },
+        {
+          key: '/admin0755/user-levels',
+          label: <Link to="/admin0755/user-levels">{t('menu.user_levels')}</Link>,
+        }
+      ];
+      
+      if (hasPermission('admin_groups')) {
+        userItems.push({
+          key: '/admin0755/admin-groups',
+          label: <Link to="/admin0755/admin-groups">管理员分组</Link>,
+        });
+      }
+
+      menuItems.push({
         key: 'user-management-group',
         icon: <TeamOutlined style={{ fontSize: '18px' }} />,
         label: t('menu.users'),
-        children: [
-          {
-            key: '/admin0755/users',
-            label: <Link to="/admin0755/users">{t('menu.user_list')}</Link>,
-          },
-          {
-            key: '/admin0755/user-levels',
-            label: <Link to="/admin0755/user-levels">{t('menu.user_levels')}</Link>,
-          }
-        ]
-      },
-      {
+        children: userItems
+      });
+    }
+
+    if (hasPermission('finance')) {
+      menuItems.push({
         key: 'finance-management-group',
         icon: <WalletOutlined style={{ fontSize: '18px' }} />,
         label: t('menu.finance'),
@@ -174,8 +219,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/finance/orders">{t('menu.finance_orders')}</Link>,
           }
         ]
-      },
-      {
+      });
+    }
+
+    if (hasPermission('settings')) {
+      menuItems.push({
         key: 'settings-group',
         icon: <SettingOutlined style={{ fontSize: '18px' }} />,
         label: t('menu.settings'),
@@ -187,10 +235,22 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           {
             key: '/admin0755/settings?tab=currency',
             label: <Link to="/admin0755/settings?tab=currency">{t('menu.currency_settings')}</Link>,
+          },
+          {
+            key: '/admin0755/settings?tab=registration',
+            label: <Link to="/admin0755/settings?tab=registration">{t('settings.registration_title')}</Link>,
+          },
+          {
+            key: '/admin0755/settings?tab=smtp',
+            label: <Link to="/admin0755/settings?tab=smtp">{t('settings.smtp_title')}</Link>,
+          },
+          {
+            key: '/admin0755/settings?tab=database',
+            label: <Link to="/admin0755/settings?tab=database">数据库设置</Link>,
           }
         ]
-      }
-    );
+      });
+    }
   }
 
 

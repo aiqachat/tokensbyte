@@ -58,7 +58,7 @@ pub async fn create_token(
     .execute(&state.db.pool)
     .await?;
 
-    let last_id = res.last_insert_rowid();
+    let last_id = res.last_insert_id().unwrap_or(0);
     let token: ApiToken = sqlx::query_as("SELECT * FROM api_tokens WHERE id = ?")
         .bind(last_id)
         .fetch_one(&state.db.pool)

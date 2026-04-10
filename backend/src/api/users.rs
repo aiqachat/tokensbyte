@@ -23,7 +23,7 @@ pub async fn create_user(
     State(state): State<Arc<AppState>>,
     Json(request): Json<CreateUserRequest>,
 ) -> AppResult<Json<User>> {
-    let exists: bool = sqlx::query_scalar(
+    let exists: i64 = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM users WHERE username = ? OR email = ?)"
     )
     .bind(&request.username)
@@ -31,7 +31,7 @@ pub async fn create_user(
     .fetch_one(&state.db.pool)
     .await?;
 
-    if exists {
+    if exists != 0 {
         return Err(AppError::Conflict("User already exists".to_string()));
     }
 

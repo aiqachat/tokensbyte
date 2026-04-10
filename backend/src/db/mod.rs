@@ -1,16 +1,20 @@
 pub mod migrations;
 
-use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
+use sqlx::{Pool, Any, any::AnyPoolOptions};
 use crate::config::AppConfig;
 use crate::auth;
 
 #[derive(Debug, Clone)]
 pub struct Database {
-    pub pool: Pool<Sqlite>,
+    pub pool: Pool<Any>,
+    pub is_sqlite: bool,
 }
 
 impl Database {
     pub async fn new(database_url: &str) -> anyhow::Result<Self> {
+        // Automatically install drivers
+        sqlx::any::install_default_drivers();
+
         // Ensure data directory exists for SQLite
         if database_url.starts_with("sqlite:") {
             let path = database_url
@@ -23,24 +27,26 @@ impl Database {
             }
         }
 
-        let pool = SqlitePoolOptions::new()
+        let pool = AnyPoolOptions::new()
             .max_connections(20)
             .connect(database_url)
             .await?;
 
-        // Enable WAL mode for better concurrent performance
-        sqlx::query("PRAGMA journal_mode=WAL")
-            .execute(&pool)
-            .await?;
-        sqlx::query("PRAGMA foreign_keys=ON")
-            .execute(&pool)
-            .await?;
+        let is_sqlite = database_url.starts_with("sqlite:");
+        if is_sqlite {
+            sqlx::query("PRAGMA journal_mode=WAL").execute(&pool).await?;
+            sqlx::query("PRAGMA foreign_keys=ON").execute(&pool).await?;
+        }
 
-        Ok(Self { pool })
+        Ok(Self { pool, is_sqlite })
     }
 
     pub async fn run_migrations(&self) -> anyhow::Result<()> {
-        migrations::run(&self.pool).await
+        if self.is_sqlite {
+            migrations::run_any(&self.pool).await
+        } else {
+            migrations::run_pg_any(&self.pool).await
+        }
     }
 
     pub async fn generate_unique_uid(&self) -> anyhow::Result<String> {
@@ -82,15 +88,19 @@ impl Database {
             let id = uuid::Uuid::new_v4().to_string();
             let uid = self.generate_unique_uid().await?;
             
+            let now = chrono::Local::now().to_rfc3339();
+            
             sqlx::query(
                 r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, user_group, is_active, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, 'admin', 100.0, 'default', 1, datetime('now'), datetime('now'))"#
+                   VALUES (?, ?, ?, ?, ?, 'admin', 100.0, 'default', 1, ?, ?)"#
             )
             .bind(&id)
             .bind(&uid)
             .bind(&config.admin_username)
             .bind(format!("{}@tokensbyte.local", &config.admin_username))
             .bind(&password_hash)
+            .bind(&now)
+            .bind(&now)
             .execute(&self.pool)
             .await?;
 

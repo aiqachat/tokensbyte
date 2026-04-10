@@ -20,6 +20,7 @@ pub mod user;
 pub mod user_levels;
 pub mod users;
 pub mod finance;
+pub mod admin_groups;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
@@ -41,10 +42,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/redemptions/{id}", delete(redemptions::delete_redemption))
         .route("/tokens/all", get(tokens::list_all_tokens))
         .route("/settings", post(settings::update_settings))
+        .route("/settings/database/verify", post(settings::verify_database))
+        .route("/settings/database/initialize", post(settings::initialize_database))
+        .route("/settings/database/backup", post(settings::backup_database))
         .route("/user_levels", get(user_levels::list_user_levels).post(user_levels::create_user_level))
         .route("/user_levels/{id}", put(user_levels::update_user_level).delete(user_levels::delete_user_level))
-        .route("/finance/recharges", get(finance::list_recharges))
         .route("/finance/orders", get(finance::list_orders))
+        .route("/admin_groups", get(admin_groups::list_admin_groups).post(admin_groups::create_admin_group))
+        .route("/admin_groups/{id}", put(admin_groups::update_admin_group).delete(admin_groups::delete_admin_group))
         .layer(axum_middleware::from_fn(admin_middleware))
         .with_state(state.clone());
 
@@ -70,10 +75,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // 2. Auth APIs & Public Configs (Public)
     let auth_routes: Router<Arc<AppState>> = Router::new()
         .route("/login", post(auth::login))
+        .route("/admin/login", post(auth::admin_login))
         .route("/register", post(auth::register))
         .route("/send-code", post(auth::send_code))
         .route("/register-email", post(auth::register_email))
-        .route("/reset-password", post(auth::reset_password));
+        .route("/reset-password", post(auth::reset_password))
+        .with_state(state.clone());
 
     let public_v1_routes: Router<Arc<AppState>> = Router::new()
         .route("/settings", get(settings::get_settings))

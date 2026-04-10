@@ -7,6 +7,7 @@ pub mod model;
 pub mod settings;
 pub mod user_level;
 pub mod verification;
+pub mod admin_group;
 
 pub use user::*;
 pub use channel::*;
@@ -17,6 +18,7 @@ pub use model::*;
 pub use settings::*;
 pub use user_level::*;
 pub use verification::*;
+pub use admin_group::*;
 
 pub use user::User;
 pub use channel::Channel;

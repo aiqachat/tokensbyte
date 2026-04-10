@@ -42,6 +42,19 @@ pub struct MarketingSettings {
     pub max_amount: f64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DatabaseSettings {
+    pub db_type: String, // "sqlite" or "postgres"
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub username: String,
+    pub password: String,
+    #[serde(default)]
+    pub ssl_mode: bool,
+}
+
+
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AllSettings {
@@ -50,6 +63,7 @@ pub struct AllSettings {
     pub registration: RegistrationSettings,
     pub smtp: SMTPSettings,
     pub marketing: MarketingSettings,
+    pub database: DatabaseSettings,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,4 +73,5 @@ pub struct UpdateSettingsRequest {
     pub registration: Option<RegistrationSettings>,
     pub smtp: Option<SMTPSettings>,
     pub marketing: Option<MarketingSettings>,
+    pub database: Option<DatabaseSettings>,
 }

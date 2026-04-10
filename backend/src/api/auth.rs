@@ -21,8 +21,7 @@ pub async fn login(
     Json(request): Json<LoginRequest>,
 ) -> Response {
     let result = (async {
-        // 1. Fetch user from database
-        let user: User = sqlx::query_as(
+        let mut user: User = sqlx::query_as(
             "SELECT * FROM users WHERE username = ? OR email = ?"
         )
         .bind(&request.username)
@@ -31,16 +30,76 @@ pub async fn login(
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-        // 2. Verify password
+        if user.role != "user" {
+            return Err(AppError::Forbidden("Only users can login from here".to_string()));
+        }
+
         if !auth::verify_password(&request.password, &user.password_hash)? {
             return Err(AppError::Unauthorized);
         }
 
-        if !user.is_active {
+        if user.is_active == 0 {
             return Err(AppError::Forbidden("Account disabled".to_string()));
         }
 
-        // 3. Create JWT token
+        let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
+
+        Ok(Json(LoginResponse { token, user }))
+    }).await;
+
+    match result {
+        Ok(json) => json.into_response(),
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn admin_login(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<LoginRequest>,
+) -> Response {
+    let result = (async {
+        let mut user: User = sqlx::query_as(
+            "SELECT * FROM users WHERE username = ? OR email = ?"
+        )
+        .bind(&request.username)
+        .bind(&request.username)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+        if user.role != "admin" {
+            return Err(AppError::Forbidden("Access denied: Not an administrator".to_string()));
+        }
+
+        if !auth::verify_password(&request.password, &user.password_hash)? {
+            return Err(AppError::Unauthorized);
+        }
+
+        if user.is_active == 0 {
+            return Err(AppError::Forbidden("Account disabled".to_string()));
+        }
+
+        // Fetch permissions
+        let permissions = if let Some(group_id) = user.admin_group_id {
+            let row: Option<(String,)> = sqlx::query_as("SELECT permissions FROM admin_groups WHERE id = ?")
+                .bind(group_id)
+                .fetch_optional(&state.db.pool)
+                .await?;
+            
+            row.and_then(|(p,)| serde_json::from_str::<Vec<String>>(&p).ok())
+               .unwrap_or_default()
+        } else {
+            // Super Admin - default all permissions
+            vec![
+                "dashboard".to_string(), "tokens".to_string(), "logs".to_string(),
+                "channels".to_string(), "models".to_string(), "redemptions".to_string(),
+                "users".to_string(), "user_levels".to_string(), "finance_recharges".to_string(),
+                "finance_orders".to_string(), "settings".to_string(), "admin_groups".to_string()
+            ]
+        };
+        
+        user.permissions = Some(permissions);
+
         let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
 
         Ok(Json(LoginResponse { token, user }))
@@ -62,8 +121,7 @@ pub async fn register(
             return Err(AppError::Forbidden("Username registration is disabled".to_string()));
         }
 
-        // 1. Check if user already exists
-        let exists: bool = sqlx::query_scalar(
+        let exists: i64 = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM users WHERE username = ? OR email = ?)"
         )
         .bind(&request.username)
@@ -71,11 +129,10 @@ pub async fn register(
         .fetch_one(&state.db.pool)
         .await?;
 
-        if exists {
+        if exists != 0 {
             return Err(AppError::Conflict("User already exists".to_string()));
         }
 
-        // 2. Hash password and insert
         let password_hash = auth::hash_password(&request.password)?;
         let user_id = uuid::Uuid::new_v4().to_string();
         let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
@@ -125,7 +182,6 @@ pub async fn register(
 
         tx.commit().await?;
 
-        // 3. Auto-login after registration
         let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
             .bind(&user_id)
             .fetch_one(&state.db.pool)
@@ -156,13 +212,12 @@ pub async fn send_code(
             return Err(AppError::Forbidden("Password recovery is disabled".to_string()));
         }
 
-        // Generate 6-digit code
-        let mut rng = rand::thread_rng();
-        let code: String = (0..6).map(|_| rng.gen_range(0..10).to_string()).collect();
-        
+        let code: String = {
+            let mut rng = rand::thread_rng();
+            (0..6).map(|_| rng.gen_range(0..10).to_string()).collect()
+        };
         let expires_at = (Utc::now() + Duration::minutes(10)).format("%Y-%m-%d %H:%M:%S").to_string();
 
-        // Save to database
         sqlx::query(
             "INSERT INTO verification_codes (email, code, purpose, expires_at) VALUES (?, ?, ?, ?)"
         )
@@ -173,7 +228,6 @@ pub async fn send_code(
         .execute(&state.db.pool)
         .await?;
 
-        // Send email
         let email_service = EmailService::new(&settings.smtp);
         email_service.send_verification_code(&request.email, &code, &request.purpose).await?;
 
@@ -186,6 +240,7 @@ pub async fn send_code(
     }
 }
 
+
 pub async fn register_email(
     State(state): State<Arc<AppState>>,
     Json(request): Json<EmailRegisterRequest>,
@@ -196,32 +251,27 @@ pub async fn register_email(
             return Err(AppError::Forbidden("Email registration is disabled".to_string()));
         }
 
-        // 1. Verify code
         verify_code(&state, &request.email, &request.code, "register").await?;
 
-        // 2. Check if user exists
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)")
+        let exists: i64 = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)")
             .bind(&request.email)
             .fetch_one(&state.db.pool)
             .await?;
         
-        if exists {
+        if exists != 0 {
             return Err(AppError::Conflict("User with this email already exists".to_string()));
         }
 
-        // 3. Create user
         let user_id = uuid::Uuid::new_v4().to_string();
         let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
         let mut username = request.email.split('@').next().unwrap_or("user").to_string();
         
-        // Check if username already exists
-        let username_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)")
+        let username_exists: i64 = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)")
             .bind(&username)
             .fetch_one(&state.db.pool)
             .await?;
         
-        if username_exists {
-            // Append small random suffix if collision
+        if username_exists != 0 {
             let suffix: String = (0..4).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
             username = format!("{}_{}", username, suffix);
         }
@@ -299,10 +349,8 @@ pub async fn reset_password(
             return Err(AppError::Forbidden("Password recovery is disabled".to_string()));
         }
 
-        // 1. Verify code
         verify_code(&state, &request.email, &request.code, "reset_password").await?;
 
-        // 2. Update password
         let password_hash = auth::hash_password(&request.new_password)?;
         let result = sqlx::query("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE email = ?")
             .bind(&password_hash)
@@ -323,7 +371,6 @@ pub async fn reset_password(
     }
 }
 
-// Helpers
 async fn get_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> {
     use crate::api::settings::{default_site_settings, default_currency_settings, default_registration_settings, default_smtp_settings, default_marketing_settings};
     
@@ -333,7 +380,10 @@ async fn get_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> {
     let smtp = get_setting::<SMTPSettings>(state, "smtp_settings", default_smtp_settings()).await?;
     let marketing = get_setting::<crate::models::MarketingSettings>(state, "marketing_settings", default_marketing_settings()).await?;
 
-    Ok(AllSettings { site, currency, registration, smtp, marketing })
+    use crate::api::settings::default_database_settings;
+    let database = get_setting::<crate::models::DatabaseSettings>(state, "database_settings", default_database_settings()).await?;
+
+    Ok(AllSettings { site, currency, registration, smtp, marketing, database })
 }
 
 async fn get_setting<T: serde::de::DeserializeOwned + Clone>(state: &Arc<AppState>, key: &str, default: T) -> AppResult<T> {
@@ -359,13 +409,11 @@ async fn verify_code(state: &Arc<AppState>, email: &str, code: &str, purpose: &s
 
     let (expires_at,) = row.ok_or_else(|| AppError::BadRequest("Invalid verification code".to_string()))?;
     
-    // Simple string comparison for SQLite datetime
     let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     if now > expires_at {
         return Err(AppError::BadRequest("Verification code expired".to_string()));
     }
 
-    // Delete used code
     sqlx::query("DELETE FROM verification_codes WHERE email = ? AND code = ? AND purpose = ?")
         .bind(email)
         .bind(code)

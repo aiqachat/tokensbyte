@@ -14,7 +14,11 @@ pub struct User {
     pub role: String,
     pub balance: f64,
     pub user_group: String,
-    pub is_active: bool,
+    pub admin_group_id: Option<i64>,
+    #[serde(skip_deserializing)]
+    #[sqlx(skip)]
+    pub permissions: Option<Vec<String>>,
+    pub is_active: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -25,6 +29,7 @@ pub struct CreateUserRequest {
     pub email: String,
     pub password: String,
     pub group: Option<String>,
+    pub admin_group_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,7 +43,8 @@ pub struct UpdateUserRequest {
     pub role: Option<String>,
     pub balance: Option<f64>,
     pub user_group: Option<String>,
-    pub is_active: Option<bool>,
+    pub admin_group_id: Option<i64>,
+    pub is_active: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

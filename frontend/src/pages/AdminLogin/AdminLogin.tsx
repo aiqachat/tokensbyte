@@ -34,7 +34,7 @@ const AdminLogin: React.FC = () => {
   const onFinish = async (values: unknown) => {
     setLoading(true);
     try {
-      const response = await axios.post<LoginResponse>('/api/v1/auth/login', values);
+      const response = await axios.post<LoginResponse>('/api/v1/auth/admin/login', values);
       const { token, user } = response.data;
       
       if (user.role !== 'admin') {

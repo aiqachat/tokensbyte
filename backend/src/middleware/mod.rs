@@ -37,15 +37,15 @@ pub async fn auth_middleware(
     };
 
     // Verify user still exists and is active
-    let user_exists: Result<bool, sqlx::Error> = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND is_active = 1)"
+    let is_active: Result<Option<i64>, sqlx::Error> = sqlx::query_scalar(
+        "SELECT is_active FROM users WHERE id = ?"
     )
     .bind(&claims.sub)
-    .fetch_one(&state.db.pool)
+    .fetch_optional(&state.db.pool)
     .await;
 
-    match user_exists {
-        Ok(true) => {
+    match is_active {
+        Ok(Some(active)) if active != 0 => {
             request.extensions_mut().insert(claims);
             next.run(request).await
         },
@@ -90,15 +90,16 @@ pub async fn api_key_middleware(
     };
 
     // Look up the API token
-    let token: crate::models::ApiToken = match sqlx::query_as(
-        "SELECT * FROM api_tokens WHERE token_key = ? AND is_active = 1"
+    let token: crate::models::ApiToken = match sqlx::query_as::<sqlx::Any, crate::models::ApiToken>(
+        "SELECT * FROM api_tokens WHERE token_key = ?"
     )
     .bind(api_key)
     .fetch_optional(&state.db.pool)
     .await {
-        Ok(Some(t)) => t,
+        Ok(Some(t)) if t.is_active != 0 => t,
+        Ok(Some(_)) => return AppError::Forbidden("Token disabled".to_string()).into_response(),
         Ok(None) => return AppError::Unauthorized.into_response(),
-        Err(_) => return AppError::Internal("Database error".to_string()).into_response(),
+        Err(e) => return AppError::Internal(format!("Database error: {}", e)).into_response(),
     };
 
     // Check expiry
@@ -113,7 +114,7 @@ pub async fn api_key_middleware(
 
     // Check IP Whitelist
     if !token.allowed_ips.is_empty() {
-        let client_ip = request
+        let client_ip: &str = request
             .headers()
             .get("x-forwarded-for")
             .and_then(|v| v.to_str().ok())

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Form, Input, Button, InputNumber, message, Typography, Space, Switch } from 'antd';
+import { Card, Form, Input, Button, InputNumber, message, Typography, Space, Switch, Radio } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import request from '../../utils/request';
@@ -50,6 +50,7 @@ const Settings: React.FC = () => {
       case 'currency': return t('menu.currency_settings');
       case 'registration': return t('settings.registration_title');
       case 'smtp': return t('settings.smtp_title');
+      case 'database': return '数据库设置';
       default: return t('menu.basic_settings');
     }
   };
@@ -61,12 +62,26 @@ const Settings: React.FC = () => {
   const fetchSettings = async () => {
     try {
       const response = await (request.get('/settings') as any);
-      const { site, currency, registration, smtp } = response;
+      const { site, currency, registration, smtp, database: backendDatabase } = response;
+      
+      const defaultDatabase = {
+        db_type: 'postgres',
+        host: 'localhost',
+        port: 5432,
+        database: 'postgres',
+        username: 'postgres',
+        password: 'postgres',
+        ssl_mode: false,
+      };
+
+      const database = { ...defaultDatabase, ...backendDatabase };
+
       form.setFieldsValue({
         ...site,
         ...currency,
         ...registration,
-        ...smtp,
+        smtp,
+        database,
       });
     } catch (error) {
       console.error('Failed to fetch settings:', error);
@@ -100,14 +115,9 @@ const Settings: React.FC = () => {
           enable_password_recovery: values.enable_password_recovery,
         };
       } else if (tab === 'smtp') {
-        payload.smtp = {
-          host: values.host,
-          port: values.port,
-          username: values.username,
-          password: values.password,
-          from_address: values.from_address,
-          from_name: values.from_name,
-        };
+        payload.smtp = values.smtp;
+      } else if (tab === 'database') {
+        payload.database = values.database;
       }
 
       const updatedSettings = await (request.post('/settings', payload) as any);
@@ -138,6 +148,17 @@ const Settings: React.FC = () => {
         layout="vertical"
         onFinish={onFinish}
         autoComplete="off"
+        initialValues={{
+          database: {
+            db_type: 'postgres',
+            host: 'localhost',
+            port: 5432,
+            database: 'postgres',
+            username: 'postgres',
+            password: 'postgres',
+            ssl_mode: false,
+          }
+        }}
       >
         {tab === 'basic' && (
           <div style={{ maxWidth: 600 }}>
@@ -206,24 +227,107 @@ const Settings: React.FC = () => {
 
         {tab === 'smtp' && (
           <div style={{ maxWidth: 600 }}>
-            <Form.Item label={t('settings.smtp_host')} name="host" rules={[{ required: true }]}>
+            <Form.Item label={t('settings.smtp_host')} name={['smtp', 'host']} rules={[{ required: true }]}>
               <Input placeholder="smtp.gmail.com" />
             </Form.Item>
-            <Form.Item label={t('settings.smtp_port')} name="port" rules={[{ required: true }]}>
+            <Form.Item label={t('settings.smtp_port')} name={['smtp', 'port']} rules={[{ required: true }]}>
               <InputNumber style={{ width: '100%' }} placeholder="465" />
             </Form.Item>
-            <Form.Item label={t('settings.smtp_user')} name="username" rules={[{ required: true }]}>
+            <Form.Item label={t('settings.smtp_user')} name={['smtp', 'username']} rules={[{ required: true }]}>
               <Input placeholder="user@gmail.com" />
             </Form.Item>
-            <Form.Item label={t('settings.smtp_pass')} name="password">
+            <Form.Item label={t('settings.smtp_pass')} name={['smtp', 'password']}>
               <Input.Password placeholder="Leave empty to keep current password" />
             </Form.Item>
-            <Form.Item label={t('settings.from_address')} name="from_address" rules={[{ required: true }]}>
+            <Form.Item label={t('settings.from_address')} name={['smtp', 'from_address']} rules={[{ required: true }]}>
               <Input placeholder="noreply@tokensbyte.com" />
             </Form.Item>
-            <Form.Item label={t('settings.from_name')} name="from_name" rules={[{ required: true }]}>
+            <Form.Item label={t('settings.from_name')} name={['smtp', 'from_name']} rules={[{ required: true }]}>
               <Input placeholder="TokensByte" />
             </Form.Item>
+          </div>
+        )}
+
+        {tab === 'database' && (
+          <div style={{ maxWidth: 600 }}>
+            <Form.Item label="数据库类型" name={['database', 'db_type']} rules={[{ required: true }]}>
+              <Radio.Group>
+                <Radio.Button value="postgres">PostgreSQL</Radio.Button>
+                <Radio.Button value="sqlite">SQLite (只读)</Radio.Button>
+              </Radio.Group>
+            </Form.Item>
+            <Form.Item label="数据库地址 (Host)" name={['database', 'host']} rules={[{ required: true }]}>
+              <Input placeholder="localhost" />
+            </Form.Item>
+            <Form.Item label="端口 (Port)" name={['database', 'port']} rules={[{ required: true }]}>
+              <InputNumber style={{ width: '100%' }} placeholder="5432" />
+            </Form.Item>
+            <Form.Item label="数据库名称 (Database)" name={['database', 'database']} rules={[{ required: true }]}>
+              <Input placeholder="postgres" />
+            </Form.Item>
+            <Form.Item label="用户名 (Username)" name={['database', 'username']} rules={[{ required: true }]}>
+              <Input placeholder="postgres" />
+            </Form.Item>
+            <Form.Item label="密码 (Password)" name={['database', 'password']}>
+              <Input.Password placeholder="postgres" />
+            </Form.Item>
+            <Form.Item label="启用 SSL" name={['database', 'ssl_mode']} valuePropName="checked">
+              <Switch />
+            </Form.Item>
+            
+            <Space style={{ marginBottom: 24 }}>
+              <Button 
+                onClick={async () => {
+                  try {
+                    const values = await form.validateFields();
+                    const res = await (request.post('/settings/database/verify', values.database) as any);
+                    if (res.success) {
+                      message.success(res.message);
+                    } else {
+                      message.error(res.message);
+                    }
+                  } catch (e) {
+                    message.error("验证失败");
+                  }
+                }}
+              >
+                测试连接
+              </Button>
+              <Button 
+                danger
+                onClick={async () => {
+                  try {
+                    const values = await form.validateFields();
+                    const res = await (request.post('/settings/database/initialize', values.database) as any);
+                    if (res.success) {
+                      message.success(res.message);
+                    } else {
+                      message.error(res.message);
+                    }
+                  } catch (e) {
+                    message.error("初始化失败");
+                  }
+                }}
+              >
+                初始化数据库
+              </Button>
+              <Button 
+                onClick={async () => {
+                   try {
+                    const res = await (request.post('/settings/database/backup') as any);
+                    if (res.success) {
+                      message.success(res.message);
+                    } else {
+                      message.error(res.message);
+                    }
+                  } catch (e) {
+                    message.error("备份失败");
+                  }
+                }}
+              >
+                执行备份
+              </Button>
+            </Space>
           </div>
         )}
 

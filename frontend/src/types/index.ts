@@ -11,6 +11,8 @@ export interface User {
   role: 'admin' | 'user';
   balance: number;
   user_group: string;
+  admin_group_id?: number;
+  permissions?: string[];
   is_active: boolean;
   created_at: string;
 }
@@ -19,6 +21,15 @@ export interface PricingTier {
   max_tokens: number;
   prompt_rate: number;
   completion_rate: number;
+}
+
+export interface AdminGroup {
+  id: number;
+  name: string;
+  permissions: string; // JSON string from backend
+  description?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ModelModel {

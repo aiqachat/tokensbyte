@@ -14,7 +14,7 @@ pub struct ApiToken {
     pub rpm_limit: i32,
     pub expires_at: Option<String>,
 
-    pub is_active: bool,
+    pub is_active: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -69,7 +69,7 @@ pub struct UpdateTokenRequest {
     pub rps_limit: Option<i32>,
     pub rpm_limit: Option<i32>,
     pub expires_at: Option<String>,
-    pub is_active: Option<bool>,
+    pub is_active: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]

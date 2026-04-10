@@ -12,6 +12,7 @@ import Tokens from './pages/Tokens/Tokens';
 
 import Users from './pages/Users/Users';
 import UserLevels from './pages/Users/UserLevels';
+import AdminGroups from './pages/Users/AdminGroups';
 import Logs from './pages/Logs/Logs';
 import Redemptions from './pages/Redemptions/Redemptions';
 import Profile from './pages/Profile/Profile';
@@ -81,6 +82,7 @@ const App: React.FC = () => {
           <Route path="redemptions" element={<Redemptions />} />
           <Route path="users" element={<Users />} />
           <Route path="user-levels" element={<UserLevels />} />
+          <Route path="admin-groups" element={<AdminGroups />} />
           <Route path="finance/recharges" element={<RechargeRecords />} />
           <Route path="finance/orders" element={<OrderDetails />} />
           <Route path="settings" element={<Settings />} />

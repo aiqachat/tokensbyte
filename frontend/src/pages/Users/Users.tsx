@@ -16,8 +16,10 @@ const Users: React.FC = () => {
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [users, setUsers] = useState<User[]>([]);
   const [userLevels, setUserLevels] = useState<any[]>([]);
+  const [adminGroups, setAdminGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<string>('user');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isRechargeModalVisible, setIsRechargeModalVisible] = useState(false);
   const [rechargingUser, setRechargingUser] = useState<User | null>(null);
@@ -32,6 +34,9 @@ const Users: React.FC = () => {
       
       const levelsResp = await (request.get('/user_levels') as unknown as Promise<{ data: any[] }>);
       setUserLevels(levelsResp.data);
+
+      const adminGroupsResp = await (request.get('/admin_groups') as unknown as Promise<{ data: any[] }>);
+      setAdminGroups(adminGroupsResp.data);
     } catch (e) {
       console.error(e);
     } finally {
@@ -45,12 +50,14 @@ const Users: React.FC = () => {
 
   const handleAdd = () => {
     setEditingUser(null);
+    setSelectedRole('user');
     form.resetFields();
     setIsModalVisible(true);
   };
 
   const handleEdit = (record: User) => {
     setEditingUser(record);
+    setSelectedRole(record.role);
     form.setFieldsValue({
       ...record,
       password: '', // Don't show password
@@ -137,11 +144,17 @@ const Users: React.FC = () => {
       title: t('users.group'),
       dataIndex: 'user_group',
       key: 'user_group',
-      render: (group: string) => (
-        <Tag color={group === 'vip' ? 'gold' : group === 'partner' ? 'cyan' : 'default'}>
-          {(group || 'default').toUpperCase()}
-        </Tag>
-      ),
+      render: (group: string, record: User) => {
+        if (record.role === 'admin') {
+          const adminGroup = adminGroups.find(g => g.id === record.admin_group_id);
+          return <Tag color="purple">{adminGroup ? adminGroup.name : '超级管理员'}</Tag>;
+        }
+        return (
+          <Tag color={group === 'vip' ? 'gold' : group === 'partner' ? 'cyan' : 'default'}>
+            {(group || 'default').toUpperCase()}
+          </Tag>
+        );
+      },
     },
     {
       title: t('users.balance'),
@@ -224,11 +237,20 @@ const Users: React.FC = () => {
             <Input.Password placeholder={t('login.password')} />
           </Form.Item>
           <Form.Item name="role" label={t('users.role')} initialValue="user">
-            <Select>
+            <Select onChange={(val) => setSelectedRole(val)}>
               <Option value="user">User</Option>
               <Option value="admin">Admin</Option>
             </Select>
           </Form.Item>
+          {selectedRole === 'admin' && (
+            <Form.Item name="admin_group_id" label="管理员分组" tooltip="未分配则默认为全权限超级管理员">
+              <Select placeholder="选择分组" allowClear>
+                {adminGroups.map(group => (
+                  <Option key={group.id} value={group.id}>{group.name}</Option>
+                ))}
+              </Select>
+            </Form.Item>
+          )}
           <Form.Item name="balance" label={`${t('users.balance')} (${currencySymbol})`} initialValue={0}>
             <InputNumber style={{ width: '100%' }} precision={2} />
           </Form.Item>

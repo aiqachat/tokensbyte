@@ -36,6 +36,9 @@ pub enum AppError {
 
     #[error(transparent)]
     Anyhow(#[from] anyhow::Error),
+
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
 }
 
 impl IntoResponse for AppError {
@@ -63,6 +66,10 @@ impl IntoResponse for AppError {
             AppError::Anyhow(e) => {
                 tracing::error!("Error: {}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+            }
+            AppError::Json(e) => {
+                tracing::error!("JSON error: {}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Serialization error".to_string())
             }
         };
 

@@ -35,6 +35,28 @@ pub struct ChatRequest {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
+impl ChatRequest {
+    pub fn estimate_prompt_tokens(&self) -> i32 {
+        let mut total_chars = 0;
+        for msg in &self.messages {
+            if let Some(content) = &msg.content {
+                if let Some(s) = content.as_str() {
+                    total_chars += s.len();
+                } else if let Some(arr) = content.as_array() {
+                    for part in arr {
+                        if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                            total_chars += text.len();
+                        } else if let Some(text) = part.as_str() {
+                            total_chars += text.len();
+                        }
+                    }
+                }
+            }
+        }
+        (total_chars as f64 / 4.0).ceil() as i32
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub role: String,
