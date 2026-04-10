@@ -22,6 +22,7 @@ pub struct FinanceRechargeRecord {
     pub username: String,
     pub uid: String,
     pub amount: f64,
+    pub recharge_type: String,
     pub remark: Option<String>,
     pub created_at: String,
 }

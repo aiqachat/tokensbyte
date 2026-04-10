@@ -28,7 +28,7 @@ const Login: React.FC = () => {
       setToken(token);
       setUser(user);
       message.success(t('login.welcome') + ', ' + user.username);
-      navigate('/dashboard');
+      navigate('/');
     } catch (error) {
       console.error(error);
       const axiosError = error as AxiosError<{ error: { message: string } }>;

@@ -74,7 +74,19 @@ export interface RechargeRecord {
   id: number;
   user_id: string;
   amount: number;
+  recharge_type: string;
   remark?: string;
+  created_at: string;
+}
+
+export interface FinanceRechargeRecord {
+  id: number;
+  user_id: string;
+  username: string;
+  uid: string;
+  amount: number;
+  recharge_type: string;
+  remark: string | null;
   created_at: string;
 }
 
@@ -190,9 +202,19 @@ export interface SMTPSettings {
   from_name: string;
 }
 
+export interface MarketingSettings {
+  enable_registration_gift: boolean;
+  gift_mode: 'fixed' | 'random';
+  fixed_amount: number;
+  min_amount: number;
+  max_amount: number;
+}
+
 export interface AllSettings {
   site: SiteSettings;
   currency: CurrencySettings;
   registration: RegistrationSettings;
   smtp: SMTPSettings;
+  marketing: MarketingSettings;
 }
+

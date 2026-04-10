@@ -4,7 +4,7 @@ use axum::{
 };
 use std::sync::Arc;
 use crate::AppState;
-use crate::models::{SiteSettings, CurrencySettings, RegistrationSettings, SMTPSettings, AllSettings, UpdateSettingsRequest};
+use crate::models::{SiteSettings, CurrencySettings, RegistrationSettings, SMTPSettings, MarketingSettings, AllSettings, UpdateSettingsRequest};
 use crate::error::AppResult;
 
 pub async fn get_settings(
@@ -23,6 +23,10 @@ pub async fn get_settings(
         .await?;
 
     let smtp_val: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'smtp_settings'")
+        .fetch_optional(&state.db.pool)
+        .await?;
+
+    let marketing_val: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'marketing_settings'")
         .fetch_optional(&state.db.pool)
         .await?;
 
@@ -50,7 +54,13 @@ pub async fn get_settings(
         default_smtp_settings()
     };
 
-    Ok(Json(AllSettings { site, currency, registration, smtp }))
+    let marketing = if let Some(val) = marketing_val {
+        serde_json::from_str(&val).unwrap_or(default_marketing_settings())
+    } else {
+        default_marketing_settings()
+    };
+
+    Ok(Json(AllSettings { site, currency, registration, smtp, marketing }))
 }
 
 pub async fn update_settings(
@@ -89,13 +99,22 @@ pub async fn update_settings(
             .await?;
     }
 
+    if let Some(marketing) = request.marketing {
+        let val = serde_json::to_string(&marketing).unwrap_or_default();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('marketing_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")
+            .bind(val)
+            .execute(&state.db.pool)
+            .await?;
+    }
+
     // Return the updated settings
     let site = get_setting::<SiteSettings>(&state, "site_settings", default_site_settings()).await?;
     let currency = get_setting::<CurrencySettings>(&state, "currency_settings", default_currency_settings()).await?;
     let registration = get_setting::<RegistrationSettings>(&state, "registration_settings", default_registration_settings()).await?;
     let smtp = get_setting::<SMTPSettings>(&state, "smtp_settings", default_smtp_settings()).await?;
+    let marketing = get_setting::<MarketingSettings>(&state, "marketing_settings", default_marketing_settings()).await?;
 
-    Ok(Json(AllSettings { site, currency, registration, smtp }))
+    Ok(Json(AllSettings { site, currency, registration, smtp, marketing }))
 }
 
 async fn get_setting<T: serde::de::DeserializeOwned + Clone>(state: &Arc<AppState>, key: &str, default: T) -> AppResult<T> {
@@ -147,3 +166,14 @@ pub fn default_smtp_settings() -> SMTPSettings {
         from_name: "TokensByte".to_string(),
     }
 }
+
+pub fn default_marketing_settings() -> MarketingSettings {
+    MarketingSettings {
+        enable_registration_gift: false,
+        gift_mode: "fixed".to_string(),
+        fixed_amount: 0.0,
+        min_amount: 0.0,
+        max_amount: 0.0,
+    }
+}
+

@@ -126,7 +126,7 @@ pub async fn redeem_code(
 
     // 4. Create recharge record
     sqlx::query(
-        "INSERT INTO recharge_records (user_id, amount, remark) VALUES (?, ?, ?)"
+        "INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'redemption', ?)"
     )
     .bind(&user_id)
     .bind(redemption.quota)

@@ -40,7 +40,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/redemptions", get(redemptions::list_redemptions).post(redemptions::generate_redemptions))
         .route("/redemptions/{id}", delete(redemptions::delete_redemption))
         .route("/tokens/all", get(tokens::list_all_tokens))
-        .route("/settings", get(settings::get_settings).post(settings::update_settings))
+        .route("/settings", post(settings::update_settings))
         .route("/user_levels", get(user_levels::list_user_levels).post(user_levels::create_user_level))
         .route("/user_levels/{id}", put(user_levels::update_user_level).delete(user_levels::delete_user_level))
         .route("/finance/recharges", get(finance::list_recharges))
@@ -66,13 +66,16 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
 
 
-    // 2. Auth APIs (Public)
+    // 2. Auth APIs & Public Configs (Public)
     let auth_routes = Router::new()
         .route("/login", post(auth::login))
         .route("/register", post(auth::register))
         .route("/send-code", post(auth::send_code))
         .route("/register-email", post(auth::register_email))
         .route("/reset-password", post(auth::reset_password));
+
+    let public_v1_routes = Router::new()
+        .route("/settings", get(settings::get_settings));
 
     // 3. Relay APIs (OpenAI Compatible)
     let relay_routes = Router::new()
@@ -81,6 +84,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     Router::new()
         .nest("/api/v1/auth", auth_routes)
+        .nest("/api/v1", public_v1_routes)
         .nest("/api/v1", management_routes)
         .nest("/v1", relay_routes)
         .with_state(state)

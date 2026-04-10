@@ -55,6 +55,7 @@ pub struct RechargeRecord {
     pub id: i64,
     pub user_id: String,
     pub amount: f64,
+    pub recharge_type: String,
     pub remark: Option<String>,
     pub created_at: String,
 }

@@ -44,12 +44,25 @@ pub async fn run(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL REFERENCES users(id),
             amount REAL NOT NULL,
+            recharge_type TEXT NOT NULL DEFAULT 'other',
             remark TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )"#
     )
     .execute(pool)
     .await?;
+
+    let recharge_type_count: i32 = sqlx::query_scalar(
+        "SELECT count(*) FROM pragma_table_info('recharge_records') WHERE name='recharge_type'"
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if recharge_type_count == 0 {
+        sqlx::query("ALTER TABLE recharge_records ADD COLUMN recharge_type TEXT NOT NULL DEFAULT 'other'")
+            .execute(pool)
+            .await?;
+    }
 
     // Channels table
     sqlx::query(

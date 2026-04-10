@@ -49,7 +49,9 @@
     "basic_settings": "Basic",
     "currency_settings": "Currency",
     "wallet": "My Wallet",
-    "profile": "Personal Center"
+    "profile": "Personal Center",
+    "marketing": "Marketing",
+    "registration_gifts": "Registration Gifts"
   },
   "dashboard": {
     "title": "System Overview",
@@ -255,7 +257,23 @@
     "status": "Status",
     "user_info": "User Information",
     "username": "Username",
-    "uid": "User UID"
+    "uid": "User UID",
+    "recharge_type": "Type",
+    "recharge_type_registration": "Registration Gift",
+    "recharge_type_manual": "Manual Adjustment",
+    "recharge_type_redemption": "Redemption Code",
+    "recharge_type_other": "Other"
+  },
+  "marketing": {
+    "registration_gift_title": "Registration Gifts",
+    "enable_gift": "Enable Registration Gift",
+    "gift_mode": "Gift Mode",
+    "mode_fixed": "Fixed Amount",
+    "mode_random": "Random Amount",
+    "fixed_amount": "Amount to Gift",
+    "min_amount": "Minimum Amount",
+    "max_amount": "Maximum Amount",
+    "save_success": "Marketing settings saved successfully"
   },
   "auth": {
     "register_title": "Create Account",

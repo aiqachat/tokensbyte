@@ -49,7 +49,9 @@
     "basic_settings": "基础设置",
     "currency_settings": "货币设置",
     "wallet": "我的钱包",
-    "profile": "个人中心"
+    "profile": "个人中心",
+    "marketing": "营销管理",
+    "registration_gifts": "注册好礼"
   },
   "dashboard": {
     "title": "系统概览",
@@ -251,11 +253,27 @@
     "amount": "金额",
     "remark": "备注",
     "tokens": "Token 数",
-    "cost": "消费金额",
+    "cost": "消耗花费",
     "status": "状态",
     "user_info": "用户信息",
     "username": "用户名",
-    "uid": "用户 UID"
+    "uid": "用户 UID",
+    "recharge_type": "充值类型",
+    "recharge_type_registration": "注册赠送",
+    "recharge_type_manual": "手动调账",
+    "recharge_type_redemption": "兑换码充值",
+    "recharge_type_other": "其它"
+  },
+  "marketing": {
+    "registration_gift_title": "注册好礼",
+    "enable_gift": "开启注册赠送",
+    "gift_mode": "赠送模式",
+    "mode_fixed": "固定额度",
+    "mode_random": "随机额度",
+    "fixed_amount": "赠送余额",
+    "min_amount": "最小赠送余额",
+    "max_amount": "最大赠送余额",
+    "save_success": "营销设置保存成功"
   },
   "auth": {
     "register_title": "创建账号",

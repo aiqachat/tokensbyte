@@ -14,6 +14,7 @@ interface RechargeRecord {
   username: string;
   uid: string;
   amount: number;
+  recharge_type: string;
   remark: string | null;
   created_at: string;
 }
@@ -79,6 +80,20 @@ const RechargeRecords: React.FC = () => {
           {val >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(val).toFixed(2)}
         </Text>
       ),
+    },
+    {
+      title: t('finance.recharge_type'),
+      dataIndex: 'recharge_type',
+      key: 'recharge_type',
+      render: (type: string) => {
+        let color = 'default';
+        if (type === 'registration') color = 'magenta';
+        if (type === 'manual') color = 'orange';
+        if (type === 'redemption') color = 'blue';
+
+        const label = t(`finance.recharge_type_${type}`) || t('finance.recharge_type_other');
+        return <Tag color={color}>{label}</Tag>;
+      },
     },
     {
       title: t('finance.remark'),

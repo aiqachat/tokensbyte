@@ -71,6 +71,28 @@ pub async fn register(
     let user_id = uuid::Uuid::new_v4().to_string();
     let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
 
+    let mut tx = state.db.pool.begin().await?;
+
+    let mut initial_balance = state.config.default_user_quota;
+    let mut gift_amount = 0.0;
+
+    if settings.marketing.enable_registration_gift {
+        gift_amount = if settings.marketing.gift_mode == "random" {
+            let min = settings.marketing.min_amount as i64;
+            let max = settings.marketing.max_amount as i64;
+            if max > min {
+                rand::thread_rng().gen_range(min..=max) as f64
+            } else {
+                min as f64
+            }
+        } else {
+            settings.marketing.fixed_amount
+        };
+        if gift_amount > 0.0 {
+            initial_balance += gift_amount;
+        }
+    }
+
     sqlx::query(
         r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
            VALUES (?, ?, ?, ?, ?, 'user', ?, 1)"#
@@ -80,9 +102,19 @@ pub async fn register(
     .bind(&request.username)
     .bind(&request.email)
     .bind(&password_hash)
-    .bind(state.config.default_user_quota)
-    .execute(&state.db.pool)
+    .bind(initial_balance)
+    .execute(&mut *tx)
     .await?;
+
+    if gift_amount > 0.0 {
+        sqlx::query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')")
+            .bind(&user_id)
+            .bind(gift_amount)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
 
     // 3. Auto-login after registration
     let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
@@ -173,6 +205,28 @@ pub async fn register_email(
 
     let password_hash = auth::hash_password(&request.password)?;
 
+    let mut tx = state.db.pool.begin().await?;
+
+    let mut initial_balance = state.config.default_user_quota;
+    let mut gift_amount = 0.0;
+
+    if settings.marketing.enable_registration_gift {
+        gift_amount = if settings.marketing.gift_mode == "random" {
+            let min = settings.marketing.min_amount as i64;
+            let max = settings.marketing.max_amount as i64;
+            if max > min {
+                rand::thread_rng().gen_range(min..=max) as f64
+            } else {
+                min as f64
+            }
+        } else {
+            settings.marketing.fixed_amount
+        };
+        if gift_amount > 0.0 {
+            initial_balance += gift_amount;
+        }
+    }
+
     sqlx::query(
         r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
            VALUES (?, ?, ?, ?, ?, 'user', ?, 1)"#
@@ -182,9 +236,19 @@ pub async fn register_email(
     .bind(&username)
     .bind(&request.email)
     .bind(&password_hash)
-    .bind(state.config.default_user_quota)
-    .execute(&state.db.pool)
+    .bind(initial_balance)
+    .execute(&mut *tx)
     .await?;
+
+    if gift_amount > 0.0 {
+        sqlx::query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')")
+            .bind(&user_id)
+            .bind(gift_amount)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
 
     let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
         .bind(&user_id)
@@ -225,14 +289,15 @@ pub async fn reset_password(
 
 // Helpers
 async fn get_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> {
-    use crate::api::settings::{default_site_settings, default_currency_settings, default_registration_settings, default_smtp_settings};
+    use crate::api::settings::{default_site_settings, default_currency_settings, default_registration_settings, default_smtp_settings, default_marketing_settings};
     
     let site = get_setting::<SiteSettings>(state, "site_settings", default_site_settings()).await?;
     let currency = get_setting::<CurrencySettings>(state, "currency_settings", default_currency_settings()).await?;
     let registration = get_setting::<RegistrationSettings>(state, "registration_settings", default_registration_settings()).await?;
     let smtp = get_setting::<SMTPSettings>(state, "smtp_settings", default_smtp_settings()).await?;
+    let marketing = get_setting::<crate::models::MarketingSettings>(state, "marketing_settings", default_marketing_settings()).await?;
 
-    Ok(AllSettings { site, currency, registration, smtp })
+    Ok(AllSettings { site, currency, registration, smtp, marketing })
 }
 
 async fn get_setting<T: serde::de::DeserializeOwned + Clone>(state: &Arc<AppState>, key: &str, default: T) -> AppResult<T> {

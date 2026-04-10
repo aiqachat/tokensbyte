@@ -19,6 +19,7 @@ import Wallet from './pages/Wallet/Wallet';
 import RechargeRecords from './pages/Finance/RechargeRecords';
 import OrderDetails from './pages/Finance/OrderDetails';
 import Settings from './pages/admin/Settings';
+import RegistrationGifts from './pages/admin/Marketing/RegistrationGifts';
 import useAuthStore from './store/auth';
 import useSettingsStore from './store/settings';
 import { useEffect } from 'react';
@@ -83,6 +84,7 @@ const App: React.FC = () => {
           <Route path="finance/recharges" element={<RechargeRecords />} />
           <Route path="finance/orders" element={<OrderDetails />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="marketing/registration-gifts" element={<RegistrationGifts />} />
         </Route>
 
         {/* Fallback */}

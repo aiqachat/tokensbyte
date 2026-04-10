@@ -16,6 +16,7 @@ import {
   SettingOutlined,
   WalletOutlined,
   UserOutlined,
+  NotificationOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
@@ -130,9 +131,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         label: <Link to="/admin0755/models">{t('menu.models')}</Link>,
       },
       {
-        key: '/admin0755/redemptions',
-        icon: <GiftOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/admin0755/redemptions">{t('menu.redemptions')}</Link>,
+        key: 'marketing-management-group',
+        icon: <NotificationOutlined style={{ fontSize: '18px' }} />,
+        label: t('menu.marketing'),
+        children: [
+          {
+            key: '/admin0755/redemptions',
+            label: <Link to="/admin0755/redemptions">{t('menu.redemptions')}</Link>,
+          },
+          {
+            key: '/admin0755/marketing/registration-gifts',
+            label: <Link to="/admin0755/marketing/registration-gifts">{t('menu.registration_gifts')}</Link>,
+          }
+        ]
       },
       {
         key: 'user-management-group',

@@ -20,8 +20,8 @@
 - Node.js (用于本地开发)
 
 ### 2. 访问系统
-- **用户端 (Default)**：`http://localhost:3000` (提供令牌管理、日志查询)
-- **系统后台 (Admin)**：`http://localhost:3000/admin0755` (提供渠道配置、用户及系统设置)
+- **用户端 (Default)**：`http://localhost:5173` (提供令牌管理、日志查询)
+- **系统后台 (Admin)**：`http://localhost:5173/admin0755` (提供渠道配置、用户及系统设置)
 
 **默认管理员账号**：
 - **用户名**：`admin`

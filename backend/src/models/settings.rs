@@ -34,11 +34,22 @@ pub struct SMTPSettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MarketingSettings {
+    pub enable_registration_gift: bool,
+    pub gift_mode: String, // "fixed" or "random"
+    pub fixed_amount: f64,
+    pub min_amount: f64,
+    pub max_amount: f64,
+}
+
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AllSettings {
     pub site: SiteSettings,
     pub currency: CurrencySettings,
     pub registration: RegistrationSettings,
     pub smtp: SMTPSettings,
+    pub marketing: MarketingSettings,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -47,4 +58,5 @@ pub struct UpdateSettingsRequest {
     pub currency: Option<CurrencySettings>,
     pub registration: Option<RegistrationSettings>,
     pub smtp: Option<SMTPSettings>,
+    pub marketing: Option<MarketingSettings>,
 }

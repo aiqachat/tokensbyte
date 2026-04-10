@@ -16,7 +16,7 @@ impl AppConfig {
         Self {
             host: std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: std::env::var("PORT")
-                .unwrap_or_else(|_| "3300".to_string())
+                .unwrap_or_else(|_| "3000".to_string())
                 .parse()
                 .expect("PORT must be a number"),
             database_url: std::env::var("DATABASE_URL")

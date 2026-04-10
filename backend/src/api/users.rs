@@ -108,7 +108,7 @@ pub async fn update_user(
     if user.balance > old_balance {
         let diff = user.balance - old_balance;
         sqlx::query(
-            "INSERT INTO recharge_records (user_id, amount, remark) VALUES (?, ?, ?)"
+            "INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'manual', ?)"
         )
         .bind(&id)
         .bind(diff)
@@ -153,7 +153,7 @@ pub async fn recharge_user(
         .execute(&mut *tx)
         .await?;
 
-    sqlx::query("INSERT INTO recharge_records (user_id, amount, remark) VALUES (?, ?, ?)")
+    sqlx::query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'manual', ?)")
         .bind(&id)
         .bind(request.amount)
         .bind(&remark)

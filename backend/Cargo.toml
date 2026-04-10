@@ -58,6 +58,6 @@ pin-project-lite = "0.2"
 regex = "1"
 governor = "0.7"
 dashmap = "6"
-lettre = { version = "0.11", features = ["tokio-rustls-tokio-runtime", "builder"] }
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "builder", "smtp-transport", "hostname"] }
 
 
