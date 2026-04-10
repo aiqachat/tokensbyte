@@ -45,7 +45,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/user_levels/{id}", put(user_levels::update_user_level).delete(user_levels::delete_user_level))
         .route("/finance/recharges", get(finance::list_recharges))
         .route("/finance/orders", get(finance::list_orders))
-        .layer(axum_middleware::from_fn(admin_middleware));
+        .layer(axum_middleware::from_fn(admin_middleware))
+        .with_state(state.clone());
 
     let management_routes = Router::new()
         .route("/dashboard", get(dashboard::get_stats))
@@ -72,7 +73,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/register", post(auth::register))
         .route("/send-code", post(auth::send_code))
         .route("/register-email", post(auth::register_email))
-        .route("/reset-password", post(auth::reset_password));
+        .route("/reset-password", post(auth::reset_password))
+        .with_state(state.clone());
 
     let public_v1_routes = Router::new()
         .route("/settings", get(settings::get_settings));
@@ -80,7 +82,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // 3. Relay APIs (OpenAI Compatible)
     let relay_routes = Router::new()
         .route("/chat/completions", post(crate::relay::chat_completions))
-        .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware));
+        .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
+        .with_state(state.clone());
 
     Router::new()
         .nest("/api/v1/auth", auth_routes)
