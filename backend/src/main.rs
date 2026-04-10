@@ -9,6 +9,7 @@ mod middleware;
 mod models;
 mod providers;
 mod relay;
+mod services;
 
 use config::AppConfig;
 use db::Database;

@@ -1,5 +1,6 @@
 use axum::{
     extract::State,
+    response::{IntoResponse, Response},
     Json,
 };
 use std::sync::Arc;
@@ -130,38 +131,45 @@ pub async fn register(
 pub async fn send_code(
     State(state): State<Arc<AppState>>,
     Json(request): Json<SendCodeRequest>,
-) -> AppResult<Json<serde_json::Value>> {
-    let settings = get_all_settings(&state).await?;
-    
-    if request.purpose == "register" && !settings.registration.enable_email_registration {
-        return Err(AppError::Forbidden("Email registration is disabled".to_string()));
+) -> Response {
+    let result = (async {
+        let settings = get_all_settings(&state).await?;
+        
+        if request.purpose == "register" && !settings.registration.enable_email_registration {
+            return Err(AppError::Forbidden("Email registration is disabled".to_string()));
+        }
+        if request.purpose == "reset_password" && !settings.registration.enable_password_recovery {
+            return Err(AppError::Forbidden("Password recovery is disabled".to_string()));
+        }
+
+        // Generate 6-digit code
+        let mut rng = rand::thread_rng();
+        let code: String = (0..6).map(|_| rng.gen_range(0..10).to_string()).collect();
+        
+        let expires_at = (Utc::now() + Duration::minutes(10)).format("%Y-%m-%d %H:%M:%S").to_string();
+
+        // Save to database
+        sqlx::query(
+            "INSERT INTO verification_codes (email, code, purpose, expires_at) VALUES (?, ?, ?, ?)"
+        )
+        .bind(&request.email)
+        .bind(&code)
+        .bind(&request.purpose)
+        .bind(&expires_at)
+        .execute(&state.db.pool)
+        .await?;
+
+        // Send email
+        let email_service = EmailService::new(&settings.smtp);
+        email_service.send_verification_code(&request.email, &code, &request.purpose).await?;
+
+        Ok(Json(serde_json::json!({ "success": true })))
+    }).await;
+
+    match result {
+        Ok(json) => json.into_response(),
+        Err(err) => err.into_response(),
     }
-    if request.purpose == "reset_password" && !settings.registration.enable_password_recovery {
-        return Err(AppError::Forbidden("Password recovery is disabled".to_string()));
-    }
-
-    // Generate 6-digit code
-    let mut rng = rand::thread_rng();
-    let code: String = (0..6).map(|_| rng.gen_range(0..10).to_string()).collect();
-    
-    let expires_at = (Utc::now() + Duration::minutes(10)).format("%Y-%m-%d %H:%M:%S").to_string();
-
-    // Save to database
-    sqlx::query(
-        "INSERT INTO verification_codes (email, code, purpose, expires_at) VALUES (?, ?, ?, ?)"
-    )
-    .bind(&request.email)
-    .bind(&code)
-    .bind(&request.purpose)
-    .bind(&expires_at)
-    .execute(&state.db.pool)
-    .await?;
-
-    // Send email
-    let email_service = EmailService::new(&settings.smtp);
-    email_service.send_verification_code(&request.email, &code, &request.purpose).await?;
-
-    Ok(Json(serde_json::json!({ "success": true })))
 }
 
 pub async fn register_email(

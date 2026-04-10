@@ -130,7 +130,7 @@ async fn get_setting<T: serde::de::DeserializeOwned + Clone>(state: &Arc<AppStat
     }
 }
 
-fn default_site_settings() -> SiteSettings {
+pub fn default_site_settings() -> SiteSettings {
     SiteSettings {
         name: "TokensByte".to_string(),
         title: "TokensByte - LLM API Gateway".to_string(),
@@ -139,7 +139,7 @@ fn default_site_settings() -> SiteSettings {
     }
 }
 
-fn default_currency_settings() -> CurrencySettings {
+pub fn default_currency_settings() -> CurrencySettings {
     CurrencySettings {
         default_currency: "CNY".to_string(),
         currency_symbol: "¥".to_string(),
