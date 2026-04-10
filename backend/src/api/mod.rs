@@ -23,7 +23,7 @@ pub mod finance;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
-    let admin_routes = Router::new()
+    let admin_routes: Router<Arc<AppState>> = Router::new()
         .route("/users", get(users::list_users).post(users::create_user))
         .route("/users/{id}", put(users::update_user).delete(users::delete_user))
         .route("/users/{id}/recharge", post(users::recharge_user))
@@ -48,7 +48,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .layer(axum_middleware::from_fn(admin_middleware))
         .with_state(state.clone());
 
-    let management_routes = Router::new()
+    let management_routes: Router<Arc<AppState>> = Router::new()
         .route("/dashboard", get(dashboard::get_stats))
         .route("/channels", get(channels::list_channels))
         .route("/models", get(models::list_models))
@@ -75,11 +75,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/register-email", post(auth::register_email))
         .route("/reset-password", post(auth::reset_password));
 
-    let public_v1_routes = Router::new()
-        .route("/settings", get(settings::get_settings));
+    let public_v1_routes: Router<Arc<AppState>> = Router::new()
+        .route("/settings", get(settings::get_settings))
+        .with_state(state.clone());
 
     // 3. Relay APIs (OpenAI Compatible)
-    let relay_routes = Router::new()
+    let relay_routes: Router<Arc<AppState>> = Router::new()
         .route("/chat/completions", post(crate::relay::chat_completions))
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());

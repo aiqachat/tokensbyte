@@ -19,113 +19,127 @@ use rand::Rng;
 pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(request): Json<LoginRequest>,
-) -> AppResult<Json<LoginResponse>> {
-    // 1. Fetch user from database
-    let user: User = sqlx::query_as(
-        "SELECT * FROM users WHERE username = ? OR email = ?"
-    )
-    .bind(&request.username)
-    .bind(&request.username)
-    .fetch_optional(&state.db.pool)
-    .await?
-    .ok_or(AppError::Unauthorized)?;
+) -> Response {
+    let result = (async {
+        // 1. Fetch user from database
+        let user: User = sqlx::query_as(
+            "SELECT * FROM users WHERE username = ? OR email = ?"
+        )
+        .bind(&request.username)
+        .bind(&request.username)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
 
-    // 2. Verify password
-    if !auth::verify_password(&request.password, &user.password_hash)? {
-        return Err(AppError::Unauthorized);
+        // 2. Verify password
+        if !auth::verify_password(&request.password, &user.password_hash)? {
+            return Err(AppError::Unauthorized);
+        }
+
+        if !user.is_active {
+            return Err(AppError::Forbidden("Account disabled".to_string()));
+        }
+
+        // 3. Create JWT token
+        let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
+
+        Ok(Json(LoginResponse { token, user }))
+    }).await;
+
+    match result {
+        Ok(json) => json.into_response(),
+        Err(err) => err.into_response(),
     }
-
-    if !user.is_active {
-        return Err(AppError::Forbidden("Account disabled".to_string()));
-    }
-
-    // 3. Create JWT token
-    let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
-
-    Ok(Json(LoginResponse { token, user }))
 }
 
 pub async fn register(
     State(state): State<Arc<AppState>>,
     Json(request): Json<CreateUserRequest>,
-) -> AppResult<Json<LoginResponse>> {
-    let settings = get_all_settings(&state).await?;
-    if !settings.registration.enable_username_registration {
-        return Err(AppError::Forbidden("Username registration is disabled".to_string()));
-    }
-
-    // 1. Check if user already exists
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE username = ? OR email = ?)"
-    )
-    .bind(&request.username)
-    .bind(&request.email)
-    .fetch_one(&state.db.pool)
-    .await?;
-
-    if exists {
-        return Err(AppError::Conflict("User already exists".to_string()));
-    }
-
-    // 2. Hash password and insert
-    let password_hash = auth::hash_password(&request.password)?;
-    let user_id = uuid::Uuid::new_v4().to_string();
-    let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
-
-    let mut tx = state.db.pool.begin().await?;
-
-    let mut initial_balance = state.config.default_user_quota;
-    let mut gift_amount = 0.0;
-
-    if settings.marketing.enable_registration_gift {
-        gift_amount = if settings.marketing.gift_mode == "random" {
-            let min = settings.marketing.min_amount as i64;
-            let max = settings.marketing.max_amount as i64;
-            if max > min {
-                rand::thread_rng().gen_range(min..=max) as f64
-            } else {
-                min as f64
-            }
-        } else {
-            settings.marketing.fixed_amount
-        };
-        if gift_amount > 0.0 {
-            initial_balance += gift_amount;
+) -> Response {
+    let result = (async {
+        let settings = get_all_settings(&state).await?;
+        if !settings.registration.enable_username_registration {
+            return Err(AppError::Forbidden("Username registration is disabled".to_string()));
         }
-    }
 
-    sqlx::query(
-        r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
-           VALUES (?, ?, ?, ?, ?, 'user', ?, 1)"#
-    )
-    .bind(&user_id)
-    .bind(&uid)
-    .bind(&request.username)
-    .bind(&request.email)
-    .bind(&password_hash)
-    .bind(initial_balance)
-    .execute(&mut *tx)
-    .await?;
-
-    if gift_amount > 0.0 {
-        sqlx::query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')")
-            .bind(&user_id)
-            .bind(gift_amount)
-            .execute(&mut *tx)
-            .await?;
-    }
-
-    tx.commit().await?;
-
-    // 3. Auto-login after registration
-    let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
-        .bind(&user_id)
+        // 1. Check if user already exists
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE username = ? OR email = ?)"
+        )
+        .bind(&request.username)
+        .bind(&request.email)
         .fetch_one(&state.db.pool)
         .await?;
 
-    let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
+        if exists {
+            return Err(AppError::Conflict("User already exists".to_string()));
+        }
 
-    Ok(Json(LoginResponse { token, user }))
+        // 2. Hash password and insert
+        let password_hash = auth::hash_password(&request.password)?;
+        let user_id = uuid::Uuid::new_v4().to_string();
+        let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
+
+        let mut tx = state.db.pool.begin().await?;
+
+        let mut initial_balance = state.config.default_user_quota;
+        let mut gift_amount = 0.0;
+
+        if settings.marketing.enable_registration_gift {
+            gift_amount = if settings.marketing.gift_mode == "random" {
+                let min = settings.marketing.min_amount as i64;
+                let max = settings.marketing.max_amount as i64;
+                if max > min {
+                    rand::thread_rng().gen_range(min..=max) as f64
+                } else {
+                    min as f64
+                }
+            } else {
+                settings.marketing.fixed_amount
+            };
+            if gift_amount > 0.0 {
+                initial_balance += gift_amount;
+            }
+        }
+
+        sqlx::query(
+            r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1)"#
+        )
+        .bind(&user_id)
+        .bind(&uid)
+        .bind(&request.username)
+        .bind(&request.email)
+        .bind(&password_hash)
+        .bind(initial_balance)
+        .execute(&mut *tx)
+        .await?;
+
+        if gift_amount > 0.0 {
+            sqlx::query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')")
+                .bind(&user_id)
+                .bind(gift_amount)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
+
+        // 3. Auto-login after registration
+        let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+            .bind(&user_id)
+            .fetch_one(&state.db.pool)
+            .await?;
+
+        let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
+
+        Ok(Json(LoginResponse { token, user }))
+    }).await;
+
+    match result {
+        Ok(json) => json.into_response(),
+        Err(err) => err.into_response(),
+    }
 }
 
 pub async fn send_code(
@@ -175,124 +189,138 @@ pub async fn send_code(
 pub async fn register_email(
     State(state): State<Arc<AppState>>,
     Json(request): Json<EmailRegisterRequest>,
-) -> AppResult<Json<LoginResponse>> {
-    let settings = get_all_settings(&state).await?;
-    if !settings.registration.enable_email_registration {
-        return Err(AppError::Forbidden("Email registration is disabled".to_string()));
-    }
-
-    // 1. Verify code
-    verify_code(&state, &request.email, &request.code, "register").await?;
-
-    // 2. Check if user exists
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)")
-        .bind(&request.email)
-        .fetch_one(&state.db.pool)
-        .await?;
-    
-    if exists {
-        return Err(AppError::Conflict("User with this email already exists".to_string()));
-    }
-
-    // 3. Create user
-    let user_id = uuid::Uuid::new_v4().to_string();
-    let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
-    let mut username = request.email.split('@').next().unwrap_or("user").to_string();
-    
-    // Check if username already exists
-    let username_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)")
-        .bind(&username)
-        .fetch_one(&state.db.pool)
-        .await?;
-    
-    if username_exists {
-        // Append small random suffix if collision
-        let suffix: String = (0..4).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
-        username = format!("{}_{}", username, suffix);
-    }
-
-    let password_hash = auth::hash_password(&request.password)?;
-
-    let mut tx = state.db.pool.begin().await?;
-
-    let mut initial_balance = state.config.default_user_quota;
-    let mut gift_amount = 0.0;
-
-    if settings.marketing.enable_registration_gift {
-        gift_amount = if settings.marketing.gift_mode == "random" {
-            let min = settings.marketing.min_amount as i64;
-            let max = settings.marketing.max_amount as i64;
-            if max > min {
-                rand::thread_rng().gen_range(min..=max) as f64
-            } else {
-                min as f64
-            }
-        } else {
-            settings.marketing.fixed_amount
-        };
-        if gift_amount > 0.0 {
-            initial_balance += gift_amount;
+) -> Response {
+    let result = (async {
+        let settings = get_all_settings(&state).await?;
+        if !settings.registration.enable_email_registration {
+            return Err(AppError::Forbidden("Email registration is disabled".to_string()));
         }
-    }
 
-    sqlx::query(
-        r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
-           VALUES (?, ?, ?, ?, ?, 'user', ?, 1)"#
-    )
-    .bind(&user_id)
-    .bind(&uid)
-    .bind(&username)
-    .bind(&request.email)
-    .bind(&password_hash)
-    .bind(initial_balance)
-    .execute(&mut *tx)
-    .await?;
+        // 1. Verify code
+        verify_code(&state, &request.email, &request.code, "register").await?;
 
-    if gift_amount > 0.0 {
-        sqlx::query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')")
-            .bind(&user_id)
-            .bind(gift_amount)
-            .execute(&mut *tx)
+        // 2. Check if user exists
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)")
+            .bind(&request.email)
+            .fetch_one(&state.db.pool)
             .await?;
-    }
+        
+        if exists {
+            return Err(AppError::Conflict("User with this email already exists".to_string()));
+        }
 
-    tx.commit().await?;
+        // 3. Create user
+        let user_id = uuid::Uuid::new_v4().to_string();
+        let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
+        let mut username = request.email.split('@').next().unwrap_or("user").to_string();
+        
+        // Check if username already exists
+        let username_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)")
+            .bind(&username)
+            .fetch_one(&state.db.pool)
+            .await?;
+        
+        if username_exists {
+            // Append small random suffix if collision
+            let suffix: String = (0..4).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
+            username = format!("{}_{}", username, suffix);
+        }
 
-    let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        let password_hash = auth::hash_password(&request.password)?;
+
+        let mut tx = state.db.pool.begin().await?;
+
+        let mut initial_balance = state.config.default_user_quota;
+        let mut gift_amount = 0.0;
+
+        if settings.marketing.enable_registration_gift {
+            gift_amount = if settings.marketing.gift_mode == "random" {
+                let min = settings.marketing.min_amount as i64;
+                let max = settings.marketing.max_amount as i64;
+                if max > min {
+                    rand::thread_rng().gen_range(min..=max) as f64
+                } else {
+                    min as f64
+                }
+            } else {
+                settings.marketing.fixed_amount
+            };
+            if gift_amount > 0.0 {
+                initial_balance += gift_amount;
+            }
+        }
+
+        sqlx::query(
+            r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1)"#
+        )
         .bind(&user_id)
-        .fetch_one(&state.db.pool)
+        .bind(&uid)
+        .bind(&username)
+        .bind(&request.email)
+        .bind(&password_hash)
+        .bind(initial_balance)
+        .execute(&mut *tx)
         .await?;
 
-    let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
+        if gift_amount > 0.0 {
+            sqlx::query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')")
+                .bind(&user_id)
+                .bind(gift_amount)
+                .execute(&mut *tx)
+                .await?;
+        }
 
-    Ok(Json(LoginResponse { token, user }))
+        tx.commit().await?;
+
+        let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+            .bind(&user_id)
+            .fetch_one(&state.db.pool)
+            .await?;
+
+        let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
+
+        Ok(Json(LoginResponse { token, user }))
+    }).await;
+
+    match result {
+        Ok(json) => json.into_response(),
+        Err(err) => err.into_response(),
+    }
 }
 
 pub async fn reset_password(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ResetPasswordRequest>,
-) -> AppResult<Json<serde_json::Value>> {
-    let settings = get_all_settings(&state).await?;
-    if !settings.registration.enable_password_recovery {
-        return Err(AppError::Forbidden("Password recovery is disabled".to_string()));
+) -> Response {
+    let result = (async {
+        let settings = get_all_settings(&state).await?;
+        if !settings.registration.enable_password_recovery {
+            return Err(AppError::Forbidden("Password recovery is disabled".to_string()));
+        }
+
+        // 1. Verify code
+        verify_code(&state, &request.email, &request.code, "reset_password").await?;
+
+        // 2. Update password
+        let password_hash = auth::hash_password(&request.new_password)?;
+        let result = sqlx::query("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE email = ?")
+            .bind(&password_hash)
+            .bind(&request.email)
+            .execute(&state.db.pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound("User not found".to_string()));
+        }
+
+        Ok(Json(serde_json::json!({ "success": true })))
+    }).await;
+
+    match result {
+        Ok(json) => json.into_response(),
+        Err(err) => err.into_response(),
     }
-
-    // 1. Verify code
-    verify_code(&state, &request.email, &request.code, "reset_password").await?;
-
-    // 2. Update password
-    let password_hash = auth::hash_password(&request.new_password)?;
-    let result = sqlx::query("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE email = ?")
-        .bind(&password_hash)
-        .bind(&request.email)
-        .execute(&state.db.pool)
-        .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("User not found".to_string()));
-    }
-
-    Ok(Json(serde_json::json!({ "success": true })))
 }
 
 // Helpers
