@@ -68,13 +68,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
 
     // 2. Auth APIs & Public Configs (Public)
-    let auth_routes = Router::new()
+    let auth_routes: Router<Arc<AppState>> = Router::new()
         .route("/login", post(auth::login))
         .route("/register", post(auth::register))
         .route("/send-code", post(auth::send_code))
         .route("/register-email", post(auth::register_email))
-        .route("/reset-password", post(auth::reset_password))
-        .with_state(state.clone());
+        .route("/reset-password", post(auth::reset_password));
 
     let public_v1_routes = Router::new()
         .route("/settings", get(settings::get_settings));
