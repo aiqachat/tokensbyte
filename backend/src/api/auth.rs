@@ -92,8 +92,9 @@ pub async fn admin_login(
             // Super Admin - default all permissions
             vec![
                 "dashboard".to_string(), "tokens".to_string(), "logs".to_string(),
-                "channels".to_string(), "models".to_string(), "redemptions".to_string(),
-                "users".to_string(), "user_levels".to_string(), "finance_recharges".to_string(),
+                "channels".to_string(), "models".to_string(), "marketing".to_string(),
+                "redemptions".to_string(), "users".to_string(), "user_levels".to_string(),
+                "finance".to_string(), "finance_recharges".to_string(),
                 "finance_orders".to_string(), "settings".to_string(), "admin_groups".to_string()
             ]
         };
