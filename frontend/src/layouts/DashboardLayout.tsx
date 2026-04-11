@@ -97,9 +97,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       label: <Link to={isUserEnd ? '/tokens' : '/admin0755/tokens'}>{t('menu.tokens')}</Link>,
     },
     {
-      key: isUserEnd ? '/logs' : '/admin0755/logs',
+      key: 'logs-group',
       icon: <BarsOutlined style={{ fontSize: '18px' }} />,
-      label: <Link to={isUserEnd ? '/logs' : '/admin0755/logs'}>{t('menu.logs')}</Link>,
+      label: t('menu.logs', '日志查询'),
+      children: [
+        {
+          key: isUserEnd ? '/logs' : '/admin0755/logs',
+          label: <Link to={isUserEnd ? '/logs' : '/admin0755/logs'}>{t('menu.usage_logs', '使用日志')}</Link>,
+        },
+        {
+          key: isUserEnd ? '/task-logs' : '/admin0755/task-logs',
+          label: <Link to={isUserEnd ? '/task-logs' : '/admin0755/task-logs'}>{t('menu.task_logs', '任务日志')}</Link>,
+        }
+      ]
     },
   ];
 

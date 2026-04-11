@@ -131,6 +131,27 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    // Task Logs table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS task_logs (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            channel_id INTEGER,
+            platform TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            progress INTEGER NOT NULL DEFAULT 0,
+            submit_time TEXT,
+            end_time TEXT,
+            time_spent INTEGER,
+            details TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // User levels table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS user_levels (
@@ -491,6 +512,27 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    // Task Logs table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS task_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            channel_id INTEGER,
+            platform TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            progress INTEGER NOT NULL DEFAULT 0,
+            submit_time TEXT,
+            end_time TEXT,
+            time_spent INTEGER,
+            details TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // User levels table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS user_levels (
@@ -767,6 +809,27 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
         r#"CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL DEFAULT ''
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Task Logs table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS task_logs (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            channel_id INTEGER,
+            platform TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            progress INTEGER NOT NULL DEFAULT 0,
+            submit_time TEXT,
+            end_time TEXT,
+            time_spent INTEGER,
+            details TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)

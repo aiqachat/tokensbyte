@@ -16,6 +16,7 @@ import Users from './pages/Users/Users';
 import UserLevels from './pages/Users/UserLevels';
 import AdminGroups from './pages/Users/AdminGroups';
 import Logs from './pages/Logs/Logs';
+import TaskLogs from './pages/Logs/TaskLogs';
 import Redemptions from './pages/Redemptions/Redemptions';
 import Profile from './pages/Profile/Profile';
 import Wallet from './pages/Wallet/Wallet';
@@ -62,6 +63,7 @@ const App: React.FC = () => {
           <Route index element={<Dashboard />} />
           <Route path="tokens" element={<Tokens />} />
           <Route path="logs" element={<Logs />} />
+          <Route path="task-logs" element={<TaskLogs />} />
           <Route path="wallet" element={<Wallet />} />
           <Route path="profile" element={<Profile />} />
         </Route>
@@ -83,6 +85,7 @@ const App: React.FC = () => {
           <Route path="tokens" element={<Tokens />} />
 
           <Route path="logs" element={<Logs />} />
+          <Route path="task-logs" element={<TaskLogs />} />
           <Route path="redemptions" element={<Redemptions />} />
           <Route path="users" element={<Users />} />
           <Route path="admins" element={<Users />} />

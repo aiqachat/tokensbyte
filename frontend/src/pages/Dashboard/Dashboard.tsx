@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Typography, Table, Tag, Space, List, Progress } from 'antd';
+import { Row, Col, Card, Statistic, Typography, Table, Tag, Space, List, Progress, Alert } from 'antd';
 import {
   RocketOutlined,
   ThunderboltOutlined,
@@ -12,7 +12,7 @@ import useSettingsStore from '../../store/settings';
 import type { DashboardStats, RequestLog } from '../../types';
 import dayjs from 'dayjs';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 const Dashboard: React.FC = () => {
   const { t } = useTranslation();
@@ -81,6 +81,18 @@ const Dashboard: React.FC = () => {
     <div>
       <Title level={2} style={{ marginBottom: 24 }}>{t('dashboard.title')}</Title>
       
+      <Alert
+        message={t('dashboard.relay_api_url', '中转网关 API 请求地址 (OpenAI 兼容)')}
+        description={
+          <Paragraph copyable style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', marginTop: 8 }}>
+            {`${window.location.protocol}//${window.location.host}/v1`}
+          </Paragraph>
+        }
+        type="info"
+        showIcon
+        style={{ marginBottom: 24, borderRadius: 8 }}
+      />
+
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>
           <Card bordered={false} loading={loading}>
