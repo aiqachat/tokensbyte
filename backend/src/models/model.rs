@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Model {
-    pub id: i64,
+    pub id: i32,
     pub name: String,
     pub model_id: String,
     pub provider_id: Option<i32>,
@@ -16,7 +16,7 @@ pub struct Model {
     pub billing_rule: String, // standard, tiered
     pub billing_unit: String, // 1k, 1M
     pub pricing_tiers: String, // JSON array of tiers
-    pub is_active: i64,
+    pub is_active: i32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -33,7 +33,7 @@ pub struct ModelProvider {
     pub id: i32,
     pub name: String,
     pub sort_order: i32,
-    pub is_active: i64,
+    pub is_active: i32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -43,7 +43,7 @@ pub struct ModelType {
     pub id: i32,
     pub name: String,
     pub sort_order: i32,
-    pub is_active: i64,
+    pub is_active: i32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -109,7 +109,7 @@ pub struct UpdateModelRequest {
     pub billing_rule: Option<String>,
     pub billing_unit: Option<String>,
     pub pricing_tiers: Option<Vec<PricingTier>>,
-    pub is_active: Option<i64>,
+    pub is_active: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -122,5 +122,5 @@ pub struct ModelListResponse {
 pub struct ClassificationRequest {
     pub name: String,
     pub sort_order: i32,
-    pub is_active: i64,
+    pub is_active: i32,
 }

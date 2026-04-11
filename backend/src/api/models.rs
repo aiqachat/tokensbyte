@@ -74,7 +74,7 @@ pub async fn create_model(
     }
 
     // Check for duplicate name or model_id
-    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE name = ? OR model_id = ?"))
+    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE name = ? OR model_id = ?"))
         .bind(&req.name)
         .bind(&req.model_id)
         .fetch_optional(&state.db.pool)
@@ -89,7 +89,7 @@ pub async fn create_model(
     let billing_unit = req.billing_unit.unwrap_or_else(|| "1k".to_string());
     let pricing_tiers = serde_json::to_string(&req.pricing_tiers.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
     
-    let id = sqlx::query(
+    let id_i32 = sqlx::query(
         &state.db.format_query(r#"INSERT INTO models (name, model_id, provider_id, type_id, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, group_ratios, billing_rule, billing_unit, pricing_tiers, is_active)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
            RETURNING id"#)
@@ -109,10 +109,10 @@ pub async fn create_model(
     .bind(&pricing_tiers)
     .fetch_one(&state.db.pool)
     .await?
-    .get::<i64, _>("id");
+    .get::<i32, _>("id");
 
     let model = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE id = ?"))
-        .bind(id)
+        .bind(id_i32)
         .fetch_one(&state.db.pool)
         .await?;
 
@@ -121,7 +121,7 @@ pub async fn create_model(
 
 pub async fn update_model(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i64>,
+    Path(id): Path<i32>,
     Json(mut req): Json<UpdateModelRequest>,
 ) -> AppResult<Json<Model>> {
     // Basic trimming if fields are provided
@@ -140,7 +140,7 @@ pub async fn update_model(
 
     // Check for duplicate name or model_id (collision with OTHER models)
     if let (Some(name), Some(mid)) = (&req.name, &req.model_id) {
-        let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE (name = ? OR model_id = ?) AND id != ?"))
+        let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE (name = ? OR model_id = ?) AND id != ?"))
             .bind(name)
             .bind(mid)
             .bind(id)
@@ -150,7 +150,7 @@ pub async fn update_model(
             return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
         }
     } else if let Some(name) = &req.name {
-        let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE name = ? AND id != ?"))
+        let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE name = ? AND id != ?"))
             .bind(name)
             .bind(id)
             .fetch_optional(&state.db.pool)
@@ -159,7 +159,7 @@ pub async fn update_model(
             return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
         }
     } else if let Some(mid) = &req.model_id {
-        let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE model_id = ? AND id != ?"))
+        let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE model_id = ? AND id != ?"))
             .bind(mid)
             .bind(id)
             .fetch_optional(&state.db.pool)
@@ -226,7 +226,7 @@ pub async fn update_model(
 
 pub async fn delete_model(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i64>,
+    Path(id): Path<i32>,
 ) -> AppResult<Json<serde_json::Value>> {
     sqlx::query(&state.db.format_query("DELETE FROM models WHERE id = ?"))
         .bind(id)

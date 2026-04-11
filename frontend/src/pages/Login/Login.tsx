@@ -21,7 +21,9 @@ const Login: React.FC = () => {
   const { setToken, setUser } = useAuthStore();
 
   const onFinish = async (values: unknown) => {
+    if (loading) return;
     setLoading(true);
+    message.destroy();
     try {
       const response = await axios.post<LoginResponse>('/api/v1/auth/login', values);
       const { token, user } = response.data;
@@ -34,7 +36,7 @@ const Login: React.FC = () => {
       const axiosError = error as AxiosError<{ error: { message: string } }>;
       message.error(axiosError.response?.data?.error?.message || t('common.error'));
     } finally {
-      setLoading(false);
+      setTimeout(() => setLoading(false), 800);
     }
   };
 

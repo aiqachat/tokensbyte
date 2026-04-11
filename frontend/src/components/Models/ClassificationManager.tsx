@@ -79,7 +79,7 @@ const ClassificationManager: React.FC<ClassificationManagerProps> = ({
     try {
       const payload = {
         ...values,
-        is_active: !!values.is_active,
+        is_active: values.is_active ? 1 : 0,
       };
       if (editingItem) {
         await request.put(`${apiPath}/${editingItem.id}`, payload);
