@@ -45,7 +45,7 @@ pub async fn update_profile(
 
     sqlx::query(
         r#"UPDATE users SET email = ?, password_hash = ?, nickname = ?, mobile = ?, 
-           wechat_id = ?, updated_at = datetime('now')
+           wechat_id = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#
     )
     .bind(&user.email)
@@ -84,12 +84,75 @@ pub async fn get_wallet_stats(
     .fetch_one(&state.db.pool)
     .await?;
 
+    // 3. Get affiliate stats
+    let affiliate_stats: (f64, i64) = sqlx::query_as(
+        r#"SELECT 
+            commission_balance,
+            (SELECT COUNT(*) FROM users WHERE referred_by = ?) as total_referred
+           FROM users WHERE id = ?"#
+    )
+    .bind(user_id)
+    .bind(user_id)
+    .fetch_one(&state.db.pool)
+    .await?;
+
     Ok(Json(WalletStats {
         balance,
         total_consumption: stats.0,
         total_calls: stats.1,
         success_calls: stats.2,
+        commission_balance: affiliate_stats.0,
+        total_referred: affiliate_stats.1,
     }))
+}
+
+pub async fn transfer_commission(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let user_id = &claims.sub;
+    
+    let mut tx = state.db.pool.begin().await?;
+
+    // 1. Get current commission balance
+    let commission_balance: f64 = sqlx::query_scalar("SELECT commission_balance FROM users WHERE id = ?")
+        .bind(user_id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    if commission_balance <= 0.0 {
+        return Err(AppError::BadRequest("Commission balance is zero".to_string()));
+    }
+
+    // 2. Update balances
+    sqlx::query(
+        "UPDATE users SET 
+            balance = balance + ?, 
+            commission_balance = 0.0, 
+            updated_at = CURRENT_TIMESTAMP 
+         WHERE id = ?"
+    )
+    .bind(commission_balance)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    // 3. Record recharge
+    sqlx::query(
+        "INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'transfer', ?)"
+    )
+    .bind(user_id)
+    .bind(commission_balance)
+    .bind("Commission Transfer")
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "amount": commission_balance
+    })))
 }
 
 pub async fn list_recharge_records(

@@ -7,6 +7,7 @@ use crate::AppState;
 use crate::models::{User, CreateUserRequest, UpdateUserRequest, UserListResponse, RechargeRequest};
 use crate::error::{AppError, AppResult};
 use crate::auth;
+use sqlx::Any;
 
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
@@ -88,7 +89,7 @@ pub async fn update_user(
     sqlx::query(
         r#"UPDATE users SET username = ?, email = ?, password_hash = ?, 
            nickname = ?, mobile = ?, wechat_id = ?,
-           role = ?, balance = ?, user_group = ?, is_active = ?, updated_at = datetime('now')
+           role = ?, balance = ?, user_group = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#
     )
     .bind(&user.username)
@@ -147,18 +148,23 @@ pub async fn recharge_user(
     let new_balance = user.balance + request.amount;
     let remark = request.remark.unwrap_or_else(|| "Administrator Adjustment".to_string());
 
-    sqlx::query("UPDATE users SET balance = ?, updated_at = datetime('now') WHERE id = ?")
+    sqlx::query("UPDATE users SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(new_balance)
         .bind(&id)
         .execute(&mut *tx)
         .await?;
 
-    sqlx::query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'manual', ?)")
+    let recharge_id: i64 = sqlx::query_scalar::<Any, i64>("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'manual', ?) RETURNING id")
         .bind(&id)
         .bind(request.amount)
         .bind(&remark)
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await?;
+
+    // Award commission if user has inviter
+    if let Err(e) = crate::services::affiliate::award_commission(&mut tx, &id, recharge_id, request.amount).await {
+        tracing::error!("Failed to award commission for recharge {}: {}", recharge_id, e);
+    }
 
     tx.commit().await?;
 

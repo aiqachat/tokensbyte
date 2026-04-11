@@ -12,6 +12,7 @@ interface UserLevel {
   name: String;
   group_key: String;
   discount: number;
+  commission_ratio: number;
   description: String;
   created_at: String;
 }
@@ -106,6 +107,15 @@ const UserLevels: React.FC = () => {
       },
     },
     {
+      title: '返利比例',
+      dataIndex: 'commission_ratio',
+      key: 'commission_ratio',
+      render: (val: number) => {
+        const percent = Math.round((val || 0) * 100);
+        return <Tag color="green">{percent}%</Tag>;
+      },
+    },
+    {
       title: t('user_levels.description'),
       dataIndex: 'description',
       key: 'description',
@@ -174,6 +184,23 @@ const UserLevels: React.FC = () => {
             extra={t('user_levels.discount_hint')}
           >
             <InputNumber style={{ width: '100%' }} min={0.01} max={1} step={0.01} precision={2} />
+          </Form.Item>
+          <Form.Item 
+            name="commission_ratio" 
+            label="返利比例" 
+            initialValue={0.0}
+            rules={[{ required: true }]}
+            extra="邀请的用户充值后，邀请人获得的奖励比例 (0-1)"
+          >
+            <InputNumber 
+              style={{ width: '100%' }} 
+              min={0} 
+              max={1} 
+              step={0.01} 
+              precision={2} 
+              formatter={value => `${Math.round((Number(value) || 0) * 100)}%`}
+              parser={value => (parseFloat(value?.replace('%', '') || '0') / 100) as any}
+            />
           </Form.Item>
           <Form.Item name="description" label={t('user_levels.description')}>
             <Input.TextArea rows={3} />

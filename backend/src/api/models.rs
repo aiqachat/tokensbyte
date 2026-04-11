@@ -212,7 +212,7 @@ pub async fn update_model(
         sqlx::query("UPDATE models SET is_active = ? WHERE id = ?").bind(active).bind(id).execute(&state.db.pool).await?;
     }
 
-    sqlx::query("UPDATE models SET updated_at = datetime('now') WHERE id = ?").bind(id).execute(&state.db.pool).await?;
+    sqlx::query("UPDATE models SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id).execute(&state.db.pool).await?;
 
     let model = sqlx::query_as("SELECT * FROM models WHERE id = ?")
         .bind(id)

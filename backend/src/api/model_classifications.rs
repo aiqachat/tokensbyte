@@ -73,7 +73,7 @@ pub async fn update_provider(
     }
 
     let provider = sqlx::query_as(
-        "UPDATE model_providers SET name = ?, sort_order = ?, is_active = ?, updated_at = datetime('now') WHERE id = ? RETURNING *"
+        "UPDATE model_providers SET name = ?, sort_order = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *"
     )
     .bind(&req.name)
     .bind(req.sort_order)
@@ -164,7 +164,7 @@ pub async fn update_type(
     }
 
     let model_type = sqlx::query_as(
-        "UPDATE model_types SET name = ?, sort_order = ?, is_active = ?, updated_at = datetime('now') WHERE id = ? RETURNING *"
+        "UPDATE model_types SET name = ?, sort_order = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *"
     )
     .bind(&req.name)
     .bind(req.sort_order)

@@ -8,6 +8,7 @@ use crate::auth;
 use crate::models::{Redemption, CreateRedemptionRequest, RedemptionListResponse, RedeemRequest};
 
 use crate::error::{AppResult, AppError};
+use sqlx::Any;
 use rand::{distributions::Alphanumeric, Rng};
 
 /// Admin: List all redemption codes
@@ -111,28 +112,33 @@ pub async fn redeem_code(
     };
 
     // 2. Update user balance
-    sqlx::query("UPDATE users SET balance = balance + ?, updated_at = datetime('now') WHERE id = ?")
+    sqlx::query("UPDATE users SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(redemption.quota)
         .bind(&user_id)
         .execute(&mut *tx)
         .await?;
 
     // 3. Mark code as used
-    sqlx::query("UPDATE redemptions SET is_used = 1, used_at = datetime('now'), used_by = ? WHERE id = ?")
+    sqlx::query("UPDATE redemptions SET is_used = 1, used_at = CURRENT_TIMESTAMP, used_by = ? WHERE id = ?")
         .bind(&user_id)
         .bind(redemption.id)
         .execute(&mut *tx)
         .await?;
 
     // 4. Create recharge record
-    sqlx::query(
-        "INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'redemption', ?)"
+    let recharge_id: i64 = sqlx::query_scalar::<Any, i64>(
+        "INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'redemption', ?) RETURNING id"
     )
     .bind(&user_id)
     .bind(redemption.quota)
     .bind(format!("Redemption: {}", redemption.name))
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
+
+    // Award commission if user has inviter
+    if let Err(e) = crate::services::affiliate::award_commission(&mut tx, &user_id, recharge_id, redemption.quota).await {
+        tracing::error!("Failed to award commission for redemption {}: {}", recharge_id, e);
+    }
 
     tx.commit().await?;
 

@@ -137,7 +137,7 @@ const AdminGroups: React.FC = () => {
           <Form.Item name="description" label="描述">
             <Input.TextArea />
           </Form.Item>
-          <Divider orientation="left">权限配置</Divider>
+          <Divider>权限配置</Divider>
           <Form.Item name="permissions" label="选择可见菜单">
             <Checkbox.Group options={ALL_PERMISSIONS} />
           </Form.Item>

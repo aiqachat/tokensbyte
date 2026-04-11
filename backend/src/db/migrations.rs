@@ -241,6 +241,21 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
         .execute(pool)
         .await?;
 
+    // Commissions table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS commissions (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            from_user_id TEXT NOT NULL REFERENCES users(id),
+            recharge_id INTEGER REFERENCES recharge_records(id),
+            amount DOUBLE PRECISION NOT NULL,
+            ratio DOUBLE PRECISION NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
 }
@@ -261,8 +276,8 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             balance REAL NOT NULL DEFAULT 0.0,
             user_group TEXT NOT NULL DEFAULT 'default',
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
@@ -292,7 +307,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             amount REAL NOT NULL,
             recharge_type TEXT NOT NULL DEFAULT 'other',
             remark TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
@@ -326,8 +341,8 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             balance REAL,
             max_rps INTEGER DEFAULT 0,
             config TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
@@ -349,8 +364,8 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             rpm_limit INTEGER DEFAULT 0,
             expires_at TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
@@ -371,7 +386,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             status_code INTEGER NOT NULL DEFAULT 200,
             endpoint TEXT NOT NULL DEFAULT '',
             error_message TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
@@ -387,8 +402,8 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             is_used INTEGER DEFAULT 0,
             used_at TEXT,
             used_by TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
@@ -412,8 +427,8 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             group_key TEXT NOT NULL UNIQUE,
             discount REAL NOT NULL DEFAULT 1.0,
             description TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
@@ -426,7 +441,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             code TEXT NOT NULL,
             purpose TEXT NOT NULL,
             expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
@@ -439,8 +454,8 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             name TEXT NOT NULL,
             permissions TEXT,
             description TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)

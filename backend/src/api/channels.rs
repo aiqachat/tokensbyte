@@ -77,7 +77,7 @@ pub async fn update_channel(
 
     sqlx::query(
         r#"UPDATE channels SET name = ?, provider_type = ?, base_url = ?, api_key = ?, models = ?, 
-           model_mapping = ?, priority = ?, weight = ?, status = ?, max_rps = ?, config = ?, updated_at = datetime('now')
+           model_mapping = ?, priority = ?, weight = ?, status = ?, max_rps = ?, config = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#
     )
     .bind(&channel.name)

@@ -105,7 +105,7 @@ pub async fn chat_completions(
         let mut tx = state.db.pool.begin().await?;
 
         sqlx::query(
-            "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = datetime('now') WHERE id = ?"
+            "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         )
         .bind(quota_used)
         .bind(token.id)
@@ -113,7 +113,7 @@ pub async fn chat_completions(
         .await?;
 
         sqlx::query(
-            "UPDATE users SET balance = balance - ?, updated_at = datetime('now') WHERE id = ?"
+            "UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         )
         .bind(quota_used)
         .bind(&token.user_id)

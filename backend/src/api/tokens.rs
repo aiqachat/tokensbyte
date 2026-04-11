@@ -93,7 +93,7 @@ pub async fn update_token(
 
     sqlx::query(
         r#"UPDATE api_tokens SET name = ?, quota_limit = ?, allowed_models = ?, allowed_ips = ?, 
-           expires_at = ?, is_active = ?, updated_at = datetime('now')
+           expires_at = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#
     )
     .bind(&token.name)

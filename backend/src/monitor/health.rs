@@ -31,7 +31,7 @@ pub async fn start_health_check(state: Arc<AppState>) {
                 let latency = start.elapsed().as_millis() as i32;
 
                 if let Err(e) = sqlx::query(
-                    "UPDATE channels SET updated_at = datetime('now') WHERE id = ?"
+                    "UPDATE channels SET updated_at = CURRENT_TIMESTAMP WHERE id = ?"
                 )
                 .bind(channel.id)
                 .execute(&state_c.db.pool)

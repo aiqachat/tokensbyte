@@ -20,7 +20,7 @@ impl AppConfig {
                 .parse()
                 .expect("PORT must be a number"),
             database_url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "sqlite:./data/tokensbyte.db?mode=rwc".to_string()),
+                .unwrap_or_else(|_| "postgres://tokensapi:tokensapi@localhost:5432/tokensapi".to_string()),
             jwt_secret: std::env::var("JWT_SECRET")
                 .unwrap_or_else(|_| "tokensbyte-default-secret-change-me".to_string()),
             encryption_key: std::env::var("ENCRYPTION_KEY")

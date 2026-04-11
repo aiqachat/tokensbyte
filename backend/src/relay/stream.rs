@@ -185,10 +185,10 @@ fn create_openai_chunk(text: &str, model: &str) -> StreamChunk {
 async fn record_usage(state: &Arc<AppState>, token: &ApiToken, channel: &Channel, model: &str, prompt: i32, completion: i32, cost: f64) -> AppResult<()> {
     let mut tx = state.db.pool.begin().await?;
 
-    sqlx::query("UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = datetime('now') WHERE id = ?")
+    sqlx::query("UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(cost).bind(token.id).execute(&mut *tx).await?;
 
-    sqlx::query("UPDATE users SET balance = balance - ?, updated_at = datetime('now') WHERE id = ?")
+    sqlx::query("UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(cost).bind(&token.user_id).execute(&mut *tx).await?;
 
     sqlx::query(r#"INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint)

@@ -106,6 +106,8 @@ export interface WalletStats {
   total_consumption: number;
   total_calls: number;
   success_calls: number;
+  commission_balance: number;
+  total_referred: number;
 }
 
 export interface Channel {

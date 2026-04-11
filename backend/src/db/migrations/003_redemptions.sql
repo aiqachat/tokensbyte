@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS redemptions (
     is_used INTEGER DEFAULT 0,
     used_at TEXT,
     used_by TEXT, -- references users.id
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
 CREATE INDEX IF NOT EXISTS idx_redemption_code ON redemptions(code);

@@ -140,6 +140,15 @@ pub async fn register(
 
         let mut tx = state.db.pool.begin().await?;
 
+        let mut referred_by: Option<String> = None;
+        if let Some(ref aff_code) = request.aff {
+            let inviter_id: Option<String> = sqlx::query_scalar("SELECT id FROM users WHERE uid = ?")
+                .bind(aff_code)
+                .fetch_optional(&mut *tx)
+                .await?;
+            referred_by = inviter_id;
+        }
+
         let mut initial_balance = state.config.default_user_quota;
         let mut gift_amount = 0.0;
 
@@ -161,8 +170,8 @@ pub async fn register(
         }
 
         sqlx::query(
-            r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1)"#
+            r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?)"#
         )
         .bind(&user_id)
         .bind(&uid)
@@ -170,6 +179,7 @@ pub async fn register(
         .bind(&request.email)
         .bind(&password_hash)
         .bind(initial_balance)
+        .bind(referred_by)
         .execute(&mut *tx)
         .await?;
 
@@ -281,6 +291,15 @@ pub async fn register_email(
 
         let mut tx = state.db.pool.begin().await?;
 
+        let mut referred_by: Option<String> = None;
+        if let Some(ref aff_code) = request.aff {
+            let inviter_id: Option<String> = sqlx::query_scalar("SELECT id FROM users WHERE uid = ?")
+                .bind(aff_code)
+                .fetch_optional(&mut *tx)
+                .await?;
+            referred_by = inviter_id;
+        }
+
         let mut initial_balance = state.config.default_user_quota;
         let mut gift_amount = 0.0;
 
@@ -302,8 +321,8 @@ pub async fn register_email(
         }
 
         sqlx::query(
-            r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1)"#
+            r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?)"#
         )
         .bind(&user_id)
         .bind(&uid)
@@ -311,6 +330,7 @@ pub async fn register_email(
         .bind(&request.email)
         .bind(&password_hash)
         .bind(initial_balance)
+        .bind(referred_by)
         .execute(&mut *tx)
         .await?;
 
@@ -353,7 +373,7 @@ pub async fn reset_password(
         verify_code(&state, &request.email, &request.code, "reset_password").await?;
 
         let password_hash = auth::hash_password(&request.new_password)?;
-        let result = sqlx::query("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE email = ?")
+        let result = sqlx::query("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?")
             .bind(&password_hash)
             .bind(&request.email)
             .execute(&state.db.pool)

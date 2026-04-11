@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Card, Typography, Space, Tabs, message } from 'antd';
+import { Form, Input, Button, Card, Typography, Space, Tabs, message, Tag } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 
@@ -11,11 +11,20 @@ const { Title, Text } = Typography;
 const Register: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { settings } = useSettingsStore();
   const [loading, setLoading] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [form] = Form.useForm();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const aff = params.get('aff');
+    if (aff) {
+      form.setFieldsValue({ aff });
+    }
+  }, [location, form]);
 
   useEffect(() => {
     // If settings are loaded and all registration is disabled, redirect
@@ -70,12 +79,14 @@ const Register: React.FC = () => {
           email: values.email,
           code: values.code,
           password: values.password,
+          aff: values.aff,
         });
       } else {
         await request.post('/auth/register', {
           username: values.username,
           email: values.email || '',
           password: values.password,
+          aff: values.aff,
         });
       }
       message.success(t('auth.register_success'));
@@ -218,6 +229,22 @@ const Register: React.FC = () => {
             ]}
           >
             <Input.Password prefix={<LockOutlined />} placeholder={t('auth.confirm_password_placeholder')} size="large" />
+          </Form.Item>
+
+          <Form.Item name="aff" noStyle>
+            {({ getFieldValue }) => {
+              const aff = getFieldValue('aff');
+              return aff ? (
+                <div style={{ marginBottom: 16, textAlign: 'center' }}>
+                  <Tag color="gold" icon={<UserOutlined />}>
+                    您由用户 {aff} 邀请
+                  </Tag>
+                </div>
+              ) : null;
+            }}
+          </Form.Item>
+          <Form.Item name="aff" hidden>
+            <Input />
           </Form.Item>
 
           <Form.Item>

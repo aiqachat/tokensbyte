@@ -5,36 +5,9 @@ import { useSearchParams } from 'react-router-dom';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
-interface SiteSettings {
-  name: string;
-  title: string;
-  keywords: string;
-  description: string;
-}
 
-interface CurrencySettings {
-  default_currency: string;
-  currency_symbol: string;
-  currency_unit: string;
-  token_ratio: number;
-}
-
-interface RegistrationSettings {
-  enable_username_registration: boolean;
-  enable_email_registration: boolean;
-  enable_password_recovery: boolean;
-}
-
-interface SMTPSettings {
-  host: string;
-  port: number;
-  username: string;
-  password?: string;
-  from_address: string;
-  from_name: string;
-}
 
 const Settings: React.FC = () => {
   const { t } = useTranslation();

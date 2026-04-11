@@ -9,7 +9,7 @@ import dayjs from 'dayjs';
 const { Title, Text } = Typography;
 
 interface RechargeRecord {
-  id: i64;
+  id: number;
   user_id: string;
   username: string;
   uid: string;

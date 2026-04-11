@@ -27,13 +27,14 @@ pub async fn create_user_level(
     Json(req): Json<CreateUserLevelRequest>,
 ) -> AppResult<Json<UserLevel>> {
     let id = sqlx::query(
-        r#"INSERT INTO user_levels (name, group_key, discount, description)
-           VALUES (?, ?, ?, ?)
+        r#"INSERT INTO user_levels (name, group_key, discount, commission_ratio, description)
+           VALUES (?, ?, ?, ?, ?)
            RETURNING id"#
     )
     .bind(&req.name)
     .bind(&req.group_key)
     .bind(req.discount)
+    .bind(req.commission_ratio.unwrap_or(0.0))
     .bind(req.description.unwrap_or_default())
     .fetch_one(&state.db.pool)
     .await?
@@ -64,8 +65,11 @@ pub async fn update_user_level(
     if let Some(description) = &req.description {
         sqlx::query("UPDATE user_levels SET description = ? WHERE id = ?").bind(description).bind(id).execute(&state.db.pool).await?;
     }
+    if let Some(commission_ratio) = req.commission_ratio {
+        sqlx::query("UPDATE user_levels SET commission_ratio = ? WHERE id = ?").bind(commission_ratio).bind(id).execute(&state.db.pool).await?;
+    }
 
-    sqlx::query("UPDATE user_levels SET updated_at = datetime('now') WHERE id = ?").bind(id).execute(&state.db.pool).await?;
+    sqlx::query("UPDATE user_levels SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id).execute(&state.db.pool).await?;
 
     let level = sqlx::query_as("SELECT * FROM user_levels WHERE id = ?")
         .bind(id)

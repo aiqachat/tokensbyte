@@ -6,6 +6,7 @@ pub struct UserLevel {
     pub name: String,
     pub group_key: String,
     pub discount: f64,
+    pub commission_ratio: f64,
     pub description: String,
     pub created_at: String,
     pub updated_at: String,
@@ -16,6 +17,7 @@ pub struct CreateUserLevelRequest {
     pub name: String,
     pub group_key: String,
     pub discount: f64,
+    pub commission_ratio: Option<f64>,
     pub description: Option<String>,
 }
 
@@ -24,6 +26,7 @@ pub struct UpdateUserLevelRequest {
     pub name: Option<String>,
     pub group_key: Option<String>,
     pub discount: Option<f64>,
+    pub commission_ratio: Option<f64>,
     pub description: Option<String>,
 }
 
