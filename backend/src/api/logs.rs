@@ -18,36 +18,41 @@ pub async fn list_logs(
     let offset = (page - 1) * per_page;
 
     let mut sql = "SELECT * FROM logs WHERE 1=1".to_string();
+    let mut binds: Vec<String> = Vec::new();
+
     if claims.role != "admin" {
-        sql.push_str(" AND user_id = '");
-        sql.push_str(&claims.sub);
-        sql.push_str("'");
+        sql.push_str(" AND user_id = ?");
+        binds.push(claims.sub.clone());
     } else if let Some(ref user_id) = query.user_id {
-        sql.push_str(" AND user_id = '");
-        sql.push_str(user_id);
-        sql.push_str("'");
+        sql.push_str(" AND user_id = ?");
+        binds.push(user_id.clone());
     }
 
     if let Some(ref model) = query.model {
-        sql.push_str(" AND model LIKE '%");
-        sql.push_str(model);
-        sql.push_str("%'");
+        sql.push_str(" AND model LIKE ?");
+        binds.push(format!("%{}%", model));
     }
 
     if let Some(channel_id) = query.channel_id {
-        sql.push_str(&format!(" AND channel_id = {}", channel_id));
+        sql.push_str(" AND channel_id = ?");
+        binds.push(channel_id.to_string());
     }
 
+    let count_sql = sql.replace("SELECT *", "SELECT COUNT(*)");
+    let count_query_str = state.db.format_query(&count_sql);
+    let mut count_q = sqlx::query_scalar::<_, i64>(&count_query_str);
+    for val in &binds {
+        count_q = count_q.bind(val);
+    }
+    let total = count_q.fetch_one(&state.db.pool).await?;
+
     sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {} OFFSET {}", per_page, offset));
-
-    let logs: Vec<RequestLog> = sqlx::query_as(&sql)
-        .fetch_all(&state.db.pool)
-        .await?;
-
-    let count_sql = sql.replace("SELECT *", "SELECT COUNT(*)").split("ORDER BY").next().unwrap().to_string();
-    let total: i64 = sqlx::query_scalar(&count_sql)
-        .fetch_one(&state.db.pool)
-        .await?;
+    let logs_query_str = state.db.format_query(&sql);
+    let mut logs_q = sqlx::query_as::<_, RequestLog>(&logs_query_str);
+    for val in &binds {
+        logs_q = logs_q.bind(val);
+    }
+    let logs = logs_q.fetch_all(&state.db.pool).await?;
 
     Ok(Json(LogListResponse { data: logs, total }))
 }

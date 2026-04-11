@@ -9,7 +9,7 @@ pub async fn start_health_check(state: Arc<AppState>) {
     loop {
         tracing::info!("Starting background health check for all active channels...");
         
-        let channels: Vec<Channel> = match sqlx::query_as("SELECT * FROM channels WHERE status = 1")
+        let channels: Vec<Channel> = match sqlx::query_as(&state.db.format_query("SELECT * FROM channels WHERE status = 1"))
             .fetch_all(&state.db.pool)
             .await {
                 Ok(c) => c,
@@ -31,7 +31,7 @@ pub async fn start_health_check(state: Arc<AppState>) {
                 let latency = start.elapsed().as_millis() as i32;
 
                 if let Err(e) = sqlx::query(
-                    "UPDATE channels SET updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                    &state_c.db.format_query("UPDATE channels SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")
                 )
                 .bind(channel.id)
                 .execute(&state_c.db.pool)

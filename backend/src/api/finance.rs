@@ -61,16 +61,32 @@ pub async fn list_recharges(
     let per_page = query.per_page.unwrap_or(20);
     let offset = (page - 1) * per_page;
 
-    let mut sql = "SELECT rr.*, u.username, u.uid FROM recharge_records rr JOIN users u ON rr.user_id = u.id WHERE 1=1".to_string();
-    if let Some(ref user_id) = query.user_id {
-        sql.push_str(&format!(" AND (rr.user_id = '{}' OR u.uid = '{}' OR u.username LIKE '%{}%')", user_id, user_id, user_id));
+    let mut sql = "SELECT rr.*, u.username, u.uid FROM recharge_records rr JOIN users u ON rr.user_id = u.id".to_string();
+    let mut where_clause = " WHERE 1=1".to_string();
+    let mut bind_val: Option<String> = None;
+
+    if let Some(ref search) = query.user_id {
+        where_clause.push_str(" AND (rr.user_id = ? OR u.uid = ? OR u.username LIKE ?)");
+        bind_val = Some(search.clone());
     }
     
-    let count_sql = sql.replace("SELECT rr.*, u.username, u.uid", "SELECT COUNT(*)");
-    let total: i64 = sqlx::query_scalar(&count_sql).fetch_one(&state.db.pool).await?;
+    sql.push_str(&where_clause);
+    
+    let count_sql = format!("SELECT COUNT(*) FROM recharge_records rr JOIN users u ON rr.user_id = u.id{}", where_clause);
+    let count_query_str = state.db.format_query(&count_sql);
+    let mut count_q = sqlx::query_scalar::<_, i64>(&count_query_str);
+    if let Some(ref val) = bind_val {
+        count_q = count_q.bind(val).bind(val).bind(format!("%{}%", val));
+    }
+    let total = count_q.fetch_one(&state.db.pool).await?;
 
     sql.push_str(&format!(" ORDER BY rr.created_at DESC LIMIT {} OFFSET {}", per_page, offset));
-    let data: Vec<FinanceRechargeRecord> = sqlx::query_as(&sql).fetch_all(&state.db.pool).await?;
+    let formatted_data_sql = state.db.format_query(&sql);
+    let mut data_q = sqlx::query_as::<_, FinanceRechargeRecord>(&formatted_data_sql);
+    if let Some(ref val) = bind_val {
+        data_q = data_q.bind(val).bind(val).bind(format!("%{}%", val));
+    }
+    let data = data_q.fetch_all(&state.db.pool).await?;
 
     Ok(Json(FinanceRechargeResponse { data, total }))
 }
@@ -83,16 +99,31 @@ pub async fn list_orders(
     let per_page = query.per_page.unwrap_or(20);
     let offset = (page - 1) * per_page;
 
-    let mut sql = "SELECT l.*, u.username, u.uid FROM logs l JOIN users u ON l.user_id = u.id WHERE 1=1".to_string();
-    if let Some(ref user_id) = query.user_id {
-        sql.push_str(&format!(" AND (l.user_id = '{}' OR u.uid = '{}' OR u.username LIKE '%{}%')", user_id, user_id, user_id));
+    let mut sql = "SELECT l.*, u.username, u.uid FROM logs l JOIN users u ON l.user_id = u.id".to_string();
+    let mut where_clause = " WHERE 1=1".to_string();
+    let mut bind_val: Option<String> = None;
+
+    if let Some(ref search) = query.user_id {
+        where_clause.push_str(" AND (l.user_id = ? OR u.uid = ? OR u.username LIKE ?)");
+        bind_val = Some(search.clone());
     }
 
-    let count_sql = sql.replace("SELECT l.*, u.username, u.uid", "SELECT COUNT(*)");
-    let total: i64 = sqlx::query_scalar(&count_sql).fetch_one(&state.db.pool).await?;
+    sql.push_str(&where_clause);
+    let count_sql = format!("SELECT COUNT(*) FROM logs l JOIN users u ON l.user_id = u.id{}", where_clause);
+    let count_query_str = state.db.format_query(&count_sql);
+    let mut count_q = sqlx::query_scalar::<_, i64>(&count_query_str);
+    if let Some(ref val) = bind_val {
+        count_q = count_q.bind(val).bind(val).bind(format!("%{}%", val));
+    }
+    let total = count_q.fetch_one(&state.db.pool).await?;
 
     sql.push_str(&format!(" ORDER BY l.created_at DESC LIMIT {} OFFSET {}", per_page, offset));
-    let data: Vec<FinanceOrderRecord> = sqlx::query_as(&sql).fetch_all(&state.db.pool).await?;
+    let formatted_data_sql = state.db.format_query(&sql);
+    let mut data_q = sqlx::query_as::<_, FinanceOrderRecord>(&formatted_data_sql);
+    if let Some(ref val) = bind_val {
+        data_q = data_q.bind(val).bind(val).bind(format!("%{}%", val));
+    }
+    let data = data_q.fetch_all(&state.db.pool).await?;
 
     Ok(Json(FinanceOrderResponse { data, total }))
 }

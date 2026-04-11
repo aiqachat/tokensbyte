@@ -6,6 +6,7 @@ pub struct UserLevel {
     pub name: String,
     pub group_key: String,
     pub discount: f64,
+    #[sqlx(default)]
     pub commission_ratio: f64,
     pub description: String,
     pub created_at: String,

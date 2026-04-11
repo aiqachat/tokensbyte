@@ -28,7 +28,8 @@ pub async fn list_models(
     }
     sql.push_str(" ORDER BY id DESC");
 
-    let mut q = sqlx::query_as::<_, Model>(&sql);
+    let formatted_sql = state.db.format_query(&sql);
+    let mut q = sqlx::query_as::<_, Model>(&formatted_sql);
     if let Some(pid) = query.provider_id {
         q = q.bind(pid);
     }
@@ -47,7 +48,8 @@ pub async fn list_models(
         count_sql.push_str(" AND type_id = ?");
     }
     
-    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
+    let formatted_count_sql = state.db.format_query(&count_sql);
+    let mut cq = sqlx::query_scalar::<_, i64>(&formatted_count_sql);
     if let Some(pid) = query.provider_id {
         cq = cq.bind(pid);
     }
@@ -88,9 +90,9 @@ pub async fn create_model(
     let pricing_tiers = serde_json::to_string(&req.pricing_tiers.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
     
     let id = sqlx::query(
-        r#"INSERT INTO models (name, model_id, provider_id, type_id, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, group_ratios, billing_rule, billing_unit, pricing_tiers, is_active)
+        &state.db.format_query(r#"INSERT INTO models (name, model_id, provider_id, type_id, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, group_ratios, billing_rule, billing_unit, pricing_tiers, is_active)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-           RETURNING id"#
+           RETURNING id"#)
     )
     .bind(&req.name)
     .bind(&req.model_id)

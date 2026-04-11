@@ -54,11 +54,16 @@ impl Database {
             return sql.to_string();
         }
 
+        // Convert SQLite-specific functions and keywords to PostgreSQL
+        let mut sql_new = sql.replace("date('now')", "CURRENT_DATE");
+        sql_new = sql_new.replace("datetime('now')", "CURRENT_TIMESTAMP");
+        sql_new = sql_new.replace(" LIKE ", " ILIKE "); // Case-insensitive matching
+
         // Convert ? to $1, $2, ... for PostgreSQL
-        let mut result = String::with_capacity(sql.len() + 10);
+        let mut result = String::with_capacity(sql_new.len() + 10);
         let mut count = 1;
         
-        for c in sql.chars() {
+        for c in sql_new.chars() {
             if c == '?' {
                 result.push_str(&format!("${}", count));
                 count += 1;
@@ -81,7 +86,7 @@ impl Database {
                 };
                 let uid = format!("{}{:07}", prefix, suffix);
                 
-                let count: i32 = sqlx::query_scalar(&self.format_query("SELECT COUNT(*) FROM users WHERE uid = ?"))
+                let count: i64 = sqlx::query_scalar(&self.format_query("SELECT COUNT(*) FROM users WHERE uid = ?"))
                     .bind(&uid)
                     .fetch_one(&self.pool)
                     .await?;
@@ -97,7 +102,7 @@ impl Database {
 
     pub async fn seed_admin(&self, config: &AppConfig) -> anyhow::Result<()> {
         // Check if admin exists
-        let exists_count: i32 = sqlx::query_scalar(
+        let exists_count: i64 = sqlx::query_scalar(
             &self.format_query("SELECT COUNT(*) FROM users WHERE role = 'admin'")
         )
         .fetch_one(&self.pool)

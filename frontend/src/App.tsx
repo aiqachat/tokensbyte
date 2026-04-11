@@ -81,6 +81,7 @@ const App: React.FC = () => {
           <Route path="logs" element={<Logs />} />
           <Route path="redemptions" element={<Redemptions />} />
           <Route path="users" element={<Users />} />
+          <Route path="admins" element={<Users />} />
           <Route path="user-levels" element={<UserLevels />} />
           <Route path="admin-groups" element={<AdminGroups />} />
           <Route path="finance/recharges" element={<RechargeRecords />} />

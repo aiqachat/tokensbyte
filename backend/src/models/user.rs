@@ -14,12 +14,15 @@ pub struct User {
     pub role: String,
     pub balance: f64,
     pub user_group: String,
+    pub level_name: Option<String>,
+    #[sqlx(default)]
     pub admin_group_id: Option<i64>,
     #[serde(skip_deserializing)]
     #[sqlx(skip)]
     pub permissions: Option<Vec<String>>,
     pub is_active: i64,
     pub referred_by: Option<String>,
+    #[sqlx(default)]
     pub commission_balance: f64,
     pub created_at: String,
     pub updated_at: String,

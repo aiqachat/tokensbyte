@@ -226,7 +226,6 @@ const Settings: React.FC = () => {
             <Form.Item label="数据库类型" name={['database', 'db_type']} rules={[{ required: true }]}>
               <Radio.Group>
                 <Radio.Button value="postgres">PostgreSQL</Radio.Button>
-                <Radio.Button value="sqlite">SQLite (只读)</Radio.Button>
               </Radio.Group>
             </Form.Item>
             <Form.Item label="数据库地址 (Host)" name={['database', 'host']} rules={[{ required: true }]}>

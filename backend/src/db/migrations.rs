@@ -138,6 +138,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             name TEXT NOT NULL,
             group_key TEXT NOT NULL UNIQUE,
             discount DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+            commission_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             description TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
@@ -238,6 +239,11 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
 
     // Add admin_group_id to users table if not exists
     sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_group_id INTEGER")
+        .execute(pool)
+        .await?;
+        
+    // Fix missing column in user_levels if table was already created
+    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS commission_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0")
         .execute(pool)
         .await?;
 

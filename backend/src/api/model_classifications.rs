@@ -41,7 +41,7 @@ pub async fn create_provider(
     }
 
     let provider = sqlx::query_as(
-        "INSERT INTO model_providers (name, sort_order, is_active) VALUES (?, ?, ?) RETURNING *"
+        &state.db.format_query("INSERT INTO model_providers (name, sort_order, is_active) VALUES (?, ?, ?) RETURNING *")
     )
     .bind(&req.name)
     .bind(req.sort_order)
@@ -73,7 +73,7 @@ pub async fn update_provider(
     }
 
     let provider = sqlx::query_as(
-        "UPDATE model_providers SET name = ?, sort_order = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *"
+        &state.db.format_query("UPDATE model_providers SET name = ?, sort_order = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *")
     )
     .bind(&req.name)
     .bind(req.sort_order)
@@ -132,7 +132,7 @@ pub async fn create_type(
     }
 
     let model_type = sqlx::query_as(
-        "INSERT INTO model_types (name, sort_order, is_active) VALUES (?, ?, ?) RETURNING *"
+        &state.db.format_query("INSERT INTO model_types (name, sort_order, is_active) VALUES (?, ?, ?) RETURNING *")
     )
     .bind(&req.name)
     .bind(req.sort_order)
@@ -164,7 +164,7 @@ pub async fn update_type(
     }
 
     let model_type = sqlx::query_as(
-        "UPDATE model_types SET name = ?, sort_order = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *"
+        &state.db.format_query("UPDATE model_types SET name = ?, sort_order = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *")
     )
     .bind(&req.name)
     .bind(req.sort_order)
@@ -199,24 +199,24 @@ pub async fn get_classifications_stats(
 ) -> AppResult<Json<ClassificationsResponse>> {
     // Get providers with model counts
     let providers = sqlx::query_as(
-        r#"SELECT p.id, p.name, COUNT(m.id) as count 
+        &state.db.format_query(r#"SELECT p.id, p.name, COUNT(m.id) as count 
            FROM model_providers p 
            LEFT JOIN models m ON p.id = m.provider_id 
            WHERE p.is_active = 1
-           GROUP BY p.id 
-           ORDER BY p.sort_order ASC, p.id ASC"#
+           GROUP BY p.id, p.name 
+           ORDER BY p.sort_order ASC, p.id ASC"#)
     )
     .fetch_all(&state.db.pool)
     .await?;
 
     // Get types with model counts
     let types = sqlx::query_as(
-        r#"SELECT t.id, t.name, COUNT(m.id) as count 
+        &state.db.format_query(r#"SELECT t.id, t.name, COUNT(m.id) as count 
            FROM model_types t 
            LEFT JOIN models m ON t.id = m.type_id 
            WHERE t.is_active = 1
-           GROUP BY t.id 
-           ORDER BY t.sort_order ASC, t.id ASC"#
+           GROUP BY t.id, t.name 
+           ORDER BY t.sort_order ASC, t.id ASC"#)
     )
     .fetch_all(&state.db.pool)
     .await?;

@@ -184,6 +184,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           label: <Link to="/admin0755/users">{t('menu.user_list')}</Link>,
         },
         {
+          key: '/admin0755/admins',
+          label: <Link to="/admin0755/admins">{t('menu.admin_list')}</Link>,
+        },
+        {
           key: '/admin0755/user-levels',
           label: <Link to="/admin0755/user-levels">{t('menu.user_levels')}</Link>,
         }

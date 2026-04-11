@@ -43,24 +43,24 @@ pub async fn generate_redemptions(
     }
 
     let mut codes = Vec::new();
+    let mut values = Vec::new();
+    let mut query_builder: sqlx::QueryBuilder<'_, sqlx::Any> = sqlx::QueryBuilder::new("INSERT INTO redemptions (name, code, quota) ");
+
     for _ in 0..request.count {
         let code: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(32)
             .map(char::from)
             .collect();
-        
-        sqlx::query(
-            "INSERT INTO redemptions (name, code, quota) VALUES (?, ?, ?)"
-        )
-        .bind(&request.name)
-        .bind(&code)
-        .bind(request.quota)
-        .execute(&state.db.pool)
-        .await?;
-        
-        codes.push(code);
+        codes.push(code.clone());
+        values.push((request.name.clone(), code, request.quota));
     }
+
+    query_builder.push_values(values.iter(), |mut b, (name, code, quota)| {
+        b.push_bind(name).push_bind(code).push_bind(quota);
+    });
+
+    query_builder.build().execute(&state.db.pool).await?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -100,7 +100,7 @@ pub async fn redeem_code(
 
     // 1. Find and lock the code
     let redemption: Option<Redemption> = sqlx::query_as(
-        "SELECT * FROM redemptions WHERE code = ? AND is_used = 0 LIMIT 1"
+        &state.db.format_query("SELECT * FROM redemptions WHERE code = ? AND is_used = 0 LIMIT 1")
     )
     .bind(&request.code)
     .fetch_optional(&mut *tx)
@@ -127,7 +127,7 @@ pub async fn redeem_code(
 
     // 4. Create recharge record
     let recharge_id: i64 = sqlx::query_scalar::<Any, i64>(
-        "INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'redemption', ?) RETURNING id"
+        &state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'redemption', ?) RETURNING id")
     )
     .bind(&user_id)
     .bind(redemption.quota)

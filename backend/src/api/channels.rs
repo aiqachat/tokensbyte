@@ -28,24 +28,43 @@ pub async fn create_channel(
     let mapping_json = serde_json::to_string(&request.model_mapping.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     let config_json = serde_json::to_string(&request.config.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
 
-    sqlx::query(
-        r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, priority, weight, status, max_rps, config)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"#
-    )
-    .bind(&request.name)
-    .bind(&request.provider_type)
-    .bind(&request.base_url)
-    .bind(&request.api_key)
-    .bind(&models_json)
-    .bind(&mapping_json)
-    .bind(request.priority.unwrap_or(0))
-    .bind(request.weight.unwrap_or(1))
-    .bind(request.max_rps.unwrap_or(0))
-    .bind(&config_json)
-    .execute(&state.db.pool)
-    .await?;
+    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, priority, weight, status, max_rps, config)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"#;
 
-    let channel: Channel = sqlx::query_as(&state.db.format_query("SELECT * FROM channels ORDER BY id DESC LIMIT 1"))
+    let id: i64 = if state.db.is_sqlite {
+        let res = sqlx::query(&state.db.format_query(sql))
+            .bind(&request.name)
+            .bind(&request.provider_type)
+            .bind(&request.base_url)
+            .bind(&request.api_key)
+            .bind(&models_json)
+            .bind(&mapping_json)
+            .bind(request.priority.unwrap_or(0))
+            .bind(request.weight.unwrap_or(1))
+            .bind(request.max_rps.unwrap_or(0))
+            .bind(&config_json)
+            .execute(&state.db.pool)
+            .await?;
+        res.last_insert_id().unwrap_or(0) as i64
+    } else {
+        let pg_sql = format!("{} RETURNING id", sql);
+        sqlx::query_scalar::<_, i64>(&state.db.format_query(&pg_sql))
+            .bind(&request.name)
+            .bind(&request.provider_type)
+            .bind(&request.base_url)
+            .bind(&request.api_key)
+            .bind(&models_json)
+            .bind(&mapping_json)
+            .bind(request.priority.unwrap_or(0))
+            .bind(request.weight.unwrap_or(1))
+            .bind(request.max_rps.unwrap_or(0))
+            .bind(&config_json)
+            .fetch_one(&state.db.pool)
+            .await?
+    };
+
+    let channel: Channel = sqlx::query_as(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
+        .bind(id)
         .fetch_one(&state.db.pool)
         .await?;
 
@@ -76,9 +95,9 @@ pub async fn update_channel(
     if let Some(config) = request.config { channel.config = serde_json::to_string(&config).unwrap_or_else(|_| "{}".to_string()); }
 
     sqlx::query(
-        r#"UPDATE channels SET name = ?, provider_type = ?, base_url = ?, api_key = ?, models = ?, 
+        &state.db.format_query(r#"UPDATE channels SET name = ?, provider_type = ?, base_url = ?, api_key = ?, models = ?, 
            model_mapping = ?, priority = ?, weight = ?, status = ?, max_rps = ?, config = ?, updated_at = CURRENT_TIMESTAMP
-           WHERE id = ?"#
+           WHERE id = ?"#)
     )
     .bind(&channel.name)
     .bind(&channel.provider_type)

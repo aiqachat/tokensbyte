@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router-dom';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import type { User } from '../../types';
@@ -12,6 +13,10 @@ const { Option } = Select;
 
 const Users: React.FC = () => {
   const { t } = useTranslation();
+  const location = useLocation();
+  const isAdminPage = location.pathname.includes('/admins');
+  const targetRole = isAdminPage ? 'admin' : 'user';
+  
   const { settings } = useSettingsStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [users, setUsers] = useState<User[]>([]);
@@ -30,7 +35,9 @@ const Users: React.FC = () => {
     setLoading(true);
     try {
       const resp = await (request.get('/users') as unknown as Promise<{ data: User[] }>);
-      setUsers(resp.data);
+      // Filter by role
+      const filteredUsers = resp.data.filter(u => u.role === targetRole);
+      setUsers(filteredUsers);
       
       const levelsResp = await (request.get('/user_levels') as unknown as Promise<{ data: any[] }>);
       setUserLevels(levelsResp.data);
@@ -46,12 +53,13 @@ const Users: React.FC = () => {
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [isAdminPage]);
 
   const handleAdd = () => {
     setEditingUser(null);
-    setSelectedRole('user');
+    setSelectedRole(targetRole);
     form.resetFields();
+    form.setFieldsValue({ role: targetRole, is_active: true, balance: 0, user_group: 'default' });
     setIsModalVisible(true);
   };
 
@@ -149,9 +157,13 @@ const Users: React.FC = () => {
           const adminGroup = adminGroups.find(g => g.id === record.admin_group_id);
           return <Tag color="purple">{adminGroup ? adminGroup.name : '超级管理员'}</Tag>;
         }
+        
+        const level = userLevels.find(l => l.group_key === group);
+        const levelName = level ? level.name : (group || 'default').toUpperCase();
+        
         return (
           <Tag color={group === 'vip' ? 'gold' : group === 'partner' ? 'cyan' : 'default'}>
-            {(group || 'default').toUpperCase()}
+            {levelName}
           </Tag>
         );
       },
@@ -200,7 +212,9 @@ const Users: React.FC = () => {
   return (
     <Card bordered={false}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>{t('users.title')}</Title>
+        <Title level={2} style={{ margin: 0 }}>
+          {isAdminPage ? t('menu.admin_list') : t('menu.user_list')}
+        </Title>
         <Space>
           <Button icon={<SyncOutlined />} onClick={fetchUsers}>{t('common.refresh')}</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('users.add_user')}</Button>
@@ -236,12 +250,19 @@ const Users: React.FC = () => {
           >
             <Input.Password placeholder={t('login.password')} />
           </Form.Item>
-          <Form.Item name="role" label={t('users.role')} initialValue="user">
-            <Select onChange={(val) => setSelectedRole(val)}>
-              <Option value="user">User</Option>
-              <Option value="admin">Admin</Option>
-            </Select>
-          </Form.Item>
+          {!editingUser && (
+             <Form.Item name="role" label={t('users.role')} initialValue={targetRole} hidden>
+                <Input />
+             </Form.Item>
+          )}
+          {editingUser && (
+            <Form.Item name="role" label={t('users.role')}>
+              <Select onChange={(val) => setSelectedRole(val)}>
+                <Option value="user">User</Option>
+                <Option value="admin">Admin</Option>
+              </Select>
+            </Form.Item>
+          )}
           {selectedRole === 'admin' && (
             <Form.Item name="admin_group_id" label="管理员分组" tooltip="未分配则默认为全权限超级管理员">
               <Select placeholder="选择分组" allowClear>

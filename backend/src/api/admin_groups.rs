@@ -39,7 +39,7 @@ pub async fn create_admin_group(
         let permissions_json = serde_json::to_string(&request.permissions.unwrap_or_default())?;
         
         sqlx::query(
-            "INSERT INTO admin_groups (name, permissions, description) VALUES (?, ?, ?)"
+            &state.db.format_query("INSERT INTO admin_groups (name, permissions, description) VALUES (?, ?, ?)")
         )
         .bind(&request.name)
         .bind(permissions_json)

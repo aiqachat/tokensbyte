@@ -81,12 +81,12 @@ pub async fn admin_login(
 
         // Fetch permissions
         let permissions = if let Some(group_id) = user.admin_group_id {
-            let row: Option<(String,)> = sqlx::query_as(&state.db.format_query("SELECT permissions FROM admin_groups WHERE id = ?"))
-                .bind(group_id)
+            let row: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT permissions FROM admin_groups WHERE id = ?"))
+                .bind(group_id as i32)
                 .fetch_optional(&state.db.pool)
                 .await?;
             
-            row.and_then(|(p,)| serde_json::from_str::<Vec<String>>(&p).ok())
+            row.and_then(|p| serde_json::from_str::<Vec<String>>(&p).ok())
                .unwrap_or_default()
         } else {
             // Super Admin - default all permissions
@@ -122,7 +122,7 @@ pub async fn register(
             return Err(AppError::Forbidden("Username registration is disabled".to_string()));
         }
 
-        let exists: i64 = sqlx::query_scalar(
+        let exists: bool = sqlx::query_scalar(
             &state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ? OR email = ?)")
         )
         .bind(&request.username)
@@ -130,8 +130,8 @@ pub async fn register(
         .fetch_one(&state.db.pool)
         .await?;
 
-        if exists != 0 {
-            return Err(AppError::Conflict("User already exists".to_string()));
+        if exists {
+            return Err(AppError::Forbidden("User already exists".to_string()));
         }
 
         let password_hash = auth::hash_password(&request.password)?;
@@ -264,12 +264,12 @@ pub async fn register_email(
 
         verify_code(&state, &request.email, &request.code, "register").await?;
 
-        let exists: i64 = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)"))
+        let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)"))
             .bind(&request.email)
             .fetch_one(&state.db.pool)
             .await?;
         
-        if exists != 0 {
+        if exists {
             return Err(AppError::Conflict("User with this email already exists".to_string()));
         }
 
@@ -277,12 +277,12 @@ pub async fn register_email(
         let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
         let mut username = request.email.split('@').next().unwrap_or("user").to_string();
         
-        let username_exists: i64 = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)"))
+        let username_exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)"))
             .bind(&username)
             .fetch_one(&state.db.pool)
             .await?;
         
-        if username_exists != 0 {
+        if username_exists {
             let suffix: String = (0..4).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
             username = format!("{}_{}", username, suffix);
         }
