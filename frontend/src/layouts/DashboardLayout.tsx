@@ -153,9 +153,23 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
 
     if (hasPermission('models')) {
       menuItems.push({
-        key: '/admin0755/models',
+        key: 'models-management-group',
         icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/admin0755/models">{t('menu.models')}</Link>,
+        label: t('menu.models', '大模型路由管理'),
+        children: [
+          {
+            key: '/admin0755/models',
+            label: <Link to="/admin0755/models">{t('menu.model_list', '模型列表')}</Link>,
+          },
+          {
+            key: '/admin0755/forward-rules',
+            label: <Link to="/admin0755/forward-rules">{t('menu.forward_rules', '转发规则')}</Link>,
+          },
+          {
+            key: '/admin0755/billing-rules',
+            label: <Link to="/admin0755/billing-rules">{t('menu.billing_rules', '计费配置')}</Link>,
+          }
+        ]
       });
     }
 

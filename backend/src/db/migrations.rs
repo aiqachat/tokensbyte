@@ -262,6 +262,72 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    // Forward Rules table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS forward_rules (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            rule_type TEXT NOT NULL,
+            config_json TEXT NOT NULL DEFAULT '{}',
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Alter models to add rule link
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS forward_rule_ids TEXT")
+        .execute(pool)
+        .await?;
+
+    // Seed Forward Rules (PG)
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules").fetch_one(pool).await?;
+    if count == 0 {
+        sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json) VALUES 
+            ('OpenAI 兼容原生通道', 'openai', '标准的按路径透传规则，支持绝大多数兼容站', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}'),
+            ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}'),
+            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}')
+        "#).execute(pool).await?;
+    }
+
+    // Billing Rules table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS billing_rules (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            billing_type TEXT NOT NULL,
+            prompt_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            completion_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            fixed_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            duration_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            billing_rule TEXT NOT NULL DEFAULT 'standard',
+            pricing_tiers TEXT NOT NULL DEFAULT '[]',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Alter models to add billing rule link
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS billing_rule_id INTEGER")
+        .execute(pool)
+        .await?;
+
+    // Seed Billing Rules
+    let bcount: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM billing_rules").fetch_one(pool).await?;
+    if bcount == 0 {
+        sqlx::query(r#"INSERT INTO billing_rules (name, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule) VALUES 
+            ('免费公益模型模板', 'tokens', 0.0, 0.0, 0.0, 0.0, 'standard'),
+            ('标准 1M 万字计费 ($1)', 'tokens', 1.0, 1.0, 0.0, 0.0, 'standard'),
+            ('单次请求扣费 ($0.1)', 'requests', 0.0, 0.0, 0.1, 0.0, 'standard')
+        "#).execute(pool).await?;
+    }
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
 }
@@ -506,6 +572,72 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
         }
     }
     
+    // Forward Rules table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS forward_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            rule_type TEXT NOT NULL,
+            config_json TEXT NOT NULL DEFAULT '{}',
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    let count_frule: i32 = sqlx::query_scalar("SELECT count(*) FROM pragma_table_info('models') WHERE name='forward_rule_ids'").fetch_one(pool).await?;
+    if count_frule == 0 {
+        sqlx::query("ALTER TABLE models ADD COLUMN forward_rule_ids TEXT").execute(pool).await?;
+    }
+
+    // Seed Forward Rules (SQLite)
+    let rule_count: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules").fetch_one(pool).await?;
+    if rule_count == 0 {
+        sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json) VALUES 
+            ('OpenAI 兼容原生通道', 'openai', '标准的按路径透传规则，支持绝大多数兼容站', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}'),
+            ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}'),
+            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}')
+        "#).execute(pool).await?;
+    }
+
+    // Billing Rules table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS billing_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            billing_type TEXT NOT NULL,
+            prompt_rate REAL NOT NULL DEFAULT 0.0,
+            completion_rate REAL NOT NULL DEFAULT 0.0,
+            fixed_rate REAL NOT NULL DEFAULT 0.0,
+            duration_rate REAL NOT NULL DEFAULT 0.0,
+            billing_rule TEXT NOT NULL DEFAULT 'standard',
+            pricing_tiers TEXT NOT NULL DEFAULT '[]',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    let count_brule: i32 = sqlx::query_scalar("SELECT count(*) FROM pragma_table_info('models') WHERE name='billing_rule_id'").fetch_one(pool).await?;
+    if count_brule == 0 {
+        sqlx::query("ALTER TABLE models ADD COLUMN billing_rule_id INTEGER").execute(pool).await?;
+    }
+
+    // Seed Billing Rules
+    let brule_count: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM billing_rules").fetch_one(pool).await?;
+    if brule_count == 0 {
+        sqlx::query(r#"INSERT INTO billing_rules (name, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule) VALUES 
+            ('免费公益模型模板', 'tokens', 0.0, 0.0, 0.0, 0.0, 'standard'),
+            ('标准 1M 万字计费 ($1)', 'tokens', 1.0, 1.0, 0.0, 0.0, 'standard'),
+            ('单次请求扣费 ($0.1)', 'requests', 0.0, 0.0, 0.1, 0.0, 'standard')
+        "#).execute(pool).await?;
+    }
+
     Ok(())
 }
 
@@ -749,6 +881,72 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
     sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_group_id INTEGER")
         .execute(pool)
         .await?;
+
+    // Forward Rules table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS forward_rules (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            rule_type TEXT NOT NULL,
+            config_json TEXT NOT NULL DEFAULT '{}',
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Alter models to add rule link
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS forward_rule_ids TEXT")
+        .execute(pool)
+        .await?;
+
+    // Seed Forward Rules (PG Standard)
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules").fetch_one(pool).await?;
+    if count == 0 {
+        sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json) VALUES 
+            ('OpenAI 兼容原生通道', 'openai', '标准的按路径透传规则，支持绝大多数兼容站', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}'),
+            ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}'),
+            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}')
+        "#).execute(pool).await?;
+    }
+
+    // Billing Rules table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS billing_rules (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            billing_type TEXT NOT NULL,
+            prompt_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            completion_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            fixed_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            duration_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            billing_rule TEXT NOT NULL DEFAULT 'standard',
+            pricing_tiers TEXT NOT NULL DEFAULT '[]',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Alter models to add billing rule link
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS billing_rule_id INTEGER")
+        .execute(pool)
+        .await?;
+
+    // Seed Billing Rules (PG Standard)
+    let bcount: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM billing_rules").fetch_one(pool).await?;
+    if bcount == 0 {
+        sqlx::query(r#"INSERT INTO billing_rules (name, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule) VALUES 
+            ('免费公益模型模板', 'tokens', 0.0, 0.0, 0.0, 0.0, 'standard'),
+            ('标准 1M 万字计费 ($1)', 'tokens', 1.0, 1.0, 0.0, 0.0, 'standard'),
+            ('单次请求扣费 ($0.1)', 'requests', 0.0, 0.0, 0.1, 0.0, 'standard')
+        "#).execute(pool).await?;
+    }
 
     tracing::info!("PostgreSQL database migrations completed successfully");
     Ok(())

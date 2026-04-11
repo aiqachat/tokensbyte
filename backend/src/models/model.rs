@@ -16,9 +16,54 @@ pub struct Model {
     pub billing_rule: String, // standard, tiered
     pub billing_unit: String, // 1k, 1M
     pub pricing_tiers: String, // JSON array of tiers
+    pub billing_rule_id: Option<i32>,
+    pub is_active: i32,
+    pub forward_rule_ids: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct BillingRule {
+    pub id: i32,
+    pub name: String,
+    pub billing_type: String,
+    pub prompt_rate: f64,
+    pub completion_rate: f64,
+    pub fixed_rate: f64,
+    pub duration_rate: f64,
+    pub billing_rule: String,
+    pub pricing_tiers: String,
     pub is_active: i32,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateBillingRuleRequest {
+    pub name: String,
+    pub billing_type: String,
+    pub prompt_rate: f64,
+    pub completion_rate: f64,
+    pub fixed_rate: f64,
+    pub duration_rate: f64,
+    pub billing_rule: String,
+    pub pricing_tiers: Option<Vec<PricingTier>>,
+    #[serde(default = "default_active")]
+    pub is_active: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateBillingRuleRequest {
+    pub name: Option<String>,
+    pub billing_type: Option<String>,
+    pub prompt_rate: Option<f64>,
+    pub completion_rate: Option<f64>,
+    pub fixed_rate: Option<f64>,
+    pub duration_rate: Option<f64>,
+    pub billing_rule: Option<String>,
+    pub pricing_tiers: Option<Vec<PricingTier>>,
+    pub is_active: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +72,39 @@ pub struct PricingTier {
     pub prompt_rate: f64,
     pub completion_rate: f64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ForwardRule {
+    pub id: i32,
+    pub name: String,
+    pub rule_type: String,
+    pub config_json: String,
+    pub description: Option<String>,
+    pub is_active: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateRuleRequest {
+    pub name: String,
+    pub rule_type: String,
+    pub config_json: Option<String>,
+    pub description: Option<String>,
+    #[serde(default = "default_active")]
+    pub is_active: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateRuleRequest {
+    pub name: Option<String>,
+    pub rule_type: Option<String>,
+    pub config_json: Option<String>,
+    pub description: Option<String>,
+    pub is_active: Option<i32>,
+}
+
+pub fn default_active() -> i32 { 1 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ModelProvider {
@@ -78,20 +156,10 @@ pub struct CreateModelRequest {
     pub model_id: String,
     pub provider_id: Option<i32>,
     pub type_id: Option<i32>,
-    pub billing_type: String,
-    #[serde(default)]
-    pub prompt_rate: f64,
-    #[serde(default)]
-    pub completion_rate: f64,
-    #[serde(default)]
-    pub fixed_rate: f64,
-    #[serde(default)]
-    pub duration_rate: f64,
-    #[serde(default)]
-    pub group_ratios: Option<std::collections::HashMap<String, f64>>,
-    pub billing_rule: Option<String>,
+    pub group_ratios: Option<serde_json::Value>,
     pub billing_unit: Option<String>,
-    pub pricing_tiers: Option<Vec<PricingTier>>,
+    pub billing_rule_id: Option<i32>,
+    pub forward_rule_ids: Option<Vec<i32>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,16 +168,11 @@ pub struct UpdateModelRequest {
     pub model_id: Option<String>,
     pub provider_id: Option<i32>,
     pub type_id: Option<i32>,
-    pub billing_type: Option<String>,
-    pub prompt_rate: Option<f64>,
-    pub completion_rate: Option<f64>,
-    pub fixed_rate: Option<f64>,
-    pub duration_rate: Option<f64>,
-    pub group_ratios: Option<std::collections::HashMap<String, f64>>,
-    pub billing_rule: Option<String>,
+    pub group_ratios: Option<serde_json::Value>,
     pub billing_unit: Option<String>,
-    pub pricing_tiers: Option<Vec<PricingTier>>,
+    pub billing_rule_id: Option<i32>,
     pub is_active: Option<i32>,
+    pub forward_rule_ids: Option<Vec<i32>>,
 }
 
 #[derive(Debug, Serialize)]

@@ -21,6 +21,8 @@ pub mod user_levels;
 pub mod users;
 pub mod finance;
 pub mod admin_groups;
+pub mod forward_rules;
+pub mod billing_rules;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
@@ -51,6 +53,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/finance/recharges", get(finance::list_recharges))
         .route("/admin_groups", get(admin_groups::list_admin_groups).post(admin_groups::create_admin_group))
         .route("/admin_groups/{id}", put(admin_groups::update_admin_group).delete(admin_groups::delete_admin_group))
+        .route("/forward-rules", get(forward_rules::list_rules).post(forward_rules::create_rule))
+        .route("/forward-rules/{id}", put(forward_rules::update_rule).delete(forward_rules::delete_rule))
+        .route("/billing-rules", get(billing_rules::list_rules).post(billing_rules::create_rule))
+        .route("/billing-rules/{id}", put(billing_rules::update_rule).delete(billing_rules::delete_rule))
         .layer(axum_middleware::from_fn(admin_middleware))
         .with_state(state.clone());
 

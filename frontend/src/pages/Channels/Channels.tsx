@@ -83,10 +83,11 @@ const Channels: React.FC = () => {
     }
   };
 
-  const handleSave = async (values: { models: string[]; model_mapping?: string; [key: string]: unknown }) => {
+  const handleSave = async (values: { models: string[]; model_mapping?: string; provider_type?: string; [key: string]: unknown }) => {
     const data = {
       ...values,
-      model_mapping: values.model_mapping ? JSON.parse(values.model_mapping) : {},
+      provider_type: 'custom',
+      model_mapping: {},
     };
 
     try {
@@ -115,7 +116,7 @@ const Channels: React.FC = () => {
       title: t('channels.type'),
       dataIndex: 'provider_type',
       key: 'provider_type',
-      render: (type: string) => <Tag color="purple">{type}</Tag>,
+      render: (type: string) => <Tag color="purple">通用接口池</Tag>,
     },
     {
       title: t('channels.base_url'),
@@ -176,20 +177,9 @@ const Channels: React.FC = () => {
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={24}>
               <Form.Item name="name" label={t('channels.name')} rules={[{ required: true }]}>
                 <Input placeholder="e.g. OpenAI Primary" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="provider_type" label={t('channels.type')} rules={[{ required: true }]}>
-                <Select placeholder="Select Provider">
-                  <Option value="openai">OpenAI</Option>
-                  <Option value="anthropic">Anthropic</Option>
-                  <Option value="google">Google Gemini</Option>
-                  <Option value="azure">Azure OpenAI</Option>
-                  <Option value="custom">Custom (OpenAI Compatible)</Option>
-                </Select>
               </Form.Item>
             </Col>
           </Row>
@@ -208,10 +198,6 @@ const Channels: React.FC = () => {
                     <Option key={m.model_id} value={m.model_id}>{m.name} ({m.model_id})</Option>
                 ))}
             </Select>
-          </Form.Item>
-
-          <Form.Item name="model_mapping" label="Model Mapping (JSON, optional)">
-            <Input.TextArea rows={4} placeholder='{"gpt-4": "gpt-4-0613"}' />
           </Form.Item>
 
           <Row gutter={16}>

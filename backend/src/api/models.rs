@@ -85,28 +85,29 @@ pub async fn create_model(
     }
 
     let group_ratios = serde_json::to_string(&req.group_ratios.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
-    let billing_rule = req.billing_rule.unwrap_or_else(|| "standard".to_string());
     let billing_unit = req.billing_unit.unwrap_or_else(|| "1k".to_string());
-    let pricing_tiers = serde_json::to_string(&req.pricing_tiers.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
+    let forward_rule_ids = req.forward_rule_ids.map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "[]".to_string()));
     
     let id_i32 = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO models (name, model_id, provider_id, type_id, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, group_ratios, billing_rule, billing_unit, pricing_tiers, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        &state.db.format_query(r#"INSERT INTO models (name, model_id, provider_id, type_id, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, group_ratios, billing_rule, billing_unit, pricing_tiers, forward_rule_ids, billing_rule_id, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
            RETURNING id"#)
     )
     .bind(&req.name)
     .bind(&req.model_id)
     .bind(req.provider_id)
     .bind(req.type_id)
-    .bind(&req.billing_type)
-    .bind(req.prompt_rate)
-    .bind(req.completion_rate)
-    .bind(req.fixed_rate)
-    .bind(req.duration_rate)
+    .bind("tokens") // legacy dummy value
+    .bind(0.0) // legacy dummy value
+    .bind(0.0) // legacy dummy value
+    .bind(0.0) // legacy dummy value
+    .bind(0.0) // legacy dummy value
     .bind(&group_ratios)
-    .bind(&billing_rule)
+    .bind("standard") // legacy dummy value
     .bind(&billing_unit)
-    .bind(&pricing_tiers)
+    .bind("[]") // legacy dummy value
+    .bind(forward_rule_ids)
+    .bind(req.billing_rule_id)
     .fetch_one(&state.db.pool)
     .await?
     .get::<i32, _>("id");
@@ -181,34 +182,12 @@ pub async fn update_model(
     if let Some(tid) = req.type_id {
         sqlx::query(&state.db.format_query("UPDATE models SET type_id = ? WHERE id = ?")).bind(tid).bind(id).execute(&state.db.pool).await?;
     }
-    if let Some(bt) = &req.billing_type {
-        sqlx::query(&state.db.format_query("UPDATE models SET billing_type = ? WHERE id = ?")).bind(bt).bind(id).execute(&state.db.pool).await?;
+    if let Some(rule_id) = req.billing_rule_id {
+        sqlx::query(&state.db.format_query("UPDATE models SET billing_rule_id = ? WHERE id = ?")).bind(rule_id).bind(id).execute(&state.db.pool).await?;
     }
-    if let Some(pr) = req.prompt_rate {
-        sqlx::query(&state.db.format_query("UPDATE models SET prompt_rate = ? WHERE id = ?")).bind(pr).bind(id).execute(&state.db.pool).await?;
-    }
-    if let Some(cr) = req.completion_rate {
-        sqlx::query(&state.db.format_query("UPDATE models SET completion_rate = ? WHERE id = ?")).bind(cr).bind(id).execute(&state.db.pool).await?;
-    }
-    if let Some(fr) = req.fixed_rate {
-        sqlx::query(&state.db.format_query("UPDATE models SET fixed_rate = ? WHERE id = ?")).bind(fr).bind(id).execute(&state.db.pool).await?;
-    }
-    if let Some(dr) = req.duration_rate {
-        sqlx::query(&state.db.format_query("UPDATE models SET duration_rate = ? WHERE id = ?")).bind(dr).bind(id).execute(&state.db.pool).await?;
-    }
-    if let Some(gr) = &req.group_ratios {
-        let gr_str = serde_json::to_string(gr).unwrap_or_else(|_| "{}".to_string());
-        sqlx::query(&state.db.format_query("UPDATE models SET group_ratios = ? WHERE id = ?")).bind(&gr_str).bind(id).execute(&state.db.pool).await?;
-    }
-    if let Some(rule) = &req.billing_rule {
-        sqlx::query(&state.db.format_query("UPDATE models SET billing_rule = ? WHERE id = ?")).bind(rule).bind(id).execute(&state.db.pool).await?;
-    }
-    if let Some(unit) = &req.billing_unit {
-        sqlx::query(&state.db.format_query("UPDATE models SET billing_unit = ? WHERE id = ?")).bind(unit).bind(id).execute(&state.db.pool).await?;
-    }
-    if let Some(tiers) = &req.pricing_tiers {
-        let tiers_str = serde_json::to_string(tiers).unwrap_or_else(|_| "[]".to_string());
-        sqlx::query(&state.db.format_query("UPDATE models SET pricing_tiers = ? WHERE id = ?")).bind(&tiers_str).bind(id).execute(&state.db.pool).await?;
+    if let Some(rules) = &req.forward_rule_ids {
+        let rules_str = serde_json::to_string(rules).unwrap_or_else(|_| "[]".to_string());
+        sqlx::query(&state.db.format_query("UPDATE models SET forward_rule_ids = ? WHERE id = ?")).bind(&rules_str).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(active) = req.is_active {
         sqlx::query(&state.db.format_query("UPDATE models SET is_active = ? WHERE id = ?")).bind(active).bind(id).execute(&state.db.pool).await?;

@@ -8,6 +8,8 @@ import DashboardLayout from './layouts/DashboardLayout';
 import Dashboard from './pages/Dashboard/Dashboard';
 import Channels from './pages/Channels/Channels';
 import Models from './pages/Models/Models';
+import ForwardRules from './pages/Models/ForwardRules';
+import BillingRules from './pages/Models/BillingRules';
 import Tokens from './pages/Tokens/Tokens';
 
 import Users from './pages/Users/Users';
@@ -76,6 +78,8 @@ const App: React.FC = () => {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="channels" element={<Channels />} />
           <Route path="models" element={<Models />} />
+          <Route path="forward-rules" element={<ForwardRules />} />
+          <Route path="billing-rules" element={<BillingRules />} />
           <Route path="tokens" element={<Tokens />} />
 
           <Route path="logs" element={<Logs />} />
