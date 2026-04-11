@@ -14,6 +14,7 @@ pub struct User {
     pub role: String,
     pub balance: f64,
     pub user_group: String,
+    #[sqlx(default)]
     pub level_name: Option<String>,
     #[sqlx(default)]
     pub admin_group_id: Option<i64>,
