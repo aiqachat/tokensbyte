@@ -38,7 +38,7 @@ pub async fn auth_middleware(
 
     // Verify user still exists and is active
     let is_active: Result<Option<i64>, sqlx::Error> = sqlx::query_scalar(
-        "SELECT is_active FROM users WHERE id = ?"
+        &state.db.format_query("SELECT is_active FROM users WHERE id = ?")
     )
     .bind(&claims.sub)
     .fetch_optional(&state.db.pool)
@@ -91,7 +91,7 @@ pub async fn api_key_middleware(
 
     // Look up the API token
     let token: crate::models::ApiToken = match sqlx::query_as::<sqlx::Any, crate::models::ApiToken>(
-        "SELECT * FROM api_tokens WHERE token_key = ?"
+        &state.db.format_query("SELECT * FROM api_tokens WHERE token_key = ?")
     )
     .bind(api_key)
     .fetch_optional(&state.db.pool)

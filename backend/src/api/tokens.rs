@@ -13,7 +13,7 @@ pub async fn list_tokens(
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<TokenListResponse>> {
     let tokens: Vec<ApiToken> = sqlx::query_as(
-        "SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC"
+        &state.db.format_query("SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC")
     )
     .bind(&claims.sub)
     .fetch_all(&state.db.pool)
@@ -27,7 +27,7 @@ pub async fn list_all_tokens(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<TokenListResponse>> {
     let tokens: Vec<ApiToken> = sqlx::query_as(
-        "SELECT * FROM api_tokens ORDER BY created_at DESC"
+        &state.db.format_query("SELECT * FROM api_tokens ORDER BY created_at DESC")
     )
     .fetch_all(&state.db.pool)
     .await?;
@@ -44,22 +44,36 @@ pub async fn create_token(
     let token_key = auth::generate_api_key();
     let models_json = serde_json::to_string(&request.allowed_models.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
 
-    let res = sqlx::query(
-        r#"INSERT INTO api_tokens (user_id, token_key, name, quota_limit, allowed_models, allowed_ips, expires_at, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1)"#
-    )
-    .bind(&claims.sub)
-    .bind(&token_key)
-    .bind(request.name.unwrap_or_else(|| "default".to_string()))
-    .bind(request.quota_limit.unwrap_or(-1.0))
-    .bind(&models_json)
-    .bind(request.allowed_ips.unwrap_or_default())
-    .bind(&request.expires_at)
-    .execute(&state.db.pool)
-    .await?;
+    let sql = r#"INSERT INTO api_tokens (user_id, token_key, name, quota_limit, allowed_models, allowed_ips, expires_at, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1)"#;
 
-    let last_id = res.last_insert_id().unwrap_or(0);
-    let token: ApiToken = sqlx::query_as("SELECT * FROM api_tokens WHERE id = ?")
+    let last_id: i64 = if state.db.is_sqlite {
+        let res = sqlx::query(&state.db.format_query(sql))
+            .bind(&claims.sub)
+            .bind(&token_key)
+            .bind(request.name.unwrap_or_else(|| "default".to_string()))
+            .bind(request.quota_limit.unwrap_or(-1.0))
+            .bind(&models_json)
+            .bind(request.allowed_ips.unwrap_or_default())
+            .bind(&request.expires_at)
+            .execute(&state.db.pool)
+            .await?;
+        res.last_insert_id().unwrap_or(0) as i64
+    } else {
+        let sql_pg = format!("{} RETURNING id", sql);
+        sqlx::query_scalar::<_, i64>(&state.db.format_query(&sql_pg))
+            .bind(&claims.sub)
+            .bind(&token_key)
+            .bind(request.name.unwrap_or_else(|| "default".to_string()))
+            .bind(request.quota_limit.unwrap_or(-1.0))
+            .bind(&models_json)
+            .bind(request.allowed_ips.unwrap_or_default())
+            .bind(&request.expires_at)
+            .fetch_one(&state.db.pool)
+            .await?
+    };
+
+    let token: ApiToken = sqlx::query_as(&state.db.format_query("SELECT * FROM api_tokens WHERE id = ?"))
         .bind(last_id)
         .fetch_one(&state.db.pool)
         .await?;
@@ -74,7 +88,7 @@ pub async fn update_token(
     Json(request): Json<UpdateTokenRequest>,
 ) -> AppResult<Json<ApiToken>> {
     // Verify ownership or admin
-    let mut token: ApiToken = sqlx::query_as("SELECT * FROM api_tokens WHERE id = ?")
+    let mut token: ApiToken = sqlx::query_as(&state.db.format_query("SELECT * FROM api_tokens WHERE id = ?"))
         .bind(id)
         .fetch_optional(&state.db.pool)
         .await?
@@ -92,9 +106,9 @@ pub async fn update_token(
     if let Some(active) = request.is_active { token.is_active = active; }
 
     sqlx::query(
-        r#"UPDATE api_tokens SET name = ?, quota_limit = ?, allowed_models = ?, allowed_ips = ?, 
+        &state.db.format_query(r#"UPDATE api_tokens SET name = ?, quota_limit = ?, allowed_models = ?, allowed_ips = ?, 
            expires_at = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
-           WHERE id = ?"#
+           WHERE id = ?"#)
     )
     .bind(&token.name)
     .bind(token.quota_limit)
@@ -115,7 +129,7 @@ pub async fn delete_token(
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     // Check ownership
-    let token_user_id: String = sqlx::query_scalar("SELECT user_id FROM api_tokens WHERE id = ?")
+    let token_user_id: String = sqlx::query_scalar(&state.db.format_query("SELECT user_id FROM api_tokens WHERE id = ?"))
         .bind(id)
         .fetch_optional(&state.db.pool)
         .await?
@@ -125,7 +139,7 @@ pub async fn delete_token(
         return Err(AppError::Forbidden("Unauthorized access".to_string()));
     }
 
-    sqlx::query("DELETE FROM api_tokens WHERE id = ?").bind(id).execute(&state.db.pool).await?;
+    sqlx::query(&state.db.format_query("DELETE FROM api_tokens WHERE id = ?")).bind(id).execute(&state.db.pool).await?;
 
     Ok(Json(serde_json::json!({ "success": true })))
 }

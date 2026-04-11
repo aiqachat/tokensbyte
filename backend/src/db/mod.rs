@@ -49,6 +49,26 @@ impl Database {
         }
     }
 
+    pub fn format_query(&self, sql: &str) -> String {
+        if self.is_sqlite {
+            return sql.to_string();
+        }
+
+        // Convert ? to $1, $2, ... for PostgreSQL
+        let mut result = String::with_capacity(sql.len() + 10);
+        let mut count = 1;
+        
+        for c in sql.chars() {
+            if c == '?' {
+                result.push_str(&format!("${}", count));
+                count += 1;
+            } else {
+                result.push(c);
+            }
+        }
+        result
+    }
+
     pub async fn generate_unique_uid(&self) -> anyhow::Result<String> {
         use rand::Rng;
         let mut prefix = 100;
@@ -61,7 +81,7 @@ impl Database {
                 };
                 let uid = format!("{}{:07}", prefix, suffix);
                 
-                let count: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE uid = ?")
+                let count: i32 = sqlx::query_scalar(&self.format_query("SELECT COUNT(*) FROM users WHERE uid = ?"))
                     .bind(&uid)
                     .fetch_one(&self.pool)
                     .await?;
@@ -78,7 +98,7 @@ impl Database {
     pub async fn seed_admin(&self, config: &AppConfig) -> anyhow::Result<()> {
         // Check if admin exists
         let exists_count: i32 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM users WHERE role = 'admin'"
+            &self.format_query("SELECT COUNT(*) FROM users WHERE role = 'admin'")
         )
         .fetch_one(&self.pool)
         .await?;
@@ -91,8 +111,8 @@ impl Database {
             let now = chrono::Local::now().to_rfc3339();
             
             sqlx::query(
-                r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, user_group, is_active, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, 'admin', 100.0, 'default', 1, ?, ?)"#
+                &self.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, user_group, is_active, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 'admin', 100.0, 'default', 1, ?, ?)"#)
             )
             .bind(&id)
             .bind(&uid)

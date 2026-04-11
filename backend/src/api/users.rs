@@ -12,7 +12,7 @@ use sqlx::Any;
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<UserListResponse>> {
-    let users: Vec<User> = sqlx::query_as("SELECT * FROM users ORDER BY created_at DESC")
+    let users: Vec<User> = sqlx::query_as(&state.db.format_query("SELECT * FROM users ORDER BY created_at DESC"))
         .fetch_all(&state.db.pool)
         .await?;
 
@@ -52,7 +52,7 @@ pub async fn create_user(
     .execute(&state.db.pool)
     .await?;
 
-    let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+    let user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
         .bind(&user_id)
         .fetch_one(&state.db.pool)
         .await?;
@@ -65,7 +65,7 @@ pub async fn update_user(
     Path(id): Path<String>,
     Json(request): Json<UpdateUserRequest>,
 ) -> AppResult<Json<User>> {
-    let mut user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+    let mut user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
         .bind(&id)
         .fetch_optional(&state.db.pool)
         .await?
@@ -128,7 +128,7 @@ pub async fn delete_user(
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
     // Prevent self-deletion if needed (optional)
-    sqlx::query("DELETE FROM users WHERE id = ?").bind(id).execute(&state.db.pool).await?;
+    sqlx::query(&state.db.format_query("DELETE FROM users WHERE id = ?")).bind(id).execute(&state.db.pool).await?;
 
     Ok(Json(serde_json::json!({ "success": true })))
 }
@@ -139,7 +139,7 @@ pub async fn recharge_user(
 ) -> AppResult<Json<User>> {
     let mut tx = state.db.pool.begin().await?;
 
-    let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+    let user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
         .bind(&id)
         .fetch_optional(&mut *tx)
         .await?
@@ -148,7 +148,7 @@ pub async fn recharge_user(
     let new_balance = user.balance + request.amount;
     let remark = request.remark.unwrap_or_else(|| "Administrator Adjustment".to_string());
 
-    sqlx::query("UPDATE users SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    sqlx::query(&state.db.format_query("UPDATE users SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
         .bind(new_balance)
         .bind(&id)
         .execute(&mut *tx)
@@ -162,13 +162,13 @@ pub async fn recharge_user(
         .await?;
 
     // Award commission if user has inviter
-    if let Err(e) = crate::services::affiliate::award_commission(&mut tx, &id, recharge_id, request.amount).await {
+    if let Err(e) = crate::services::affiliate::award_commission(&state.db, &mut tx, &id, recharge_id, request.amount).await {
         tracing::error!("Failed to award commission for recharge {}: {}", recharge_id, e);
     }
 
     tx.commit().await?;
 
-    let updated_user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+    let updated_user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
         .bind(&id)
         .fetch_one(&state.db.pool)
         .await?;

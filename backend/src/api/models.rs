@@ -72,7 +72,7 @@ pub async fn create_model(
     }
 
     // Check for duplicate name or model_id
-    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM models WHERE name = ? OR model_id = ?")
+    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE name = ? OR model_id = ?"))
         .bind(&req.name)
         .bind(&req.model_id)
         .fetch_optional(&state.db.pool)
@@ -109,7 +109,7 @@ pub async fn create_model(
     .await?
     .get::<i64, _>("id");
 
-    let model = sqlx::query_as("SELECT * FROM models WHERE id = ?")
+    let model = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.db.pool)
         .await?;
@@ -138,7 +138,7 @@ pub async fn update_model(
 
     // Check for duplicate name or model_id (collision with OTHER models)
     if let (Some(name), Some(mid)) = (&req.name, &req.model_id) {
-        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM models WHERE (name = ? OR model_id = ?) AND id != ?")
+        let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE (name = ? OR model_id = ?) AND id != ?"))
             .bind(name)
             .bind(mid)
             .bind(id)
@@ -148,7 +148,7 @@ pub async fn update_model(
             return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
         }
     } else if let Some(name) = &req.name {
-        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM models WHERE name = ? AND id != ?")
+        let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE name = ? AND id != ?"))
             .bind(name)
             .bind(id)
             .fetch_optional(&state.db.pool)
@@ -157,7 +157,7 @@ pub async fn update_model(
             return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
         }
     } else if let Some(mid) = &req.model_id {
-        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM models WHERE model_id = ? AND id != ?")
+        let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE model_id = ? AND id != ?"))
             .bind(mid)
             .bind(id)
             .fetch_optional(&state.db.pool)
@@ -168,53 +168,53 @@ pub async fn update_model(
     }
 
     if let Some(name) = &req.name {
-        sqlx::query("UPDATE models SET name = ? WHERE id = ?").bind(name).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET name = ? WHERE id = ?")).bind(name).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(model_id) = &req.model_id {
-        sqlx::query("UPDATE models SET model_id = ? WHERE id = ?").bind(model_id).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET model_id = ? WHERE id = ?")).bind(model_id).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(pid) = req.provider_id {
-        sqlx::query("UPDATE models SET provider_id = ? WHERE id = ?").bind(pid).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET provider_id = ? WHERE id = ?")).bind(pid).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(tid) = req.type_id {
-        sqlx::query("UPDATE models SET type_id = ? WHERE id = ?").bind(tid).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET type_id = ? WHERE id = ?")).bind(tid).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(bt) = &req.billing_type {
-        sqlx::query("UPDATE models SET billing_type = ? WHERE id = ?").bind(bt).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET billing_type = ? WHERE id = ?")).bind(bt).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(pr) = req.prompt_rate {
-        sqlx::query("UPDATE models SET prompt_rate = ? WHERE id = ?").bind(pr).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET prompt_rate = ? WHERE id = ?")).bind(pr).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(cr) = req.completion_rate {
-        sqlx::query("UPDATE models SET completion_rate = ? WHERE id = ?").bind(cr).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET completion_rate = ? WHERE id = ?")).bind(cr).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(fr) = req.fixed_rate {
-        sqlx::query("UPDATE models SET fixed_rate = ? WHERE id = ?").bind(fr).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET fixed_rate = ? WHERE id = ?")).bind(fr).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(dr) = req.duration_rate {
-        sqlx::query("UPDATE models SET duration_rate = ? WHERE id = ?").bind(dr).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET duration_rate = ? WHERE id = ?")).bind(dr).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(gr) = &req.group_ratios {
         let gr_str = serde_json::to_string(gr).unwrap_or_else(|_| "{}".to_string());
-        sqlx::query("UPDATE models SET group_ratios = ? WHERE id = ?").bind(&gr_str).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET group_ratios = ? WHERE id = ?")).bind(&gr_str).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(rule) = &req.billing_rule {
-        sqlx::query("UPDATE models SET billing_rule = ? WHERE id = ?").bind(rule).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET billing_rule = ? WHERE id = ?")).bind(rule).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(unit) = &req.billing_unit {
-        sqlx::query("UPDATE models SET billing_unit = ? WHERE id = ?").bind(unit).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET billing_unit = ? WHERE id = ?")).bind(unit).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(tiers) = &req.pricing_tiers {
         let tiers_str = serde_json::to_string(tiers).unwrap_or_else(|_| "[]".to_string());
-        sqlx::query("UPDATE models SET pricing_tiers = ? WHERE id = ?").bind(&tiers_str).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET pricing_tiers = ? WHERE id = ?")).bind(&tiers_str).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(active) = req.is_active {
-        sqlx::query("UPDATE models SET is_active = ? WHERE id = ?").bind(active).bind(id).execute(&state.db.pool).await?;
+        sqlx::query(&state.db.format_query("UPDATE models SET is_active = ? WHERE id = ?")).bind(active).bind(id).execute(&state.db.pool).await?;
     }
 
-    sqlx::query("UPDATE models SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id).execute(&state.db.pool).await?;
+    sqlx::query(&state.db.format_query("UPDATE models SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;
 
-    let model = sqlx::query_as("SELECT * FROM models WHERE id = ?")
+    let model = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.db.pool)
         .await?;
@@ -226,7 +226,7 @@ pub async fn delete_model(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
-    sqlx::query("DELETE FROM models WHERE id = ?")
+    sqlx::query(&state.db.format_query("DELETE FROM models WHERE id = ?"))
         .bind(id)
         .execute(&state.db.pool)
         .await?;

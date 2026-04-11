@@ -15,9 +15,9 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
             balance DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             user_group TEXT NOT NULL DEFAULT 'default',
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            is_active INTEGER NOT NULL DEFAULT 1, referred_by TEXT, commission_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -31,7 +31,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             amount DOUBLE PRECISION NOT NULL,
             recharge_type TEXT NOT NULL DEFAULT 'other',
             remark TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -53,8 +53,8 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             balance DOUBLE PRECISION,
             max_rps INTEGER DEFAULT 0,
             config TEXT NOT NULL DEFAULT '{}',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -76,8 +76,8 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             rpm_limit INTEGER DEFAULT 0,
             expires_at TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -98,7 +98,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             status_code INTEGER NOT NULL DEFAULT 200,
             endpoint TEXT NOT NULL DEFAULT '',
             error_message TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -114,8 +114,8 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             is_used INTEGER DEFAULT 0,
             used_at TEXT,
             used_by TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -139,8 +139,8 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             group_key TEXT NOT NULL UNIQUE,
             discount DOUBLE PRECISION NOT NULL DEFAULT 1.0,
             description TEXT NOT NULL DEFAULT '',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -154,7 +154,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             code TEXT NOT NULL,
             purpose TEXT NOT NULL,
             expires_at TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -167,8 +167,8 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             name TEXT NOT NULL UNIQUE,
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -181,8 +181,8 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             name TEXT NOT NULL UNIQUE,
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -206,8 +206,8 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             billing_unit TEXT NOT NULL DEFAULT '1k',
             pricing_tiers TEXT NOT NULL DEFAULT '[]',
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -229,8 +229,8 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             name TEXT NOT NULL,
             permissions TEXT,
             description TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -250,7 +250,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             recharge_id INTEGER REFERENCES recharge_records(id),
             amount DOUBLE PRECISION NOT NULL,
             ratio DOUBLE PRECISION NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -275,7 +275,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
             balance REAL NOT NULL DEFAULT 0.0,
             user_group TEXT NOT NULL DEFAULT 'default',
-            is_active INTEGER NOT NULL DEFAULT 1,
+            is_active INTEGER NOT NULL DEFAULT 1, referred_by TEXT, commission_balance REAL NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
@@ -518,9 +518,9 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
             balance DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             user_group TEXT NOT NULL DEFAULT 'default',
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            is_active INTEGER NOT NULL DEFAULT 1, referred_by TEXT, commission_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -534,7 +534,7 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             amount DOUBLE PRECISION NOT NULL,
             recharge_type TEXT NOT NULL DEFAULT 'other',
             remark TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -556,8 +556,8 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             balance DOUBLE PRECISION,
             max_rps INTEGER DEFAULT 0,
             config TEXT NOT NULL DEFAULT '{}',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -579,8 +579,8 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             rpm_limit INTEGER DEFAULT 0,
             expires_at TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -601,7 +601,7 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             status_code INTEGER NOT NULL DEFAULT 200,
             endpoint TEXT NOT NULL DEFAULT '',
             error_message TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -617,8 +617,8 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             is_used INTEGER DEFAULT 0,
             used_at TEXT,
             used_by TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -642,8 +642,8 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             group_key TEXT NOT NULL UNIQUE,
             discount DOUBLE PRECISION NOT NULL DEFAULT 1.0,
             description TEXT NOT NULL DEFAULT '',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -657,7 +657,7 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             code TEXT NOT NULL,
             purpose TEXT NOT NULL,
             expires_at TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -670,8 +670,8 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             name TEXT NOT NULL UNIQUE,
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -684,8 +684,8 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             name TEXT NOT NULL UNIQUE,
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -709,8 +709,8 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             billing_unit TEXT NOT NULL DEFAULT '1k',
             pricing_tiers TEXT NOT NULL DEFAULT '[]',
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
@@ -732,8 +732,8 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             name TEXT NOT NULL,
             permissions TEXT,
             description TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)

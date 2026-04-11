@@ -34,14 +34,14 @@ pub async fn get_stats(
 
     
     let total_users: i64 = if claims.role == "admin" {
-        sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&state.db.pool).await?
+        sqlx::query_scalar(&state.db.format_query("SELECT COUNT(*) FROM users")).fetch_one(&state.db.pool).await?
     } else { 1 };
 
     let total_channels: i64 = if claims.role == "admin" {
-        sqlx::query_scalar("SELECT COUNT(*) FROM channels").fetch_one(&state.db.pool).await?
+        sqlx::query_scalar(&state.db.format_query("SELECT COUNT(*) FROM channels")).fetch_one(&state.db.pool).await?
     } else { 0 };
 
-    let active_tokens: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_tokens WHERE user_id = ? AND is_active = 1")
+    let active_tokens: i64 = sqlx::query_scalar(&state.db.format_query("SELECT COUNT(*) FROM api_tokens WHERE user_id = ? AND is_active = 1"))
         .bind(&claims.sub)
         .fetch_one(&state.db.pool)
         .await?;

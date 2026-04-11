@@ -14,11 +14,11 @@ pub async fn list_admin_groups(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     let result: AppResult<Json<AdminGroupListResponse>> = (async {
-        let groups: Vec<AdminGroup> = sqlx::query_as("SELECT * FROM admin_groups ORDER BY id DESC")
+        let groups: Vec<AdminGroup> = sqlx::query_as(&state.db.format_query("SELECT * FROM admin_groups ORDER BY id DESC"))
             .fetch_all(&state.db.pool)
             .await?;
         
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_groups")
+        let total: i64 = sqlx::query_scalar(&state.db.format_query("SELECT COUNT(*) FROM admin_groups"))
             .fetch_one(&state.db.pool)
             .await?;
 
@@ -65,7 +65,7 @@ pub async fn update_admin_group(
         let mut tx = state.db.pool.begin().await?;
 
         if let Some(name) = request.name {
-            sqlx::query("UPDATE admin_groups SET name = ? WHERE id = ?")
+            sqlx::query(&state.db.format_query("UPDATE admin_groups SET name = ? WHERE id = ?"))
                 .bind(name)
                 .bind(id)
                 .execute(&mut *tx)
@@ -74,7 +74,7 @@ pub async fn update_admin_group(
 
         if let Some(permissions) = request.permissions {
             let p_json = serde_json::to_string(&permissions)?;
-            sqlx::query("UPDATE admin_groups SET permissions = ? WHERE id = ?")
+            sqlx::query(&state.db.format_query("UPDATE admin_groups SET permissions = ? WHERE id = ?"))
                 .bind(p_json)
                 .bind(id)
                 .execute(&mut *tx)
@@ -82,14 +82,14 @@ pub async fn update_admin_group(
         }
 
         if let Some(description) = request.description {
-            sqlx::query("UPDATE admin_groups SET description = ? WHERE id = ?")
+            sqlx::query(&state.db.format_query("UPDATE admin_groups SET description = ? WHERE id = ?"))
                 .bind(description)
                 .bind(id)
                 .execute(&mut *tx)
                 .await?;
         }
 
-        sqlx::query("UPDATE admin_groups SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        sqlx::query(&state.db.format_query("UPDATE admin_groups SET updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
             .bind(id)
             .execute(&mut *tx)
             .await?;
@@ -111,7 +111,7 @@ pub async fn delete_admin_group(
 ) -> Response {
     let result: AppResult<Json<serde_json::Value>> = (async {
         // Check if any users are using this group
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE admin_group_id = ?")
+        let count: i64 = sqlx::query_scalar(&state.db.format_query("SELECT COUNT(*) FROM users WHERE admin_group_id = ?"))
             .bind(id)
             .fetch_one(&state.db.pool)
             .await?;
@@ -120,7 +120,7 @@ pub async fn delete_admin_group(
             return Err(AppError::BadRequest("Cannot delete group that is in use by users".to_string()));
         }
 
-        sqlx::query("DELETE FROM admin_groups WHERE id = ?")
+        sqlx::query(&state.db.format_query("DELETE FROM admin_groups WHERE id = ?"))
             .bind(id)
             .execute(&state.db.pool)
             .await?;

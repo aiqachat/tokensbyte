@@ -16,7 +16,7 @@ echo "🚀 Starting TokensByte Local API Test..."
 
 # 1. Login Test
 echo -n "🔑 Testing Login... "
-LOGIN_RESPONSE=$(curl -s -X POST "$BASE_URL/api/v1/auth/login" \
+LOGIN_RESPONSE=$(curl -s -X POST "$BASE_URL/api/v1/auth/admin/login" \
   -H "Content-Type: application/json" \
   -d "{\"username\": \"$ADMIN_USER\", \"password\": \"$ADMIN_PASS\"}")
 

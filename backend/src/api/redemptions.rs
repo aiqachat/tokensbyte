@@ -20,7 +20,7 @@ pub async fn list_redemptions(
         return Err(AppError::Forbidden("Admin only".to_string()));
     }
 
-    let redemptions: Vec<Redemption> = sqlx::query_as("SELECT * FROM redemptions ORDER BY id DESC")
+    let redemptions: Vec<Redemption> = sqlx::query_as(&state.db.format_query("SELECT * FROM redemptions ORDER BY id DESC"))
         .fetch_all(&state.db.pool)
         .await?;
 
@@ -79,7 +79,7 @@ pub async fn delete_redemption(
         return Err(AppError::Forbidden("Admin only".to_string()));
     }
 
-    sqlx::query("DELETE FROM redemptions WHERE id = ?")
+    sqlx::query(&state.db.format_query("DELETE FROM redemptions WHERE id = ?"))
         .bind(id)
         .execute(&state.db.pool)
         .await?;
@@ -112,14 +112,14 @@ pub async fn redeem_code(
     };
 
     // 2. Update user balance
-    sqlx::query("UPDATE users SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    sqlx::query(&state.db.format_query("UPDATE users SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
         .bind(redemption.quota)
         .bind(&user_id)
         .execute(&mut *tx)
         .await?;
 
     // 3. Mark code as used
-    sqlx::query("UPDATE redemptions SET is_used = 1, used_at = CURRENT_TIMESTAMP, used_by = ? WHERE id = ?")
+    sqlx::query(&state.db.format_query("UPDATE redemptions SET is_used = 1, used_at = CURRENT_TIMESTAMP, used_by = ? WHERE id = ?"))
         .bind(&user_id)
         .bind(redemption.id)
         .execute(&mut *tx)
@@ -136,7 +136,7 @@ pub async fn redeem_code(
     .await?;
 
     // Award commission if user has inviter
-    if let Err(e) = crate::services::affiliate::award_commission(&mut tx, &user_id, recharge_id, redemption.quota).await {
+    if let Err(e) = crate::services::affiliate::award_commission(&state.db, &mut tx, &user_id, recharge_id, redemption.quota).await {
         tracing::error!("Failed to award commission for redemption {}: {}", recharge_id, e);
     }
 

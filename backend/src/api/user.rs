@@ -12,7 +12,7 @@ pub async fn get_profile(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<User>> {
-    let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+    let user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?
@@ -26,7 +26,7 @@ pub async fn update_profile(
     Extension(claims): Extension<auth::Claims>,
     Json(request): Json<ProfileUpdateRequest>,
 ) -> AppResult<Json<User>> {
-    let mut user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+    let mut user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?
@@ -67,7 +67,7 @@ pub async fn get_wallet_stats(
     let user_id = &claims.sub;
     
     // 1. Get current balance
-    let balance: f64 = sqlx::query_scalar("SELECT balance FROM users WHERE id = ?")
+    let balance: f64 = sqlx::query_scalar(&state.db.format_query("SELECT balance FROM users WHERE id = ?"))
         .bind(user_id)
         .fetch_one(&state.db.pool)
         .await?;
@@ -115,7 +115,7 @@ pub async fn transfer_commission(
     let mut tx = state.db.pool.begin().await?;
 
     // 1. Get current commission balance
-    let commission_balance: f64 = sqlx::query_scalar("SELECT commission_balance FROM users WHERE id = ?")
+    let commission_balance: f64 = sqlx::query_scalar(&state.db.format_query("SELECT commission_balance FROM users WHERE id = ?"))
         .bind(user_id)
         .fetch_one(&mut *tx)
         .await?;

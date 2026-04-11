@@ -10,7 +10,7 @@ use crate::error::{AppError, AppResult};
 pub async fn list_channels(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<ChannelListResponse>> {
-    let channels: Vec<Channel> = sqlx::query_as("SELECT * FROM channels ORDER BY priority DESC")
+    let channels: Vec<Channel> = sqlx::query_as(&state.db.format_query("SELECT * FROM channels ORDER BY priority DESC"))
         .fetch_all(&state.db.pool)
         .await?;
 
@@ -45,7 +45,7 @@ pub async fn create_channel(
     .execute(&state.db.pool)
     .await?;
 
-    let channel: Channel = sqlx::query_as("SELECT * FROM channels ORDER BY id DESC LIMIT 1")
+    let channel: Channel = sqlx::query_as(&state.db.format_query("SELECT * FROM channels ORDER BY id DESC LIMIT 1"))
         .fetch_one(&state.db.pool)
         .await?;
 
@@ -58,7 +58,7 @@ pub async fn update_channel(
     Json(request): Json<UpdateChannelRequest>,
 ) -> AppResult<Json<ChannelSafe>> {
     // Current channel for partial updates
-    let mut channel: Channel = sqlx::query_as("SELECT * FROM channels WHERE id = ?")
+    let mut channel: Channel = sqlx::query_as(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.db.pool)
         .await?;
@@ -102,7 +102,7 @@ pub async fn delete_channel(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
-    sqlx::query("DELETE FROM channels WHERE id = ?")
+    sqlx::query(&state.db.format_query("DELETE FROM channels WHERE id = ?"))
         .bind(id)
         .execute(&state.db.pool)
         .await?;
@@ -114,7 +114,7 @@ pub async fn test_channel(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let channel: Channel = sqlx::query_as("SELECT * FROM channels WHERE id = ?")
+    let channel: Channel = sqlx::query_as(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.db.pool)
         .await?;

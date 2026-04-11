@@ -64,7 +64,7 @@ pub async fn handle_chat_stream(
         // Finalize billing
         let _ = tx.send(Ok("data: [DONE]\n\n".to_string())).await;
         
-        let db_model: Option<crate::models::Model> = sqlx::query_as("SELECT * FROM models WHERE model_id = ? AND is_active = 1")
+        let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
             .bind(&model)
             .fetch_optional(&state.db.pool)
             .await
@@ -185,14 +185,14 @@ fn create_openai_chunk(text: &str, model: &str) -> StreamChunk {
 async fn record_usage(state: &Arc<AppState>, token: &ApiToken, channel: &Channel, model: &str, prompt: i32, completion: i32, cost: f64) -> AppResult<()> {
     let mut tx = state.db.pool.begin().await?;
 
-    sqlx::query("UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    sqlx::query(&state.db.format_query("UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
         .bind(cost).bind(token.id).execute(&mut *tx).await?;
 
-    sqlx::query("UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    sqlx::query(&state.db.format_query("UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
         .bind(cost).bind(&token.user_id).execute(&mut *tx).await?;
 
-    sqlx::query(r#"INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 200, '/v1/chat/completions')"#)
+    sqlx::query(&state.db.format_query(r#"INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 200, '/v1/chat/completions')"#))
         .bind(&token.user_id).bind(channel.id).bind(token.id).bind(model).bind(prompt).bind(completion).bind(cost)
         .execute(&mut *tx).await?;
     

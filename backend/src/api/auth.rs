@@ -22,7 +22,7 @@ pub async fn login(
 ) -> Response {
     let result = (async {
         let mut user: User = sqlx::query_as(
-            "SELECT * FROM users WHERE username = ? OR email = ?"
+            &state.db.format_query("SELECT * FROM users WHERE username = ? OR email = ?")
         )
         .bind(&request.username)
         .bind(&request.username)
@@ -59,7 +59,7 @@ pub async fn admin_login(
 ) -> Response {
     let result = (async {
         let mut user: User = sqlx::query_as(
-            "SELECT * FROM users WHERE username = ? OR email = ?"
+            &state.db.format_query("SELECT * FROM users WHERE username = ? OR email = ?")
         )
         .bind(&request.username)
         .bind(&request.username)
@@ -81,7 +81,7 @@ pub async fn admin_login(
 
         // Fetch permissions
         let permissions = if let Some(group_id) = user.admin_group_id {
-            let row: Option<(String,)> = sqlx::query_as("SELECT permissions FROM admin_groups WHERE id = ?")
+            let row: Option<(String,)> = sqlx::query_as(&state.db.format_query("SELECT permissions FROM admin_groups WHERE id = ?"))
                 .bind(group_id)
                 .fetch_optional(&state.db.pool)
                 .await?;
@@ -123,7 +123,7 @@ pub async fn register(
         }
 
         let exists: i64 = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM users WHERE username = ? OR email = ?)"
+            &state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ? OR email = ?)")
         )
         .bind(&request.username)
         .bind(&request.email)
@@ -142,7 +142,7 @@ pub async fn register(
 
         let mut referred_by: Option<String> = None;
         if let Some(ref aff_code) = request.aff {
-            let inviter_id: Option<String> = sqlx::query_scalar("SELECT id FROM users WHERE uid = ?")
+            let inviter_id: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM users WHERE uid = ?"))
                 .bind(aff_code)
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -170,8 +170,8 @@ pub async fn register(
         }
 
         sqlx::query(
-            r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?)"#
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?)"#)
         )
         .bind(&user_id)
         .bind(&uid)
@@ -184,7 +184,7 @@ pub async fn register(
         .await?;
 
         if gift_amount > 0.0 {
-            sqlx::query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')")
+            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
                 .bind(&user_id)
                 .bind(gift_amount)
                 .execute(&mut *tx)
@@ -193,7 +193,7 @@ pub async fn register(
 
         tx.commit().await?;
 
-        let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        let user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
             .bind(&user_id)
             .fetch_one(&state.db.pool)
             .await?;
@@ -230,7 +230,7 @@ pub async fn send_code(
         let expires_at = (Utc::now() + Duration::minutes(10)).format("%Y-%m-%d %H:%M:%S").to_string();
 
         sqlx::query(
-            "INSERT INTO verification_codes (email, code, purpose, expires_at) VALUES (?, ?, ?, ?)"
+            &state.db.format_query("INSERT INTO verification_codes (email, code, purpose, expires_at) VALUES (?, ?, ?, ?)")
         )
         .bind(&request.email)
         .bind(&code)
@@ -264,7 +264,7 @@ pub async fn register_email(
 
         verify_code(&state, &request.email, &request.code, "register").await?;
 
-        let exists: i64 = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)")
+        let exists: i64 = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)"))
             .bind(&request.email)
             .fetch_one(&state.db.pool)
             .await?;
@@ -277,7 +277,7 @@ pub async fn register_email(
         let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
         let mut username = request.email.split('@').next().unwrap_or("user").to_string();
         
-        let username_exists: i64 = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)")
+        let username_exists: i64 = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)"))
             .bind(&username)
             .fetch_one(&state.db.pool)
             .await?;
@@ -293,7 +293,7 @@ pub async fn register_email(
 
         let mut referred_by: Option<String> = None;
         if let Some(ref aff_code) = request.aff {
-            let inviter_id: Option<String> = sqlx::query_scalar("SELECT id FROM users WHERE uid = ?")
+            let inviter_id: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM users WHERE uid = ?"))
                 .bind(aff_code)
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -321,8 +321,8 @@ pub async fn register_email(
         }
 
         sqlx::query(
-            r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?)"#
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?)"#)
         )
         .bind(&user_id)
         .bind(&uid)
@@ -335,7 +335,7 @@ pub async fn register_email(
         .await?;
 
         if gift_amount > 0.0 {
-            sqlx::query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')")
+            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
                 .bind(&user_id)
                 .bind(gift_amount)
                 .execute(&mut *tx)
@@ -344,7 +344,7 @@ pub async fn register_email(
 
         tx.commit().await?;
 
-        let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        let user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
             .bind(&user_id)
             .fetch_one(&state.db.pool)
             .await?;
@@ -373,7 +373,7 @@ pub async fn reset_password(
         verify_code(&state, &request.email, &request.code, "reset_password").await?;
 
         let password_hash = auth::hash_password(&request.new_password)?;
-        let result = sqlx::query("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?")
+        let result = sqlx::query(&state.db.format_query("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?"))
             .bind(&password_hash)
             .bind(&request.email)
             .execute(&state.db.pool)
@@ -408,7 +408,7 @@ async fn get_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> {
 }
 
 async fn get_setting<T: serde::de::DeserializeOwned + Clone>(state: &Arc<AppState>, key: &str, default: T) -> AppResult<T> {
-    let val: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
+    let val: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = ?"))
         .bind(key)
         .fetch_optional(&state.db.pool)
         .await?;
@@ -421,7 +421,7 @@ async fn get_setting<T: serde::de::DeserializeOwned + Clone>(state: &Arc<AppStat
 }
 
 async fn verify_code(state: &Arc<AppState>, email: &str, code: &str, purpose: &str) -> AppResult<()> {
-    let row: Option<(String,)> = sqlx::query_as("SELECT expires_at FROM verification_codes WHERE email = ? AND code = ? AND purpose = ? ORDER BY created_at DESC LIMIT 1")
+    let row: Option<(String,)> = sqlx::query_as(&state.db.format_query("SELECT expires_at FROM verification_codes WHERE email = ? AND code = ? AND purpose = ? ORDER BY created_at DESC LIMIT 1"))
         .bind(email)
         .bind(code)
         .bind(purpose)
@@ -435,7 +435,7 @@ async fn verify_code(state: &Arc<AppState>, email: &str, code: &str, purpose: &s
         return Err(AppError::BadRequest("Verification code expired".to_string()));
     }
 
-    sqlx::query("DELETE FROM verification_codes WHERE email = ? AND code = ? AND purpose = ?")
+    sqlx::query(&state.db.format_query("DELETE FROM verification_codes WHERE email = ? AND code = ? AND purpose = ?"))
         .bind(email)
         .bind(code)
         .bind(purpose)

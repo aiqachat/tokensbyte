@@ -9,10 +9,10 @@ pub async fn select_channel(state: &Arc<AppState>, model: &str) -> AppResult<Cha
     // 1. Fetch available channels that support this model
     // Filter by priority (desc) first.
     let channels: Vec<Channel> = sqlx::query_as(
-        r#"SELECT * FROM channels 
+        &state.db.format_query(r#"SELECT * FROM channels 
            WHERE status = 1 
            AND (models LIKE ? OR models = '[]')
-           ORDER BY priority DESC"#
+           ORDER BY priority DESC"#)
     )
     .bind(format!("%{:?}%", model))
     .fetch_all(&state.db.pool)

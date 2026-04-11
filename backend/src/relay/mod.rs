@@ -27,10 +27,10 @@ pub async fn chat_completions(
 
     // Fetch user info including balance and discount
     let user_info: (String, f64, f64) = sqlx::query_as(
-        "SELECT u.user_group, u.balance, COALESCE(ul.discount, 1.0) as discount 
+        &state.db.format_query("SELECT u.user_group, u.balance, COALESCE(ul.discount, 1.0) as discount 
          FROM users u 
          LEFT JOIN user_levels ul ON u.user_group = ul.group_key 
-         WHERE u.id = ?"
+         WHERE u.id = ?")
     )
     .bind(&token.user_id)
     .fetch_one(&state.db.pool)
@@ -59,7 +59,7 @@ pub async fn chat_completions(
         let completion_tokens = response.usage.as_ref().map(|u| u.completion_tokens).unwrap_or(0);
         
         // Fetch model config from DB
-        let db_model: Option<crate::models::Model> = sqlx::query_as("SELECT * FROM models WHERE model_id = ? AND is_active = 1")
+        let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
             .bind(&request.model)
             .fetch_optional(&state.db.pool)
             .await?;
@@ -105,7 +105,7 @@ pub async fn chat_completions(
         let mut tx = state.db.pool.begin().await?;
 
         sqlx::query(
-            "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            &state.db.format_query("UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         )
         .bind(quota_used)
         .bind(token.id)
@@ -113,7 +113,7 @@ pub async fn chat_completions(
         .await?;
 
         sqlx::query(
-            "UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            &state.db.format_query("UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         )
         .bind(quota_used)
         .bind(&token.user_id)
@@ -125,8 +125,8 @@ pub async fn chat_completions(
 
         // 6. Record Log
         sqlx::query(
-            r#"INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 200, '/v1/chat/completions')"#
+            &state.db.format_query(r#"INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 200, '/v1/chat/completions')"#)
         )
         .bind(&token.user_id)
         .bind(channel.id)

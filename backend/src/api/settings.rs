@@ -80,7 +80,7 @@ pub async fn update_settings(
 ) -> AppResult<Json<AllSettings>> {
     if let Some(site) = request.site {
         let val = serde_json::to_string(&site).unwrap_or_default();
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('site_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('site_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
             .bind(val)
             .execute(&state.db.pool)
             .await?;
@@ -88,7 +88,7 @@ pub async fn update_settings(
 
     if let Some(currency) = request.currency {
         let val = serde_json::to_string(&currency).unwrap_or_default();
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('currency_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('currency_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
             .bind(val)
             .execute(&state.db.pool)
             .await?;
@@ -96,7 +96,7 @@ pub async fn update_settings(
 
     if let Some(registration) = request.registration {
         let val = serde_json::to_string(&registration).unwrap_or_default();
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('registration_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('registration_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
             .bind(val)
             .execute(&state.db.pool)
             .await?;
@@ -104,7 +104,7 @@ pub async fn update_settings(
 
     if let Some(smtp) = request.smtp {
         let val = serde_json::to_string(&smtp).unwrap_or_default();
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('smtp_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('smtp_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
             .bind(val)
             .execute(&state.db.pool)
             .await?;
@@ -112,7 +112,7 @@ pub async fn update_settings(
 
     if let Some(marketing) = request.marketing {
         let val = serde_json::to_string(&marketing).unwrap_or_default();
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('marketing_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('marketing_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
             .bind(val)
             .execute(&state.db.pool)
             .await?;
@@ -120,7 +120,7 @@ pub async fn update_settings(
 
     if let Some(database) = request.database {
         let val = serde_json::to_string(&database).unwrap_or_default();
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('database_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('database_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
             .bind(val)
             .execute(&state.db.pool)
             .await?;
@@ -220,7 +220,7 @@ pub async fn backup_database(
 
 
 async fn get_setting<T: serde::de::DeserializeOwned + Clone>(state: &Arc<AppState>, key: &str, default: T) -> AppResult<T> {
-    let val: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
+    let val: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = ?"))
         .bind(key)
         .fetch_optional(&state.db.pool)
         .await?;

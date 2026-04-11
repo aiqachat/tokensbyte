@@ -15,7 +15,7 @@ use crate::models::{
 pub async fn list_providers(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<Vec<ModelProvider>>> {
-    let providers = sqlx::query_as("SELECT * FROM model_providers ORDER BY sort_order ASC, id ASC")
+    let providers = sqlx::query_as(&state.db.format_query("SELECT * FROM model_providers ORDER BY sort_order ASC, id ASC"))
         .fetch_all(&state.db.pool)
         .await?;
     Ok(Json(providers))
@@ -31,7 +31,7 @@ pub async fn create_provider(
     }
 
     // Check for duplicate name
-    let exists: Option<i32> = sqlx::query_scalar("SELECT id FROM model_providers WHERE name = ?")
+    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_providers WHERE name = ?"))
         .bind(&req.name)
         .fetch_optional(&state.db.pool)
         .await?;
@@ -62,7 +62,7 @@ pub async fn update_provider(
     }
 
     // Check for duplicate name (excluding itself)
-    let exists: Option<i32> = sqlx::query_scalar("SELECT id FROM model_providers WHERE name = ? AND id != ?")
+    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_providers WHERE name = ? AND id != ?"))
         .bind(&req.name)
         .bind(id)
         .fetch_optional(&state.db.pool)
@@ -89,12 +89,12 @@ pub async fn delete_provider(
     Path(id): Path<i32>,
 ) -> AppResult<Json<serde_json::Value>> {
     // NULL out references in models table
-    sqlx::query("UPDATE models SET provider_id = NULL WHERE provider_id = ?")
+    sqlx::query(&state.db.format_query("UPDATE models SET provider_id = NULL WHERE provider_id = ?"))
         .bind(id)
         .execute(&state.db.pool)
         .await?;
         
-    sqlx::query("DELETE FROM model_providers WHERE id = ?")
+    sqlx::query(&state.db.format_query("DELETE FROM model_providers WHERE id = ?"))
         .bind(id)
         .execute(&state.db.pool)
         .await?;
@@ -106,7 +106,7 @@ pub async fn delete_provider(
 pub async fn list_types(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<Vec<ModelType>>> {
-    let types = sqlx::query_as("SELECT * FROM model_types ORDER BY sort_order ASC, id ASC")
+    let types = sqlx::query_as(&state.db.format_query("SELECT * FROM model_types ORDER BY sort_order ASC, id ASC"))
         .fetch_all(&state.db.pool)
         .await?;
     Ok(Json(types))
@@ -122,7 +122,7 @@ pub async fn create_type(
     }
 
     // Check for duplicate name
-    let exists: Option<i32> = sqlx::query_scalar("SELECT id FROM model_types WHERE name = ?")
+    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_types WHERE name = ?"))
         .bind(&req.name)
         .fetch_optional(&state.db.pool)
         .await?;
@@ -153,7 +153,7 @@ pub async fn update_type(
     }
 
     // Check for duplicate name (excluding itself)
-    let exists: Option<i32> = sqlx::query_scalar("SELECT id FROM model_types WHERE name = ? AND id != ?")
+    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_types WHERE name = ? AND id != ?"))
         .bind(&req.name)
         .bind(id)
         .fetch_optional(&state.db.pool)
@@ -180,12 +180,12 @@ pub async fn delete_type(
     Path(id): Path<i32>,
 ) -> AppResult<Json<serde_json::Value>> {
     // NULL out references in models table
-    sqlx::query("UPDATE models SET type_id = NULL WHERE type_id = ?")
+    sqlx::query(&state.db.format_query("UPDATE models SET type_id = NULL WHERE type_id = ?"))
         .bind(id)
         .execute(&state.db.pool)
         .await?;
 
-    sqlx::query("DELETE FROM model_types WHERE id = ?")
+    sqlx::query(&state.db.format_query("DELETE FROM model_types WHERE id = ?"))
         .bind(id)
         .execute(&state.db.pool)
         .await?;
