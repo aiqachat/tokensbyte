@@ -89,7 +89,8 @@ const Users: React.FC = () => {
         await request.put(`/users/${editingUser.id}`, values);
         message.success(t('common.success'));
       } else {
-        await request.post('/users', values);
+        const payload = { ...values, role: targetRole };
+        await request.post('/users', payload);
         message.success(t('common.success'));
       }
       setIsModalVisible(false);
@@ -120,7 +121,7 @@ const Users: React.FC = () => {
     }
   };
 
-  const columns = [
+  const baseColumns: any[] = [
     {
       title: t('users.uid'),
       dataIndex: 'uid',
@@ -195,11 +196,13 @@ const Users: React.FC = () => {
       key: 'actions',
       render: (_: unknown, record: User) => (
         <Space>
-          <Button 
-            icon={<WalletOutlined />} 
-            style={{ color: '#52c41a', borderColor: '#52c41a' }}
-            onClick={() => handleRechargeClick(record)} 
-          />
+          {!isAdminPage && (
+            <Button 
+              icon={<WalletOutlined />} 
+              style={{ color: '#52c41a', borderColor: '#52c41a' }}
+              onClick={() => handleRechargeClick(record)} 
+            />
+          )}
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
             <Button icon={<DeleteOutlined />} danger disabled={record.role === 'admin'} />
@@ -209,6 +212,8 @@ const Users: React.FC = () => {
     },
   ];
 
+  const columns = isAdminPage ? baseColumns.filter(c => c.key !== 'balance') : baseColumns;
+
   return (
     <Card bordered={false}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -217,7 +222,7 @@ const Users: React.FC = () => {
         </Title>
         <Space>
           <Button icon={<SyncOutlined />} onClick={fetchUsers}>{t('common.refresh')}</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('users.add_user')}</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{isAdminPage ? '添加管理员' : '添加普通用户'}</Button>
         </Space>
       </div>
 
@@ -231,7 +236,7 @@ const Users: React.FC = () => {
       />
 
       <Modal
-        title={editingUser ? t('users.edit_user') : t('users.add_user')}
+        title={editingUser ? t('users.edit_user') : (isAdminPage ? '添加管理员' : '添加普通用户')}
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         onOk={() => form.submit()}
@@ -272,16 +277,20 @@ const Users: React.FC = () => {
               </Select>
             </Form.Item>
           )}
-          <Form.Item name="balance" label={`${t('users.balance')} (${currencySymbol})`} initialValue={0}>
-            <InputNumber style={{ width: '100%' }} precision={2} />
-          </Form.Item>
-          <Form.Item name="user_group" label={t('users.group')} initialValue="default">
-            <Select>
-              {userLevels.map(level => (
-                <Option key={level.id} value={level.group_key}>{level.name}</Option>
-              ))}
-            </Select>
-          </Form.Item>
+          {!isAdminPage && (
+            <Form.Item name="balance" label={`${t('users.balance')} (${currencySymbol})`} initialValue={0}>
+              <InputNumber style={{ width: '100%' }} precision={2} />
+            </Form.Item>
+          )}
+          {!isAdminPage && (
+            <Form.Item name="user_group" label="普通用户等级" initialValue="default">
+              <Select>
+                {userLevels.map(level => (
+                  <Option key={level.id} value={level.group_key}>{level.name}</Option>
+                ))}
+              </Select>
+            </Form.Item>
+          )}
           <Form.Item name="is_active" label={t('common.status')} initialValue={true}>
             <Select>
               <Option value={true}>{t('common.active')}</Option>

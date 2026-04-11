@@ -42,15 +42,22 @@ pub async fn create_user(
     let user_id = uuid::Uuid::new_v4().to_string();
     let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
 
+    let role = request.role.as_deref().unwrap_or("user");
+    let user_group = request.user_group.as_deref().unwrap_or(request.group.as_deref().unwrap_or("default"));
+    let admin_group_id = request.admin_group_id;
+
     sqlx::query(
-        &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active)
-           VALUES (?, ?, ?, ?, ?, 'user', 0.0, 1)"#)
+        &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, user_group, admin_group_id, balance, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 1)"#)
     )
     .bind(&user_id)
     .bind(&uid)
     .bind(&request.username)
     .bind(&request.email)
     .bind(&password_hash)
+    .bind(role)
+    .bind(user_group)
+    .bind(admin_group_id)
     .execute(&state.db.pool)
     .await?;
 

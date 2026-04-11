@@ -33,9 +33,11 @@ pub struct CreateUserRequest {
     pub username: String,
     pub email: String,
     pub password: String,
-    pub group: Option<String>,
+    pub group: Option<String>, // Keep for compatibility
+    pub user_group: Option<String>,
     pub admin_group_id: Option<i64>,
     pub aff: Option<String>,
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
