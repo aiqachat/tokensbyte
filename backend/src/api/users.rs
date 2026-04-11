@@ -26,11 +26,18 @@ pub async fn create_user(
     State(state): State<Arc<AppState>>,
     Json(request): Json<CreateUserRequest>,
 ) -> AppResult<Json<User>> {
+    let mut actual_email = request.email.clone();
+    if actual_email.is_empty() {
+        use rand::Rng;
+        let random_suffix: String = (0..8).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
+        actual_email = format!("u_{}@tokensbyte.local", random_suffix);
+    }
+
     let exists: bool = sqlx::query_scalar(
         &state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ? OR email = ?)")
     )
     .bind(&request.username)
-    .bind(&request.email)
+    .bind(&actual_email)
     .fetch_one(&state.db.pool)
     .await?;
 
@@ -53,7 +60,7 @@ pub async fn create_user(
     .bind(&user_id)
     .bind(&uid)
     .bind(&request.username)
-    .bind(&request.email)
+    .bind(&actual_email)
     .bind(&password_hash)
     .bind(role)
     .bind(user_group)

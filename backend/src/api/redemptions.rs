@@ -43,24 +43,26 @@ pub async fn generate_redemptions(
     }
 
     let mut codes = Vec::new();
-    let mut values = Vec::new();
-    let mut query_builder: sqlx::QueryBuilder<'_, sqlx::Any> = sqlx::QueryBuilder::new("INSERT INTO redemptions (name, code, quota) ");
-
+    let mut tx = state.db.pool.begin().await?;
+    
     for _ in 0..request.count {
         let code: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(32)
             .map(char::from)
             .collect();
-        codes.push(code.clone());
-        values.push((request.name.clone(), code, request.quota));
+            
+        sqlx::query(&state.db.format_query("INSERT INTO redemptions (name, code, quota) VALUES (?, ?, ?)"))
+            .bind(&request.name)
+            .bind(&code)
+            .bind(request.quota)
+            .execute(&mut *tx)
+            .await?;
+            
+        codes.push(code);
     }
-
-    query_builder.push_values(values.iter(), |mut b, (name, code, quota)| {
-        b.push_bind(name).push_bind(code).push_bind(quota);
-    });
-
-    query_builder.build().execute(&state.db.pool).await?;
+    
+    tx.commit().await?;
 
     Ok(Json(serde_json::json!({
         "success": true,

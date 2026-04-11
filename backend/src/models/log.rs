@@ -53,6 +53,8 @@ pub struct DashboardStats {
 pub struct ModelStat {
     pub model: String,
     pub count: i64,
-    pub total_tokens: i64,
-    pub total_cost: f64,
+    #[sqlx(default)]
+    pub total_tokens: Option<i64>,
+    #[sqlx(default)]
+    pub total_cost: Option<f64>,
 }

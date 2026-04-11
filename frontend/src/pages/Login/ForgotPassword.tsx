@@ -56,7 +56,7 @@ const ForgotPassword: React.FC = () => {
       message.success(t('auth.code_sent'));
       setCountdown(60);
     } catch (error: any) {
-      message.error(error.response?.data?.error || t('common.error'));
+      message.error(error.response?.data?.error?.message || t('common.error'));
     } finally {
       setSendingCode(false);
     }
@@ -73,7 +73,7 @@ const ForgotPassword: React.FC = () => {
       message.success(t('auth.reset_password_success'));
       navigate('/login');
     } catch (error: any) {
-      message.error(error.response?.data?.error || t('common.error'));
+      message.error(error.response?.data?.error?.message || t('common.error'));
     } finally {
       setLoading(false);
     }

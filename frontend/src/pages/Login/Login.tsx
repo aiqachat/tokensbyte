@@ -70,9 +70,9 @@ const Login: React.FC = () => {
         >
           <Form.Item
             name="username"
-            rules={[{ required: true, message: t('login.username') }]}
+            rules={[{ required: true, message: t('login.username_or_email') }]}
           >
-            <Input prefix={<UserOutlined />} placeholder={t('login.username')} />
+            <Input prefix={<UserOutlined />} placeholder={t('login.username_or_email')} />
           </Form.Item>
 
           <Form.Item

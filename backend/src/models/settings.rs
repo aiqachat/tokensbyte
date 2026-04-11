@@ -35,11 +35,20 @@ pub struct SMTPSettings {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MarketingSettings {
+    #[serde(default)]
     pub enable_registration_gift: bool,
+    #[serde(default = "default_gift_mode")]
     pub gift_mode: String, // "fixed" or "random"
+    #[serde(default)]
     pub fixed_amount: f64,
+    #[serde(default)]
     pub min_amount: f64,
+    #[serde(default)]
     pub max_amount: f64,
+}
+
+fn default_gift_mode() -> String {
+    "fixed".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -68,6 +68,7 @@
   "login": {
     "title": "登录",
     "username": "用户名",
+    "username_or_email": "用户名 或 邮箱帐号",
     "password": "密码",
     "sign_in": "登录系统",
     "welcome": "欢迎回来"

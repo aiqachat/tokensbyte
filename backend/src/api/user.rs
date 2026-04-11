@@ -77,7 +77,7 @@ pub async fn get_wallet_stats(
         &state.db.format_query(r#"SELECT 
             COALESCE(SUM(cost), 0.0) as total_consumption,
             COUNT(*) as total_calls,
-            SUM(CASE WHEN status_code = 200 THEN 1 ELSE 0 END) as success_calls
+            COALESCE(SUM(CASE WHEN status_code = 200 THEN 1 ELSE 0 END), 0) as success_calls
            FROM logs WHERE user_id = ?"#)
     )
     .bind(user_id)

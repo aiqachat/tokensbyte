@@ -62,7 +62,7 @@ const Register: React.FC = () => {
       setCountdown(60);
     } catch (error: any) {
       if (error.errorFields) return;
-      message.error(error.response?.data?.error || t('common.error'));
+      message.error(error.response?.data?.error?.message || t('common.error'));
     } finally {
       setSendingCode(false);
     }
@@ -89,7 +89,7 @@ const Register: React.FC = () => {
       message.success(t('auth.register_success'));
       navigate('/login');
     } catch (error: any) {
-      message.error(error.response?.data?.error || t('common.error'));
+      message.error(error.response?.data?.error?.message || t('common.error'));
     } finally {
       setLoading(false);
     }
