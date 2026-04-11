@@ -28,14 +28,14 @@ pub async fn login(
         .bind(&request.username)
         .fetch_optional(&state.db.pool)
         .await?
-        .ok_or(AppError::Unauthorized)?;
+        .ok_or_else(|| AppError::AuthFailed("没有此用户，请核对您的账号".to_string()))?;
 
         if user.role != "user" {
             return Err(AppError::Forbidden("Only users can login from here".to_string()));
         }
 
         if !auth::verify_password(&request.password, &user.password_hash)? {
-            return Err(AppError::Unauthorized);
+            return Err(AppError::AuthFailed("密码输入错误，请重新尝试".to_string()));
         }
 
         if user.is_active == 0 {
@@ -65,14 +65,14 @@ pub async fn admin_login(
         .bind(&request.username)
         .fetch_optional(&state.db.pool)
         .await?
-        .ok_or(AppError::Unauthorized)?;
+        .ok_or_else(|| AppError::AuthFailed("管理后台未查询到此账号".to_string()))?;
 
         if user.role != "admin" {
             return Err(AppError::Forbidden("Access denied: Not an administrator".to_string()));
         }
 
         if !auth::verify_password(&request.password, &user.password_hash)? {
-            return Err(AppError::Unauthorized);
+            return Err(AppError::AuthFailed("管理员密码错误".to_string()));
         }
 
         if user.is_active == 0 {

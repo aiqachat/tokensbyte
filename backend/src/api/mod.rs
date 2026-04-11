@@ -48,6 +48,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/user_levels", get(user_levels::list_user_levels).post(user_levels::create_user_level))
         .route("/user_levels/{id}", put(user_levels::update_user_level).delete(user_levels::delete_user_level))
         .route("/finance/orders", get(finance::list_orders))
+        .route("/finance/recharges", get(finance::list_recharges))
         .route("/admin_groups", get(admin_groups::list_admin_groups).post(admin_groups::create_admin_group))
         .route("/admin_groups/{id}", put(admin_groups::update_admin_group).delete(admin_groups::delete_admin_group))
         .layer(axum_middleware::from_fn(admin_middleware))

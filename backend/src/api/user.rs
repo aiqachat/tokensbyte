@@ -12,7 +12,7 @@ pub async fn get_profile(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<User>> {
-    let user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
+    let user: User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?
@@ -26,7 +26,7 @@ pub async fn update_profile(
     Extension(claims): Extension<auth::Claims>,
     Json(request): Json<ProfileUpdateRequest>,
 ) -> AppResult<Json<User>> {
-    let mut user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
+    let mut user: User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?

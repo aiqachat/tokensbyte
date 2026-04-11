@@ -14,6 +14,7 @@ export interface User {
   admin_group_id?: number;
   permissions?: string[];
   is_active: boolean;
+  level_name?: string;
   created_at: string;
 }
 

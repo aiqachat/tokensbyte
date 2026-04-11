@@ -78,7 +78,10 @@ pub async fn list_recharges(
     if let Some(ref val) = bind_val {
         count_q = count_q.bind(val).bind(val).bind(format!("%{}%", val));
     }
-    let total = count_q.fetch_one(&state.db.pool).await?;
+    let total = count_q.fetch_one(&state.db.pool).await.map_err(|e| {
+        eprintln!("Finance recharges count error: {:?}", e);
+        e
+    })?;
 
     sql.push_str(&format!(" ORDER BY rr.created_at DESC LIMIT {} OFFSET {}", per_page, offset));
     let formatted_data_sql = state.db.format_query(&sql);
@@ -86,7 +89,10 @@ pub async fn list_recharges(
     if let Some(ref val) = bind_val {
         data_q = data_q.bind(val).bind(val).bind(format!("%{}%", val));
     }
-    let data = data_q.fetch_all(&state.db.pool).await?;
+    let data = data_q.fetch_all(&state.db.pool).await.map_err(|e| {
+        eprintln!("Finance recharges data error: {:?}", e);
+        e
+    })?;
 
     Ok(Json(FinanceRechargeResponse { data, total }))
 }
@@ -115,7 +121,10 @@ pub async fn list_orders(
     if let Some(ref val) = bind_val {
         count_q = count_q.bind(val).bind(val).bind(format!("%{}%", val));
     }
-    let total = count_q.fetch_one(&state.db.pool).await?;
+    let total = count_q.fetch_one(&state.db.pool).await.map_err(|e| {
+        eprintln!("Finance orders count error: {:?}", e);
+        e
+    })?;
 
     sql.push_str(&format!(" ORDER BY l.created_at DESC LIMIT {} OFFSET {}", per_page, offset));
     let formatted_data_sql = state.db.format_query(&sql);
@@ -123,7 +132,10 @@ pub async fn list_orders(
     if let Some(ref val) = bind_val {
         data_q = data_q.bind(val).bind(val).bind(format!("%{}%", val));
     }
-    let data = data_q.fetch_all(&state.db.pool).await?;
+    let data = data_q.fetch_all(&state.db.pool).await.map_err(|e| {
+        eprintln!("Finance orders data error: {:?}", e);
+        e
+    })?;
 
     Ok(Json(FinanceOrderResponse { data, total }))
 }

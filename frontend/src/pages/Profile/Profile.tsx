@@ -111,9 +111,25 @@ const Profile: React.FC = () => {
             />
           </div>
           <div style={{ marginLeft: 24 }}>
-            <Title level={3} style={{ margin: 0, color: '#fff' }}>
-              {profile?.nickname || profile?.username || t('profile.nickname')}
-            </Title>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <Title level={3} style={{ margin: 0, color: '#fff' }}>
+                {profile?.nickname || profile?.username || t('profile.nickname')}
+              </Title>
+              {(profile?.level_name || profile?.user_group) && (
+                <div style={{
+                  padding: '2px 10px',
+                  background: 'linear-gradient(135deg, #FFD700 0%, #FDB931 100%)',
+                  borderRadius: '12px',
+                  color: '#fff',
+                  textShadow: '0px 1px 2px rgba(0,0,0,0.4)',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  boxShadow: '0 2px 4px rgba(253, 185, 49, 0.3)',
+                }}>
+                  {profile?.level_name || (profile?.user_group === 'default' ? '普通会员' : profile?.user_group)}
+                </div>
+              )}
+            </div>
             <Text type="secondary" style={{ color: '#8c8c8c' }}>
               UID: {profile?.uid}
             </Text>

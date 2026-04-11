@@ -7,6 +7,9 @@ pub enum AppError {
     #[error("Authentication required")]
     Unauthorized,
 
+    #[error("{0}")]
+    AuthFailed(String),
+
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
@@ -45,6 +48,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::AuthFailed(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
