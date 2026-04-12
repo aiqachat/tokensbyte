@@ -186,10 +186,16 @@ const Users: React.FC = () => {
       ),
     },
     {
+      title: t('users.register_ip'),
+      dataIndex: 'register_ip',
+      key: 'register_ip',
+      render: (ip: string) => ip ? <Text style={{ color: '#8c8c8c' }}>{ip}</Text> : '-',
+    },
+    {
       title: t('users.joined'),
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (text: string) => dayjs(text).format('YYYY-MM-DD'),
+      render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm:ss'),
     },
     {
       title: t('common.actions'),

@@ -372,6 +372,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
         "#).execute(pool).await?;
     }
 
+    let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
 }
@@ -618,6 +619,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     // Model Providers / Types / Models (SQLite truncated for brevity but ensured relevant columns)
     // ... (rest of models migrations)
 
+    let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
     tracing::info!("SQLite database migrations completed successfully");
     
     // UID population logic
@@ -1074,6 +1076,7 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
         "#).execute(pool).await?;
     }
 
+    let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
     tracing::info!("PostgreSQL database migrations completed successfully");
     Ok(())
 }

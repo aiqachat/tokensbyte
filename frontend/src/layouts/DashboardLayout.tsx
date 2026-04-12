@@ -64,7 +64,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    if (isUserEnd) {
+      navigate('/login');
+    } else {
+      navigate('/admin0755');
+    }
   };
 
   const changeLanguage = (lng: string) => {

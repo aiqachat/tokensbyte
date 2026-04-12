@@ -16,6 +16,7 @@ export interface User {
   is_active: boolean;
   level_name?: string;
   created_at: string;
+  register_ip?: string;
 }
 
 export interface PricingTier {

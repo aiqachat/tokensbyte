@@ -95,6 +95,7 @@
     "balance": "Balance",
     "group": "Group",
     "joined": "Joined",
+    "register_ip": "Registration IP",
     "password_hint": "Password (leave blank to keep current)",
     "uid": "User UID",
     "recharge": "Balance Adjustment",
@@ -308,6 +309,7 @@
     "new_password_required": "Please input new password",
     "confirm_password_required": "Please confirm password",
     "passwords_not_match": "Passwords do not match",
-    "registration_disabled": "Registration is currently disabled"
+    "registration_disabled": "Registration is currently disabled",
+    "admin_success": "AUTHENTICATION SUCCESSFUL. WELCOME, OPERATOR."
   }
 }

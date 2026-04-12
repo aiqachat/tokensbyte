@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{State, ConnectInfo},
     response::{IntoResponse, Response},
     Json,
 };
@@ -114,6 +114,8 @@ pub async fn admin_login(
 
 pub async fn register(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<CreateUserRequest>,
 ) -> Response {
     let result = (async {
@@ -175,9 +177,15 @@ pub async fn register(
             }
         }
 
+        let raw_ip = headers.get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.split(',').next().unwrap_or("").trim().to_string())
+            .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()).map(|s| s.to_string()))
+            .unwrap_or_else(|| addr.ip().to_string());
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?)"#)
         )
         .bind(&user_id)
         .bind(&uid)
@@ -185,7 +193,8 @@ pub async fn register(
         .bind(&actual_email)
         .bind(&password_hash)
         .bind(initial_balance)
-        .bind(referred_by)
+        .bind(&referred_by)
+        .bind(&raw_ip)
         .execute(&mut *tx)
         .await?;
 
@@ -260,6 +269,8 @@ pub async fn send_code(
 
 pub async fn register_email(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<EmailRegisterRequest>,
 ) -> Response {
     let result = (async {
@@ -326,9 +337,15 @@ pub async fn register_email(
             }
         }
 
+        let raw_ip = headers.get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.split(',').next().unwrap_or("").trim().to_string())
+            .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()).map(|s| s.to_string()))
+            .unwrap_or_else(|| addr.ip().to_string());
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?)"#)
         )
         .bind(&user_id)
         .bind(&uid)
@@ -336,7 +353,8 @@ pub async fn register_email(
         .bind(&request.email)
         .bind(&password_hash)
         .bind(initial_balance)
-        .bind(referred_by)
+        .bind(&referred_by)
+        .bind(&raw_ip)
         .execute(&mut *tx)
         .await?;
 

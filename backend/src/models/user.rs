@@ -27,6 +27,8 @@ pub struct User {
     pub commission_balance: f64,
     pub created_at: String,
     pub updated_at: String,
+    #[sqlx(default)]
+    pub register_ip: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

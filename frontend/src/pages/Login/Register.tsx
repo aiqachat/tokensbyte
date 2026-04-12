@@ -98,7 +98,8 @@ const Register: React.FC = () => {
   if (!settings) return null;
 
   return (
-    <div style={{
+    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
+      <div style={{
       height: '100vh',
       display: 'flex',
       alignItems: 'center',
@@ -268,7 +269,8 @@ const Register: React.FC = () => {
             </div>
         </Form>
       </Card>
-    </div>
+      </div>
+    </ConfigProvider>
   );
 };
 

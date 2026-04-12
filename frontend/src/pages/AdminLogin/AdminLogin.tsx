@@ -4,6 +4,7 @@ import { SafetyCertificateOutlined, UnlockOutlined, SecurityScanOutlined } from 
 
 
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios, { AxiosError } from 'axios';
 import useAuthStore from '../../store/auth';
 import type { User } from '../../types';
@@ -17,6 +18,7 @@ interface LoginResponse {
 }
 
 const AdminLogin: React.FC = () => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [glitch, setGlitch] = useState(false);
 
@@ -44,7 +46,7 @@ const AdminLogin: React.FC = () => {
 
       setToken(token);
       setUser(user);
-      message.success('AUTHENTICATION SUCCESSFUL. WELCOME, OPERATOR.');
+      message.success(t('auth.admin_success') || 'AUTHENTICATION SUCCESSFUL. WELCOME, OPERATOR.');
       navigate('/admin0755/dashboard');
     } catch (error) {
       console.error(error);

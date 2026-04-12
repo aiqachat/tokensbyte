@@ -97,6 +97,7 @@
     "balance": "余额",
     "group": "分组",
     "joined": "加入时间",
+    "register_ip": "注册 IP",
     "password_hint": "密码 (留空保持不变)",
     "uid": "用户 UID",
     "recharge": "余额调整",
@@ -310,6 +311,7 @@
     "new_password_required": "请输入新密码",
     "confirm_password_required": "请再次输入密码",
     "passwords_not_match": "两次填写的密码不一致",
-    "registration_disabled": "暂时不支持自主注册"
+    "registration_disabled": "暂时不支持自主注册",
+    "admin_success": "认证成功，欢迎，操作员。"
   }
 }

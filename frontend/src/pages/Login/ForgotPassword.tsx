@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Card, Typography, Space, message } from 'antd';
+import { Form, Input, Button, Card, Typography, Space, message, ConfigProvider, theme } from 'antd';
 import { MailOutlined, LockOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, Link } from 'react-router-dom';
@@ -35,9 +35,11 @@ const ForgotPassword: React.FC = () => {
 
   if (!settings) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#000' }}>
-        <Text type="secondary">{t('common.loading')}</Text>
-      </div>
+      <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#000' }}>
+          <Text type="secondary">{t('common.loading')}</Text>
+        </div>
+      </ConfigProvider>
     );
   }
 
@@ -78,7 +80,8 @@ const ForgotPassword: React.FC = () => {
   };
 
   return (
-    <div style={{
+    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
+      <div style={{
       height: '100vh',
       display: 'flex',
       alignItems: 'center',
@@ -173,7 +176,8 @@ const ForgotPassword: React.FC = () => {
           </div>
         </Form>
       </Card>
-    </div>
+      </div>
+    </ConfigProvider>
   );
 };
 

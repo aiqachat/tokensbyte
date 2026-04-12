@@ -43,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{}:{}", config_data.host, config_data.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("🚀 TokensByte server running at http://{}", addr);
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
 
     Ok(())
 }
