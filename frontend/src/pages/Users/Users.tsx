@@ -215,9 +215,16 @@ const Users: React.FC = () => {
         const levelName = level ? level.name : (group || 'default').toUpperCase();
         
         return (
-          <Tag color={group === 'vip' ? 'gold' : group === 'partner' ? 'cyan' : 'default'}>
-            {levelName}
-          </Tag>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+            <Tag color={group === 'vip' ? 'gold' : group === 'partner' ? 'cyan' : 'default'} style={{ margin: 0 }}>
+              {levelName}
+            </Tag>
+            {level && (
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                折扣倍率: {level.discount}x
+              </Text>
+            )}
+          </div>
         );
       },
     },
@@ -362,7 +369,7 @@ const Users: React.FC = () => {
                 <Input />
              </Form.Item>
           )}
-          {editingUser && (
+          {editingUser && isAdminPage && (
             <Form.Item name="role" label={t('users.role')}>
               <Select onChange={(val) => setSelectedRole(val)}>
                 <Option value="user">User</Option>
@@ -388,7 +395,9 @@ const Users: React.FC = () => {
             <Form.Item name="user_group" label="普通用户等级" initialValue="default">
               <Select>
                 {userLevels.map(level => (
-                  <Option key={level.id} value={level.group_key}>{level.name}</Option>
+                  <Option key={level.id} value={level.group_key}>
+                    {level.name} (折扣倍率: {level.discount}x)
+                  </Option>
                 ))}
               </Select>
             </Form.Item>

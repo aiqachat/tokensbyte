@@ -97,7 +97,7 @@ const BillingRules: React.FC = () => {
 
   const handleSave = async (values: any) => {
     try {
-      if (values.billing_rule === 'standard') {
+      if (values.billing_rule === 'standard' || values.billing_rule === 'fixed' || values.billing_rule === 'per_image') {
         values.pricing_tiers = [];
       }
 
@@ -158,6 +158,11 @@ const BillingRules: React.FC = () => {
               </Space>
             );
         } else if (record.billing_type === 'requests') {
+            if (record.billing_rule === 'per_image') {
+                return <Text type="secondary">{currencySymbol}{record.fixed_rate} / 张</Text>;
+            } else if (record.billing_rule === 'image_resolution') {
+                return <Text type="warning" style={{ fontSize: '12px' }}>按分辨率张收费 (见配置)</Text>;
+            }
             return <Text type="secondary">{currencySymbol}{record.fixed_rate} / 请求</Text>;
         } else {
             return <Text type="secondary">{currencySymbol}{record.duration_rate}/s</Text>;
@@ -311,9 +316,74 @@ const BillingRules: React.FC = () => {
           )}
 
           {billingType === 'requests' && (
-            <Form.Item name="fixed_rate" label={t('models.fixed_rate')} rules={[{ required: true }]}>
-              <InputNumber style={{ width: '100%' }} precision={4} addonAfter="/ Request" />
-            </Form.Item>
+            <>
+              <Form.Item name="billing_rule" label="计费子模式配置" initialValue="fixed">
+                <Radio.Group optionType="button" buttonStyle="solid">
+                  <Radio value="fixed">固定费率 (单次)</Radio>
+                  <Radio value="per_image">按张收费 (实际返回)</Radio>
+                  <Radio value="image_resolution">按分辨率张收费</Radio>
+                </Radio.Group>
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prev, curr) => prev.billing_rule !== curr.billing_rule}>
+                {({ getFieldValue }) => {
+                  const rule = getFieldValue('billing_rule');
+                  
+                  if (rule === 'image_resolution') {
+                    return (
+                      <div style={{ 
+                        background: '#141414', padding: '20px', borderRadius: '12px', marginBottom: '24px', border: '1px solid #303030'
+                      }}>
+                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>图片分辨率计费配置</Title>
+                        <Form.List name="pricing_tiers" initialValue={[]}>
+                          {(fields, { add, remove }) => (
+                            <>
+                              {fields.map(({ key, name, ...restField }) => (
+                                <Row key={key} gutter={16} align="middle" style={{ marginBottom: 12 }}>
+                                  <Col span={10}>
+                                    <Form.Item {...restField} name={[name, 'resolution']} rules={[{ required: true }]} noStyle>
+                                      <Input placeholder="图片分辨率 (如: 1K, 1024x1024)" style={{ width: '100%' }} />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={8}>
+                                    <Form.Item {...restField} name={[name, 'rate']} rules={[{ required: true }]} noStyle>
+                                      <InputNumber placeholder="单张费率" style={{ width: '100%' }} precision={6} addonAfter="/ 张" />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={4}>
+                                    <Form.Item {...restField} name={[name, 'enabled']} valuePropName="checked" style={{ marginBottom: 0 }}>
+                                      <Switch size="small" checkedChildren="开启" unCheckedChildren="关闭" />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={2} style={{ textAlign: 'right' }}>
+                                    <Button type="text" danger icon={<DeleteTwoTone />} onClick={() => remove(name)} />
+                                  </Col>
+                                </Row>
+                              ))}
+                              <Button 
+                                type="dashed" 
+                                onClick={() => add({ resolution: '', rate: 0, enabled: true })} 
+                                block 
+                                icon={<PlusOutlined />}
+                                style={{ marginTop: 8, height: '40px' }}
+                              >
+                                增加一个分辨率价格档位
+                              </Button>
+                            </>
+                          )}
+                        </Form.List>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <Form.Item name="fixed_rate" label={t('models.fixed_rate')} rules={[{ required: true }]}>
+                        <InputNumber style={{ width: '100%' }} precision={6} addonAfter={rule === 'per_image' ? "/ 张" : "/ Request"} />
+                      </Form.Item>
+                    );
+                  }
+                }}
+              </Form.Item>
+            </>
           )}
 
           {billingType === 'duration' && (
