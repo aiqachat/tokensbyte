@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Form, Input, Button, Typography, Space, message } from 'antd';
+import { Card, Form, Input, Button, Typography, Space, message, ConfigProvider, theme } from 'antd';
 import { UserOutlined, LockOutlined, RocketOutlined } from '@ant-design/icons';
 import { useNavigate, Link } from 'react-router-dom';
 import axios, { AxiosError } from 'axios';
@@ -42,7 +42,8 @@ const Login: React.FC = () => {
 
 
   return (
-    <div style={{
+    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
+      <div style={{
       height: '100vh',
       display: 'flex',
       alignItems: 'center',
@@ -97,7 +98,8 @@ const Login: React.FC = () => {
 
         </Form>
       </Card>
-    </div>
+      </div>
+    </ConfigProvider>
   );
 };
 

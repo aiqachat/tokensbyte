@@ -22,10 +22,7 @@ pub async fn chat_completions(
         return Err(AppError::Forbidden(format!("Model {} not allowed for this token", request.model)));
     }
 
-    // 2. Select channel (Routing & Load Balancing)
-    let channel = router::select_channel(&state, &request.model).await?;
-
-    // Fetch user info including balance and discount
+    // Fetch user info including balance, group, and discount first
     let user_info: (String, f64, f64) = sqlx::query_as(
         &state.db.format_query("SELECT u.user_group, u.balance, COALESCE(ul.discount, 1.0) as discount 
          FROM users u 
@@ -36,7 +33,10 @@ pub async fn chat_completions(
     .fetch_one(&state.db.pool)
     .await?;
 
-    let (_user_group, balance, discount) = user_info;
+    let (user_group, balance, discount) = user_info;
+
+    // 2. Select channel (Routing & Load Balancing) with user group restrictions
+    let channel = router::select_channel(&state, &request.model, &user_group).await?;
 
     // Check if user has enough balance (if not using pre-paid token quota)
     if token.quota_limit < 0.0 && balance <= 0.0 {

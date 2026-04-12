@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag } from 'antd';
+import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Select } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CodeOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
@@ -10,6 +10,7 @@ interface ForwardRule {
   id: number;
   name: string;
   rule_type: string;
+  category: string;
   config_json: string;
   description?: string;
   is_active: number;
@@ -57,6 +58,7 @@ const ForwardRules: React.FC = () => {
     setEditingItem(item);
     form.setFieldsValue({
       ...item,
+      category: item.category ? [item.category] : ['聊天'],
       is_active: item.is_active === 1,
     });
     setIsModalVisible(true);
@@ -87,6 +89,7 @@ const ForwardRules: React.FC = () => {
 
       const payload = {
         ...values,
+        category: (Array.isArray(values.category) && values.category.length > 0) ? values.category[0] : (values.category || '聊天'),
         is_active: values.is_active ? 1 : 0,
       };
 
@@ -134,6 +137,20 @@ const ForwardRules: React.FC = () => {
       key: 'rule_type',
       width: 150,
       render: (text: string) => <Tag color="purple">{text}</Tag>
+    },
+    {
+      title: '所属分类',
+      dataIndex: 'category',
+      key: 'category',
+      width: 100,
+      render: (text: string) => {
+          let color = 'cyan';
+          if (text === '聊天') color = 'blue';
+          else if (text === '图片') color = 'magenta';
+          else if (text === '视频') color = 'volcano';
+          else if (text === '语音') color = 'green';
+          return <Tag color={color}>{text || '聊天'}</Tag>;
+      }
     },
     {
       title: '应用详情描述',
@@ -206,6 +223,21 @@ const ForwardRules: React.FC = () => {
 
           <Form.Item name="rule_type" label="映射厂商及模式 (类型标识)" rules={[{ required: true }]}>
             <Input placeholder="如: openai, anthropic, gemini, passthrough" />
+          </Form.Item>
+
+          <Form.Item name="category" label={'模型分类属类'} rules={[{ required: true }]} initialValue={['聊天']}>
+            <Select 
+                mode="tags" 
+                maxCount={1}
+                placeholder="请选择或输入新分类并回车..." 
+                options={[
+                    { value: '聊天', label: '聊天' },
+                    { value: '图片', label: '图片' },
+                    { value: '视频', label: '视频' },
+                    { value: '语音', label: '语音' },
+                    { value: '其他', label: '其他' },
+                ]} 
+            />
           </Form.Item>
 
           <Form.Item name="description" label="详细阐述">

@@ -10,6 +10,7 @@ pub struct Channel {
     pub api_key: String,
     pub models: String,       // JSON array string
     pub model_mapping: String, // JSON object string
+    pub user_groups: String,   // JSON array of user level ids/keys
     pub priority: i32,
     pub weight: i32,
     pub status: i32,           // 1=active, 0=disabled, 2=testing
@@ -23,6 +24,10 @@ pub struct Channel {
 impl Channel {
     pub fn get_models(&self) -> Vec<String> {
         serde_json::from_str(&self.models).unwrap_or_default()
+    }
+
+    pub fn get_user_groups(&self) -> Vec<String> {
+        serde_json::from_str(&self.user_groups).unwrap_or_default()
     }
 
     pub fn get_model_mapping(&self) -> std::collections::HashMap<String, String> {
@@ -62,6 +67,7 @@ pub struct CreateChannelRequest {
     pub api_key: String,
     pub models: Vec<String>,
     pub model_mapping: Option<std::collections::HashMap<String, String>>,
+    pub user_groups: Option<Vec<String>>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub max_rps: Option<i32>,
@@ -76,6 +82,7 @@ pub struct UpdateChannelRequest {
     pub api_key: Option<String>,
     pub models: Option<Vec<String>>,
     pub model_mapping: Option<std::collections::HashMap<String, String>>,
+    pub user_groups: Option<Vec<String>>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub status: Option<i32>,
@@ -98,6 +105,7 @@ pub struct ChannelSafe {
     pub base_url: String,
     pub models: Vec<String>,
     pub model_mapping: std::collections::HashMap<String, String>,
+    pub user_groups: Vec<String>,
     pub priority: i32,
     pub weight: i32,
     pub status: i32,
@@ -111,6 +119,7 @@ impl From<Channel> for ChannelSafe {
     fn from(ch: Channel) -> Self {
         let models = ch.get_models();
         let model_mapping = ch.get_model_mapping();
+        let user_groups = ch.get_user_groups();
         Self {
             id: ch.id,
             name: ch.name,
@@ -118,6 +127,7 @@ impl From<Channel> for ChannelSafe {
             base_url: ch.base_url,
             models,
             model_mapping,
+            user_groups,
             priority: ch.priority,
             weight: ch.weight,
             status: ch.status,
@@ -127,5 +137,11 @@ impl From<Channel> for ChannelSafe {
             updated_at: ch.updated_at,
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TestChannelRequest {
+    pub model: Option<String>,
+    pub forward_rule_id: Option<i32>,
 }
 

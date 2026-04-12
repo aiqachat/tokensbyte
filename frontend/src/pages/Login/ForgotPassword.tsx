@@ -35,10 +35,8 @@ const ForgotPassword: React.FC = () => {
 
   if (!settings) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <Card bordered={false} style={{ width: 400, borderRadius: 16, textAlign: 'center' }}>
-          <Text type="secondary">{t('common.loading')}</Text>
-        </Card>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#000' }}>
+        <Text type="secondary">{t('common.loading')}</Text>
       </div>
     );
   }
@@ -80,18 +78,27 @@ const ForgotPassword: React.FC = () => {
   };
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      justifyContent: 'center', 
-      alignItems: 'center', 
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-      padding: '20px'
+    <div style={{
+      height: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#000',
+      backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
     }}>
-      <Card bordered={false} style={{ width: 400, borderRadius: 16, boxShadow: '0 8px 24px rgba(0,0,0,0.08)' }}>
+      <Card style={{ 
+        width: 'min(400px, 92vw)', 
+        borderRadius: 16, 
+        background: '#141414', 
+        border: '1px solid #303030',
+        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
+      }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <Title level={2} style={{ marginBottom: 8, color: '#1a1a1a' }}>{t('auth.reset_password_title')}</Title>
-          <Text type="secondary">{t('auth.reset_password_subtitle')}</Text>
+          <Space direction="vertical">
+            <LockOutlined style={{ fontSize: 48, color: '#1677ff' }} />
+            <Title level={2} style={{ margin: 0 }}>TokensByte</Title>
+            <Text type="secondary">{t('auth.reset_password_title')}</Text>
+          </Space>
         </div>
 
         <Form
@@ -154,13 +161,15 @@ const ForgotPassword: React.FC = () => {
           </Form.Item>
 
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading} block size="large" style={{ borderRadius: 8, height: 48 }}>
+            <Button type="primary" htmlType="submit" loading={loading} block size="large">
               {t('auth.reset_password_btn')}
             </Button>
           </Form.Item>
 
           <div style={{ textAlign: 'center' }}>
-            <Link to="/login">{t('auth.back_to_login')}</Link>
+            <Text type="secondary">
+              <Link to="/login" style={{ color: '#1677ff' }}>{t('auth.back_to_login')}</Link>
+            </Text>
           </div>
         </Form>
       </Card>

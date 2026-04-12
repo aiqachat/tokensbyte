@@ -7,6 +7,7 @@ import AdminLogin from './pages/AdminLogin/AdminLogin';
 import DashboardLayout from './layouts/DashboardLayout';
 import Dashboard from './pages/Dashboard/Dashboard';
 import Channels from './pages/Channels/Channels';
+import ChannelTest from './pages/Channels/ChannelTest';
 import Models from './pages/Models/Models';
 import ForwardRules from './pages/Models/ForwardRules';
 import BillingRules from './pages/Models/BillingRules';
@@ -79,6 +80,7 @@ const App: React.FC = () => {
         >
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="channels" element={<Channels />} />
+          <Route path="channels/test/:id" element={<ChannelTest />} />
           <Route path="models" element={<Models />} />
           <Route path="forward-rules" element={<ForwardRules />} />
           <Route path="billing-rules" element={<BillingRules />} />

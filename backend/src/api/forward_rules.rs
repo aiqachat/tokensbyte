@@ -39,11 +39,14 @@ pub async fn create_rule(
         return Err(crate::error::AppError::Conflict("规则名称已存在".to_string()));
     }
 
+    let category_val = req.category.unwrap_or_else(|| "聊天".to_string());
+
     let rule = sqlx::query_as(
-        &state.db.format_query("INSERT INTO forward_rules (name, rule_type, description, config_json, is_active) VALUES (?, ?, ?, ?, ?) RETURNING *")
+        &state.db.format_query("INSERT INTO forward_rules (name, rule_type, category, description, config_json, is_active) VALUES (?, ?, ?, ?, ?, ?) RETURNING *")
     )
     .bind(&req.name)
     .bind(&req.rule_type)
+    .bind(&category_val)
     .bind(&req.description)
     .bind(&config_json)
     .bind(req.is_active)
@@ -80,6 +83,9 @@ pub async fn update_rule(
     
     if let Some(rtype) = &req.rule_type {
         sqlx::query(&state.db.format_query("UPDATE forward_rules SET rule_type = ? WHERE id = ?")).bind(rtype).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(cat) = &req.category {
+        sqlx::query(&state.db.format_query("UPDATE forward_rules SET category = ? WHERE id = ?")).bind(cat).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(config) = &req.config_json {
         sqlx::query(&state.db.format_query("UPDATE forward_rules SET config_json = ? WHERE id = ?")).bind(config).bind(id).execute(&state.db.pool).await?;

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Channel } from '../../types';
 
@@ -12,10 +13,12 @@ const Channels: React.FC = () => {
   const { t } = useTranslation();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [availableUserLevels, setAvailableUserLevels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [form] = Form.useForm();
+  const navigate = useNavigate();
 
   const fetchChannels = async () => {
     setLoading(true);
@@ -38,9 +41,19 @@ const Channels: React.FC = () => {
     }
   };
 
+  const fetchUserLevels = async () => {
+    try {
+      const resp = await (request.get('/user_levels') as unknown as Promise<{ data: any[] }>);
+      setAvailableUserLevels(resp.data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchChannels();
     fetchModels();
+    fetchUserLevels();
   }, []);
 
   const handleAdd = () => {
@@ -68,19 +81,8 @@ const Channels: React.FC = () => {
     }
   };
 
-  const handleTest = async (id: number) => {
-    try {
-      message.loading({ content: t('common.loading'), key: 'test' });
-      const resp = await (request.post(`/channels/${id}/test`, {}) as unknown as Promise<{ success: boolean; message: string }>);
-      if (resp.success) {
-        message.success({ content: t('channels.test_success'), key: 'test' });
-      } else {
-        message.error({ content: `${t('channels.test_failed')}: ${resp.message}`, key: 'test' });
-      }
-    } catch (e) {
-      console.error(e);
-      message.error({ content: t('channels.test_failed'), key: 'test' });
-    }
+  const handleTest = (record: Channel) => {
+    navigate(`/admin0755/channels/test/${record.id}`);
   };
 
   const handleSave = async (values: { models: string[]; model_mapping?: string; provider_type?: string; [key: string]: unknown }) => {
@@ -119,10 +121,20 @@ const Channels: React.FC = () => {
       render: (type: string) => <Tag color="purple">通用接口池</Tag>,
     },
     {
-      title: t('channels.base_url'),
-      dataIndex: 'base_url',
-      key: 'base_url',
-      render: (url: string) => <Text code>{url || 'Default'}</Text>,
+      title: '支持等级', // Supported user levels
+      dataIndex: 'user_groups',
+      key: 'user_groups',
+      render: (groups: string[] | undefined) => {
+        if (!groups || groups.length === 0) return <Tag color="green">全部允许</Tag>;
+        return (
+          <Space size={[0, 4]} wrap>
+            {groups.map(groupKey => {
+              const level = availableUserLevels.find(l => l.group_key === groupKey);
+              return <Tag color="blue" key={groupKey}>{level ? level.name : groupKey}</Tag>;
+            })}
+          </Space>
+        );
+      },
     },
     {
       title: t('common.status'),
@@ -139,7 +151,7 @@ const Channels: React.FC = () => {
       key: 'actions',
       render: (_: unknown, record: Channel) => (
         <Space>
-          <Button onClick={() => handleTest(record.id)}>{t('common.test')}</Button>
+          <Button onClick={() => handleTest(record)}>{t('common.test')}</Button>
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
             <Button icon={<DeleteOutlined />} danger />
@@ -200,6 +212,14 @@ const Channels: React.FC = () => {
             </Select>
           </Form.Item>
 
+          <Form.Item name="user_groups" label="支持用户等级" extra="默认不选则表示允许所有等级的用户使用该渠道">
+            <Select mode="multiple" placeholder="选择开放该渠道的特定 VIP 等级（留空允许所有）" allowClear>
+                {availableUserLevels.map((l) => (
+                    <Option key={l.group_key} value={l.group_key}>{l.name} ({l.group_key})</Option>
+                ))}
+            </Select>
+          </Form.Item>
+
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="priority" label={t('channels.priority')} initialValue={0}>
@@ -226,6 +246,4 @@ const Channels: React.FC = () => {
   );
 };
 
-
 export default Channels;
-

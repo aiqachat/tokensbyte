@@ -53,12 +53,19 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             balance DOUBLE PRECISION,
             max_rps INTEGER DEFAULT 0,
             config TEXT NOT NULL DEFAULT '{}',
+            user_groups TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
     .await?;
+
+    // Safe fallback for existing postgres deployments
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS user_groups TEXT NOT NULL DEFAULT '[]'")
+        .execute(pool)
+        .await
+        .ok();
 
     // API Tokens table
     sqlx::query(
@@ -289,6 +296,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             rule_type TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT '聊天',
             config_json TEXT NOT NULL DEFAULT '{}',
             description TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
@@ -299,6 +307,11 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '聊天'")
+        .execute(pool)
+        .await
+        .ok();
+
     // Alter models to add rule link
     sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS forward_rule_ids TEXT")
         .execute(pool)
@@ -307,11 +320,21 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     // Seed Forward Rules (PG)
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules").fetch_one(pool).await?;
     if count == 0 {
-        sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json) VALUES 
-            ('OpenAI 兼容原生通道', 'openai', '标准的按路径透传规则，支持绝大多数兼容站', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}'),
-            ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}'),
-            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}')
+        sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+            ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天'),
+            ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
+            ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频'),
+            ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}', '聊天'),
+            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天')
         "#).execute(pool).await?;
+    } else {
+        let img_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (图片)'").fetch_one(pool).await?;
+        if img_count == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
+                ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频')
+            "#).execute(pool).await.ok();
+        }
     }
 
     // Billing Rules table
@@ -620,6 +643,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             rule_type TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT '聊天',
             config_json TEXT NOT NULL DEFAULT '{}',
             description TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
@@ -630,6 +654,12 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    // Safe fallback for existing sqlite deployments
+    sqlx::query("ALTER TABLE forward_rules ADD COLUMN category TEXT NOT NULL DEFAULT '聊天'")
+        .execute(pool)
+        .await
+        .ok();
+
     let count_frule: i32 = sqlx::query_scalar("SELECT count(*) FROM pragma_table_info('models') WHERE name='forward_rule_ids'").fetch_one(pool).await?;
     if count_frule == 0 {
         sqlx::query("ALTER TABLE models ADD COLUMN forward_rule_ids TEXT").execute(pool).await?;
@@ -638,11 +668,21 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     // Seed Forward Rules (SQLite)
     let rule_count: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules").fetch_one(pool).await?;
     if rule_count == 0 {
-        sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json) VALUES 
-            ('OpenAI 兼容原生通道', 'openai', '标准的按路径透传规则，支持绝大多数兼容站', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}'),
-            ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}'),
-            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}')
+        sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+            ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天'),
+            ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
+            ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频'),
+            ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}', '聊天'),
+            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天')
         "#).execute(pool).await?;
+    } else {
+        let img_count_sq: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (图片)'").fetch_one(pool).await?;
+        if img_count_sq == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
+                ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频')
+            "#).execute(pool).await.ok();
+        }
     }
 
     // Billing Rules table
@@ -736,12 +776,19 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             balance DOUBLE PRECISION,
             max_rps INTEGER DEFAULT 0,
             config TEXT NOT NULL DEFAULT '{}',
+            user_groups TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
     .execute(pool)
     .await?;
+
+    // Safe fallback for existing postgres deployments
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS user_groups TEXT NOT NULL DEFAULT '[]'")
+        .execute(pool)
+        .await
+        .ok();
 
     // API Tokens table
     sqlx::query(
@@ -951,6 +998,7 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             rule_type TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT '聊天',
             config_json TEXT NOT NULL DEFAULT '{}',
             description TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
@@ -961,6 +1009,11 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '聊天'")
+        .execute(pool)
+        .await
+        .ok();
+
     // Alter models to add rule link
     sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS forward_rule_ids TEXT")
         .execute(pool)
@@ -969,11 +1022,21 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
     // Seed Forward Rules (PG Standard)
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules").fetch_one(pool).await?;
     if count == 0 {
-        sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json) VALUES 
-            ('OpenAI 兼容原生通道', 'openai', '标准的按路径透传规则，支持绝大多数兼容站', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}'),
-            ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}'),
-            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}')
+        sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+            ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天'),
+            ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
+            ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频'),
+            ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}', '聊天'),
+            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天')
         "#).execute(pool).await?;
+    } else {
+        let img_count_pg: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (图片)'").fetch_one(pool).await?;
+        if img_count_pg == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
+                ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频')
+            "#).execute(pool).await.ok();
+        }
     }
 
     // Billing Rules table

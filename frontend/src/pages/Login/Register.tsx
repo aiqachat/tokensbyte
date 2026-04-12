@@ -97,96 +97,36 @@ const Register: React.FC = () => {
 
   if (!settings) return null;
 
-  const glassStyle: React.CSSProperties = {
-    background: 'rgba(255, 255, 255, 0.7)',
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
-    borderRadius: '24px',
-    border: '1px solid rgba(255, 255, 255, 0.3)',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.15)',
-    padding: '40px 32px',
-    width: '100%',
-    maxWidth: '440px',
-  };
-
-  const containerStyle: React.CSSProperties = {
-    minHeight: '100vh',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    padding: '24px',
-    position: 'relative',
-    overflow: 'hidden'
-  };
-
-  const decorationStyle: React.CSSProperties = {
-    position: 'absolute',
-    width: '600px',
-    height: '600px',
-    background: 'radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%)',
-    borderRadius: '50%',
-    top: '-200px',
-    right: '-200px',
-    zIndex: 0
-  };
-
   return (
-    <div style={containerStyle}>
-      <div style={decorationStyle} />
-      <div style={{ ...decorationStyle, top: 'auto', bottom: '-200px', right: 'auto', left: '-200px' }} />
-      
-      <div style={glassStyle}>
-        <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <div style={{ 
-            display: 'inline-flex', 
-            padding: '12px', 
-            borderRadius: '16px', 
-            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
-            marginBottom: 20,
-            boxShadow: '0 10px 15px -3px rgba(99, 102, 241, 0.4)'
-          }}>
-            <UserOutlined style={{ fontSize: 32, color: '#fff' }} />
-          </div>
-          <Title level={2} style={{ margin: '0 0 8px', fontSize: 28, fontWeight: 700, color: '#111827' }}>
-            {t('auth.register_title')}
-          </Title>
-          <Text style={{ color: '#4b5563', fontSize: 16 }}>
-            {t('auth.register_subtitle')}
-          </Text>
+    <div style={{
+      height: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#000',
+      backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
+    }}>
+      <Card style={{ 
+        width: 'min(400px, 92vw)', 
+        borderRadius: 16, 
+        background: '#141414', 
+        border: '1px solid #303030',
+        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
+      }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <Space direction="vertical">
+            <UserOutlined style={{ fontSize: 48, color: '#1677ff' }} />
+            <Title level={2} style={{ margin: 0 }}>TokensByte</Title>
+            <Text type="secondary">{t('auth.register_title')}</Text>
+          </Space>
         </div>
 
-        <ConfigProvider
-          theme={{
-            token: {
-              borderRadius: 12,
-              colorPrimary: '#6366f1',
-            },
-            components: {
-              Input: {
-                activeShadow: '0 0 0 2px rgba(99, 102, 241, 0.1)',
-                paddingBlock: 12,
-              },
-              Button: {
-                controlHeight: 48,
-                fontWeight: 600,
-              },
-              Tabs: {
-                itemSelectedColor: '#6366f1',
-                inkBarColor: '#6366f1',
-                itemHoverColor: '#4f46e5',
-                titleFontSize: 16,
-              }
-            }
-          }}
+        <Form
+          form={form}
+          onFinish={onFinish}
+          layout="vertical"
+          size="large"
         >
-          <Form
-            form={form}
-            onFinish={onFinish}
-            layout="vertical"
-            requiredMark={false}
-            size="large"
-          >
             {(settings.registration.enable_username_registration && settings.registration.enable_email_registration) && (
               <Tabs
                 activeKey={activeTab}
@@ -207,7 +147,7 @@ const Register: React.FC = () => {
                   rules={[{ required: true, message: t('auth.username_required') }]}
                 >
                   <Input 
-                    prefix={<UserOutlined style={{ color: '#9ca3af', marginRight: 8 }} />} 
+                    prefix={<UserOutlined />} 
                     placeholder={t('auth.username_placeholder')} 
                   />
                 </Form.Item>
@@ -216,7 +156,7 @@ const Register: React.FC = () => {
                   rules={[{ type: 'email', message: t('auth.email_invalid') }]}
                 >
                   <Input 
-                    prefix={<MailOutlined style={{ color: '#9ca3af', marginRight: 8 }} />} 
+                    prefix={<MailOutlined />} 
                     placeholder={t('auth.email_optional')} 
                   />
                 </Form.Item>
@@ -228,7 +168,7 @@ const Register: React.FC = () => {
                   rules={[{ required: true, type: 'email', message: t('auth.email_required') }]}
                 >
                   <Input 
-                    prefix={<MailOutlined style={{ color: '#9ca3af', marginRight: 8 }} />} 
+                    prefix={<MailOutlined />} 
                     placeholder={t('auth.email_placeholder')} 
                   />
                 </Form.Item>
@@ -238,7 +178,7 @@ const Register: React.FC = () => {
                 >
                   <div style={{ display: 'flex', gap: 12 }}>
                     <Input 
-                      prefix={<SafetyCertificateOutlined style={{ color: '#9ca3af', marginRight: 8 }} />} 
+                      prefix={<SafetyCertificateOutlined />} 
                       placeholder={t('auth.code_placeholder')} 
                     />
                     <Button 
@@ -259,7 +199,7 @@ const Register: React.FC = () => {
               rules={[{ required: true, message: t('auth.password_required') }, { min: 6, message: '密码至少 6 位' }]}
             >
               <Input.Password 
-                prefix={<LockOutlined style={{ color: '#9ca3af', marginRight: 8 }} />} 
+                prefix={<LockOutlined />} 
                 placeholder={t('auth.password_placeholder')} 
               />
             </Form.Item>
@@ -278,7 +218,7 @@ const Register: React.FC = () => {
               ]}
             >
               <Input.Password 
-                prefix={<LockOutlined style={{ color: '#9ca3af', marginRight: 8 }} />} 
+                prefix={<LockOutlined />} 
                 placeholder={t('auth.confirm_password_placeholder')} 
               />
             </Form.Item>
@@ -291,8 +231,8 @@ const Register: React.FC = () => {
                     marginBottom: 24, 
                     padding: '12px', 
                     borderRadius: '12px', 
-                    background: 'rgba(99, 102, 241, 0.05)',
-                    border: '1px dashed rgba(99, 102, 241, 0.3)',
+                    background: 'rgba(22, 119, 255, 0.05)',
+                    border: '1px dashed rgba(22, 119, 255, 0.3)',
                     textAlign: 'center'
                   }}>
                     <Tag color="cyan" icon={<CheckCircleFilled />} style={{ border: 'none', background: 'transparent', fontSize: 13 }}>
@@ -319,16 +259,15 @@ const Register: React.FC = () => {
             </Form.Item>
 
             <div style={{ textAlign: 'center' }}>
-              <Text style={{ color: '#6b7280' }}>
+              <Text type="secondary">
                 {t('auth.have_account')} {' '}
-                <Link to="/login" style={{ color: '#6366f1', fontWeight: 600 }}>
+                <Link to="/login" style={{ color: '#1677ff', fontWeight: 600 }}>
                   {t('auth.login_link')}
                 </Link>
               </Text>
             </div>
-          </Form>
-        </ConfigProvider>
-      </div>
+        </Form>
+      </Card>
     </div>
   );
 };

@@ -78,6 +78,7 @@ pub struct ForwardRule {
     pub id: i32,
     pub name: String,
     pub rule_type: String,
+    pub category: String,
     pub config_json: String,
     pub description: Option<String>,
     pub is_active: i32,
@@ -89,6 +90,7 @@ pub struct ForwardRule {
 pub struct CreateRuleRequest {
     pub name: String,
     pub rule_type: String,
+    pub category: Option<String>,
     pub config_json: Option<String>,
     pub description: Option<String>,
     #[serde(default = "default_active")]
@@ -99,6 +101,7 @@ pub struct CreateRuleRequest {
 pub struct UpdateRuleRequest {
     pub name: Option<String>,
     pub rule_type: Option<String>,
+    pub category: Option<String>,
     pub config_json: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<i32>,
