@@ -373,6 +373,23 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     }
 
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE users ADD COLUMN admin_remark TEXT DEFAULT ''").execute(pool).await;
+
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS channel_configs (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider_type TEXT NOT NULL,
+            base_url TEXT NOT NULL,
+            api_key TEXT NOT NULL,
+            remark TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+    let _ = sqlx::query("ALTER TABLE channels ADD COLUMN preset_id INTEGER").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN remark TEXT").execute(pool).await;
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
 }
@@ -620,6 +637,23 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     // ... (rest of models migrations)
 
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE users ADD COLUMN admin_remark TEXT DEFAULT ''").execute(pool).await;
+
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS channel_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            provider_type TEXT NOT NULL,
+            base_url TEXT NOT NULL,
+            api_key TEXT NOT NULL,
+            remark TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    ).execute(pool).await?;
+    let _ = sqlx::query("ALTER TABLE channels ADD COLUMN preset_id INTEGER").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN remark TEXT").execute(pool).await;
+
     tracing::info!("SQLite database migrations completed successfully");
     
     // UID population logic
@@ -1077,6 +1111,23 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
     }
 
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE users ADD COLUMN admin_remark TEXT DEFAULT ''").execute(pool).await;
+
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS channel_configs (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider_type TEXT NOT NULL,
+            base_url TEXT NOT NULL,
+            api_key TEXT NOT NULL,
+            remark TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+    let _ = sqlx::query("ALTER TABLE channels ADD COLUMN preset_id INTEGER").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN remark TEXT").execute(pool).await;
+
     tracing::info!("PostgreSQL database migrations completed successfully");
     Ok(())
 }

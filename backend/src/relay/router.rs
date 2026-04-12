@@ -37,7 +37,18 @@ pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str
     }
 
     if total_weight <= 0 {
-        return Ok(top_tier_channels[0].clone());
+        let mut ch = top_tier_channels[0].clone();
+        if let Some(pid) = ch.preset_id {
+            if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
+                .bind(pid)
+                .fetch_optional(&state.db.pool)
+                .await 
+            {
+                ch.base_url = preset.base_url;
+                ch.api_key = preset.api_key;
+            }
+        }
+        return Ok(ch);
     }
 
     let mut rng = rand::rngs::OsRng;
@@ -47,7 +58,18 @@ pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str
     for channel in &top_tier_channels {
         current_sum += channel.weight;
         if random_value < current_sum {
-            return Ok(channel.clone());
+            let mut ch = channel.clone();
+            if let Some(pid) = ch.preset_id {
+                if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
+                    .bind(pid)
+                    .fetch_optional(&state.db.pool)
+                    .await 
+                {
+                    ch.base_url = preset.base_url;
+                    ch.api_key = preset.api_key;
+                }
+            }
+            return Ok(ch);
         }
     }
 

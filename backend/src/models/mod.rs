@@ -1,5 +1,6 @@
 pub mod user;
 pub mod channel;
+pub mod channel_config;
 pub mod api_token;
 pub mod log;
 pub mod redemption;
@@ -12,6 +13,7 @@ pub mod task_log;
 
 pub use user::*;
 pub use channel::*;
+pub use channel_config::*;
 pub use api_token::*;
 pub use log::*;
 pub use redemption::*;

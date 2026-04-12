@@ -29,6 +29,8 @@ pub struct User {
     pub updated_at: String,
     #[sqlx(default)]
     pub register_ip: Option<String>,
+    #[sqlx(default)]
+    pub admin_remark: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +42,7 @@ pub struct CreateUserRequest {
     pub user_group: Option<String>,
     pub admin_group_id: Option<i64>,
     pub aff: Option<String>,
+    pub referred_by: Option<String>,
     pub role: Option<String>,
 }
 
@@ -57,6 +60,8 @@ pub struct UpdateUserRequest {
     pub admin_group_id: Option<i64>,
     pub is_active: Option<i64>,
     pub commission_balance: Option<f64>,
+    pub admin_remark: Option<String>,
+    pub referred_by: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

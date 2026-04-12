@@ -159,9 +159,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
 
     if (hasPermission('channels')) {
       menuItems.push({
-        key: '/admin0755/channels',
+        key: 'channels-management-group',
         icon: <ControlOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/admin0755/channels">{t('menu.channels')}</Link>,
+        label: t('menu.channels'),
+        children: [
+          {
+            key: '/admin0755/channels',
+            label: <Link to="/admin0755/channels">{t('menu.channel_groups', '模型渠道分组')}</Link>,
+          },
+          {
+            key: '/admin0755/channel-configs',
+            label: <Link to="/admin0755/channel-configs">{t('menu.channel_configs', '模型渠道配置')}</Link>,
+          }
+        ]
       });
     }
 

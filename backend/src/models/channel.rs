@@ -11,6 +11,8 @@ pub struct Channel {
     pub models: String,       // JSON array string
     pub model_mapping: String, // JSON object string
     pub user_groups: String,   // JSON array of user level ids/keys
+    #[sqlx(default)]
+    pub preset_id: Option<i64>,
     pub priority: i32,
     pub weight: i32,
     pub status: i32,           // 1=active, 0=disabled, 2=testing
@@ -68,6 +70,7 @@ pub struct CreateChannelRequest {
     pub models: Vec<String>,
     pub model_mapping: Option<std::collections::HashMap<String, String>>,
     pub user_groups: Option<Vec<String>>,
+    pub preset_id: Option<i64>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub max_rps: Option<i32>,
@@ -83,6 +86,7 @@ pub struct UpdateChannelRequest {
     pub models: Option<Vec<String>>,
     pub model_mapping: Option<std::collections::HashMap<String, String>>,
     pub user_groups: Option<Vec<String>>,
+    pub preset_id: Option<i64>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub status: Option<i32>,
@@ -103,9 +107,11 @@ pub struct ChannelSafe {
     pub name: String,
     pub provider_type: String,
     pub base_url: String,
+    pub api_key: String,
     pub models: Vec<String>,
     pub model_mapping: std::collections::HashMap<String, String>,
     pub user_groups: Vec<String>,
+    pub preset_id: Option<i64>,
     pub priority: i32,
     pub weight: i32,
     pub status: i32,
@@ -125,9 +131,11 @@ impl From<Channel> for ChannelSafe {
             name: ch.name,
             provider_type: ch.provider_type,
             base_url: ch.base_url,
+            api_key: ch.api_key,
             models,
             model_mapping,
             user_groups,
+            preset_id: ch.preset_id,
             priority: ch.priority,
             weight: ch.weight,
             status: ch.status,

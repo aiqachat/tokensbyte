@@ -52,10 +52,11 @@ pub async fn create_user(
     let role = request.role.as_deref().unwrap_or("user");
     let user_group = request.user_group.as_deref().unwrap_or(request.group.as_deref().unwrap_or("default"));
     let admin_group_id = request.admin_group_id;
+    let referred_by = request.referred_by.clone().or(request.aff.clone());
 
     sqlx::query(
-        &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, user_group, admin_group_id, balance, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 1)"#)
+        &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, user_group, admin_group_id, balance, is_active, referred_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 1, ?)"#)
     )
     .bind(&user_id)
     .bind(&uid)
@@ -65,6 +66,7 @@ pub async fn create_user(
     .bind(role)
     .bind(user_group)
     .bind(admin_group_id)
+    .bind(&referred_by)
     .execute(&state.db.pool)
     .await?;
 
@@ -103,13 +105,17 @@ pub async fn update_user(
     if let Some(balance) = request.balance { user.balance = balance; }
     if let Some(user_group) = request.user_group { user.user_group = user_group; }
     if let Some(is_active) = request.is_active { user.is_active = is_active; }
+    if let Some(admin_remark) = request.admin_remark { user.admin_remark = Some(admin_remark); }
+    if let Some(referred_by) = request.referred_by { 
+        user.referred_by = if referred_by.trim().is_empty() { None } else { Some(referred_by) }; 
+    }
 
     let mut tx = state.db.pool.begin().await?;
 
     sqlx::query(
         &state.db.format_query(r#"UPDATE users SET username = ?, email = ?, password_hash = ?, 
            nickname = ?, mobile = ?, wechat_id = ?,
-           role = ?, balance = ?, user_group = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+           role = ?, balance = ?, user_group = ?, is_active = ?, admin_remark = ?, referred_by = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&user.username)
@@ -122,6 +128,8 @@ pub async fn update_user(
     .bind(user.balance)
     .bind(&user.user_group)
     .bind(user.is_active)
+    .bind(&user.admin_remark)
+    .bind(&user.referred_by)
     .bind(&id)
     .execute(&mut *tx)
     .await?;

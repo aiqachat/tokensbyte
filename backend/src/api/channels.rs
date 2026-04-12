@@ -29,8 +29,8 @@ pub async fn create_channel(
     let config_json = serde_json::to_string(&request.config.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     let groups_json = serde_json::to_string(&request.user_groups.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
 
-    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, priority, weight, status, max_rps, config)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING id"#;
+    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, preset_id, priority, weight, status, max_rps, config)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING id"#;
 
     let id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(sql))
         .bind(&request.name)
@@ -40,6 +40,7 @@ pub async fn create_channel(
         .bind(&models_json)
         .bind(&mapping_json)
         .bind(&groups_json)
+        .bind(request.preset_id)
         .bind(request.priority.unwrap_or(0))
         .bind(request.weight.unwrap_or(1))
         .bind(request.max_rps.unwrap_or(0))
@@ -73,6 +74,7 @@ pub async fn update_channel(
     if let Some(models) = request.models { channel.models = serde_json::to_string(&models).unwrap_or_else(|_| "[]".to_string()); }
     if let Some(mapping) = request.model_mapping { channel.model_mapping = serde_json::to_string(&mapping).unwrap_or_else(|_| "{}".to_string()); }
     if let Some(user_groups) = request.user_groups { channel.user_groups = serde_json::to_string(&user_groups).unwrap_or_else(|_| "[]".to_string()); }
+    if let Some(preset_id) = request.preset_id { channel.preset_id = Some(preset_id); }
     if let Some(priority) = request.priority { channel.priority = priority; }
     if let Some(weight) = request.weight { channel.weight = weight; }
     if let Some(status) = request.status { channel.status = status; }
@@ -81,7 +83,7 @@ pub async fn update_channel(
 
     sqlx::query(
         &state.db.format_query(r#"UPDATE channels SET name = ?, provider_type = ?, base_url = ?, api_key = ?, models = ?, 
-           model_mapping = ?, user_groups = ?, priority = ?, weight = ?, status = ?, max_rps = ?, config = ?, updated_at = CURRENT_TIMESTAMP
+           model_mapping = ?, user_groups = ?, preset_id = ?, priority = ?, weight = ?, status = ?, max_rps = ?, config = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&channel.name)
@@ -91,6 +93,7 @@ pub async fn update_channel(
     .bind(&channel.models)
     .bind(&channel.model_mapping)
     .bind(&channel.user_groups)
+    .bind(channel.preset_id)
     .bind(channel.priority)
     .bind(channel.weight)
     .bind(channel.status)
@@ -121,10 +124,20 @@ pub async fn test_channel(
     Path(id): Path<i64>,
     Json(req): Json<crate::models::TestChannelRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let channel: Channel = sqlx::query_as(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
+    let mut channel: Channel = sqlx::query_as(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.db.pool)
         .await?;
+
+    if let Some(pid) = channel.preset_id {
+        let preset: Option<crate::models::ChannelConfig> = sqlx::query_as(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
+            .bind(pid)
+            .fetch_optional(&state.db.pool).await?;
+        if let Some(p) = preset {
+            channel.base_url = p.base_url;
+            channel.api_key = p.api_key;
+        }
+    }
 
     let provider = crate::providers::get_provider(&channel.provider_type);
     

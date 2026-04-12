@@ -14,6 +14,7 @@ const Channels: React.FC = () => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [availableUserLevels, setAvailableUserLevels] = useState<any[]>([]);
+  const [presets, setPresets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
@@ -24,7 +25,7 @@ const Channels: React.FC = () => {
     setLoading(true);
     try {
       const resp = await (request.get('/channels') as unknown as Promise<{ data: Channel[] }>);
-      setChannels(resp.data);
+      setChannels(resp.data || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -35,7 +36,7 @@ const Channels: React.FC = () => {
   const fetchModels = async () => {
     try {
       const resp = await (request.get('/models') as unknown as Promise<{ data: any[] }>);
-      setAvailableModels(resp.data);
+      setAvailableModels(resp.data || []);
     } catch (e) {
       console.error(e);
     }
@@ -44,7 +45,16 @@ const Channels: React.FC = () => {
   const fetchUserLevels = async () => {
     try {
       const resp = await (request.get('/user_levels') as unknown as Promise<{ data: any[] }>);
-      setAvailableUserLevels(resp.data);
+      setAvailableUserLevels(resp.data || []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchPresets = async () => {
+    try {
+      const resp = await (request.get('/channel-configs') as unknown as Promise<{ data: any[] }>);
+      setPresets(resp.data || []);
     } catch (e) {
       console.error(e);
     }
@@ -54,6 +64,7 @@ const Channels: React.FC = () => {
     fetchChannels();
     fetchModels();
     fetchUserLevels();
+    fetchPresets();
   }, []);
 
   const handleAdd = () => {
@@ -88,7 +99,7 @@ const Channels: React.FC = () => {
   const handleSave = async (values: { models: string[]; model_mapping?: string; provider_type?: string; [key: string]: unknown }) => {
     const data = {
       ...values,
-      provider_type: 'custom',
+      provider_type: values.provider_type || 'custom',
       model_mapping: {},
     };
 
@@ -108,6 +119,15 @@ const Channels: React.FC = () => {
   };
 
   const columns = [
+    {
+      title: '配置归属',
+      dataIndex: 'preset_id',
+      key: 'preset_id',
+      render: (pid: number) => {
+        const preset = (presets || []).find(p => p.id === pid);
+        return preset ? <Tag color="orange">{preset.name}</Tag> : <Text type="secondary">独立渠道</Text>;
+      }
+    },
     {
       title: t('channels.name'),
       dataIndex: 'name',
@@ -196,11 +216,27 @@ const Channels: React.FC = () => {
             </Col>
           </Row>
 
-          <Form.Item name="base_url" label={t('channels.base_url')}>
+          <Form.Item name="preset_id" label="预设渠道配置 (可选)" extra="选择预设后，基础 URL 和 API Key 会在实际请求时被预设接管">
+            <Select placeholder="选择预设配置（不选则使用独立配置）" allowClear>
+              {(presets || []).map(p => (
+                <Option key={p.id} value={p.id}>{p.name} [{p.provider_type}]</Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item name="provider_type" label="服务商类型" required>
+                <Input placeholder="例如：openai" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item name="base_url" label={t('channels.base_url')} extra="若已选择配置归属，此项只做备用或可为空">
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
 
-          <Form.Item name="api_key" label={t('channels.api_key')} rules={[{ required: true }]}>
+          <Form.Item name="api_key" label={t('channels.api_key')} extra="若已选择配置归属，此项只做备用或可填任意值" rules={[{ required: true }]}>
             <Input.Password placeholder="sk-..." />
           </Form.Item>
 

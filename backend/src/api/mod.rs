@@ -9,6 +9,7 @@ use crate::middleware::{auth_middleware, admin_middleware, api_key_middleware};
 
 pub mod auth;
 pub mod channels;
+pub mod channel_configs;
 pub mod dashboard;
 pub mod logs;
 pub mod model_classifications;
@@ -34,6 +35,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/channels", post(channels::create_channel))
         .route("/channels/{id}", put(channels::update_channel).delete(channels::delete_channel))
         .route("/channels/{id}/test", post(channels::test_channel))
+        .route("/channel-configs", post(channel_configs::create_channel_config))
+        .route("/channel-configs/{id}", put(channel_configs::update_channel_config).delete(channel_configs::delete_channel_config))
         .route("/models", post(models::create_model))
         .route("/models/{id}", put(models::update_model).delete(models::delete_model))
         .route("/model-providers", get(model_classifications::list_providers).post(model_classifications::create_provider))
@@ -69,6 +72,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/models", get(models::list_models))
         .route("/tokens", get(tokens::list_tokens).post(tokens::create_token))
         .route("/tokens/{id}", put(tokens::update_token).delete(tokens::delete_token))
+        .route("/channel-configs", get(channel_configs::list_channel_configs))
         .route("/logs", get(logs::list_logs))
         .route("/redemptions/redeem", post(redemptions::redeem_code))
         

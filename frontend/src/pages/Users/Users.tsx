@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +19,7 @@ const Users: React.FC = () => {
   
   const { settings } = useSettingsStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [userLevels, setUserLevels] = useState<any[]>([]);
   const [adminGroups, setAdminGroups] = useState<any[]>([]);
@@ -28,6 +29,7 @@ const Users: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isRechargeModalVisible, setIsRechargeModalVisible] = useState(false);
   const [rechargingUser, setRechargingUser] = useState<User | null>(null);
+  const [searchText, setSearchText] = useState('');
   const [form] = Form.useForm();
   const [rechargeForm] = Form.useForm();
 
@@ -35,6 +37,7 @@ const Users: React.FC = () => {
     setLoading(true);
     try {
       const resp = await (request.get('/users') as unknown as Promise<{ data: User[] }>);
+      setAllUsers(resp.data);
       // Filter by role
       const filteredUsers = resp.data.filter(u => u.role === targetRole);
       setUsers(filteredUsers);
@@ -54,6 +57,19 @@ const Users: React.FC = () => {
   useEffect(() => {
     fetchUsers();
   }, [isAdminPage]);
+
+  const displayedUsers = useMemo(() => {
+    if (!searchText) return users;
+    const lower = searchText.toLowerCase();
+    return users.filter(user => 
+      user.username?.toLowerCase().includes(lower) ||
+      user.uid?.toLowerCase().includes(lower) ||
+      user.nickname?.toLowerCase().includes(lower) ||
+      user.email?.toLowerCase().includes(lower) ||
+      user.mobile?.toLowerCase().includes(lower) ||
+      user.register_ip?.toLowerCase().includes(lower)
+    );
+  }, [users, searchText]);
 
   const handleAdd = () => {
     setEditingUser(null);
@@ -132,23 +148,59 @@ const Users: React.FC = () => {
       title: t('users.username'),
       dataIndex: 'username',
       key: 'username',
-      render: (text: string) => <Space><UserOutlined /><Text strong>{text}</Text></Space>,
-    },
-    {
-      title: t('users.email'),
-      dataIndex: 'email',
-      key: 'email',
-    },
-    {
-      title: t('users.role'),
-      dataIndex: 'role',
-      key: 'role',
-      render: (role: string) => (
-        <Tag color={role === 'admin' ? 'purple' : 'blue'}>
-          {role.toUpperCase()}
-        </Tag>
+      render: (text: string, record: User) => (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <Space>
+            <UserOutlined />
+            <Text strong>{text}</Text>
+            {record.nickname && <Text type="secondary">({record.nickname})</Text>}
+          </Space>
+          {record.referred_by && (() => {
+            const referrer = allUsers.find(u => u.id === record.referred_by || u.uid === record.referred_by || u.username === record.referred_by);
+            return (
+              <Text type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
+                推荐人: {referrer ? `${referrer.username} (UID: ${referrer.uid})` : record.referred_by}
+              </Text>
+            );
+          })()}
+          <Text 
+            type="secondary" 
+            style={{ fontSize: '12px', marginTop: 4 }}
+            editable={{
+              text: record.admin_remark || '',
+              onChange: async (val) => {
+                if (val === record.admin_remark) return;
+                try {
+                  await request.put(`/users/${record.id}`, { admin_remark: val });
+                  message.success('备注已更新');
+                  await fetchUsers();
+                } catch (e) {
+                  console.error('Failed to update remark:', e);
+                  message.error('备注更新失败');
+                }
+              },
+              tooltip: '点击编辑用户备注',
+              triggerType: ['text', 'icon']
+            }}
+          >
+            {record.admin_remark || '添加备注'}
+          </Text>
+        </div>
       ),
     },
+    {
+      title: '注册信息',
+      key: 'registration_info',
+      render: (_, record: User) => (
+        <Space direction="vertical" size={2} style={{ fontSize: '13px' }}>
+          {record.email && <Text type="secondary">邮箱: {record.email}</Text>}
+          {record.mobile && <Text type="secondary">手机号: {record.mobile}</Text>}
+          <Text type="secondary">注册 IP: {record.register_ip || '未知'}</Text>
+          <Text type="secondary">加入时间: {dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+        </Space>
+      ),
+    },
+
     {
       title: t('users.group'),
       dataIndex: 'user_group',
@@ -185,18 +237,7 @@ const Users: React.FC = () => {
         </Tag>
       ),
     },
-    {
-      title: t('users.register_ip'),
-      dataIndex: 'register_ip',
-      key: 'register_ip',
-      render: (ip: string) => ip ? <Text style={{ color: '#8c8c8c' }}>{ip}</Text> : '-',
-    },
-    {
-      title: t('users.joined'),
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm:ss'),
-    },
+
     {
       title: t('common.actions'),
       key: 'actions',
@@ -226,18 +267,30 @@ const Users: React.FC = () => {
         <Title level={2} style={{ margin: 0 }}>
           {isAdminPage ? t('menu.admin_list') : t('menu.user_list')}
         </Title>
-        <Space>
+        <Space wrap>
+          <Input.Search 
+            placeholder="搜索用户名/ID/昵称/邮箱/手机号/IP..." 
+            allowClear 
+            onSearch={setSearchText} 
+            onChange={(e) => setSearchText(e.target.value)} 
+            style={{ width: 300 }}
+          />
           <Button icon={<SyncOutlined />} onClick={fetchUsers}>{t('common.refresh')}</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{isAdminPage ? '添加管理员' : '添加普通用户'}</Button>
         </Space>
       </div>
 
       <Table
-        dataSource={users}
+        dataSource={displayedUsers}
         columns={columns}
         rowKey="id"
         loading={loading}
-        pagination={{ pageSize: 10 }}
+        pagination={{ 
+          defaultPageSize: 50, 
+          pageSizeOptions: ['50', '100', '200'], 
+          showSizeChanger: true,
+          showTotal: (total) => `共 ${total} 条数据`
+        }}
         scroll={{ x: 'max-content' }}
       />
 
@@ -250,6 +303,15 @@ const Users: React.FC = () => {
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="username" label={t('users.username')} rules={[{ required: true }]}>
             <Input placeholder={t('users.username')} />
+          </Form.Item>
+          <Form.Item name="nickname" label="用户昵称">
+            <Input placeholder="输入用户昵称" />
+          </Form.Item>
+          <Form.Item name="admin_remark" label="用户备注 (管理员可见)">
+            <Input.TextArea placeholder="写入简便备注例如: vip客户" rows={3} autoSize={{ minRows: 2, maxRows: 6 }} />
+          </Form.Item>
+          <Form.Item name="referred_by" label="上级推荐人 (UID / User ID)">
+            <Input placeholder="输入推荐人的内部 ID" />
           </Form.Item>
           <Form.Item name="email" label={t('users.email')} rules={[{ required: true, type: 'email' }]}>
             <Input placeholder="email@example.com" />

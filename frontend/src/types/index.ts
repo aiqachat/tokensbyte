@@ -17,6 +17,8 @@ export interface User {
   level_name?: string;
   created_at: string;
   register_ip?: string;
+  admin_remark?: string;
+  referred_by?: string;
 }
 
 export interface PricingTier {
@@ -119,6 +121,8 @@ export interface Channel {
   base_url: string;
   models: string[];
   model_mapping: Record<string, string>;
+  user_groups: string[];
+  preset_id?: number | null;
   priority: number;
   weight: number;
   status: number; // 1=active, 0=disabled
@@ -231,5 +235,16 @@ export interface AllSettings {
   registration: RegistrationSettings;
   smtp: SMTPSettings;
   marketing: MarketingSettings;
+}
+
+export interface ChannelConfig {
+  id: number;
+  name: string;
+  provider_type: string;
+  base_url: string;
+  remark?: string;
+  has_api_key?: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
