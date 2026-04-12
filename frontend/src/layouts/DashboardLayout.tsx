@@ -17,6 +17,8 @@ import {
   WalletOutlined,
   UserOutlined,
   NotificationOutlined,
+  HistoryOutlined,
+  ScheduleOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
@@ -101,31 +103,26 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       label: <Link to={isUserEnd ? '/tokens' : '/admin0755/tokens'}>{t('menu.tokens')}</Link>,
     },
     {
-      key: 'logs-group',
-      icon: <BarsOutlined style={{ fontSize: '18px' }} />,
-      label: t('menu.logs', '日志查询'),
-      children: [
-        {
-          key: isUserEnd ? '/logs' : '/admin0755/logs',
-          label: <Link to={isUserEnd ? '/logs' : '/admin0755/logs'}>{t('menu.usage_logs', '使用日志')}</Link>,
-        },
-        {
-          key: isUserEnd ? '/task-logs' : '/admin0755/task-logs',
-          label: <Link to={isUserEnd ? '/task-logs' : '/admin0755/task-logs'}>{t('menu.task_logs', '任务日志')}</Link>,
-        }
-      ]
+      key: isUserEnd ? '/logs' : '/admin0755/logs',
+      icon: <HistoryOutlined style={{ fontSize: '18px' }} />,
+      label: <Link to={isUserEnd ? '/logs' : '/admin0755/logs'}>{t('menu.usage_logs', '使用日志')}</Link>,
     },
+    {
+      key: isUserEnd ? '/task-logs' : '/admin0755/task-logs',
+      icon: <ScheduleOutlined style={{ fontSize: '18px' }} />,
+      label: <Link to={isUserEnd ? '/task-logs' : '/admin0755/task-logs'}>{t('menu.task_logs', '任务日志')}</Link>,
+    }
   ];
 
   // For Admin login, initial menu items need to be filtered too if not super admin
   if (!isUserEnd && user?.role === 'admin' && user.permissions) {
-     // Filter top level items
-     const initialKeys = ['dashboard', 'tokens', 'logs'];
-     // Replace menuItems with only allowed ones
      const filteredInitial = [];
      if (user.permissions.includes('dashboard')) filteredInitial.push(menuItems[0]);
      if (user.permissions.includes('tokens')) filteredInitial.push(menuItems[1]);
-     if (user.permissions.includes('logs')) filteredInitial.push(menuItems[2]);
+     if (user.permissions.includes('logs')) {
+         filteredInitial.push(menuItems[2]);
+         filteredInitial.push(menuItems[3]);
+     }
      
      // Reset menuItems to filtered version
      menuItems.length = 0;
@@ -322,7 +319,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           collapsible 
           collapsed={collapsed} 
           theme="dark" 
-          width={240}
+          width={200}
           breakpoint="lg"
           collapsedWidth={screens.xs ? 0 : 80}
           onBreakpoint={(broken) => {
@@ -344,16 +341,28 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             </Title>
 
           </div>
-          <Menu
-            theme="dark"
-            mode="inline"
-            selectedKeys={[location.pathname]}
-            items={menuItems}
-            style={{ border: 'none', background: 'transparent', marginTop: 8 }}
-            onClick={() => {
-              if (screens.xs) setCollapsed(true);
+          <ConfigProvider 
+            theme={{ 
+              components: { 
+                Menu: { 
+                  itemHeight: 36, // default is 40
+                  itemMarginInline: 8, 
+                  itemMarginBlock: 2, 
+                } 
+              } 
             }}
-          />
+          >
+            <Menu
+              theme="dark"
+              mode="inline"
+              selectedKeys={[location.pathname]}
+              items={menuItems}
+              style={{ border: 'none', background: 'transparent', marginTop: 8 }}
+              onClick={() => {
+                if (screens.xs) setCollapsed(true);
+              }}
+            />
+          </ConfigProvider>
         </Sider>
         <Layout style={{ marginLeft: (screens.xs || collapsed) ? 0 : 0 }}>
           <Header style={{ 
