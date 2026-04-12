@@ -112,7 +112,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/api/v1/auth", auth_routes)
         .nest("/api/v1", public_v1_routes)
         .nest("/api/v1", management_routes)
-        .nest("/v1", relay_routes)
+        .nest("/v1", relay_routes.clone())
+        .nest("/api", relay_routes)
         .with_state(state)
         .layer(tower_http::cors::CorsLayer::permissive())
 }
