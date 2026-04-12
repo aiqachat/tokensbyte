@@ -28,8 +28,27 @@ pub async fn create_channel(
     let mapping_json = serde_json::to_string(&request.model_mapping.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     let config_json = serde_json::to_string(&request.config.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     let groups_json = serde_json::to_string(&request.user_groups.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
+    
+    // Auto-generate unique 4-digit group_aid
+    let mut group_aid_val = String::new();
+    use rand::Rng;
+    for _ in 0..10 {
+        let aid: u32 = rand::thread_rng().gen_range(1000..10000);
+        let aid_str = aid.to_string();
+        let exists: i64 = sqlx::query_scalar(&state.db.format_query("SELECT COUNT(*) FROM channels WHERE group_aid = ?"))
+            .bind(&aid_str)
+            .fetch_one(&state.db.pool)
+            .await?;
+        if exists == 0 {
+            group_aid_val = aid_str;
+            break;
+        }
+    }
+    if group_aid_val.is_empty() {
+        group_aid_val = rand::thread_rng().gen_range(1000..10000).to_string(); // fallback
+    }
 
-    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, preset_id, priority, weight, status, max_rps, config)
+    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, group_aid, preset_id, priority, weight, status, max_rps, config)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING id"#;
 
     let id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(sql))
@@ -40,6 +59,7 @@ pub async fn create_channel(
         .bind(&models_json)
         .bind(&mapping_json)
         .bind(&groups_json)
+        .bind(&group_aid_val)
         .bind(request.preset_id)
         .bind(request.priority.unwrap_or(0))
         .bind(request.weight.unwrap_or(1))
@@ -74,6 +94,7 @@ pub async fn update_channel(
     if let Some(models) = request.models { channel.models = serde_json::to_string(&models).unwrap_or_else(|_| "[]".to_string()); }
     if let Some(mapping) = request.model_mapping { channel.model_mapping = serde_json::to_string(&mapping).unwrap_or_else(|_| "{}".to_string()); }
     if let Some(user_groups) = request.user_groups { channel.user_groups = serde_json::to_string(&user_groups).unwrap_or_else(|_| "[]".to_string()); }
+    if let Some(group_aid) = request.group_aid { channel.group_aid = Some(group_aid); }
     if let Some(preset_id) = request.preset_id { channel.preset_id = Some(preset_id); }
     if let Some(priority) = request.priority { channel.priority = priority; }
     if let Some(weight) = request.weight { channel.weight = weight; }
@@ -81,9 +102,29 @@ pub async fn update_channel(
     if let Some(max_rps) = request.max_rps { channel.max_rps = Some(max_rps); }
     if let Some(config) = request.config { channel.config = serde_json::to_string(&config).unwrap_or_else(|_| "{}".to_string()); }
 
+    let mut group_aid_val = channel.group_aid.clone().unwrap_or_default();
+    if group_aid_val.is_empty() {
+        use rand::Rng;
+        for _ in 0..10 {
+            let aid: u32 = rand::thread_rng().gen_range(1000..10000);
+            let aid_str = aid.to_string();
+            let exists: i64 = sqlx::query_scalar(&state.db.format_query("SELECT COUNT(*) FROM channels WHERE group_aid = ?"))
+                .bind(&aid_str)
+                .fetch_one(&state.db.pool)
+                .await?;
+            if exists == 0 {
+                group_aid_val = aid_str;
+                break;
+            }
+        }
+        if group_aid_val.is_empty() {
+            group_aid_val = rand::thread_rng().gen_range(1000..10000).to_string(); // fallback
+        }
+    }
+
     sqlx::query(
         &state.db.format_query(r#"UPDATE channels SET name = ?, provider_type = ?, base_url = ?, api_key = ?, models = ?, 
-           model_mapping = ?, user_groups = ?, preset_id = ?, priority = ?, weight = ?, status = ?, max_rps = ?, config = ?, updated_at = CURRENT_TIMESTAMP
+           model_mapping = ?, user_groups = ?, preset_id = ?, priority = ?, weight = ?, status = ?, max_rps = ?, config = ?, group_aid = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&channel.name)
@@ -99,6 +140,7 @@ pub async fn update_channel(
     .bind(channel.status)
     .bind(channel.max_rps)
     .bind(&channel.config)
+    .bind(&group_aid_val)
     .bind(id)
     .execute(&state.db.pool)
     .await?;

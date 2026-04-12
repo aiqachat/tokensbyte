@@ -2,28 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, TrophyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import dayjs from 'dayjs';
+import type { UserLevel } from '../../types';
 
 const { Title, Text } = Typography;
 
-interface UserLevel {
-  id: number;
-  name: String;
-  group_key: String;
-  discount: number;
-  commission_ratio: number;
-  description: String;
-  created_at: String;
-}
+
 
 const UserLevels: React.FC = () => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [levels, setLevels] = useState<UserLevel[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [editingLevel, setEditingLevel] = useState<UserLevel | null>(null);
-  const [form] = Form.useForm();
 
   const fetchLevels = async () => {
     setLoading(true);
@@ -42,15 +34,11 @@ const UserLevels: React.FC = () => {
   }, []);
 
   const handleAdd = () => {
-    setEditingLevel(null);
-    form.resetFields();
-    setIsModalVisible(true);
+    navigate('/admin0755/user-levels/new');
   };
 
   const handleEdit = (record: UserLevel) => {
-    setEditingLevel(record);
-    form.setFieldsValue(record);
-    setIsModalVisible(true);
+    navigate(`/admin0755/user-levels/${record.id}`);
   };
 
   const handleDelete = async (id: number) => {
@@ -64,20 +52,7 @@ const UserLevels: React.FC = () => {
     }
   };
 
-  const handleSave = async (values: any) => {
-    try {
-      if (editingLevel) {
-        await request.put(`/user_levels/${editingLevel.id}`, values);
-      } else {
-        await request.post('/user_levels', values);
-      }
-      message.success(t('user_levels.success'));
-      setIsModalVisible(false);
-      fetchLevels();
-    } catch (e) {
-      console.error(e);
-    }
-  };
+
 
   const columns = [
     {
@@ -163,50 +138,7 @@ const UserLevels: React.FC = () => {
         scroll={{ x: 'max-content' }}
       />
 
-      <Modal
-        title={editingLevel ? t('user_levels.edit_level') : t('user_levels.add_level')}
-        open={isModalVisible}
-        onCancel={() => setIsModalVisible(false)}
-        onOk={() => form.submit()}
-      >
-        <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="name" label={t('user_levels.name')} rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="group_key" label={t('user_levels.group_key')} rules={[{ required: true }]}>
-            <Input placeholder="e.g. vip" disabled={editingLevel?.group_key === 'default'} />
-          </Form.Item>
-          <Form.Item 
-            name="discount" 
-            label={t('user_levels.discount')} 
-            initialValue={1.0}
-            rules={[{ required: true }]}
-            extra={t('user_levels.discount_hint')}
-          >
-            <InputNumber style={{ width: '100%' }} min={0.01} max={1} step={0.01} precision={2} />
-          </Form.Item>
-          <Form.Item 
-            name="commission_ratio" 
-            label="返利比例" 
-            initialValue={0.0}
-            rules={[{ required: true }]}
-            extra="邀请的用户充值后，邀请人获得的奖励比例 (0-1)"
-          >
-            <InputNumber 
-              style={{ width: '100%' }} 
-              min={0} 
-              max={1} 
-              step={0.01} 
-              precision={2} 
-              formatter={value => `${Math.round((Number(value) || 0) * 100)}%`}
-              parser={value => (parseFloat(value?.replace('%', '') || '0') / 100) as any}
-            />
-          </Form.Item>
-          <Form.Item name="description" label={t('user_levels.description')}>
-            <Input.TextArea rows={3} />
-          </Form.Item>
-        </Form>
-      </Modal>
+
     </Card>
   );
 };

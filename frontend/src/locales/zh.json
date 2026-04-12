@@ -265,6 +265,7 @@
     "recharge_type_registration": "注册赠送",
     "recharge_type_manual": "手动调账",
     "recharge_type_redemption": "兑换码充值",
+    "recharge_type_commission": "邀请返佣",
     "recharge_type_other": "其它"
   },
   "marketing": {

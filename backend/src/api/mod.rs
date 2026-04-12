@@ -57,6 +57,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/user_levels/{id}", put(user_levels::update_user_level).delete(user_levels::delete_user_level))
         .route("/finance/orders", get(finance::list_orders))
         .route("/finance/recharges", get(finance::list_recharges))
+        .route("/finance/recharge_types", get(finance::list_recharge_types))
         .route("/admin_groups", get(admin_groups::list_admin_groups).post(admin_groups::create_admin_group))
         .route("/admin_groups/{id}", put(admin_groups::update_admin_group).delete(admin_groups::delete_admin_group))
         .route("/forward-rules", get(forward_rules::list_rules).post(forward_rules::create_rule))

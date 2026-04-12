@@ -113,8 +113,9 @@ pub async fn chat_completions(
         .await?;
 
         sqlx::query(
-            &state.db.format_query("UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+            &state.db.format_query("UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         )
+        .bind(quota_used)
         .bind(quota_used)
         .bind(&token.user_id)
         .execute(&mut *tx)

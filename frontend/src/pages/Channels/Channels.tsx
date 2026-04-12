@@ -120,12 +120,11 @@ const Channels: React.FC = () => {
 
   const columns = [
     {
-      title: '配置归属',
-      dataIndex: 'preset_id',
-      key: 'preset_id',
-      render: (pid: number) => {
-        const preset = (presets || []).find(p => p.id === pid);
-        return preset ? <Tag color="orange">{preset.name}</Tag> : <Text type="secondary">独立渠道</Text>;
+      title: '渠道分组 AID',
+      dataIndex: 'group_aid',
+      key: 'group_aid',
+      render: (aid: string) => {
+        return aid ? <Tag color="geekblue">{aid}</Tag> : <Text type="secondary">-</Text>;
       }
     },
     {

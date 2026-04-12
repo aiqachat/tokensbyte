@@ -15,6 +15,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
             balance DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             user_group TEXT NOT NULL DEFAULT 'default',
+            used_quota DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             is_active INTEGER NOT NULL DEFAULT 1, referred_by TEXT, commission_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
@@ -54,6 +55,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             max_rps INTEGER DEFAULT 0,
             config TEXT NOT NULL DEFAULT '{}',
             user_groups TEXT NOT NULL DEFAULT '[]',
+            group_aid TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -165,8 +167,11 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             group_key TEXT NOT NULL UNIQUE,
-            discount DOUBLE PRECISION NOT NULL DEFAULT 1.0,
             commission_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            invite_reward_inviter DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            invite_reward_invitee DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            daily_invite_limit INTEGER NOT NULL DEFAULT 10,
+            marketing_enabled INTEGER NOT NULL DEFAULT 0,
             description TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
@@ -271,9 +276,11 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
         .await?;
         
     // Fix missing column in user_levels if table was already created
-    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS commission_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0")
-        .execute(pool)
-        .await?;
+    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS commission_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS invite_reward_inviter DOUBLE PRECISION NOT NULL DEFAULT 0.0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS invite_reward_invitee DOUBLE PRECISION NOT NULL DEFAULT 0.0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS daily_invite_limit INTEGER NOT NULL DEFAULT 10").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS marketing_enabled INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
 
     // Commissions table
     sqlx::query(
@@ -408,6 +415,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             wechat_id TEXT,
             role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
             balance REAL NOT NULL DEFAULT 0.0,
+            used_quota REAL NOT NULL DEFAULT 0.0,
             user_group TEXT NOT NULL DEFAULT 'default',
             is_active INTEGER NOT NULL DEFAULT 1, referred_by TEXT, commission_balance REAL NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
@@ -581,6 +589,11 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             name TEXT NOT NULL,
             group_key TEXT NOT NULL UNIQUE,
             discount REAL NOT NULL DEFAULT 1.0,
+            commission_ratio REAL NOT NULL DEFAULT 0.0,
+            invite_reward_inviter REAL NOT NULL DEFAULT 0.0,
+            invite_reward_invitee REAL NOT NULL DEFAULT 0.0,
+            daily_invite_limit INTEGER NOT NULL DEFAULT 10,
+            marketing_enabled INTEGER NOT NULL DEFAULT 0,
             description TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
@@ -773,6 +786,7 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             wechat_id TEXT,
             role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
             balance DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            used_quota DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             user_group TEXT NOT NULL DEFAULT 'default',
             is_active INTEGER NOT NULL DEFAULT 1, referred_by TEXT, commission_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (now()::text),
@@ -813,6 +827,7 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             max_rps INTEGER DEFAULT 0,
             config TEXT NOT NULL DEFAULT '{}',
             user_groups TEXT NOT NULL DEFAULT '[]',
+            group_aid TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -925,6 +940,10 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             name TEXT NOT NULL,
             group_key TEXT NOT NULL UNIQUE,
             discount DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+            commission_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            invite_reward_inviter DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            invite_reward_invitee DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            daily_invite_limit INTEGER NOT NULL DEFAULT 10,
             description TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined, DollarOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import request from '../../utils/request';
@@ -191,7 +191,7 @@ const Users: React.FC = () => {
     {
       title: '注册信息',
       key: 'registration_info',
-      render: (_, record: User) => (
+      render: (_: any, record: User) => (
         <Space direction="vertical" size={2} style={{ fontSize: '13px' }}>
           {record.email && <Text type="secondary">邮箱: {record.email}</Text>}
           {record.mobile && <Text type="secondary">手机号: {record.mobile}</Text>}
@@ -222,10 +222,44 @@ const Users: React.FC = () => {
       },
     },
     {
-      title: t('users.balance'),
-      dataIndex: 'balance',
+      title: '剩余额度/总额度',
       key: 'balance',
-      render: (val: number) => `${currencySymbol}${val.toFixed(2)}`,
+      render: (_: unknown, record: User) => {
+        const balance = record.balance;
+        const used = record.used_quota || 0;
+        const total = balance + used;
+        const percent = total > 0 ? (balance / total) * 100 : 0;
+        return (
+          <div style={{ width: 140 }}>
+             <Tag 
+                icon={<DollarOutlined />}
+                style={{ 
+                  width: '100%', 
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  borderColor: 'rgba(255, 255, 255, 0.1)',
+                  borderRadius: '12px',
+                  padding: '4px 8px',
+                  fontSize: '13px',
+                  textAlign: 'center',
+                  marginBottom: 4,
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center'
+                }}
+             >
+                {currencySymbol}{balance.toFixed(2)} / {currencySymbol}{total.toFixed(2)}
+             </Tag>
+             <Progress 
+                percent={percent} 
+                showInfo={false} 
+                size="small" 
+                strokeColor={balance > 0 ? '#52c41a' : '#ff4d4f'}
+                trailColor="rgba(255, 255, 255, 0.1)"
+                style={{ marginBottom: 0, padding: '0 8px' }}
+             />
+          </div>
+        );
+      },
     },
     {
       title: t('common.status'),

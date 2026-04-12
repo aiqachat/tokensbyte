@@ -17,28 +17,28 @@ pub async fn list_logs(
     let per_page = query.per_page.unwrap_or(20);
     let offset = (page - 1) * per_page;
 
-    let mut sql = "SELECT * FROM logs WHERE 1=1".to_string();
+    let mut sql = "SELECT l.*, c.group_aid as channel_group_aid FROM logs l LEFT JOIN channels c ON l.channel_id = c.id WHERE 1=1".to_string();
     let mut binds: Vec<String> = Vec::new();
 
     if claims.role != "admin" {
-        sql.push_str(" AND user_id = ?");
+        sql.push_str(" AND l.user_id = ?");
         binds.push(claims.sub.clone());
     } else if let Some(ref user_id) = query.user_id {
-        sql.push_str(" AND user_id = ?");
+        sql.push_str(" AND l.user_id = ?");
         binds.push(user_id.clone());
     }
 
     if let Some(ref model) = query.model {
-        sql.push_str(" AND model LIKE ?");
+        sql.push_str(" AND l.model LIKE ?");
         binds.push(format!("%{}%", model));
     }
 
     if let Some(channel_id) = query.channel_id {
-        sql.push_str(" AND channel_id = ?");
+        sql.push_str(" AND l.channel_id = ?");
         binds.push(channel_id.to_string());
     }
 
-    let count_sql = sql.replace("SELECT *", "SELECT COUNT(*)");
+    let count_sql = sql.replace("SELECT l.*, c.group_aid as channel_group_aid", "SELECT COUNT(*)");
     let count_query_str = state.db.format_query(&count_sql);
     let mut count_q = sqlx::query_scalar::<_, i64>(&count_query_str);
     for val in &binds {
@@ -46,7 +46,7 @@ pub async fn list_logs(
     }
     let total = count_q.fetch_one(&state.db.pool).await?;
 
-    sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {} OFFSET {}", per_page, offset));
+    sql.push_str(&format!(" ORDER BY l.created_at DESC LIMIT {} OFFSET {}", per_page, offset));
     let logs_query_str = state.db.format_query(&sql);
     let mut logs_q = sqlx::query_as::<_, RequestLog>(&logs_query_str);
     for val in &binds {

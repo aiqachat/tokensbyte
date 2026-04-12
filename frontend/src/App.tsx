@@ -16,6 +16,7 @@ import Tokens from './pages/Tokens/Tokens';
 
 import Users from './pages/Users/Users';
 import UserLevels from './pages/Users/UserLevels';
+import UserLevelEdit from './pages/Users/UserLevelEdit';
 import AdminGroups from './pages/Users/AdminGroups';
 import Logs from './pages/Logs/Logs';
 import TaskLogs from './pages/Logs/TaskLogs';
@@ -94,6 +95,7 @@ const App: React.FC = () => {
           <Route path="users" element={<Users />} />
           <Route path="admins" element={<Users />} />
           <Route path="user-levels" element={<UserLevels />} />
+          <Route path="user-levels/:actionId" element={<UserLevelEdit />} />
           <Route path="admin-groups" element={<AdminGroups />} />
           <Route path="finance/recharges" element={<RechargeRecords />} />
           <Route path="finance/orders" element={<OrderDetails />} />

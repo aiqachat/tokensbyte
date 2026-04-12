@@ -13,6 +13,8 @@ pub struct User {
     pub wechat_id: Option<String>,
     pub role: String,
     pub balance: f64,
+    #[sqlx(default)]
+    pub used_quota: f64,
     pub user_group: String,
     #[sqlx(default)]
     pub level_name: Option<String>,

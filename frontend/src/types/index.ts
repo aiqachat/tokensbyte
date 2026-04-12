@@ -10,6 +10,7 @@ export interface User {
   wechat_id?: string;
   role: 'admin' | 'user';
   balance: number;
+  used_quota: number;
   user_group: string;
   admin_group_id?: number;
   permissions?: string[];
@@ -19,6 +20,20 @@ export interface User {
   register_ip?: string;
   admin_remark?: string;
   referred_by?: string;
+}
+
+export interface UserLevel {
+  id: number;
+  name: string;
+  group_key: string;
+  discount: number;
+  commission_ratio: number;
+  invite_reward_inviter: number;
+  invite_reward_invitee: number;
+  daily_invite_limit: number;
+  marketing_enabled: number;
+  description: string;
+  created_at: string;
 }
 
 export interface PricingTier {
@@ -48,10 +63,11 @@ export interface ModelModel {
   fixed_rate: number;
   duration_rate: number;
   group_ratios: string;
-  billing_rule: string;
-  billing_unit: string;
-  pricing_tiers: string; // JSON string from backend
-  is_active: boolean;
+  billing_rule?: string;
+  forward_rule_ids?: string;
+  billing_rule_id?: number | null;
+  pricing_tiers: string;
+  is_active: number;
   created_at: string;
   updated_at?: string;
 }
@@ -122,6 +138,7 @@ export interface Channel {
   models: string[];
   model_mapping: Record<string, string>;
   user_groups: string[];
+  group_aid?: string;
   preset_id?: number | null;
   priority: number;
   weight: number;
@@ -141,9 +158,10 @@ export interface ApiToken {
   allowed_ips: string;
   rps_limit: number;
   rpm_limit: number;
-  expires_at?: string;
-  is_active: boolean;
-  created_at: string;
+  billing_rule: string;
+  forward_rule_ids?: string;
+  is_active: number | boolean;
+  config?: string;
 }
 
 export interface Redemption {
@@ -171,6 +189,7 @@ export interface RequestLog {
   status_code: number;
   endpoint: string;
   error_message?: string;
+  channel_group_aid?: string;
   created_at: string;
 }
 

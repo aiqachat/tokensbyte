@@ -188,8 +188,12 @@ async fn record_usage(state: &Arc<AppState>, token: &ApiToken, channel: &Channel
     sqlx::query(&state.db.format_query("UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
         .bind(cost).bind(token.id).execute(&mut *tx).await?;
 
-    sqlx::query(&state.db.format_query("UPDATE users SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
-        .bind(cost).bind(&token.user_id).execute(&mut *tx).await?;
+    sqlx::query(&state.db.format_query("UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+        .bind(cost)
+        .bind(cost)
+        .bind(&token.user_id)
+        .execute(&mut *tx)
+        .await?;
 
     sqlx::query(&state.db.format_query(r#"INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint)
                    VALUES (?, ?, ?, ?, ?, ?, ?, 200, '/v1/chat/completions')"#))

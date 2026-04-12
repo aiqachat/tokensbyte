@@ -1,0 +1,185 @@
+import React, { useEffect, useState } from 'react';
+import { Card, Form, Input, InputNumber, Button, message, Space, Tabs, Spin, Switch } from 'antd';
+import { SaveOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import { useParams, useNavigate } from 'react-router-dom';
+import request from '../../utils/request';
+import type { UserLevel } from '../../types';
+
+const { TabPane } = Tabs;
+
+const UserLevelEdit: React.FC = () => {
+  const { t } = useTranslation();
+  const { actionId } = useParams<{ actionId: string }>();
+  const navigate = useNavigate();
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const isAdd = actionId === 'new';
+
+  useEffect(() => {
+    if (isAdd) {
+      setLoading(false);
+      form.setFieldsValue({
+        discount: 1.0,
+        commission_ratio: 0.0,
+        invite_reward_inviter: 0.0,
+        invite_reward_invitee: 0.0,
+        daily_invite_limit: 10,
+        marketing_enabled: false,
+      });
+      return;
+    }
+
+    const fetchLevel = async () => {
+      setLoading(true);
+      try {
+        const resp = await (request.get('/user_levels') as unknown as Promise<{ data: UserLevel[] }>);
+        const level = resp.data.find((l: UserLevel) => String(l.id) === actionId);
+        if (level) {
+          form.setFieldsValue({
+            ...level,
+            marketing_enabled: level.marketing_enabled === 1
+          });
+        } else {
+          message.error('未找到对应等级记录');
+          navigate('/admin0755/user-levels');
+        }
+      } catch (e) {
+        console.error(e);
+        message.error('获取等级详情失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLevel();
+  }, [actionId, form, isAdd, navigate]);
+
+  const handleSave = async (values: any) => {
+    setSaving(true);
+    // Convert boolean switch back to number
+    const payload = {
+      ...values,
+      marketing_enabled: values.marketing_enabled ? 1 : 0
+    };
+    try {
+      if (isAdd) {
+        await request.post('/user_levels', payload);
+        message.success(t('user_levels.success'));
+      } else {
+        await request.put(`/user_levels/${actionId}`, payload);
+        message.success(t('user_levels.success'));
+      }
+      navigate('/admin0755/user-levels');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <div style={{ textAlign: 'center', marginTop: 100 }}><Spin size="large" /></div>;
+  }
+
+  const groupKey = form.getFieldValue('group_key');
+
+  return (
+    <Card 
+      title={
+        <Space>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin0755/user-levels')} />
+          <span>{isAdd ? t('user_levels.add_level') : t('user_levels.edit_level')}</span>
+        </Space>
+      }
+      extra={
+        <Button type="primary" icon={<SaveOutlined />} onClick={() => form.submit()} loading={saving}>
+          保存配置
+        </Button>
+      }
+      bordered={false}
+    >
+      <Form form={form} layout="vertical" onFinish={handleSave} style={{ maxWidth: 800 }}>
+        <Tabs defaultActiveKey="1" type="card">
+          <TabPane tab="等级基本信息" key="1">
+            <Form.Item name="name" label={t('user_levels.name')} rules={[{ required: true }]}>
+              <Input placeholder="输入等级呈现的中文名称" />
+            </Form.Item>
+            <Form.Item name="group_key" label={t('user_levels.group_key')} rules={[{ required: true }]}>
+              <Input placeholder="e.g. vip, primary" disabled={groupKey === 'default'} />
+            </Form.Item>
+            <Form.Item 
+              name="discount" 
+              label={t('user_levels.discount')} 
+              rules={[{ required: true }]}
+              extra={t('user_levels.discount_hint')}
+            >
+              <InputNumber style={{ width: '100%' }} min={0.01} max={1} step={0.01} precision={2} />
+            </Form.Item>
+            <Form.Item name="description" label={t('user_levels.description')}>
+              <Input.TextArea rows={4} placeholder="描述该组特权或补充信息..." />
+            </Form.Item>
+          </TabPane>
+
+          <TabPane tab="等级营销推广" key="2">
+            <Form.Item 
+              name="marketing_enabled" 
+              label="开启专属推广模式 (高优先级)" 
+              valuePropName="checked"
+              extra="开启后，被邀请人注册时将不再发放站点的「全局注册好礼」，而是直接发放该等级配置的面额。邀请人也会根据日限制额度获得对应提成。"
+            >
+              <Switch checkedChildren="已开启" unCheckedChildren="已关闭" />
+            </Form.Item>
+
+            <Form.Item 
+              name="commission_ratio" 
+              label="返利比例 (邀请充值返现)" 
+              rules={[{ required: true }]}
+              extra="邀请的用户充值后，邀请人获得的奖金入账比例 (0-1)"
+            >
+              <InputNumber 
+                style={{ width: '100%' }} 
+                min={0} 
+                max={1} 
+                step={0.01} 
+                precision={2} 
+                formatter={value => `${Math.round((Number(value) || 0) * 100)}%`}
+                parser={value => (parseFloat(value?.replace('%', '') || '0') / 100) as any}
+              />
+            </Form.Item>
+
+            <Form.Item 
+              name="invite_reward_inviter" 
+              label="邀请成功送额度（给邀请人）" 
+              rules={[{ required: true }]}
+              extra="当受邀人成功注册并激活后，一次性赠送给【邀请人】的固定消费额度"
+            >
+              <InputNumber style={{ width: '100%' }} min={0} step={1} precision={2} />
+            </Form.Item>
+
+            <Form.Item 
+              name="invite_reward_invitee" 
+              label="走邀请链接注册送额度（给新客户/受邀人）" 
+              rules={[{ required: true }]}
+              extra="【受到邀请】而来的新用户，一经注册额外直接赠送的启动资金加成额度"
+            >
+              <InputNumber style={{ width: '100%' }} min={0} step={1} precision={2} />
+            </Form.Item>
+
+            <Form.Item 
+              name="daily_invite_limit" 
+              label="每日邀请人数上限 (0为无限)" 
+              rules={[{ required: true }]}
+              extra="限制每天最多有多少个有效下线名额可以获得固定额度奖励，防止机器批量注册撸羊毛（超出的邀请可能依然绑定但不支持送额度）"
+            >
+              <InputNumber style={{ width: '100%' }} min={0} step={1} precision={0} />
+            </Form.Item>
+          </TabPane>
+        </Tabs>
+      </Form>
+    </Card>
+  );
+};
+
+export default UserLevelEdit;

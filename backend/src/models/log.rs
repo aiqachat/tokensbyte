@@ -14,6 +14,8 @@ pub struct RequestLog {
     pub status_code: i32,
     pub endpoint: String,
     pub error_message: Option<String>,
+    #[sqlx(default)]
+    pub channel_group_aid: Option<String>,
     pub created_at: String,
 }
 

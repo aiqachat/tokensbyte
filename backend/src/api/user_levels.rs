@@ -27,14 +27,18 @@ pub async fn create_user_level(
     Json(req): Json<CreateUserLevelRequest>,
 ) -> AppResult<Json<UserLevel>> {
     let id = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO user_levels (name, group_key, discount, commission_ratio, description)
-           VALUES (?, ?, ?, ?, ?)
+        &state.db.format_query(r#"INSERT INTO user_levels (name, group_key, discount, commission_ratio, invite_reward_inviter, invite_reward_invitee, daily_invite_limit, marketing_enabled, description)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#)
     )
     .bind(&req.name)
     .bind(&req.group_key)
     .bind(req.discount)
     .bind(req.commission_ratio.unwrap_or(0.0))
+    .bind(req.invite_reward_inviter.unwrap_or(0.0))
+    .bind(req.invite_reward_invitee.unwrap_or(0.0))
+    .bind(req.daily_invite_limit.unwrap_or(10))
+    .bind(req.marketing_enabled.unwrap_or(0))
     .bind(req.description.unwrap_or_default())
     .fetch_one(&state.db.pool)
     .await?
@@ -67,6 +71,18 @@ pub async fn update_user_level(
     }
     if let Some(commission_ratio) = req.commission_ratio {
         sqlx::query(&state.db.format_query("UPDATE user_levels SET commission_ratio = ? WHERE id = ?")).bind(commission_ratio).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(invite_reward_inviter) = req.invite_reward_inviter {
+        sqlx::query(&state.db.format_query("UPDATE user_levels SET invite_reward_inviter = ? WHERE id = ?")).bind(invite_reward_inviter).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(invite_reward_invitee) = req.invite_reward_invitee {
+        sqlx::query(&state.db.format_query("UPDATE user_levels SET invite_reward_invitee = ? WHERE id = ?")).bind(invite_reward_invitee).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(daily_invite_limit) = req.daily_invite_limit {
+        sqlx::query(&state.db.format_query("UPDATE user_levels SET daily_invite_limit = ? WHERE id = ?")).bind(daily_invite_limit).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(marketing_enabled) = req.marketing_enabled {
+        sqlx::query(&state.db.format_query("UPDATE user_levels SET marketing_enabled = ? WHERE id = ?")).bind(marketing_enabled).bind(id).execute(&state.db.pool).await?;
     }
 
     sqlx::query(&state.db.format_query("UPDATE user_levels SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;

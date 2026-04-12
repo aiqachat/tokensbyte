@@ -159,8 +159,65 @@ pub async fn register(
 
         let mut initial_balance = state.config.default_user_quota;
         let mut gift_amount = 0.0;
+        let mut inviter_reward = 0.0;
+        let mut marketing_override = false;
+        let mut gift_remark = "注册赠送".to_string();
 
-        if settings.marketing.enable_registration_gift {
+        if let Some(ref inv_id) = referred_by {
+            let inviter_group: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT user_group FROM users WHERE id = ?"))
+                .bind(inv_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                
+            if let Some(group) = inviter_group {
+                use sqlx::Row;
+                let level_row_opt = sqlx::query(&state.db.format_query("SELECT marketing_enabled, invite_reward_inviter, invite_reward_invitee, daily_invite_limit FROM user_levels WHERE group_key = ?"))
+                    .bind(&group)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+                    
+                if let Some(row) = level_row_opt {
+                    let enabled: i64 = row.try_get::<i64, _>("marketing_enabled")
+                        .unwrap_or_else(|_| row.try_get::<i32, _>("marketing_enabled").unwrap_or(0) as i64);
+                        
+                    if enabled == 1 {
+                        marketing_override = true;
+                        
+                        let invitee_rew: f64 = row.try_get::<f64, _>("invite_reward_invitee").unwrap_or(0.0);
+                        let inviter_rew: f64 = row.try_get::<f64, _>("invite_reward_inviter").unwrap_or(0.0);
+                        let limit: i64 = row.try_get::<i64, _>("daily_invite_limit")
+                            .unwrap_or_else(|_| row.try_get::<i32, _>("daily_invite_limit").unwrap_or(10) as i64);
+                            
+                        gift_amount = invitee_rew;
+                        gift_remark = "走专属链接注册特权赠送".to_string();
+                        
+                        let mut can_reward = true;
+                        if limit > 0 {
+                            let today_prefix = chrono::Local::now().format("%Y-%m-%d").to_string();
+                            let like_str = format!("{}%", today_prefix);
+                            let today_count: i64 = sqlx::query_scalar(&state.db.format_query(
+                                "SELECT COUNT(*) FROM users WHERE referred_by = ? AND created_at LIKE ?"
+                            ))
+                            .bind(inv_id)
+                            .bind(&like_str)
+                            .fetch_one(&mut *tx)
+                            .await?;
+                            
+                            if today_count >= limit {
+                                can_reward = false;
+                                gift_amount = 0.0;
+                            }
+                        }
+                        
+                        if can_reward {
+                            inviter_reward = inviter_rew;
+                        }
+                    }
+                }
+            }
+        }
+
+        if !marketing_override && settings.marketing.enable_registration_gift {
             gift_amount = if settings.marketing.gift_mode == "random" {
                 let min = settings.marketing.min_amount as i64;
                 let max = settings.marketing.max_amount as i64;
@@ -172,9 +229,10 @@ pub async fn register(
             } else {
                 settings.marketing.fixed_amount
             };
-            if gift_amount > 0.0 {
-                initial_balance += gift_amount;
-            }
+        }
+        
+        if gift_amount > 0.0 {
+            initial_balance += gift_amount;
         }
 
         let raw_ip = headers.get("x-forwarded-for")
@@ -199,11 +257,28 @@ pub async fn register(
         .await?;
 
         if gift_amount > 0.0 {
-            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
+            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', ?)"))
                 .bind(&user_id)
                 .bind(gift_amount)
+                .bind(&gift_remark)
                 .execute(&mut *tx)
                 .await?;
+        }
+
+        if inviter_reward > 0.0 {
+            if let Some(ref inv_id) = referred_by {
+                sqlx::query(&state.db.format_query("UPDATE users SET balance = balance + ? WHERE id = ?"))
+                    .bind(inviter_reward)
+                    .bind(inv_id)
+                    .execute(&mut *tx)
+                    .await?;
+                    
+                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'commission', '邀请成功奖励')"))
+                    .bind(inv_id)
+                    .bind(inviter_reward)
+                    .execute(&mut *tx)
+                    .await?;
+            }
         }
 
         tx.commit().await?;

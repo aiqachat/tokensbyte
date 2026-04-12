@@ -263,6 +263,7 @@
     "recharge_type_registration": "Registration Gift",
     "recharge_type_manual": "Manual Adjustment",
     "recharge_type_redemption": "Redemption Code",
+    "recharge_type_commission": "Invite Commission",
     "recharge_type_other": "Other"
   },
   "marketing": {

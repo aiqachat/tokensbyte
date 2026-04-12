@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Card, Typography, Space, Input, Button, Tag } from 'antd';
+import { Table, Card, Typography, Space, Input, Button, Tag, Select, DatePicker } from 'antd';
 import { SyncOutlined, SearchOutlined, WalletOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
@@ -7,6 +7,8 @@ import useSettingsStore from '../../store/settings';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
+const { Option } = Select;
 
 interface RechargeRecord {
   id: number;
@@ -27,8 +29,23 @@ const RechargeRecords: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(50);
   const [search, setSearch] = useState('');
+  const [rechargeTypes, setRechargeTypes] = useState<string[]>([]);
+  const [selectedType, setSelectedType] = useState<string | undefined>();
+  const [dateRange, setDateRange] = useState<[string, string] | undefined>();
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const resp = await request.get('/finance/recharge_types');
+        setRechargeTypes((resp as any) || []);
+      } catch(e) {
+        console.error(e);
+      }
+    };
+    init();
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -38,6 +55,9 @@ const RechargeRecords: React.FC = () => {
           page,
           per_page: pageSize,
           user_id: search || undefined,
+          recharge_type: selectedType || undefined,
+          start_time: dateRange?.[0] || undefined,
+          end_time: dateRange?.[1] ? dateRange[1] + ' 23:59:59' : undefined,
         }
       }) as unknown as Promise<{ data: RechargeRecord[]; total: number }>);
       setData(resp.data);
@@ -47,7 +67,7 @@ const RechargeRecords: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search]);
+  }, [page, pageSize, search, selectedType, dateRange]);
 
   useEffect(() => {
     fetchData();
@@ -111,13 +131,34 @@ const RechargeRecords: React.FC = () => {
             <Title level={2} style={{ margin: 0 }}>{t('finance.recharge_title')}</Title>
         </Space>
         <Space>
+          <RangePicker 
+            onChange={(dates) => {
+              if (dates && dates[0] && dates[1]) {
+                 setDateRange([dates[0].format('YYYY-MM-DD'), dates[1].format('YYYY-MM-DD')]);
+              } else {
+                 setDateRange(undefined);
+              }
+            }} 
+            style={{ width: 240 }}
+          />
+          <Select
+            placeholder="按类型筛选"
+            allowClear
+            value={selectedType}
+            onChange={setSelectedType}
+            style={{ width: 140 }}
+          >
+            {rechargeTypes.map(rt => (
+              <Option key={rt} value={rt}>{t(`finance.recharge_type_${rt}`) || rt}</Option>
+            ))}
+          </Select>
           <Input 
             placeholder={t('common.search_placeholder')} 
             prefix={<SearchOutlined />} 
             value={search}
             onChange={e => setSearch(e.target.value)}
             onPressEnter={fetchData}
-            style={{ width: 250 }}
+            style={{ width: 200 }}
           />
           <Button icon={<SyncOutlined />} onClick={fetchData}>{t('common.refresh')}</Button>
         </Space>
@@ -132,6 +173,7 @@ const RechargeRecords: React.FC = () => {
           total,
           current: page,
           pageSize,
+          pageSizeOptions: ['50', '100', '200'],
           onChange: (p, s) => {
             setPage(p);
             setPageSize(s);
