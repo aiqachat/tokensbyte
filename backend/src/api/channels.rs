@@ -49,7 +49,7 @@ pub async fn create_channel(
     }
 
     let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, group_aid, preset_id, priority, weight, status, max_rps, config)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING id"#;
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING id"#;
 
     let id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(sql))
         .bind(&request.name)
@@ -200,17 +200,22 @@ pub async fn test_channel(
     // Generate accurate Mock cURL and Endpoint
     let mut endpoint = match channel.provider_type.as_str() {
         "anthropic" => format!("{}/v1/messages", channel.base_url.trim_end_matches('/')),
-        "google" => format!("{}/v1beta/models/{}:generateContent", channel.base_url.trim_end_matches('/'), test_model),
+        "google" => format!("{}/v1/chat/completions", channel.base_url.trim_end_matches('/')),
         _ => format!("{}/v1/chat/completions", channel.base_url.trim_end_matches('/')),
     };
 
     // Forward Rule Path Override
+    let mut rule_is_stream = false;
+    let mut rule_target_type: Option<String> = None;
     if let Some(fid) = req.forward_rule_id {
         let rule: Option<crate::models::ForwardRule> = sqlx::query_as(&state.db.format_query("SELECT * FROM forward_rules WHERE id = ?"))
             .bind(fid)
             .fetch_optional(&state.db.pool)
             .await?;
         if let Some(r) = rule {
+            if r.name.contains("流式") || r.name.to_lowercase().contains("stream") {
+                rule_is_stream = true;
+            }
             if r.category == "图片" {
                 is_image_request = true;
             } else if r.category == "视频" {
@@ -222,39 +227,72 @@ pub async fn test_channel(
                         if let Some(new) = path_rw.get("new").and_then(|v| v.as_str()) {
                             if endpoint.contains(old) {
                                 endpoint = endpoint.replace(old, new);
-                            } else if channel.provider_type == "openai" || channel.provider_type == "custom" {
+                            } else {
                                 endpoint = format!("{}{}", channel.base_url.trim_end_matches('/'), new);
                             }
+                            endpoint = endpoint.replace("${model}", &test_model);
                         }
                     }
+                }
+                if let Some(tt) = config.get("target_type").and_then(|v| v.as_str()) {
+                    rule_target_type = Some(tt.to_string());
                 }
             }
         }
     }
 
     let request_data = if is_image_request {
-         serde_json::json!({
-             "model": test_model.clone(),
-             "prompt": "Test Image Generation Check",
-             "n": 1,
-             "size": "512x512"
-         })
+         if rule_target_type.as_deref() == Some("gemini_image") || rule_target_type.as_deref() == Some("gemini") || (channel.provider_type == "google" && req.forward_rule_id.is_none()) {
+            serde_json::json!({
+                "contents": [{
+                    "parts": [{"text": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。"}]
+                }],
+                "generationConfig": {
+                    "imageConfig": {
+                        "aspectRatio": "1:1",
+                        "imageSize": "1K"
+                    }
+                }
+            })
+         } else {
+             serde_json::json!({
+                 "model": test_model.clone(),
+                 "prompt": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。",
+                 "n": 1,
+                 "size": "512x512"
+             })
+         }
     } else if is_video_request {
          serde_json::json!({
              "model": test_model.clone(),
-             "prompt": "Test Video Generation Check"
+             "prompt": "A short video of a cute white cat walking"
          })
     } else {
-         serde_json::json!({
-            "model": test_model.clone(),
-            "messages": [{
-                "role": "user",
-                "content": "hi"
-            }],
-            "stream": false,
-            "temperature": 0.0,
-            "max_tokens": 5
-        })
+         if rule_target_type.as_deref() == Some("gemini") {
+             serde_json::json!({
+                "contents": [{
+                    "role": "user",
+                    "parts": [{"text": "hi"}]
+                }],
+                "generationConfig": {
+                    "maxOutputTokens": 5,
+                    "temperature": 0.0
+                }
+             })
+         } else {
+             let mut st = false;
+             if endpoint.contains("stream") || rule_is_stream { st = true; }
+             serde_json::json!({
+                "model": test_model.clone(),
+                "messages": [{
+                    "role": "user",
+                    "content": "hi"
+                }],
+                "stream": st,
+                "temperature": 0.0,
+                "max_tokens": 5
+            })
+         }
     };
 
     let mut masked_key = channel.api_key.clone();
@@ -268,7 +306,7 @@ pub async fn test_channel(
     if channel.provider_type == "anthropic" {
         curl_cmd.push_str(&format!("  -H 'x-api-key: {}' \\\n", masked_key));
         curl_cmd.push_str("  -H 'anthropic-version: 2023-06-01' \\\n");
-    } else if channel.provider_type == "google" {
+    } else if channel.provider_type == "google" && (endpoint.contains("v1beta") || endpoint.contains("v1alpha") || endpoint.contains("generateContent") || endpoint.contains("predict")) {
         curl_cmd.push_str(&format!("  -H 'x-goog-api-key: {}' \\\n", masked_key));
     } else {
         curl_cmd.push_str(&format!("  -H 'Authorization: Bearer {}' \\\n", masked_key));
@@ -281,7 +319,7 @@ pub async fn test_channel(
         let mut builder = state.http_client.post(&endpoint).header("Content-Type", "application/json");
         if channel.provider_type == "anthropic" {
             builder = builder.header("x-api-key", &channel.api_key).header("anthropic-version", "2023-06-01");
-        } else if channel.provider_type == "google" {
+        } else if channel.provider_type == "google" && (endpoint.contains("v1beta") || endpoint.contains("v1alpha") || endpoint.contains("generateContent") || endpoint.contains("predict")) {
             builder = builder.header("x-goog-api-key", &channel.api_key);
         } else {
             builder = builder.header("Authorization", format!("Bearer {}", channel.api_key));
@@ -290,8 +328,19 @@ pub async fn test_channel(
             Ok(r) => {
                 let status = r.status();
                 if status.is_success() {
-                    let v: serde_json::Value = r.json().await.unwrap_or_default();
-                    Ok(v)
+                    let text = r.text().await.unwrap_or_default();
+                    if text.starts_with("data: ") || text.contains("\"candidates\"") {
+                        // Attempt strict JSON, otherwise fallback to mock usage to prevent error
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(v) => Ok(v),
+                            Err(_) => Ok(serde_json::json!({"status": "stream_success", "raw": text.chars().take(200).collect::<String>()}))
+                        }
+                    } else {
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(v) => Ok(v),
+                            Err(_) => Ok(serde_json::json!({"status": "success", "raw": text}))
+                        }
+                    }
                 } else {
                     let err = r.text().await.unwrap_or_default();
                     Err(crate::error::AppError::UpstreamError(err))

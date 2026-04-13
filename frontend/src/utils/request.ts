@@ -3,7 +3,7 @@ import { message } from 'antd';
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api/v1',
-  timeout: 60000,
+  timeout: 300000, // 5 minutes timeout for long-running requests like image generation
 });
 
 request.interceptors.request.use(

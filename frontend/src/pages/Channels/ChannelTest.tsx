@@ -132,7 +132,7 @@ const ChannelTest: React.FC = () => {
             
             <Row gutter={24}>
                 {/* Left Panel: Models Table */}
-                <Col span={12}>
+                <Col span={24} style={{ marginBottom: 24 }}>
                     <Card size="small" title="模型拨测队列" extra={
                         <Button type="primary" onClick={handleBatchTest} disabled={selectedTestModels.length === 0}>
                             批量拨测 {selectedTestModels.length} 个模型
@@ -143,7 +143,7 @@ const ChannelTest: React.FC = () => {
                             rowKey="model"
                             loading={loading}
                             pagination={false}
-                            scroll={{ y: 600 }}
+                            scroll={{ y: 300 }}
                             onRow={(record) => {
                                 return {
                                     onClick: () => {
@@ -177,7 +177,6 @@ const ChannelTest: React.FC = () => {
                                 {
                                     title: '操作',
                                     key: 'action',
-                                    width: 140,
                                     render: (_, record) => {
                                         const gModel = globalModels[record.model];
                                         let ruleOptions: {label: string, value: number}[] = [];
@@ -192,11 +191,11 @@ const ChannelTest: React.FC = () => {
                                         }
 
                                         return (
-                                            <Space direction="vertical" size="small">
+                                            <Space direction="horizontal" size="small">
                                                 {ruleOptions.length > 0 && (
                                                     <Select
                                                         size="small"
-                                                        style={{ width: '100%', minWidth: 100 }}
+                                                        style={{ minWidth: 180 }}
                                                         placeholder="默认拨号"
                                                         value={selectedRules[record.model] || undefined}
                                                         onChange={(val) => setSelectedRules({...selectedRules, [record.model]: val})}
@@ -207,7 +206,6 @@ const ChannelTest: React.FC = () => {
                                                 <Button 
                                                     size="small" 
                                                     type="dashed"
-                                                    style={{ width: '100%' }}
                                                     loading={testStatuses[record.model]?.status === 'testing'}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -225,12 +223,12 @@ const ChannelTest: React.FC = () => {
                     </Card>
                 </Col>
 
-                {/* Right Panel: Data Layout Rendering */}
-                <Col span={12}>
+                {/* Bottom Panel: Data Layout Rendering */}
+                <Col span={24}>
                     <Card size="small" title={activeModelLog ? `链路解包跟踪 - ${activeModelLog}` : '链路解包跟踪'}>
                         {!activeModelLog ? (
                             <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
-                                点击左侧任一表格行，实时显示底层发出与接收的真实 Payload
+                                点击上面任一表格行，实时显示底层发出与接收的真实 Payload
                             </div>
                         ) : (
                             <div style={{
@@ -238,8 +236,8 @@ const ChannelTest: React.FC = () => {
                                 color: '#d4d4d4',
                                 padding: 16,
                                 borderRadius: 8,
-                                minHeight: 600,
-                                maxHeight: 600,
+                                minHeight: 450,
+                                maxHeight: 450,
                                 overflowY: 'auto',
                                 fontFamily: 'monospace',
                                 fontSize: 13,
