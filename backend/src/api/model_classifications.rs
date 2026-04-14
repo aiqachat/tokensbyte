@@ -41,11 +41,12 @@ pub async fn create_provider(
     }
 
     let provider = sqlx::query_as(
-        &state.db.format_query("INSERT INTO model_providers (name, sort_order, is_active) VALUES (?, ?, ?) RETURNING *")
+        &state.db.format_query("INSERT INTO model_providers (name, sort_order, is_active, remark) VALUES (?, ?, ?, ?) RETURNING *")
     )
     .bind(&req.name)
     .bind(req.sort_order)
     .bind(req.is_active)
+    .bind(&req.remark)
     .fetch_one(&state.db.pool)
     .await?;
     Ok(Json(provider))
@@ -73,11 +74,12 @@ pub async fn update_provider(
     }
 
     let provider = sqlx::query_as(
-        &state.db.format_query("UPDATE model_providers SET name = ?, sort_order = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *")
+        &state.db.format_query("UPDATE model_providers SET name = ?, sort_order = ?, is_active = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *")
     )
     .bind(&req.name)
     .bind(req.sort_order)
     .bind(req.is_active)
+    .bind(&req.remark)
     .bind(id)
     .fetch_one(&state.db.pool)
     .await?;

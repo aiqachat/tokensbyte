@@ -422,6 +422,24 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     ).execute(pool).await?;
     let _ = sqlx::query("ALTER TABLE channels ADD COLUMN preset_id INTEGER").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN remark TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE model_providers ADD COLUMN remark TEXT").execute(pool).await;
+
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS upstreams (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            config TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN upstream_type TEXT NOT NULL DEFAULT 'other'").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN config TEXT").execute(pool).await;
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
@@ -1202,6 +1220,24 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
     ).execute(pool).await?;
     let _ = sqlx::query("ALTER TABLE channels ADD COLUMN preset_id INTEGER").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN remark TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE model_providers ADD COLUMN remark TEXT").execute(pool).await;
+
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS upstreams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            config TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    ).execute(pool).await?;
+
+    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN upstream_type TEXT NOT NULL DEFAULT 'other'").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN config TEXT").execute(pool).await;
 
     tracing::info!("PostgreSQL database migrations completed successfully");
     Ok(())

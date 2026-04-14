@@ -116,6 +116,7 @@ pub struct ModelProvider {
     pub name: String,
     pub sort_order: i32,
     pub is_active: i32,
+    pub remark: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -191,4 +192,5 @@ pub struct ClassificationRequest {
     pub name: String,
     pub sort_order: i32,
     pub is_active: i32,
+    pub remark: Option<String>,
 }
