@@ -68,6 +68,7 @@ export interface ModelModel {
   billing_rule_id?: number | null;
   pricing_tiers: string;
   is_active: number;
+  enable_log_content?: number;
   created_at: string;
   updated_at?: string;
 }
@@ -190,6 +191,13 @@ export interface RequestLog {
   endpoint: string;
   error_message?: string;
   channel_group_aid?: string;
+  channel_name?: string;
+  user_nickname?: string;
+  user_group?: string;
+  token_name?: string;
+  request_content?: string;
+  response_content?: string;
+  is_stream?: number;
   created_at: string;
 }
 

@@ -251,7 +251,9 @@ const ChannelTest: React.FC = () => {
                                 )}
                                 
                                 {activeLogData?.status === 'testing' && (
-                                    <div style={{ color: '#569cd6' }}>&gt; 正在拨号并执行网关校验...</div>
+                                    <div style={{ color: '#569cd6' }}>&gt; 正在拨号并执行网关校验... 
+                                      <span style={{ color: '#9cdcfe', paddingLeft: 8, fontSize: 12 }}>(若是视频/异步任务，可能自动轮询，预计 1-3 分钟，请耐心等待)</span>
+                                    </div>
                                 )}
 
                                 {(activeLogData?.status === 'success' || activeLogData?.status === 'error') && (
@@ -278,6 +280,7 @@ const ChannelTest: React.FC = () => {
                                             ### [INCOMING] 代理回包快照 (Response Snapshot) ###
                                             <span style={{ marginLeft: 8, background: '#333', padding: '2px 8px', borderRadius: 4 }}>
                                                 Round-Trip Time: {activeLogData.latency} ms
+                                                {activeLogData.response_data?._upstream_status && ` | HTTP ${activeLogData.response_data._upstream_status}`}
                                             </span>
                                         </div>
                                         <div style={{ borderLeft: `3px solid ${activeLogData.status === 'success' ? '#6a9955' : '#f44336'}`, marginTop: 8, background: '#252526', padding: 12 }}>

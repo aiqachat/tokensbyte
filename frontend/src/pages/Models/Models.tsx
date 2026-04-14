@@ -106,7 +106,8 @@ const Models: React.FC = () => {
     form.setFieldsValue({
       ...record,
       forward_rule_ids: ruleIds,
-      is_active: record.is_active === 1
+      is_active: record.is_active === 1,
+      enable_log_content: record.enable_log_content === 1
     });
     setIsModalVisible(true);
   };
@@ -126,6 +127,7 @@ const Models: React.FC = () => {
     try {
       // Cleanup arrays internally managed
       values.is_active = values.is_active ? 1 : 0;
+      values.enable_log_content = values.enable_log_content ? 1 : 0;
       
       if (editingModel) {
         await request.put(`/models/${editingModel.id}`, values);
@@ -328,9 +330,18 @@ const Models: React.FC = () => {
              </Select>
           </Form.Item>
 
-          <Form.Item name="is_active" label={t('common.status')} valuePropName="checked" initialValue={true}>
-            <Switch checkedChildren={t('common.active')} unCheckedChildren={t('common.disabled')} />
-          </Form.Item>
+          <Row gutter={16}>
+             <Col span={12}>
+                 <Form.Item name="is_active" label={t('common.status')} valuePropName="checked" initialValue={true}>
+                    <Switch checkedChildren={t('common.active')} unCheckedChildren={t('common.disabled')} />
+                 </Form.Item>
+             </Col>
+             <Col span={12}>
+                 <Form.Item name="enable_log_content" label="记录上下文" valuePropName="checked" initialValue={false}>
+                    <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                 </Form.Item>
+             </Col>
+          </Row>
         </Form>
       </Modal>
 

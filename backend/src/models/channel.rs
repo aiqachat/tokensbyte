@@ -67,8 +67,11 @@ impl Channel {
 pub struct CreateChannelRequest {
     pub name: String,
     pub provider_type: String,
+    #[serde(default)]
     pub base_url: String,
+    #[serde(default)]
     pub api_key: String,
+    #[serde(default)]
     pub models: Vec<String>,
     pub model_mapping: Option<std::collections::HashMap<String, String>>,
     pub user_groups: Option<Vec<String>>,

@@ -17,6 +17,8 @@ pub async fn handle_chat_stream(
     response: ReqwestResponse,
     discount: f64,
     prompt_tokens: i32,
+    request_content_str: String,
+    start_time: std::time::Instant,
 ) -> impl IntoResponse {
     let (tx, rx) = mpsc::channel(100);
     let mut upstream_stream = response.bytes_stream();
@@ -26,6 +28,8 @@ pub async fn handle_chat_stream(
         let mut total_prompt_tokens = prompt_tokens;
         let mut total_completion_tokens = 0;
         let mut buffer = String::new();
+        let mut full_response_text = String::new();
+        
         
         // Use a provider-specific parser (mocked for now, will implement properly)
         let provider_type = channel.provider_type.clone();
@@ -54,6 +58,8 @@ pub async fn handle_chat_stream(
                             if tx.send(Ok::<_, axum::Error>(format!("data: {}\n\n", transformed))).await.is_err() {
                                 break;
                             }
+                            full_response_text.push_str(&transformed);
+                            full_response_text.push('\n');
                         }
                     }
                 }
@@ -102,9 +108,12 @@ pub async fn handle_chat_stream(
             }
         };
         
-        if let Err(e) = record_usage(&state, &token, &channel, &model, total_prompt_tokens, total_completion_tokens, cost).await {
-            tracing::error!("Failed to record usage for stream: {:?}", e);
-        }
+        let latency_ms = start_time.elapsed().as_millis() as u32;
+        crate::relay::proxy::record_and_bill(
+            &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens,
+            cost, 200, "/v1/chat/completions", None, latency_ms, 1,
+            Some(request_content_str), Some(full_response_text)
+        ).await;
     });
 
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
@@ -182,24 +191,113 @@ fn create_openai_chunk(text: &str, model: &str) -> StreamChunk {
     }
 }
 
-async fn record_usage(state: &Arc<AppState>, token: &ApiToken, channel: &Channel, model: &str, prompt: i32, completion: i32, cost: f64) -> AppResult<()> {
-    let mut tx = state.db.pool.begin().await?;
 
-    sqlx::query(&state.db.format_query("UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
-        .bind(cost).bind(token.id).execute(&mut *tx).await?;
 
-    sqlx::query(&state.db.format_query("UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
-        .bind(cost)
-        .bind(cost)
-        .bind(&token.user_id)
-        .execute(&mut *tx)
-        .await?;
-
-    sqlx::query(&state.db.format_query(r#"INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 200, '/v1/chat/completions')"#))
-        .bind(&token.user_id).bind(channel.id).bind(token.id).bind(model).bind(prompt).bind(completion).bind(cost)
-        .execute(&mut *tx).await?;
+pub async fn handle_image_stream(
+    state: Arc<AppState>,
+    token: ApiToken,
+    channel: Channel,
+    model: String,
+    response: ReqwestResponse,
+    discount: f64,
+    request_content_str: String,
+    start_time: std::time::Instant,
+) -> impl IntoResponse {
+    let (tx, rx) = mpsc::channel(100);
+    let mut upstream_stream = response.bytes_stream();
     
-    tx.commit().await?;
-    Ok(())
+    // Spawn a worker to process the stream
+    tokio::spawn(async move {
+        let mut total_prompt_tokens = 0;
+        let mut total_completion_tokens = 0;
+        let mut buffer = String::new();
+        let mut full_response_text = String::new();
+        
+        while let Some(chunk_result) = upstream_stream.next().await {
+            match chunk_result {
+                Ok(bytes) => {
+                    let chunk_str = String::from_utf8_lossy(&bytes);
+                    buffer.push_str(&chunk_str);
+                    full_response_text.push_str(&chunk_str);
+                    
+                    if tx.send(Ok::<_, axum::Error>(bytes.clone())).await.is_err() {
+                        break;
+                    }
+                    
+                    // Parse usage from lines
+                    while let Some(index) = buffer.find('\n') {
+                        let line = buffer.drain(..index + 1).collect::<String>();
+                        let line = line.trim();
+                        if line.starts_with("data: ") && line != "data: [DONE]" {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line[6..]) {
+                                if let Some(usage) = json.get("usage") {
+                                    if let Some(prompt) = usage.get("prompt_tokens").and_then(|v| v.as_i64()) {
+                                        total_prompt_tokens = prompt as i32;
+                                    }
+                                    if let Some(comp) = usage.get("completion_tokens").or_else(|| usage.get("output_tokens")).or_else(|| usage.get("total_tokens")).and_then(|v| v.as_i64()) {
+                                        total_completion_tokens = comp as i32;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        
+        let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
+            .bind(&model)
+            .fetch_optional(&state.db.pool)
+            .await.unwrap_or(None);
+
+        let cost = match db_model {
+            Some(m) => {
+                match m.billing_type.as_str() {
+                    "requests" => m.fixed_rate * discount,
+                    "duration" => 0.0,
+                    _ => {
+                        let mut p_rate = m.prompt_rate;
+                        let mut c_rate = m.completion_rate;
+
+                        if m.billing_rule == "tiered" {
+                            let tiers: Vec<crate::models::PricingTier> = serde_json::from_str(&m.pricing_tiers).unwrap_or_default();
+                            let mut sorted_tiers = tiers;
+                            sorted_tiers.sort_by_key(|t| t.max_tokens);
+                            for tier in sorted_tiers {
+                                if total_prompt_tokens <= tier.max_tokens {
+                                    p_rate = tier.prompt_rate;
+                                    c_rate = tier.completion_rate;
+                                    break;
+                                }
+                            }
+                        }
+
+                        let divisor = 1_000_000.0;
+                        ((total_prompt_tokens as f64 * p_rate + total_completion_tokens as f64 * c_rate) / divisor) * discount
+                    }
+                }
+            },
+            None => {
+                let total_tokens = total_prompt_tokens + total_completion_tokens;
+                (total_tokens as f64 / 1_000_000.0) * discount
+            }
+        };
+        
+        let latency_ms = start_time.elapsed().as_millis() as u32;
+        crate::relay::proxy::record_and_bill(
+            &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens,
+            cost, 200, "/v1/images/generations", None, latency_ms, 1,
+            Some(request_content_str), Some(full_response_text)
+        ).await;
+    });
+
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+
+    Response::builder()
+        .header("Content-Type", "text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .header("Connection", "keep-alive")
+        .body(axum::body::Body::from_stream(stream))
+        .unwrap()
 }

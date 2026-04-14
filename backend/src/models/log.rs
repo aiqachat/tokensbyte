@@ -15,7 +15,23 @@ pub struct RequestLog {
     pub endpoint: String,
     pub error_message: Option<String>,
     #[sqlx(default)]
+    pub upstream_url: Option<String>,
+    #[sqlx(default)]
     pub channel_group_aid: Option<String>,
+    #[sqlx(default)]
+    pub request_content: Option<String>,
+    #[sqlx(default)]
+    pub response_content: Option<String>,
+    #[sqlx(default)]
+    pub is_stream: Option<i32>,
+    #[sqlx(default)]
+    pub token_name: Option<String>,
+    #[sqlx(default)]
+    pub user_nickname: Option<String>,
+    #[sqlx(default)]
+    pub user_group: Option<String>,
+    #[sqlx(default)]
+    pub channel_name: Option<String>,
     pub created_at: String,
 }
 

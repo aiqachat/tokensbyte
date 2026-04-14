@@ -204,14 +204,14 @@ const ForwardRules: React.FC = () => {
         <b>核心 JSON 配置参数指南：</b>
         <ul style={{ paddingLeft: 20, marginBottom: 0 }}>
           <li><CText>mode</CText>: 转发执行模式，例如 <CText>"transform"</CText> (启用协议报文转换)、<CText>"passthrough"</CText> (透明代理直接透传)。</li>
-          <li><CText>target_type</CText>: 目标厂商架构标识，如 <CText>"gemini"</CText>, <CText>"anthropic"</CText>。系统底层会自动加载该类型的 Header 或 Payload 模板。</li>
+          <li><CText>target_type</CText>: 目标厂商架构标识，如 <CText>"gemini"</CText>, <CText>"anthropic"</CText>, <CText>"volcengine"</CText>。系统底层会自动加载该类型的 Header 或 Payload 模板。</li>
           <li><CText>path_rewrite</CText>: URL 路径拦截变异规则。
             <ul>
-              <li><CText>old</CText>: 将被拦截替换的原始路径片段，例如 <CText>"/v1/chat/completions"</CText>；</li>
-              <li><CText>new</CText>: 将转换的新路径目标，支持宏变量替换，例如 <CText>{"\"/v1beta/models/${model}:generateContent\""}</CText>；</li>
+              <li><CText>old</CText>: 将被拦截替换的原始路径片段，例如 <CText>"/v1/video/generations"</CText>；</li>
+              <li><CText>new</CText>: 将转换的新路径目标，支持宏变量替换，例如 <CText>{"\"/api/v3/contents/generations/tasks\""}</CText> (火山方舟官方)。</li>
             </ul>
           </li>
-          <li><CText>auth_type</CText>: <span style={{ color: '#888' }}>(可选)</span> 强行覆盖认证鉴权机制传递方式，例如 <CText>"query_key"</CText> 将 API-Key 拼装至 URL Query 参数中发放。</li>
+          <li><CText>auth_type</CText>: <span style={{ color: '#888' }}>(可选)</span> 强行覆盖认证鉴权机制传递方式，例如 <CText>"query_key"</CText> 将 API-Key 拼装至 URL Query 参数中发放，或 <CText>"bearer"</CText> 强制走 Authorization 头。</li>
         </ul>
       </div>
       <p style={{ marginTop: 8, color: '#1890ff', marginBottom: 0 }}>配置结束后，您可在「模型列表」页将其绑定至对应的具体模型，真实网关或系统拨测都将自动走您定义的这条重写链路。</p>

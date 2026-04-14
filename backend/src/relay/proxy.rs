@@ -70,16 +70,94 @@ pub async fn get_model_cost(state: &Arc<AppState>, model: &str, discount: f64) -
 
 // ── Record Usage & Billing ──────────────────────────────────────
 
+use regex::Regex;
+
 pub async fn record_and_bill(
     state: &Arc<AppState>,
     token: &ApiToken,
     channel_id: i64,
-    model: &str,
+    model_name: &str,
+    prompt_tokens: i32,
+    completion_tokens: i32,
     cost: f64,
     status_code: u16,
     endpoint: &str,
     error_msg: Option<&str>,
+    latency_ms: u32,
+    is_stream: i32,
+    request_content: Option<String>,
+    response_content: Option<String>,
 ) {
+    let mut enable_log: i32 = 0;
+    if let Ok(Some(m)) = sqlx::query_as::<_, crate::models::Model>(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
+        .bind(model_name).fetch_optional(&state.db.pool).await 
+    {
+        enable_log = m.enable_log_content;
+    }
+
+    let filter_base64 = |content: Option<String>| -> Option<String> {
+        let text = content?;
+        if enable_log == 0 { return None; }
+        let re = Regex::new(r"data:image/[^;]+;base64,[A-Za-z0-9+/=]+").unwrap();
+        Some(re.replace_all(&text, "data:image/[type];base64,[base64 数据]").to_string())
+    };
+
+    let req_content = filter_base64(request_content);
+    let resp_content = filter_base64(response_content);
+
+    let mut channel_info: Option<(String, String, String)> = None;
+    if let Ok(Some(ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
+        .bind(channel_id)
+        .fetch_optional(&state.db.pool)
+        .await
+    {
+        let mut b = ch.base_url.clone();
+        let mut k = ch.api_key.clone();
+        if let Some(pid) = ch.preset_id {
+            if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
+                .bind(pid)
+                .fetch_optional(&state.db.pool)
+                .await
+            {
+                b = preset.base_url;
+                k = preset.api_key;
+            }
+        }
+        channel_info = Some((b, k, ch.provider_type));
+    }
+        
+    let (system_endpoint, upstream_ep) = if endpoint.contains('|') {
+        let parts: Vec<&str> = endpoint.splitn(2, '|').collect();
+        (parts[0], parts[1])
+    } else {
+        (endpoint, endpoint)
+    };
+
+    let mut final_endpoint = upstream_ep.to_string();
+    if let Some((base, key, provider)) = channel_info {
+        if !final_endpoint.starts_with("http") {
+             let base_clean = base.trim_end_matches('/');
+             let ep_clean = if final_endpoint.starts_with('/') { &final_endpoint[1..] } else { &final_endpoint };
+             // 针对特定提供商组合特殊的 URL
+             if provider == "google" && final_endpoint.contains("generateContent") {
+                 final_endpoint = format!("{}/{}?key=******", base_clean, ep_clean);
+             } else {
+                 final_endpoint = format!("{}/{}", base_clean, ep_clean);
+             }
+        } else {
+            // 如果原本就是包含 http 的全路径，并且带着密钥，直接脱敏即可
+            if !key.is_empty() && final_endpoint.contains(&key) {
+                let mut masked = key.clone();
+                if masked.len() > 8 {
+                    masked.replace_range(4..masked.len()-4, "******");
+                } else {
+                    masked = "******".to_string();
+                }
+                final_endpoint = final_endpoint.replace(&key, &masked);
+            }
+        }
+    }
+
     let res: Result<(), sqlx::Error> = async {
         let mut tx = state.db.pool.begin().await?;
         if cost > 0.0 {
@@ -100,17 +178,24 @@ pub async fn record_and_bill(
             .await?;
         }
         sqlx::query(&state.db.format_query(
-            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint, error_message) \
-             VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ))
         .bind(&token.user_id)
         .bind(channel_id)
         .bind(token.id)
-        .bind(model)
+        .bind(model_name)
+        .bind(prompt_tokens)
+        .bind(completion_tokens)
         .bind(cost)
         .bind(status_code as i32)
-        .bind(endpoint)
+        .bind(system_endpoint)
         .bind(error_msg)
+        .bind(latency_ms as i32)
+        .bind(req_content)
+        .bind(resp_content)
+        .bind(is_stream)
+        .bind(&final_endpoint)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
