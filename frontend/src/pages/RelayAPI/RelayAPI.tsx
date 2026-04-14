@@ -94,9 +94,20 @@ const RelayAPI: React.FC = () => {
                   <Text code>POST /v1/images/generations</Text>
                 </div>
                 <Descriptions column={1} bordered size="small">
-                  <Descriptions.Item label="prompt (必填)">图像生成的提示词描述</Descriptions.Item>
-                  <Descriptions.Item label="model (选填)">模型名称，如 'dall-e-3'</Descriptions.Item>
-                  <Descriptions.Item label="size (选填)">分辨率，缺省通常为 1024x1024</Descriptions.Item>
+                  <Descriptions.Item label="model (必填)">模型名称，如果不传系统将默认回落至 'dall-e-3'</Descriptions.Item>
+                  <Descriptions.Item label="prompt (必填)">图像生成的提示词描述文本</Descriptions.Item>
+                  <Descriptions.Item label="stream (选填)">可选值为 true/false，专为部分原生支持流式的模型体系（如 Gemini 等）转换解析使用</Descriptions.Item>
+                  <Descriptions.Item label="规范全量透传参数 (Passthrough)">
+                    <Text type="secondary">对于所有符合官方原生或 OpenAI 兼容格式的绘图模型，网关在此层不作字段抹除，将原封不动向原始上游透传（Passthrough）各类参数：</Text>
+                    <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 20 }}>
+                      <li><Text code>size</Text>: 图片分辨率 (例："1024x1024")</li>
+                      <li><Text code>n</Text>: 请求生成的图片数量</li>
+                      <li><Text code>quality</Text>: 图片质量级别 (例："standard", "hd")</li>
+                      <li><Text code>style</Text>: 艺术渲染风格 (例："vivid", "natural")</li>
+                      <li><Text code>response_format</Text>: 编码返回格式 (例："url", "b64_json")</li>
+                      <li>以及任何上游厂商官方私有定义的合法扩展传参...</li>
+                    </ul>
+                  </Descriptions.Item>
                 </Descriptions>
               </Card>
             )
