@@ -154,7 +154,7 @@ const Upstreams: React.FC = () => {
       render: (text: string) => <Text type="secondary">{text || '-'}</Text>,
     },
     {
-      title: 'CashBalance (现金余额)',
+      title: '现金余额',
       key: 'balance',
       width: 180,
       render: (_: unknown, record: Upstream) => (
@@ -226,6 +226,10 @@ const Upstreams: React.FC = () => {
         onOk={() => form.submit()}
       >
         <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ sort_order: 0, is_active: true, upstream_type: '其他' }}>
+          <Divider orientation="left" plain style={{ color: '#888', marginBottom: 24, marginTop: 0 }}>
+             <ProfileOutlined /> 基础配置
+          </Divider>
+          
           <Form.Item name="name" label="上游名称 (标识)" rules={[{ required: true }]}>
             <Input placeholder="输入上游提供商名称。将在渠道预设配置中直接可用。" />
           </Form.Item>
@@ -237,20 +241,16 @@ const Upstreams: React.FC = () => {
               ))}
             </Select>
           </Form.Item>
-
-          <Divider orientation="left" plain style={{ color: '#888', margin: '12px 0 24px' }}>
-             <ProfileOutlined /> 基础配置
-          </Divider>
           
           {currentUpstreamType === '火山官方' && (
               <>
                   <Divider orientation="left" plain style={{ color: '#888', margin: '12px 0 24px' }}>
                       <ApiOutlined /> 火山官方接入凭证
                   </Divider>
-                  <Form.Item name="api_key" label="Access Key ID (AK)" rules={[{ required: true, message: '请输入火山 AK' }]}>
+                  <Form.Item name="api_key" label="Access Key ID (AK)" rules={[{ required: true, message: '请输入火山 AK' }]} normalize={(value) => (value || '').trim()}>
                       <Input prefix={<KeyOutlined style={{color: 'rgba(0,0,0,.25)'}}/>} placeholder="输入您的 Access Key ID" />
                   </Form.Item>
-                  <Form.Item name="api_secret" label="Secret Access Key (SK)" rules={[{ required: true, message: '请输入火山 SK' }]}>
+                  <Form.Item name="api_secret" label="Secret Access Key (SK)" rules={[{ required: true, message: '请输入火山 SK' }]} normalize={(value) => (value || '').trim()}>
                       <Input.Password prefix={<KeyOutlined style={{color: 'rgba(0,0,0,.25)'}}/>} placeholder="输入您的 Secret Access Key" />
                   </Form.Item>
               </>
