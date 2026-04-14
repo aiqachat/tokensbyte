@@ -107,6 +107,10 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             status_code INTEGER NOT NULL DEFAULT 200,
             endpoint TEXT NOT NULL DEFAULT '',
             error_message TEXT,
+            upstream_url TEXT DEFAULT '',
+            request_content TEXT,
+            response_content TEXT,
+            is_stream INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
@@ -241,6 +245,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             billing_unit TEXT NOT NULL DEFAULT '1k',
             pricing_tiers TEXT NOT NULL DEFAULT '[]',
             is_active INTEGER NOT NULL DEFAULT 1,
+            enable_log_content INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -298,22 +303,25 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
-    // Forward Rules table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS forward_rules (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            rule_type TEXT NOT NULL,
-            category TEXT NOT NULL DEFAULT '聊天',
-            config_json TEXT NOT NULL DEFAULT '{}',
-            description TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
+    // Add new columns to existing models/logs tables
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS enable_log_content INTEGER NOT NULL DEFAULT 0")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS is_stream INTEGER NOT NULL DEFAULT 0")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS request_content TEXT")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS response_content TEXT")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_url TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_url TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+
+    // Safe fallback for existing postgres deployments
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS user_groups TEXT NOT NULL DEFAULT '[]'")
+        .execute(pool)
+        .await
+        .ok();
 
     sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '聊天'")
         .execute(pool)
@@ -331,16 +339,34 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
         sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
             ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天'),
             ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
-            ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频'),
+            ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频'),
             ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}', '聊天'),
-            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天')
+            ('Google Gemini 原生生图', 'gemini', '将标准的生图请求适配到 Gemini contents 接口', '{"mode":"transform","target_type":"gemini_image","path_rewrite":{"old":"/v1/images/generations","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '图片'),
+            ('Google Gemini 格式转换 (聊天)', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天'),
+            ('Google Gemini 流式转换 (聊天)', 'gemini', '将标准请求转换为支持流式输出的 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:streamGenerateContent?alt=sse"},"auth_type":"query_key"}', '聊天'),
+            ('火山方舟 原生生图', 'volcengine', '将标准的生图请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '图片'),
+            ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
         "#).execute(pool).await?;
     } else {
         let img_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (图片)'").fetch_one(pool).await?;
         if img_count == 0 {
             sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
-                ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
-                ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频')
+                ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片')
+            "#).execute(pool).await.ok();
+        }
+        
+        let video_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (视频)'").fetch_one(pool).await?;
+        if video_count == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频')
+            "#).execute(pool).await.ok();
+        }
+        
+        let volc_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = '火山方舟 原生生图'").fetch_one(pool).await?;
+        if volc_count == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('火山方舟 原生生图', 'volcengine', '将标准的生图请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '图片'),
+                ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
             "#).execute(pool).await.ok();
         }
     }
@@ -529,6 +555,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             status_code INTEGER NOT NULL DEFAULT 200,
             endpoint TEXT NOT NULL DEFAULT '',
             error_message TEXT,
+            upstream_url TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
@@ -652,6 +679,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
 
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN admin_remark TEXT DEFAULT ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE logs ADD COLUMN upstream_url TEXT DEFAULT ''").execute(pool).await;
 
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS channel_configs (
@@ -721,16 +749,34 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
         sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
             ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天'),
             ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
-            ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频'),
+            ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频'),
             ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}', '聊天'),
-            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天')
+            ('Google Gemini 原生生图', 'gemini', '将标准的生图请求适配到 Gemini contents 接口', '{"mode":"transform","target_type":"gemini_image","path_rewrite":{"old":"/v1/images/generations","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '图片'),
+            ('Google Gemini 格式转换 (聊天)', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天'),
+            ('Google Gemini 流式转换 (聊天)', 'gemini', '将标准请求转换为支持流式输出的 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:streamGenerateContent?alt=sse"},"auth_type":"query_key"}', '聊天'),
+            ('火山方舟 原生生图', 'volcengine', '将标准的生图请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '图片'),
+            ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
         "#).execute(pool).await?;
     } else {
         let img_count_sq: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (图片)'").fetch_one(pool).await?;
         if img_count_sq == 0 {
             sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
-                ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
-                ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频')
+                ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片')
+            "#).execute(pool).await.ok();
+        }
+        
+        let video_count_sq: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (视频)'").fetch_one(pool).await?;
+        if video_count_sq == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频')
+            "#).execute(pool).await.ok();
+        }
+        
+        let volc_count_sq: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = '火山方舟 原生生图'").fetch_one(pool).await?;
+        if volc_count_sq == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('火山方舟 原生生图', 'volcengine', '将标准的生图请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '图片'),
+                ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
             "#).execute(pool).await.ok();
         }
     }
@@ -1081,16 +1127,26 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
         sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
             ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天'),
             ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
-            ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频'),
+            ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频'),
             ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}', '聊天'),
-            ('Google Gemini 格式转换', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天')
+            ('Google Gemini 原生生图', 'gemini', '将标准的生图请求适配到 Gemini contents 接口', '{"mode":"transform","target_type":"gemini_image","path_rewrite":{"old":"/v1/images/generations","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '图片'),
+            ('Google Gemini 格式转换 (聊天)', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天'),
+            ('Google Gemini 流式转换 (聊天)', 'gemini', '将标准请求转换为支持流式输出的 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:streamGenerateContent?alt=sse"},"auth_type":"query_key"}', '聊天'),
+            ('火山方舟 原生生图', 'volcengine', '将标准的生图请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '图片'),
+            ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
         "#).execute(pool).await?;
     } else {
         let img_count_pg: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (图片)'").fetch_one(pool).await?;
         if img_count_pg == 0 {
             sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
-                ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
-                ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos","new":"/v1/videos"}}', '视频')
+                ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片')
+            "#).execute(pool).await.ok();
+        }
+        
+        let video_count_pg: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (视频)'").fetch_one(pool).await?;
+        if video_count_pg == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频')
             "#).execute(pool).await.ok();
         }
     }

@@ -49,7 +49,7 @@ pub async fn create_channel(
     }
 
     let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, group_aid, preset_id, priority, weight, status, max_rps, config)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING id"#;
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING id"#;
 
     let id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(sql))
         .bind(&request.name)
@@ -200,17 +200,22 @@ pub async fn test_channel(
     // Generate accurate Mock cURL and Endpoint
     let mut endpoint = match channel.provider_type.as_str() {
         "anthropic" => format!("{}/v1/messages", channel.base_url.trim_end_matches('/')),
-        "google" => format!("{}/v1beta/models/{}:generateContent", channel.base_url.trim_end_matches('/'), test_model),
+        "google" => format!("{}/v1/chat/completions", channel.base_url.trim_end_matches('/')),
         _ => format!("{}/v1/chat/completions", channel.base_url.trim_end_matches('/')),
     };
 
     // Forward Rule Path Override
+    let mut rule_is_stream = false;
+    let mut rule_target_type: Option<String> = None;
     if let Some(fid) = req.forward_rule_id {
         let rule: Option<crate::models::ForwardRule> = sqlx::query_as(&state.db.format_query("SELECT * FROM forward_rules WHERE id = ?"))
             .bind(fid)
             .fetch_optional(&state.db.pool)
             .await?;
         if let Some(r) = rule {
+            if r.name.contains("流式") || r.name.to_lowercase().contains("stream") {
+                rule_is_stream = true;
+            }
             if r.category == "图片" {
                 is_image_request = true;
             } else if r.category == "视频" {
@@ -222,39 +227,90 @@ pub async fn test_channel(
                         if let Some(new) = path_rw.get("new").and_then(|v| v.as_str()) {
                             if endpoint.contains(old) {
                                 endpoint = endpoint.replace(old, new);
-                            } else if channel.provider_type == "openai" || channel.provider_type == "custom" {
+                            } else {
                                 endpoint = format!("{}{}", channel.base_url.trim_end_matches('/'), new);
                             }
+                            endpoint = endpoint.replace("${model}", &test_model);
                         }
                     }
+                }
+                if let Some(tt) = config.get("target_type").and_then(|v| v.as_str()) {
+                    rule_target_type = Some(tt.to_string());
                 }
             }
         }
     }
 
     let request_data = if is_image_request {
-         serde_json::json!({
-             "model": test_model.clone(),
-             "prompt": "Test Image Generation Check",
-             "n": 1,
-             "size": "512x512"
-         })
+         if rule_target_type.as_deref() == Some("gemini_image") || rule_target_type.as_deref() == Some("gemini") || (channel.provider_type == "google" && req.forward_rule_id.is_none()) {
+            serde_json::json!({
+                "contents": [{
+                    "parts": [{"text": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。"}]
+                }],
+                "generationConfig": {
+                    "imageConfig": {
+                        "aspectRatio": "1:1",
+                        "imageSize": "1K"
+                    }
+                }
+            })
+         } else if rule_target_type.as_deref() == Some("volcengine") {
+            endpoint = format!("{}/api/v3/contents/generations/tasks", channel.base_url.trim_end_matches('/'));
+            serde_json::json!({
+                "model": test_model.clone(),
+                "content": [{"type": "text", "text": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。"}],
+                "ratio": "1:1",
+                "watermark": false
+            })
+         } else {
+             serde_json::json!({
+                 "model": test_model.clone(),
+                 "prompt": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。",
+                 "n": 1
+             })
+         }
     } else if is_video_request {
-         serde_json::json!({
-             "model": test_model.clone(),
-             "prompt": "Test Video Generation Check"
-         })
+         if rule_target_type.as_deref() == Some("volcengine") {
+            endpoint = format!("{}/api/v3/contents/generations/tasks", channel.base_url.trim_end_matches('/'));
+            serde_json::json!({
+                "model": test_model.clone(),
+                "content": [{"type": "text", "text": "A short video of a cute white cat walking"}],
+                "ratio": "16:9",
+                "duration": 5,
+                "watermark": false
+            })
+         } else {
+            serde_json::json!({
+                "model": test_model.clone(),
+                "prompt": "A short video of a cute white cat walking"
+            })
+         }
     } else {
-         serde_json::json!({
-            "model": test_model.clone(),
-            "messages": [{
-                "role": "user",
-                "content": "hi"
-            }],
-            "stream": false,
-            "temperature": 0.0,
-            "max_tokens": 5
-        })
+         if rule_target_type.as_deref() == Some("gemini") {
+             serde_json::json!({
+                "contents": [{
+                    "role": "user",
+                    "parts": [{"text": "hi"}]
+                }],
+                "generationConfig": {
+                    "maxOutputTokens": 5,
+                    "temperature": 0.0
+                }
+             })
+         } else {
+             let mut st = false;
+             if endpoint.contains("stream") || rule_is_stream { st = true; }
+             serde_json::json!({
+                "model": test_model.clone(),
+                "messages": [{
+                    "role": "user",
+                    "content": "hi"
+                }],
+                "stream": st,
+                "temperature": 0.0,
+                "max_tokens": 5
+            })
+         }
     };
 
     let mut masked_key = channel.api_key.clone();
@@ -268,7 +324,7 @@ pub async fn test_channel(
     if channel.provider_type == "anthropic" {
         curl_cmd.push_str(&format!("  -H 'x-api-key: {}' \\\n", masked_key));
         curl_cmd.push_str("  -H 'anthropic-version: 2023-06-01' \\\n");
-    } else if channel.provider_type == "google" {
+    } else if channel.provider_type == "google" && (endpoint.contains("v1beta") || endpoint.contains("v1alpha") || endpoint.contains("generateContent") || endpoint.contains("predict")) {
         curl_cmd.push_str(&format!("  -H 'x-goog-api-key: {}' \\\n", masked_key));
     } else {
         curl_cmd.push_str(&format!("  -H 'Authorization: Bearer {}' \\\n", masked_key));
@@ -281,7 +337,7 @@ pub async fn test_channel(
         let mut builder = state.http_client.post(&endpoint).header("Content-Type", "application/json");
         if channel.provider_type == "anthropic" {
             builder = builder.header("x-api-key", &channel.api_key).header("anthropic-version", "2023-06-01");
-        } else if channel.provider_type == "google" {
+        } else if channel.provider_type == "google" && (endpoint.contains("v1beta") || endpoint.contains("v1alpha") || endpoint.contains("generateContent") || endpoint.contains("predict")) {
             builder = builder.header("x-goog-api-key", &channel.api_key);
         } else {
             builder = builder.header("Authorization", format!("Bearer {}", channel.api_key));
@@ -290,14 +346,35 @@ pub async fn test_channel(
             Ok(r) => {
                 let status = r.status();
                 if status.is_success() {
-                    let v: serde_json::Value = r.json().await.unwrap_or_default();
-                    Ok(v)
+                    let text = r.text().await.unwrap_or_default();
+                    if text.starts_with("data: ") || text.contains("\"candidates\"") {
+                        // Attempt strict JSON, otherwise fallback to mock usage to prevent error
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(v) => Ok(v),
+                            Err(_) => Ok(serde_json::json!({"status": "stream_success", "raw": text.chars().take(200).collect::<String>()}))
+                        }
+                    } else {
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(v) => Ok(v),
+                            Err(_) => Ok(serde_json::json!({"status": "success", "raw": text}))
+                        }
+                    }
                 } else {
-                    let err = r.text().await.unwrap_or_default();
-                    Err(crate::error::AppError::UpstreamError(err))
+                    // 保留完整上游错误响应体，便于前端展示诊断
+                    let status_val = status.as_u16();
+                    let err_body = r.text().await.unwrap_or_default();
+                    let upstream_json = serde_json::from_str::<serde_json::Value>(&err_body)
+                        .unwrap_or_else(|_| serde_json::json!({"raw_error": err_body}));
+                    Ok(serde_json::json!({
+                        "_upstream_status": status_val,
+                        "_upstream_error": upstream_json
+                    }))
                 }
             },
-            Err(e) => Err(crate::error::AppError::UpstreamError(e.to_string()))
+            Err(e) => Ok(serde_json::json!({
+                "_upstream_status": 0,
+                "_upstream_error": {"connection_error": e.to_string()}
+            }))
         }
     } else {
         let chat_req_obj = crate::providers::ChatRequest {
@@ -314,6 +391,51 @@ pub async fn test_channel(
             .map(|resp| serde_json::to_value(&resp).unwrap_or_default())
     };
 
+    // 火山方舟视频异步任务：POST 创建后自动轮询 GET 查询结果
+    let response_res = if is_video_request && rule_target_type.as_deref() == Some("volcengine") {
+        match response_res {
+            Ok(create_resp) if create_resp.get("_upstream_error").is_none() => {
+                if let Some(task_id) = create_resp.get("id").and_then(|v| v.as_str()) {
+                    let poll_url = format!("{}/api/v3/contents/generations/tasks/{}",
+                        channel.base_url.trim_end_matches('/'), task_id);
+                    let mut poll_result = serde_json::json!({"status": "polling_timeout"});
+                    for _ in 0..90 {
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        match state.http_client.get(&poll_url)
+                            .header("Authorization", format!("Bearer {}", channel.api_key))
+                            .send().await
+                        {
+                            Ok(pr) => {
+                                let body = pr.text().await.unwrap_or_default();
+                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                                    let task_status_str = v.get("status").and_then(|s| s.as_str()).unwrap_or("").to_string();
+                                    poll_result = v;
+                                    if task_status_str == "succeeded" || task_status_str == "failed" {
+                                        break;
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                poll_result = serde_json::json!({"poll_error": e.to_string()});
+                                break;
+                            }
+                        }
+                    }
+                    Ok(serde_json::json!({
+                        "create_task_response": create_resp,
+                        "task_id": task_id,
+                        "final_result": poll_result
+                    }))
+                } else {
+                    Ok(create_resp)
+                }
+            },
+            other => other,
+        }
+    } else {
+        response_res
+    };
+
     // Inject usage logs for debugging
     let latency_ms = start.elapsed().as_millis() as i32;
     let mut status_code = 200;
@@ -323,7 +445,10 @@ pub async fn test_channel(
 
     match &response_res {
         Ok(v) => {
-            if let Some(usage) = v.get("usage") {
+            if v.get("_upstream_error").is_some() {
+                status_code = v.get("_upstream_status").and_then(|s| s.as_i64()).unwrap_or(502) as i32;
+                err_msg = Some(serde_json::to_string(&v["_upstream_error"]).unwrap_or_default());
+            } else if let Some(usage) = v.get("usage") {
                 p_tokens = usage.get("prompt_tokens").and_then(|t| t.as_i64()).unwrap_or(0) as i32;
                 c_tokens = usage.get("completion_tokens").and_then(|t| t.as_i64()).unwrap_or(0) as i32;
             }
@@ -334,12 +459,17 @@ pub async fn test_channel(
         }
     }
 
+    let mut masked_endpoint = endpoint.clone();
+    if !channel.api_key.is_empty() && masked_endpoint.contains(&channel.api_key) {
+        masked_endpoint = masked_endpoint.replace(&channel.api_key, &masked_key);
+    }
+
     let user_id_str = match &options_claims {
         Some(axum::Extension(c)) => c.sub.clone(),
         None => "0".to_string(),
     };
 
-    let _ = sqlx::query(&state.db.format_query("INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, latency_ms, status_code, endpoint, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"))
+    let _ = sqlx::query(&state.db.format_query("INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, latency_ms, status_code, endpoint, error_message, upstream_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"))
         .bind(user_id_str)
         .bind(id)
         .bind(0)
@@ -351,19 +481,34 @@ pub async fn test_channel(
         .bind(status_code)
         .bind(&endpoint)
         .bind(err_msg)
+        .bind(&masked_endpoint)
         .execute(&state.db.pool)
         .await;
 
     match response_res {
         Ok(response_value) => {
-            Ok(Json(serde_json::json!({
-                "success": true,
-                "latency": latency_ms,
-                "channel_id": id,
-                "curl_command": curl_cmd,
-                "request_data": request_data,
-                "response_data": response_value,
-            })))
+            let is_upstream_err = response_value.get("_upstream_error").is_some();
+            if is_upstream_err {
+                let upstream_status = response_value.get("_upstream_status").and_then(|s| s.as_i64()).unwrap_or(0);
+                Ok(Json(serde_json::json!({
+                    "success": false,
+                    "err_msg": format!("上游返回 HTTP {}", upstream_status),
+                    "latency": latency_ms,
+                    "channel_id": id,
+                    "curl_command": curl_cmd,
+                    "request_data": request_data,
+                    "response_data": response_value,
+                })))
+            } else {
+                Ok(Json(serde_json::json!({
+                    "success": true,
+                    "latency": latency_ms,
+                    "channel_id": id,
+                    "curl_command": curl_cmd,
+                    "request_data": request_data,
+                    "response_data": response_value,
+                })))
+            }
         },
         Err(e) => {
             let err_str = e.to_string();

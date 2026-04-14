@@ -235,7 +235,7 @@ const Channels: React.FC = () => {
             <Input placeholder="https://api.openai.com/v1" />
           </Form.Item>
 
-          <Form.Item name="api_key" label={t('channels.api_key')} extra="若已选择配置归属，此项只做备用或可填任意值" rules={[{ required: true }]}>
+          <Form.Item name="api_key" label={t('channels.api_key')} extra="若已选择配置归属，此项只做备用或可为空">
             <Input.Password placeholder="sk-..." />
           </Form.Item>
 

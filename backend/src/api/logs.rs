@@ -17,7 +17,16 @@ pub async fn list_logs(
     let per_page = query.per_page.unwrap_or(20);
     let offset = (page - 1) * per_page;
 
-    let mut sql = "SELECT l.*, c.group_aid as channel_group_aid FROM logs l LEFT JOIN channels c ON l.channel_id = c.id WHERE 1=1".to_string();
+    let mut sql = "SELECT l.*, \
+        c.group_aid as channel_group_aid, c.name as channel_name, \
+        COALESCE(u.nickname, u.username) as user_nickname, \
+        u.user_group, \
+        t.name as token_name \
+        FROM logs l \
+        LEFT JOIN channels c ON l.channel_id = c.id \
+        LEFT JOIN users u ON l.user_id = u.id \
+        LEFT JOIN api_tokens t ON l.token_id = t.id \
+        WHERE 1=1".to_string();
     let mut binds: Vec<String> = Vec::new();
 
     if claims.role != "admin" {
@@ -38,7 +47,11 @@ pub async fn list_logs(
         binds.push(channel_id.to_string());
     }
 
-    let count_sql = sql.replace("SELECT l.*, c.group_aid as channel_group_aid", "SELECT COUNT(*)");
+    let count_sql = if let Some(from_idx) = sql.find("FROM logs") {
+        format!("SELECT COUNT(*) {}", &sql[from_idx..])
+    } else {
+        sql.replace("SELECT l.*", "SELECT COUNT(*)")
+    };
     let count_query_str = state.db.format_query(&count_sql);
     let mut count_q = sqlx::query_scalar::<_, i64>(&count_query_str);
     for val in &binds {

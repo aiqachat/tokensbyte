@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Select } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CodeOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Select, Alert, Popover } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CodeOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 
@@ -48,8 +48,8 @@ const ForwardRules: React.FC = () => {
     setEditingItem(null);
     form.resetFields();
     form.setFieldsValue({
-        is_active: true,
-        config_json: '{\n  \n}'
+      is_active: true,
+      config_json: '{\n  \n}'
     });
     setIsModalVisible(true);
   };
@@ -79,12 +79,12 @@ const ForwardRules: React.FC = () => {
     try {
       // Validate JSON content
       if (values.config_json) {
-         try {
-            JSON.parse(values.config_json);
-         } catch(err) {
-            message.error("配置内容不是合法的 JSON 格式");
-            return;
-         }
+        try {
+          JSON.parse(values.config_json);
+        } catch (err) {
+          message.error("配置内容不是合法的 JSON 格式");
+          return;
+        }
       }
 
       const payload = {
@@ -108,13 +108,13 @@ const ForwardRules: React.FC = () => {
   };
 
   const viewConfigJson = (jsonStr: string) => {
-      try {
-          const formatted = JSON.stringify(JSON.parse(jsonStr), null, 2);
-          setCurrentConfig(formatted);
-      } catch(e) {
-          setCurrentConfig(jsonStr);
-      }
-      setIsConfigModalVisible(true);
+    try {
+      const formatted = JSON.stringify(JSON.parse(jsonStr), null, 2);
+      setCurrentConfig(formatted);
+    } catch (e) {
+      setCurrentConfig(jsonStr);
+    }
+    setIsConfigModalVisible(true);
   };
 
   const columns = [
@@ -144,12 +144,12 @@ const ForwardRules: React.FC = () => {
       key: 'category',
       width: 100,
       render: (text: string) => {
-          let color = 'cyan';
-          if (text === '聊天') color = 'blue';
-          else if (text === '图片') color = 'magenta';
-          else if (text === '视频') color = 'volcano';
-          else if (text === '语音') color = 'green';
-          return <Tag color={color}>{text || '聊天'}</Tag>;
+        let color = 'cyan';
+        if (text === '聊天') color = 'blue';
+        else if (text === '图片') color = 'magenta';
+        else if (text === '视频') color = 'volcano';
+        else if (text === '语音') color = 'green';
+        return <Tag color={color}>{text || '聊天'}</Tag>;
       }
     },
     {
@@ -159,14 +159,14 @@ const ForwardRules: React.FC = () => {
       ellipsis: true,
     },
     {
-       title: 'JSON 配置',
-       key: 'config',
-       render: (_: any, record: ForwardRule) => (
-         <Button size="small" type="dashed" icon={<CodeOutlined />} onClick={() => viewConfigJson(record.config_json)}>
-           查看 JSON 详情
-         </Button>
-       ),
-       width: 150,
+      title: 'JSON 配置',
+      key: 'config',
+      render: (_: any, record: ForwardRule) => (
+        <Button size="small" type="dashed" icon={<CodeOutlined />} onClick={() => viewConfigJson(record.config_json)}>
+          查看 JSON 详情
+        </Button>
+      ),
+      width: 150,
     },
     {
       title: t('common.status'),
@@ -192,9 +192,42 @@ const ForwardRules: React.FC = () => {
     },
   ];
 
+  const CText: React.FC<{children: React.ReactNode}> = ({ children }) => (
+    <span style={{ background: '#252526', color: '#ce9178', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>{children}</span>
+  );
+
+  const helpContent = (
+    <div style={{ maxWidth: 500, color: 'rgba(255, 255, 255, 0.85)' }}>
+      <p>高级转发规则（Forward Rules）用于底层<strong>路由重写</strong>与<strong>协议转换</strong>，赋予系统对接所有非标准 OpenAI 接口的自定义能力。</p>
+      <p>当您接入特殊的第三方模型 API（如 Google 官方、Anthropic 等）而他们不使用标准的 <CText>/v1/chat/completions</CText> 路径时，您可以通过该规则将标准的接入请求转换为特定格式发往上游。</p>
+      <div style={{ marginTop: 8 }}>
+        <b>核心 JSON 配置参数指南：</b>
+        <ul style={{ paddingLeft: 20, marginBottom: 0 }}>
+          <li><CText>mode</CText>: 转发执行模式，例如 <CText>"transform"</CText> (启用协议报文转换)、<CText>"passthrough"</CText> (透明代理直接透传)。</li>
+          <li><CText>target_type</CText>: 目标厂商架构标识，如 <CText>"gemini"</CText>, <CText>"anthropic"</CText>, <CText>"volcengine"</CText>。系统底层会自动加载该类型的 Header 或 Payload 模板。</li>
+          <li><CText>path_rewrite</CText>: URL 路径拦截变异规则。
+            <ul>
+              <li><CText>old</CText>: 将被拦截替换的原始路径片段，例如 <CText>"/v1/video/generations"</CText>；</li>
+              <li><CText>new</CText>: 将转换的新路径目标，支持宏变量替换，例如 <CText>{"\"/api/v3/contents/generations/tasks\""}</CText> (火山方舟官方)。</li>
+            </ul>
+          </li>
+          <li><CText>auth_type</CText>: <span style={{ color: '#888' }}>(可选)</span> 强行覆盖认证鉴权机制传递方式，例如 <CText>"query_key"</CText> 将 API-Key 拼装至 URL Query 参数中发放，或 <CText>"bearer"</CText> 强制走 Authorization 头。</li>
+        </ul>
+      </div>
+      <p style={{ marginTop: 8, color: '#1890ff', marginBottom: 0 }}>配置结束后，您可在「模型列表」页将其绑定至对应的具体模型，真实网关或系统拨测都将自动走您定义的这条重写链路。</p>
+    </div>
+  );
+
   return (
     <div>
-      <Card title="大模型高级转发规则引擎配置" extra={
+      <Card title={
+        <Space>
+          大模型高级转发规则引擎配置
+          <Popover content={helpContent} title="什么是高级转发规则引擎？" trigger="hover" placement="bottomLeft">
+            <QuestionCircleOutlined style={{ color: '#1890ff', cursor: 'pointer' }} />
+          </Popover>
+        </Space>
+      } extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           新增定制规则
         </Button>
@@ -226,17 +259,17 @@ const ForwardRules: React.FC = () => {
           </Form.Item>
 
           <Form.Item name="category" label={'模型分类属类'} rules={[{ required: true }]} initialValue={['聊天']}>
-            <Select 
-                mode="tags" 
-                maxCount={1}
-                placeholder="请选择或输入新分类并回车..." 
-                options={[
-                    { value: '聊天', label: '聊天' },
-                    { value: '图片', label: '图片' },
-                    { value: '视频', label: '视频' },
-                    { value: '语音', label: '语音' },
-                    { value: '其他', label: '其他' },
-                ]} 
+            <Select
+              mode="tags"
+              maxCount={1}
+              placeholder="请选择或输入新分类并回车..."
+              options={[
+                { value: '聊天', label: '聊天' },
+                { value: '图片', label: '图片' },
+                { value: '视频', label: '视频' },
+                { value: '语音', label: '语音' },
+                { value: '其他', label: '其他' },
+              ]}
             />
           </Form.Item>
 
@@ -245,7 +278,7 @@ const ForwardRules: React.FC = () => {
           </Form.Item>
 
           <Form.Item name="config_json" label="JSON 引擎路由协议参数配置 (核心)" rules={[{ required: true }]}>
-             <TextArea style={{ fontFamily: 'monospace', fontSize: 13, background: '#1e1e1e', color: '#d4d4d4', padding: 12 }} rows={10} placeholder={'{\n  "mode": "...", \n}'} />
+            <TextArea style={{ fontFamily: 'monospace', fontSize: 13, background: '#1e1e1e', color: '#d4d4d4', padding: 12 }} rows={10} placeholder={'{\n  "mode": "...", \n}'} />
           </Form.Item>
 
           <Form.Item name="is_active" label={t('common.status')} valuePropName="checked">
@@ -255,24 +288,24 @@ const ForwardRules: React.FC = () => {
       </Modal>
 
       <Modal
-         title="JSON 重写拦截协议预览"
-         open={isConfigModalVisible}
-         footer={null}
-         onCancel={() => setIsConfigModalVisible(false)}
-         width={650}
+        title="JSON 重写拦截协议预览"
+        open={isConfigModalVisible}
+        footer={null}
+        onCancel={() => setIsConfigModalVisible(false)}
+        width={650}
       >
-          <pre style={{
-              background: '#121212',
-              color: '#4af626',
-              padding: 16,
-              borderRadius: 8,
-              border: '1px solid #333',
-              overflow: 'auto',
-              maxHeight: '60vh',
-              fontSize: 13,
-          }}>
-              {currentConfig}
-          </pre>
+        <pre style={{
+          background: '#121212',
+          color: '#4af626',
+          padding: 16,
+          borderRadius: 8,
+          border: '1px solid #333',
+          overflow: 'auto',
+          maxHeight: '60vh',
+          fontSize: 13,
+        }}>
+          {currentConfig}
+        </pre>
       </Modal>
 
     </div>

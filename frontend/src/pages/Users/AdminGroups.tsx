@@ -8,6 +8,7 @@ const { Title, Text } = Typography;
 
 const ALL_PERMISSIONS = [
   { label: '仪表盘 (Dashboard)', value: 'dashboard' },
+  { label: '中转网关 (Relay API)', value: 'relay_api' },
   { label: '令牌管理 (Tokens)', value: 'tokens' },
   { label: '日志管理 (Logs)', value: 'logs' },
   { label: '渠道管理 (Channels)', value: 'channels' },

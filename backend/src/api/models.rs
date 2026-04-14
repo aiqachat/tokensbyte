@@ -192,6 +192,9 @@ pub async fn update_model(
     if let Some(active) = req.is_active {
         sqlx::query(&state.db.format_query("UPDATE models SET is_active = ? WHERE id = ?")).bind(active).bind(id).execute(&state.db.pool).await?;
     }
+    if let Some(elc) = req.enable_log_content {
+        sqlx::query(&state.db.format_query("UPDATE models SET enable_log_content = ? WHERE id = ?")).bind(elc).bind(id).execute(&state.db.pool).await?;
+    }
 
     sqlx::query(&state.db.format_query("UPDATE models SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;
 

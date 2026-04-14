@@ -1,5 +1,9 @@
 pub mod router;
 pub mod stream;
+pub mod proxy;
+pub mod image;
+pub mod video;
+pub mod native;
 
 use axum::{
     extract::{State, Extension, Path},
@@ -17,6 +21,9 @@ pub async fn chat_completions(
     Extension(token): Extension<ApiToken>,
     Json(mut request): Json<ChatRequest>,
 ) -> AppResult<impl IntoResponse> {
+    let start_time = std::time::Instant::now();
+    let request_content_str = serde_json::to_string(&request).unwrap_or_default();
+    
     // 1. Validate model access
     if !token.is_model_allowed(&request.model) {
         return Err(AppError::Forbidden(format!("Model {} not allowed for this token", request.model)));
@@ -50,7 +57,7 @@ pub async fn chat_completions(
     if request.stream.unwrap_or(false) {
         let prompt_tokens = request.estimate_prompt_tokens();
         let response = provider.chat_completions_stream(&state.http_client, &channel, &request).await?;
-        Ok(stream::handle_chat_stream(state, token, channel, request.model, response, discount, prompt_tokens).await.into_response())
+        Ok(stream::handle_chat_stream(state, token, channel, request.model, response, discount, prompt_tokens, request_content_str, start_time).await.into_response())
     } else {
         let response = provider.chat_completions(&state.http_client, &channel, &request).await?;
         
@@ -101,44 +108,14 @@ pub async fn chat_completions(
             }
         };
         
-        // Use transaction to update both token quota and user balance
-        let mut tx = state.db.pool.begin().await?;
-
-        sqlx::query(
-            &state.db.format_query("UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        )
-        .bind(quota_used)
-        .bind(token.id)
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            &state.db.format_query("UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        )
-        .bind(quota_used)
-        .bind(quota_used)
-        .bind(&token.user_id)
-        .execute(&mut *tx)
-        .await?;
-
-        tx.commit().await?;
-
-
-        // 6. Record Log
-        sqlx::query(
-            &state.db.format_query(r#"INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 200, '/v1/chat/completions')"#)
-        )
-        .bind(&token.user_id)
-        .bind(channel.id)
-        .bind(token.id)
-        .bind(&request.model)
-        .bind(prompt_tokens)
-        .bind(completion_tokens)
-        .bind(quota_used)
-        .execute(&state.db.pool)
-        .await?;
-
+        // 6. Record Log and Bill
+        let latency_ms = start_time.elapsed().as_millis() as u32;
+        let response_content_str = serde_json::to_string(&response).unwrap_or_default();
+        proxy::record_and_bill(
+            &state, &token, channel.id, &request.model, prompt_tokens, completion_tokens,
+            quota_used, 200, "/v1/chat/completions", None, latency_ms, 0,
+            Some(request_content_str), Some(response_content_str)
+        ).await;
 
         Ok(Json(response).into_response())
     }
