@@ -17,6 +17,7 @@ target/
 .env.local
 .env.production.local
 .env.development.local
+pgdata/
 
 # Build
 dist/

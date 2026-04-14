@@ -167,6 +167,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             group_key TEXT NOT NULL UNIQUE,
+            discount DOUBLE PRECISION NOT NULL DEFAULT 1.0,
             commission_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             invite_reward_inviter DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             invite_reward_invitee DOUBLE PRECISION NOT NULL DEFAULT 0.0,

@@ -45,11 +45,22 @@ docker-compose up -d
 ## 🛠️ 开发环境搭建
 
 ### 后端 (Backend)
-```bash
-cd backend
-cp .env.example .env
-cargo run
-```
+
+后端采用 Rust 开发，配置管理遵循 **环境变量优先** 原则：
+
+1. **配置文件加载**：
+   ```bash
+   cd backend
+   cp .env.example .env  # 复制模板
+   # 修改 .env 中的配置（如数据库 URL、JWT 密钥等）
+   ```
+2. **运行**：
+   ```bash
+   cargo run
+   ```
+
+> [!TIP]
+> **配置优先级**：系统环境变量 > `.env` 文件 > `data/database.json` > 内置默认值。这确保了在无配置环境下仍能降级运行，同时方便容器化和自动化部署。
 
 ### 前端 (Frontend)
 ```bash

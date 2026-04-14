@@ -27,10 +27,28 @@ impl Database {
             }
         }
 
-        let pool = AnyPoolOptions::new()
-            .max_connections(20)
-            .connect(database_url)
-            .await?;
+        let mut attempts = 0;
+        let max_attempts = 15;
+        let pool = loop {
+            attempts += 1;
+            match AnyPoolOptions::new()
+                .max_connections(20)
+                .acquire_timeout(std::time::Duration::from_secs(5))
+                .connect(database_url)
+                .await
+            {
+                Ok(pool) => break pool,
+                Err(e) => {
+                    if attempts >= max_attempts {
+                        tracing::error!("❌ Failed to connect to database after {} attempts: {}", max_attempts, e);
+                        return Err(anyhow::anyhow!("Database connection failed after {} attempts: {}", max_attempts, e));
+                    }
+                    let delay = std::cmp::min(attempts * 2, 10);
+                    tracing::warn!("⏳ Database connection attempt {}/{} failed: {}. Retrying in {}s...", attempts, max_attempts, e, delay);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(delay as u64)).await;
+                }
+            }
+        };
 
         let is_sqlite = database_url.starts_with("sqlite:");
         if is_sqlite {
