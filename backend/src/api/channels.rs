@@ -258,8 +258,7 @@ pub async fn test_channel(
              serde_json::json!({
                  "model": test_model.clone(),
                  "prompt": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。",
-                 "n": 1,
-                 "size": "512x512"
+                 "n": 1
              })
          }
     } else if is_video_request {

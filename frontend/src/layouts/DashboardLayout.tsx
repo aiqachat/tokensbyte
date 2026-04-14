@@ -19,6 +19,7 @@ import {
   NotificationOutlined,
   HistoryOutlined,
   ScheduleOutlined,
+  RocketOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
@@ -91,37 +92,69 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     },
   ];
 
-  const menuItems: MenuProps['items'] = [
-    {
-      key: isUserEnd ? '/' : '/admin0755/dashboard',
-      icon: <DashboardOutlined style={{ fontSize: '18px' }} />,
-      label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{t('menu.dashboard')}</Link>,
-    },
-    {
-      key: isUserEnd ? '/tokens' : '/admin0755/tokens',
-      icon: <KeyOutlined style={{ fontSize: '18px' }} />,
-      label: <Link to={isUserEnd ? '/tokens' : '/admin0755/tokens'}>{t('menu.tokens')}</Link>,
-    },
-    {
-      key: isUserEnd ? '/logs' : '/admin0755/logs',
-      icon: <HistoryOutlined style={{ fontSize: '18px' }} />,
-      label: <Link to={isUserEnd ? '/logs' : '/admin0755/logs'}>{t('menu.usage_logs', '使用日志')}</Link>,
-    },
-    {
-      key: isUserEnd ? '/task-logs' : '/admin0755/task-logs',
-      icon: <ScheduleOutlined style={{ fontSize: '18px' }} />,
-      label: <Link to={isUserEnd ? '/task-logs' : '/admin0755/task-logs'}>{t('menu.task_logs', '任务日志')}</Link>,
-    }
-  ];
+  const menuItems: MenuProps['items'] = [];
+
+  // 1. Dashboard
+  menuItems.push({
+    key: isUserEnd ? '/' : '/admin0755/dashboard',
+    icon: <DashboardOutlined style={{ fontSize: '18px' }} />,
+    label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{t('menu.dashboard')}</Link>,
+  });
+
+  // 2. Relay API (Admin Only)
+  if (!isUserEnd) {
+    menuItems.push({
+      key: '/admin0755/relay-api',
+      icon: <RocketOutlined style={{ fontSize: '18px' }} />,
+      label: <Link to="/admin0755/relay-api">中转网关</Link>,
+    });
+  }
+
+  // 3. Tokens
+  menuItems.push({
+    key: isUserEnd ? '/tokens' : '/admin0755/tokens',
+    icon: <KeyOutlined style={{ fontSize: '18px' }} />,
+    label: <Link to={isUserEnd ? '/tokens' : '/admin0755/tokens'}>{t('menu.tokens')}</Link>,
+  });
+
+  // 4. Logs
+  menuItems.push({
+    key: isUserEnd ? '/logs' : '/admin0755/logs',
+    icon: <HistoryOutlined style={{ fontSize: '18px' }} />,
+    label: <Link to={isUserEnd ? '/logs' : '/admin0755/logs'}>{t('menu.usage_logs', '使用日志')}</Link>,
+  });
+
+  // 5. Task Logs
+  menuItems.push({
+    key: isUserEnd ? '/task-logs' : '/admin0755/task-logs',
+    icon: <ScheduleOutlined style={{ fontSize: '18px' }} />,
+    label: <Link to={isUserEnd ? '/task-logs' : '/admin0755/task-logs'}>{t('menu.task_logs', '任务日志')}</Link>,
+  });
+
+  const isSuperAdmin = !isUserEnd && user?.role === 'admin' && !user.admin_group_id;
 
   // For Admin login, initial menu items need to be filtered too if not super admin
-  if (!isUserEnd && user?.role === 'admin' && user.permissions) {
+  if (!isUserEnd && user?.role === 'admin' && !isSuperAdmin && user.permissions) {
      const filteredInitial = [];
-     if (user.permissions.includes('dashboard')) filteredInitial.push(menuItems[0]);
-     if (user.permissions.includes('tokens')) filteredInitial.push(menuItems[1]);
+     const getMenu = (path: string) => menuItems.find((m: any) => m?.key === path);
+     
+     if (user.permissions.includes('dashboard')) {
+       const m = getMenu('/admin0755/dashboard');
+       if (m) filteredInitial.push(m);
+     }
+     if (user.permissions.includes('relay_api')) {
+       const m = getMenu('/admin0755/relay-api');
+       if (m) filteredInitial.push(m);
+     }
+     if (user.permissions.includes('tokens')) {
+       const m = getMenu('/admin0755/tokens');
+       if (m) filteredInitial.push(m);
+     }
      if (user.permissions.includes('logs')) {
-         filteredInitial.push(menuItems[2]);
-         filteredInitial.push(menuItems[3]);
+       const m1 = getMenu('/admin0755/logs');
+       const m2 = getMenu('/admin0755/task-logs');
+       if (m1) filteredInitial.push(m1);
+       if (m2) filteredInitial.push(m2);
      }
      
      // Reset menuItems to filtered version
@@ -146,7 +179,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
 
   if (!isUserEnd && user?.role === 'admin') {
     const hasPermission = (key: string) => {
-      if (!user.permissions) return true; // Super admin
+      if (isSuperAdmin) return true; // 超级管理员直接放行所有菜单
+      if (!user.permissions) return false;
       return user.permissions.includes(key);
     };
 

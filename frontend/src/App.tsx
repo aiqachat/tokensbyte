@@ -6,6 +6,7 @@ import ForgotPassword from './pages/Login/ForgotPassword';
 import AdminLogin from './pages/AdminLogin/AdminLogin';
 import DashboardLayout from './layouts/DashboardLayout';
 import Dashboard from './pages/Dashboard/Dashboard';
+import RelayAPI from './pages/RelayAPI/RelayAPI';
 import Channels from './pages/Channels/Channels';
 import ChannelTest from './pages/Channels/ChannelTest';
 import ChannelConfigs from './pages/Channels/ChannelConfigs';
@@ -81,6 +82,7 @@ const App: React.FC = () => {
           }
         >
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="relay-api" element={<RelayAPI />} />
           <Route path="channel-configs" element={<ChannelConfigs />} />
           <Route path="channels" element={<Channels />} />
           <Route path="channels/test/:id" element={<ChannelTest />} />

@@ -105,6 +105,23 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // 3. Relay APIs (OpenAI Compatible)
     let relay_routes: Router<Arc<AppState>> = Router::new()
         .route("/chat/completions", post(crate::relay::chat_completions))
+        .route("/images/generations", post(crate::relay::image::image_generations))
+        .route("/video/generations", post(crate::relay::video::video_generations))
+        .route("/video/generations/{task_id}", get(crate::relay::video::video_generations_status))
+        .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
+        .with_state(state.clone());
+
+    // 4. Google Gemini Native Relay (supports ?key=, x-goog-api-key, and Bearer auth)
+    let google_native_routes: Router<Arc<AppState>> = Router::new()
+        .route("/v1beta/models/{model_action}", post(crate::relay::native::gemini_proxy))
+        .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
+        .layer(axum_middleware::from_fn(crate::relay::native::normalize_google_auth))
+        .with_state(state.clone());
+
+    // 5. Volcengine Native Relay
+    let volcengine_native_routes: Router<Arc<AppState>> = Router::new()
+        .route("/api/v3/contents/generations/tasks", post(crate::relay::native::volcengine_submit))
+        .route("/api/v3/contents/generations/tasks/{task_id}", get(crate::relay::native::volcengine_status))
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());
 
@@ -114,6 +131,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/api/v1", management_routes)
         .nest("/v1", relay_routes.clone())
         .nest("/api", relay_routes)
+        .merge(google_native_routes)
+        .merge(volcengine_native_routes)
         .with_state(state)
         .layer(tower_http::cors::CorsLayer::permissive())
 }

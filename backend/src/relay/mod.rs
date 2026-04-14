@@ -1,5 +1,9 @@
 pub mod router;
 pub mod stream;
+pub mod proxy;
+pub mod image;
+pub mod video;
+pub mod native;
 
 use axum::{
     extract::{State, Extension, Path},

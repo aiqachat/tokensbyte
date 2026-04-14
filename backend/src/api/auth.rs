@@ -89,14 +89,8 @@ pub async fn admin_login(
             row.and_then(|p| serde_json::from_str::<Vec<String>>(&p).ok())
                .unwrap_or_default()
         } else {
-            // Super Admin - default all permissions
-            vec![
-                "dashboard".to_string(), "tokens".to_string(), "logs".to_string(),
-                "channels".to_string(), "models".to_string(), "marketing".to_string(),
-                "redemptions".to_string(), "users".to_string(), "user_levels".to_string(),
-                "finance".to_string(), "finance_recharges".to_string(),
-                "finance_orders".to_string(), "settings".to_string(), "admin_groups".to_string()
-            ]
+            // Super Admin - permissions handled by frontend logic bypassing (user.admin_group_id == null)
+            vec![]
         };
         
         user.permissions = Some(permissions);
