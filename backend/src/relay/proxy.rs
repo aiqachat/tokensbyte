@@ -88,6 +88,7 @@ pub async fn record_and_bill(
     is_stream: i32,
     request_content: Option<String>,
     response_content: Option<String>,
+    upstream_req_content: Option<String>,
 ) {
     let mut enable_log: i32 = 0;
     if let Ok(Some(m)) = sqlx::query_as::<_, crate::models::Model>(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
@@ -105,6 +106,7 @@ pub async fn record_and_bill(
 
     let req_content = filter_base64(request_content);
     let resp_content = filter_base64(response_content);
+    let upstream_req = filter_base64(upstream_req_content);
 
     let mut channel_info: Option<(String, String, String)> = None;
     if let Ok(Some(ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
@@ -135,28 +137,12 @@ pub async fn record_and_bill(
     };
 
     let mut final_endpoint = upstream_ep.to_string();
-    if let Some((base, key, provider)) = channel_info {
+    if let Some((base, key, _provider)) = channel_info {
         if !final_endpoint.starts_with("http") {
-             let base_clean = base.trim_end_matches('/');
-             let ep_clean = if final_endpoint.starts_with('/') { &final_endpoint[1..] } else { &final_endpoint };
-             // 针对特定提供商组合特殊的 URL
-             if provider == "google" && final_endpoint.contains("generateContent") {
-                 final_endpoint = format!("{}/{}?key=******", base_clean, ep_clean);
-             } else {
-                 final_endpoint = join_url(&base, ep_clean);
-             }
-        } else {
-            // 如果原本就是包含 http 的全路径，并且带着密钥，直接脱敏即可
-            if !key.is_empty() && final_endpoint.contains(&key) {
-                let mut masked = key.clone();
-                if masked.len() > 8 {
-                    masked.replace_range(4..masked.len()-4, "******");
-                } else {
-                    masked = "******".to_string();
-                }
-                final_endpoint = final_endpoint.replace(&key, &masked);
-            }
+             final_endpoint = join_url(&base, if final_endpoint.starts_with('/') { &final_endpoint[1..] } else { &final_endpoint });
         }
+        // 通用密钥脱敏：只要 URL 中包含 api_key，统一脱敏
+        final_endpoint = super::forward::mask_key_in_string(&final_endpoint, &key);
     }
 
     let res: Result<(), sqlx::Error> = async {
@@ -179,8 +165,8 @@ pub async fn record_and_bill(
             .await?;
         }
         sqlx::query(&state.db.format_query(
-            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ))
         .bind(&token.user_id)
         .bind(channel_id)
@@ -197,6 +183,7 @@ pub async fn record_and_bill(
         .bind(resp_content)
         .bind(is_stream)
         .bind(&final_endpoint)
+        .bind(upstream_req)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

@@ -23,6 +23,8 @@ pub struct RequestLog {
     #[sqlx(default)]
     pub response_content: Option<String>,
     #[sqlx(default)]
+    pub upstream_req_content: Option<String>,
+    #[sqlx(default)]
     pub is_stream: Option<i32>,
     #[sqlx(default)]
     pub token_name: Option<String>,

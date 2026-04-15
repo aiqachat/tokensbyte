@@ -137,11 +137,15 @@ const Logs: React.FC = () => {
   const expandedRowRender = (record: RequestLog) => {
     let reqJson = record.request_content;
     let respJson = record.response_content;
+    let upstreamReqJson = record.upstream_req_content;
     try {
       if (reqJson) reqJson = JSON.stringify(JSON.parse(reqJson), null, 2);
     } catch (e) { /* keep raw */ }
     try {
       if (respJson) respJson = JSON.stringify(JSON.parse(respJson), null, 2);
+    } catch (e) { /* keep raw */ }
+    try {
+      if (upstreamReqJson) upstreamReqJson = JSON.stringify(JSON.parse(upstreamReqJson), null, 2);
     } catch (e) { /* keep raw */ }
 
     const modelMeta = modelsCache.find(m => m.model_id === record.model);
@@ -177,7 +181,7 @@ const Logs: React.FC = () => {
 
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
           <Col span={24} style={{ maxWidth: '100%', overflow: 'hidden' }}>
-            <Text strong style={{ fontSize: 13 }}>请求参数</Text>
+            <Text strong style={{ fontSize: 13 }}>请求参数（入参）</Text>
             <div style={{
               marginTop: 8, maxHeight: 300, overflow: 'auto',
               background: codeBg, border: `1px solid ${codeBorder}`,
@@ -185,6 +189,18 @@ const Logs: React.FC = () => {
             }}>
               <pre style={{ margin: 0, fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                 {reqJson || '该模型未开启「记录上下文」或内容为空'}
+              </pre>
+            </div>
+          </Col>
+          <Col span={24} style={{ maxWidth: '100%', overflow: 'hidden' }}>
+            <Text strong style={{ fontSize: 13 }}>真实转发给上游的请求参数（出参）</Text>
+            <div style={{
+              marginTop: 8, maxHeight: 300, overflow: 'auto',
+              background: codeBg, border: `1px solid ${codeBorder}`,
+              padding: 12, borderRadius: 6,
+            }}>
+              <pre style={{ margin: 0, fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                {upstreamReqJson || '同【请求参数】或未记录。对于未发生协议变异的请求默认展示同上。'}
               </pre>
             </div>
           </Col>

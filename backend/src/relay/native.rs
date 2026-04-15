@@ -100,7 +100,7 @@ pub async fn gemini_proxy(
     if !resp.status().is_success() {
         let err = resp.text().await?;
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, &endpoint, Some(&err), latency_ms, if action.starts_with("streamGenerateContent") { 1 } else { 0 }, Some(request_content_str.clone()), None).await;
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, &endpoint, Some(&err), latency_ms, if action.starts_with("streamGenerateContent") { 1 } else { 0 }, Some(request_content_str.clone()), None, Some(request_content_str.clone())).await;
         return Err(AppError::UpstreamError(err));
     }
 
@@ -108,18 +108,15 @@ pub async fn gemini_proxy(
 
     // Stream SSE for streamGenerateContent, otherwise buffer JSON
     if action.starts_with("streamGenerateContent") {
-        let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, cost, 200, &endpoint, None, latency_ms, 1, Some(request_content_str), None).await;
-        Ok(Response::builder()
-            .header("Content-Type", "text/event-stream")
-            .header("Cache-Control", "no-cache")
-            .body(axum::body::Body::from_stream(resp.bytes_stream()))
-            .unwrap())
+        Ok(crate::relay::stream::handle_native_stream(
+            state, token.clone(), channel.clone(), model.to_string(), resp, ctx.discount,
+            request_content_str.clone(), start_time, endpoint, Some(request_content_str)
+        ).await.into_response())
     } else {
         let data = resp.bytes().await?;
         let response_content_str = String::from_utf8_lossy(&data).to_string();
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, cost, 200, &endpoint, None, latency_ms, 0, Some(request_content_str), Some(response_content_str)).await;
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, cost, 200, &endpoint, None, latency_ms, 0, Some(request_content_str.clone()), Some(response_content_str), Some(request_content_str)).await;
         Ok(Response::builder()
             .header("Content-Type", "application/json")
             .body(axum::body::Body::from(data))
@@ -161,7 +158,7 @@ pub async fn volcengine_submit(
     if !resp.status().is_success() {
         let err = resp.text().await?;
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, "/v1/video/generations|/api/v3/contents/generations/tasks", Some(&err), latency_ms, 0, Some(request_content_str.clone()), None).await;
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, "/v1/video/generations|/api/v3/contents/generations/tasks", Some(&err), latency_ms, 0, Some(request_content_str.clone()), None, Some(fwd.to_string())).await;
         return Err(AppError::UpstreamError(err));
     }
 
@@ -169,7 +166,7 @@ pub async fn volcengine_submit(
     let data = resp.bytes().await?;
     let response_content_str = String::from_utf8_lossy(&data).to_string();
     let latency_ms = start_time.elapsed().as_millis() as u32;
-    proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, cost, 200, "/v1/video/generations|/api/v3/contents/generations/tasks", None, latency_ms, 0, Some(request_content_str), Some(response_content_str)).await;
+    proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, cost, 200, "/v1/video/generations|/api/v3/contents/generations/tasks", None, latency_ms, 0, Some(request_content_str), Some(response_content_str), Some(fwd.to_string())).await;
 
     Ok(Response::builder()
         .header("Content-Type", "application/json")
@@ -251,5 +248,58 @@ pub async fn volcengine_status(
     Ok(Response::builder()
         .header("Content-Type", "application/json")
         .body(axum::body::Body::from(get_resp_str))
+        .unwrap())
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Volcengine Native:
+//    POST /api/v3/images/generations  (图片生成 OpenAI 兼容格式)
+// ═══════════════════════════════════════════════════════════════
+
+/// POST — 火山方舟图片生成（官方路径，body 保持 OpenAI 兼容格式）
+pub async fn volcengine_images(
+    State(state): State<Arc<AppState>>,
+    Extension(token): Extension<ApiToken>,
+    Json(body): Json<serde_json::Value>,
+) -> AppResult<Response> {
+    let start_time = std::time::Instant::now();
+    let request_content_str = serde_json::to_string(&body).unwrap_or_default();
+    let model = body["model"].as_str().unwrap_or("volcengine-image");
+    let ctx = proxy::get_user_context(&state, &token.user_id).await?;
+    proxy::check_access(&token, model, ctx.balance)?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
+
+    let url = join_url(&channel.base_url, "/api/v3/images/generations");
+    let mut fwd = body.clone();
+    fwd["model"] = serde_json::json!(resolved_model);
+
+    let resp = state.http_client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", channel.api_key))
+        .json(&fwd)
+        .send()
+        .await?;
+
+    let status = resp.status().as_u16();
+    if !resp.status().is_success() {
+        let err = resp.text().await?;
+        let latency_ms = start_time.elapsed().as_millis() as u32;
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status,
+            "/api/v3/images/generations", Some(&err), latency_ms, 0,
+            Some(request_content_str.clone()), None, Some(fwd.to_string())).await;
+        return Err(AppError::UpstreamError(err));
+    }
+
+    let cost = proxy::get_model_cost(&state, model, ctx.discount).await;
+    let data = resp.bytes().await?;
+    let response_content_str = String::from_utf8_lossy(&data).to_string();
+    let latency_ms = start_time.elapsed().as_millis() as u32;
+    proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, cost, 200,
+        "/api/v3/images/generations", None, latency_ms, 0,
+        Some(request_content_str), Some(response_content_str), Some(fwd.to_string())).await;
+
+    Ok(Response::builder()
+        .header("Content-Type", "application/json")
+        .body(axum::body::Body::from(data))
         .unwrap())
 }

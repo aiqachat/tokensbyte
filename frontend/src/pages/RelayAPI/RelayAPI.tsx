@@ -16,8 +16,10 @@ const RelayAPI: React.FC = () => {
     { label: 'OpenAI 视频 (查询)', path: '/v1/video/generations/{task_id}', method: 'GET', type: 'openai' },
     { label: 'Google 原生 (非流式)', path: '/v1beta/models/{model}:generateContent', method: 'POST', type: 'google' },
     { label: 'Google 原生 (流式)', path: '/v1beta/models/{model}:streamGenerateContent', method: 'POST', type: 'google' },
-    { label: '火山方舟 (提交)', path: '/api/v3/contents/generations/tasks', method: 'POST', type: 'volcengine' },
-    { label: '火山方舟 (查询)', path: '/api/v3/contents/generations/tasks/{task_id}', method: 'GET', type: 'volcengine' },
+    { label: '火山方舟聊天', path: '/api/v3/chat/completions', method: 'POST', type: 'volcengine' },
+    { label: '火山方舟生图', path: '/api/v3/images/generations', method: 'POST', type: 'volcengine' },
+    { label: '火山方舟视频 (提交)', path: '/api/v3/contents/generations/tasks', method: 'POST', type: 'volcengine' },
+    { label: '火山方舟视频 (查询)', path: '/api/v3/contents/generations/tasks/{task_id}', method: 'GET', type: 'volcengine' },
   ];
 
   const errorCodes = [
@@ -127,6 +129,10 @@ const RelayAPI: React.FC = () => {
 
                 <Title level={5} style={{ marginTop: 24 }}>火山方舟 架构</Title>
                 <div style={{ background: '#000', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+                  <Text code>POST /api/v3/chat/completions</Text>
+                  <br/>
+                  <Text code>POST /api/v3/images/generations</Text>
+                  <br/>
                   <Text code>POST /api/v3/contents/generations/tasks</Text> 
                 </div>
               </Card>

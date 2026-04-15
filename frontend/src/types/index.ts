@@ -199,6 +199,7 @@ export interface RequestLog {
   token_name?: string;
   request_content?: string;
   response_content?: string;
+  upstream_req_content?: string;
   is_stream?: number;
   created_at: string;
 }

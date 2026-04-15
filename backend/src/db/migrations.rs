@@ -110,6 +110,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             upstream_url TEXT DEFAULT '',
             request_content TEXT,
             response_content TEXT,
+            upstream_req_content TEXT,
             is_stream INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -314,7 +315,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
         .execute(pool).await.ok();
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_url TEXT DEFAULT ''")
         .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_url TEXT DEFAULT ''")
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_req_content TEXT")
         .execute(pool).await.ok();
 
     // Safe fallback for existing postgres deployments
@@ -344,7 +345,6 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             ('Google Gemini 原生生图', 'gemini', '将标准的生图请求适配到 Gemini contents 接口', '{"mode":"transform","target_type":"gemini_image","path_rewrite":{"old":"/v1/images/generations","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '图片'),
             ('Google Gemini 格式转换 (聊天)', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天'),
             ('Google Gemini 流式转换 (聊天)', 'gemini', '将标准请求转换为支持流式输出的 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:streamGenerateContent?alt=sse"},"auth_type":"query_key"}', '聊天'),
-            ('火山方舟 原生生图', 'volcengine', '将标准的生图请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '图片'),
             ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
         "#).execute(pool).await?;
     } else {
@@ -362,11 +362,26 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             "#).execute(pool).await.ok();
         }
         
-        let volc_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = '火山方舟 原生生图'").fetch_one(pool).await?;
+        let volc_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = '火山方舟 视频生成'").fetch_one(pool).await?;
         if volc_count == 0 {
             sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
-                ('火山方舟 原生生图', 'volcengine', '将标准的生图请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '图片'),
                 ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
+            "#).execute(pool).await.ok();
+        }
+
+        // 火山方舟聊天转发规则
+        let volc_chat_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = '火山方舟 聊天'").fetch_one(pool).await?;
+        if volc_chat_count == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('火山方舟 聊天', 'volcengine', '将标准的聊天请求转发到火山方舟官方 Chat 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_chat","path_rewrite":{"old":"/v1/chat/completions","new":"/api/v3/chat/completions"},"auth_type":"bearer"}', '聊天')
+            "#).execute(pool).await.ok();
+        }
+
+        // 火山方舟图片生成（/api/v3/images/generations）
+        let volc_img_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = '火山方舟 图片生成'").fetch_one(pool).await?;
+        if volc_img_count == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('火山方舟 图片生成', 'volcengine', '将标准的图片生成请求转发到火山方舟官方 images 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_image","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/images/generations"},"auth_type":"bearer"}', '图片')
             "#).execute(pool).await.ok();
         }
     }
@@ -772,7 +787,6 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             ('Google Gemini 原生生图', 'gemini', '将标准的生图请求适配到 Gemini contents 接口', '{"mode":"transform","target_type":"gemini_image","path_rewrite":{"old":"/v1/images/generations","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '图片'),
             ('Google Gemini 格式转换 (聊天)', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天'),
             ('Google Gemini 流式转换 (聊天)', 'gemini', '将标准请求转换为支持流式输出的 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:streamGenerateContent?alt=sse"},"auth_type":"query_key"}', '聊天'),
-            ('火山方舟 原生生图', 'volcengine', '将标准的生图请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '图片'),
             ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
         "#).execute(pool).await?;
     } else {
@@ -790,11 +804,26 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             "#).execute(pool).await.ok();
         }
         
-        let volc_count_sq: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = '火山方舟 原生生图'").fetch_one(pool).await?;
+        let volc_count_sq: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = '火山方舟 视频生成'").fetch_one(pool).await?;
         if volc_count_sq == 0 {
             sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
-                ('火山方舟 原生生图', 'volcengine', '将标准的生图请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '图片'),
                 ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
+            "#).execute(pool).await.ok();
+        }
+
+        // 火山方舟聊天转发规则 (SQLite)
+        let volc_chat_sq: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = '火山方舟 聊天'").fetch_one(pool).await?;
+        if volc_chat_sq == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('火山方舟 聊天', 'volcengine', '将标准的聊天请求转发到火山方舟官方 Chat 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_chat","path_rewrite":{"old":"/v1/chat/completions","new":"/api/v3/chat/completions"},"auth_type":"bearer"}', '聊天')
+            "#).execute(pool).await.ok();
+        }
+
+        // 火山方舟图片生成 (SQLite)
+        let volc_img_sq: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = '火山方舟 图片生成'").fetch_one(pool).await?;
+        if volc_img_sq == 0 {
+            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
+                ('火山方舟 图片生成', 'volcengine', '将标准的图片生成请求转发到火山方舟官方 images 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_image","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/images/generations"},"auth_type":"bearer"}', '图片')
             "#).execute(pool).await.ok();
         }
     }
@@ -1150,7 +1179,6 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
             ('Google Gemini 原生生图', 'gemini', '将标准的生图请求适配到 Gemini contents 接口', '{"mode":"transform","target_type":"gemini_image","path_rewrite":{"old":"/v1/images/generations","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '图片'),
             ('Google Gemini 格式转换 (聊天)', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天'),
             ('Google Gemini 流式转换 (聊天)', 'gemini', '将标准请求转换为支持流式输出的 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:streamGenerateContent?alt=sse"},"auth_type":"query_key"}', '聊天'),
-            ('火山方舟 原生生图', 'volcengine', '将标准的生图请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '图片'),
             ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
         "#).execute(pool).await?;
     } else {
@@ -1206,6 +1234,7 @@ pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
 
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN admin_remark TEXT DEFAULT ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE logs ADD COLUMN upstream_req_content TEXT").execute(pool).await;
 
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS channel_configs (

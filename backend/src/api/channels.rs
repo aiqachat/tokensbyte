@@ -182,227 +182,107 @@ pub async fn test_channel(
         }
     }
 
-    let provider = crate::providers::get_provider(&channel.provider_type);
-    
-    // Construct a minimal request to test the provider
     let test_model = req.model.unwrap_or_else(|| {
         let models = channel.get_models();
-        if !models.is_empty() {
-            models[0].clone()
-        } else {
-            "gpt-3.5-turbo".to_string()
-        }
+        if !models.is_empty() { models[0].clone() } else { "gpt-3.5-turbo".to_string() }
     });
 
     let start = std::time::Instant::now();
-    let mut is_image_request = false;
-    let mut is_video_request = false;
 
-    // Generate accurate Mock cURL and Endpoint
-    let mut endpoint = match channel.provider_type.as_str() {
-        "anthropic" => join_url(&channel.base_url, "/v1/messages"),
-        _ => join_url(&channel.base_url, "/v1/chat/completions"),
-    };
-
-    // Forward Rule Path Override
+    // ── 解析转发规则 ──
+    let mut resolved: Option<crate::relay::forward::ResolvedForward> = None;
+    let mut category = "聊天".to_string();
     let mut rule_is_stream = false;
-    let mut rule_target_type: Option<String> = None;
+
     if let Some(fid) = req.forward_rule_id {
         let rule: Option<crate::models::ForwardRule> = sqlx::query_as(&state.db.format_query("SELECT * FROM forward_rules WHERE id = ?"))
             .bind(fid)
-            .fetch_optional(&state.db.pool)
-            .await?;
+            .fetch_optional(&state.db.pool).await?;
         if let Some(r) = rule {
+            category = r.category.clone();
             if r.name.contains("流式") || r.name.to_lowercase().contains("stream") {
                 rule_is_stream = true;
             }
-            if r.category == "图片" {
-                is_image_request = true;
-            } else if r.category == "视频" {
-                is_video_request = true;
-            }
             if let Ok(config) = serde_json::from_str::<serde_json::Value>(&r.config_json) {
-                if let Some(path_rw) = config.get("path_rewrite") {
-                    if let Some(old) = path_rw.get("old").and_then(|v| v.as_str()) {
-                        if let Some(new) = path_rw.get("new").and_then(|v| v.as_str()) {
-                            if endpoint.contains(old) {
-                                endpoint = endpoint.replace(old, new);
-                            } else {
-                                endpoint = join_url(&channel.base_url, new);
-                            }
-                            endpoint = endpoint.replace("${model}", &test_model);
-                        }
-                    }
-                }
-                if let Some(tt) = config.get("target_type").and_then(|v| v.as_str()) {
-                    rule_target_type = Some(tt.to_string());
-                }
+                let target_type = config.get("target_type").and_then(|v| v.as_str()).unwrap_or("openai").to_string();
+                let upstream_path = config.get("path_rewrite")
+                    .and_then(|pr| pr.get("new"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("/v1/chat/completions")
+                    .to_string();
+                let auth_type = config.get("auth_type").and_then(|v| v.as_str()).unwrap_or("bearer").to_string();
+                resolved = Some(crate::relay::forward::ResolvedForward { target_type, upstream_path, auth_type });
             }
         }
     }
 
-    let request_data = if is_image_request {
-         if rule_target_type.as_deref() == Some("gemini_image") || rule_target_type.as_deref() == Some("gemini") || (channel.provider_type == "google" && req.forward_rule_id.is_none()) {
-            serde_json::json!({
-                "contents": [{
-                    "parts": [{"text": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。"}]
-                }],
-                "generationConfig": {
-                    "imageConfig": {
-                        "aspectRatio": "1:1",
-                        "imageSize": "1K"
-                    }
-                }
-            })
-         } else if rule_target_type.as_deref() == Some("volcengine") {
-            endpoint = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
-            serde_json::json!({
-                "model": test_model.clone(),
-                "content": [{"type": "text", "text": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。"}],
-                "ratio": "1:1",
-                "watermark": false
-            })
-         } else {
-             serde_json::json!({
-                 "model": test_model.clone(),
-                 "prompt": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。",
-                 "n": 1
-             })
-         }
-    } else if is_video_request {
-         if rule_target_type.as_deref() == Some("volcengine") {
-            endpoint = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
-            serde_json::json!({
-                "model": test_model.clone(),
-                "content": [{"type": "text", "text": "A short video of a cute white cat walking"}],
-                "ratio": "16:9",
-                "duration": 5,
-                "watermark": false
-            })
-         } else {
-            serde_json::json!({
-                "model": test_model.clone(),
-                "prompt": "A short video of a cute white cat walking"
-            })
-         }
+    let fwd = resolved.unwrap_or_else(|| crate::relay::forward::default_openai_forward("/v1/chat/completions"));
+    let is_image = category == "图片";
+    let is_video = category == "视频";
+
+    // ── 构建测试请求体 ──
+    let openai_body = if is_image {
+        serde_json::json!({"model": test_model, "prompt": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。", "n": 1})
+    } else if is_video {
+        serde_json::json!({"model": test_model, "prompt": "A short video of a cute white cat walking"})
     } else {
-         if rule_target_type.as_deref() == Some("gemini") {
-             serde_json::json!({
-                "contents": [{
-                    "role": "user",
-                    "parts": [{"text": "hi"}]
-                }],
-                "generationConfig": {
-                    "maxOutputTokens": 5,
-                    "temperature": 0.0
-                }
-             })
-         } else {
-             let mut st = false;
-             if endpoint.contains("stream") || rule_is_stream { st = true; }
-             serde_json::json!({
-                "model": test_model.clone(),
-                "messages": [{
-                    "role": "user",
-                    "content": "hi"
-                }],
-                "stream": st,
-                "temperature": 0.0,
-                "max_tokens": 5
-            })
-         }
+        let st = rule_is_stream || fwd.upstream_path.contains("stream");
+        serde_json::json!({"model": test_model, "messages": [{"role": "user", "content": "hi"}], "stream": st, "temperature": 0.0, "max_tokens": 5})
     };
 
-    let mut masked_key = channel.api_key.clone();
-    if masked_key.len() > 8 {
-        masked_key.replace_range(4..masked_key.len()-4, "******");
-    } else {
-        masked_key = "******".to_string();
-    }
-    let mut curl_cmd = format!("curl -X POST '{}' \\\n", endpoint);
+    let request_data = crate::relay::forward::transform_request_body(&fwd, &test_model, &openai_body, &category);
+
+    // ── 构建 URL 和鉴权 ──
+    let endpoint = crate::relay::forward::build_upstream_url(&channel.base_url, &fwd, &test_model, &channel.api_key);
+    let auth_headers = crate::relay::forward::build_auth_headers(&fwd, &channel.api_key);
+
+    // ── 生成 cURL 命令 ──
+    let masked_endpoint = crate::relay::forward::mask_key_in_string(&endpoint, &channel.api_key);
+    let masked_key = if channel.api_key.len() > 8 {
+        format!("{}******{}", &channel.api_key[..4], &channel.api_key[channel.api_key.len()-4..])
+    } else { "******".to_string() };
+
+    let mut curl_cmd = format!("curl -X POST '{}' \\\n", masked_endpoint);
     curl_cmd.push_str("  -H 'Content-Type: application/json' \\\n");
-    if channel.provider_type == "anthropic" {
-        curl_cmd.push_str(&format!("  -H 'x-api-key: {}' \\\n", masked_key));
-        curl_cmd.push_str("  -H 'anthropic-version: 2023-06-01' \\\n");
-    } else if channel.provider_type == "google" && (endpoint.contains("v1beta") || endpoint.contains("v1alpha") || endpoint.contains("generateContent") || endpoint.contains("predict")) {
-        curl_cmd.push_str(&format!("  -H 'x-goog-api-key: {}' \\\n", masked_key));
-    } else {
-        curl_cmd.push_str(&format!("  -H 'Authorization: Bearer {}' \\\n", masked_key));
+    for (k, v) in &auth_headers {
+        let masked_v = crate::relay::forward::mask_key_in_string(v, &channel.api_key);
+        curl_cmd.push_str(&format!("  -H '{}: {}' \\\n", k, masked_v));
     }
     let request_json = serde_json::to_string(&request_data).unwrap_or_default();
     curl_cmd.push_str(&format!("  -d '{}'", request_json.replace("'", "\\'")));
 
-    // Dispatch using manual override if forward rule exists, otherwise fallback to provider
-    let response_res = if req.forward_rule_id.is_some() {
-        let mut builder = state.http_client.post(&endpoint).header("Content-Type", "application/json");
-        if channel.provider_type == "anthropic" {
-            builder = builder.header("x-api-key", &channel.api_key).header("anthropic-version", "2023-06-01");
-        } else if channel.provider_type == "google" && (endpoint.contains("v1beta") || endpoint.contains("v1alpha") || endpoint.contains("generateContent") || endpoint.contains("predict")) {
-            builder = builder.header("x-goog-api-key", &channel.api_key);
-        } else {
-            builder = builder.header("Authorization", format!("Bearer {}", channel.api_key));
-        }
-        match builder.json(&request_data).send().await {
-            Ok(r) => {
-                let status = r.status();
-                if status.is_success() {
-                    let text = r.text().await.unwrap_or_default();
-                    if text.starts_with("data: ") || text.contains("\"candidates\"") {
-                        // Attempt strict JSON, otherwise fallback to mock usage to prevent error
-                        match serde_json::from_str::<serde_json::Value>(&text) {
-                            Ok(v) => Ok(v),
-                            Err(_) => Ok(serde_json::json!({"status": "stream_success", "raw": text.chars().take(200).collect::<String>()}))
-                        }
-                    } else {
-                        match serde_json::from_str::<serde_json::Value>(&text) {
-                            Ok(v) => Ok(v),
-                            Err(_) => Ok(serde_json::json!({"status": "success", "raw": text}))
-                        }
-                    }
-                } else {
-                    // 保留完整上游错误响应体，便于前端展示诊断
-                    let status_val = status.as_u16();
-                    let err_body = r.text().await.unwrap_or_default();
-                    let upstream_json = serde_json::from_str::<serde_json::Value>(&err_body)
-                        .unwrap_or_else(|_| serde_json::json!({"raw_error": err_body}));
-                    Ok(serde_json::json!({
-                        "_upstream_status": status_val,
-                        "_upstream_error": upstream_json
-                    }))
+    // ── 发送请求 ──
+    let mut builder = state.http_client.post(&endpoint).header("Content-Type", "application/json");
+    for (k, v) in &auth_headers {
+        builder = builder.header(k, v);
+    }
+
+    let response_res: Result<serde_json::Value, crate::error::AppError> = match builder.json(&request_data).send().await {
+        Ok(r) => {
+            let status = r.status();
+            if status.is_success() {
+                let text = r.text().await.unwrap_or_default();
+                match serde_json::from_str::<serde_json::Value>(&text) {
+                    Ok(v) => Ok(v),
+                    Err(_) => Ok(serde_json::json!({"status": "success", "raw": text.chars().take(500).collect::<String>()}))
                 }
-            },
-            Err(e) => Ok(serde_json::json!({
-                "_upstream_status": 0,
-                "_upstream_error": {"connection_error": e.to_string()}
-            }))
-        }
-    } else {
-        let chat_req_obj = crate::providers::ChatRequest {
-            model: test_model.clone(),
-            messages: vec![crate::providers::Message {
-                role: "user".to_string(),
-                content: Some(serde_json::json!("hi")),
-                name: None, tool_calls: None, tool_call_id: None, extra: serde_json::Map::new(),
-            }],
-            stream: Some(false), temperature: Some(0.0), max_tokens: Some(5),
-            top_p: None, stop: None, presence_penalty: None, frequency_penalty: None, n: None, user: None, extra: serde_json::Map::new(),
-        };
-        provider.chat_completions(&state.http_client, &channel, &chat_req_obj).await
-            .map(|resp| serde_json::to_value(&resp).unwrap_or_default())
+            } else {
+                let status_val = status.as_u16();
+                let err_body = r.text().await.unwrap_or_default();
+                let upstream_json = serde_json::from_str::<serde_json::Value>(&err_body)
+                    .unwrap_or_else(|_| serde_json::json!({"raw_error": err_body}));
+                Ok(serde_json::json!({"_upstream_status": status_val, "_upstream_error": upstream_json}))
+            }
+        },
+        Err(e) => Ok(serde_json::json!({"_upstream_status": 0, "_upstream_error": {"connection_error": e.to_string()}}))
     };
 
-    // 火山方舟视频异步任务：POST 创建后自动轮询 GET 查询结果
-    let response_res = if is_video_request && rule_target_type.as_deref() == Some("volcengine") {
+    // ── 火山视频异步任务轮询 ──
+    let response_res = if is_video && fwd.target_type == "volcengine" {
         match response_res {
             Ok(create_resp) if create_resp.get("_upstream_error").is_none() => {
-                // 兼容两种 task_id 路径:
-                //   - 标准 OpenAI 风格: resp.id
-                //   - 火山方舟风格:    resp.data.task_id
                 let task_id_opt = create_resp.get("id").and_then(|v| v.as_str())
-                    .or_else(|| create_resp.get("data")
-                        .and_then(|d| d.get("task_id"))
-                        .and_then(|v| v.as_str()));
-
+                    .or_else(|| create_resp.get("data").and_then(|d| d.get("task_id")).and_then(|v| v.as_str()));
                 if let Some(task_id) = task_id_opt {
                     let poll_url = join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id));
                     tracing::info!("[Channel Test] 视频任务已提交 task_id={}, 开始轮询: {}", task_id, poll_url);
@@ -416,21 +296,11 @@ pub async fn test_channel(
                             Ok(pr) => {
                                 let body = pr.text().await.unwrap_or_default();
                                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
-                                    // 兼容两种状态路径:
-                                    //   - 扁平风格:       resp.status
-                                    //   - 火山方舟风格:  resp.data.status
-                                    let task_status_str = v.get("status")
-                                        .and_then(|s| s.as_str())
-                                        .or_else(|| v.get("data")
-                                            .and_then(|d| d.get("status"))
-                                            .and_then(|s| s.as_str()))
-                                        .unwrap_or("")
-                                        .to_string();
-
+                                    let task_status_str = v.get("status").and_then(|s| s.as_str())
+                                        .or_else(|| v.get("data").and_then(|d| d.get("status")).and_then(|s| s.as_str()))
+                                        .unwrap_or("").to_string();
                                     tracing::info!("[Channel Test] 轮询第 {} 次, status={}", attempt + 1, task_status_str);
                                     poll_result = v;
-
-                                    // 兼容多种成功/失败状态字符串
                                     match task_status_str.as_str() {
                                         "succeeded" | "success" | "failed" | "error" => break,
                                         _ => {}
@@ -444,13 +314,8 @@ pub async fn test_channel(
                             }
                         }
                     }
-                    Ok(serde_json::json!({
-                        "create_task_response": create_resp,
-                        "task_id": task_id,
-                        "final_result": poll_result
-                    }))
+                    Ok(serde_json::json!({"create_task_response": create_resp, "task_id": task_id, "final_result": poll_result}))
                 } else {
-                    // task_id 未找到，直接返回 POST 响应以便调试
                     tracing::warn!("[Channel Test] 无法从响应中提取 task_id，跳过轮询。响应体: {:?}", create_resp);
                     Ok(create_resp)
                 }
@@ -461,7 +326,7 @@ pub async fn test_channel(
         response_res
     };
 
-    // Inject usage logs for debugging
+    // ── 记录日志 ──
     let latency_ms = start.elapsed().as_millis() as i32;
     let mut status_code = 200;
     let mut p_tokens = 0;
@@ -478,15 +343,7 @@ pub async fn test_channel(
                 c_tokens = usage.get("completion_tokens").and_then(|t| t.as_i64()).unwrap_or(0) as i32;
             }
         },
-        Err(e) => {
-            status_code = 500;
-            err_msg = Some(e.to_string());
-        }
-    }
-
-    let mut masked_endpoint = endpoint.clone();
-    if !channel.api_key.is_empty() && masked_endpoint.contains(&channel.api_key) {
-        masked_endpoint = masked_endpoint.replace(&channel.api_key, &masked_key);
+        Err(e) => { status_code = 500; err_msg = Some(e.to_string()); }
     }
 
     let user_id_str = match &options_claims {
@@ -495,58 +352,36 @@ pub async fn test_channel(
     };
 
     let _ = sqlx::query(&state.db.format_query("INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, latency_ms, status_code, endpoint, error_message, upstream_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"))
-        .bind(user_id_str)
-        .bind(id)
-        .bind(0)
-        .bind(&test_model)
-        .bind(p_tokens)
-        .bind(c_tokens)
-        .bind(0.0) // No real user cost for an admin test
-        .bind(latency_ms)
-        .bind(status_code)
-        .bind(&endpoint)
-        .bind(err_msg)
-        .bind(&masked_endpoint)
-        .execute(&state.db.pool)
-        .await;
+        .bind(user_id_str).bind(id).bind(0).bind(&test_model)
+        .bind(p_tokens).bind(c_tokens).bind(0.0).bind(latency_ms)
+        .bind(status_code).bind(&endpoint).bind(err_msg).bind(&masked_endpoint)
+        .execute(&state.db.pool).await;
 
+    // ── 返回结果 ──
     match response_res {
         Ok(response_value) => {
             let is_upstream_err = response_value.get("_upstream_error").is_some();
             if is_upstream_err {
                 let upstream_status = response_value.get("_upstream_status").and_then(|s| s.as_i64()).unwrap_or(0);
                 Ok(Json(serde_json::json!({
-                    "success": false,
-                    "err_msg": format!("上游返回 HTTP {}", upstream_status),
-                    "latency": latency_ms,
-                    "channel_id": id,
-                    "curl_command": curl_cmd,
-                    "request_data": request_data,
-                    "response_data": response_value,
+                    "success": false, "err_msg": format!("上游返回 HTTP {}", upstream_status),
+                    "latency": latency_ms, "channel_id": id, "curl_command": curl_cmd,
+                    "request_data": request_data, "response_data": response_value,
                 })))
             } else {
                 Ok(Json(serde_json::json!({
-                    "success": true,
-                    "latency": latency_ms,
-                    "channel_id": id,
-                    "curl_command": curl_cmd,
-                    "request_data": request_data,
-                    "response_data": response_value,
+                    "success": true, "latency": latency_ms, "channel_id": id,
+                    "curl_command": curl_cmd, "request_data": request_data, "response_data": response_value,
                 })))
             }
         },
         Err(e) => {
             let err_str = e.to_string();
             Ok(Json(serde_json::json!({
-                "success": false,
-                "err_msg": err_str.clone(),
-                "latency": latency_ms,
-                "channel_id": id,
-                "curl_command": curl_cmd,
-                "request_data": request_data,
+                "success": false, "err_msg": err_str.clone(), "latency": latency_ms,
+                "channel_id": id, "curl_command": curl_cmd, "request_data": request_data,
                 "response_data": { "error": err_str },
             })))
         }
     }
 }
-
