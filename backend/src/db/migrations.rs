@@ -1,6 +1,9 @@
 use sqlx::{Pool, Sqlite, Postgres, Any};
 
-pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
+macro_rules! pg_migration_blocks {
+    ($pool:expr) => {{
+        let pool = $pool;
+
     // Users table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS users (
@@ -16,7 +19,10 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             balance DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             user_group TEXT NOT NULL DEFAULT 'default',
             used_quota DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            is_active INTEGER NOT NULL DEFAULT 1, referred_by TEXT, commission_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT, referred_by TEXT, commission_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -56,6 +62,7 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             config TEXT NOT NULL DEFAULT '{}',
             user_groups TEXT NOT NULL DEFAULT '[]',
             group_aid TEXT DEFAULT '',
+            preset_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -85,6 +92,9 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             rpm_limit INTEGER DEFAULT 0,
             expires_at TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -207,6 +217,9 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             name TEXT NOT NULL UNIQUE,
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -221,6 +234,9 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             name TEXT NOT NULL UNIQUE,
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -246,7 +262,12 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             billing_unit TEXT NOT NULL DEFAULT '1k',
             pricing_tiers TEXT NOT NULL DEFAULT '[]',
             is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT,
             enable_log_content INTEGER NOT NULL DEFAULT 0,
+            forward_rule_ids TEXT,
+            billing_rule_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -399,6 +420,9 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             billing_rule TEXT NOT NULL DEFAULT 'standard',
             pricing_tiers TEXT NOT NULL DEFAULT '[]',
             is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -448,6 +472,9 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
             remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT,
+            remark TEXT,
             config TEXT,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
@@ -459,8 +486,12 @@ pub async fn run_pg_any(pool: &Pool<Any>) -> anyhow::Result<()> {
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
+    }};
 }
 
+pub async fn run_pg_any(pool: &sqlx::Pool<sqlx::Any>) -> anyhow::Result<()> {
+    pg_migration_blocks!(pool)
+}
 pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     // Users table
     sqlx::query(
@@ -477,7 +508,10 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             balance REAL NOT NULL DEFAULT 0.0,
             used_quota REAL NOT NULL DEFAULT 0.0,
             user_group TEXT NOT NULL DEFAULT 'default',
-            is_active INTEGER NOT NULL DEFAULT 1, referred_by TEXT, commission_balance REAL NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT, referred_by TEXT, commission_balance REAL NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
@@ -566,6 +600,9 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             rpm_limit INTEGER DEFAULT 0,
             expires_at TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
@@ -758,6 +795,9 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             config_json TEXT NOT NULL DEFAULT '{}',
             description TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
@@ -841,6 +881,9 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             billing_rule TEXT NOT NULL DEFAULT 'standard',
             pricing_tiers TEXT NOT NULL DEFAULT '[]',
             is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
@@ -866,410 +909,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn run_pg(pool: &Pool<Postgres>) -> anyhow::Result<()> {
-    // Users table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            uid TEXT NOT NULL UNIQUE,
-            username TEXT NOT NULL UNIQUE,
-            email TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            nickname TEXT,
-            mobile TEXT,
-            wechat_id TEXT,
-            role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
-            balance DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            used_quota DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            user_group TEXT NOT NULL DEFAULT 'default',
-            is_active INTEGER NOT NULL DEFAULT 1, referred_by TEXT, commission_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
 
-    // Recharge Records table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS recharge_records (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES users(id),
-            amount DOUBLE PRECISION NOT NULL,
-            recharge_type TEXT NOT NULL DEFAULT 'other',
-            remark TEXT,
-            created_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Channels table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS channels (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            provider_type TEXT NOT NULL,
-            base_url TEXT NOT NULL,
-            api_key TEXT NOT NULL,
-            models TEXT NOT NULL DEFAULT '[]',
-            model_mapping TEXT NOT NULL DEFAULT '{}',
-            priority INTEGER NOT NULL DEFAULT 0,
-            weight INTEGER NOT NULL DEFAULT 1,
-            status INTEGER NOT NULL DEFAULT 1,
-            balance DOUBLE PRECISION,
-            max_rps INTEGER DEFAULT 0,
-            config TEXT NOT NULL DEFAULT '{}',
-            user_groups TEXT NOT NULL DEFAULT '[]',
-            group_aid TEXT DEFAULT '',
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Safe fallback for existing postgres deployments
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS user_groups TEXT NOT NULL DEFAULT '[]'")
-        .execute(pool)
-        .await
-        .ok();
-
-    // API Tokens table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS api_tokens (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES users(id),
-            token_key TEXT NOT NULL UNIQUE,
-            name TEXT NOT NULL DEFAULT 'default',
-            quota_limit DOUBLE PRECISION NOT NULL DEFAULT -1,
-            quota_used DOUBLE PRECISION NOT NULL DEFAULT 0,
-            allowed_models TEXT NOT NULL DEFAULT '[]',
-            allowed_ips TEXT NOT NULL DEFAULT '',
-            ip_whitelist TEXT,
-            rps_limit INTEGER DEFAULT 0,
-            rpm_limit INTEGER DEFAULT 0,
-            expires_at TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Logs table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS logs (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            channel_id INTEGER,
-            token_id INTEGER,
-            model TEXT NOT NULL DEFAULT '',
-            prompt_tokens INTEGER NOT NULL DEFAULT 0,
-            completion_tokens INTEGER NOT NULL DEFAULT 0,
-            cost DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            latency_ms INTEGER NOT NULL DEFAULT 0,
-            status_code INTEGER NOT NULL DEFAULT 200,
-            endpoint TEXT NOT NULL DEFAULT '',
-            error_message TEXT,
-            created_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Redemption codes table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS redemptions (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            code TEXT NOT NULL UNIQUE,
-            quota DOUBLE PRECISION NOT NULL,
-            is_used INTEGER DEFAULT 0,
-            used_at TEXT,
-            used_by TEXT,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // System settings table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL DEFAULT ''
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Task Logs table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS task_logs (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            channel_id INTEGER,
-            platform TEXT NOT NULL,
-            action_type TEXT NOT NULL,
-            task_id TEXT NOT NULL,
-            status TEXT NOT NULL,
-            progress INTEGER NOT NULL DEFAULT 0,
-            submit_time TEXT,
-            end_time TEXT,
-            time_spent INTEGER,
-            details TEXT,
-            created_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // User levels table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS user_levels (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            group_key TEXT NOT NULL UNIQUE,
-            discount DOUBLE PRECISION NOT NULL DEFAULT 1.0,
-            commission_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            invite_reward_inviter DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            invite_reward_invitee DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            daily_invite_limit INTEGER NOT NULL DEFAULT 10,
-            description TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Verification codes table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS verification_codes (
-            id SERIAL PRIMARY KEY,
-            email TEXT NOT NULL,
-            code TEXT NOT NULL,
-            purpose TEXT NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Model Providers table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS model_providers (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Model Types table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS model_types (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Models table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS models (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            model_id TEXT NOT NULL UNIQUE,
-            provider_id INTEGER REFERENCES model_providers(id),
-            type_id INTEGER REFERENCES model_types(id),
-            billing_type TEXT NOT NULL DEFAULT 'tokens',
-            prompt_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            completion_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            fixed_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            duration_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            group_ratios TEXT NOT NULL DEFAULT '{}',
-            billing_rule TEXT NOT NULL DEFAULT 'standard',
-            billing_unit TEXT NOT NULL DEFAULT '1k',
-            pricing_tiers TEXT NOT NULL DEFAULT '[]',
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Seed default user level
-    sqlx::query(
-        r#"INSERT INTO user_levels (name, group_key, discount, description)
-           VALUES ('默认用户', 'default', 1.0, '普通用户，无折扣')
-           ON CONFLICT (group_key) DO NOTHING"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Admin Groups table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS admin_groups (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            permissions TEXT,
-            description TEXT,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Add admin_group_id to users table if not exists
-    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_group_id INTEGER")
-        .execute(pool)
-        .await?;
-
-    // Forward Rules table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS forward_rules (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            rule_type TEXT NOT NULL,
-            category TEXT NOT NULL DEFAULT '聊天',
-            config_json TEXT NOT NULL DEFAULT '{}',
-            description TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '聊天'")
-        .execute(pool)
-        .await
-        .ok();
-
-    // Alter models to add rule link
-    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS forward_rule_ids TEXT")
-        .execute(pool)
-        .await?;
-
-    // Seed Forward Rules (PG Standard)
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules").fetch_one(pool).await?;
-    if count == 0 {
-        sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
-            ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天'),
-            ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片'),
-            ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频'),
-            ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}', '聊天'),
-            ('Google Gemini 原生生图', 'gemini', '将标准的生图请求适配到 Gemini contents 接口', '{"mode":"transform","target_type":"gemini_image","path_rewrite":{"old":"/v1/images/generations","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '图片'),
-            ('Google Gemini 格式转换 (聊天)', 'gemini', '将标准请求转换并适配到 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '聊天'),
-            ('Google Gemini 流式转换 (聊天)', 'gemini', '将标准请求转换为支持流式输出的 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:streamGenerateContent?alt=sse"},"auth_type":"query_key"}', '聊天'),
-            ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频')
-        "#).execute(pool).await?;
-    } else {
-        let img_count_pg: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (图片)'").fetch_one(pool).await?;
-        if img_count_pg == 0 {
-            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
-                ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片')
-            "#).execute(pool).await.ok();
-        }
-        
-        let video_count_pg: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forward_rules WHERE name = 'OpenAI 兼容原生通道 (视频)'").fetch_one(pool).await?;
-        if video_count_pg == 0 {
-            sqlx::query(r#"INSERT INTO forward_rules (name, rule_type, description, config_json, category) VALUES 
-                ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频')
-            "#).execute(pool).await.ok();
-        }
-    }
-
-    // Billing Rules table
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS billing_rules (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            billing_type TEXT NOT NULL,
-            prompt_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            completion_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            fixed_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            duration_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            billing_rule TEXT NOT NULL DEFAULT 'standard',
-            pricing_tiers TEXT NOT NULL DEFAULT '[]',
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    )
-    .execute(pool)
-    .await?;
-
-    // Alter models to add billing rule link
-    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS billing_rule_id INTEGER")
-        .execute(pool)
-        .await?;
-
-    // Seed Billing Rules (PG Standard)
-    let bcount: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM billing_rules").fetch_one(pool).await?;
-    if bcount == 0 {
-        sqlx::query(r#"INSERT INTO billing_rules (name, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule) VALUES 
-            ('免费公益模型模板', 'tokens', 0.0, 0.0, 0.0, 0.0, 'standard'),
-            ('标准 1M 万字计费 ($1)', 'tokens', 1.0, 1.0, 0.0, 0.0, 'standard'),
-            ('单次请求扣费 ($0.1)', 'requests', 0.0, 0.0, 0.1, 0.0, 'standard')
-        "#).execute(pool).await?;
-    }
-
-    let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE users ADD COLUMN admin_remark TEXT DEFAULT ''").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE logs ADD COLUMN upstream_req_content TEXT").execute(pool).await;
-
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS channel_configs (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            provider_type TEXT NOT NULL,
-            base_url TEXT NOT NULL,
-            api_key TEXT NOT NULL,
-            remark TEXT,
-            created_at TEXT NOT NULL DEFAULT (now()::text),
-            updated_at TEXT NOT NULL DEFAULT (now()::text)
-        )"#
-    ).execute(pool).await?;
-    let _ = sqlx::query("ALTER TABLE channels ADD COLUMN preset_id INTEGER").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN remark TEXT").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE model_providers ADD COLUMN remark TEXT").execute(pool).await;
-
-    sqlx::query(
-        r#"CREATE TABLE IF NOT EXISTS upstreams (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            upstream_type TEXT NOT NULL DEFAULT 'other',
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            remark TEXT,
-            config TEXT,
-            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-        )"#
-    ).execute(pool).await?;
-
-    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN upstream_type TEXT NOT NULL DEFAULT 'other'").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN config TEXT").execute(pool).await;
-
-    tracing::info!("PostgreSQL database migrations completed successfully");
-    Ok(())
+pub async fn run_pg(pool: &sqlx::Pool<sqlx::Postgres>) -> anyhow::Result<()> {
+    pg_migration_blocks!(pool)
 }
-
