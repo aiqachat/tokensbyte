@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Switch, Button, message, Checkbox, Divider, Spin, Tag, Tabs, Input, Form, Space, Alert } from 'antd';
+import { Typography, Switch, Button, message, Checkbox, Divider, Spin, Tag, Tabs, Input, Form, Space, Alert, Select } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
+import AdminPresetAssets from './AssetManager/AdminPresetAssets';
 
 const { Title, Text } = Typography;
 
@@ -25,6 +26,16 @@ interface StorageConfig {
   tos_custom_domain: string;
   is_configured: boolean;
 }
+
+// 火山引擎 TOS 地域及访问域名（来自官方文档）
+const TOS_REGIONS = [
+  { label: '华北2（北京）', region: 'cn-beijing', endpoint: 'https://tos-cn-beijing.volces.com', endpointInternal: 'tos-cn-beijing.ivolces.com' },
+  { label: '华南1（广州）', region: 'cn-guangzhou', endpoint: 'https://tos-cn-guangzhou.volces.com', endpointInternal: 'tos-cn-guangzhou.ivolces.com' },
+  { label: '华东2（上海）', region: 'cn-shanghai', endpoint: 'https://tos-cn-shanghai.volces.com', endpointInternal: 'tos-cn-shanghai.ivolces.com' },
+  { label: '中国香港', region: 'cn-hongkong', endpoint: 'https://tos-cn-hongkong.volces.com', endpointInternal: 'tos-cn-hongkong.ivolces.com' },
+  { label: '亚太东南（柔佛）', region: 'ap-southeast-1', endpoint: 'https://tos-ap-southeast-1.volces.com', endpointInternal: 'tos-ap-southeast-1.ivolces.com' },
+  { label: '亚太东南（雅加达）', region: 'ap-southeast-3', endpoint: 'https://tos-ap-southeast-3.volces.com', endpointInternal: 'tos-ap-southeast-3.ivolces.com' },
+];
 
 const pluginIcons: Record<string, React.ReactNode> = {
   asset_manager: <PictureOutlined style={{ fontSize: 20 }} />,
@@ -289,14 +300,33 @@ const PluginConfig: React.FC = () => {
             </Form.Item>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Endpoint</Text>} name="tos_endpoint" rules={[{ required: true, message: '请输入 Endpoint' }]}>
-              <Input placeholder="如 https://tos-cn-beijing.volces.com" style={inputStyle} />
-            </Form.Item>
-            <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Region</Text>} name="tos_region" rules={[{ required: true, message: '请输入 Region' }]}>
-              <Input placeholder="如 cn-beijing" style={inputStyle} />
-            </Form.Item>
-          </div>
+          <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>数据地域</Text>} name="tos_region" rules={[{ required: true, message: '请选择数据地域' }]}>
+            <Select
+              placeholder="选择数据地域"
+              style={{ width: '100%' }}
+              popupClassName="dark-select-dropdown"
+              onChange={(value: string) => {
+                const found = TOS_REGIONS.find(r => r.region === value);
+                if (found) {
+                  storageForm.setFieldsValue({ tos_endpoint: found.endpoint });
+                }
+              }}
+              options={TOS_REGIONS.map(r => ({
+                value: r.region,
+                label: (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>{r.label}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>{r.region}</span>
+                  </div>
+                ),
+              }))}
+            />
+          </Form.Item>
+          <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Endpoint</Text>} name="tos_endpoint" rules={[{ required: true, message: '请选择地域后自动填充' }]}
+            extra={<Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>选择地域后自动填充，如使用内网请手动修改</Text>}
+          >
+            <Input placeholder="选择地域后自动填充" style={inputStyle} />
+          </Form.Item>
 
           <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Bucket</Text>} name="tos_bucket" rules={[{ required: true, message: '请输入 Bucket 名称' }]}>
             <Input placeholder="对象存储桶名称" style={inputStyle} />
@@ -367,6 +397,7 @@ const PluginConfig: React.FC = () => {
         items={[
           { key: 'basic', label: '基本配置', children: basicTab },
           { key: 'storage', label: '存储配置', children: storageTab },
+          ...(plugin.name === 'asset_manager' ? [{ key: 'preset', label: '预设素材', children: <AdminPresetAssets /> }] : []),
         ]}
       />
     </div>

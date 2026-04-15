@@ -25,6 +25,8 @@ pub struct PluginAsset {
     pub mime_type: Option<String>,
     pub size: Option<i64>,
     pub reject_reason: Option<String>,
+    pub category: Option<String>,
+    pub asset_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

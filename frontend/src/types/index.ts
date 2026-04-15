@@ -314,6 +314,8 @@ export interface PluginAsset {
   mime_type?: string;
   size?: number;
   reject_reason?: string;
+  category?: string;
+  asset_id?: string;
   created_at: string;
   updated_at: string;
 }

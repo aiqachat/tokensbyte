@@ -17,6 +17,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/upload", post(upload_asset))
         .route("/admin/list", get(admin_list_assets))
         .route("/admin/audit/{id}", post(audit_asset))
+        .route("/admin/{id}/tags", get(get_asset_tags).put(update_asset_tags))
         .route("/user/list", get(user_list_assets))
 }
 
@@ -55,6 +56,10 @@ async fn upload_asset(
     // Status builtin is automatically approved
     let status = if source == "builtin" { "approved" } else { "pending" };
 
+    let mut category = String::from("未分类");
+    let mut target_user_id = String::new();
+    let mut file_data: Option<axum::body::Bytes> = None;
+
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         let name = field.name().unwrap_or("").to_string();
         
@@ -71,7 +76,15 @@ async fn upload_asset(
                 return Err(AppError::BadRequest("Unsupported file type".to_string()));
             }
 
-            let data = field.bytes().await.map_err(|_| AppError::BadRequest("Failed to read file".to_string()))?;
+            file_data = Some(field.bytes().await.map_err(|_| AppError::BadRequest("Failed to read file".to_string()))?);
+        } else if name == "category" {
+            category = field.text().await.unwrap_or_else(|_| "未分类".to_string());
+        } else if name == "target_user_id" {
+            target_user_id = field.text().await.unwrap_or_default();
+        }
+    }
+
+    if let Some(data) = file_data {
             size = data.len() as i64;
             
             // Limit size: Image 10MB, Video 50MB
@@ -91,12 +104,25 @@ async fn upload_asset(
             let safe_filename = format!("{}.{}", file_id, ext);
             let object_key = tos_config.full_key(&safe_filename);
 
+            let final_user_id = if user.role == "admin" && !target_user_id.trim().is_empty() {
+                target_user_id.clone()
+            } else {
+                user.id.clone()
+            };
+
+            let tags_str = format!("userid={}&assetid={}&category={}", 
+                urlencoding::encode(&final_user_id), 
+                urlencoding::encode(&file_id),
+                urlencoding::encode(&category)
+            );
+
             // 上传到 TOS
             file_url = crate::services::tos::upload_file(
                 &tos_config,
                 &object_key,
                 data.to_vec(),
                 &mime_type,
+                Some(&tags_str),
             ).await.map_err(|e| {
                 tracing::error!("TOS upload failed: {}", e);
                 AppError::Internal(format!("文件上传失败: {}", e))
@@ -108,12 +134,20 @@ async fn upload_asset(
         return Err(AppError::BadRequest("No file provided".to_string()));
     }
 
+    let final_user_id = if user.role == "admin" && !target_user_id.trim().is_empty() {
+        target_user_id.clone()
+    } else {
+        user.id.clone()
+    };
+
+    let asset_id_uuid = file_url.split('/').last().unwrap_or("").split('.').next().unwrap_or("").to_string();
+
     let asset: PluginAsset = sqlx::query_as(&state.db.format_query(r#"
-        INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, mime_type, size)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, mime_type, size, category, asset_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
         "#))
-    .bind(&user.id)
+    .bind(&final_user_id)
     .bind(&asset_type)
     .bind(&source)
     .bind(&status)
@@ -121,6 +155,8 @@ async fn upload_asset(
     .bind(&file_url)
     .bind(&mime_type)
     .bind(size)
+    .bind(&category)
+    .bind(&asset_id_uuid)
     .fetch_one(&state.db.pool)
     .await?;
 
@@ -201,4 +237,99 @@ async fn user_list_assets(
         .await?;
         
     Ok(Json(json!({ "assets": assets })))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateTagsRequest {
+    pub category: String,
+    pub userid: String,
+}
+
+async fn get_asset_tags(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| crate::error::AppError::Unauthorized)?;
+    if user.role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let asset: PluginAsset = sqlx::query_as(&state.db.format_query("SELECT * FROM plugin_assets WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("Asset not found".to_string()))?;
+
+    let tos_config = crate::api::plugins::get_tos_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("TOS未配置".to_string()))?;
+
+    // Extract object_key from file_url
+    let mut parts = asset.file_url.split('/');
+    let object_key = parts.last().unwrap_or(asset.file_name.as_str());
+    // Safe fallback to full_key in case file_url includes prefix
+    let object_key_str = tos_config.full_key(object_key);
+
+    match crate::services::tos::get_object_tags(&tos_config, &object_key_str).await {
+        Ok(tags) => Ok(Json(json!({ "tags": tags }))),
+        Err(e) => {
+            tracing::error!("Failed to get object tags: {}", e);
+            Ok(Json(json!({ "tags": {} })))
+        }
+    }
+}
+
+async fn update_asset_tags(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    Json(payload): Json<UpdateTagsRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| crate::error::AppError::Unauthorized)?;
+    if user.role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let asset: PluginAsset = sqlx::query_as(&state.db.format_query("SELECT * FROM plugin_assets WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("Asset not found".to_string()))?;
+
+    let tos_config = crate::api::plugins::get_tos_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("TOS未配置".to_string()))?;
+
+    let mut parts = asset.file_url.split('/');
+    let object_key = parts.last().unwrap_or(asset.file_name.as_str());
+    let object_key_str = tos_config.full_key(object_key);
+
+    let mut tags = std::collections::HashMap::new();
+    tags.insert("userid".to_string(), payload.userid.clone());
+    let current_asset_id = asset.asset_id.unwrap_or_else(|| {
+        asset.file_url.split('/').last().unwrap_or("").split('.').next().unwrap_or("").to_string()
+    });
+    tags.insert("assetid".to_string(), current_asset_id.clone());
+    tags.insert("category".to_string(), payload.category.clone());
+
+    crate::services::tos::update_object_tags(&tos_config, &object_key_str, tags).await
+        .map_err(|e| AppError::Internal(format!("更新TOS标签失败: {}", e)))?;
+
+    // Also update Database
+    sqlx::query(&state.db.format_query("UPDATE plugin_assets SET category = ?, user_id = ?, asset_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+        .bind(&payload.category)
+        .bind(&payload.userid)
+        .bind(&current_asset_id)
+        .bind(id)
+        .execute(&state.db.pool)
+        .await?;
+
+    Ok(Json(json!({ "message": "标签已更新" })))
 }

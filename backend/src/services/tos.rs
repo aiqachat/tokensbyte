@@ -27,11 +27,11 @@ pub struct TosConfig {
 
 impl TosConfig {
     pub fn from_map(map: &HashMap<String, String>) -> Option<Self> {
-        let ak = map.get("tos_access_key")?.clone();
-        let sk = map.get("tos_secret_key")?.clone();
-        let endpoint = map.get("tos_endpoint")?.clone();
-        let region = map.get("tos_region")?.clone();
-        let bucket = map.get("tos_bucket")?.clone();
+        let ak = map.get("tos_access_key")?.trim().to_string();
+        let sk = map.get("tos_secret_key")?.trim().to_string();
+        let endpoint = map.get("tos_endpoint")?.trim().to_string();
+        let region = map.get("tos_region")?.trim().to_string();
+        let bucket = map.get("tos_bucket")?.trim().to_string();
 
         if ak.is_empty() || sk.is_empty() || endpoint.is_empty() || region.is_empty() || bucket.is_empty() {
             return None;
@@ -43,8 +43,8 @@ impl TosConfig {
             endpoint,
             region,
             bucket,
-            path_prefix: map.get("tos_path_prefix").cloned().unwrap_or_default(),
-            custom_domain: map.get("tos_custom_domain").cloned().unwrap_or_default(),
+            path_prefix: map.get("tos_path_prefix").map(|s| s.trim().to_string()).unwrap_or_default(),
+            custom_domain: map.get("tos_custom_domain").map(|s| s.trim().to_string()).unwrap_or_default(),
         })
     }
 
@@ -126,6 +126,7 @@ pub async fn upload_file(
     object_key: &str,
     data: Vec<u8>,
     content_type: &str,
+    tags: Option<&str>,
 ) -> Result<String, String> {
     let client = tos::builder::<TokioRuntime>()
         .connection_timeout(5000)
@@ -138,7 +139,10 @@ pub async fn upload_file(
         .build()
         .map_err(|e| format!("创建 TOS 客户端失败: {:?}", e))?;
 
-    let input = PutObjectFromBufferInput::new_with_content(&config.bucket, object_key, data);
+    let mut input = PutObjectFromBufferInput::new_with_content(&config.bucket, object_key, data);
+    if let Some(t) = tags {
+        input.set_tagging(t);
+    }
 
     client
         .put_object_from_buffer(&input)
@@ -166,6 +170,70 @@ pub async fn delete_file(config: &TosConfig, object_key: &str) -> Result<(), Str
         .delete_object(&input)
         .await
         .map_err(|e| format!("删除失败: {:?}", e))?;
+
+    Ok(())
+}
+
+use ve_tos_rust_sdk::object::{PutObjectTaggingInput, GetObjectTaggingInput};
+use ve_tos_rust_sdk::common::{TagSet, Tag};
+
+/// 获取 TOS 文件标签
+pub async fn get_object_tags(config: &TosConfig, object_key: &str) -> Result<HashMap<String, String>, String> {
+    let client = tos::builder::<TokioRuntime>()
+        .connection_timeout(5000)
+        .request_timeout(10000)
+        .max_retry_count(2)
+        .ak(&config.access_key)
+        .sk(&config.secret_key)
+        .region(&config.region)
+        .endpoint(&config.endpoint)
+        .build()
+        .map_err(|e| format!("创建 TOS 客户端失败: {:?}", e))?;
+
+    let input = GetObjectTaggingInput::new(&config.bucket, object_key);
+    let output = client
+        .get_object_tagging(&input)
+        .await
+        .map_err(|e| format!("获取标签失败: {:?}", e))?;
+
+    let mut result = HashMap::new();
+    for tag in output.tag_set().tags() {
+        result.insert(tag.key().to_string(), tag.value().to_string());
+    }
+    
+    Ok(result)
+}
+
+/// 更新 TOS 文件标签
+pub async fn update_object_tags(config: &TosConfig, object_key: &str, tags: HashMap<String, String>) -> Result<(), String> {
+    let client = tos::builder::<TokioRuntime>()
+        .connection_timeout(5000)
+        .request_timeout(10000)
+        .max_retry_count(2)
+        .ak(&config.access_key)
+        .sk(&config.secret_key)
+        .region(&config.region)
+        .endpoint(&config.endpoint)
+        .build()
+        .map_err(|e| format!("创建 TOS 客户端失败: {:?}", e))?;
+
+    let tag_list: Vec<Tag> = tags.into_iter().map(|(k, v)| {
+        let mut t = Tag::default();
+        t.set_key(k);
+        t.set_value(v);
+        t
+    }).collect();
+
+    let mut tag_set = TagSet::default();
+    tag_set.set_tags(tag_list);
+
+    let mut input = PutObjectTaggingInput::new(&config.bucket, object_key);
+    input.set_tag_set(tag_set);
+
+    client
+        .put_object_tagging(&input)
+        .await
+        .map_err(|e| format!("设置标签失败: {:?}", e))?;
 
     Ok(())
 }

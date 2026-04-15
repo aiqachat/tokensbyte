@@ -518,12 +518,18 @@ macro_rules! pg_migration_blocks {
             mime_type TEXT,
             size INTEGER,
             reject_reason TEXT,
+            category TEXT DEFAULT '未分类',
+            asset_id TEXT,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
     .await?;
+
+    // Migrate existing plugin_assets
+    sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS category TEXT DEFAULT '未分类'").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS asset_id TEXT").execute(pool).await.ok();
 
     // Seed Asset Manager plugin
     sqlx::query(
@@ -863,12 +869,17 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             mime_type TEXT,
             size INTEGER,
             reject_reason TEXT,
+            category TEXT DEFAULT '未分类',
+            asset_id TEXT,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
     .await?;
+
+    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN category TEXT DEFAULT '未分类'").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN asset_id TEXT").execute(pool).await;
 
     // Seed Asset Manager plugin
     sqlx::query(
