@@ -32,7 +32,7 @@ if (-Not (Test-Path $OutputDir)) {
 # 询问构建模式
 Write-Host "请选择构建模式:" -ForegroundColor Cyan
 Write-Host "  1) 开发环境 (使用 docker-compose.yml)" -ForegroundColor White
-Write-Host "  2) 生产环境 (使用 docker-compose.prod.yml)" -ForegroundColor White
+Write-Host "  2) 生产环境 (构建后导出，用于配合 docker-compose.prod.yml 部署)" -ForegroundColor White
 Write-Host ""
 $mode = Read-Host "请输入选项 (1/2)"
 
@@ -42,7 +42,8 @@ switch ($mode) {
         $EnvName = "development"
     }
     "2" {
-        $ComposeFile = "docker-compose.prod.yml"
+        # 生产模式也用 docker-compose.yml 构建（因为 prod.yml 是 image 模式，不含 build 指令）
+        $ComposeFile = "docker-compose.yml"
         $EnvName = "production"
     }
     default {
@@ -56,11 +57,14 @@ Write-Host ""
 Write-Host "📦 开始构建 Docker 镜像 ($EnvName)..." -ForegroundColor Cyan
 Write-Host ""
 
-# 构建镜像
-if ($mode -eq "2") {
-    docker compose -f $ComposeFile build
-} else {
-    docker compose build
+# 构建镜像（统一使用 docker-compose.yml 构建）
+docker compose build
+
+# 检查构建结果
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ 镜像构建失败！" -ForegroundColor Red
+    pause
+    exit 1
 }
 
 Write-Host ""
@@ -69,30 +73,21 @@ Write-Host ""
 
 # 获取镜像信息
 Write-Host "📋 镜像信息:" -ForegroundColor Cyan
-if ($mode -eq "2") {
-    docker compose -f $ComposeFile images
-    # 使用更可靠的方式获取镜像名称
-    $ImagesOutput = docker compose -f $ComposeFile images --format "json" | ConvertFrom-Json
-    $BackendImage = ($ImagesOutput | Where-Object { $_.Service -match "backend" }).Repository
-    if (-not $BackendImage) {
-        $BackendImage = "tokensbyte-backend:latest"
-    }
-    $FrontendImage = ($ImagesOutput | Where-Object { $_.Service -match "frontend" }).Repository
-    if (-not $FrontendImage) {
-        $FrontendImage = "tokensbyte-frontend:latest"
-    }
-    # PostgreSQL 是官方镜像，服务器可以直接拉取，不需要导出
-} else {
-    docker compose images
-    $ImagesOutput = docker compose images --format "json" | ConvertFrom-Json
-    $BackendImage = ($ImagesOutput | Where-Object { $_.Service -match "backend" }).Repository
-    if (-not $BackendImage) {
-        $BackendImage = "tokensbyte-backend:latest"
-    }
-    $FrontendImage = ($ImagesOutput | Where-Object { $_.Service -match "frontend" }).Repository
-    if (-not $FrontendImage) {
-        $FrontendImage = "tokensbyte-frontend:latest"
-    }
+docker compose images
+
+# 使用固定镜像名（docker-compose.yml 构建出的镜像名）
+$BackendImage = "tokensbyte-backend:latest"
+$FrontendImage = "tokensbyte-frontend:latest"
+
+# 验证镜像是否存在
+$backendExists = docker images -q $BackendImage
+$frontendExists = docker images -q $FrontendImage
+if (-not $backendExists -or -not $frontendExists) {
+    Write-Host "❌ 镜像未找到，构建可能失败！" -ForegroundColor Red
+    Write-Host "   后端镜像: $(if($backendExists){'✅ 存在'}else{'❌ 缺失'})" -ForegroundColor $(if($backendExists){'Green'}else{'Red'})
+    Write-Host "   前端镜像: $(if($frontendExists){'✅ 存在'}else{'❌ 缺失'})" -ForegroundColor $(if($frontendExists){'Green'}else{'Red'})
+    pause
+    exit 1
 }
 
 Write-Host ""

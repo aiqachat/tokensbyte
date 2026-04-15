@@ -28,17 +28,16 @@ mkdir -p "$OUTPUT_DIR"
 # 询问构建模式
 echo "请选择构建模式:"
 echo "  1) 开发环境 (使用 docker-compose.yml)"
-echo "  2) 生产环境 (使用 docker-compose.prod.yml)"
+echo "  2) 生产环境 (构建后导出，用于配合 docker-compose.prod.yml 部署)"
 echo ""
 read -p "请输入选项 (1/2): " mode
 
 case $mode in
     1)
-        COMPOSE_FILE="docker-compose.yml"
         ENV_NAME="development"
         ;;
     2)
-        COMPOSE_FILE="docker-compose.prod.yml"
+        # 生产模式也用 docker-compose.yml 构建（因为 prod.yml 是 image 模式，不含 build 指令）
         ENV_NAME="production"
         ;;
     *)
@@ -51,11 +50,12 @@ echo ""
 echo "📦 开始构建 Docker 镜像 ($ENV_NAME)..."
 echo ""
 
-# 构建镜像
-if [ "$mode" = "2" ]; then
-    docker compose -f "$COMPOSE_FILE" build
-else
-    docker compose build
+# 构建镜像（统一使用 docker-compose.yml 构建）
+docker compose build
+
+if [ $? -ne 0 ]; then
+    echo "❌ 镜像构建失败！"
+    exit 1
 fi
 
 echo ""
@@ -64,24 +64,20 @@ echo ""
 
 # 获取镜像信息
 echo "📋 镜像信息:"
-if [ "$mode" = "2" ]; then
-    docker compose -f "$COMPOSE_FILE" images
-    # 使用更可靠的方式获取镜像名称
-    BACKEND_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "tokensbyte-backend" | head -n1)
-    FRONTEND_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "tokensbyte-frontend" | head -n1)
-    # PostgreSQL 是官方镜像，服务器可以直接拉取，不需要导出
-else
-    docker compose images
-    BACKEND_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "tokensbyte-backend" | head -n1)
-    FRONTEND_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "tokensbyte-frontend" | head -n1)
-fi
+docker compose images
 
-# 如果未找到镜像，使用默认值
-if [ -z "$BACKEND_IMAGE" ]; then
-    BACKEND_IMAGE="tokensbyte-backend:latest"
+# 使用固定镜像名
+BACKEND_IMAGE="tokensbyte-backend:latest"
+FRONTEND_IMAGE="tokensbyte-frontend:latest"
+
+# 验证镜像是否存在
+if ! docker images -q "$BACKEND_IMAGE" | grep -q .; then
+    echo "❌ 后端镜像未找到: $BACKEND_IMAGE"
+    exit 1
 fi
-if [ -z "$FRONTEND_IMAGE" ]; then
-    FRONTEND_IMAGE="tokensbyte-frontend:latest"
+if ! docker images -q "$FRONTEND_IMAGE" | grep -q .; then
+    echo "❌ 前端镜像未找到: $FRONTEND_IMAGE"
+    exit 1
 fi
 
 echo ""
