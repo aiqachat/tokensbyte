@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::AppState;
 use crate::models::{Channel, CreateChannelRequest, UpdateChannelRequest, ChannelSafe, ChannelListResponse};
 use crate::error::{AppError, AppResult};
+use crate::relay::url_utils::join_url;
 
 pub async fn list_channels(
     State(state): State<Arc<AppState>>,
@@ -199,9 +200,8 @@ pub async fn test_channel(
 
     // Generate accurate Mock cURL and Endpoint
     let mut endpoint = match channel.provider_type.as_str() {
-        "anthropic" => format!("{}/v1/messages", channel.base_url.trim_end_matches('/')),
-        "google" => format!("{}/v1/chat/completions", channel.base_url.trim_end_matches('/')),
-        _ => format!("{}/v1/chat/completions", channel.base_url.trim_end_matches('/')),
+        "anthropic" => join_url(&channel.base_url, "/v1/messages"),
+        _ => join_url(&channel.base_url, "/v1/chat/completions"),
     };
 
     // Forward Rule Path Override
@@ -228,7 +228,7 @@ pub async fn test_channel(
                             if endpoint.contains(old) {
                                 endpoint = endpoint.replace(old, new);
                             } else {
-                                endpoint = format!("{}{}", channel.base_url.trim_end_matches('/'), new);
+                                endpoint = join_url(&channel.base_url, new);
                             }
                             endpoint = endpoint.replace("${model}", &test_model);
                         }
@@ -255,7 +255,7 @@ pub async fn test_channel(
                 }
             })
          } else if rule_target_type.as_deref() == Some("volcengine") {
-            endpoint = format!("{}/api/v3/contents/generations/tasks", channel.base_url.trim_end_matches('/'));
+            endpoint = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
             serde_json::json!({
                 "model": test_model.clone(),
                 "content": [{"type": "text", "text": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。"}],
@@ -271,7 +271,7 @@ pub async fn test_channel(
          }
     } else if is_video_request {
          if rule_target_type.as_deref() == Some("volcengine") {
-            endpoint = format!("{}/api/v3/contents/generations/tasks", channel.base_url.trim_end_matches('/'));
+            endpoint = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
             serde_json::json!({
                 "model": test_model.clone(),
                 "content": [{"type": "text", "text": "A short video of a cute white cat walking"}],
@@ -396,8 +396,7 @@ pub async fn test_channel(
         match response_res {
             Ok(create_resp) if create_resp.get("_upstream_error").is_none() => {
                 if let Some(task_id) = create_resp.get("id").and_then(|v| v.as_str()) {
-                    let poll_url = format!("{}/api/v3/contents/generations/tasks/{}",
-                        channel.base_url.trim_end_matches('/'), task_id);
+                    let poll_url = join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id));
                     let mut poll_result = serde_json::json!({"status": "polling_timeout"});
                     for _ in 0..90 {
                         tokio::time::sleep(std::time::Duration::from_secs(2)).await;

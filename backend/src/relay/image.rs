@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::{AppState, error::{AppError, AppResult}};
 use crate::models::ApiToken;
 use super::proxy;
+use super::url_utils::join_url;
 
 pub async fn image_generations(
     State(state): State<Arc<AppState>>,
@@ -25,8 +26,9 @@ pub async fn image_generations(
         let prompt = body["prompt"].as_str().unwrap_or("Generate an image");
         let action = if is_stream { "streamGenerateContent" } else { "generateContent" };
         let url = format!(
-            "{}/v1beta/models/{}:{}?key={}",
-            channel.base_url.trim_end_matches('/'), resolved_model, action, channel.api_key
+            "{}?key={}",
+            join_url(&channel.base_url, &format!("/v1beta/models/{}:{}", resolved_model, action)),
+            channel.api_key
         );
         let gemini_body = serde_json::json!({
             "contents": [{"parts": [{"text": prompt}]}],
@@ -37,7 +39,7 @@ pub async fn image_generations(
     // Volcengine channels: transform to contents/generations format
     else if channel.provider_type == "volcengine" {
         let prompt = body["prompt"].as_str().unwrap_or("Generate an image");
-        let url = format!("{}/api/v3/contents/generations/tasks", channel.base_url.trim_end_matches('/'));
+        let url = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
         let volc_body = serde_json::json!({
             "model": resolved_model,
             "content": [{"type": "text", "text": prompt}],
@@ -51,7 +53,7 @@ pub async fn image_generations(
     }
     // Other channels: passthrough OpenAI format
     else {
-        let url = format!("{}/v1/images/generations", channel.base_url.trim_end_matches('/'));
+        let url = join_url(&channel.base_url, "/v1/images/generations");
         let mut fwd = body.clone();
         fwd["model"] = serde_json::json!(resolved_model);
         state.http_client.post(&url)

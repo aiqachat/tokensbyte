@@ -4,6 +4,7 @@ pub mod proxy;
 pub mod image;
 pub mod video;
 pub mod native;
+pub mod url_utils;
 
 use axum::{
     extract::{State, Extension, Path},

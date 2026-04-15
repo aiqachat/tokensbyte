@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use crate::{AppState, error::{AppError, AppResult}};
 use crate::models::ApiToken;
 use super::proxy;
+use super::url_utils::join_url;
 
 // ═══════════════════════════════════════════════════════════════
 //  Middleware: Normalize Google auth formats → Authorization: Bearer
@@ -81,10 +82,8 @@ pub async fn gemini_proxy(
         }
     }
     let url = format!(
-        "{}/v1beta/models/{}:{}?{}",
-        channel.base_url.trim_end_matches('/'),
-        resolved_model,
-        action,
+        "{}?{}",
+        join_url(&channel.base_url, &format!("/v1beta/models/{}:{}", resolved_model, action)),
         qs
     );
 
@@ -147,7 +146,7 @@ pub async fn volcengine_submit(
     proxy::check_access(&token, model, ctx.balance)?;
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
 
-    let url = format!("{}/api/v3/contents/generations/tasks", channel.base_url.trim_end_matches('/'));
+    let url = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
     let mut fwd = body.clone();
     fwd["model"] = serde_json::json!(resolved_model);
 
@@ -228,7 +227,7 @@ pub async fn volcengine_status(
         proxy::select_channel_for_model(&state, &model_name, &ctx.user_group).await?
     };
 
-    let url = format!("{}/api/v3/contents/generations/tasks/{}", channel.base_url.trim_end_matches('/'), task_id);
+    let url = join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id));
 
     let resp = state.http_client.get(&url)
         .header("Authorization", format!("Bearer {}", channel.api_key))
