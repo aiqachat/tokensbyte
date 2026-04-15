@@ -226,7 +226,7 @@ const Upstreams: React.FC = () => {
         onOk={() => form.submit()}
       >
         <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ sort_order: 0, is_active: true, upstream_type: '其他' }}>
-          <Divider orientation="left" plain style={{ color: '#888', marginBottom: 24, marginTop: 0 }}>
+          <Divider orientation={"left" as any} plain style={{ color: '#888', marginBottom: 24, marginTop: 0 }}>
              <ProfileOutlined /> 基础配置
           </Divider>
           
@@ -244,7 +244,7 @@ const Upstreams: React.FC = () => {
           
           {currentUpstreamType === '火山官方' && (
               <>
-                  <Divider orientation="left" plain style={{ color: '#888', margin: '12px 0 24px' }}>
+                  <Divider orientation={"left" as any} plain style={{ color: '#888', margin: '12px 0 24px' }}>
                       <ApiOutlined /> 火山官方接入凭证
                   </Divider>
                   <Form.Item name="api_key" label="Access Key ID (AK)" rules={[{ required: true, message: '请输入火山 AK' }]} normalize={(value) => (value || '').trim()}>
