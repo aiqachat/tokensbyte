@@ -395,10 +395,19 @@ pub async fn test_channel(
     let response_res = if is_video_request && rule_target_type.as_deref() == Some("volcengine") {
         match response_res {
             Ok(create_resp) if create_resp.get("_upstream_error").is_none() => {
-                if let Some(task_id) = create_resp.get("id").and_then(|v| v.as_str()) {
+                // 兼容两种 task_id 路径:
+                //   - 标准 OpenAI 风格: resp.id
+                //   - 火山方舟风格:    resp.data.task_id
+                let task_id_opt = create_resp.get("id").and_then(|v| v.as_str())
+                    .or_else(|| create_resp.get("data")
+                        .and_then(|d| d.get("task_id"))
+                        .and_then(|v| v.as_str()));
+
+                if let Some(task_id) = task_id_opt {
                     let poll_url = join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id));
+                    tracing::info!("[Channel Test] 视频任务已提交 task_id={}, 开始轮询: {}", task_id, poll_url);
                     let mut poll_result = serde_json::json!({"status": "polling_timeout"});
-                    for _ in 0..90 {
+                    for attempt in 0..90 {
                         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                         match state.http_client.get(&poll_url)
                             .header("Authorization", format!("Bearer {}", channel.api_key))
@@ -407,14 +416,29 @@ pub async fn test_channel(
                             Ok(pr) => {
                                 let body = pr.text().await.unwrap_or_default();
                                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
-                                    let task_status_str = v.get("status").and_then(|s| s.as_str()).unwrap_or("").to_string();
+                                    // 兼容两种状态路径:
+                                    //   - 扁平风格:       resp.status
+                                    //   - 火山方舟风格:  resp.data.status
+                                    let task_status_str = v.get("status")
+                                        .and_then(|s| s.as_str())
+                                        .or_else(|| v.get("data")
+                                            .and_then(|d| d.get("status"))
+                                            .and_then(|s| s.as_str()))
+                                        .unwrap_or("")
+                                        .to_string();
+
+                                    tracing::info!("[Channel Test] 轮询第 {} 次, status={}", attempt + 1, task_status_str);
                                     poll_result = v;
-                                    if task_status_str == "succeeded" || task_status_str == "failed" {
-                                        break;
+
+                                    // 兼容多种成功/失败状态字符串
+                                    match task_status_str.as_str() {
+                                        "succeeded" | "success" | "failed" | "error" => break,
+                                        _ => {}
                                     }
                                 }
                             },
                             Err(e) => {
+                                tracing::error!("[Channel Test] 轮询请求失败: {}", e);
                                 poll_result = serde_json::json!({"poll_error": e.to_string()});
                                 break;
                             }
@@ -426,6 +450,8 @@ pub async fn test_channel(
                         "final_result": poll_result
                     }))
                 } else {
+                    // task_id 未找到，直接返回 POST 响应以便调试
+                    tracing::warn!("[Channel Test] 无法从响应中提取 task_id，跳过轮询。响应体: {:?}", create_resp);
                     Ok(create_resp)
                 }
             },
