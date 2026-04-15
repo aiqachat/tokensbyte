@@ -30,3 +30,6 @@ pub use user::User;
 pub use channel::Channel;
 pub use api_token::ApiToken;
 pub use log::RequestLog;
+
+pub mod plugin;
+pub use plugin::*;

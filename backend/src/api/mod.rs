@@ -87,6 +87,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/user/affiliate/transfer", post(user::transfer_commission))
 
         .merge(admin_routes)
+        .nest("/plugins", plugins::router())
+        .nest("/assets", assets::router())
         .layer(axum_middleware::from_fn_with_state(state.clone(), auth_middleware));
 
 
@@ -104,6 +106,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     let public_v1_routes: Router<Arc<AppState>> = Router::new()
         .route("/settings", get(settings::get_settings))
+        .route("/plugins/active", get(plugins::get_active_plugins_public))
         .with_state(state.clone());
 
     // 3. Relay APIs (OpenAI Compatible)
@@ -141,3 +144,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .with_state(state)
         .layer(tower_http::cors::CorsLayer::permissive())
 }
+
+pub mod plugins;
+pub mod assets;

@@ -44,11 +44,25 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [siteName, setSiteName] = useState(isUserEnd ? 'TokensByte' : t('common.admin_title'));
+  const [activePlugins, setActivePlugins] = useState<any[]>([]);
 
 
   useEffect(() => {
+    fetchActivePlugins();
     fetchGlobalSettings();
   }, []);
+
+  
+  const fetchActivePlugins = async () => {
+    try {
+      const response = await (request.get('/plugins/active') as any);
+      if (response.active_plugins) {
+        setActivePlugins(response.active_plugins);
+      }
+    } catch (error) {
+      console.error('Failed to fetch active plugins', error);
+    }
+  };
 
   const fetchGlobalSettings = async () => {
     try {
@@ -67,7 +81,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
 
   const handleLogout = () => {
     logout();
-    if (isUserEnd) {
+  if (isUserEnd) {
       navigate('/login');
     } else {
       navigate('/admin0755');
@@ -162,6 +176,24 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
      menuItems.push(...filteredInitial);
   }
 
+  // 插件菜单：检查用户等级是否在插件允许范围内
+  const isPluginVisibleForUser = (pluginName: string) => {
+    const plugin = activePlugins.find((p: any) => p.name === pluginName);
+    if (!plugin) return false;
+    if (plugin.allowed_levels === 'all') return true;
+    if (!isUserEnd) return true; // 管理员端始终显示
+    const userGroup = user?.user_group || 'default';
+    return plugin.allowed_levels.split(',').includes(userGroup);
+  };
+
+  if (isPluginVisibleForUser('asset_manager')) {
+    menuItems.push({
+      key: isUserEnd ? '/assets' : '/admin0755/assets/user',
+      icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
+      label: <Link to={isUserEnd ? '/assets' : '/admin0755/assets/user'}>资产管理</Link>,
+    });
+  }
+
   if (isUserEnd) {
     menuItems.push(
       {
@@ -251,6 +283,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/marketing/registration-gifts">{t('menu.registration_gifts')}</Link>,
           }
         ]
+      });
+    }
+
+    
+    if (isSuperAdmin || hasPermission('plugins')) {
+      menuItems.push({
+        key: '/admin0755/plugins',
+        icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
+        label: <Link to="/admin0755/plugins">站点插件</Link>,
       });
     }
 

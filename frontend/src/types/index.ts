@@ -291,3 +291,29 @@ export interface Upstream {
   updated_at: string;
 }
 
+
+export interface Plugin {
+  id: number;
+  name: string;
+  title: string;
+  description: string;
+  is_enabled: number;
+  allowed_levels: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PluginAsset {
+  id: number;
+  user_id: string;
+  asset_type: 'image' | 'video';
+  source: 'builtin' | 'user';
+  status: 'pending' | 'approved' | 'rejected';
+  file_name: string;
+  file_url: string;
+  mime_type?: string;
+  size?: number;
+  reject_reason?: string;
+  created_at: string;
+  updated_at: string;
+}

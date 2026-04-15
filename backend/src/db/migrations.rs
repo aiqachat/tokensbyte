@@ -484,6 +484,56 @@ macro_rules! pg_migration_blocks {
     let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN upstream_type TEXT NOT NULL DEFAULT 'other'").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN config TEXT").execute(pool).await;
 
+    
+    // Plugins table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS plugins (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            description TEXT,
+            is_enabled INTEGER NOT NULL DEFAULT 0,
+            allowed_levels TEXT NOT NULL DEFAULT 'all',
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Upgrade: add allowed_levels for existing deployments
+    let _ = sqlx::query("ALTER TABLE plugins ADD COLUMN IF NOT EXISTS allowed_levels TEXT NOT NULL DEFAULT 'all'")
+        .execute(pool).await;
+
+    // Plugin Assets table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS plugin_assets (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            asset_type TEXT NOT NULL,
+            source TEXT NOT NULL,
+            status TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_url TEXT NOT NULL,
+            mime_type TEXT,
+            size INTEGER,
+            reject_reason TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Seed Asset Manager plugin
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled)
+           VALUES ('asset_manager', '素材资产管理', '提供全站图片、视频大模型使用的素材上传与审核功能', 0)
+           ON CONFLICT (name) DO NOTHING"#
+    )
+    .execute(pool)
+    .await?;
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};
@@ -765,6 +815,55 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     ).execute(pool).await?;
     let _ = sqlx::query("ALTER TABLE channels ADD COLUMN preset_id INTEGER").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN remark TEXT").execute(pool).await;
+
+    
+    // Plugins table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS plugins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            description TEXT,
+            is_enabled INTEGER NOT NULL DEFAULT 0,
+            allowed_levels TEXT NOT NULL DEFAULT 'all',
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    let _ = sqlx::query("ALTER TABLE plugins ADD COLUMN allowed_levels TEXT NOT NULL DEFAULT 'all'")
+        .execute(pool).await;
+
+    // Plugin Assets table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS plugin_assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            asset_type TEXT NOT NULL,
+            source TEXT NOT NULL,
+            status TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_url TEXT NOT NULL,
+            mime_type TEXT,
+            size INTEGER,
+            reject_reason TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Seed Asset Manager plugin
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled)
+           VALUES ('asset_manager', '素材资产管理', '提供全站图片、视频大模型使用的素材上传与审核功能', 0)
+           ON CONFLICT (name) DO NOTHING"#
+    )
+    .execute(pool)
+    .await?;
 
     tracing::info!("SQLite database migrations completed successfully");
     

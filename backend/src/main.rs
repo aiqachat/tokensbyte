@@ -39,7 +39,8 @@ async fn main() -> anyhow::Result<()> {
         rate_limiter: middleware::rate_limit::GlobalRateLimiter::new(),
     });
 
-    let app = api::build_router(state.clone());
+    let app = api::build_router(state.clone())
+        .nest_service("/assets", tower_http::services::ServeDir::new("data/assets"));
 
     let addr = format!("{}:{}", config_data.host, config_data.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;

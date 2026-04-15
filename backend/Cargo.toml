@@ -9,7 +9,7 @@ description = "TokensByte - Next-gen LLM API Distribution & Management Platform"
 axum = { version = "0.8", features = ["ws", "multipart", "macros"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
 tower = { version = "0.5", features = ["full"] }
-tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "fs"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
