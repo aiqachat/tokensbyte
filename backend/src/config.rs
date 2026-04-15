@@ -28,22 +28,43 @@ struct DatabaseSettings {
 
 impl AppConfig {
     pub fn from_env() -> Self {
-        let mut database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://tokensapi:tokensapi@localhost:5432/tokensapi".to_string());
+        // 优先级 1: 系统环境变量 / .env
+        let mut database_url = std::env::var("DATABASE_URL").ok();
 
-        // Try reading from data/database.json
-        if let Ok(config_str) = fs::read_to_string("./data/database.json") {
-            if let Ok(settings) = serde_json::from_str::<DatabaseSettings>(&config_str) {
-                if settings.db_type == "postgres" {
-                    let ssl_mode = if settings.ssl_mode { "require" } else { "disable" };
-                    database_url = format!(
-                        "postgres://{}:{}@{}:{}/{}?sslmode={}",
-                        settings.username, settings.password, settings.host, settings.port, settings.database, ssl_mode
-                    );
-                } else if settings.db_type == "sqlite" {
-                    database_url = format!("sqlite:./data/{}", settings.database);
+        // 优先级 2: database.json (降级方案)
+        if database_url.is_none() {
+            if let Ok(config_str) = fs::read_to_string("./data/database.json") {
+                if let Ok(settings) = serde_json::from_str::<DatabaseSettings>(&config_str) {
+                    if settings.db_type == "postgres" {
+                        let ssl_mode = if settings.ssl_mode { "require" } else { "disable" };
+                        database_url = Some(format!(
+                            "postgres://{}:{}@{}:{}/{}?sslmode={}",
+                            settings.username, settings.password, settings.host, settings.port, settings.database, ssl_mode
+                        ));
+                    } else if settings.db_type == "sqlite" {
+                        database_url = Some(format!("sqlite:./data/{}", settings.database));
+                    }
                 }
             }
+        }
+
+        // 优先级 3: 默认值
+        let database_url = database_url.unwrap_or_else(|| {
+            "postgres://tokensapi:tokensapi@localhost:5432/tokensapi".to_string()
+        });
+
+        let jwt_secret = std::env::var("JWT_SECRET")
+            .unwrap_or_else(|_| "tokensbyte-default-secret-change-me".to_string());
+        
+        let encryption_key = std::env::var("ENCRYPTION_KEY")
+            .unwrap_or_else(|_| "0123456789abcdef0123456789abcdef".to_string());
+
+        // 安全警告
+        if jwt_secret == "tokensbyte-default-secret-change-me" {
+            eprintln!("⚠️ [WARNING] Using default JWT_SECRET. Please change it in .env for security!");
+        }
+        if encryption_key == "0123456789abcdef0123456789abcdef" {
+            eprintln!("⚠️ [WARNING] Using default ENCRYPTION_KEY. Please change it in .env for security!");
         }
 
         Self {
@@ -53,10 +74,8 @@ impl AppConfig {
                 .parse()
                 .expect("PORT must be a number"),
             database_url,
-            jwt_secret: std::env::var("JWT_SECRET")
-                .unwrap_or_else(|_| "tokensbyte-default-secret-change-me".to_string()),
-            encryption_key: std::env::var("ENCRYPTION_KEY")
-                .unwrap_or_else(|_| "0123456789abcdef0123456789abcdef".to_string()),
+            jwt_secret,
+            encryption_key,
             admin_username: std::env::var("ADMIN_USERNAME")
                 .unwrap_or_else(|_| "admin".to_string()),
             admin_password: std::env::var("ADMIN_PASSWORD")

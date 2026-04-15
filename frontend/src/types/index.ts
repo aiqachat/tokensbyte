@@ -191,6 +191,7 @@ export interface RequestLog {
   status_code: number;
   endpoint: string;
   error_message?: string;
+  upstream_url?: string;
   channel_group_aid?: string;
   channel_name?: string;
   user_nickname?: string;

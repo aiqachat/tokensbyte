@@ -28,6 +28,7 @@ data/*.sqlite
 
 # Docker volumes
 data/
+pgdata/
 
 # Build
 dist/

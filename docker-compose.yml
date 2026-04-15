@@ -1,6 +1,22 @@
-version: '3.8'
-
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: tokensbyte-db
+    environment:
+      - POSTGRES_USER=tokensapi
+      - POSTGRES_PASSWORD=tokensapi
+      - POSTGRES_DB=tokensapi
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tokensapi -d tokensapi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
   backend:
     build:
       context: ./backend
@@ -9,15 +25,18 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=3000
-      - DATABASE_URL=postgres://tokensapi:tokensapi@host.docker.internal:5432/tokensapi
+      - DATABASE_URL=postgres://tokensapi:tokensapi@db:5432/tokensapi
       - JWT_SECRET=tokensbyte-change-me
       - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin
+      - ADMIN_PASSWORD=123456
       - REGISTER_ENABLED=true
     volumes:
-      - ./data:/data
+      - ./backend/data:/data
     ports:
       - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
     restart: always
 
   frontend:
@@ -32,4 +51,4 @@ services:
     restart: always
 
 volumes:
-  data:
+  pgdata:
