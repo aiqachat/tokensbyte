@@ -1,4 +1,4 @@
-# TokensByte Docker 镜像导出脚本 (Windows PowerShell)
+﻿# TokensByte Docker 镜像导出脚本 (Windows PowerShell)
 # 在本地构建并导出镜像，用于上传到云服务器
 
 $ErrorActionPreference = "Stop"
@@ -374,7 +374,7 @@ Write-Host "   3. 在服务器运行: ./import-images.sh"
 Write-Host "   4. 启动服务: docker compose -f docker-compose.prod.yml up -d"
 Write-Host ""
 Write-Host "💡 提示: 可以使用压缩减小传输体积" -ForegroundColor Yellow
-Write-Host "   Compress-Archive -Path '$OutputDir\*$Timestamp.tar' -DestinationPath '$OutputDir\tokensbyte-images.zip'"
+Write-Host "   Compress-Archive -Path .\docker-images\*.tar -DestinationPath .\docker-images\tokensbyte-images.zip"
 Write-Host ""
 
 pause
