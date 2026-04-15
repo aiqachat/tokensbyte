@@ -533,6 +533,20 @@ macro_rules! pg_migration_blocks {
     )
     .execute(pool)
     .await?;
+    // Plugin Configs table (for TOS storage, etc.)
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS plugin_configs (
+            id SERIAL PRIMARY KEY,
+            plugin_name TEXT NOT NULL,
+            config_key TEXT NOT NULL,
+            config_value TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            UNIQUE(plugin_name, config_key)
+        )"#
+    )
+    .execute(pool)
+    .await?;
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
@@ -861,6 +875,20 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
         r#"INSERT INTO plugins (name, title, description, is_enabled)
            VALUES ('asset_manager', '素材资产管理', '提供全站图片、视频大模型使用的素材上传与审核功能', 0)
            ON CONFLICT (name) DO NOTHING"#
+    )
+    .execute(pool)
+    .await?;
+    // Plugin Configs table (for TOS storage, etc.)
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS plugin_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plugin_name TEXT NOT NULL,
+            config_key TEXT NOT NULL,
+            config_value TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(plugin_name, config_key)
+        )"#
     )
     .execute(pool)
     .await?;

@@ -1,22 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Switch, message, Typography, Row, Col, Tag, Button, Space } from 'antd';
-import { SettingOutlined, AppstoreOutlined, PictureOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { Switch, message, Typography, Row, Col, Tag, Button, Space, Spin } from 'antd';
+import { SettingOutlined, AppstoreOutlined, PictureOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
 
 const { Title, Text } = Typography;
 
-const pluginMeta: Record<string, { icon: React.ReactNode; gradient: string }> = {
-  asset_manager: {
-    icon: <PictureOutlined style={{ fontSize: 28, color: '#fff' }} />,
-    gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  },
-};
-
-const defaultMeta = {
-  icon: <AppstoreOutlined style={{ fontSize: 28, color: '#fff' }} />,
-  gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+const pluginIcons: Record<string, React.ReactNode> = {
+  asset_manager: <PictureOutlined style={{ fontSize: 22 }} />,
 };
 
 const PluginsList: React.FC = () => {
@@ -34,14 +26,14 @@ const PluginsList: React.FC = () => {
       const res = await (request.get('/plugins') as any);
       if (res.plugins) setPlugins(res.plugins);
     } catch (error: any) {
-      console.error(error);
-      message.error(error?.response?.data?.error?.message || '获取插件列表失败');
+      message.error('获取插件列表失败');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleToggle = async (checked: boolean, plugin: Plugin) => {
+  const handleToggle = async (checked: boolean, plugin: Plugin, e: React.MouseEvent) => {
+    e.stopPropagation();
     try {
       await request.post(`/plugins/${plugin.name}/toggle`, { is_enabled: checked ? 1 : 0 });
       message.success(checked ? '插件已开启' : '插件已关闭');
@@ -53,121 +45,96 @@ const PluginsList: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* 页头 - 与站点其它页面一致 */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 20, paddingBottom: 16,
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+      }}>
         <Title level={4} style={{ margin: 0, color: '#fff' }}>站点插件</Title>
-        <Text type="secondary">管理平台功能模块的启用与配置</Text>
+        <Button icon={<ReloadOutlined />} onClick={fetchPlugins} loading={loading}>刷新</Button>
       </div>
 
-      <Row gutter={[20, 20]}>
-        {plugins.map((plugin) => {
-          const meta = pluginMeta[plugin.name] || defaultMeta;
-          const isEnabled = plugin.is_enabled === 1;
-
-          return (
-            <Col xs={24} sm={12} lg={8} xl={6} key={plugin.id}>
-              <div style={{
-                background: '#1a1a2e',
-                borderRadius: 16,
-                overflow: 'hidden',
-                border: '1px solid rgba(255,255,255,0.06)',
-                transition: 'all 0.3s ease',
-                cursor: 'default',
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(102,126,234,0.4)';
-                (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)';
-                (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)';
-                (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
-                (e.currentTarget as HTMLElement).style.boxShadow = 'none';
-              }}
-              >
-                {/* 渐变头部 */}
-                <div style={{
-                  background: meta.gradient,
-                  padding: '24px 20px',
-                  position: 'relative',
-                }}>
-                  {/* 状态指示 */}
-                  <div style={{ position: 'absolute', top: 12, right: 12 }}>
-                    {isEnabled ? (
-                      <Tag color="rgba(0,0,0,0.3)" style={{ border: 'none', borderRadius: 12 }}>
-                        <CheckCircleOutlined /> 运行中
-                      </Tag>
-                    ) : (
-                      <Tag color="rgba(0,0,0,0.3)" style={{ border: 'none', borderRadius: 12 }}>
-                        <CloseCircleOutlined /> 已停用
-                      </Tag>
-                    )}
+      {loading && plugins.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 60 }}><Spin /></div>
+      ) : (
+        <Row gutter={[16, 16]}>
+          {plugins.map((plugin) => {
+            const isEnabled = plugin.is_enabled === 1;
+            return (
+              <Col xs={24} sm={12} lg={8} key={plugin.id}>
+                <div
+                  onClick={() => navigate(`/admin0755/plugins/${plugin.name}/config`)}
+                  style={{
+                    background: '#141414',
+                    borderRadius: 8,
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    padding: '20px',
+                    cursor: 'pointer',
+                    transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(22,119,255,0.5)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)')}
+                >
+                  {/* 头部 */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <Space size={10}>
+                      <div style={{
+                        width: 40, height: 40, borderRadius: 8,
+                        background: 'rgba(22,119,255,0.1)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#1677ff',
+                      }}>
+                        {pluginIcons[plugin.name] || <AppstoreOutlined style={{ fontSize: 22 }} />}
+                      </div>
+                      <div>
+                        <Text strong style={{ color: '#fff', fontSize: 15, display: 'block', lineHeight: 1.3 }}>{plugin.title}</Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>{plugin.name}</Text>
+                      </div>
+                    </Space>
+                    <Switch
+                      size="small"
+                      checked={isEnabled}
+                      onChange={(checked, e) => handleToggle(checked, plugin, e as any)}
+                    />
                   </div>
 
-                  <div style={{
-                    width: 52, height: 52, borderRadius: 14,
-                    background: 'rgba(255,255,255,0.15)',
-                    backdropFilter: 'blur(10px)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    marginBottom: 12,
-                  }}>
-                    {meta.icon}
-                  </div>
-                  <Text strong style={{ fontSize: 17, color: '#fff', display: 'block', lineHeight: 1.3 }}>
-                    {plugin.title}
-                  </Text>
-                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>
-                    {plugin.name}
-                  </Text>
-                </div>
-
-                {/* 内容区 */}
-                <div style={{ padding: '16px 20px' }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, display: 'block', minHeight: 38, lineHeight: '19px' }}>
+                  {/* 描述 */}
+                  <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, display: 'block', marginBottom: 12 }}>
                     {plugin.description || '暂无描述'}
                   </Text>
 
-                  <div style={{ margin: '12px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>开放等级</Text>
-                    {plugin.allowed_levels === 'all' ? (
-                      <Tag color="#177ddc" style={{ margin: 0, borderRadius: 4, fontSize: 11 }}>全部用户</Tag>
-                    ) : (
-                      plugin.allowed_levels.split(',').slice(0, 3).map(lv => (
-                        <Tag key={lv} style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.65)' }}>{lv}</Tag>
-                      ))
-                    )}
-                  </div>
-
-                  {/* 底部操作 */}
+                  {/* 底部信息 */}
                   <div style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)',
                   }}>
-                    <Space size={8} align="center">
-                      <Switch
-                        size="small"
-                        checked={isEnabled}
-                        onChange={(checked) => handleToggle(checked, plugin)}
-                      />
-                      <Text style={{ color: isEnabled ? '#52c41a' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>
-                        {isEnabled ? '已启用' : '已关闭'}
-                      </Text>
-                    </Space>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 12 }}>开放：</Text>
+                      {plugin.allowed_levels === 'all' ? (
+                        <Tag style={{ margin: 0, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff', borderRadius: 4 }}>全部用户</Tag>
+                      ) : (
+                        plugin.allowed_levels.split(',').slice(0, 2).map(lv => (
+                          <Tag key={lv} style={{ margin: 0, fontSize: 11, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)', borderRadius: 4 }}>{lv}</Tag>
+                        ))
+                      )}
+                    </div>
                     <Button
-                      type="link"
+                      type="text"
                       size="small"
                       icon={<SettingOutlined />}
-                      style={{ color: 'rgba(255,255,255,0.45)', padding: 0 }}
-                      onClick={() => navigate(`/admin0755/plugins/${plugin.name}/config`)}
+                      style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/admin0755/plugins/${plugin.name}/config`); }}
                     >
                       配置
                     </Button>
                   </div>
                 </div>
-              </div>
-            </Col>
-          );
-        })}
-      </Row>
+              </Col>
+            );
+          })}
+        </Row>
+      )}
     </div>
   );
 };

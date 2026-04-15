@@ -4,8 +4,6 @@ use axum::{
     Json, Router,
 };
 use std::sync::Arc;
-use std::path::PathBuf;
-use tokio::fs;
 use serde_json::json;
 use crate::{
     error::{AppResult, AppError},
@@ -34,12 +32,19 @@ async fn upload_asset(
     mut multipart: Multipart,
 ) -> AppResult<Json<serde_json::Value>> {
 
+    // 检查 TOS 配置是否存在
+    let tos_config = crate::api::plugins::get_tos_config(&state, "asset_manager").await;
+    if tos_config.is_none() {
+        return Err(AppError::BadRequest("素材上传功能需要先配置对象存储，请管理员在「站点插件 → 素材资产管理 → 存储配置」中完成配置".to_string()));
+    }
+    let tos_config = tos_config.unwrap();
+
     let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?
         .ok_or_else(|| crate::error::AppError::Unauthorized)?;
-        let mut file_url = String::new();
+    let mut file_url = String::new();
     let mut original_name = String::new();
     let mut asset_type = String::new();
     let mut mime_type = String::new();
@@ -49,14 +54,6 @@ async fn upload_asset(
     let source = if user.role == "admin" { "builtin" } else { "user" };
     // Status builtin is automatically approved
     let status = if source == "builtin" { "approved" } else { "pending" };
-
-    let upload_dir = PathBuf::from("data/assets");
-    if !upload_dir.exists() {
-        fs::create_dir_all(&upload_dir).await.map_err(|e| {
-            tracing::error!("Failed to create upload dir: {}", e);
-            AppError::Internal("Failed to create directory".to_string())
-        })?;
-    }
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         let name = field.name().unwrap_or("").to_string();
@@ -92,13 +89,18 @@ async fn upload_asset(
                 
             let file_id = uuid::Uuid::new_v4().to_string();
             let safe_filename = format!("{}.{}", file_id, ext);
-            let filepath = upload_dir.join(&safe_filename);
-            
-            fs::write(&filepath, data).await.map_err(|_| {
-                AppError::Internal("Failed to save file".to_string())
+            let object_key = tos_config.full_key(&safe_filename);
+
+            // 上传到 TOS
+            file_url = crate::services::tos::upload_file(
+                &tos_config,
+                &object_key,
+                data.to_vec(),
+                &mime_type,
+            ).await.map_err(|e| {
+                tracing::error!("TOS upload failed: {}", e);
+                AppError::Internal(format!("文件上传失败: {}", e))
             })?;
-            
-            file_url = format!("/assets/{}", safe_filename);
         }
     }
 

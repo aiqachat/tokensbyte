@@ -23,6 +23,7 @@ import AdminGroups from './pages/Users/AdminGroups';
 import Logs from './pages/Logs/Logs';
 import TaskLogs from './pages/Logs/TaskLogs';
 import PluginsList from './pages/Plugins/PluginsList';
+import PluginConfig from './pages/Plugins/PluginConfig';
 import AdminAssets from './pages/Plugins/AssetManager/AdminAssets';
 import UserAssets from './pages/UserAssets/UserAssets';
 import Redemptions from './pages/Redemptions/Redemptions';
@@ -100,6 +101,7 @@ const App: React.FC = () => {
           <Route path="logs" element={<Logs />} />
           <Route path="task-logs" element={<TaskLogs />} />
           <Route path="plugins" element={<PluginsList />} />
+          <Route path="plugins/:name/config" element={<PluginConfig />} />
           <Route path="assets/user" element={<AdminAssets />} />
           <Route path="redemptions" element={<Redemptions />} />
           <Route path="users" element={<Users />} />
