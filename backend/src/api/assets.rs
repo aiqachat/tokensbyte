@@ -5,6 +5,7 @@ use axum::{
 };
 use std::sync::Arc;
 use serde_json::json;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use crate::{
     error::{AppResult, AppError},
     models::{PluginAsset, User, AssetAuditRequest},
@@ -110,10 +111,11 @@ async fn upload_asset(
                 user.id.clone()
             };
 
+            let encoded_category = URL_SAFE_NO_PAD.encode(&category);
             let tags_str = format!("userid={}&assetid={}&category={}", 
                 urlencoding::encode(&final_user_id), 
                 urlencoding::encode(&file_id),
-                urlencoding::encode(&category)
+                urlencoding::encode(&encoded_category)
             );
 
             // 上传到 TOS
@@ -273,13 +275,21 @@ async fn get_asset_tags(
     // Safe fallback to full_key in case file_url includes prefix
     let object_key_str = tos_config.full_key(object_key);
 
-    match crate::services::tos::get_object_tags(&tos_config, &object_key_str).await {
-        Ok(tags) => Ok(Json(json!({ "tags": tags }))),
-        Err(e) => {
-            tracing::error!("Failed to get object tags: {}", e);
-            Ok(Json(json!({ "tags": {} })))
+    let mut tags = crate::services::tos::get_object_tags(&tos_config, &object_key_str).await.map_err(|e| {
+        tracing::error!("Failed to get object tags: {}", e);
+        AppError::Internal("Failed to get tags".to_string())
+    })?;
+
+    // Volcengine TOS TagValue only allows alphanumeric and certain symbols. We base64 encoded the Chinese string.
+    if let Some(cat) = tags.get_mut("category") {
+        if let Ok(decoded) = URL_SAFE_NO_PAD.decode(cat.as_bytes()) {
+            if let Ok(s) = String::from_utf8(decoded) {
+                *cat = s;
+            }
         }
     }
+
+    Ok(Json(json!({ "tags": tags })))
 }
 
 async fn update_asset_tags(
@@ -311,12 +321,12 @@ async fn update_asset_tags(
     let object_key_str = tos_config.full_key(object_key);
 
     let mut tags = std::collections::HashMap::new();
+    tags.insert("category".to_string(), URL_SAFE_NO_PAD.encode(&payload.category));
     tags.insert("userid".to_string(), payload.userid.clone());
     let current_asset_id = asset.asset_id.unwrap_or_else(|| {
         asset.file_url.split('/').last().unwrap_or("").split('.').next().unwrap_or("").to_string()
     });
     tags.insert("assetid".to_string(), current_asset_id.clone());
-    tags.insert("category".to_string(), payload.category.clone());
 
     crate::services::tos::update_object_tags(&tos_config, &object_key_str, tags).await
         .map_err(|e| AppError::Internal(format!("更新TOS标签失败: {}", e)))?;
