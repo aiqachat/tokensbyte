@@ -244,6 +244,7 @@ async fn user_list_assets(
 pub struct UpdateTagsRequest {
     pub category: String,
     pub userid: String,
+    pub file_name: Option<String>,
 }
 
 async fn get_asset_tags(
@@ -332,13 +333,15 @@ async fn update_asset_tags(
         .map_err(|e| AppError::Internal(format!("更新TOS标签失败: {}", e)))?;
 
     // Also update Database
-    sqlx::query(&state.db.format_query("UPDATE plugin_assets SET category = ?, user_id = ?, asset_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+    let new_file_name = payload.file_name.unwrap_or(asset.file_name.clone());
+    sqlx::query(&state.db.format_query("UPDATE plugin_assets SET category = ?, user_id = ?, asset_id = ?, file_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
         .bind(&payload.category)
         .bind(&payload.userid)
         .bind(&current_asset_id)
+        .bind(&new_file_name)
         .bind(id)
         .execute(&state.db.pool)
         .await?;
 
-    Ok(Json(json!({ "message": "标签已更新" })))
+    Ok(Json(json!({ "message": "标签和文件名已更新" })))
 }

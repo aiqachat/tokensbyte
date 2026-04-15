@@ -45,6 +45,7 @@ const AdminPresetAssets: React.FC = () => {
     setEditingAsset(record);
     setIsEditModalOpen(true);
     form.setFieldsValue({
+      file_name: record.file_name || '',
       category: record.category || '未分类',
       userid: record.user_id || '',
     });
@@ -70,6 +71,7 @@ const AdminPresetAssets: React.FC = () => {
       setSaving(true);
       
       await request.put(`/assets/admin/${editingAsset.id}/tags`, {
+        file_name: values.file_name,
         category: values.category,
         userid: values.userid,
       });
@@ -122,7 +124,12 @@ const AdminPresetAssets: React.FC = () => {
       title: '预览',
       key: 'preview',
       render: (_: any, record: PluginAsset) => {
-        const fullUrl = `${API_BASE_URL}${record.file_url}`;
+        let fullUrl = record.file_url;
+        if (!fullUrl.startsWith('http') && !fullUrl.startsWith('/')) {
+          fullUrl = `https://${fullUrl}`;
+        } else if (fullUrl.startsWith('/')) {
+          fullUrl = `${API_BASE_URL}${fullUrl}`;
+        }
         if (record.asset_type === 'image') {
           return <img src={fullUrl} alt={record.file_name} style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 4 }} />;
         } else {
@@ -202,6 +209,9 @@ const AdminPresetAssets: React.FC = () => {
         okText="保存(写TOS)"
       >
         <Form form={form} layout="vertical">
+          <Form.Item label="文件名" name="file_name" rules={[{ required: true, message: '请输入文件名' }]}>
+            <Input placeholder="输入新的显示名称" />
+          </Form.Item>
           <Form.Item label="分类 (Category)" name="category" rules={[{ required: true, message: '请输入分类' }]}>
             <Input placeholder="例如：风景、人物、背景等" />
           </Form.Item>

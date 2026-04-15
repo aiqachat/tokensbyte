@@ -364,7 +364,7 @@ const PluginConfig: React.FC = () => {
   );
 
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div>
       {/* 页头 */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
