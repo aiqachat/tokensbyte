@@ -14,6 +14,7 @@ import Models from './pages/Models/Models';
 import ForwardRules from './pages/Models/ForwardRules';
 import BillingRules from './pages/Models/BillingRules';
 import Tokens from './pages/Tokens/Tokens';
+import Upstreams from './pages/Upstreams/Upstreams';
 
 import Users from './pages/Users/Users';
 import UserLevels from './pages/Users/UserLevels';
@@ -83,6 +84,7 @@ const App: React.FC = () => {
         >
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="relay-api" element={<RelayAPI />} />
+          <Route path="upstreams" element={<Upstreams />} />
           <Route path="channel-configs" element={<ChannelConfigs />} />
           <Route path="channels" element={<Channels />} />
           <Route path="channels/test/:id" element={<ChannelTest />} />

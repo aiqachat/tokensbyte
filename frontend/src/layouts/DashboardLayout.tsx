@@ -206,6 +206,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       });
     }
 
+    if (hasPermission('upstreams') || isSuperAdmin) {
+      menuItems.push({
+        key: '/admin0755/upstreams',
+        icon: <GlobalOutlined style={{ fontSize: '18px' }} />,
+        label: <Link to="/admin0755/upstreams">上游管理</Link>,
+      });
+    }
+
     if (hasPermission('models')) {
       menuItems.push({
         key: 'models-management-group',

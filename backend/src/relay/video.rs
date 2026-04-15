@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use crate::{AppState, error::{AppError, AppResult}};
 use crate::models::ApiToken;
 use super::proxy;
+use super::url_utils::join_url;
 
 /// POST /v1/video/generations — Submit a video generation task
 pub async fn video_generations(
@@ -23,7 +24,7 @@ pub async fn video_generations(
 
     let resp = if channel.provider_type == "volcengine" {
         let prompt = body["prompt"].as_str().unwrap_or("Generate a video");
-        let url = format!("{}/api/v3/contents/generations/tasks", channel.base_url.trim_end_matches('/'));
+        let url = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
         let volc_body = serde_json::json!({
             "model": resolved_model,
             "content": [{"type": "text", "text": prompt}],
@@ -36,7 +37,7 @@ pub async fn video_generations(
             .json(&volc_body)
             .send().await?
     } else {
-        let url = format!("{}/v1/video/generations", channel.base_url.trim_end_matches('/'));
+        let url = join_url(&channel.base_url, "/v1/video/generations");
         let mut fwd = body.clone();
         fwd["model"] = serde_json::json!(resolved_model);
         state.http_client.post(&url)
@@ -120,9 +121,9 @@ pub async fn video_generations_status(
     };
 
     let url = if channel.provider_type == "volcengine" {
-        format!("{}/api/v3/contents/generations/tasks/{}", channel.base_url.trim_end_matches('/'), task_id)
+        join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id))
     } else {
-        format!("{}/v1/video/generations/{}", channel.base_url.trim_end_matches('/'), task_id)
+        join_url(&channel.base_url, &format!("/v1/video/generations/{}", task_id))
     };
 
     tracing::info!("GET status url: {}, using channel id: {}", url, channel.id);

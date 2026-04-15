@@ -25,6 +25,7 @@ pub mod admin_groups;
 pub mod forward_rules;
 pub mod billing_rules;
 pub mod task_logs;
+pub mod upstreams;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
@@ -37,6 +38,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/channels/{id}/test", post(channels::test_channel))
         .route("/channel-configs", post(channel_configs::create_channel_config))
         .route("/channel-configs/{id}", put(channel_configs::update_channel_config).delete(channel_configs::delete_channel_config))
+        .route("/upstreams", get(upstreams::list_upstreams).post(upstreams::create_upstream))
+        .route("/upstreams/{id}", put(upstreams::update_upstream).delete(upstreams::delete_upstream))
+        .route("/upstreams/{id}/balance", get(upstreams::get_upstream_balance))
         .route("/models", post(models::create_model))
         .route("/models/{id}", put(models::update_model).delete(models::delete_model))
         .route("/model-providers", get(model_classifications::list_providers).post(model_classifications::create_provider))

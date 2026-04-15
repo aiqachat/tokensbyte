@@ -3,7 +3,7 @@ import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, 
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
-import type { ChannelConfig } from '../../types';
+import type { ChannelConfig, Upstream } from '../../types';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -14,7 +14,7 @@ const ChannelConfigs: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ChannelConfig | null>(null);
-  const [providers, setProviders] = useState<{id: number, name: string}[]>([]);
+  const [upstreams, setUpstreams] = useState<{id: number, name: string}[]>([]);
   const [form] = Form.useForm();
 
   const fetchConfigs = async () => {
@@ -29,10 +29,10 @@ const ChannelConfigs: React.FC = () => {
     }
   };
 
-  const fetchProviders = async () => {
+  const fetchUpstreams = async () => {
     try {
-      const pResp = await (request.get('/model-providers') as unknown as Promise<{ data: {id: number, name: string}[] }>);
-      setProviders(pResp.data || []);
+      const pResp = await (request.get('/upstreams') as unknown as Promise<Upstream[]>);
+      setUpstreams(pResp || []);
     } catch (e) {
       console.error(e);
     }
@@ -40,7 +40,7 @@ const ChannelConfigs: React.FC = () => {
 
   useEffect(() => {
     fetchConfigs();
-    fetchProviders();
+    fetchUpstreams();
   }, []);
 
   const handleAdd = () => {
@@ -160,7 +160,7 @@ const ChannelConfigs: React.FC = () => {
           </Form.Item>
           <Form.Item name="provider_type" label="服务商类型 (输入或快捷选择)" rules={[{ required: true }]}>
             <AutoComplete
-              options={(providers || []).map(p => ({ value: p.name, label: p.name.toUpperCase() })).concat([{ value: 'openai', label: 'OPENAI (默认)' }, { value: 'anthropic', label: 'ANTHROPIC' }, { value: 'gemini', label: 'GEMINI' }, { value: 'azure', label: 'AZURE' }])}
+              options={(upstreams || []).map(p => ({ value: p.name, label: p.name.toUpperCase() })).concat([{ value: 'openai', label: 'OPENAI (默认)' }, { value: 'anthropic', label: 'ANTHROPIC' }, { value: 'gemini', label: 'GEMINI' }, { value: 'azure', label: 'AZURE' }])}
               placeholder="可直选或自由输入 (如: custom)"
               filterOption={(inputValue, option) =>
                 option!.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1

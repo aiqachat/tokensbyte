@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::AppState;
 use crate::models::ApiToken;
 use crate::error::{AppError, AppResult};
+use regex::Regex;
 use super::router;
 use crate::models::Channel;
 
@@ -70,7 +71,7 @@ pub async fn get_model_cost(state: &Arc<AppState>, model: &str, discount: f64) -
 
 // ── Record Usage & Billing ──────────────────────────────────────
 
-use regex::Regex;
+use super::url_utils::join_url;
 
 pub async fn record_and_bill(
     state: &Arc<AppState>,
@@ -142,7 +143,7 @@ pub async fn record_and_bill(
              if provider == "google" && final_endpoint.contains("generateContent") {
                  final_endpoint = format!("{}/{}?key=******", base_clean, ep_clean);
              } else {
-                 final_endpoint = format!("{}/{}", base_clean, ep_clean);
+                 final_endpoint = join_url(&base, ep_clean);
              }
         } else {
             // 如果原本就是包含 http 的全路径，并且带着密钥，直接脱敏即可

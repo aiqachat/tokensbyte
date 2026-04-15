@@ -78,6 +78,7 @@ export interface ModelProvider {
   name: string;
   sort_order: number;
   is_active: boolean;
+  remark?: string;
   created_at: string;
   updated_at: string;
 }
@@ -271,6 +272,19 @@ export interface ChannelConfig {
   base_url: string;
   remark?: string;
   has_api_key?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Upstream {
+  id: number;
+  name: string;
+  upstream_type: string;
+  sort_order: number;
+  is_active: boolean;
+  remark?: string;
+  config?: string; // JSON string
+  balance?: number; // Fetched async
   created_at: string;
   updated_at: string;
 }

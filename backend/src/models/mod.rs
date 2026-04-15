@@ -10,6 +10,7 @@ pub mod user_level;
 pub mod verification;
 pub mod admin_group;
 pub mod task_log;
+pub mod upstream;
 
 pub use user::*;
 pub use channel::*;
@@ -23,6 +24,7 @@ pub use user_level::*;
 pub use verification::*;
 pub use admin_group::*;
 pub use task_log::*;
+pub use upstream::*;
 
 pub use user::User;
 pub use channel::Channel;

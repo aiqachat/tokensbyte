@@ -59,5 +59,10 @@ regex = "1"
 governor = "0.7"
 dashmap = "6"
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "builder", "smtp-transport", "hostname"] }
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+urlencoding = "2.1"
+
 
 

@@ -1,6 +1,7 @@
 pub mod openai;
 pub mod anthropic;
 pub mod google;
+pub mod volcengine_billing;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
