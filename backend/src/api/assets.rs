@@ -128,7 +128,6 @@ async fn upload_asset(
                 AppError::Internal(format!("文件上传失败: {}", e))
             })?;
         }
-    }
 
     if file_url.is_empty() {
         return Err(AppError::BadRequest("No file provided".to_string()));
