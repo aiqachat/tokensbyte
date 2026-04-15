@@ -25,7 +25,6 @@ pub mod admin_groups;
 pub mod forward_rules;
 pub mod billing_rules;
 pub mod task_logs;
-pub mod upstreams;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
@@ -38,9 +37,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/channels/{id}/test", post(channels::test_channel))
         .route("/channel-configs", post(channel_configs::create_channel_config))
         .route("/channel-configs/{id}", put(channel_configs::update_channel_config).delete(channel_configs::delete_channel_config))
-        .route("/upstreams", get(upstreams::list_upstreams).post(upstreams::create_upstream))
-        .route("/upstreams/{id}", put(upstreams::update_upstream).delete(upstreams::delete_upstream))
-        .route("/upstreams/{id}/balance", get(upstreams::get_upstream_balance))
         .route("/models", post(models::create_model))
         .route("/models/{id}", put(models::update_model).delete(models::delete_model))
         .route("/model-providers", get(model_classifications::list_providers).post(model_classifications::create_provider))
@@ -109,23 +105,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // 3. Relay APIs (OpenAI Compatible)
     let relay_routes: Router<Arc<AppState>> = Router::new()
         .route("/chat/completions", post(crate::relay::chat_completions))
-        .route("/images/generations", post(crate::relay::image::image_generations))
-        .route("/video/generations", post(crate::relay::video::video_generations))
-        .route("/video/generations/{task_id}", get(crate::relay::video::video_generations_status))
-        .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
-        .with_state(state.clone());
-
-    // 4. Google Gemini Native Relay (supports ?key=, x-goog-api-key, and Bearer auth)
-    let google_native_routes: Router<Arc<AppState>> = Router::new()
-        .route("/v1beta/models/{model_action}", post(crate::relay::native::gemini_proxy))
-        .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
-        .layer(axum_middleware::from_fn(crate::relay::native::normalize_google_auth))
-        .with_state(state.clone());
-
-    // 5. Volcengine Native Relay
-    let volcengine_native_routes: Router<Arc<AppState>> = Router::new()
-        .route("/api/v3/contents/generations/tasks", post(crate::relay::native::volcengine_submit))
-        .route("/api/v3/contents/generations/tasks/{task_id}", get(crate::relay::native::volcengine_status))
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());
 
@@ -135,8 +114,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/api/v1", management_routes)
         .nest("/v1", relay_routes.clone())
         .nest("/api", relay_routes)
-        .merge(google_native_routes)
-        .merge(volcengine_native_routes)
         .with_state(state)
         .layer(tower_http::cors::CorsLayer::permissive())
 }
