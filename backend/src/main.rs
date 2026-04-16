@@ -29,11 +29,11 @@ async fn main() -> anyhow::Result<()> {
     let config_data = AppConfig::from_env();
     let database = Database::new(&config_data.database_url).await?;
     database.run_migrations().await?;
+    
     database.seed_admin(&config_data).await?;
 
     // 同步 REGISTER_ENABLED 环境变量到数据库设置
     sync_registration_settings(&database, config_data.register_enabled).await?;
-
     
     let state = Arc::new(AppState {
         db: database,
