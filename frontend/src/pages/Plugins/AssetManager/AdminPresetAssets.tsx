@@ -365,7 +365,6 @@ const AdminPresetAssets: React.FC = () => {
             </div>
           )}
         </div>
-        </div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
@@ -379,14 +378,16 @@ const AdminPresetAssets: React.FC = () => {
             icon={<UploadOutlined />} 
             type="primary" 
             onClick={() => {
-              const currentPrimary = selectedKey.replace('preset_', '').split('/')[0];
-              const activeCat = PRESET_CATEGORIES.find(c => c.key === currentPrimary);
-              if (activeCat && activeCat.children.length > 0) {
-                uploadForm.setFieldsValue({ category: `${currentPrimary}/${activeCat.children[0]}` });
-              } else {
-                uploadForm.setFieldsValue({ category: currentPrimary });
-              }
               setIsUploadModalOpen(true);
+              setTimeout(() => {
+                const currentPrimary = selectedKey.replace('preset_', '').split('/')[0];
+                const activeCat = PRESET_CATEGORIES.find(c => c.key === currentPrimary);
+                if (activeCat && activeCat.children.length > 0) {
+                  uploadForm.setFieldsValue({ category: `${currentPrimary}/${activeCat.children[0]}` });
+                } else {
+                  uploadForm.setFieldsValue({ category: currentPrimary });
+                }
+              }, 50);
             }}
           >
             {selectedKey.replace('preset_', '').split('/')[0] === '模版库' ? '上传模版' : 
@@ -470,6 +471,7 @@ const AdminPresetAssets: React.FC = () => {
         onOk={handleCustomUpload}
         confirmLoading={uploading}
         okText="开始上传"
+        destroyOnClose
       >
         <Form form={uploadForm} layout="vertical">
           <Form.Item label="选择文件" required>

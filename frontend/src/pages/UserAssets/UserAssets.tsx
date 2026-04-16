@@ -202,18 +202,21 @@ const UserAssets: React.FC = () => {
       }
 
       setUploading(true);
-      const formData = new FormData();
-      formData.append('file', fileList[0].originFileObj as any);
-      formData.append('category', values.category || '未分类');
+      const category = values.category || '未分类';
+      const api = category === '虚拟人像' ? '/assets/user/upload-virtual-portrait' : '/assets/upload';
 
-      // 如果是虚拟人像，调用专门的接口以同步到火山
-      const api = values.category === '虚拟人像' ? '/assets/user/upload-virtual-portrait' : '/assets/upload';
-
-      await request.post(api, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const uploadPromises = fileList.map(async (fileItem) => {
+        const formData = new FormData();
+        formData.append('file', fileItem.originFileObj as any);
+        formData.append('category', category);
+        return request.post(api, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
       });
 
-      message.success(values.category === '虚拟人像' ? '上传成功，正在合规审核' : '上传成功，等待管理员审核');
+      await Promise.all(uploadPromises);
+
+      message.success(category === '虚拟人像' ? '上传成功，正在合规审核' : '上传成功，等待管理员审核');
       setIsUploadModalOpen(false);
       uploadForm.resetFields();
       setFileList([]);
@@ -401,30 +404,6 @@ const UserAssets: React.FC = () => {
           </div>
         }
         bordered={false}
-        extra={
-          <Space>
-            <Button
-              icon={<UserAddOutlined />}
-              type="primary"
-              size="large"
-              onClick={handleRealPortraitVerify}
-              loading={loading}
-            >
-              真人人像
-            </Button>
-            <Button
-              icon={<UploadOutlined />}
-              type="primary"
-              size="large"
-              onClick={() => {
-                uploadForm.setFieldsValue({ category: '虚拟人像' });
-                setIsUploadModalOpen(true);
-              }}
-            >
-              上传素材
-            </Button>
-          </Space>
-        }
       >
         {/* 分类导航 + 素材列表 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -458,12 +437,38 @@ const UserAssets: React.FC = () => {
                 if (selectedKey.startsWith('my_')) {
                   // 我的素材的二级分类
                   return (
-                    <Segmented
-                      options={MY_ASSET_SUBCATEGORIES.map(sub => ({ label: sub.label, value: sub.key }))}
-                      value={selectedKey}
-                      onChange={(val) => setSelectedKey(val as string)}
-                      style={{ alignSelf: 'flex-start' }}
-                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Segmented
+                        options={MY_ASSET_SUBCATEGORIES.map(sub => ({ label: sub.label, value: sub.key }))}
+                        value={selectedKey}
+                        onChange={(val) => setSelectedKey(val as string)}
+                        style={{ alignSelf: 'flex-start' }}
+                      />
+                      {selectedKey === 'my_real_portrait' && (
+                        <Button
+                          icon={<UserAddOutlined />}
+                          type="primary"
+                          onClick={handleRealPortraitVerify}
+                          loading={loading}
+                        >
+                          上传真人人像
+                        </Button>
+                      )}
+                      {selectedKey === 'my_virtual_portrait' && (
+                        <Button
+                          icon={<UploadOutlined />}
+                          type="primary"
+                          onClick={() => {
+                            setIsUploadModalOpen(true);
+                            setTimeout(() => {
+                              uploadForm.setFieldsValue({ category: '虚拟人像' });
+                            }, 50);
+                          }}
+                        >
+                          上传虚拟人像
+                        </Button>
+                      )}
+                    </div>
                   );
                 } else {
                   // 预设素材的二级分类
@@ -518,64 +523,67 @@ const UserAssets: React.FC = () => {
         </div>
       </Card>
 
-      {/* 上传素材弹窗 */}
+      {/* 上传虚拟人像弹窗 */}
       <Modal
-        title="上传素材"
+        title="上传虚拟人像"
         open={isUploadModalOpen}
         onCancel={() => { setIsUploadModalOpen(false); uploadForm.resetFields(); setFileList([]); }}
         onOk={handleCustomUpload}
         confirmLoading={uploading}
         okText="开始上传"
+        destroyOnClose
       >
-        <Form form={uploadForm} layout="vertical" initialValues={{ category: '真人人像' }}>
+        <Form form={uploadForm} layout="vertical" initialValues={{ category: '虚拟人像' }}>
           <Form.Item label="选择文件" required>
             <Upload
-              accept="image/*,video/*,audio/*"
-              maxCount={1}
+              accept=".jpeg,.jpg,.png,.webp,.bmp,.tiff,.gif,.heic,.heif"
+              multiple={true}
               fileList={fileList}
               onChange={(info) => {
-                let newFileList = [...info.fileList];
-                newFileList = newFileList.slice(-1);
-                setFileList(newFileList);
+                setFileList([...info.fileList]);
               }}
               beforeUpload={(file) => {
-                const isVideo = file.type.startsWith('video/');
-                const isImage = file.type.startsWith('image/');
-                const isAudio = file.type.startsWith('audio/') || file.name.endsWith('.mp3') || file.name.endsWith('.wav');
+                const ext = file.name.split('.').pop()?.toLowerCase() || '';
+                const allowedExts = ['jpeg', 'jpg', 'png', 'webp', 'bmp', 'tiff', 'gif', 'heic', 'heif'];
+                if (!allowedExts.includes(ext)) {
+                  import('antd').then(({ message }) => message.error(`${file.name}: 不支持的图片格式`));
+                  return Upload.LIST_IGNORE;
+                }
                 const sizeMB = file.size / 1024 / 1024;
-                
-                if (isVideo && sizeMB > 50) {
-                  message.error(`视频文件过大，不能超过 50MB！当前大小: ${sizeMB.toFixed(1)}MB`);
+                if (sizeMB > 30) {
+                  import('antd').then(({ message }) => message.error(`${file.name}: 单张图片不能超过 30MB`));
                   return Upload.LIST_IGNORE;
                 }
-                if (isImage && sizeMB > 10) {
-                  message.error(`图片文件过大，不能超过 10MB！当前大小: ${sizeMB.toFixed(1)}MB`);
-                  return Upload.LIST_IGNORE;
-                }
-                if (isAudio && sizeMB > 20) {
-                  message.error(`声音文件过大，不能超过 20MB！当前大小: ${sizeMB.toFixed(1)}MB`);
-                  return Upload.LIST_IGNORE;
-                }
-                if (!isVideo && !isImage && !isAudio) {
-                  message.error('只支持上传图片、视频或声音文件');
-                  return Upload.LIST_IGNORE;
-                }
-                return false;
+
+                return new Promise<boolean | string>((resolve, reject) => {
+                  const img = new window.Image();
+                  img.onload = () => {
+                    const { width, height } = img;
+                    URL.revokeObjectURL(img.src);
+                    if (width < 300 || width > 6000 || height < 300 || height > 6000) {
+                      import('antd').then(({ message }) => message.error(`${file.name}: 宽高长度需在 300-6000 px 之间，当前 ${width}x${height}`));
+                      return reject();
+                    }
+                    const ratio = width / height;
+                    if (ratio <= 0.4 || ratio >= 2.5) {
+                      import('antd').then(({ message }) => message.error(`${file.name}: 宽高比（宽/高）需在 (0.4, 2.5) 之间，当前 ${ratio.toFixed(2)}`));
+                      return reject();
+                    }
+                    resolve(false); // Stop Action
+                  };
+                  img.onerror = () => {
+                    // For HEIC and formats not natively previewable in all browsers, we skip local dimension validation
+                    resolve(false);
+                  };
+                  img.src = URL.createObjectURL(file);
+                }).catch(() => Upload.LIST_IGNORE);
               }}
             >
-              <Button icon={<UploadOutlined />}>选择图片、视频或声音</Button>
+              <Button icon={<UploadOutlined />}>选择多张图片</Button>
             </Upload>
           </Form.Item>
-          <Form.Item
-            label="素材分类"
-            name="category"
-            rules={[{ required: true, message: '请选择分类' }]}
-            extra="选择分类后，素材将归类到对应的查看入口"
-          >
-            <Select placeholder="请选择分类">
-              <Select.Option value="真人人像">真人人像</Select.Option>
-              <Select.Option value="虚拟人像">虚拟人像</Select.Option>
-            </Select>
+          <Form.Item name="category" hidden>
+            <Input />
           </Form.Item>
         </Form>
       </Modal>
