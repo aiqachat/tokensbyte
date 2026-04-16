@@ -252,15 +252,7 @@ macro_rules! pg_migration_blocks {
             model_id TEXT NOT NULL UNIQUE,
             provider_id INTEGER REFERENCES model_providers(id),
             type_id INTEGER REFERENCES model_types(id),
-            billing_type TEXT NOT NULL DEFAULT 'tokens',
-            prompt_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            completion_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            fixed_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            duration_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             group_ratios TEXT NOT NULL DEFAULT '{}',
-            billing_rule TEXT NOT NULL DEFAULT 'standard',
-            billing_unit TEXT NOT NULL DEFAULT '1k',
-            pricing_tiers TEXT NOT NULL DEFAULT '[]',
             is_active INTEGER NOT NULL DEFAULT 1,
             remark TEXT,
             upstream_type TEXT NOT NULL DEFAULT 'other',
@@ -268,6 +260,7 @@ macro_rules! pg_migration_blocks {
             enable_log_content INTEGER NOT NULL DEFAULT 0,
             forward_rule_ids TEXT,
             billing_rule_id INTEGER,
+            pre_deduction DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -439,6 +432,7 @@ macro_rules! pg_migration_blocks {
             duration_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             billing_rule TEXT NOT NULL DEFAULT 'standard',
             pricing_tiers TEXT NOT NULL DEFAULT '[]',
+            extended_config TEXT NOT NULL DEFAULT '{}',
             is_active INTEGER NOT NULL DEFAULT 1,
             remark TEXT,
             upstream_type TEXT NOT NULL DEFAULT 'other',
@@ -450,8 +444,25 @@ macro_rules! pg_migration_blocks {
     .execute(pool)
     .await?;
 
-    // Alter models to add billing rule link
+    // Alter models to add billing rule link and pre_deduction
     sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS billing_rule_id INTEGER")
+        .execute(pool)
+        .await?;
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS pre_deduction DOUBLE PRECISION NOT NULL DEFAULT 0.0")
+        .execute(pool)
+        .await?;
+    
+    // Clean up unused legacy billing fields from models table (PostgreSQL specific)
+    let drop_fields = vec![
+        "billing_type", "prompt_rate", "completion_rate", "fixed_rate", 
+        "duration_rate", "billing_rule", "billing_unit", "pricing_tiers"
+    ];
+    for field in drop_fields {
+        let q = format!("ALTER TABLE models DROP COLUMN IF EXISTS {}", field);
+        sqlx::query(&q).execute(pool).await.ok();
+    }
+    
+    sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS extended_config TEXT NOT NULL DEFAULT '{}'")
         .execute(pool)
         .await?;
 

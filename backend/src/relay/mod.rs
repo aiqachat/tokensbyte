@@ -6,6 +6,7 @@ pub mod video;
 pub mod native;
 pub mod url_utils;
 pub mod forward;
+pub mod usage_extractor;
 
 use axum::{
     extract::{State, Extension, Path},
@@ -100,11 +101,28 @@ pub async fn chat_completions(
         }
 
         let prompt_tokens = estimate_prompt_tokens(&body);
+
+        let db_model: Option<crate::models::Model> = sqlx::query_as(
+            &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
+        )
+        .bind(&model)
+        .fetch_optional(&state.db.pool)
+        .await
+        .unwrap_or(None);
+
+        let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
+        if pre_deduction > 0.0 {
+            if let Err(e) = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
+                tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+            }
+        }
+
         Ok(stream::handle_chat_stream(
             state, token, channel, model.to_string(), resp,
             ctx.discount, prompt_tokens, request_content_str, start_time, target_type,
             resolved.upstream_path.replace("${model}", &resolved_model),
-            Some(upstream_body.to_string())
+            Some(upstream_body.to_string()),
+            pre_deduction
         ).await.into_response())
     } else {
         let resp = builder.json(&upstream_body).send().await?;
@@ -126,10 +144,15 @@ pub async fn chat_completions(
         let data = resp.bytes().await?;
         let response_content_str = String::from_utf8_lossy(&data).to_string();
 
-        // 解析 usage（兼容 OpenAI / Anthropic / Gemini 多种格式）
-        let (prompt_tokens, completion_tokens) = parse_chat_usage(&response_content_str, &target_type);
+        // 解析 usage（兼容多种格式）
+        let usage_tokens = usage_extractor::parse_usage(&response_content_str);
+        let prompt_tokens = usage_tokens.prompt;
+        let completion_tokens = usage_tokens.completion;
 
-        // 计费
+        // 提取请求参数特征用于进阶计费
+        let features = usage_extractor::extract_request_features(&body);
+
+        // 计费: 联表查询 Model 及其关联的 BillingRule
         let db_model: Option<crate::models::Model> = sqlx::query_as(
             &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
         )
@@ -137,13 +160,27 @@ pub async fn chat_completions(
         .fetch_optional(&state.db.pool)
         .await?;
 
-        let quota_used = compute_cost(db_model, prompt_tokens, completion_tokens, ctx.discount);
+        let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
+            if let Some(rule_id) = m.billing_rule_id {
+                sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+                    .bind(rule_id)
+                    .fetch_optional(&state.db.pool)
+                    .await?
+            } else { None }
+        } else { None };
+
+        let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
+        if pre_deduction > 0.0 {
+            let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
+        }
+
+        let quota_used = compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, ctx.discount, &features);
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
 
-        proxy::record_and_bill(
+        proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, model, prompt_tokens, completion_tokens,
-            quota_used, 200, &ep, None, latency_ms, 0,
+            quota_used, pre_deduction, 200, &ep, None, latency_ms, 0,
             Some(request_content_str), Some(response_content_str.clone()), Some(upstream_body.to_string())
         ).await;
 
@@ -172,33 +209,7 @@ pub fn estimate_prompt_tokens(body: &serde_json::Value) -> i32 {
     (total_chars as f64 / 4.0).ceil() as i32
 }
 
-/// 从响应体中解析 usage（兼容多种上游格式）
-fn parse_chat_usage(response: &str, target_type: &str) -> (i32, i32) {
-    let v: serde_json::Value = match serde_json::from_str(response) {
-        Ok(v) => v,
-        Err(_) => return (0, 0),
-    };
-
-    match target_type {
-        "anthropic" => {
-            let p = v.get("usage").and_then(|u| u.get("input_tokens")).and_then(|t| t.as_i64()).unwrap_or(0);
-            let c = v.get("usage").and_then(|u| u.get("output_tokens")).and_then(|t| t.as_i64()).unwrap_or(0);
-            (p as i32, c as i32)
-        }
-        "gemini" | "gemini_image" => {
-            let u = v.get("usageMetadata");
-            let p = u.and_then(|u| u.get("promptTokenCount")).and_then(|t| t.as_i64()).unwrap_or(0);
-            let c = u.and_then(|u| u.get("candidatesTokenCount")).and_then(|t| t.as_i64()).unwrap_or(0);
-            (p as i32, c as i32)
-        }
-        _ => {
-            let u = v.get("usage");
-            let p = u.and_then(|u| u.get("prompt_tokens")).and_then(|t| t.as_i64()).unwrap_or(0);
-            let c = u.and_then(|u| u.get("completion_tokens")).and_then(|t| t.as_i64()).unwrap_or(0);
-            (p as i32, c as i32)
-        }
-    }
-}
+// 我们已将 parse_chat_usage 移到了 usage_extractor.rs 中
 
 /// 将上游非 OpenAI 格式响应转换为 OpenAI 格式
 fn transform_chat_response(response: &str, target_type: &str, model: &str) -> String {
@@ -212,14 +223,14 @@ fn transform_chat_response(response: &str, target_type: &str, model: &str) -> St
                         .map(|c| c.get("text").and_then(|t| t.as_str()).unwrap_or(""))
                         .next())
                     .unwrap_or("");
-                let (p, c) = parse_chat_usage(response, target_type);
+                let usage_tokens = usage_extractor::parse_usage(response);
                 return serde_json::to_string(&serde_json::json!({
                     "id": v.get("id").and_then(|i| i.as_str()).unwrap_or(""),
                     "object": "chat.completion",
                     "created": chrono::Utc::now().timestamp(),
                     "model": model,
                     "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
-                    "usage": {"prompt_tokens": p, "completion_tokens": c, "total_tokens": p + c}
+                    "usage": {"prompt_tokens": usage_tokens.prompt, "completion_tokens": usage_tokens.completion, "total_tokens": usage_tokens.total}
                 })).unwrap_or_else(|_| response.to_string());
             }
             response.to_string()
@@ -239,14 +250,14 @@ fn transform_chat_response(response: &str, target_type: &str, model: &str) -> St
                     .and_then(|c| c.get("finishReason"))
                     .and_then(|f| f.as_str())
                     .unwrap_or("stop");
-                let (p, c) = parse_chat_usage(response, target_type);
+                let usage_tokens = usage_extractor::parse_usage(response);
                 return serde_json::to_string(&serde_json::json!({
                     "id": uuid::Uuid::new_v4().to_string(),
                     "object": "chat.completion",
                     "created": chrono::Utc::now().timestamp(),
                     "model": model,
                     "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": finish}],
-                    "usage": {"prompt_tokens": p, "completion_tokens": c, "total_tokens": p + c}
+                    "usage": {"prompt_tokens": usage_tokens.prompt, "completion_tokens": usage_tokens.completion, "total_tokens": usage_tokens.total}
                 })).unwrap_or_else(|_| response.to_string());
             }
             response.to_string()
@@ -256,31 +267,125 @@ fn transform_chat_response(response: &str, target_type: &str, model: &str) -> St
 }
 
 /// 统一计费逻辑
-pub fn compute_cost(db_model: Option<crate::models::Model>, prompt_tokens: i32, completion_tokens: i32, discount: f64) -> f64 {
-    match db_model {
-        Some(m) => match m.billing_type.as_str() {
-            "requests" => m.fixed_rate * discount,
-            "duration" => 0.0,
-            _ => {
-                let mut p_rate = m.prompt_rate;
-                let mut c_rate = m.completion_rate;
-                if m.billing_rule == "tiered" {
-                    let mut tiers: Vec<crate::models::PricingTier> = serde_json::from_str(&m.pricing_tiers).unwrap_or_default();
-                    tiers.sort_by_key(|t| t.max_tokens);
-                    for tier in tiers {
-                        if prompt_tokens <= tier.max_tokens {
+pub fn compute_cost(
+    db_model: Option<&crate::models::Model>, 
+    db_rule: Option<&crate::models::BillingRule>, 
+    prompt_tokens: i32, 
+    completion_tokens: i32, 
+    discount: f64,
+    features: &usage_extractor::ExtractedFeatures
+) -> f64 {
+    let rule = match db_rule {
+        Some(r) => r,
+        None => {
+            // 没有配置计费规则，走默认基础计费 1M 万字 = 1美金 等价
+            let total = prompt_tokens + completion_tokens;
+            return (total as f64 / 1_000_000.0) * discount;
+        }
+    };
+
+    // 供解析分辨率费率使用的辅助结构体
+    #[derive(serde::Deserialize)]
+    struct ResolutionTier {
+        pub resolution: String,
+        pub rate: f64,
+        pub enabled: bool,
+    }
+
+    match rule.billing_type.as_str() {
+        "requests" => {
+            let mut rate = rule.fixed_rate;
+            let mut count = 1.0;
+
+            if rule.billing_rule == "per_image" {
+                count = if completion_tokens > 0 { completion_tokens as f64 } else { 1.0 };
+            } else if rule.billing_rule == "image_resolution" {
+                count = if completion_tokens > 0 { completion_tokens as f64 } else { 1.0 };
+                if let Some(res) = &features.resolution {
+                    if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
+                        for tier in tiers {
+                            if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
+                                rate = tier.rate; break;
+                            }
+                        }
+                    }
+                }
+            }
+            count * rate * discount
+        },
+        "duration" => {
+            let dur = features.duration_seconds.unwrap_or(0.0);
+            let mut rate = rule.duration_rate; 
+
+            if rule.billing_rule == "video_resolution" {
+                if let Some(res) = &features.resolution {
+                    if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
+                        for tier in tiers {
+                            if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
+                                rate = tier.rate; break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            dur * rate * discount
+        },
+        _ => {
+            // tokens 计费
+            let mut p_rate = rule.prompt_rate;
+            let mut c_rate = rule.completion_rate;
+            // Volcano 多模态特征特殊截断 3 层网逻辑
+            let mut is_overridden = false;
+            // 只有当规则被显式指定为 "volcengine" 时，才激活三路特供引擎！
+            if rule.billing_rule == "volcengine" {
+                if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    if features.has_video {
+                        if ext.get("volc_video_enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
+                            if let Some(vr) = ext.get("volc_video_rate").and_then(|v| v.as_f64()) {
+                                p_rate = vr; c_rate = vr; is_overridden = true;
+                            }
+                        }
+                    } else if features.has_audio {
+                        if ext.get("volc_audio_enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
+                            if let Some(ar) = ext.get("volc_audio_rate").and_then(|v| v.as_f64()) {
+                                p_rate = ar; c_rate = ar; is_overridden = true;
+                            }
+                        }
+                    } else {
+                        // 既无视频也无音频的纯文字请求
+                        if ext.get("volc_base_enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
+                            if let Some(br) = ext.get("volc_base_rate").and_then(|v| v.as_f64()) {
+                                p_rate = br; c_rate = br; is_overridden = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !is_overridden && rule.billing_rule == "tiered" {
+                let mut tiers: Vec<crate::models::PricingTier> = serde_json::from_str(&rule.pricing_tiers).unwrap_or_default();
+                // 确保按照 prompt 升序
+                tiers.sort_by_key(|t| t.max_prompt_tokens);
+                for tier in tiers {
+                    if prompt_tokens <= tier.max_prompt_tokens {
+                        // 如果存在 completion 限制，则优先遵循
+                        if let Some(mc) = tier.max_completion_tokens {
+                            if completion_tokens <= mc {
+                                p_rate = tier.prompt_rate;
+                                c_rate = tier.completion_rate;
+                                break;
+                            }
+                        } else {
+                            // 没有 completion 限制，直接采纳
                             p_rate = tier.prompt_rate;
                             c_rate = tier.completion_rate;
                             break;
                         }
                     }
                 }
-                ((prompt_tokens as f64 * p_rate + completion_tokens as f64 * c_rate) / 1_000_000.0) * discount
             }
-        },
-        None => {
-            let total = prompt_tokens + completion_tokens;
-            (total as f64 / 1_000_000.0) * discount
+            ((prompt_tokens as f64 * p_rate + completion_tokens as f64 * c_rate) / 1_000_000.0) * discount
         }
     }
 }

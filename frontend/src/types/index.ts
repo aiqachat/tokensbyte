@@ -36,11 +36,6 @@ export interface UserLevel {
   created_at: string;
 }
 
-export interface PricingTier {
-  max_tokens: number;
-  prompt_rate: number;
-  completion_rate: number;
-}
 
 export interface AdminGroup {
   id: number;
@@ -57,16 +52,10 @@ export interface ModelModel {
   model_id: string;
   provider_id?: number;
   type_id?: number;
-  billing_type: string;
-  prompt_rate: number;
-  completion_rate: number;
-  fixed_rate: number;
-  duration_rate: number;
   group_ratios: string;
-  billing_rule?: string;
-  forward_rule_ids?: string;
   billing_rule_id?: number | null;
-  pricing_tiers: string;
+  pre_deduction?: number;
+  forward_rule_ids?: string;
   is_active: number;
   enable_log_content?: number;
   created_at: string;

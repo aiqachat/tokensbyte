@@ -7,16 +7,9 @@ pub struct Model {
     pub model_id: String,
     pub provider_id: Option<i32>,
     pub type_id: Option<i32>,
-    pub billing_type: String, // tokens, requests, duration
-    pub prompt_rate: f64,     // Price per 1k tokens
-    pub completion_rate: f64, // Price per 1k tokens
-    pub fixed_rate: f64,      // Price per request
-    pub duration_rate: f64,   // Price per second
-    pub group_ratios: String, // JSON object string: {"default": 1.0, "vip": 0.8}
-    pub billing_rule: String, // standard, tiered
-    pub billing_unit: String, // 1k, 1M
-    pub pricing_tiers: String, // JSON array of tiers
+    pub group_ratios: String, // {"default": 1.0, "vip": 0.8}
     pub billing_rule_id: Option<i32>,
+    pub pre_deduction: f64, // 新增预扣费
     pub is_active: i32,
     pub forward_rule_ids: Option<String>,
     pub enable_log_content: i32,
@@ -35,6 +28,7 @@ pub struct BillingRule {
     pub duration_rate: f64,
     pub billing_rule: String,
     pub pricing_tiers: String,
+    pub extended_config: String, // 新增
     pub is_active: i32,
     pub created_at: String,
     pub updated_at: String,
@@ -49,7 +43,8 @@ pub struct CreateBillingRuleRequest {
     pub fixed_rate: f64,
     pub duration_rate: f64,
     pub billing_rule: String,
-    pub pricing_tiers: Option<Vec<PricingTier>>,
+    pub pricing_tiers: Option<serde_json::Value>,
+    pub extended_config: Option<serde_json::Value>,
     #[serde(default = "default_active")]
     pub is_active: i32,
 }
@@ -63,13 +58,15 @@ pub struct UpdateBillingRuleRequest {
     pub fixed_rate: Option<f64>,
     pub duration_rate: Option<f64>,
     pub billing_rule: Option<String>,
-    pub pricing_tiers: Option<Vec<PricingTier>>,
+    pub pricing_tiers: Option<serde_json::Value>,
+    pub extended_config: Option<serde_json::Value>,
     pub is_active: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PricingTier {
-    pub max_tokens: i32,
+    pub max_prompt_tokens: i32,
+    pub max_completion_tokens: Option<i32>,
     pub prompt_rate: f64,
     pub completion_rate: f64,
 }
@@ -162,8 +159,8 @@ pub struct CreateModelRequest {
     pub provider_id: Option<i32>,
     pub type_id: Option<i32>,
     pub group_ratios: Option<serde_json::Value>,
-    pub billing_unit: Option<String>,
     pub billing_rule_id: Option<i32>,
+    pub pre_deduction: Option<f64>,
     pub forward_rule_ids: Option<Vec<i32>>,
 }
 
@@ -174,8 +171,8 @@ pub struct UpdateModelRequest {
     pub provider_id: Option<i32>,
     pub type_id: Option<i32>,
     pub group_ratios: Option<serde_json::Value>,
-    pub billing_unit: Option<String>,
     pub billing_rule_id: Option<i32>,
+    pub pre_deduction: Option<f64>,
     pub is_active: Option<i32>,
     pub forward_rule_ids: Option<Vec<i32>>,
     pub enable_log_content: Option<i32>,

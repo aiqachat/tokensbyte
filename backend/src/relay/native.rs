@@ -116,7 +116,7 @@ pub async fn gemini_proxy(
     if action.starts_with("streamGenerateContent") || is_stream == 1 {
         Ok(crate::relay::stream::handle_native_stream(
             state, token.clone(), channel.clone(), model.to_string(), resp, ctx.discount,
-            request_content_str.clone(), start_time, endpoint, Some(request_content_str)
+            request_content_str.clone(), start_time, endpoint, Some(request_content_str), 0.0
         ).await.into_response())
     } else {
         let data = resp.bytes().await?;

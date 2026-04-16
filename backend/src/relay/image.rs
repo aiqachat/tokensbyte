@@ -51,7 +51,29 @@ pub async fn image_generations(
         return Err(AppError::UpstreamError(display_err));
     }
 
-    let cost = proxy::get_model_cost(&state, model, ctx.discount).await;
+    let db_model: Option<crate::models::Model> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
+    )
+    .bind(model)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
+        if let Some(rule_id) = m.billing_rule_id {
+            sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+                .bind(rule_id)
+                .fetch_optional(&state.db.pool)
+                .await
+                .unwrap_or(None)
+        } else { None }
+    } else { None };
+
+    let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
+    if pre_deduction > 0.0 {
+        if let Err(e) = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
+            tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+        }
+    }
 
     let is_upstream_stream = upstream_resp.headers()
         .get("content-type")
@@ -64,26 +86,24 @@ pub async fn image_generations(
             state, token, channel, model.to_string(), upstream_resp,
             ctx.discount, request_content_str, start_time,
             resolved.upstream_path.replace("${model}", &resolved_model),
-            Some(upstream_body.to_string())
+            Some(upstream_body.to_string()),
+            pre_deduction
         ).await.into_response())
     } else {
         let data = upstream_resp.bytes().await?;
         let response_content_str = String::from_utf8_lossy(&data).to_string();
         let mut p_tokens = 0;
         let mut c_tokens = 0;
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response_content_str) {
-            if let Some(usage) = json.get("usage") {
-                p_tokens = usage.get("prompt_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                c_tokens = usage.get("completion_tokens")
-                    .or_else(|| usage.get("output_tokens"))
-                    .or_else(|| usage.get("total_tokens"))
-                    .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-            }
-        }
+        let usage_tokens = crate::relay::usage_extractor::parse_usage(&response_content_str);
+        p_tokens = usage_tokens.prompt;
+        c_tokens = usage_tokens.completion;
+
+        let features = crate::relay::usage_extractor::extract_request_features(&body);
+        let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, ctx.discount, &features);
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
-        proxy::record_and_bill(&state, &token, channel.id, model, p_tokens, c_tokens, cost, 200,
+        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, p_tokens, c_tokens, cost, pre_deduction, 200,
             &ep, None, latency_ms, 0,
             Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string())).await;
 

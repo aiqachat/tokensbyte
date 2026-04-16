@@ -63,8 +63,19 @@ pub async fn get_model_cost(state: &Arc<AppState>, model: &str, discount: f64) -
     .fetch_optional(&state.db.pool)
     .await
     .unwrap_or(None);
-    match m {
-        Some(m) => m.fixed_rate * discount,
+    
+    let db_rule: Option<crate::models::BillingRule> = if let Some(ref md) = m {
+        if let Some(rule_id) = md.billing_rule_id {
+            sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+                .bind(rule_id)
+                .fetch_optional(&state.db.pool)
+                .await
+                .unwrap_or(None)
+        } else { None }
+    } else { None };
+
+    match db_rule {
+        Some(r) => r.fixed_rate * discount,
         None => 0.0,
     }
 }
@@ -73,7 +84,27 @@ pub async fn get_model_cost(state: &Arc<AppState>, model: &str, discount: f64) -
 
 use super::url_utils::join_url;
 
+pub async fn pre_deduct(state: &Arc<AppState>, user_id: &str, amount: f64) -> Result<(), sqlx::Error> {
+    if amount > 0.0 {
+        sqlx::query(&state.db.format_query("UPDATE users SET balance = balance - ? WHERE id = ?"))
+            .bind(amount)
+            .bind(user_id)
+            .execute(&state.db.pool)
+            .await?;
+    }
+    Ok(())
+}
+
 pub async fn record_and_bill(
+    state: &Arc<AppState>, token: &ApiToken, channel_id: i64, model_name: &str,
+    prompt_tokens: i32, completion_tokens: i32, cost: f64, status_code: u16,
+    endpoint: &str, error_msg: Option<&str>, latency_ms: u32, is_stream: i32,
+    request_content: Option<String>, response_content: Option<String>, upstream_req_content: Option<String>,
+) {
+    record_and_bill_with_prededuction(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cost, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content).await;
+}
+
+pub async fn record_and_bill_with_prededuction(
     state: &Arc<AppState>,
     token: &ApiToken,
     channel_id: i64,
@@ -81,6 +112,7 @@ pub async fn record_and_bill(
     prompt_tokens: i32,
     completion_tokens: i32,
     cost: f64,
+    pre_deducted: f64, // 新增参数，已预扣的金额
     status_code: u16,
     endpoint: &str,
     error_msg: Option<&str>,
@@ -147,7 +179,7 @@ pub async fn record_and_bill(
 
     let res: Result<(), sqlx::Error> = async {
         let mut tx = state.db.pool.begin().await?;
-        if cost > 0.0 {
+        if cost > 0.0 || pre_deducted > 0.0 {
             sqlx::query(&state.db.format_query(
                 "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             ))
@@ -155,10 +187,12 @@ pub async fn record_and_bill(
             .bind(token.id)
             .execute(&mut *tx)
             .await?;
+            
+            let apply_balance = cost - pre_deducted; // 正数表示还要扣，负数表示退款
             sqlx::query(&state.db.format_query(
                 "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             ))
-            .bind(cost)
+            .bind(apply_balance)
             .bind(cost)
             .bind(&token.user_id)
             .execute(&mut *tx)

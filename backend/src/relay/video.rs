@@ -53,12 +53,41 @@ pub async fn video_generations(
         return Err(AppError::UpstreamError(display_err));
     }
 
-    let cost = proxy::get_model_cost(&state, model, ctx.discount).await;
+    let db_model: Option<crate::models::Model> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
+    )
+    .bind(model)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
+        if let Some(rule_id) = m.billing_rule_id {
+            sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+                .bind(rule_id)
+                .fetch_optional(&state.db.pool)
+                .await
+                .unwrap_or(None)
+        } else { None }
+    } else { None };
+
+    // 预扣费逻辑
+    let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
+    if pre_deduction > 0.0 {
+        if let Err(e) = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
+            tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+        }
+    }
+
     let data = resp.bytes().await?;
     let response_content_str = String::from_utf8_lossy(&data).to_string();
+
+    let usage_tokens = crate::relay::usage_extractor::parse_usage(&response_content_str);
+    let features = crate::relay::usage_extractor::extract_request_features(&body);
+    let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage_tokens.prompt, usage_tokens.completion, ctx.discount, &features);
+    
     let latency_ms = start_time.elapsed().as_millis() as u32;
     let ep = format!("/v1/video/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
-    proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, cost, 200,
+    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage_tokens.prompt, usage_tokens.completion, cost, pre_deduction, 200,
         &ep, None, latency_ms, 0,
         Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string())).await;
 

@@ -29,6 +29,7 @@ pub async fn create_rule(
     }
 
     let pricing_tiers_str = serde_json::to_string(&req.pricing_tiers.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
+    let extended_config_str = serde_json::to_string(&req.extended_config.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     
     let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM billing_rules WHERE name = ?"))
         .bind(&req.name)
@@ -41,8 +42,8 @@ pub async fn create_rule(
 
     let id_i32 = sqlx::query(
         &state.db.format_query(r#"INSERT INTO billing_rules 
-            (name, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule, pricing_tiers, is_active) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"#)
+            (name, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule, pricing_tiers, extended_config, is_active) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"#)
     )
     .bind(&req.name)
     .bind(&req.billing_type)
@@ -52,6 +53,7 @@ pub async fn create_rule(
     .bind(req.duration_rate)
     .bind(&req.billing_rule)
     .bind(&pricing_tiers_str)
+    .bind(&extended_config_str)
     .bind(req.is_active)
     .fetch_one(&state.db.pool)
     .await?
@@ -107,6 +109,10 @@ pub async fn update_rule(
     if let Some(val) = &req.pricing_tiers {
         let str_val = serde_json::to_string(val).unwrap_or_else(|_| "[]".to_string());
         sqlx::query(&state.db.format_query("UPDATE billing_rules SET pricing_tiers = ? WHERE id = ?")).bind(&str_val).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(val) = &req.extended_config {
+        let str_val = serde_json::to_string(val).unwrap_or_else(|_| "{}".to_string());
+        sqlx::query(&state.db.format_query("UPDATE billing_rules SET extended_config = ? WHERE id = ?")).bind(&str_val).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(active) = req.is_active {
         sqlx::query(&state.db.format_query("UPDATE billing_rules SET is_active = ? WHERE id = ?")).bind(active).bind(id).execute(&state.db.pool).await?;

@@ -46,8 +46,10 @@ async fn main() -> anyhow::Result<()> {
         .nest_service("/assets", tower_http::services::ServeDir::new("data/assets"));
 
     let addr = format!("{}:{}", config_data.host, config_data.port);
+    eprintln!("⚙️ Binding server to {}", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("🚀 TokensByte server running at http://{}", addr);
+    eprintln!("✅ TokensByte server is now completely online at http://{} !", addr);
     axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await?;
 
     Ok(())

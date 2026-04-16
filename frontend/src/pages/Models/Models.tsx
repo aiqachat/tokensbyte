@@ -128,7 +128,12 @@ const Models: React.FC = () => {
       // Cleanup arrays internally managed
       values.is_active = values.is_active ? 1 : 0;
       values.enable_log_content = values.enable_log_content ? 1 : 0;
-      
+
+      const br = allBillingRules.find(b => b.id === values.billing_rule_id);
+      if (br && br.billing_type !== 'tokens') {
+        values.pre_deduction = 0.0;
+      }
+
       if (editingModel) {
         await request.put(`/models/${editingModel.id}`, values);
       } else {
@@ -177,9 +182,10 @@ const Models: React.FC = () => {
     },
     {
       title: t('models.billing_type'),
-      dataIndex: 'billing_type',
       key: 'billing_type',
-      render: (type: string) => {
+      render: (_: any, record: ModelModel) => {
+        const br = allBillingRules.find(b => b.id === record.billing_rule_id);
+        const type = br ? br.billing_type : 'tokens';
         const colors: Record<string, string> = { tokens: 'cyan', requests: 'orange', duration: 'purple' };
         return <Tag color={colors[type]}>{t(`models.type_${type}`)}</Tag>;
       },
@@ -274,7 +280,7 @@ const Models: React.FC = () => {
         onOk={() => form.submit()}
         width={700}
       >
-        <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ billing_type: 'tokens', prompt_rate: 0, completion_rate: 0, fixed_rate: 0, duration_rate: 0 }}>
+        <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ is_active: true, enable_log_content: 0, pre_deduction: 0 }}>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="name" label={t('models.model_name')} rules={[{ required: true }]}>
@@ -331,16 +337,32 @@ const Models: React.FC = () => {
           </Form.Item>
 
           <Row gutter={16}>
-             <Col span={12}>
+             <Col span={8}>
                  <Form.Item name="is_active" label={t('common.status')} valuePropName="checked" initialValue={true}>
                     <Switch checkedChildren={t('common.active')} unCheckedChildren={t('common.disabled')} />
                  </Form.Item>
              </Col>
-             <Col span={12}>
+             <Col span={8}>
                  <Form.Item name="enable_log_content" label="记录上下文" valuePropName="checked" initialValue={false}>
                     <Switch checkedChildren="开启" unCheckedChildren="关闭" />
                  </Form.Item>
              </Col>
+             <Form.Item noStyle shouldUpdate={(prev, curr) => prev.billing_rule_id !== curr.billing_rule_id}>
+                {({ getFieldValue }) => {
+                    const rId = getFieldValue('billing_rule_id');
+                    const br = allBillingRules.find(b => b.id === rId);
+                    if (br && br.billing_type === 'tokens') {
+                        return (
+                             <Col span={8}>
+                                 <Form.Item name="pre_deduction" label="初始预扣费 (USD)" initialValue={0.0}>
+                                    <InputNumber style={{ width: '100%' }} precision={6} min={0} />
+                                 </Form.Item>
+                             </Col>
+                        );
+                    }
+                    return null;
+                }}
+             </Form.Item>
           </Row>
         </Form>
       </Modal>

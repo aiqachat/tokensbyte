@@ -29,6 +29,7 @@ impl Database {
 
         let mut attempts = 0;
         let max_attempts = 15;
+        eprintln!("⏳ Attempting database connection (attempt {})...", attempts);
         let pool = loop {
             attempts += 1;
             match AnyPoolOptions::new()
@@ -39,6 +40,7 @@ impl Database {
             {
                 Ok(pool) => break pool,
                 Err(e) => {
+                    eprintln!("⚠️ Database connection error: {:?}", e);
                     if attempts >= max_attempts {
                         tracing::error!("❌ Failed to connect to database after {} attempts: {}", max_attempts, e);
                         return Err(anyhow::anyhow!("Database connection failed after {} attempts: {}", max_attempts, e));
@@ -52,19 +54,24 @@ impl Database {
 
         let is_sqlite = database_url.starts_with("sqlite:");
         if is_sqlite {
+            eprintln!("🔄 Executing SQLite PRAGMAs...");
             sqlx::query("PRAGMA journal_mode=WAL").execute(&pool).await?;
             sqlx::query("PRAGMA foreign_keys=ON").execute(&pool).await?;
         }
 
+        eprintln!("✅ Database connection established.");
         Ok(Self { pool, is_sqlite })
     }
 
     pub async fn run_migrations(&self) -> anyhow::Result<()> {
+        eprintln!("🚀 Starting database migrations...");
         if self.is_sqlite {
-            migrations::run_any(&self.pool).await
+            migrations::run_any(&self.pool).await?;
         } else {
-            migrations::run_pg_any(&self.pool).await
+            migrations::run_pg_any(&self.pool).await?;
         }
+        eprintln!("✅ Database migrations completed.");
+        Ok(())
     }
 
     pub fn format_query(&self, sql: &str) -> String {

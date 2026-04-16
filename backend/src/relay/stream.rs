@@ -21,6 +21,7 @@ pub async fn handle_chat_stream(
     target_type: String,
     upstream_path: String,
     upstream_req_content: Option<String>,
+    pre_deducted: f64,
 ) -> impl IntoResponse {
     let (tx, rx) = mpsc::channel(100);
     let mut upstream_stream = response.bytes_stream();
@@ -75,43 +76,25 @@ pub async fn handle_chat_stream(
             .await
             .unwrap_or(None);
 
-        let cost = match db_model {
-            Some(m) => {
-                match m.billing_type.as_str() {
-                    "requests" => m.fixed_rate * discount,
-                    _ => { // tokens or duration
-                        let mut p_rate = m.prompt_rate;
-                        let mut c_rate = m.completion_rate;
+        let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
+            if let Some(rule_id) = m.billing_rule_id {
+                sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+                    .bind(rule_id)
+                    .fetch_optional(&state.db.pool)
+                    .await
+                    .unwrap_or(None)
+            } else { None }
+        } else { None };
 
-                        if m.billing_rule == "tiered" {
-                            let tiers: Vec<crate::models::PricingTier> = serde_json::from_str(&m.pricing_tiers).unwrap_or_default();
-                            let mut sorted_tiers = tiers;
-                            sorted_tiers.sort_by_key(|t| t.max_tokens);
-                            for tier in sorted_tiers {
-                                if total_prompt_tokens <= tier.max_tokens {
-                                    p_rate = tier.prompt_rate;
-                                    c_rate = tier.completion_rate;
-                                    break;
-                                }
-                            }
-                        }
-
-                        let divisor = 1_000_000.0;
-                        ((total_prompt_tokens as f64 * p_rate + total_completion_tokens as f64 * c_rate) / divisor) * discount
-                    }
-                }
-            },
-            None => {
-                let total_tokens = total_prompt_tokens + total_completion_tokens;
-                (total_tokens as f64 / 1_000_000.0) * discount
-            }
-        };
+        let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
+        let features = crate::relay::usage_extractor::extract_request_features(&req_json);
+        let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, discount, &features);
         
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/chat/completions|{}", upstream_path);
-        crate::relay::proxy::record_and_bill(
+        crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens,
-            cost, 200, &ep, None, latency_ms, 1,
+            cost, pre_deducted, 200, &ep, None, latency_ms, 1,
             Some(request_content_str), Some(full_response_text), upstream_req_content
         ).await;
     });
@@ -141,6 +124,7 @@ pub async fn handle_image_stream(
     start_time: std::time::Instant,
     upstream_path: String,
     upstream_req_content: Option<String>,
+    pre_deducted: f64,
 ) -> impl IntoResponse {
     let (tx, rx) = mpsc::channel(100);
     let mut upstream_stream = response.bytes_stream();
@@ -190,44 +174,25 @@ pub async fn handle_image_stream(
             .fetch_optional(&state.db.pool)
             .await.unwrap_or(None);
 
-        let cost = match db_model {
-            Some(m) => {
-                match m.billing_type.as_str() {
-                    "requests" => m.fixed_rate * discount,
-                    "duration" => 0.0,
-                    _ => {
-                        let mut p_rate = m.prompt_rate;
-                        let mut c_rate = m.completion_rate;
+        let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
+            if let Some(rule_id) = m.billing_rule_id {
+                sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+                    .bind(rule_id)
+                    .fetch_optional(&state.db.pool)
+                    .await
+                    .unwrap_or(None)
+            } else { None }
+        } else { None };
 
-                        if m.billing_rule == "tiered" {
-                            let tiers: Vec<crate::models::PricingTier> = serde_json::from_str(&m.pricing_tiers).unwrap_or_default();
-                            let mut sorted_tiers = tiers;
-                            sorted_tiers.sort_by_key(|t| t.max_tokens);
-                            for tier in sorted_tiers {
-                                if total_prompt_tokens <= tier.max_tokens {
-                                    p_rate = tier.prompt_rate;
-                                    c_rate = tier.completion_rate;
-                                    break;
-                                }
-                            }
-                        }
-
-                        let divisor = 1_000_000.0;
-                        ((total_prompt_tokens as f64 * p_rate + total_completion_tokens as f64 * c_rate) / divisor) * discount
-                    }
-                }
-            },
-            None => {
-                let total_tokens = total_prompt_tokens + total_completion_tokens;
-                (total_tokens as f64 / 1_000_000.0) * discount
-            }
-        };
+        let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
+        let features = crate::relay::usage_extractor::extract_request_features(&req_json);
+        let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, discount, &features);
         
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/images/generations|{}", upstream_path);
-        crate::relay::proxy::record_and_bill(
+        crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens,
-            cost, 200, &ep, None, latency_ms, 1,
+            cost, pre_deducted, 200, &ep, None, latency_ms, 1,
             Some(request_content_str), Some(full_response_text), upstream_req_content
         ).await;
     });
@@ -253,6 +218,7 @@ pub async fn handle_native_stream(
     start_time: std::time::Instant,
     upstream_path: String,
     upstream_req_content: Option<String>,
+    pre_deducted: f64,
 ) -> impl IntoResponse {
     let (tx, rx) = mpsc::channel(100);
     let mut upstream_stream = response.bytes_stream();
@@ -309,12 +275,24 @@ pub async fn handle_native_stream(
             .await
             .unwrap_or(None);
 
-        let cost = crate::relay::compute_cost(db_model, prompt_tokens, completion_tokens, discount);
+        let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
+            if let Some(rule_id) = m.billing_rule_id {
+                sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+                    .bind(rule_id)
+                    .fetch_optional(&state.db.pool)
+                    .await
+                    .unwrap_or(None)
+            } else { None }
+        } else { None };
+
+        let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
+        let features = crate::relay::usage_extractor::extract_request_features(&req_json);
+        let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, discount, &features);
         
         let ep = format!("{}|{}", upstream_path, upstream_path);
-        crate::relay::proxy::record_and_bill(
+        crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, prompt_tokens, completion_tokens,
-            cost, 200, &ep, None, latency_ms, 1,
+            cost, pre_deducted, 200, &ep, None, latency_ms, 1,
             Some(request_content_str), Some(full_response_text), upstream_req_content
         ).await;
     });

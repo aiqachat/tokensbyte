@@ -17,6 +17,7 @@ interface BillingRuleData {
   fixed_rate: number;
   duration_rate: number;
   pricing_tiers: string;
+  extended_config: string;
   is_active: number;
   created_at: string;
 }
@@ -61,16 +62,23 @@ const BillingRules: React.FC = () => {
       completion_rate: 0,
       fixed_rate: 0,
       duration_rate: 0,
-      pricing_tiers: []
+      pricing_tiers: [],
+      volc_video_enabled: false, volc_video_rate: 0,
+      volc_audio_enabled: false, volc_audio_rate: 0,
+      volc_base_enabled: false, volc_base_rate: 0,
     });
     setIsModalVisible(true);
   };
 
   const handleEdit = (item: BillingRuleData) => {
     let tiers = [];
+    let ext: any = {};
     try {
       if (item.pricing_tiers) {
         tiers = JSON.parse(item.pricing_tiers);
+      }
+      if (item.extended_config) {
+        ext = JSON.parse(item.extended_config);
       }
     } catch (e) {}
 
@@ -79,6 +87,12 @@ const BillingRules: React.FC = () => {
     form.setFieldsValue({
       ...item,
       pricing_tiers: tiers,
+      volc_video_enabled: ext.volc_video_enabled || false,
+      volc_video_rate: ext.volc_video_rate || 0,
+      volc_audio_enabled: ext.volc_audio_enabled || false,
+      volc_audio_rate: ext.volc_audio_rate || 0,
+      volc_base_enabled: ext.volc_base_enabled || false,
+      volc_base_rate: ext.volc_base_rate || 0,
       is_active: item.is_active === 1,
     });
     setIsModalVisible(true);
@@ -97,12 +111,28 @@ const BillingRules: React.FC = () => {
 
   const handleSave = async (values: any) => {
     try {
-      if (values.billing_rule === 'standard' || values.billing_rule === 'fixed' || values.billing_rule === 'per_image') {
+      if (values.billing_rule !== 'tiered' && values.billing_rule !== 'image_resolution' && values.billing_rule !== 'video_resolution') {
         values.pricing_tiers = [];
       }
 
+      // 只有火山多模态规则才打包 extended_config，其他规则保持空对象
+      const extConfig = values.billing_rule === 'volcengine' ? {
+        volc_video_enabled: values.volc_video_enabled || false,
+        volc_video_rate: values.volc_video_rate || 0,
+        volc_audio_enabled: values.volc_audio_enabled || false,
+        volc_audio_rate: values.volc_audio_rate || 0,
+        volc_base_enabled: values.volc_base_enabled || false,
+        volc_base_rate: values.volc_base_rate || 0,
+      } : {};
+
+      // 清除表单中不应提交的临时字段
+      delete values.volc_video_enabled; delete values.volc_video_rate;
+      delete values.volc_audio_enabled; delete values.volc_audio_rate;
+      delete values.volc_base_enabled;  delete values.volc_base_rate;
+
       const payload = {
         ...values,
+        extended_config: extConfig,
         is_active: values.is_active ? 1 : 0,
       };
 
@@ -236,6 +266,7 @@ const BillingRules: React.FC = () => {
                 <Radio.Group optionType="button" buttonStyle="solid">
                   <Radio value="standard">{t('models.rule_standard')}</Radio>
                   <Radio value="tiered">{t('models.rule_tiered')}</Radio>
+                  <Radio value="volcengine">火山多模态特供计费</Radio>
                 </Radio.Group>
               </Form.Item>
 
@@ -260,6 +291,23 @@ const BillingRules: React.FC = () => {
                         </Col>
                       </Row>
                     );
+                  } else if (rule === 'volcengine') {
+                    return (
+                      <>
+                        <Row gutter={8} align="middle">
+                          <Col span={18}><Form.Item name="volc_video_rate" label="包含视频" style={{ marginBottom: 4 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                          <Col span={6}><Form.Item name="volc_video_enabled" valuePropName="checked" style={{ marginBottom: 4 }}><Switch checkedChildren="启用" unCheckedChildren="关闭" /></Form.Item></Col>
+                        </Row>
+                        <Row gutter={8} align="middle">
+                          <Col span={18}><Form.Item name="volc_audio_rate" label="包含声音" style={{ marginBottom: 4 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                          <Col span={6}><Form.Item name="volc_audio_enabled" valuePropName="checked" style={{ marginBottom: 4 }}><Switch checkedChildren="启用" unCheckedChildren="关闭" /></Form.Item></Col>
+                        </Row>
+                        <Row gutter={8} align="middle">
+                          <Col span={18}><Form.Item name="volc_base_rate" label="不包含视频和声音" style={{ marginBottom: 4 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                          <Col span={6}><Form.Item name="volc_base_enabled" valuePropName="checked" style={{ marginBottom: 4 }}><Switch checkedChildren="启用" unCheckedChildren="关闭" /></Form.Item></Col>
+                        </Row>
+                      </>
+                    );
                   } else {
                     return (
                       <div style={{ 
@@ -276,9 +324,14 @@ const BillingRules: React.FC = () => {
                               {fields.map(({ key, name, ...restField }) => (
                                 <Row key={key} gutter={12} align="middle" style={{ marginBottom: 12 }}>
                                   <Col span={9}>
-                                    <Form.Item {...restField} name={[name, 'max_tokens']} rules={[{ required: true, message: '' }]} noStyle>
-                                      <InputNumber placeholder={t('models.context_limit')} style={{ width: '100%' }} />
-                                    </Form.Item>
+                                    <Space.Compact style={{ width: '100%' }}>
+                                      <Form.Item {...restField} name={[name, 'max_prompt_tokens']} rules={[{ required: true, message: '' }]} noStyle>
+                                        <InputNumber placeholder="输入界限(Token)" style={{ width: '50%' }} />
+                                      </Form.Item>
+                                      <Form.Item {...restField} name={[name, 'max_completion_tokens']} noStyle>
+                                        <InputNumber placeholder="输出上限(选填)" style={{ width: '50%' }} />
+                                      </Form.Item>
+                                    </Space.Compact>
                                   </Col>
                                   <Col span={6}>
                                     <Form.Item {...restField} name={[name, 'prompt_rate']} rules={[{ required: true }]} noStyle>
@@ -314,6 +367,7 @@ const BillingRules: React.FC = () => {
               </Form.Item>
             </>
           )}
+
 
           {billingType === 'requests' && (
             <>
@@ -387,9 +441,65 @@ const BillingRules: React.FC = () => {
           )}
 
           {billingType === 'duration' && (
-            <Form.Item name="duration_rate" label={t('models.duration_rate')} rules={[{ required: true }]}>
-              <InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ s" />
-            </Form.Item>
+            <>
+              <Form.Item name="billing_rule" label="时长计费子模式配置" initialValue="standard">
+                <Radio.Group optionType="button" buttonStyle="solid">
+                  <Radio value="standard">按固定时长收费 (单价/秒)</Radio>
+                  <Radio value="video_resolution">按视频分辨率阶梯表</Radio>
+                </Radio.Group>
+              </Form.Item>
+
+              <Form.Item noStyle shouldUpdate={(prev, curr) => prev.billing_rule !== curr.billing_rule}>
+                {({ getFieldValue }) => {
+                  const rule = getFieldValue('billing_rule');
+                  
+                  if (rule === 'video_resolution') {
+                    return (
+                      <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', marginBottom: '24px', border: '1px solid #303030' }}>
+                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>视频分辨率计费组合包</Title>
+                        <Form.List name="pricing_tiers" initialValue={[]}>
+                          {(fields, { add, remove }) => (
+                            <>
+                              {fields.map(({ key, name, ...restField }) => (
+                                <Row key={key} gutter={16} align="middle" style={{ marginBottom: 12 }}>
+                                  <Col span={10}>
+                                    <Form.Item {...restField} name={[name, 'resolution']} rules={[{ required: true }]} noStyle>
+                                      <Input placeholder="视频分辨率 (如: 720p, 1080p, 4k)" style={{ width: '100%' }} />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={8}>
+                                    <Form.Item {...restField} name={[name, 'rate']} rules={[{ required: true }]} noStyle>
+                                      <InputNumber placeholder="每秒单价" style={{ width: '100%' }} precision={6} addonAfter="/ 秒" />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={4}>
+                                    <Form.Item {...restField} name={[name, 'enabled']} valuePropName="checked" style={{ marginBottom: 0 }}>
+                                      <Switch size="small" checkedChildren="开启" unCheckedChildren="关闭" />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={2} style={{ textAlign: 'right' }}>
+                                    <Button type="text" danger icon={<DeleteTwoTone />} onClick={() => remove(name)} />
+                                  </Col>
+                                </Row>
+                              ))}
+                              <Button type="dashed" onClick={() => add({ resolution: '', rate: 0, enabled: true })} block icon={<PlusOutlined />} style={{ marginTop: 8, height: '40px' }}>
+                                增加一个视频分辨率价格档位
+                              </Button>
+                            </>
+                          )}
+                        </Form.List>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <Form.Item name="duration_rate" label={t('models.duration_rate')} rules={[{ required: true }]}>
+                        <InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ s" />
+                      </Form.Item>
+                    );
+                  }
+                }}
+              </Form.Item>
+            </>
           )}
 
           <Form.Item name="is_active" label={t('common.status')} valuePropName="checked">

@@ -85,29 +85,24 @@ pub async fn create_model(
     }
 
     let group_ratios = serde_json::to_string(&req.group_ratios.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
-    let billing_unit = req.billing_unit.unwrap_or_else(|| "1k".to_string());
     let forward_rule_ids = req.forward_rule_ids.map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "[]".to_string()));
     
+    let mut pre_deduction = req.pre_deduction.unwrap_or(0.0);
+    // 可选：如果此处有关联的 billing_rule 检查也可以做，目前统一允许设置
+    
     let id_i32 = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO models (name, model_id, provider_id, type_id, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, group_ratios, billing_rule, billing_unit, pricing_tiers, forward_rule_ids, billing_rule_id, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        &state.db.format_query(r#"INSERT INTO models (name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
            RETURNING id"#)
     )
     .bind(&req.name)
     .bind(&req.model_id)
     .bind(req.provider_id)
     .bind(req.type_id)
-    .bind("tokens") // legacy dummy value
-    .bind(0.0) // legacy dummy value
-    .bind(0.0) // legacy dummy value
-    .bind(0.0) // legacy dummy value
-    .bind(0.0) // legacy dummy value
     .bind(&group_ratios)
-    .bind("standard") // legacy dummy value
-    .bind(&billing_unit)
-    .bind("[]") // legacy dummy value
     .bind(forward_rule_ids)
     .bind(req.billing_rule_id)
+    .bind(pre_deduction)
     .fetch_one(&state.db.pool)
     .await?
     .get::<i32, _>("id");
@@ -184,6 +179,12 @@ pub async fn update_model(
     }
     if let Some(rule_id) = req.billing_rule_id {
         sqlx::query(&state.db.format_query("UPDATE models SET billing_rule_id = ? WHERE id = ?")).bind(rule_id).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(pd) = req.pre_deduction {
+        // Here we could enforce billing_type == "tokens" logic, but since billing_type is now in billing_rules,
+        // we'll rely on the frontend to send pre_deduction = 0.0, or we could fetch the rule and check.
+        // For strictness, if the frontend implements it, this is fine. If not, we can check here.
+        sqlx::query(&state.db.format_query("UPDATE models SET pre_deduction = ? WHERE id = ?")).bind(pd).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(rules) = &req.forward_rule_ids {
         let rules_str = serde_json::to_string(rules).unwrap_or_else(|_| "[]".to_string());
