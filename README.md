@@ -70,7 +70,7 @@ npm run dev
 ```
 
 ## 🏗️ 技术栈
-- **后端**：Rust, Axum, SQLx, SQLite/PostgreSQL
+- **后端**：Rust, Axum, SQLx, PostgreSQL
 - **前端**：React, TypeScript, Ant Design 5, i18next, Zustand
 - **部署**：Docker, Nginx, Docker Compose
 

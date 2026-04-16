@@ -85,6 +85,7 @@ async fn toggle_plugin(
 #[derive(Deserialize)]
 pub struct ConfigRequest {
     pub allowed_levels: String,
+    pub level_quotas: Option<HashMap<String, i64>>, // 每个等级的存储配额(MB)
 }
 
 /// 管理员：配置插件的开放等级
@@ -107,6 +108,14 @@ async fn update_plugin_config(
         .bind(&name)
         .execute(&state.db.pool)
         .await?;
+
+    // 保存每个等级的存储配额
+    if let Some(quotas) = &payload.level_quotas {
+        for (level_key, quota_mb) in quotas {
+            let config_key = format!("quota_{}", level_key);
+            upsert_config(&state, &name, &config_key, &quota_mb.to_string()).await?;
+        }
+    }
 
     Ok(Json(json!({ "message": "ok" })))
 }
@@ -176,6 +185,15 @@ async fn get_storage_config(
         String::new()
     };
 
+    // 提取等级配额 (quota_xxx -> { xxx: value })
+    let mut level_quotas = serde_json::Map::new();
+    for (k, v) in &configs {
+        if let Some(level_key) = k.strip_prefix("quota_") {
+            let mb: i64 = v.parse().unwrap_or(100);
+            level_quotas.insert(level_key.to_string(), serde_json::Value::Number(mb.into()));
+        }
+    }
+
     Ok(Json(json!({
         "tos_access_key": configs.get("tos_access_key").cloned().unwrap_or_default(),
         "tos_secret_key_masked": masked_sk,
@@ -185,6 +203,7 @@ async fn get_storage_config(
         "tos_path_prefix": configs.get("tos_path_prefix").cloned().unwrap_or_default(),
         "tos_custom_domain": configs.get("tos_custom_domain").cloned().unwrap_or_default(),
         "is_configured": !configs.get("tos_access_key").cloned().unwrap_or_default().is_empty(),
+        "level_quotas": level_quotas,
     })))
 }
 

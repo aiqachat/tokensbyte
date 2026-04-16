@@ -1,14 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, message, Card, Typography, Upload, Tag } from 'antd';
-import { UploadOutlined } from '@ant-design/icons';
+import { Table, Button, Space, message, Card, Typography, Upload, Tag, Progress } from 'antd';
+import { UploadOutlined, CloudOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import type { PluginAsset } from '../../types';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
+
+interface StorageInfo {
+  used_bytes: number;
+  quota_mb: number;
+  quota_bytes: number;
+  used_mb: string;
+}
 
 const UserAssets: React.FC = () => {
   const [assets, setAssets] = useState<PluginAsset[]>([]);
   const [loading, setLoading] = useState(false);
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
 
   useEffect(() => {
     fetchAssets();
@@ -20,6 +28,9 @@ const UserAssets: React.FC = () => {
       const res = await (request.get('/assets/user/list') as any);
       if (res.assets) {
         setAssets(res.assets);
+      }
+      if (res.storage) {
+        setStorage(res.storage);
       }
     } catch (error) {
       console.error(error);
@@ -33,7 +44,7 @@ const UserAssets: React.FC = () => {
 
   const props = {
     name: 'file',
-    action: `${API_BASE_URL}/assets/upload`,
+    action: '/api/v1/assets/upload',
     headers: {
       Authorization: `Bearer ${localStorage.getItem('token')}`
     },
@@ -43,17 +54,31 @@ const UserAssets: React.FC = () => {
         message.success(`${info.file.name} 上传成功, 等待管理员审核`);
         fetchAssets();
       } else if (info.file.status === 'error') {
-        message.error(`${info.file.name} 上传失败`);
+        const errMsg = info.file.response?.error?.message || `${info.file.name} 上传失败`;
+        message.error(errMsg);
       }
     },
   };
+
+  // 存储空间计算
+  const usedMB = storage ? parseFloat(storage.used_mb) : 0;
+  const quotaMB = storage?.quota_mb ?? 100;
+  const remainMB = Math.max(0, quotaMB - usedMB);
+  const usagePercent = quotaMB > 0 ? Math.min(100, (usedMB / quotaMB) * 100) : 0;
+  const progressColor = usagePercent > 90 ? '#ff4d4f' : usagePercent > 70 ? '#faad14' : '#52c41a';
 
   const columns = [
     {
       title: '预览',
       key: 'preview',
       render: (_: any, record: PluginAsset) => {
-        const fullUrl = `${API_BASE_URL}${record.file_url}`;
+        let fullUrl = record.file_url;
+        if (!fullUrl.startsWith('http') && !fullUrl.startsWith('/')) {
+          fullUrl = `https://${fullUrl}`;
+        } else if (fullUrl.startsWith('/')) {
+          fullUrl = `${API_BASE_URL}${fullUrl}`;
+        }
+
         if (record.asset_type === 'image') {
           return <img src={fullUrl} alt={record.file_name} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: '4px' }} />;
         } else {
@@ -74,6 +99,16 @@ const UserAssets: React.FC = () => {
           {record.asset_type === 'image' ? '图片' : '视频'}
         </Tag>
       )
+    },
+    {
+      title: '大小',
+      key: 'size',
+      render: (_: any, record: PluginAsset) => {
+        if (!record.size) return <Text type="secondary">-</Text>;
+        if (record.size < 1024) return `${record.size} B`;
+        if (record.size < 1024 * 1024) return `${(record.size / 1024).toFixed(1)} KB`;
+        return `${(record.size / 1024 / 1024).toFixed(2)} MB`;
+      }
     },
     {
       title: '审核状态',
@@ -106,6 +141,34 @@ const UserAssets: React.FC = () => {
           </Upload>
         }
       >
+        {/* 存储空间信息 */}
+        {storage && (
+          <div style={{
+            background: 'rgba(255,255,255,0.04)',
+            borderRadius: 8,
+            border: '1px solid rgba(255,255,255,0.08)',
+            padding: '16px 20px',
+            marginBottom: 20,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CloudOutlined style={{ color: '#1677ff', fontSize: 16 }} />
+                <Text strong style={{ fontSize: 14 }}>存储空间</Text>
+              </div>
+              <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
+                已用 <Text strong style={{ color: progressColor }}>{usedMB.toFixed(1)} MB</Text> / {quotaMB} MB，剩余 <Text strong style={{ color: '#52c41a' }}>{remainMB.toFixed(1)} MB</Text>
+              </Text>
+            </div>
+            <Progress
+              percent={Number(usagePercent.toFixed(1))}
+              strokeColor={progressColor}
+              trailColor="rgba(255,255,255,0.08)"
+              showInfo={false}
+              size="small"
+            />
+          </div>
+        )}
+
         <Table
           dataSource={assets}
           columns={columns}

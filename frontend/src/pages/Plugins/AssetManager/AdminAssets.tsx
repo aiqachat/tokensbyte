@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, message, Card, Typography, Upload, Tag, Popconfirm } from 'antd';
-import { UploadOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { Table, Button, Space, message, Card, Typography, Upload, Tag, Popconfirm, Tooltip } from 'antd';
+import { UploadOutlined, CheckOutlined, CloseOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import type { PluginAsset } from '../../../types';
 
@@ -43,11 +43,26 @@ const AdminAssets: React.FC = () => {
     }
   };
 
+  const handleDelete = async (record: PluginAsset) => {
+    try {
+      const res = await request.post(`/assets/admin/delete/${record.id}`) as any;
+      if (res?.tos_deleted) {
+        message.success(res.message || '素材已删除（数据库 + TOS 文件）');
+      } else {
+        message.warning(res.message || '数据库记录已删除，但 TOS 文件未能删除');
+      }
+      fetchAssets();
+    } catch (error) {
+      console.error(error);
+      message.error('删除失败');
+    }
+  };
+
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   const props = {
     name: 'file',
-    action: `${API_BASE_URL}/assets/upload`,
+    action: '/api/v1/assets/upload',
     headers: {
       Authorization: `Bearer ${localStorage.getItem('token')}`
     },
@@ -111,7 +126,7 @@ const AdminAssets: React.FC = () => {
       title: '操作',
       key: 'action',
       render: (_: any, record: PluginAsset) => (
-        <Space size="middle">
+        <Space size="small">
           {record.status === 'pending' && (
             <>
               <Button 
@@ -134,6 +149,23 @@ const AdminAssets: React.FC = () => {
               </Popconfirm>
             </>
           )}
+          <Popconfirm
+            title="确定要删除该素材吗？"
+            description="将同时尝试删除 TOS 上的文件"
+            onConfirm={() => handleDelete(record)}
+            okText="确定删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
+            <Tooltip title="删除">
+              <Button
+                type="text"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+              />
+            </Tooltip>
+          </Popconfirm>
         </Space>
       ),
     },

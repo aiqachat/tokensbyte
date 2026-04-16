@@ -316,6 +316,7 @@ export interface PluginAsset {
   reject_reason?: string;
   category?: string;
   asset_id?: string;
+  sort_order?: number;
   created_at: string;
   updated_at: string;
 }
