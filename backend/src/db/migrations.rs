@@ -492,17 +492,14 @@ macro_rules! pg_migration_blocks {
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
             remark TEXT,
-            upstream_type TEXT NOT NULL DEFAULT 'other',
-            config TEXT,
-            remark TEXT,
             config TEXT,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     ).execute(pool).await?;
 
-    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN upstream_type TEXT NOT NULL DEFAULT 'other'").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN config TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN IF NOT EXISTS upstream_type TEXT NOT NULL DEFAULT 'other'").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN IF NOT EXISTS config TEXT").execute(pool).await;
 
     
     // Plugins table
