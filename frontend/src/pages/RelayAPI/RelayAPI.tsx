@@ -111,6 +111,66 @@ const RelayAPI: React.FC = () => {
                     </ul>
                   </Descriptions.Item>
                 </Descriptions>
+
+                <Divider />
+
+                <Title level={5}>视频接口 (Video Generations)</Title>
+                <div style={{ background: '#000', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+                  <Text code>POST /v1/video/generations</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">提交任务</Text></span>
+                  <br/>
+                  <Text code>GET  /v1/video/generations/{'{task_id}'}</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">查询结果</Text></span>
+                </div>
+                <Descriptions column={1} bordered size="small" style={{ marginBottom: 16 }}>
+                  <Descriptions.Item label="model (必填)">视频生成模型名称，如 'doubao-seedance-2-0-fast-260128'</Descriptions.Item>
+                  <Descriptions.Item label="prompt (必填)">视频生成的提示词描述文本</Descriptions.Item>
+                  <Descriptions.Item label="images (选填)">
+                    <Text>参考图片数组，支持两种格式：</Text>
+                    <ul style={{ marginTop: 4, marginBottom: 4, paddingLeft: 20 }}>
+                      <li><Text type="secondary">简单模式：</Text> <Text code>["url1", "url2"]</Text>
+                        <Text type="secondary"> — 系统按数量自动推断 role（1张=首帧，2张=首尾帧，3+张=参考图）</Text></li>
+                      <li><Text type="secondary">精确模式：</Text> <Text code>[{'{"url": "...", "role": "first_frame"}'}]</Text>
+                        <Text type="secondary"> — 显式指定每张图的 role</Text></li>
+                    </ul>
+                    <Text type="secondary">role 可选值：<Text code>first_frame</Text> (首帧) | <Text code>last_frame</Text> (尾帧) | <Text code>reference_image</Text> (参考图)</Text>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="videos (选填)">
+                    <Text>参考视频数组，格式同 images</Text>
+                    <br/>
+                    <Text type="secondary">role 默认值：<Text code>reference_video</Text></Text>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="audios (选填)">
+                    <Text>参考音频数组，格式同 images</Text>
+                    <br/>
+                    <Text type="secondary">role 默认值：<Text code>reference_audio</Text></Text>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="content (选填)">
+                    <Text>高级模式 — 直接传入火山方舟官方 content 数组格式，系统将原样透传：</Text>
+                    <div style={{ background: '#000', padding: 8, borderRadius: 4, marginTop: 4, fontSize: 12, fontFamily: 'monospace' }}>
+                      <Text code style={{ whiteSpace: 'pre-wrap' }}>{`[
+  {"type":"text","text":"..."},
+  {"type":"image_url","image_url":{"url":"..."},"role":"first_frame"},
+  {"type":"video_url","video_url":{"url":"..."},"role":"reference_video"},
+  {"type":"audio_url","audio_url":{"url":"..."},"role":"reference_audio"}
+]`}</Text>
+                    </div>
+                    <Text type="secondary" style={{ marginTop: 4, display: 'block' }}>当传入 content 时，prompt / images / videos / audios 将被忽略</Text>
+                  </Descriptions.Item>
+                </Descriptions>
+
+                <Descriptions column={2} bordered size="small" title={<Text strong style={{ fontSize: 13 }}>视频控制参数 (全部选填，按需传入)</Text>}>
+                  <Descriptions.Item label={<Text code>resolution</Text>}>分辨率：480p, 720p, 1080p</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>ratio</Text>}>宽高比：16:9, 4:3, 1:1 等</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>duration</Text>}>视频时长（秒），如 5, 10</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>fps</Text>}>帧率</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>generate_audio</Text>}>是否生成音频 (true/false)</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>return_last_frame</Text>}>是否返回末帧 (true/false)</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>watermark</Text>}>是否添加水印 (true/false)</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>seed</Text>}>随机种子（可复现结果）</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>stream</Text>}>是否流式返回 (true/false)</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>callback_url</Text>}>任务完成回调地址</Descriptions.Item>
+                </Descriptions>
               </Card>
             )
           },
