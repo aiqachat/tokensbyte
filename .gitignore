@@ -17,6 +17,17 @@ target/
 .env.local
 .env.production.local
 .env.development.local
+.env.backup
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+data/*.db
+data/*.sqlite
+
+# Docker volumes
+data/
 pgdata/
 
 # Build
@@ -37,3 +48,4 @@ yarn-error.log*
 # Workspace
 .gemini/
 /tmp/
+docker-images/
