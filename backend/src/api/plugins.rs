@@ -21,6 +21,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/{name}/toggle", post(toggle_plugin))
         .route("/{name}/config", post(update_plugin_config))
         .route("/{name}/storage-config", get(get_storage_config).post(save_storage_config))
+        .route("/{name}/moderation-config", get(get_moderation_config).post(save_moderation_config))
         .route("/{name}/test-connection", post(test_tos_connection))
 }
 
@@ -272,6 +273,83 @@ async fn test_tos_connection(
         Ok(msg) => Ok(Json(json!({ "success": true, "message": msg }))),
         Err(msg) => Ok(Json(json!({ "success": false, "message": msg }))),
     }
+}
+
+// ========== 审核配置 (火山引擎) ==========
+
+#[derive(Deserialize)]
+pub struct ModerationConfigRequest {
+    pub volc_access_key: String,
+    pub volc_secret_key: Option<String>, // 如果为空表示不修改
+    pub volc_app_id: String,
+}
+
+/// 管理员：获取审核配置
+async fn get_moderation_config(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let configs = load_plugin_configs(&state, &name).await?;
+
+    // secret_key 脱敏
+    let sk = configs.get("volc_secret_key").cloned().unwrap_or_default();
+    let masked_sk = if sk.len() > 6 {
+        format!("{}****{}", &sk[..3], &sk[sk.len()-3..])
+    } else if !sk.is_empty() {
+        "******".to_string()
+    } else {
+        String::new()
+    };
+
+    Ok(Json(json!({
+        "volc_access_key": configs.get("volc_access_key").cloned().unwrap_or_default(),
+        "volc_secret_key_masked": masked_sk,
+        "volc_app_id": configs.get("volc_app_id").cloned().unwrap_or_default(),
+        "is_configured": !configs.get("volc_access_key").cloned().unwrap_or_default().is_empty(),
+    })))
+}
+
+/// 管理员：保存审核配置
+async fn save_moderation_config(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+    Json(payload): Json<ModerationConfigRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    upsert_config(&state, &name, "volc_access_key", &payload.volc_access_key).await?;
+    upsert_config(&state, &name, "volc_app_id", &payload.volc_app_id).await?;
+
+    // secret_key 只在有值时更新
+    if let Some(ref sk) = payload.volc_secret_key {
+        if !sk.is_empty() && !sk.contains("****") {
+            upsert_config(&state, &name, "volc_secret_key", sk).await?;
+        }
+    }
+
+    Ok(Json(json!({ "message": "审核配置已保存" })))
+}
+
+/// 公开辅助：加载插件的 Volcengine 配置（供 assets 模块调用）
+pub async fn get_volc_config(state: &AppState, plugin_name: &str) -> Option<crate::services::volcengine::VolcConfig> {
+    let configs = load_plugin_configs(state, plugin_name).await.ok()?;
+    crate::services::volcengine::VolcConfig::from_map(&configs)
 }
 
 /// 公开辅助：加载插件的 TOS 配置（供 assets 模块调用）

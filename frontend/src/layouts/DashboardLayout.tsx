@@ -286,14 +286,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       });
     }
 
-    
-    if (isSuperAdmin || hasPermission('plugins')) {
-      menuItems.push({
-        key: '/admin0755/plugins',
-        icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/admin0755/plugins">站点插件</Link>,
-      });
-    }
 
     if (hasPermission('users')) {
       const userItems = [
@@ -371,6 +363,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/settings?tab=database">数据库设置</Link>,
           }
         ]
+      });
+    }
+
+    if (isSuperAdmin || hasPermission('plugins')) {
+      menuItems.push({
+        key: '/admin0755/plugins',
+        icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
+        label: <Link to="/admin0755/plugins">站点插件</Link>,
       });
     }
   }

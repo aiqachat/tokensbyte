@@ -27,6 +27,13 @@ interface StorageConfig {
   is_configured: boolean;
 }
 
+interface ModerationConfig {
+  volc_access_key: string;
+  volc_secret_key_masked: string;
+  volc_app_id: string;
+  is_configured: boolean;
+}
+
 // 火山引擎 TOS 地域及访问域名（来自官方文档）
 const TOS_REGIONS = [
   { label: '华北2（北京）', region: 'cn-beijing', endpoint: 'https://tos-cn-beijing.volces.com', endpointInternal: 'tos-cn-beijing.ivolces.com' },
@@ -59,6 +66,11 @@ const PluginConfig: React.FC = () => {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // 审核配置
+  const [moderationConfig, setModerationConfig] = useState<ModerationConfig | null>(null);
+  const [moderationForm] = Form.useForm();
+  const [savingModeration, setSavingModeration] = useState(false);
+
   useEffect(() => {
     fetchData();
   }, [name]);
@@ -66,10 +78,11 @@ const PluginConfig: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [pluginRes, levelRes, storageRes] = await Promise.all([
+      const [pluginRes, levelRes, storageRes, moderationRes] = await Promise.all([
         request.get('/plugins') as any,
         request.get('/user_levels') as any,
         request.get(`/plugins/${name}/storage-config`) as any,
+        request.get(`/plugins/${name}/moderation-config`) as any,
       ]);
 
       const found = pluginRes.plugins?.find((p: Plugin) => p.name === name);
@@ -104,6 +117,17 @@ const PluginConfig: React.FC = () => {
             tos_bucket: storageRes.tos_bucket || '',
             tos_path_prefix: storageRes.tos_path_prefix || '',
             tos_custom_domain: storageRes.tos_custom_domain || '',
+          });
+        }, 0);
+      }
+
+      if (moderationRes) {
+        setModerationConfig(moderationRes);
+        setTimeout(() => {
+          moderationForm.setFieldsValue({
+            volc_access_key: moderationRes.volc_access_key || '',
+            volc_secret_key: '',
+            volc_app_id: moderationRes.volc_app_id || '',
           });
         }, 0);
       }
@@ -170,6 +194,21 @@ const PluginConfig: React.FC = () => {
       setTestResult({ success: false, message: error?.response?.data?.error?.message || '测试失败' });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleSaveModeration = async () => {
+    try {
+      const values = await moderationForm.validateFields();
+      setSavingModeration(true);
+      await request.post(`/plugins/${name}/moderation-config`, values);
+      message.success('审核配置已保存');
+      fetchData();
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      message.error('保存失败');
+    } finally {
+      setSavingModeration(false);
     }
   };
 
@@ -416,6 +455,68 @@ const PluginConfig: React.FC = () => {
     </div>
   );
 
+  // ====== 审核配置 Tab ======
+  const moderationTab = (
+    <div>
+      {/* 状态提示 */}
+      {moderationConfig && (
+        <div style={{ marginBottom: 16 }}>
+          {moderationConfig.is_configured ? (
+            <Alert
+              type="success"
+              showIcon
+              icon={<CheckCircleOutlined />}
+              message="审核服务已配置"
+              description={`已关联 AppID: ${moderationConfig.volc_app_id}`}
+              style={{ background: 'rgba(82,196,26,0.06)', border: '1px solid rgba(82,196,26,0.2)' }}
+            />
+          ) : (
+            <Alert
+              type="warning"
+              showIcon
+              message="审核服务未配置"
+              description="真人核验和虚拟人像功能需要配置火山引擎 2D 数字人相关凭证"
+              style={{ background: 'rgba(250,173,20,0.06)', border: '1px solid rgba(250,173,20,0.2)' }}
+            />
+          )}
+        </div>
+      )}
+
+      <div style={{
+        background: '#141414', borderRadius: 8,
+        border: '1px solid rgba(255,255,255,0.08)', padding: '20px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <ApiOutlined style={{ color: '#1677ff', fontSize: 16 }} />
+          <Text strong style={{ color: '#fff', fontSize: 14 }}>火山引擎核验与数字人配置</Text>
+        </div>
+
+        <Form form={moderationForm} layout="vertical" requiredMark={false}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+            <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Access Key</Text>} name="volc_access_key" rules={[{ required: true, message: '请输入 Access Key' }]}>
+              <Input placeholder="火山引擎 Access Key" style={inputStyle} />
+            </Form.Item>
+            <Form.Item
+              label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Secret Key</Text>}
+              name="volc_secret_key"
+              extra={moderationConfig?.volc_secret_key_masked ? <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>当前: {moderationConfig.volc_secret_key_masked}（留空则不修改）</Text> : undefined}
+            >
+              <Input.Password placeholder="火山引擎 Secret Key" style={inputStyle} />
+            </Form.Item>
+          </div>
+
+          <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>App ID</Text>} name="volc_app_id" rules={[{ required: true, message: '请输入 App ID' }]}>
+            <Input placeholder="数字人应用 App ID" style={inputStyle} />
+          </Form.Item>
+        </Form>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+          <Button type="primary" icon={<SaveOutlined />} loading={savingModeration} onClick={handleSaveModeration}>保存审核配置</Button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div>
       {/* 页头 */}
@@ -439,10 +540,7 @@ const PluginConfig: React.FC = () => {
         </div>
       </div>
 
-      {/* 描述 */}
-      <div style={{ background: '#141414', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', padding: '14px 20px', marginBottom: 20 }}>
-        <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>{plugin.description || '暂无描述'}</Text>
-      </div>
+
 
       {/* Tabs */}
       <Tabs
@@ -450,6 +548,7 @@ const PluginConfig: React.FC = () => {
         items={[
           { key: 'basic', label: '基本配置', children: basicTab },
           { key: 'storage', label: '存储配置', children: storageTab },
+          { key: 'moderation', label: '审核配置', children: moderationTab },
           ...(plugin.name === 'asset_manager' ? [{ key: 'preset', label: '预设素材', children: <AdminPresetAssets /> }] : []),
         ]}
       />

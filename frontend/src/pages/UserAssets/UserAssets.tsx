@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Space, message, Card, Typography, Upload, Tag, Progress, Spin, Menu, Modal, Select, Form } from 'antd';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Table, Button, Space, message, Card, Typography, Upload, Tag, Progress, Spin, Menu, Modal, Select, Form, Segmented, Input } from 'antd';
 import {
   UploadOutlined, CloudOutlined, FolderOutlined, FileOutlined,
   PictureOutlined, VideoCameraOutlined, UserOutlined, AppstoreOutlined,
-  StarOutlined, InboxOutlined
+  StarOutlined, InboxOutlined, AudioOutlined, UserAddOutlined, EditOutlined
 } from '@ant-design/icons';
 import request from '../../utils/request';
 import type { PluginAsset } from '../../types';
@@ -30,10 +30,9 @@ interface StorageInfo {
 
 // 我的素材固定二级分类
 const MY_ASSET_SUBCATEGORIES = [
-  { key: 'my_image', label: '图片', icon: <PictureOutlined />, filter: { asset_type: 'image' } },
-  { key: 'my_video', label: '视频', icon: <VideoCameraOutlined />, filter: { asset_type: 'video' } },
-  { key: 'my_portrait', label: '我的人像', icon: <UserOutlined />, filter: { category: '我的人像' } },
-  { key: 'my_other', label: '其他素材', icon: <InboxOutlined />, filter: { category: '__other__' } },
+  { key: 'my_all_my', label: '全部', icon: <AppstoreOutlined />, filter: {} },
+  { key: 'my_real_portrait', label: '真人人像', icon: <UserAddOutlined />, filter: { category: '真人人像' } },
+  { key: 'my_virtual_portrait', label: '虚拟人像', icon: <UserOutlined />, filter: { category: '虚拟人像' } },
 ];
 
 const UserAssets: React.FC = () => {
@@ -43,9 +42,12 @@ const UserAssets: React.FC = () => {
   const [storageLoading, setStorageLoading] = useState(false);
 
   // 分类状态
-  const [presetCategories, setPresetCategories] = useState<string[]>([]);
-  const [selectedKey, setSelectedKey] = useState<string>(''); // 当前选中的菜单key
-  const [openKeys, setOpenKeys] = useState<string[]>(['preset']); // 默认展开预设素材
+  const PRESET_CATEGORIES = [
+    { key: '模版库', label: '模版库', children: ['参考生成', '视频编辑', '时序补全'] },
+    { key: '素材库', label: '素材库', children: ['视频', '图片', '音频'] },
+    { key: '虚拟人像库', label: '虚拟人像库', children: [] }
+  ];
+  const [selectedKey, setSelectedKey] = useState<string>('preset_模版库'); // 默认选中第一个预设分类
 
   // 上传弹窗
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -53,21 +55,31 @@ const UserAssets: React.FC = () => {
   const [fileList, setFileList] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
 
-  // 获取预设素材分类
-  const fetchPresetCategories = useCallback(async () => {
+  // 编辑弹窗
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingAsset, setEditingAsset] = useState<PluginAsset | null>(null);
+  const [editForm] = Form.useForm();
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const handleEditAsset = async () => {
     try {
-      const res = await (request.get('/assets/user/preset-categories') as any);
-      if (res.categories) {
-        setPresetCategories(res.categories);
-        // 默认选中第一个预设分类
-        if (res.categories.length > 0 && !selectedKey) {
-          setSelectedKey(`preset_${res.categories[0]}`);
-        }
-      }
+      const values = await editForm.validateFields();
+      if (!editingAsset) return;
+      setSavingEdit(true);
+      await request.put(`/assets/user/${editingAsset.id}/edit`, {
+        file_name: values.file_name,
+        category: values.category
+      });
+      message.success('素材更新成功');
+      setIsEditModalOpen(false);
+      fetchAssets();
     } catch (error) {
-      console.error('获取预设分类失败', error);
+      console.error('更新素材失败', error);
+      message.error('更新素材失败');
+    } finally {
+      setSavingEdit(false);
     }
-  }, [selectedKey]);
+  };
 
   // 根据当前选中分类构建 query 参数
   const buildQueryParams = useCallback(() => {
@@ -75,8 +87,8 @@ const UserAssets: React.FC = () => {
 
     if (selectedKey.startsWith('preset_')) {
       params.source = 'builtin';
-      const cat = selectedKey.replace('preset_', '');
-      if (cat) params.category = cat;
+      let cat = selectedKey.replace('preset_', ''); // e.g., "模版库" or "模版库/视频编辑"
+      params.category = cat;
     } else if (selectedKey.startsWith('my_')) {
       params.source = 'user';
       const sub = MY_ASSET_SUBCATEGORIES.find(s => s.key === selectedKey);
@@ -123,7 +135,6 @@ const UserAssets: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchPresetCategories();
     fetchStorageInfo();
   }, []);
 
@@ -135,6 +146,51 @@ const UserAssets: React.FC = () => {
   }, [selectedKey, fetchAssets]);
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+  // 真人认证处理
+  const handleRealPortraitVerify = async () => {
+    try {
+      setLoading(true);
+      const res = await request.post('/assets/user/init-real-person-verify', {
+        callback_url: window.location.origin + window.location.pathname
+      }) as any;
+
+      if (res.h5_link) {
+        // 保存 token 到 session 供回来后查看
+        sessionStorage.setItem('pending_byted_token', res.byted_token);
+        window.location.href = res.h5_link;
+      }
+    } catch (error) {
+      console.error(error);
+      message.error('发起认证失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 检查 URL 中是否有认证返回的 token
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('byted_token') || sessionStorage.getItem('pending_byted_token');
+    
+    if (token) {
+      sessionStorage.removeItem('pending_byted_token');
+      // 清除 URL 参数
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      const completeVerify = async () => {
+        try {
+          message.loading({ content: '正在完成认证...', key: 'verify' });
+          await request.post('/assets/user/complete-real-person-verify', { byted_token: token });
+          message.success({ content: '真人认证成功', key: 'verify' });
+          fetchAssets();
+        } catch (error) {
+          message.error({ content: '认证同步失败', key: 'verify' });
+        }
+      };
+      completeVerify();
+    }
+  }, [fetchAssets]);
 
   // 上传处理
   const handleCustomUpload = async () => {
@@ -150,11 +206,14 @@ const UserAssets: React.FC = () => {
       formData.append('file', fileList[0].originFileObj as any);
       formData.append('category', values.category || '未分类');
 
-      await request.post('/assets/upload', formData, {
+      // 如果是虚拟人像，调用专门的接口以同步到火山
+      const api = values.category === '虚拟人像' ? '/assets/user/upload-virtual-portrait' : '/assets/upload';
+
+      await request.post(api, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      message.success('上传成功，等待管理员审核');
+      message.success(values.category === '虚拟人像' ? '上传成功，正在合规审核' : '上传成功，等待管理员审核');
       setIsUploadModalOpen(false);
       uploadForm.resetFields();
       setFileList([]);
@@ -176,42 +235,18 @@ const UserAssets: React.FC = () => {
   const usagePercent = (!isAdmin && quotaMB > 0) ? Math.min(100, (usedMB / quotaMB) * 100) : 0;
   const progressColor = usagePercent > 90 ? '#ff4d4f' : usagePercent > 70 ? '#faad14' : '#52c41a';
 
-  // 构建分类菜单
-  const categoryMenuItems: MenuProps['items'] = [
-    {
-      key: 'preset',
-      icon: <StarOutlined />,
-      label: '预设素材',
-      children: presetCategories.map(cat => ({
-        key: `preset_${cat}`,
-        icon: cat === '图片' ? <PictureOutlined /> :
-              cat === '视频' ? <VideoCameraOutlined /> :
-              cat === '虚拟人像' ? <UserOutlined /> :
-              <AppstoreOutlined />,
-        label: cat,
-      })),
-    },
-    {
-      key: 'my',
-      icon: <FolderOutlined />,
-      label: '我的素材',
-      children: MY_ASSET_SUBCATEGORIES.map(sub => ({
-        key: sub.key,
-        icon: sub.icon,
-        label: sub.label,
-      })),
-    },
-  ];
 
-  // 当前选中分类的显示名
-  const currentCategoryName = (() => {
+  // 当前选中的类别名称，用于列表上方提示
+  const currentCategoryName = useMemo(() => {
     if (selectedKey.startsWith('preset_')) {
-      return `预设素材 / ${selectedKey.replace('preset_', '')}`;
+      const cat = selectedKey.replace('preset_', '');
+      return cat.replace('/', ' · ');
+    } else if (selectedKey.startsWith('my_')) {
+      const sub = MY_ASSET_SUBCATEGORIES.find(s => s.key === selectedKey);
+      return sub ? sub.label : '未知';
     }
-    const sub = MY_ASSET_SUBCATEGORIES.find(s => s.key === selectedKey);
-    if (sub) return `我的素材 / ${sub.label}`;
-    return '全部素材';
-  })();
+    return '未知';
+  }, [selectedKey]);
 
   const columns = [
     {
@@ -234,9 +269,10 @@ const UserAssets: React.FC = () => {
       }
     },
     {
-      title: '文件名',
-      dataIndex: 'file_name',
-      key: 'file_name',
+      title: 'Asset ID',
+      dataIndex: 'asset_id',
+      key: 'asset_id',
+      render: (aid: string) => aid ? <Text code copyable>{aid}</Text> : <Text type="secondary">暂无</Text>
     },
     {
       title: '类型',
@@ -280,140 +316,181 @@ const UserAssets: React.FC = () => {
         return <Tag color="warning">审核中</Tag>;
       }
     },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: any, record: PluginAsset) => (
+        <Space size="middle">
+          {record.source === 'user' && (
+            <Button 
+              type="text" 
+              icon={<EditOutlined style={{ color: '#1677ff' }} />} 
+              onClick={() => {
+                setEditingAsset(record);
+                editForm.setFieldsValue({
+                  file_name: record.file_name,
+                  category: record.category || '图片'
+                });
+                setIsEditModalOpen(true);
+              }} 
+            />
+          )}
+        </Space>
+      )
+    },
   ];
 
   return (
     <div style={{ padding: '16px 24px' }}>
       <Card
-        title={<Title level={4}>我的资产库</Title>}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <Title level={4} style={{ margin: 0 }}>我的资产库</Title>
+            <Spin spinning={storageLoading} size="small">
+              {storage && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 12, fontSize: 13,
+                  background: 'linear-gradient(90deg, rgba(22,119,255,0.1) 0%, rgba(22,119,255,0.02) 100%)',
+                  border: '1px solid rgba(22,119,255,0.2)',
+                  borderRadius: 30,
+                  padding: '6px 16px',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.15), inset 0 1px 1px rgba(255,255,255,0.05)',
+                  color: 'rgba(255,255,255,0.7)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <CloudOutlined style={{ color: '#1677ff' }} />
+                    <span>文件夹: <Text style={{ color: '#1677ff', fontWeight: 600 }}>{storage.folder || '未初始化'}</Text></span>
+                  </div>
+
+                  <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>已用空间: <Text style={{ color: progressColor, fontWeight: 600, textShadow: `0 0 10px ${progressColor}40` }}>{usedMB.toFixed(1)} <span style={{ fontSize: 11 }}>MB</span></Text></span>
+
+                    {!isAdmin ? (
+                      <div style={{
+                        width: 80, height: 6, background: 'rgba(0,0,0,0.3)', borderRadius: 3, overflow: 'hidden', position: 'relative',
+                        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
+                      }}>
+                        <div style={{
+                          position: 'absolute', left: 0, top: 0, height: '100%',
+                          width: `${usagePercent}%`,
+                          background: progressColor === '#52c41a' ? 'linear-gradient(90deg, #13c2c2 0%, #52c41a 100%)' : progressColor,
+                          borderRadius: 3,
+                          transition: 'width 1s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                          boxShadow: `0 0 8px ${progressColor}80`
+                        }} />
+                      </div>
+                    ) : (
+                      <Tag color="cyan" bordered={false} style={{ margin: 0, borderRadius: 12 }}>∞ 无限</Tag>
+                    )}
+
+                    {!isAdmin && (
+                      <span>限额: <Text style={{ color: '#52c41a', fontWeight: 600 }}>{quotaMB} <span style={{ fontSize: 11 }}>MB</span></Text></span>
+                    )}
+                  </div>
+
+                  <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>文件数量: <Text style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{storage.file_count || 0}</Text></span>
+                  </div>
+                </div>
+              )}
+            </Spin>
+          </div>
+        }
         bordered={false}
         extra={
-          <Button
-            icon={<UploadOutlined />}
-            type="primary"
-            size="large"
-            onClick={() => setIsUploadModalOpen(true)}
-          >
-            上传素材
-          </Button>
+          <Space>
+            <Button
+              icon={<UserAddOutlined />}
+              type="primary"
+              size="large"
+              onClick={handleRealPortraitVerify}
+              loading={loading}
+            >
+              真人人像
+            </Button>
+            <Button
+              icon={<UploadOutlined />}
+              type="primary"
+              size="large"
+              onClick={() => {
+                uploadForm.setFieldsValue({ category: '虚拟人像' });
+                setIsUploadModalOpen(true);
+              }}
+            >
+              上传素材
+            </Button>
+          </Space>
         }
       >
-        {/* 存储空间信息 - 从 TOS 实际读取 */}
-        <Spin spinning={storageLoading} tip="正在读取存储空间...">
-          <div style={{
-            background: 'linear-gradient(135deg, rgba(22,119,255,0.08) 0%, rgba(22,119,255,0.02) 100%)',
-            borderRadius: 10,
-            border: '1px solid rgba(22,119,255,0.15)',
-            padding: '18px 22px',
-            marginBottom: 20,
-          }}>
-            {/* 标题行 */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <CloudOutlined style={{ color: '#1677ff', fontSize: 18 }} />
-                <Text strong style={{ fontSize: 15 }}>存储空间</Text>
-                {storage && (
-                  <Tag style={{
-                    margin: 0, fontSize: 11, borderRadius: 10,
-                    background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)',
-                    color: '#1677ff'
-                  }}>
-                    <FolderOutlined style={{ marginRight: 4 }}/>{storage.folder || '未初始化'}
-                  </Tag>
-                )}
-              </div>
-              {storage && (
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>
-                  <FileOutlined style={{ marginRight: 4 }}/>{storage.file_count || 0} 个文件
-                </Text>
-              )}
-            </div>
-
-            {/* 用量信息 */}
-            {storage && (
-              <>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
-                  <Text style={{ fontSize: 24, fontWeight: 700, color: progressColor }}>
-                    {usedMB.toFixed(1)}
-                  </Text>
-                  <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>
-                    MB 已使用
-                    {!isAdmin && (
-                      <> / {quotaMB} MB 总空间</>
-                    )}
-                  </Text>
-                </div>
-
-                {/* 进度条 - 普通用户显示 */}
-                {!isAdmin && quotaMB > 0 && (
-                  <div style={{ marginBottom: 8 }}>
-                    <Progress
-                      percent={Number(usagePercent.toFixed(1))}
-                      strokeColor={{
-                        '0%': progressColor,
-                        '100%': usagePercent > 70 ? '#ff4d4f' : '#52c41a',
-                      }}
-                      trailColor="rgba(255,255,255,0.06)"
-                      format={(p) => `${p}%`}
-                      size="small"
-                    />
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: 20, color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
-                  {!isAdmin && (
-                    <span>剩余 <Text strong style={{ color: remainMB < 10 ? '#faad14' : '#52c41a', fontSize: 12 }}>{storage.remain_mb} MB</Text></span>
-                  )}
-                  {isAdmin && (
-                    <span style={{ color: 'rgba(255,255,255,0.35)' }}>管理员存储无空间限制</span>
-                  )}
-                </div>
-              </>
-            )}
-
-            {!storage && !storageLoading && (
-              <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>存储信息加载中...</Text>
-            )}
-          </div>
-        </Spin>
-
         {/* 分类导航 + 素材列表 */}
-        <div style={{ display: 'flex', gap: 16 }}>
-          {/* 左侧分类导航 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* 上方横向分类导航 */}
           <div style={{
-            width: 180,
-            minWidth: 180,
-            background: 'rgba(255,255,255,0.02)',
-            borderRadius: 8,
-            border: '1px solid rgba(255,255,255,0.06)',
-            overflow: 'hidden',
+            display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 20px',
+            background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)'
           }}>
-            <div style={{
-              padding: '12px 16px',
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
-              fontSize: 13,
-              fontWeight: 600,
-              color: 'rgba(255,255,255,0.85)',
-            }}>
-              <AppstoreOutlined style={{ marginRight: 6 }} />
-              素材分类
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* 一级分类：预设分类 + 我的素材 */}
+              <Segmented
+                options={[
+                  ...PRESET_CATEGORIES.map(cat => ({ label: cat.label, value: `top_preset_${cat.key}` })),
+                  { label: '我的素材', value: 'top_my' }
+                ]}
+                value={selectedKey.startsWith('my_') ? 'top_my' : `top_preset_${selectedKey.replace('preset_', '').split('/')[0]}`}
+                onChange={(val) => {
+                  if (val === 'top_my') {
+                    setSelectedKey('my_all_my');
+                  } else {
+                    const catKey = (val as string).replace('top_preset_', '');
+                    setSelectedKey(`preset_${catKey}`);
+                  }
+                }}
+                size="large"
+                style={{ alignSelf: 'flex-start' }}
+              />
+              
+              {/* 二级分类：根据一级分类动态展示 */}
+              {(() => {
+                if (selectedKey.startsWith('my_')) {
+                  // 我的素材的二级分类
+                  return (
+                    <Segmented
+                      options={MY_ASSET_SUBCATEGORIES.map(sub => ({ label: sub.label, value: sub.key }))}
+                      value={selectedKey}
+                      onChange={(val) => setSelectedKey(val as string)}
+                      style={{ alignSelf: 'flex-start' }}
+                    />
+                  );
+                } else {
+                  // 预设素材的二级分类
+                  const currentPrimary = selectedKey.replace('preset_', '').split('/')[0];
+                  const activeCat = PRESET_CATEGORIES.find(c => c.key === currentPrimary);
+                  const currentSecondary = selectedKey.includes('/') ? selectedKey.replace('preset_', '').split('/')[1] : '全部';
+                  
+                  if (activeCat && activeCat.children.length > 0) {
+                    return (
+                      <Segmented
+                        options={[
+                          { label: '全部', value: '全部' },
+                          ...activeCat.children.map(child => ({ label: child, value: child }))
+                        ]}
+                        value={currentSecondary}
+                        onChange={(val) => setSelectedKey(val === '全部' ? `preset_${currentPrimary}` : `preset_${currentPrimary}/${val}`)}
+                        style={{ alignSelf: 'flex-start' }}
+                      />
+                    );
+                  }
+                }
+                return null;
+              })()}
             </div>
-            <Menu
-              mode="inline"
-              selectedKeys={[selectedKey]}
-              openKeys={openKeys}
-              onOpenChange={(keys) => setOpenKeys(keys as string[])}
-              onClick={({ key }) => setSelectedKey(key)}
-              items={categoryMenuItems}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                fontSize: 13,
-              }}
-            />
           </div>
 
-          {/* 右侧素材列表 */}
+          {/* 下方素材列表 */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
               marginBottom: 12,
@@ -450,10 +527,10 @@ const UserAssets: React.FC = () => {
         confirmLoading={uploading}
         okText="开始上传"
       >
-        <Form form={uploadForm} layout="vertical" initialValues={{ category: '图片' }}>
+        <Form form={uploadForm} layout="vertical" initialValues={{ category: '真人人像' }}>
           <Form.Item label="选择文件" required>
             <Upload
-              accept="image/*,video/*"
+              accept="image/*,video/*,audio/*"
               maxCount={1}
               fileList={fileList}
               onChange={(info) => {
@@ -461,22 +538,64 @@ const UserAssets: React.FC = () => {
                 newFileList = newFileList.slice(-1);
                 setFileList(newFileList);
               }}
-              beforeUpload={() => false}
+              beforeUpload={(file) => {
+                const isVideo = file.type.startsWith('video/');
+                const isImage = file.type.startsWith('image/');
+                const isAudio = file.type.startsWith('audio/') || file.name.endsWith('.mp3') || file.name.endsWith('.wav');
+                const sizeMB = file.size / 1024 / 1024;
+                
+                if (isVideo && sizeMB > 50) {
+                  message.error(`视频文件过大，不能超过 50MB！当前大小: ${sizeMB.toFixed(1)}MB`);
+                  return Upload.LIST_IGNORE;
+                }
+                if (isImage && sizeMB > 10) {
+                  message.error(`图片文件过大，不能超过 10MB！当前大小: ${sizeMB.toFixed(1)}MB`);
+                  return Upload.LIST_IGNORE;
+                }
+                if (isAudio && sizeMB > 20) {
+                  message.error(`声音文件过大，不能超过 20MB！当前大小: ${sizeMB.toFixed(1)}MB`);
+                  return Upload.LIST_IGNORE;
+                }
+                if (!isVideo && !isImage && !isAudio) {
+                  message.error('只支持上传图片、视频或声音文件');
+                  return Upload.LIST_IGNORE;
+                }
+                return false;
+              }}
             >
-              <Button icon={<UploadOutlined />}>选择图片或视频</Button>
+              <Button icon={<UploadOutlined />}>选择图片、视频或声音</Button>
             </Upload>
           </Form.Item>
           <Form.Item
             label="素材分类"
             name="category"
             rules={[{ required: true, message: '请选择分类' }]}
-            extra="选择『我的人像』可在资产库的『我的素材 > 我的人像』中查看"
+            extra="选择分类后，素材将归类到对应的查看入口"
           >
             <Select placeholder="请选择分类">
-              <Select.Option value="图片">图片</Select.Option>
-              <Select.Option value="视频">视频</Select.Option>
-              <Select.Option value="我的人像">我的人像</Select.Option>
-              <Select.Option value="其他">其他</Select.Option>
+              <Select.Option value="真人人像">真人人像</Select.Option>
+              <Select.Option value="虚拟人像">虚拟人像</Select.Option>
+            </Select>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 修改素材信息弹窗 */}
+      <Modal
+        title="修改素材信息"
+        open={isEditModalOpen}
+        onCancel={() => setIsEditModalOpen(false)}
+        onOk={handleEditAsset}
+        confirmLoading={savingEdit}
+      >
+        <Form form={editForm} layout="vertical">
+          <Form.Item label="素材名称" name="file_name" rules={[{ required: true, message: '请输入素材名称' }]}>
+            <Input placeholder="输入新的素材名称" />
+          </Form.Item>
+          <Form.Item label="素材分类" name="category" rules={[{ required: true, message: '请选择分类' }]}>
+            <Select placeholder="请选择分类">
+              <Select.Option value="真人人像">真人人像</Select.Option>
+              <Select.Option value="虚拟人像">虚拟人像</Select.Option>
             </Select>
           </Form.Item>
         </Form>

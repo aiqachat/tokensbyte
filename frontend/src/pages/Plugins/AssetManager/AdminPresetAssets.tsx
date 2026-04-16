@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, message, Typography, Upload, Popconfirm, Tag, Modal, Input, Form, Select, Tooltip } from 'antd';
+import { Table, Button, Space, message, Typography, Upload, Popconfirm, Tag, Modal, Input, Form, Select, Tooltip, Segmented } from 'antd';
 import { UploadOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, CloudOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import type { PluginAsset } from '../../../types';
@@ -20,16 +20,28 @@ const AdminPresetAssets: React.FC = () => {
   const [uploadForm] = Form.useForm();
   const [fileList, setFileList] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [adminStorage, setAdminStorage] = useState<{ used_bytes: number; used_mb: string; folder: string } | null>(null);
+  const [adminStorage, setAdminStorage] = useState<{ used_bytes: number; used_mb: string; folder: string; file_count?: number } | null>(null);
+
+  const PRESET_CATEGORIES = [
+    { key: '模版库', label: '模版库', children: ['参考生成', '视频编辑', '时序补全'] },
+    { key: '素材库', label: '素材库', children: ['视频', '图片', '音频'] },
+    { key: '虚拟人像库', label: '虚拟人像库', children: [] }
+  ];
+  const [selectedKey, setSelectedKey] = useState<string>('preset_模版库');
 
   useEffect(() => {
     fetchAssets();
-  }, []);
+  }, [selectedKey]);
 
   const fetchAssets = async () => {
     try {
       setLoading(true);
-      const res = await (request.get('/assets/admin/list?source=builtin') as any);
+      let url = '/assets/admin/list?source=builtin';
+      if (selectedKey !== 'preset_全部') {
+        const cat = selectedKey.replace('preset_', '');
+        url += `&category=${encodeURIComponent(cat)}`;
+      }
+      const res = await (request.get(url) as any);
       if (res.assets) {
         setAssets(res.assets);
       }
@@ -80,7 +92,7 @@ const AdminPresetAssets: React.FC = () => {
       await request.put(`/assets/admin/${editingAsset.id}/tags`, {
         file_name: values.file_name,
         category: values.category,
-        userid: values.userid,
+        userid: (!values.userid || values.userid === '000000') ? '' : values.userid,
         assetid: values.assetid,
       });
       message.success('标签更新成功');
@@ -154,8 +166,9 @@ const AdminPresetAssets: React.FC = () => {
       const formData = new FormData();
       formData.append('file', fileList[0].originFileObj as any);
       formData.append('category', values.category || '图片');
-      formData.append('target_user_id', values.target_user_id || '');
-      formData.append('target_asset_id', values.target_asset_id || '');
+      formData.append('target_user_id', (!values.target_user_id || values.target_user_id === '000000') ? '' : values.target_user_id);
+      formData.append('target_asset_id', values.target_asset_id || '00000');
+      formData.append('remark', values.remark || '');
 
       await request.post('/assets/upload', formData, {
         headers: {
@@ -231,7 +244,7 @@ const AdminPresetAssets: React.FC = () => {
       title: '分类 (Category)',
       dataIndex: 'category',
       key: 'category',
-      render: (cat: string) => <Tag color="blue">{cat || '未分类'}</Tag>
+      render: (cat: string) => <Tag color="blue">{cat ? cat.replace('/', ' · ') : '未分类'}</Tag>
     },
     {
       title: '所属用户 (UserID)',
@@ -308,17 +321,98 @@ const AdminPresetAssets: React.FC = () => {
           <Text strong style={{ color: '#fff', fontSize: 14 }}>预设素材管理</Text><br />
           <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>您可以上传系统级预设素材，为其指定专属用户及分类，此信息同时写入对象存储(TOS)标签。点击 ↑↓ 按钮可调整排列顺序。</Text>
           {adminStorage && (
-            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CloudOutlined style={{ color: '#1677ff', fontSize: 14 }} />
-              <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12 }}>
-                管理员存储（文件夹: {adminStorage.folder}）已使用 <Text strong style={{ color: '#1677ff' }}>{adminStorage.used_mb} MB</Text>
-              </Text>
+            <div style={{
+              marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 12, fontSize: 13,
+              background: 'linear-gradient(90deg, rgba(22,119,255,0.1) 0%, rgba(22,119,255,0.02) 100%)',
+              border: '1px solid rgba(22,119,255,0.2)',
+              borderRadius: 30,
+              padding: '6px 16px',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.15), inset 0 1px 1px rgba(255,255,255,0.05)',
+              color: 'rgba(255,255,255,0.7)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <CloudOutlined style={{ color: '#1677ff' }} />
+                <span>文件夹: <Text style={{ color: '#1677ff', fontWeight: 600 }}>{adminStorage.folder || '未初始化'}</Text></span>
+              </div>
+
+              <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>已用空间: <Text style={{ color: '#1677ff', fontWeight: 600, textShadow: '0 0 10px rgba(22,119,255,0.4)' }}>{adminStorage.used_mb} <span style={{ fontSize: 11 }}>MB</span></Text></span>
+
+                <div style={{
+                  width: 80, height: 6, background: 'rgba(0,0,0,0.3)', borderRadius: 3, overflow: 'hidden', position: 'relative',
+                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
+                }}>
+                  <div style={{
+                    position: 'absolute', left: 0, top: 0, height: '100%',
+                    width: '100%',
+                    background: 'linear-gradient(90deg, #13c2c2 0%, #1677ff 100%)',
+                    borderRadius: 3,
+                    animation: 'pulse 2s infinite ease-in-out',
+                    boxShadow: '0 0 8px rgba(22,119,255,0.8)'
+                  }} />
+                </div>
+                
+                <span>限额: <Text style={{ color: '#52c41a', fontWeight: 600 }}>无限制</Text></span>
+              </div>
+
+              <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>文件数量: <Text style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{adminStorage.file_count || 0}</Text></span>
+              </div>
             </div>
           )}
         </div>
-        <Button icon={<UploadOutlined />} type="primary" onClick={() => setIsUploadModalOpen(true)}>
-          上传预设素材
-        </Button>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Segmented
+            options={PRESET_CATEGORIES.map(cat => ({ label: cat.label, value: cat.key }))}
+            value={selectedKey.replace('preset_', '').split('/')[0]}
+            onChange={(val) => setSelectedKey(`preset_${val}`)}
+          />
+          <Button 
+            icon={<UploadOutlined />} 
+            type="primary" 
+            onClick={() => {
+              const currentPrimary = selectedKey.replace('preset_', '').split('/')[0];
+              const activeCat = PRESET_CATEGORIES.find(c => c.key === currentPrimary);
+              if (activeCat && activeCat.children.length > 0) {
+                uploadForm.setFieldsValue({ category: `${currentPrimary}/${activeCat.children[0]}` });
+              } else {
+                uploadForm.setFieldsValue({ category: currentPrimary });
+              }
+              setIsUploadModalOpen(true);
+            }}
+          >
+            {selectedKey.replace('preset_', '').split('/')[0] === '模版库' ? '上传模版' : 
+             selectedKey.replace('preset_', '').split('/')[0] === '素材库' ? '上传素材' : '上传虚拟人像'}
+          </Button>
+        </div>
+        
+        {(() => {
+          const currentPrimary = selectedKey.replace('preset_', '').split('/')[0];
+          const activeCat = PRESET_CATEGORIES.find(c => c.key === currentPrimary);
+          const currentSecondary = selectedKey.includes('/') ? selectedKey.replace('preset_', '').split('/')[1] : '全部';
+          if (activeCat && activeCat.children.length > 0) {
+            return (
+              <Segmented
+                options={[
+                  { label: '全部', value: '全部' },
+                  ...activeCat.children.map(child => ({ label: child, value: child }))
+                ]}
+                value={currentSecondary}
+                onChange={(val) => setSelectedKey(val === '全部' ? `preset_${currentPrimary}` : `preset_${currentPrimary}/${val}`)}
+                style={{ alignSelf: 'flex-start' }}
+              />
+            );
+          }
+          return null;
+        })()}
       </div>
 
       <Table
@@ -344,33 +438,40 @@ const AdminPresetAssets: React.FC = () => {
           </Form.Item>
           <Form.Item label="分类 (Category)" name="category" rules={[{ required: true, message: '请选择分类' }]}>
             <Select placeholder="请选择预设分类">
-              <Select.Option value="视频">视频</Select.Option>
-              <Select.Option value="图片">图片</Select.Option>
-              <Select.Option value="音频">音频</Select.Option>
-              <Select.Option value="虚拟人像">虚拟人像</Select.Option>
-              <Select.Option value="我的">我的</Select.Option>
+              <Select.OptGroup label="模版库">
+                <Select.Option value="模版库/参考生成">参考生成</Select.Option>
+                <Select.Option value="模版库/视频编辑">视频编辑</Select.Option>
+                <Select.Option value="模版库/时序补全">时序补全</Select.Option>
+              </Select.OptGroup>
+              <Select.OptGroup label="素材库">
+                <Select.Option value="素材库/视频">视频</Select.Option>
+                <Select.Option value="素材库/图片">图片</Select.Option>
+                <Select.Option value="素材库/音频">音频</Select.Option>
+              </Select.OptGroup>
+              <Select.Option value="虚拟人像库">虚拟人像库</Select.Option>
             </Select>
           </Form.Item>
-          <Form.Item label="归属用户 (User ID) (非必填)" name="userid">
-            <Input placeholder="输入特定的前台 User ID，留空表示公共" />
+          <Form.Item label="归属用户 (User ID) (非必填)" name="userid" extra="如果不填，默认分配为 000000 (所有人可用)">
+            <Input placeholder="输入特定的前台 User ID，留空表示公开 (000000)" />
           </Form.Item>
           {editingAsset && (
-             <Form.Item label="素材 ID (Asset ID)" name="assetid">
-               <Input placeholder="输入自定义素材 ID (留空保持原样)" />
+             <Form.Item label="素材 ID (Asset ID)" name="assetid" extra="如果不填，默认分配为 00000">
+               <Input placeholder="输入自定义素材 ID，留空默认为 00000" />
              </Form.Item>
           )}
         </Form>
       </Modal>
 
       <Modal
-        title="上传预设素材"
+        title={selectedKey.replace('preset_', '').split('/')[0] === '模版库' ? '上传模版' : 
+               selectedKey.replace('preset_', '').split('/')[0] === '素材库' ? '上传素材' : '上传虚拟人像'}
         open={isUploadModalOpen}
         onCancel={() => { setIsUploadModalOpen(false); uploadForm.resetFields(); setFileList([]); }}
         onOk={handleCustomUpload}
         confirmLoading={uploading}
         okText="开始上传"
       >
-        <Form form={uploadForm} layout="vertical" initialValues={{ category: '图片' }}>
+        <Form form={uploadForm} layout="vertical">
           <Form.Item label="选择文件" required>
             <Upload 
               accept="image/*,video/*"
@@ -381,25 +482,50 @@ const AdminPresetAssets: React.FC = () => {
                 newFileList = newFileList.slice(-1);
                 setFileList(newFileList);
               }}
-              beforeUpload={() => false} // 手动上传
+              beforeUpload={(file) => {
+                const isVideo = file.type.startsWith('video/');
+                const isImage = file.type.startsWith('image/');
+                const sizeMB = file.size / 1024 / 1024;
+                
+                if (isVideo && sizeMB > 50) {
+                  import('antd').then(({ message }) => message.error(`视频文件过大，不能超过 50MB！当前大小: ${sizeMB.toFixed(1)}MB`));
+                  return Upload.LIST_IGNORE;
+                }
+                if (isImage && sizeMB > 10) {
+                  import('antd').then(({ message }) => message.error(`图片文件过大，不能超过 10MB！当前大小: ${sizeMB.toFixed(1)}MB`));
+                  return Upload.LIST_IGNORE;
+                }
+                return false; // 手动上传
+              }}
             >
               <Button icon={<UploadOutlined />}>选择图片或视频</Button>
             </Upload>
           </Form.Item>
           <Form.Item label="分类" name="category" rules={[{ required: true, message: '请选择分类' }]}>
-            <Select placeholder="请选择预设分类">
-              <Select.Option value="视频">视频</Select.Option>
-              <Select.Option value="图片">图片</Select.Option>
-              <Select.Option value="音频">音频</Select.Option>
-              <Select.Option value="虚拟人像">虚拟人像</Select.Option>
-              <Select.Option value="我的">我的</Select.Option>
+            <Select placeholder="请选择二级分类">
+              {(() => {
+                const currentPrimary = selectedKey.replace('preset_', '').split('/')[0];
+                const activeCat = PRESET_CATEGORIES.find(c => c.key === currentPrimary);
+                if (activeCat && activeCat.children.length > 0) {
+                  return activeCat.children.map(child => (
+                    <Select.Option key={child} value={`${currentPrimary}/${child}`}>{child}</Select.Option>
+                  ));
+                } else {
+                  return <Select.Option value={currentPrimary}>{currentPrimary}</Select.Option>;
+                }
+              })()}
             </Select>
           </Form.Item>
-          <Form.Item label="指定专属用户 ID" name="target_user_id" extra="如果填入 User ID，该预设素材将只属于该用户；不填即所有人可用">
-            <Input placeholder="可选" />
+          {selectedKey.replace('preset_', '').split('/')[0] === '模版库' && (
+            <Form.Item label="模版介绍" name="remark">
+              <Input.TextArea rows={3} placeholder="请输入模版介绍说明" />
+            </Form.Item>
+          )}
+          <Form.Item label="指定专属用户 ID" name="target_user_id" extra="如果不填，默认分配为 000000（所有人可用）；如果填写特定的 User ID，则该素材只属于该用户">
+            <Input placeholder="可选，留空默认为 000000" />
           </Form.Item>
-          <Form.Item label="自定义素材 ID (Asset ID)" name="target_asset_id" extra="推荐自行指定唯一的标识，留空将由系统自动生成 UUID">
-            <Input placeholder="可选，例如：bg_forest_01" />
+          <Form.Item label="自定义素材 ID (Asset ID)" name="target_asset_id" extra="推荐自行指定唯一的标识，如果不填默认分配为 00000">
+            <Input placeholder="可选，留空默认为 00000" />
           </Form.Item>
         </Form>
       </Modal>
