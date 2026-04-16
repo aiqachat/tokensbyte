@@ -42,12 +42,13 @@ pub async fn image_generations(
     let status = upstream_resp.status().as_u16();
     if !upstream_resp.status().is_success() {
         let err = upstream_resp.text().await?;
+        let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
         proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status,
-            &ep, Some(&err), latency_ms, if is_stream {1} else {0},
-            Some(request_content_str.clone()), None, Some(upstream_body.to_string())).await;
-        return Err(AppError::UpstreamError(err));
+            &ep, Some(&display_err), latency_ms, if is_stream {1} else {0},
+            Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string())).await;
+        return Err(AppError::UpstreamError(display_err));
     }
 
     let cost = proxy::get_model_cost(&state, model, ctx.discount).await;

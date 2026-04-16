@@ -54,7 +54,18 @@ docker-compose up -d
    cp .env.example .env  # 复制模板
    # 修改 .env 中的配置（如数据库 URL、JWT 密钥等）
    ```
-2. **运行**：
+2. **运行（推荐：全自动热重载开发模式）**：
+   如果你在 Windows 等非原生 Linux 环境下开发，每次修改 Rust 重新构建可能会面临文件锁定或缓慢的问题。我们提供了基于 Docker + `cargo-watch` 的**零配置热重载开发环境**：
+   
+   只需在终端执行如下脚本（一次性启动前后端与数据库）：
+   ```powershell
+   .\dev.ps1
+   ```
+   启动后：
+   - 只要你对代码（如 `backend/src/*.rs`）进行任何保存（`Ctrl+S`），后端即会在容器内秒级自动增量编译并重启。
+   - `target` 和 `cargo registry` 编译缓存通过专用 Volume 挂载，不污染宿主机，不重下依赖。
+
+3. **运行（传统手动模式）**：
    ```bash
    cargo run
    ```

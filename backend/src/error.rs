@@ -77,13 +77,20 @@ impl IntoResponse for AppError {
             }
         };
 
-        let body = json!({
+        let mut body = json!({
             "error": {
-                "message": message,
+                "message": message.clone(),
                 "type": format!("{:?}", status),
             },
             "success": false,
         });
+
+        // 如果是上游错误且本身就是有效 JSON，则直接透传上游响应
+        if let AppError::UpstreamError(ref msg) = self {
+            if let Ok(json_msg) = serde_json::from_str::<serde_json::Value>(msg) {
+                body = json_msg;
+            }
+        }
 
         (status, axum::Json(body)).into_response()
     }

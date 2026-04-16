@@ -44,12 +44,13 @@ pub async fn video_generations(
     let status = resp.status().as_u16();
     if !resp.status().is_success() {
         let err = resp.text().await?;
+        let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/video/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
         proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status,
-            &ep, Some(&err), latency_ms, 0,
-            Some(request_content_str.clone()), None, Some(upstream_body.to_string())).await;
-        return Err(AppError::UpstreamError(err));
+            &ep, Some(&display_err), latency_ms, 0,
+            Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string())).await;
+        return Err(AppError::UpstreamError(display_err));
     }
 
     let cost = proxy::get_model_cost(&state, model, ctx.discount).await;
@@ -138,9 +139,11 @@ pub async fn video_generations_status(
         .header("Authorization", format!("Bearer {}", channel.api_key))
         .send().await?;
 
+    let status = resp.status().as_u16();
     if !resp.status().is_success() {
         let err = resp.text().await?;
-        return Err(AppError::UpstreamError(err));
+        let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
+        return Err(AppError::UpstreamError(display_err));
     }
 
     let data = resp.bytes().await?;

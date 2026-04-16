@@ -86,8 +86,17 @@ pub async fn chat_completions(
         let resp = stream_builder.json(&stream_body).send().await?;
 
         if !resp.status().is_success() {
+            let status = resp.status().as_u16();
             let err = resp.text().await?;
-            return Err(AppError::UpstreamError(err));
+            let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
+            let latency_ms = start_time.elapsed().as_millis() as u32;
+            let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+            proxy::record_and_bill(
+                &state, &token, channel.id, model, 0, 0, 0.0, status,
+                &ep, Some(&display_err), latency_ms, 1,
+                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string())
+            ).await;
+            return Err(AppError::UpstreamError(display_err));
         }
 
         let prompt_tokens = estimate_prompt_tokens(&body);
@@ -103,14 +112,15 @@ pub async fn chat_completions(
 
         if !resp.status().is_success() {
             let err = resp.text().await?;
+            let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
             let latency_ms = start_time.elapsed().as_millis() as u32;
             let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
             proxy::record_and_bill(
                 &state, &token, channel.id, model, 0, 0, 0.0, status,
-                &ep, Some(&err), latency_ms, 0,
-                Some(request_content_str.clone()), None, Some(upstream_body.to_string())
+                &ep, Some(&display_err), latency_ms, 0,
+                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string())
             ).await;
-            return Err(AppError::UpstreamError(err));
+            return Err(AppError::UpstreamError(display_err));
         }
 
         let data = resp.bytes().await?;
