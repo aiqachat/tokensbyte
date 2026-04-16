@@ -199,20 +199,9 @@ pub fn transform_request_body(
         }
 
         // 火山方舟图片/视频（/api/v3/contents/generations/tasks）: prompt → content 格式
+        // 参考火山引擎 Seedance 2.0 官方 API：https://www.volcengine.com/docs/82379/1520757
         "volcengine" if category == "图片" || category == "视频" => {
-            let prompt = body["prompt"]
-                .as_str()
-                .unwrap_or("Generate content");
-            let mut result = serde_json::json!({
-                "model": model,
-                "content": [{"type": "text", "text": prompt}],
-            });
-            for key in &["ratio", "duration", "watermark", "n", "size"] {
-                if let Some(v) = body.get(*key) {
-                    result[*key] = v.clone();
-                }
-            }
-            result
+            build_volcengine_content_body(model, body)
         }
 
         // 火山方舟聊天：保持 OpenAI 格式（火山完全兼容 OpenAI）
@@ -450,6 +439,171 @@ fn create_openai_chunk(text: &str, model: &str) -> serde_json::Value {
             "finish_reason": null
         }]
     })
+}
+
+// ── 火山方舟视频/图片请求体构建器 ──────────────────────────────
+//
+// 将 OpenAI 风格的扁平参数转换为火山方舟 /api/v3/contents/generations/tasks 所需的结构化格式。
+// 参考文档：https://www.volcengine.com/docs/82379/1520757
+//
+// 设计原则（三级兼容）：
+//   Level 3 — body 中已有 content 数组 → 原样直通，仅替换 model
+//   Level 2 — images/videos/audios 元素为 {url, role} 对象 → 复用 role
+//   Level 1 — images/videos/audios 元素为纯 URL 字符串 → 按数量智能推断 role
+//
+// 控制参数（resolution, duration, watermark 等）→ 顶层 key 数据驱动直通
+// 新增参数只需在 PASSTHROUGH_KEYS 中追加，零侵入式扩展
+
+/// 火山方舟视频/图片接口的「控制参数白名单」
+/// 在用户请求体中出现即原样透传到火山上游请求体，扩展时追加一行即可。
+const VOLCENGINE_CONTENT_PASSTHROUGH_KEYS: &[&str] = &[
+    // 画面控制
+    "ratio",             // 宽高比，如 "16:9", "4:3"
+    "resolution",        // 分辨率，如 "480p", "720p", "1080p"
+    "n",                 // 生成数量
+    "size",              // 尺寸
+    // 视频控制
+    "duration",          // 视频时长（秒），如 5, 10
+    "fps",               // 帧率
+    "seed",              // 随机种子
+    // 音频/水印/末帧
+    "generate_audio",    // 是否生成音频 (bool)
+    "return_last_frame", // 是否返回末帧 (bool)
+    "watermark",         // 是否添加水印 (bool)
+    // 流式/回调
+    "stream",            // 是否流式返回
+    "callback_url",      // 回调地址
+];
+
+/// 构建火山方舟 /api/v3/contents/generations/tasks 请求体。
+///
+/// 支持三种输入格式，系统自动识别：
+///
+/// **简单模式** — images/videos/audios 为纯 URL 字符串数组：
+/// ```json
+/// {"model": "...", "prompt": "...", "images": ["url1"], "resolution": "720p"}
+/// ```
+///
+/// **高级模式** — 带 role 的结构化对象数组：
+/// ```json
+/// {"model": "...", "prompt": "...", "images": [{"url": "url1", "role": "first_frame"}]}
+/// ```
+///
+/// **直通模式** — 直接传入火山官方 content 数组：
+/// ```json
+/// {"model": "...", "content": [{"type": "text", "text": "..."}, ...]}
+/// ```
+fn build_volcengine_content_body(model: &str, body: &serde_json::Value) -> serde_json::Value {
+    // ── Level 3：直通模式 ──
+    // body 中已包含 content 数组，原样使用，仅替换 model 并合并控制参数
+    let content = if let Some(c) = body.get("content").filter(|v| v.is_array()) {
+        c.clone()
+    } else {
+        // ── Level 1 & 2：从 prompt + images/videos/audios 构建 content ──
+        let mut parts: Vec<serde_json::Value> = Vec::new();
+
+        // 文本 prompt
+        let prompt = body["prompt"].as_str().unwrap_or("Generate content");
+        parts.push(serde_json::json!({"type": "text", "text": prompt}));
+
+        // 图片：按数量智能推断默认 role
+        //   1 张 → first_frame（首帧）
+        //   2 张 → first_frame + last_frame（首尾帧）
+        //   3+ 张 → 全部 reference_image（参考图）
+        if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
+            let defaults = infer_image_default_roles(arr.len());
+            for (i, item) in arr.iter().enumerate() {
+                let (url, role) = parse_media_item(item, defaults.get(i).copied().unwrap_or("reference_image"));
+                if let Some(u) = url {
+                    let mut entry = serde_json::json!({
+                        "type": "image_url",
+                        "image_url": {"url": u}
+                    });
+                    entry["role"] = serde_json::json!(role);
+                    parts.push(entry);
+                }
+            }
+        }
+
+        // 视频：默认 role = reference_video
+        if let Some(arr) = body.get("videos").and_then(|v| v.as_array()) {
+            for item in arr {
+                let (url, role) = parse_media_item(item, "reference_video");
+                if let Some(u) = url {
+                    let mut entry = serde_json::json!({
+                        "type": "video_url",
+                        "video_url": {"url": u}
+                    });
+                    entry["role"] = serde_json::json!(role);
+                    parts.push(entry);
+                }
+            }
+        }
+
+        // 音频：默认 role = reference_audio
+        if let Some(arr) = body.get("audios").and_then(|v| v.as_array()) {
+            for item in arr {
+                let (url, role) = parse_media_item(item, "reference_audio");
+                if let Some(u) = url {
+                    let mut entry = serde_json::json!({
+                        "type": "audio_url",
+                        "audio_url": {"url": u}
+                    });
+                    entry["role"] = serde_json::json!(role);
+                    parts.push(entry);
+                }
+            }
+        }
+
+        serde_json::json!(parts)
+    };
+
+    // ── 组装请求体 ──
+    let mut result = serde_json::json!({
+        "model": model,
+        "content": content,
+    });
+
+    // ── 数据驱动直通：遍历白名单，存在即透传 ──
+    for key in VOLCENGINE_CONTENT_PASSTHROUGH_KEYS {
+        if let Some(v) = body.get(*key) {
+            result[*key] = v.clone();
+        }
+    }
+
+    result
+}
+
+// ── 辅助函数 ──────────────────────────────────────────────────
+
+/// 从数组元素中提取 (url, role)。
+/// 兼容两种输入格式：
+///   - 纯字符串 `"https://..."` → 使用 default_role
+///   - 对象 `{"url": "https://...", "role": "first_frame"}` → 优先使用用户指定的 role
+fn parse_media_item<'a>(item: &'a serde_json::Value, default_role: &'a str) -> (Option<&'a str>, &'a str) {
+    match item {
+        // Level 1：纯字符串 URL
+        serde_json::Value::String(s) => (Some(s.as_str()), default_role),
+        // Level 2：结构化对象 {url, role?}
+        serde_json::Value::Object(obj) => {
+            let url = obj.get("url").and_then(|v| v.as_str());
+            let role = obj.get("role").and_then(|v| v.as_str()).unwrap_or(default_role);
+            (url, role)
+        }
+        _ => (None, default_role),
+    }
+}
+
+/// 根据 images 数组长度推断默认 role 列表：
+///   1 张 → ["first_frame"]
+///   2 张 → ["first_frame", "last_frame"]（首尾帧）
+///   3+ 张 → 全部 "reference_image"（多模态参考）
+fn infer_image_default_roles(count: usize) -> Vec<&'static str> {
+    match count {
+        1 => vec!["first_frame"],
+        2 => vec!["first_frame", "last_frame"],
+        _ => vec!["reference_image"; count],
+    }
 }
 
 // ── 通用密钥脱敏 ──────────────────────────────────────────────
