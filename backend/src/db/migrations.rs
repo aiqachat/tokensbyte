@@ -345,6 +345,26 @@ macro_rules! pg_migration_blocks {
         .await
         .ok();
 
+    // Forward Rules table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS forward_rules (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            rule_type TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT '聊天',
+            config_json TEXT NOT NULL DEFAULT '{}',
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            upstream_type TEXT NOT NULL DEFAULT 'other',
+            config TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '聊天'")
         .execute(pool)
         .await
