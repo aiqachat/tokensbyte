@@ -17,294 +17,72 @@
 - **用户UID**：用户唯一标识。
 
 
-## 📦 Docker 部署指南
+## 📦 服务部署指南
 
-### 方式三：本地打包镜像 + 云服务器部署（推荐用于慢速服务器）
+本项目支持多种部署方式，满足从本地测试到企业生产的各类需求。所有容器化配置文件均已内置。
 
-如果云服务器打包速度慢，可以在本地构建好镜像后上传到服务器：
-
-**快速三步走：**
+### 方式一：快速起步（本地/测试环境）
+使用 SQLite 和基础配置，最快体验全功能：
 ```bash
-# 1. 本地导出镜像
-./export-images.sh  # Linux/Mac
-.\export-images.ps1  # Windows
-
-# 2. 上传到服务器
-scp docker-images/*.tar root@server:/opt/tokensbyte/
-
-# 3. 服务器导入部署
-ssh root@server
-cd /opt/tokensbyte
-./import-images.sh
-docker compose -f docker-compose.prod.yml up -d
-```
-
-📖 **详细说明**：查看 [EXPORT-IMAGES-GUIDE.md](EXPORT-IMAGES-GUIDE.md)
-
-#### 1. 本地构建并导出镜像
-
-**Linux/Mac:**
-```bash
-# 运行导出脚本
-chmod +x export-images.sh
-./export-images.sh
-```
-
-**Windows:**
-```powershell
-# 运行导出脚本
-.\export-images.ps1
-```
-
-脚本会：
-- 自动构建 Docker 镜像
-- 导出为 `.tar` 文件到 `docker-images/` 目录
-- 生成导入脚本和上传指南
-
-#### 2. 上传到云服务器
-
-参考生成的 `docker-images/UPLOAD-GUIDE.txt` 文件，使用以下任一方法：
-
-**方法一：使用 scp**
-```bash
-# Linux/Mac
-scp docker-images/*.tar your-user@your-server:/opt/tokensbyte/
-scp docker-images/import-images.sh your-user@your-server:/opt/tokensbyte/
-scp docker-compose.prod.yml your-user@your-server:/opt/tokensbyte/
-
-# Windows PowerShell
-scp .\docker-images\*.tar your-user@your-server:/opt/tokensbyte/
-scp .\docker-images\import-images.ps1 your-user@your-server:/opt/tokensbyte/
-scp docker-compose.prod.yml your-user@your-server:/opt/tokensbyte/
-```
-
-**方法二：使用 WinSCP（Windows 推荐）**
-1. 下载 WinSCP: https://winscp.net
-2. 连接到服务器
-3. 上传 `docker-images/` 目录下的所有文件
-
-**方法三：使用云存储（大文件推荐）**
-```bash
-# 压缩文件
-# Linux/Mac
-cd docker-images
-tar -czf tokensbyte-images.tar.gz *.tar
-
-# Windows PowerShell
-Compress-Archive -Path ".\docker-images\*.tar" -DestinationPath ".\docker-images\tokensbyte-images.zip"
-```
-
-#### 3. 在服务器导入并部署
-
-```bash
-# SSH 登录服务器
-ssh your-user@your-server
-
-# 进入部署目录
-cd /opt/tokensbyte
-
-# 导入镜像
-chmod +x import-images.sh
-./import-images.sh
-
-# 创建环境变量
-cp .env.example .env
-nano .env  # 编辑配置
-
-# 启动服务
-docker compose -f docker-compose.prod.yml up -d
-
-# 查看状态
-docker compose -f docker-compose.prod.yml ps
-```
-
-### 方式一：快速部署（开发/测试环境）
-
-适用于本地开发和测试，使用内置 SQLite 数据库：
-
-```bash
-# 1. 克隆项目
 git clone <repository-url>
 cd tokensbyte
-
-# 2. 一键启动
-docker compose up -d
-
-# 3. 查看日志
-docker compose logs -f
-```
-
-**访问地址：**
-- 用户端：http://localhost:5173
-- 管理后台：http://localhost:5173/admin0755
-- API 接口：http://localhost:3000/v1
-
-**默认管理员账号：**
-- 用户名：`admin`
-- 密码：`admin`
-
-### 方式二：生产环境部署（推荐）
-
-生产环境建议使用 PostgreSQL 数据库，需要创建自定义配置文件：
-
-#### 1. 创建环境变量文件
-
-```bash
-cp .env.example .env
-```
-
-编辑 `.env` 文件：
-
-```env
-# 数据库配置（PostgreSQL）
-DATABASE_URL=postgres://tokensbyte:your_secure_password@postgres:5432/tokensbyte
-POSTGRES_PASSWORD=your_secure_password
-
-# JWT 密钥（生产环境必须修改）
-JWT_SECRET=your-secret-key-change-me-in-production
-
-# 管理员账号
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=your-admin-password
-
-# 端口配置
-BACKEND_PORT=3000
-FRONTEND_PORT=5173
-
-# 功能开关
-REGISTER_ENABLED=true
-```
-
-#### 2. 创建生产环境 Docker Compose 配置
-
-创建 `docker-compose.prod.yml`：
-
-```yaml
-version: '3.8'
-
-services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: tokensbyte-postgres
-    environment:
-      - POSTGRES_DB=tokensbyte
-      - POSTGRES_USER=tokensbyte
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tokensbyte"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: tokensbyte-backend
-    environment:
-      - HOST=0.0.0.0
-      - PORT=3000
-      - DATABASE_URL=${DATABASE_URL}
-      - JWT_SECRET=${JWT_SECRET}
-      - ADMIN_USERNAME=${ADMIN_USERNAME}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - REGISTER_ENABLED=${REGISTER_ENABLED}
-    volumes:
-      - ./data:/data
-    ports:
-      - "${BACKEND_PORT:-3000}:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: always
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: tokensbyte-frontend
-    ports:
-      - "${FRONTEND_PORT:-5173}:80"
-    depends_on:
-      - backend
-    restart: always
-
-volumes:
-  postgres_data:
-```
-
-#### 3. 启动服务
-
-```bash
 docker-compose up -d
 ```
+> [!NOTE]
+> 成功启动后，浏览器访问 `http://localhost:5173/admin0755`。默认超管账号：`admin` / `123456`（请在控制台及时修改）。
+
+### 方式二：标准生产环境部署（推荐）
+针对生产环境，推荐挂载外部 PostgreSQL 并开启生产环境构建：
+
+1. **初始化配置**：
+   ```bash
+   cp .env.example .env
+   # 根据注释修改 .env 中的 DATABASE_URL、JWT 密钥等安全项
+   ```
+2. **使用专用的生产 Compose 文件启动**（详情参阅内置的 [`docker-compose.prod.yml`](docker-compose.prod.yml)）：
+   ```bash
+   docker-compose -f docker-compose.prod.yml up -d
+   ```
+
+### 方式三：离线/云端加速部署（针对国内慢速网络）
+如果您在云服务器上的构建速度过慢，我们在工程中自带了一键导出/导入脚本：
+1. **本地打包**：Windows 运行 `.\export-images.ps1`（Mac/Linux 运行 `./export-images.sh`）。
+2. **上传并在服务器激活**：将生成的 `docker-images` 文件夹丢到服务器运行 `./import-images.sh`。
+📖 详细操作请参阅专业文档：[`EXPORT-IMAGES-GUIDE.md`](EXPORT-IMAGES-GUIDE.md)。
 
 ### 4. 使用 API
 配置您的 OpenAI SDK：
-- **Base URL**: `http://localhost:3000/v1`
+- **Base URL**: `http://localhost:3000`
 - **API Key**: `sk-xxxx` (在 TokensByte 后台生成)
 
 ## 🛠️ 开发环境搭建
 
 ### 后端 (Backend)
 
-```bash
-cd backend
-
-# 配置环境变量（如需要）
-# Windows
-copy .env.example .env
-# Linux/Mac
-cp .env.example .env
-
-# 运行开发服务器
-cargo run
-
-# 或者构建 release 版本
-cargo build --release
-./target/release/tokensbyte-server
-```
-后端采用 Rust 开发，配置管理遵循 **环境变量优先** 原则：
+后端采用 Rust 开发，配置管理遵循 **环境变量优先** 原则（配置优先级：系统环境变量 > `.env` 文件 > `data/database.json` > 内置默认值）。
 
 1. **配置文件加载**：
    ```bash
    cd backend
-   cp .env.example .env  # 复制模板
-   # 修改 .env 中的配置（如数据库 URL、JWT 密钥等）
+   cp .env.example .env  # Windows使用 copy .env.example .env
+   # 根据注释修改 .env （可参考内置的 .env.example 文件）
    ```
+
 2. **运行（推荐：全自动热重载开发模式）**：
-   如果你在 Windows 等非原生 Linux 环境下开发，每次修改 Rust 重新构建可能会面临文件锁定或缓慢的问题。我们提供了基于 Docker + `cargo-watch` 的**零配置热重载开发环境**：
+   如果你在 Windows 等非原生 Linux 环境下开发，每次修改 Rust 会面临锁文件或编译缓慢的问题。我们提供了基于 Docker + `cargo-watch` 的**零配置热重载开发环境**：
    
-   只需在终端执行如下脚本（一次性启动前后端与数据库）：
+   只需在工程根目录执行（一次性拉起前后端与数据库）：
    ```powershell
    .\dev.ps1
    ```
-   启动后：
-   - 只要你对代码（如 `backend/src/*.rs`）进行任何保存（`Ctrl+S`），后端即会在容器内秒级自动增量编译并重启。
-   - `target` 和 `cargo registry` 编译缓存通过专用 Volume 挂载，不污染宿主机，不重下依赖。
+   *保存任意 `backend/src/*.rs` 文件，后端即会在容器内秒级自动增量编译并热重载。`target` 缓存亦通过专用 Volume 隔离，不污染宿主机。*
 
-3. **运行（传统手动模式）**：
+3. **运行（传统原生单机模式）**：
+   需要你本地已安装完整的 Rust 环境。
    ```bash
    cargo run
+   # 或构建生产版本: cargo build --release
    ```
-
-**后端环境变量示例 (.env)：**
-```env
-HOST=127.0.0.1
-PORT=3000
-DATABASE_URL=sqlite://data/tokensbyte.db
-# 或使用 PostgreSQL
-# DATABASE_URL=postgres://user:password@localhost:5432/tokensbyte
-JWT_SECRET=your-jwt-secret
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=123456
-REGISTER_ENABLED=true
-```
 
 ### 前端 (Frontend)
 
@@ -396,25 +174,6 @@ tokensbyte/
 └── data/                   # 数据持久化目录
 ```
 
-## 📖 API 文档
-
-TokensByte 兼容 OpenAI API 标准，您可以使用任何 OpenAI 兼容的 SDK 或工具。
-
-### 聊天补全
-
-```bash
-curl http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-your-api-key" \
-  -d '{
-    "model": "gpt-3.5-turbo",
-    "messages": [
-      {"role": "user", "content": "Hello!"}
-    ],
-    "stream": true
-  }'
-```
-
 ### 其他端点
 
 - `POST /v1/chat/completions` - 聊天补全（支持流式）
@@ -425,7 +184,7 @@ curl http://localhost:3000/v1/chat/completions \
 
 ### 管理后台 API
 
-所有管理 API 位于 `/api/v1` 路径下，需要管理员 JWT token 认证。
+所有管理页面 API 位于 `/api/v1` 路径下，需要管理员 JWT token 认证。
 
 ## 🔧 贡献指南
 
@@ -446,6 +205,16 @@ curl http://localhost:3000/v1/chat/completions \
 - **提交信息**：使用语义化提交信息
 
 ## ❓ 常见问题
+
+### Q: 如何指定使用 PostgreSQL 还是 SQLite？
+
+A: 系统底部驱动 `sqlx` 会严格根据环境变量 `DATABASE_URL` 的**协议前缀**自动判断并切换底层数据库引擎，完全无需调整代码或装依赖：
+- **使用 PostgreSQL（推荐生产）**：
+  在 `.env` 或系统中配置 `DATABASE_URL=postgres://user:password@host:port/dbname`
+- **使用 SQLite（推荐本地开发测试）**：
+  在 `.env` 或系统中配置 `DATABASE_URL=sqlite://data/tokensbyte.db`
+
+*注：在 `docker-compose.prod.yml` 中默认预配置的正是 PostgreSQL 环境。如果没有显式声明该变量，系统也会默认尝试连接本地默认的 PG 实例。*
 
 ### Q: 支持哪些模型？
 
