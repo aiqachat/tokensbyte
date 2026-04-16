@@ -1,39 +1,12 @@
 version: '3.8'
 
 # TokensByte 生产环境 Docker Compose 配置
-# 包含 PostgreSQL、Backend、Frontend 三个服务
+# 使用外部 PostgreSQL 数据库，仅包含 Backend 和 Frontend 两个服务
+#
+# 使用前请在 .env 文件中配置 DATABASE_URL，例如：
+#   DATABASE_URL=postgres://用户名:密码@数据库地址:5432/数据库名
 
 services:
-  # PostgreSQL 数据库
-  postgres:
-    image: postgres:16-alpine
-    container_name: tokensbyte-postgres
-    environment:
-      - POSTGRES_DB=tokensbyte
-      - POSTGRES_USER=tokensbyte
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-tokensbyte_secure_password}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - tokensbyte-network
-    restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tokensbyte"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
-        reservations:
-          memory: 512M
-          cpus: '0.5'
-
   # Rust 后端服务
   backend:
     # 如果已导入镜像，使用 image；如果需要构建，使用 build
@@ -45,7 +18,7 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=3000
-      - DATABASE_URL=${DATABASE_URL:-postgres://tokensbyte:tokensbyte_secure_password@postgres:5432/tokensbyte}
+      - DATABASE_URL=${DATABASE_URL:?请在 .env 中配置 DATABASE_URL}
       - JWT_SECRET=${JWT_SECRET:-tokensbyte-change-me-in-production}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
@@ -57,9 +30,6 @@ services:
       - "${BACKEND_PORT:-3000}:3000"
     networks:
       - tokensbyte-network
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: always
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
@@ -110,9 +80,3 @@ networks:
   tokensbyte-network:
     driver: bridge
     name: tokensbyte-network
-
-# 数据卷
-volumes:
-  postgres_data:
-    name: tokensbyte-postgres-data
-    driver: local
