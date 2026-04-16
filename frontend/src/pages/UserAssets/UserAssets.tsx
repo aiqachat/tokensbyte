@@ -581,6 +581,12 @@ const UserAssets: React.FC = () => {
             >
               <Button icon={<UploadOutlined />}>选择多张图片</Button>
             </Upload>
+            <div style={{ marginTop: 12, color: 'rgba(255,255,255,0.45)', fontSize: 12, lineHeight: '20px' }}>
+              <div>• 格式：jpeg、png、webp、bmp、tiff、gif、heic/heif</div>
+              <div>• 宽高比（宽/高）：(0.4, 2.5)</div>
+              <div>• 宽高长度（px）：(300, 6000)</div>
+              <div>• 大小：单张图片小于 30 MB</div>
+            </div>
           </Form.Item>
           <Form.Item name="category" hidden>
             <Input />
