@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# 源码由 docker-compose.dev.yml volume 挂载，无需 COPY
-EXPOSE 5173
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# Vite 监听 80 端口（与生产 Nginx 一致），
+# 这样 docker-compose.yml 中的 5173:80 映射在开发/生产环境都通用
+EXPOSE 80
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "80"]
