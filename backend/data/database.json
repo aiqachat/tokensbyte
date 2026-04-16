@@ -1,9 +1,0 @@
-{
-  "db_type": "postgres",
-  "host": "localhost",
-  "port": 5432,
-  "database": "tokensapi",
-  "username": "tokensapi",
-  "password": "tokensapi",
-  "ssl_mode": false
-}

@@ -1,6 +1,3 @@
-use serde::{Deserialize, Serialize};
-use std::fs;
-
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub host: String,
@@ -14,42 +11,11 @@ pub struct AppConfig {
     pub register_enabled: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct DatabaseSettings {
-    db_type: String,
-    host: String,
-    port: u16,
-    database: String,
-    username: String,
-    password: String,
-    #[serde(default)]
-    ssl_mode: bool,
-}
-
 impl AppConfig {
     pub fn from_env() -> Self {
         // 优先级 1: 系统环境变量 / .env
-        let mut database_url = std::env::var("DATABASE_URL").ok();
-
-        // 优先级 2: database.json (降级方案)
-        if database_url.is_none() {
-            if let Ok(config_str) = fs::read_to_string("./data/database.json") {
-                if let Ok(settings) = serde_json::from_str::<DatabaseSettings>(&config_str) {
-                    if settings.db_type == "postgres" {
-                        let ssl_mode = if settings.ssl_mode { "require" } else { "disable" };
-                        database_url = Some(format!(
-                            "postgres://{}:{}@{}:{}/{}?sslmode={}",
-                            settings.username, settings.password, settings.host, settings.port, settings.database, ssl_mode
-                        ));
-                    } else if settings.db_type == "sqlite" {
-                        database_url = Some(format!("sqlite:./data/{}", settings.database));
-                    }
-                }
-            }
-        }
-
-        // 优先级 3: 默认值
-        let database_url = database_url.unwrap_or_else(|| {
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            // 优先级 2: 默认值
             "postgres://tokensapi:tokensapi@localhost:5432/tokensapi".to_string()
         });
 

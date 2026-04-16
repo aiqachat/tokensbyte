@@ -65,9 +65,7 @@ pub async fn get_settings(
         default_marketing_settings()
     };
 
-    let database = if let Ok(config_str) = tokio::fs::read_to_string("./data/database.json").await {
-        serde_json::from_str(&config_str).unwrap_or(default_database_settings())
-    } else if let Some(val) = database_val {
+    let database = if let Some(val) = database_val {
         serde_json::from_str(&val).unwrap_or(default_database_settings())
     } else {
         default_database_settings()
@@ -126,13 +124,6 @@ pub async fn update_settings(
             .bind(val)
             .execute(&state.db.pool)
             .await?;
-
-        // Also sync to file
-        let config_path = "./data/database.json";
-        if let Some(parent) = std::path::Path::new(config_path).parent() {
-            let _ = tokio::fs::create_dir_all(parent).await;
-        }
-        let _ = tokio::fs::write(config_path, serde_json::to_string_pretty(&database).unwrap_or_default()).await;
     }
 
     // Return the updated settings
@@ -141,11 +132,7 @@ pub async fn update_settings(
     let registration = get_setting::<RegistrationSettings>(&state, "registration_settings", default_registration_settings()).await?;
     let smtp = get_setting::<SMTPSettings>(&state, "smtp_settings", default_smtp_settings()).await?;
     let marketing = get_setting::<MarketingSettings>(&state, "marketing_settings", default_marketing_settings()).await?;
-    let database = if let Ok(config_str) = tokio::fs::read_to_string("./data/database.json").await {
-        serde_json::from_str(&config_str).unwrap_or(default_database_settings())
-    } else {
-        get_setting::<DatabaseSettings>(&state, "database_settings", default_database_settings()).await?
-    };
+    let database = get_setting::<DatabaseSettings>(&state, "database_settings", default_database_settings()).await?;
 
     Ok(Json(AllSettings { site, currency, registration, smtp, marketing, database }))
 }
