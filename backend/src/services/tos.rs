@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::time::Duration;
+use sha2::{Sha256, Digest};
+use hmac::{Hmac, Mac};
+type HmacSha256 = Hmac<Sha256>;
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
@@ -254,4 +257,144 @@ pub async fn update_object_tags(config: &TosConfig, object_key: &str, tags: Hash
         .map_err(|e| format!("设置标签失败: {:?}", e))?;
 
     Ok(())
+}
+
+/// TOS 文件夹中的对象信息
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TosObject {
+    pub key: String,
+    pub size: i64,
+    pub last_modified: String,
+}
+
+/// 列出 TOS 文件夹下的所有文件（通过 S3 兼容 REST API）
+/// 返回文件列表和总大小
+pub async fn list_folder(config: &TosConfig, folder_prefix: &str) -> Result<(Vec<TosObject>, i64), String> {
+    let full_prefix = config.full_key(folder_prefix);
+    // 确保 prefix 以 / 结尾
+    let prefix = if full_prefix.ends_with('/') {
+        full_prefix
+    } else {
+        format!("{}/", full_prefix)
+    };
+
+    let ep = config.endpoint.trim_end_matches('/');
+    let ep_domain = if ep.starts_with("https://") {
+        &ep[8..]
+    } else if ep.starts_with("http://") {
+        &ep[7..]
+    } else {
+        ep
+    };
+
+    let host = if config.bucket.contains('.') {
+        ep_domain.to_string()
+    } else {
+        format!("{}.{}", config.bucket, ep_domain)
+    };
+
+    let path = if config.bucket.contains('.') {
+        format!("/{}", config.bucket)
+    } else {
+        "/".to_string()
+    };
+
+    let now = chrono::Utc::now();
+    let date_str = now.format("%Y%m%dT%H%M%SZ").to_string();
+    let date_short = now.format("%Y%m%d").to_string();
+
+    let query_string = format!(
+        "list-type=2&prefix={}&max-keys=1000",
+        urlencoding::encode(&prefix)
+    );
+
+    // 构造 CanonicalRequest
+    let canonical_request = format!(
+        "GET\n{}\n{}\nhost:{}\nx-tos-date:{}\n\nhost;x-tos-date\n{}",
+        path, query_string, host, date_str,
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" // empty body hash
+    );
+
+    let credential_scope = format!("{}/{}/tos/request", date_short, config.region);
+    let canonical_hash = hex::encode(Sha256::digest(canonical_request.as_bytes()));
+    let string_to_sign = format!(
+        "TOS4-HMAC-SHA256\n{}\n{}\n{}",
+        date_str,
+        credential_scope,
+        canonical_hash
+    );
+
+    // 计算签名
+    fn hmac_sign(key: &[u8], data: &[u8]) -> Vec<u8> {
+        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC key");
+        mac.update(data);
+        mac.finalize().into_bytes().to_vec()
+    }
+    let k_date = hmac_sign(config.secret_key.as_bytes(), date_short.as_bytes());
+    let k_region = hmac_sign(&k_date, config.region.as_bytes());
+    let k_service = hmac_sign(&k_region, b"tos");
+    let k_signing = hmac_sign(&k_service, b"request");
+    let signature = hex::encode(hmac_sign(&k_signing, string_to_sign.as_bytes()));
+
+    let auth_header = format!(
+        "TOS4-HMAC-SHA256 Credential={}/{},SignedHeaders=host;x-tos-date,Signature={}",
+        config.access_key, credential_scope, signature
+    );
+
+    let url = format!("https://{}{}?{}", host, path, query_string);
+
+    let client = reqwest::Client::new();
+    let resp = client.get(&url)
+        .header("Host", &host)
+        .header("x-tos-date", &date_str)
+        .header("Authorization", &auth_header)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("TOS 请求失败: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("TOS ListObjects 失败 ({}): {}", status, body));
+    }
+
+    let body = resp.text().await.map_err(|e| format!("读取响应失败: {}", e))?;
+
+    // 解析 XML 响应
+    let mut objects = Vec::new();
+    let mut total_size: i64 = 0;
+
+    // 简单 XML 解析（提取 <Key>, <Size>, <LastModified>）
+    for content_block in body.split("<Contents>").skip(1) {
+        if let Some(end) = content_block.find("</Contents>") {
+            let block = &content_block[..end];
+            let key = extract_xml_value(block, "Key").unwrap_or_default();
+            let size_str = extract_xml_value(block, "Size").unwrap_or_default();
+            let last_modified = extract_xml_value(block, "LastModified").unwrap_or_default();
+
+            let size: i64 = size_str.parse().unwrap_or(0);
+            // 跳过文件夹标记（0字节且以/结尾的key）
+            if size == 0 && key.ends_with('/') {
+                continue;
+            }
+            total_size += size;
+            objects.push(TosObject {
+                key,
+                size,
+                last_modified,
+            });
+        }
+    }
+
+    Ok((objects, total_size))
+}
+
+/// 辅助：从 XML 中提取标签值
+fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
+    let open = format!("<{}>", tag);
+    let close = format!("</{}>", tag);
+    let start = xml.find(&open)? + open.len();
+    let end = xml.find(&close)?;
+    Some(xml[start..end].to_string())
 }

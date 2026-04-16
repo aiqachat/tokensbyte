@@ -22,6 +22,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/admin/delete/{id}", post(delete_asset))
         .route("/admin/reorder", post(reorder_assets))
         .route("/user/list", get(user_list_assets))
+        .route("/user/storage-info", get(user_storage_info))
 }
 
 #[derive(Deserialize)]
@@ -428,6 +429,97 @@ async fn user_list_assets(
             "quota_bytes": quota_mb * 1024 * 1024,
             "used_mb": format!("{:.1}", used as f64 / 1024.0 / 1024.0),
         }
+    })))
+}
+
+/// 用户存储信息：从 TOS 实际读取文件夹内容，返回文件列表和空间使用量
+async fn user_storage_info(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query(
+        "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+    ))
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| crate::error::AppError::Unauthorized)?;
+
+    let tos_config = crate::api::plugins::get_tos_config(&state, "asset_manager").await;
+    if tos_config.is_none() {
+        return Ok(Json(json!({
+            "folder": "",
+            "files": [],
+            "total_size": 0,
+            "total_size_mb": "0.0",
+            "quota_mb": 100,
+            "is_admin": user.role == "admin",
+            "error": "TOS 存储未配置"
+        })));
+    }
+    let tos_config = tos_config.unwrap();
+
+    // 管理员文件夹 = 000000，普通用户文件夹 = uid
+    let folder_name = if user.role == "admin" {
+        "000000".to_string()
+    } else {
+        user.uid.clone()
+    };
+
+    // 从 TOS 实际列出文件夹内容
+    let (tos_files, total_size) = crate::services::tos::list_folder(&tos_config, &folder_name)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("TOS list_folder 失败: {}", e);
+            (vec![], 0)
+        });
+
+    // 获取配额（管理员无限制，普通用户按等级）
+    let quota_mb: i64 = if user.role == "admin" {
+        0 // 0 表示无限制
+    } else {
+        let quota_key = format!("quota_{}", user.user_group);
+        sqlx::query_scalar::<sqlx::Any, Option<String>>(
+            &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
+        )
+        .bind(&quota_key)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .flatten()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(100)
+    };
+
+    // 将 TOS 文件列表转为简洁格式
+    let files: Vec<serde_json::Value> = tos_files.iter().map(|f| {
+        // 提取文件名（去掉前缀路径）
+        let filename = f.key.rsplit('/').next().unwrap_or(&f.key).to_string();
+        json!({
+            "key": f.key,
+            "filename": filename,
+            "size": f.size,
+            "size_display": if f.size < 1024 {
+                format!("{} B", f.size)
+            } else if f.size < 1024 * 1024 {
+                format!("{:.1} KB", f.size as f64 / 1024.0)
+            } else {
+                format!("{:.2} MB", f.size as f64 / 1024.0 / 1024.0)
+            },
+            "last_modified": f.last_modified,
+        })
+    }).collect();
+
+    let used_mb = total_size as f64 / 1024.0 / 1024.0;
+
+    Ok(Json(json!({
+        "folder": folder_name,
+        "files": files,
+        "file_count": files.len(),
+        "total_size": total_size,
+        "total_size_mb": format!("{:.1}", used_mb),
+        "quota_mb": quota_mb,
+        "remain_mb": if quota_mb > 0 { format!("{:.1}", quota_mb as f64 - used_mb) } else { "无限制".to_string() },
+        "is_admin": user.role == "admin",
     })))
 }
 
