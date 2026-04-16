@@ -23,12 +23,20 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/admin/reorder", post(reorder_assets))
         .route("/user/list", get(user_list_assets))
         .route("/user/storage-info", get(user_storage_info))
+        .route("/user/preset-categories", get(user_preset_categories))
 }
 
 #[derive(Deserialize)]
 pub struct AssetQuery {
     pub status: Option<String>,
     pub source: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UserAssetQuery {
+    pub source: Option<String>,
+    pub category: Option<String>,
+    pub asset_type: Option<String>,
 }
 
 async fn upload_asset(
@@ -380,6 +388,7 @@ async fn audit_asset(
 async fn user_list_assets(
     State(state): State<Arc<AppState>>,
     axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    Query(query): Query<UserAssetQuery>,
 ) -> AppResult<Json<serde_json::Value>> {
 
     let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
@@ -387,15 +396,41 @@ async fn user_list_assets(
         .fetch_optional(&state.db.pool)
         .await?
         .ok_or_else(|| crate::error::AppError::Unauthorized)?;
-        // User sees their own assets + approved builtin assets
-        // User sees their own assets + approved builtin assets that are owned by admins
-    let assets: Vec<PluginAsset> = sqlx::query_as(&state.db.format_query(
-        "SELECT a.* FROM plugin_assets a 
-         JOIN users u ON a.user_id = u.id
-         WHERE a.user_id = ? OR (a.source = 'builtin' AND a.status = 'approved' AND u.role = 'admin') 
-         ORDER BY a.id DESC"
-    ))
-        .bind(&user.id)
+
+    // Build dynamic SQL based on query filters
+    let source_filter = query.source.as_deref().unwrap_or("");
+    
+    let base_sql = if source_filter == "builtin" {
+        // 预设素材：只看 builtin + approved（由管理员上传）
+        "SELECT a.* FROM plugin_assets a JOIN users u ON a.user_id = u.id WHERE a.source = 'builtin' AND a.status = 'approved' AND u.role = 'admin'".to_string()
+    } else if source_filter == "user" {
+        // 我的素材：只看用户自己上传的
+        format!("SELECT a.* FROM plugin_assets a WHERE a.user_id = '{}' AND a.source = 'user'", claims.sub.replace("'", "''"))
+    } else {
+        // 默认：用户自己的 + 已审核的预设素材
+        format!("SELECT a.* FROM plugin_assets a JOIN users u ON a.user_id = u.id WHERE a.user_id = '{}' OR (a.source = 'builtin' AND a.status = 'approved' AND u.role = 'admin')", claims.sub.replace("'", "''"))
+    };
+
+    let mut sql = base_sql;
+
+    // 分类过滤
+    if let Some(ref cat) = query.category {
+        if cat == "__other__" {
+            // 其他素材：非图片、非视频类型，且分类不是"我的人像"
+            sql.push_str(" AND a.asset_type NOT IN ('image', 'video') AND (a.category IS NULL OR a.category != '我的人像')");
+        } else {
+            sql.push_str(&format!(" AND a.category = '{}'", cat.replace("'", "''")));
+        }
+    }
+
+    // 素材类型过滤
+    if let Some(ref at) = query.asset_type {
+        sql.push_str(&format!(" AND a.asset_type = '{}'", at.replace("'", "''")));
+    }
+
+    sql.push_str(" ORDER BY a.sort_order ASC, a.id DESC");
+
+    let assets: Vec<PluginAsset> = sqlx::query_as(&state.db.format_query(&sql))
         .fetch_all(&state.db.pool)
         .await?;
 
@@ -429,6 +464,32 @@ async fn user_list_assets(
             "quota_bytes": quota_mb * 1024 * 1024,
             "used_mb": format!("{:.1}", used as f64 / 1024.0 / 1024.0),
         }
+    })))
+}
+
+/// 获取预设素材的分类列表（去重），供用户端分类导航使用
+async fn user_preset_categories(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 验证用户身份
+    let _user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| crate::error::AppError::Unauthorized)?;
+
+    // 获取所有已审核的预设素材的去重分类
+    let categories: Vec<String> = sqlx::query_scalar(
+        &state.db.format_query(
+            "SELECT DISTINCT category FROM plugin_assets WHERE source = 'builtin' AND status = 'approved' AND category IS NOT NULL AND category != '' ORDER BY category"
+        )
+    )
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    Ok(Json(json!({
+        "categories": categories
     })))
 }
 
