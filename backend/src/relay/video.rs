@@ -177,9 +177,11 @@ pub async fn video_generations_status(
     let get_resp_str = String::from_utf8_lossy(&data).to_string();
 
     if let Some(log_id) = db_log_id {
-        // 解析响应获取任务状态
+        // 解析响应获取任务状态（兼容两种格式：顶层 status 或 final_result.status）
         let resp_json: serde_json::Value = serde_json::from_str(&get_resp_str).unwrap_or(serde_json::json!({}));
-        let task_status = resp_json.get("status").and_then(|s| s.as_str()).unwrap_or("");
+        let task_status = resp_json.get("status")
+            .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
+            .and_then(|s| s.as_str()).unwrap_or("");
 
         // 更新日志响应内容
         let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ? WHERE id = ?"))

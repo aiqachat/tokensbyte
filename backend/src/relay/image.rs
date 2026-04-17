@@ -82,6 +82,7 @@ pub async fn image_generations(
         .unwrap_or(false);
 
     if is_stream || is_upstream_stream {
+        tracing::info!("[Image] model={}, path=STREAM (is_stream={}, is_upstream_stream={})", model, is_stream, is_upstream_stream);
         Ok(crate::relay::stream::handle_image_stream(
             state, token, channel, model.to_string(), upstream_resp,
             ctx.discount, request_content_str, start_time,
@@ -92,11 +93,11 @@ pub async fn image_generations(
     } else {
         let data = upstream_resp.bytes().await?;
         let response_content_str = String::from_utf8_lossy(&data).to_string();
-        let mut p_tokens = 0;
-        let mut c_tokens = 0;
         let usage_tokens = crate::relay::usage_extractor::parse_usage(&response_content_str);
-        p_tokens = usage_tokens.prompt;
-        c_tokens = usage_tokens.completion;
+        let p_tokens = usage_tokens.prompt;
+        let c_tokens = usage_tokens.completion;
+
+        tracing::info!("[Image] model={}, path=SYNC, prompt={}, completion={}, total={}", model, p_tokens, c_tokens, usage_tokens.total);
 
         let features = crate::relay::usage_extractor::extract_request_features(&body);
         let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, ctx.discount, &features);

@@ -42,15 +42,24 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         }
     }
 
-    // Other top-level parameters
-    if let Some(res) = body.get("resolution").and_then(|r| r.as_str()) {
-        resolution = Some(res.to_string());
-    }
-    if let Some(size) = body.get("size").and_then(|s| s.as_str()) {
-        resolution = Some(size.to_string());
-    }
-    if let Some(dur) = body.get("duration").and_then(|d| d.as_f64()) {
-        duration_seconds = Some(dur);
+    // Top-level or final_result nested parameters (兼容视频 GET 两种响应格式)
+    let sources = [body as &Value, body.get("final_result").unwrap_or(body)];
+    for src in &sources {
+        if resolution.is_none() {
+            if let Some(res) = src.get("resolution").and_then(|r| r.as_str()) {
+                resolution = Some(res.to_string());
+            }
+        }
+        if resolution.is_none() {
+            if let Some(size) = src.get("size").and_then(|s| s.as_str()) {
+                resolution = Some(size.to_string());
+            }
+        }
+        if duration_seconds.is_none() {
+            if let Some(dur) = src.get("duration").and_then(|d| d.as_f64()) {
+                duration_seconds = Some(dur);
+            }
+        }
     }
 
     ExtractedFeatures {

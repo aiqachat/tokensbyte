@@ -70,6 +70,13 @@ pub async fn handle_chat_stream(
         // Finalize billing
         let _ = tx.send(Ok("data: [DONE]\n\n".to_string())).await;
         
+        // Fallback: 如果 SSE 解析未获取到 token，从完整响应体中提取
+        if total_prompt_tokens == 0 && total_completion_tokens == 0 && !full_response_text.is_empty() {
+            let fallback = crate::relay::usage_extractor::parse_usage(&full_response_text);
+            total_prompt_tokens = fallback.prompt;
+            total_completion_tokens = fallback.completion;
+        }
+        
         let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
             .bind(&model)
             .fetch_optional(&state.db.pool)
@@ -169,6 +176,14 @@ pub async fn handle_image_stream(
             }
         }
         
+        // Fallback: 如果 SSE 解析未获取到 token（如火山图片返回普通 JSON），从完整响应体中提取
+        if total_prompt_tokens == 0 && total_completion_tokens == 0 && !full_response_text.is_empty() {
+            let fallback = crate::relay::usage_extractor::parse_usage(&full_response_text);
+            total_prompt_tokens = fallback.prompt;
+            total_completion_tokens = fallback.completion;
+            tracing::info!("[Image Stream Fallback] model={}, prompt={}, completion={}", model, total_prompt_tokens, total_completion_tokens);
+        }
+
         let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
             .bind(&model)
             .fetch_optional(&state.db.pool)
@@ -263,6 +278,13 @@ pub async fn handle_native_stream(
 
         // Just blindly try to parse full text if it's small JSON? No, it's a stream, might be concatenated JSONs.
         // Or we can use the estimate if 0.
+        if prompt_tokens == 0 && completion_tokens == 0 {
+             // 先尝试从完整响应精确提取
+             let fallback = crate::relay::usage_extractor::parse_usage(&full_response_text);
+             prompt_tokens = fallback.prompt;
+             completion_tokens = fallback.completion;
+        }
+        // 仍为 0 则估算
         if prompt_tokens == 0 && completion_tokens == 0 {
              let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
              prompt_tokens = crate::relay::estimate_prompt_tokens(&req_json);
