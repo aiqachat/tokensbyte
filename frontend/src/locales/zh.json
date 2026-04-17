@@ -75,7 +75,7 @@
     "welcome": "欢迎回来"
   },
   "channels": {
-    "title": "渠道管理",
+    "title": "渠道分组管理",
     "add_channel": "添加渠道",
     "edit_channel": "编辑渠道",
     "name": "名称",
