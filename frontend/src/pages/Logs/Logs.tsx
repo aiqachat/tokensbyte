@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme } from 'antd';
+import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid } from 'antd';
+import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { SyncOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
@@ -8,6 +9,7 @@ import type { RequestLog, ModelModel } from '../../types';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 const Logs: React.FC = () => {
   const { t } = useTranslation();
@@ -21,6 +23,7 @@ const Logs: React.FC = () => {
   const [pageSize, setPageSize] = useState(20);
   const [modelFilter, setModelFilter] = useState('');
   const [modelsCache, setModelsCache] = useState<ModelModel[]>([]);
+  const screens = useBreakpoint();
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
@@ -224,40 +227,83 @@ const Logs: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24, alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, alignItems: 'flex-start', gap: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           <SyncOutlined style={{ marginRight: 8 }} />
           {t('menu.usage_logs', '使用日志')}
         </Typography.Title>
-        <Space>
+        <Space wrap>
           <Input
             placeholder={t('logs.search_model')}
             prefix={<SearchOutlined />}
             value={modelFilter}
             onChange={e => setModelFilter(e.target.value)}
             onPressEnter={fetchLogs}
+            style={{ width: screens.xs ? '100%' : undefined }}
           />
           <Button icon={<SyncOutlined />} onClick={fetchLogs}>{t('common.refresh')}</Button>
         </Space>
       </div>
 
-      <Table
-        dataSource={logs}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        expandable={{ expandedRowRender, expandRowByClick: true }}
-        pagination={{
-          total,
-          current: page,
-          pageSize,
-          onChange: (p, s) => { setPage(p); setPageSize(s); },
-          showSizeChanger: true,
-        }}
-        size="middle"
-        locale={{ emptyText: t('dashboard.no_data') }}
-        scroll={{ x: 'max-content' }}
-      />
+      {screens.xs ? (
+        <MobileCardList
+          dataSource={logs}
+          loading={loading}
+          rowKey="id"
+          pagination={{
+            total,
+            current: page,
+            pageSize,
+            onChange: (p: number, s: number) => { setPage(p); setPageSize(s); },
+          }}
+          renderCard={(record: any) => {
+            const userName = record.user_nickname || record.user_id?.slice(0, 8) || '-';
+            return (
+              <MobileCard
+                title={<Tag color="blue">{record.model}</Tag>}
+                extra={<Tag color={record.status_code === 200 ? 'success' : 'error'}>{record.status_code}</Tag>}
+              >
+                <CardRow label="时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm:ss')}</Text></CardRow>
+                <CardRow label="用户">
+                  <Space size={4}>
+                    <Avatar size={18} style={{ backgroundColor: themeToken.colorPrimary, fontSize: 10 }}>{userName[0]?.toUpperCase()}</Avatar>
+                    <Text style={{ fontSize: 12 }}>{userName}</Text>
+                  </Space>
+                </CardRow>
+                <CardRow label="令牌"><Tag color="cyan" style={{ fontSize: 11 }}>{record.token_name || '-'}</Tag></CardRow>
+                {record.channel_name && <CardRow label="渠道"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_name}</Text></CardRow>}
+                <CardRow label="用量"><Text type="secondary" style={{ fontSize: 12 }}>输入:{record.prompt_tokens} / 输出:{record.completion_tokens}</Text></CardRow>
+                <CardRow label="费用">
+                  {record.cost === 0
+                    ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
+                    : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{record.cost.toFixed(4)}</Text>
+                  }
+                </CardRow>
+                <CardRow label="延迟"><Text style={{ fontSize: 12 }}>{(record.latency_ms / 1000).toFixed(3)}s</Text></CardRow>
+                <CardRow label="类型"><Tag color={record.is_stream === 1 ? 'geekblue' : 'default'}>{record.is_stream === 1 ? '流' : '非流'}</Tag></CardRow>
+              </MobileCard>
+            );
+          }}
+        />
+      ) : (
+        <Table
+          dataSource={logs}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          expandable={{ expandedRowRender, expandRowByClick: true }}
+          pagination={{
+            total,
+            current: page,
+            pageSize,
+            onChange: (p, s) => { setPage(p); setPageSize(s); },
+            showSizeChanger: true,
+          }}
+          size="middle"
+          locale={{ emptyText: t('dashboard.no_data') }}
+          scroll={{ x: 'max-content' }}
+        />
+      )}
     </Card>
   );
 };

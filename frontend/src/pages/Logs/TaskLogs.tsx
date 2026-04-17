@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Tag, Progress, Button, Space, Typography, DatePicker, Input, Row, Col, Form, message } from 'antd';
+import { Table, Tag, Progress, Button, Space, Typography, DatePicker, Input, Row, Col, Form, message, Grid } from 'antd';
+import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { SyncOutlined, ExperimentOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import dayjs from 'dayjs';
@@ -7,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 interface TaskLog {
   id: number;
@@ -32,6 +34,7 @@ const TaskLogs: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [form] = Form.useForm();
+  const screens = useBreakpoint();
 
   const fetchLogs = async (current = 1, size = 20) => {
     setLoading(true);
@@ -214,21 +217,75 @@ const TaskLogs: React.FC = () => {
         </Form>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={data}
-        rowKey="id"
-        loading={loading}
-        pagination={{
-          current: page,
-          pageSize,
-          total,
-          showSizeChanger: true,
-          onChange: (page, size) => fetchLogs(page, size),
-        }}
-        scroll={{ x: 'max-content' }}
-        size="middle"
-      />
+      {screens.xs ? (
+        <MobileCardList
+          dataSource={data}
+          loading={loading}
+          rowKey="id"
+          pagination={{
+            current: page,
+            pageSize,
+            total,
+            onChange: (p: number, s: number) => fetchLogs(p, s),
+          }}
+          renderCard={(record: any) => {
+            let statusColor = 'default';
+            if (record.status === '成功') statusColor = 'success';
+            if (record.status === '失败') statusColor = 'error';
+            if (record.status === '进行中') statusColor = 'processing';
+            let detailNode = null;
+            if (record.details) {
+              try {
+                const parsed = JSON.parse(record.details);
+                detailNode = (
+                  <Space>
+                    {parsed.preview && <a href={parsed.preview} target="_blank" rel="noreferrer">预览</a>}
+                    {parsed.download && <a href={parsed.download} target="_blank" rel="noreferrer">下载</a>}
+                  </Space>
+                );
+              } catch {
+                detailNode = <Text type="secondary" style={{ fontSize: 12 }}>{record.details}</Text>;
+              }
+            }
+            return (
+              <MobileCard
+                title={<Space><Tag color="blue">{record.platform}</Tag><Tag color="cyan">{record.action_type}</Tag></Space>}
+                extra={<Tag color={statusColor}>{record.status}</Tag>}
+              >
+                <CardRow label="任务ID"><Text style={{ fontSize: 11, fontFamily: 'monospace' }}>{record.task_id}</Text></CardRow>
+                <CardRow label="渠道">{record.channel_id ? <Tag color="gold" style={{ borderRadius: 12 }}># {record.channel_id}</Tag> : '-'}</CardRow>
+                <CardRow label="进度">
+                  <Progress 
+                    percent={record.progress} 
+                    size="small" 
+                    style={{ width: 120, margin: 0 }}
+                    status={record.status === '失败' ? 'exception' : (record.progress === 100 ? 'success' : 'active')}
+                  />
+                </CardRow>
+                <CardRow label="提交"><Text type="secondary" style={{ fontSize: 12 }}>{record.submit_time ? dayjs(record.submit_time).format('MM-DD HH:mm:ss') : '-'}</Text></CardRow>
+                {record.time_spent > 0 && <CardRow label="耗时"><Text type="secondary" style={{ fontSize: 12 }}>🕗 {record.time_spent} 秒</Text></CardRow>}
+                {detailNode && <CardRow label="详情">{detailNode}</CardRow>}
+              </MobileCard>
+            );
+          }}
+        />
+      ) : (
+        <Table
+          columns={columns}
+          dataSource={data}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            current: page,
+            pageSize,
+            total,
+            showSizeChanger: true,
+            onChange: (page, size) => fetchLogs(page, size),
+          }}
+          scroll={{ x: 'max-content' }}
+          size="middle"
+        />
+      )}
     </div>
   );
 };
