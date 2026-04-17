@@ -119,7 +119,12 @@
     "limit": "额度",
     "unlimited": "无限制",
     "copy_success": "令牌已复制到剪贴板",
-    "copy_hint": "复制完整密钥"
+    "copy_hint": "复制完整密钥",
+    "limit_hint": "(-1 为无限额)",
+    "unlimited_quota": "无限额",
+    "allowed_ips": "IP 白名单 (逗号分隔，留空则允许所有)",
+    "rps_limit_hint": "0 = ∞",
+    "rpm_limit_hint": "0 = ∞"
   },
   "logs": {
     "title": "日志查询",

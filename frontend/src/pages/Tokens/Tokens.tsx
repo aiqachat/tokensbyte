@@ -96,12 +96,28 @@ const Tokens: React.FC = () => {
       dataIndex: 'token_key',
       key: 'token_key',
       render: (key: string) => (
-        <Space>
-          <Text code style={{ fontSize: 11 }}>{key.substring(0, 10)}...{key.substring(key.length - 4)}</Text>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: 'rgba(255, 255, 255, 0.04)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '8px',
+          padding: '4px 8px 4px 12px',
+          width: 'max-content',
+        }}>
+          <Text style={{ fontFamily: 'monospace', fontSize: 13, color: '#1677ff', letterSpacing: '0.5px' }}>
+            {key.substring(0, 10)}<span style={{color: '#666', margin: '0 4px'}}>••••••••</span>{key.substring(key.length - 6)}
+          </Text>
           <Tooltip title={t('tokens.copy_hint')}>
-            <Button icon={<CopyOutlined />} size="small" onClick={() => handleCopy(key)} />
+            <Button 
+              type="text" 
+              icon={<CopyOutlined />} 
+              size="small" 
+              onClick={() => handleCopy(key)} 
+              style={{ color: '#888', marginLeft: 12 }} 
+            />
           </Tooltip>
-        </Space>
+        </div>
       ),
     },
     {
@@ -188,27 +204,32 @@ const Tokens: React.FC = () => {
             <Input placeholder="e.g. Project A" />
           </Form.Item>
 
-          <Form.Item name="quota_limit" label={t('tokens.limit') + " (-1 for unlimited)"} initialValue={-1}>
-            <InputNumber style={{ width: '100%' }} />
+          <Form.Item name="quota_limit" label={`${t('tokens.limit')} ${t('tokens.limit_hint')}`} initialValue={-1}>
+            <InputNumber 
+              min={-1}
+              style={{ width: '100%' }} 
+              formatter={(val) => (val === -1 || val === '-1') ? t('tokens.unlimited_quota') : `${val}`}
+              parser={(val) => val === t('tokens.unlimited_quota') ? -1 : parseFloat(val as string) || 0}
+            />
           </Form.Item>
 
           <Form.Item name="allowed_models" label={t('channels.models')}>
             <Input.TextArea rows={4} placeholder="gpt-4o\ngpt-3.5-turbo" />
           </Form.Item>
 
-          <Form.Item name="allowed_ips" label="IP Whitelist (comma separated, empty for all)">
+          <Form.Item name="allowed_ips" label={t('tokens.allowed_ips')}>
              <Input placeholder="192.168.1.1, 10.0.0.1" />
           </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="rps_limit" label="RPS Limit" initialValue={0}>
-                <InputNumber min={0} style={{ width: '100%' }} placeholder="0 = ∞" />
+                <InputNumber min={0} style={{ width: '100%' }} placeholder={t('tokens.rps_limit_hint')} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name="rpm_limit" label="RPM Limit" initialValue={0}>
-                <InputNumber min={0} style={{ width: '100%' }} placeholder="0 = ∞" />
+                <InputNumber min={0} style={{ width: '100%' }} placeholder={t('tokens.rpm_limit_hint')} />
               </Form.Item>
             </Col>
           </Row>

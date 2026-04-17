@@ -22,7 +22,6 @@ const Settings: React.FC = () => {
     switch(tab) {
       case 'currency': return t('menu.currency_settings');
       case 'registration': return t('settings.registration_title');
-      case 'smtp': return t('settings.smtp_title');
       case 'database': return '数据库设置';
       default: return t('menu.basic_settings');
     }
@@ -87,7 +86,6 @@ const Settings: React.FC = () => {
           enable_email_registration: values.enable_email_registration,
           enable_password_recovery: values.enable_password_recovery,
         };
-      } else if (tab === 'smtp') {
         payload.smtp = values.smtp;
       } else if (tab === 'database') {
         payload.database = values.database;
@@ -161,13 +159,20 @@ const Settings: React.FC = () => {
             <Form.Item label={t('settings.currency_unit')} name="currency_unit" rules={[{ required: true }]}>
               <Input placeholder="元" />
             </Form.Item>
-            <Form.Item 
-              label={t('settings.token_ratio')} 
-              name="token_ratio" 
-              rules={[{ required: true }]}
-              extra={<Text type="secondary">{t('settings.currency_hint')}</Text>}
-            >
-              <InputNumber style={{ width: '100%' }} min={0} step={0.0001} />
+            <Form.Item noStyle dependencies={['default_currency']}>
+              {({ getFieldValue }) => {
+                const defaultCurrency = getFieldValue('default_currency') || 'USD';
+                return (
+                  <Form.Item 
+                    label={t('settings.token_ratio')} 
+                    name="token_ratio" 
+                    rules={[{ required: true }]}
+                    extra={<Text type="secondary">{`1 ${defaultCurrency} = N Tokens`}</Text>}
+                  >
+                    <InputNumber style={{ width: '100%' }} min={0} step={0.0001} />
+                  </Form.Item>
+                );
+              }}
             </Form.Item>
           </div>
         )}
@@ -188,35 +193,42 @@ const Settings: React.FC = () => {
             >
               <Switch />
             </Form.Item>
+
+            <Form.Item noStyle dependencies={['enable_email_registration']}>
+              {({ getFieldValue }) => {
+                const enableEmailReg = getFieldValue('enable_email_registration');
+                return enableEmailReg ? (
+                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', marginBottom: '24px' }}>
+                    <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 16 }}>{t('settings.smtp_title')}</Typography.Title>
+                    <Form.Item label={t('settings.smtp_host')} name={['smtp', 'host']} rules={[{ required: true }]}>
+                      <Input placeholder="smtp.gmail.com" />
+                    </Form.Item>
+                    <Form.Item label={t('settings.smtp_port')} name={['smtp', 'port']} rules={[{ required: true }]}>
+                      <InputNumber style={{ width: '100%' }} placeholder="465" />
+                    </Form.Item>
+                    <Form.Item label={t('settings.smtp_user')} name={['smtp', 'username']} rules={[{ required: true }]}>
+                      <Input placeholder="user@gmail.com" />
+                    </Form.Item>
+                    <Form.Item label={t('settings.smtp_pass')} name={['smtp', 'password']}>
+                      <Input.Password placeholder="Leave empty to keep current password" />
+                    </Form.Item>
+                    <Form.Item label={t('settings.from_address')} name={['smtp', 'from_address']} rules={[{ required: true }]}>
+                      <Input placeholder="noreply@tokensbyte.com" />
+                    </Form.Item>
+                    <Form.Item label={t('settings.from_name')} name={['smtp', 'from_name']} rules={[{ required: true }]}>
+                      <Input placeholder="TokensByte" />
+                    </Form.Item>
+                  </div>
+                ) : null;
+              }}
+            </Form.Item>
+
             <Form.Item 
               label={t('settings.enable_password_recovery')} 
               name="enable_password_recovery" 
               valuePropName="checked"
             >
               <Switch />
-            </Form.Item>
-          </div>
-        )}
-
-        {tab === 'smtp' && (
-          <div style={{ maxWidth: 600 }}>
-            <Form.Item label={t('settings.smtp_host')} name={['smtp', 'host']} rules={[{ required: true }]}>
-              <Input placeholder="smtp.gmail.com" />
-            </Form.Item>
-            <Form.Item label={t('settings.smtp_port')} name={['smtp', 'port']} rules={[{ required: true }]}>
-              <InputNumber style={{ width: '100%' }} placeholder="465" />
-            </Form.Item>
-            <Form.Item label={t('settings.smtp_user')} name={['smtp', 'username']} rules={[{ required: true }]}>
-              <Input placeholder="user@gmail.com" />
-            </Form.Item>
-            <Form.Item label={t('settings.smtp_pass')} name={['smtp', 'password']}>
-              <Input.Password placeholder="Leave empty to keep current password" />
-            </Form.Item>
-            <Form.Item label={t('settings.from_address')} name={['smtp', 'from_address']} rules={[{ required: true }]}>
-              <Input placeholder="noreply@tokensbyte.com" />
-            </Form.Item>
-            <Form.Item label={t('settings.from_name')} name={['smtp', 'from_name']} rules={[{ required: true }]}>
-              <Input placeholder="TokensByte" />
             </Form.Item>
           </div>
         )}

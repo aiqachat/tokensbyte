@@ -364,10 +364,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/settings?tab=registration">{t('menu.registration_settings')}</Link>,
           },
           {
-            key: '/admin0755/settings?tab=smtp',
-            label: <Link to="/admin0755/settings?tab=smtp">{t('settings.smtp_title')}</Link>,
-          },
-          {
             key: '/admin0755/settings?tab=database',
             label: <Link to="/admin0755/settings?tab=database">数据库设置</Link>,
           }

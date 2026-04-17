@@ -19,6 +19,9 @@ const Wallet: React.FC = () => {
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const currencyUnit = settings?.currency?.currency_unit || '元';
   const [rechargeModalVisible, setRechargeModalVisible] = useState(false);
+  const [stats, setStats] = useState<WalletStats | null>(null);
+  const [records, setRecords] = useState<RechargeRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
     setLoading(true);

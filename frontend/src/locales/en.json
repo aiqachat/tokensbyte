@@ -116,7 +116,12 @@
     "limit": "Limit",
     "unlimited": "Unlimited",
     "copy_success": "Token copied to clipboard",
-    "copy_hint": "Copy full key"
+    "copy_hint": "Copy full key",
+    "limit_hint": "(-1 for unlimited)",
+    "unlimited_quota": "Unlimited",
+    "allowed_ips": "IP Whitelist (comma separated, empty for all)",
+    "rps_limit_hint": "0 = ∞",
+    "rpm_limit_hint": "0 = ∞"
   },
   "logs": {
     "title": "Request Logs",
