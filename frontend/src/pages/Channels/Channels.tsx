@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch, Grid } from 'antd';
+import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +10,7 @@ import type { Channel } from '../../types';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { useBreakpoint } = Grid;
 
 const Channels: React.FC = () => {
   const { t } = useTranslation();
@@ -24,6 +26,7 @@ const Channels: React.FC = () => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const [showMapping, setShowMapping] = useState(false);
+  const screens = useBreakpoint();
 
   const fetchChannels = async () => {
     setLoading(true);
@@ -223,22 +226,68 @@ const Channels: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>{t('channels.title')}</Title>
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
+        <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('channels.title')}</Title>
         <Space>
           <Button icon={<SyncOutlined />} onClick={fetchChannels}>{t('common.refresh')}</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('channels.add_channel')}</Button>
         </Space>
       </div>
 
-      <Table
-        dataSource={channels}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={{ pageSize: 10 }}
-        scroll={{ x: 'max-content' }}
-      />
+      {screens.xs ? (
+        <MobileCardList
+          dataSource={channels}
+          loading={loading}
+          rowKey="id"
+          pagination={{ pageSize: 10 }}
+          renderCard={(record: any) => {
+            const used = record.quota_used || 0;
+            const limit = record.quota_limit ?? -1;
+            const groups = record.user_groups;
+            return (
+              <MobileCard
+                title={<Text strong>{record.name}</Text>}
+                extra={<Tag color={record.status === 1 ? 'success' : 'error'}>{record.status === 1 ? t('common.active') : t('common.disabled')}</Tag>}
+              >
+                {record.group_aid && <CardRow label="AID"><Tag color="geekblue">{record.group_aid}</Tag></CardRow>}
+                <CardRow label="类型"><Tag color="purple">通用接口池</Tag></CardRow>
+                <CardRow label="支持等级">
+                  {(!groups || groups.length === 0)
+                    ? <Tag color="green">全部允许</Tag>
+                    : <Space size={[0, 4]} wrap>{groups.map((gk: string) => {
+                        const lv = availableUserLevels.find((l: any) => l.group_key === gk);
+                        return <Tag color="blue" key={gk}>{lv ? lv.name : gk}</Tag>;
+                      })}</Space>
+                  }
+                </CardRow>
+                <CardRow label="已用/额度">
+                  <Space size={4}>
+                    <Tag color="orange">{currencySymbol}{used.toFixed(2)}</Tag>
+                    <Text type="secondary">/</Text>
+                    {limit < 0 ? <Tag color="green">∞</Tag> : <Tag>{currencySymbol}{limit.toFixed(2)}</Tag>}
+                  </Space>
+                </CardRow>
+                <CardActions>
+                  <Button size="small" onClick={() => handleTest(record)}>{t('common.test')}</Button>
+                  <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                  <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                    <Button size="small" icon={<DeleteOutlined />} danger />
+                  </Popconfirm>
+                </CardActions>
+              </MobileCard>
+            );
+          }}
+        />
+      ) : (
+        <Table
+          dataSource={channels}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 10 }}
+          scroll={{ x: 'max-content' }}
+        />
+      )}
 
       <Modal
         title={editingChannel ? t('channels.edit_channel') : t('channels.add_channel')}
