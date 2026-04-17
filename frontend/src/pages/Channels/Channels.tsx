@@ -4,6 +4,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-d
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
 import type { Channel } from '../../types';
 
 const { Title, Text } = Typography;
@@ -11,6 +12,8 @@ const { Option } = Select;
 
 const Channels: React.FC = () => {
   const { t } = useTranslation();
+  const { settings } = useSettingsStore();
+  const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [channels, setChannels] = useState<Channel[]>([]);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [availableUserLevels, setAvailableUserLevels] = useState<any[]>([]);
@@ -170,6 +173,25 @@ const Channels: React.FC = () => {
       },
     },
     {
+      title: '已用/额度',
+      key: 'quota',
+      width: 160,
+      render: (_: any, record: Channel) => {
+        const used = record.quota_used || 0;
+        const limit = record.quota_limit ?? -1;
+        return (
+          <Space size={4}>
+            <Tag color="orange">{currencySymbol}{used.toFixed(2)}</Tag>
+            <Text type="secondary">/</Text>
+            {limit < 0 
+              ? <Tag color="green">∞ 无限额</Tag>
+              : <Tag color="default">{currencySymbol}{limit.toFixed(2)}</Tag>
+            }
+          </Space>
+        );
+      }
+    },
+    {
       title: t('common.status'),
       dataIndex: 'status',
       key: 'status',
@@ -297,17 +319,27 @@ const Channels: React.FC = () => {
           </Form.Item>
 
           <Row gutter={16}>
-            <Col span={8}>
+            <Col span={6}>
               <Form.Item name="priority" label={t('channels.priority')} initialValue={0}>
                 <InputNumber style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={6}>
               <Form.Item name="weight" label={t('channels.weight')} initialValue={1}>
                 <InputNumber style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={6}>
+              <Form.Item name="quota_limit" label="使用额度" initialValue={-1} extra="-1 表示无限额度">
+                <InputNumber 
+                  min={-1} 
+                  style={{ width: '100%' }} 
+                  formatter={(val) => (val === -1 || val === '-1') ? '无限额' : `${val}`}
+                  parser={(val) => val === '无限额' ? -1 : parseFloat(val as string) || 0}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
               <Form.Item name="status" label={t('common.status')} initialValue={1}>
                 <Select>
                   <Option value={1}>{t('common.enabled')}</Option>

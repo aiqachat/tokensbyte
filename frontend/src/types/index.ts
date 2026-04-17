@@ -135,6 +135,8 @@ export interface Channel {
   weight: number;
   status: number; // 1=active, 0=disabled
   balance?: number;
+  quota_limit: number; // -1 = unlimited
+  quota_used: number;
   created_at: string;
 }
 
