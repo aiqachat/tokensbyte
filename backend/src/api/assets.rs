@@ -13,6 +13,8 @@ use crate::{
 };
 use serde::Deserialize;
 
+use axum::extract::DefaultBodyLimit;
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/upload", post(upload_asset))
@@ -23,12 +25,26 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/admin/reorder", post(reorder_assets))
         .route("/user/list", get(user_list_assets))
         .route("/user/storage-info", get(user_storage_info))
+        .route("/user/preset-categories", get(user_preset_categories))
+        .route("/user/{id}/edit", put(user_edit_asset))
+        .route("/user/init-real-person-verify", post(init_real_person_verify))
+        .route("/user/complete-real-person-verify", post(complete_real_person_verify))
+        .route("/user/upload-virtual-portrait", post(upload_virtual_portrait))
+        .layer(DefaultBodyLimit::disable())
 }
 
 #[derive(Deserialize)]
 pub struct AssetQuery {
     pub status: Option<String>,
     pub source: Option<String>,
+    pub category: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UserAssetQuery {
+    pub source: Option<String>,
+    pub category: Option<String>,
+    pub asset_type: Option<String>,
 }
 
 async fn upload_asset(
@@ -63,6 +79,7 @@ async fn upload_asset(
     let mut category = String::from("未分类");
     let mut target_user_id = String::new();
     let mut target_asset_id = String::new();
+    let mut remark = String::new();
     let mut file_data: Option<axum::body::Bytes> = None;
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
@@ -88,6 +105,8 @@ async fn upload_asset(
             target_user_id = field.text().await.unwrap_or_default();
         } else if name == "target_asset_id" {
             target_asset_id = field.text().await.unwrap_or_default();
+        } else if name == "remark" {
+            remark = field.text().await.unwrap_or_default();
         }
     }
 
@@ -96,10 +115,10 @@ async fn upload_asset(
             
             // Limit size: Image 10MB, Video 50MB
             if asset_type == "image" && size > 10 * 1024 * 1024 {
-                return Err(AppError::BadRequest("Image exceeds 10MB limit".to_string()));
+                return Err(AppError::BadRequest("图片文件过大，不能超过 10MB！".to_string()));
             }
             if asset_type == "video" && size > 50 * 1024 * 1024 {
-                return Err(AppError::BadRequest("Video exceeds 50MB limit".to_string()));
+                return Err(AppError::BadRequest("视频文件过大，不能超过 50MB！".to_string()));
             }
 
             let ext = std::path::Path::new(&original_name)
@@ -198,8 +217,8 @@ async fn upload_asset(
     };
 
     let asset: PluginAsset = sqlx::query_as(&state.db.format_query(r#"
-        INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, mime_type, size, category, asset_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, mime_type, size, category, asset_id, remark)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
         "#))
     .bind(&final_user_id)
@@ -212,6 +231,7 @@ async fn upload_asset(
     .bind(size)
     .bind(&category)
     .bind(&final_asset_id)
+    .bind(&remark)
     .fetch_one(&state.db.pool)
     .await?;
 
@@ -240,6 +260,10 @@ async fn admin_list_assets(
     if let Some(s) = query.source {
         sql.push_str(&format!(" AND source = '{}'", s.replace("'", "''")));
     }
+    if let Some(ref cat) = query.category {
+        let escaped_cat = cat.replace("'", "''");
+        sql.push_str(&format!(" AND (category = '{escaped_cat}' OR category LIKE '{escaped_cat}/%')"));
+    }
     sql.push_str(" ORDER BY sort_order ASC, id DESC");
 
     let assets: Vec<PluginAsset> = sqlx::query_as(&state.db.format_query(&sql))
@@ -253,12 +277,20 @@ async fn admin_list_assets(
     .fetch_one(&state.db.pool)
     .await?;
 
+    let admin_count: i64 = sqlx::query_scalar(
+        &state.db.format_query("SELECT COUNT(*) FROM plugin_assets WHERE source = 'builtin'")
+    )
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
     Ok(Json(json!({
         "assets": assets,
         "admin_storage": {
             "used_bytes": admin_used.unwrap_or(0),
             "used_mb": format!("{:.1}", admin_used.unwrap_or(0) as f64 / 1024.0 / 1024.0),
             "folder": "000000",
+            "file_count": admin_count,
         }
     })))
 }
@@ -288,10 +320,18 @@ async fn delete_asset(
     // 尝试从 TOS 删除文件
     let mut tos_deleted = false;
     if let Some(tos_config) = crate::api::plugins::get_tos_config(&state, "asset_manager").await {
-        // 从 file_url 解析出 object_key
+        let owner_info: Option<(String, String)> = sqlx::query_as(&state.db.format_query("SELECT uid, role FROM users WHERE id = ?"))
+            .bind(&asset.user_id)
+            .fetch_optional(&state.db.pool)
+            .await
+            .unwrap_or(None);
+        let (owner_uid, owner_role) = owner_info.unwrap_or_else(|| ("000000".to_string(), "admin".to_string()));
+        let folder_name = if owner_role == "admin" { "000000".to_string() } else { owner_uid };
+
+        // 从 file_url 解析出 object_key，必须带上目标文件夹
         let object_key = {
             let filename = asset.file_url.split('/').last().unwrap_or("");
-            tos_config.full_key(filename)
+            tos_config.full_key(&format!("{}/{}", folder_name, filename))
         };
 
         match crate::services::tos::delete_file(&tos_config, &object_key).await {
@@ -380,6 +420,7 @@ async fn audit_asset(
 async fn user_list_assets(
     State(state): State<Arc<AppState>>,
     axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    Query(query): Query<UserAssetQuery>,
 ) -> AppResult<Json<serde_json::Value>> {
 
     let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
@@ -387,15 +428,44 @@ async fn user_list_assets(
         .fetch_optional(&state.db.pool)
         .await?
         .ok_or_else(|| crate::error::AppError::Unauthorized)?;
-        // User sees their own assets + approved builtin assets
-        // User sees their own assets + approved builtin assets that are owned by admins
-    let assets: Vec<PluginAsset> = sqlx::query_as(&state.db.format_query(
-        "SELECT a.* FROM plugin_assets a 
-         JOIN users u ON a.user_id = u.id
-         WHERE a.user_id = ? OR (a.source = 'builtin' AND a.status = 'approved' AND u.role = 'admin') 
-         ORDER BY a.id DESC"
-    ))
-        .bind(&user.id)
+
+    // Build dynamic SQL based on query filters
+    let source_filter = query.source.as_deref().unwrap_or("");
+    
+    let base_sql = if source_filter == "builtin" {
+        // 预设素材：只看 builtin + approved（由管理员上传）
+        "SELECT a.* FROM plugin_assets a JOIN users u ON a.user_id = u.id WHERE a.source = 'builtin' AND a.status = 'approved' AND u.role = 'admin'".to_string()
+    } else if source_filter == "user" {
+        // 我的素材：只看用户自己上传的
+        format!("SELECT a.* FROM plugin_assets a WHERE a.user_id = '{}' AND a.source = 'user'", claims.sub.replace("'", "''"))
+    } else {
+        // 默认：用户自己的 + 已审核的预设素材
+        format!("SELECT a.* FROM plugin_assets a JOIN users u ON a.user_id = u.id WHERE a.user_id = '{}' OR (a.source = 'builtin' AND a.status = 'approved' AND u.role = 'admin')", claims.sub.replace("'", "''"))
+    };
+
+    let mut sql = base_sql;
+
+    // 分类过滤
+    if let Some(ref cat) = query.category {
+        if cat == "__other__" {
+            // 其他素材：非图片、非视频类型，且分类不是"我的人像"
+            sql.push_str(" AND a.asset_type NOT IN ('image', 'video') AND (a.category IS NULL OR a.category != '我的人像')");
+        } else {
+            sql.push_str(&format!(" AND (a.category = '{cat}' OR a.category LIKE '{cat}/%')", cat = cat.replace("'", "''")));
+        }
+    } else {
+        // 如果没有指定 category，默认排除 "我的人像"（因为它现在是独立的一级菜单）
+        sql.push_str(" AND (a.category IS NULL OR a.category != '我的人像')");
+    }
+
+    // 素材类型过滤
+    if let Some(ref at) = query.asset_type {
+        sql.push_str(&format!(" AND a.asset_type = '{}'", at.replace("'", "''")));
+    }
+
+    sql.push_str(" ORDER BY a.sort_order ASC, a.id DESC");
+
+    let assets: Vec<PluginAsset> = sqlx::query_as(&state.db.format_query(&sql))
         .fetch_all(&state.db.pool)
         .await?;
 
@@ -429,6 +499,32 @@ async fn user_list_assets(
             "quota_bytes": quota_mb * 1024 * 1024,
             "used_mb": format!("{:.1}", used as f64 / 1024.0 / 1024.0),
         }
+    })))
+}
+
+/// 获取预设素材的分类列表（去重），供用户端分类导航使用
+async fn user_preset_categories(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 验证用户身份
+    let _user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| crate::error::AppError::Unauthorized)?;
+
+    // 获取所有已审核的预设素材的去重分类
+    let categories: Vec<String> = sqlx::query_scalar(
+        &state.db.format_query(
+            "SELECT DISTINCT category FROM plugin_assets WHERE source = 'builtin' AND status = 'approved' AND category IS NOT NULL AND category != '' ORDER BY category"
+        )
+    )
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    Ok(Json(json!({
+        "categories": categories
     })))
 }
 
@@ -588,9 +684,16 @@ async fn update_asset_tags(
     let tos_config = crate::api::plugins::get_tos_config(&state, "asset_manager").await
         .ok_or_else(|| AppError::BadRequest("TOS未配置".to_string()))?;
 
-    let mut parts = asset.file_url.split('/');
-    let object_key = parts.last().unwrap_or(asset.file_name.as_str());
-    let object_key_str = tos_config.full_key(object_key);
+    let owner_info: Option<(String, String)> = sqlx::query_as(&state.db.format_query("SELECT uid, role FROM users WHERE id = ?"))
+        .bind(&asset.user_id)
+        .fetch_optional(&state.db.pool)
+        .await
+        .unwrap_or(None);
+    let (owner_uid, owner_role) = owner_info.unwrap_or_else(|| ("000000".to_string(), "admin".to_string()));
+    let folder_name = if owner_role == "admin" { "000000".to_string() } else { owner_uid };
+
+    let filename = asset.file_url.split('/').last().unwrap_or(asset.file_name.as_str());
+    let object_key_str = tos_config.full_key(&format!("{}/{}", folder_name, filename));
 
     let final_user_id = if user.role == "admin" && !payload.userid.trim().is_empty() {
         payload.userid.clone()
@@ -628,3 +731,186 @@ async fn update_asset_tags(
 
     Ok(Json(json!({ "message": "标签和文件名已更新" })))
 }
+
+#[derive(Deserialize)]
+pub struct UserEditAssetRequest {
+    pub file_name: Option<String>,
+    pub category: Option<String>,
+}
+
+async fn user_edit_asset(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    Json(payload): Json<UserEditAssetRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let asset: PluginAsset = sqlx::query_as(&state.db.format_query("SELECT * FROM plugin_assets WHERE id = ? AND user_id = ?"))
+        .bind(id)
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("Asset not found or unauthorized".to_string()))?;
+
+    let new_file_name = payload.file_name.unwrap_or(asset.file_name.clone());
+    let new_category = payload.category.unwrap_or(asset.category.unwrap_or_default());
+
+    sqlx::query(&state.db.format_query("UPDATE plugin_assets SET file_name = ?, category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+        .bind(&new_file_name)
+        .bind(&new_category)
+        .bind(id)
+        .execute(&state.db.pool)
+        .await?;
+
+    Ok(Json(json!({ "message": "Asset updated successfully" })))
+}
+
+// ========== 真人人像 & 虚拟人像 (火山引擎) ==========
+
+#[derive(Deserialize)]
+pub struct CompleteVerifyRequest {
+    pub byted_token: String,
+}
+
+/// 用户：发起真人核验 (H5)
+async fn init_real_person_verify(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(_claims): axum::extract::Extension<crate::auth::Claims>,
+    Json(payload): Json<serde_json::Value>,
+) -> AppResult<Json<serde_json::Value>> {
+    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("实人认证功能未配置，请联系管理员".to_string()))?;
+
+    let callback_url = payload.get("callback_url")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("缺少 callback_url".to_string()))?;
+
+    let client = crate::services::volcengine::VolcClient::new(volc_config.clone());
+    
+    let req = crate::services::volcengine::CreateVisualValidateSessionRequest {
+        app_id: volc_config.app_id.clone(),
+        callback_url: callback_url.to_string(),
+        token_valid_time: 3600,
+    };
+
+    let res: crate::services::volcengine::CreateVisualValidateSessionResponse = client.call_api(
+        "visual", "cn-north-1", "CreateVisualValidateSession", "2022-03-25", req
+    ).await.map_err(|e| AppError::Internal(format!("发起认证失败: {}", e)))?;
+
+    if let Some(result) = res.result {
+        Ok(Json(json!({
+            "h5_link": result.h5_link,
+            "byted_token": result.byted_token
+        })))
+    } else {
+        let err_msg = res.metadata.error.map(|e| e.message).unwrap_or_else(|| "未知错误".to_string());
+        Err(AppError::Internal(format!("火山引擎接口错误: {}", err_msg)))
+    }
+}
+
+/// 用户：完成真人核验并同步资产
+async fn complete_real_person_verify(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    Json(payload): Json<CompleteVerifyRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("实人认证功能未配置".to_string()))?;
+
+    let client = crate::services::volcengine::VolcClient::new(volc_config.clone());
+
+    // 1. 获取核验结果
+    let res: crate::services::volcengine::GetVisualValidateResultResponse = client.call_api(
+        "visual", "cn-north-1", "GetVisualValidateResult", "2022-03-25",
+        crate::services::volcengine::GetVisualValidateResultRequest {
+            app_id: volc_config.app_id.clone(),
+            byted_token: payload.byted_token.clone(),
+        }
+    ).await.map_err(|e| AppError::Internal(format!("获取认证结果失败: {}", e)))?;
+
+    let result = res.result.ok_or_else(|| AppError::BadRequest("认证未完成或已过期".to_string()))?;
+    if result.status != 0 {
+        return Err(AppError::BadRequest("实人认证未通过".to_string()));
+    }
+
+    // 2. 创建火山资产
+    let asset_id = format!("real_{}_{}", claims.sub, uuid::Uuid::new_v4().simple());
+    let create_req = crate::services::volcengine::CreateAssetRequest {
+        asset_type: "Human".to_string(),
+        asset_id: asset_id.clone(),
+        asset_name: "真人认证人像".to_string(),
+        asset_group_id: result.asset_group_id,
+        binary_data: None,
+    };
+
+    let asset_res: crate::services::volcengine::CreateAssetResponse = client.call_api(
+        "visual", "cn-north-1", "CreateAsset", "2022-03-25", create_req
+    ).await.map_err(|e| AppError::Internal(format!("创建数字人资产失败: {}", e)))?;
+
+    // 3. 写入本地数据库
+    sqlx::query(&state.db.format_query(
+        "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, category, asset_id) 
+         VALUES (?, 'image', 'user', 'approved', ?, ?, '真人人像', ?)"
+    ))
+    .bind(&claims.sub)
+    .bind("真人认证人像")
+    .bind("") // 真人认证暂无 URL，火山侧管理
+    .bind(&asset_id)
+    .execute(&state.db.pool).await?;
+
+    Ok(Json(json!({ "message": "认证成功", "asset": asset_res.result })))
+}
+
+/// 用户：上传虚拟人像
+async fn upload_virtual_portrait(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    mut multipart: Multipart,
+) -> AppResult<Json<serde_json::Value>> {
+    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("审核配置未完成".to_string()))?;
+
+    let mut file_data = Vec::new();
+    let mut file_name = String::new();
+
+    while let Some(field) = multipart.next_field().await.map_err(|e| AppError::BadRequest(e.to_string()))? {
+        let name = field.name().unwrap_or_default().to_string();
+        if name == "file" {
+            file_name = field.file_name().unwrap_or("virtual_portrait.jpg").to_string();
+            file_data = field.bytes().await.map_err(|e| AppError::BadRequest(e.to_string()))?.to_vec();
+        }
+    }
+
+    if file_data.is_empty() {
+        return Err(AppError::BadRequest("未检测到文件".to_string()));
+    }
+
+    let b64_data = base64::engine::general_purpose::STANDARD.encode(&file_data);
+    let asset_id = format!("v_{}_{}", claims.sub, uuid::Uuid::new_v4().simple());
+    
+    let client = crate::services::volcengine::VolcClient::new(volc_config.clone());
+    let create_req = crate::services::volcengine::CreateAssetRequest {
+        asset_type: "Human".to_string(),
+        asset_id: asset_id.clone(),
+        asset_name: format!("虚拟人像: {}", file_name),
+        asset_group_id: None,
+        binary_data: Some(b64_data),
+    };
+
+    let asset_res: crate::services::volcengine::CreateAssetResponse = client.call_api(
+        "visual", "cn-north-1", "CreateAsset", "2022-03-25", create_req
+    ).await.map_err(|e| AppError::Internal(format!("创建虚拟人像失败: {}", e)))?;
+
+    // 写入本地数据库 (状态为审核中)
+    sqlx::query(&state.db.format_query(
+        "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, category, asset_id) 
+         VALUES (?, 'image', 'user', 'pending', ?, ?, '虚拟人像', ?)"
+    ))
+    .bind(&claims.sub)
+    .bind(&file_name)
+    .bind("") // 暂且留空
+    .bind(&asset_id)
+    .execute(&state.db.pool).await?;
+
+    Ok(Json(json!({ "message": "上传成功，正在进行合规审核", "asset": asset_res.result })))
+}
+

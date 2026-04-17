@@ -49,7 +49,11 @@ pub async fn auth_middleware(
             request.extensions_mut().insert(claims);
             next.run(request).await
         },
-        _ => AppError::Unauthorized.into_response(),
+        Ok(Some(_)) | Ok(None) => AppError::Unauthorized.into_response(),
+        Err(e) => {
+            tracing::error!("Database error in auth_middleware: {}", e);
+            AppError::Internal("Database connection error".to_string()).into_response()
+        }
     }
 }
 

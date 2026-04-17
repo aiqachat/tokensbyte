@@ -29,11 +29,13 @@ request.interceptors.response.use(
       const { status, data } = response;
       if (status === 401) {
         localStorage.removeItem('token');
+        message.error('登录状态已过期，请重新登录');
         if (window.location.pathname !== '/login') {
           window.location.href = '/login';
         }
+      } else {
+        message.error(data?.error?.message || 'Request failed');
       }
-      message.error(data?.error?.message || 'Request failed');
     } else {
       message.error('Network error');
     }
