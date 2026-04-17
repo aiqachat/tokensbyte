@@ -63,11 +63,10 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol }) => {
       }
       if (rule.billing_rule === 'seedance1.5pro') {
         return (
-          <>
-            <Text type="secondary" style={s} display="block">带语音: {currencySymbol}{ext.audio_rate}/1M</Text>
-            <br/>
-            <Text type="secondary" style={s} display="block">无语音: {currencySymbol}{ext.base_rate}/1M</Text>
-          </>
+          <Space direction="vertical" size={0}>
+            <Text type="secondary" style={s}>带语音: {currencySymbol}{ext.audio_rate}/1M</Text>
+            <Text type="secondary" style={s}>无语音: {currencySymbol}{ext.base_rate}/1M</Text>
+          </Space>
         );
       }
       if (rule.billing_rule === 'volcengine') {
