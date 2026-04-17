@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Radio, Switch } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Radio, Switch, Grid } from 'antd';
+import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
@@ -11,6 +12,7 @@ import RateDisplay from './RateDisplay';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { useBreakpoint } = Grid;
 
 const Models: React.FC = () => {
   const { t } = useTranslation();
@@ -22,6 +24,7 @@ const Models: React.FC = () => {
   const [editingModel, setEditingModel] = useState<ModelModel | null>(null);
   const [billingType, setBillingType] = useState('tokens');
   const [form] = Form.useForm();
+  const screens = useBreakpoint();
 
   // Classification State
   const [classStats, setClassStats] = useState<ClassificationsResponse>({ providers: [], types: [] });
@@ -227,8 +230,8 @@ const Models: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>{t('models.title')}</Title>
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
+        <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('models.title')}</Title>
         <Space>
           <Button icon={<SyncOutlined />} onClick={() => { fetchModels(); fetchClassifications(); }}>{t('common.refresh')}</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('models.add_model')}</Button>
@@ -247,14 +250,57 @@ const Models: React.FC = () => {
         totalModels={totalModelsCount}
       />
 
-      <Table
-        dataSource={models}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={{ pageSize: 12 }}
-        scroll={{ x: 'max-content' }}
-      />
+      {screens.xs ? (
+        <MobileCardList
+          dataSource={models}
+          loading={loading}
+          rowKey="id"
+          pagination={{ pageSize: 12 }}
+          renderCard={(record: any) => {
+            const br = allBillingRules.find((b: any) => b.id === record.billing_rule_id);
+            const billingTypeVal = br ? br.billing_type : 'tokens';
+            const colors: Record<string, string> = { tokens: 'cyan', requests: 'orange', duration: 'purple' };
+            return (
+              <MobileCard
+                title={
+                  <div>
+                    <Text strong>{record.name}</Text>
+                    <div style={{ marginTop: 4 }}>
+                      {record.provider_id && <Tag color="default" style={{ fontSize: 10 }}>{getProviderName(record.provider_id)}</Tag>}
+                      {record.type_id && <Tag color="blue" style={{ fontSize: 10 }}>{getTypeName(record.type_id)}</Tag>}
+                    </div>
+                  </div>
+                }
+                extra={<Tag color={record.is_active ? 'success' : 'error'}>{record.is_active ? t('common.active') : t('common.disabled')}</Tag>}
+              >
+                <CardRow label="模型ID"><Tag color="blue" style={{ fontSize: 11 }}>{record.model_id}</Tag></CardRow>
+                <CardRow label="计费类型"><Tag color={colors[billingTypeVal]}>{t(`models.type_${billingTypeVal}`)}</Tag></CardRow>
+                <CardRow label="费率">
+                  {br ? <RateDisplay rule={br} currencySymbol={currencySymbol} /> : <Text type="secondary" italic>未挂载</Text>}
+                </CardRow>
+                {(record.pre_deduction ?? 0) > 0 && (
+                  <CardRow label="预扣"><Text style={{ fontSize: 11, color: '#faad14' }}>{currencySymbol}{record.pre_deduction}</Text></CardRow>
+                )}
+                <CardActions>
+                  <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                  <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                    <Button size="small" icon={<DeleteOutlined />} danger />
+                  </Popconfirm>
+                </CardActions>
+              </MobileCard>
+            );
+          }}
+        />
+      ) : (
+        <Table
+          dataSource={models}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 12 }}
+          scroll={{ x: 'max-content' }}
+        />
+      )}
 
       <Modal
         title={editingModel ? t('models.edit_model') : t('models.add_model')}

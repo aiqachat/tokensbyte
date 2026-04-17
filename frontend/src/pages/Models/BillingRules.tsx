@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Radio, InputNumber, Row, Col, Typography } from 'antd';
+import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Radio, InputNumber, Row, Col, Typography, Grid } from 'antd';
+import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, DeleteTwoTone } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
@@ -7,6 +8,7 @@ import useSettingsStore from '../../store/settings';
 import RateDisplay from './RateDisplay';
 
 const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
 
 interface BillingRuleData {
   id: number;
@@ -34,6 +36,7 @@ const BillingRules: React.FC = () => {
   const [editingItem, setEditingItem] = useState<BillingRuleData | null>(null);
   const [billingType, setBillingType] = useState('tokens');
   const [form] = Form.useForm();
+  const screens = useBreakpoint();
 
   const fetchItems = async () => {
     setLoading(true);
@@ -232,19 +235,47 @@ const BillingRules: React.FC = () => {
 
   return (
     <div>
-      <Card title="大模型价格配置与统一计费计算池" extra={
+      <Card title={screens.xs ? '计费配置' : '大模型价格配置与统一计费计算池'} extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          新建计费策略类
+          {screens.xs ? '新建' : '新建计费策略类'}
         </Button>
       }>
-        <Table
-          dataSource={items}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 15 }}
-          size="middle"
-        />
+        {screens.xs ? (
+          <MobileCardList
+            dataSource={items}
+            loading={loading}
+            rowKey="id"
+            pagination={{ pageSize: 15 }}
+            renderCard={(record: any) => {
+              const colors: Record<string, string> = { tokens: 'cyan', requests: 'orange', duration: 'purple' };
+              return (
+                <MobileCard
+                  title={<Text strong>{record.name}</Text>}
+                  extra={<Switch checked={record.is_active === 1} disabled size="small" />}
+                >
+                  <CardRow label="ID"><Text type="secondary">{record.id}</Text></CardRow>
+                  <CardRow label="计费类型"><Tag color={colors[record.billing_type]}>{t(`models.type_${record.billing_type}`)}</Tag></CardRow>
+                  <CardRow label="费率"><RateDisplay rule={record} currencySymbol={currencySymbol} /></CardRow>
+                  <CardActions>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                    <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                      <Button size="small" icon={<DeleteOutlined />} danger />
+                    </Popconfirm>
+                  </CardActions>
+                </MobileCard>
+              );
+            }}
+          />
+        ) : (
+          <Table
+            dataSource={items}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            pagination={{ pageSize: 15 }}
+            size="middle"
+          />
+        )}
       </Card>
 
       <Modal

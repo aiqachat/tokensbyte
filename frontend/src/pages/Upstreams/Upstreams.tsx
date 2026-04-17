@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Modal, Form, Input, InputNumber, Switch, message, Popconfirm, Card, Typography, Select, Divider } from 'antd';
+import { Table, Button, Space, Modal, Form, Input, InputNumber, Switch, message, Popconfirm, Card, Typography, Select, Divider, Grid } from 'antd';
+import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, KeyOutlined, ApiOutlined, ProfileOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
@@ -7,6 +8,7 @@ import type { Upstream } from '../../types';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { useBreakpoint } = Grid;
 
 const UPSTREAM_TYPES = [
   'newapi', '火山官方', 'byteplus', '阿里云官方', '阿里云国际', 
@@ -21,6 +23,7 @@ const Upstreams: React.FC = () => {
   const [editingUpstream, setEditingUpstream] = useState<Upstream | null>(null);
   const [syncingId, setSyncingId] = useState<number | null>(null);
   const [form] = Form.useForm();
+  const screens = useBreakpoint();
   
   const currentUpstreamType = Form.useWatch('upstream_type', form);
 
@@ -203,21 +206,51 @@ const Upstreams: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>上游管理</Title>
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
+        <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>上游管理</Title>
         <Space>
           <Button icon={<SyncOutlined />} onClick={fetchUpstreams}>{t('common.refresh')}</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>新增上游转发</Button>
         </Space>
       </div>
 
-      <Table
-        dataSource={upstreams}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={{ pageSize: 15 }}
-      />
+      {screens.xs ? (
+        <MobileCardList
+          dataSource={upstreams}
+          loading={loading}
+          rowKey="id"
+          pagination={{ pageSize: 15 }}
+          renderCard={(record: any) => (
+            <MobileCard
+              title={<Text strong>{record.name}</Text>}
+              extra={<Switch checked={record.is_active} disabled size="small" />}
+            >
+              <CardRow label="类型"><Text>{record.upstream_type}</Text></CardRow>
+              <CardRow label="余额">
+                <Space>
+                  <Text strong style={{ color: '#52c41a' }}>{record.balance !== undefined ? `¥ ${record.balance}` : '-'}</Text>
+                  <Button type="link" size="small" icon={<SyncOutlined spin={syncingId === record.id} />} onClick={() => handleSyncBalance(record.id)} disabled={syncingId === record.id}>同步</Button>
+                </Space>
+              </CardRow>
+              {record.remark && <CardRow label="备注"><Text type="secondary" style={{ fontSize: 12 }}>{record.remark}</Text></CardRow>}
+              <CardActions>
+                <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                  <Button size="small" icon={<DeleteOutlined />} danger />
+                </Popconfirm>
+              </CardActions>
+            </MobileCard>
+          )}
+        />
+      ) : (
+        <Table
+          dataSource={upstreams}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 15 }}
+        />
+      )}
 
       <Modal
         title={editingUpstream ? "编辑上游" : "新增上游"}

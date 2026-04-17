@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress, Grid } from 'antd';
+import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined, DollarOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
@@ -10,10 +11,12 @@ import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { useBreakpoint } = Grid;
 
 const Users: React.FC = () => {
   const { t } = useTranslation();
   const location = useLocation();
+  const screens = useBreakpoint();
   const isAdminPage = location.pathname.includes('/admins');
   const targetRole = isAdminPage ? 'admin' : 'user';
   
@@ -304,8 +307,8 @@ const Users: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
+        <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>
           {isAdminPage ? t('menu.admin_list') : t('menu.user_list')}
         </Title>
         <Space wrap>
@@ -314,26 +317,81 @@ const Users: React.FC = () => {
             allowClear 
             onSearch={setSearchText} 
             onChange={(e) => setSearchText(e.target.value)} 
-            style={{ width: 300 }}
+            style={{ width: screens.xs ? '100%' : 300 }}
           />
           <Button icon={<SyncOutlined />} onClick={fetchUsers}>{t('common.refresh')}</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{isAdminPage ? '添加管理员' : '添加普通用户'}</Button>
         </Space>
       </div>
 
-      <Table
-        dataSource={displayedUsers}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={{ 
-          defaultPageSize: 50, 
-          pageSizeOptions: ['50', '100', '200'], 
-          showSizeChanger: true,
-          showTotal: (total) => `共 ${total} 条数据`
-        }}
-        scroll={{ x: 'max-content' }}
-      />
+      {screens.xs ? (
+        <MobileCardList
+          dataSource={displayedUsers}
+          loading={loading}
+          rowKey="id"
+          pagination={{ pageSize: 20, showTotal: (total: number) => `共 ${total} 条` }}
+          renderCard={(record: any) => {
+            const level = userLevels.find((l: any) => l.group_key === record.user_group);
+            const levelName = level ? level.name : (record.user_group || 'default').toUpperCase();
+            const balance = record.balance || 0;
+            const used = record.used_quota || 0;
+            const total = balance + used;
+            return (
+              <MobileCard
+                title={<Space><UserOutlined /><Text strong>{record.username}</Text>{record.nickname && <Text type="secondary">({record.nickname})</Text>}</Space>}
+                extra={<Tag color={record.is_active ? 'success' : 'error'}>{record.is_active ? t('common.active') : t('common.disabled')}</Tag>}
+              >
+                <CardRow label="UID"><Text code style={{ color: '#fff', fontSize: 12 }}>{record.uid}</Text></CardRow>
+                {record.email && <CardRow label="邮箱"><Text style={{ fontSize: 12 }}>{record.email}</Text></CardRow>}
+                {record.mobile && <CardRow label="手机号"><Text style={{ fontSize: 12 }}>{record.mobile}</Text></CardRow>}
+                {!isAdminPage && (
+                  <CardRow label="余额">
+                    <Text style={{ color: '#52c41a', fontWeight: 'bold' }}>{currencySymbol}{balance.toFixed(2)}</Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}> / {currencySymbol}{total.toFixed(2)}</Text>
+                  </CardRow>
+                )}
+                {isAdminPage ? (
+                  <CardRow label="分组">
+                    {(() => {
+                      const adminGroup = adminGroups.find((g: any) => g.id === record.admin_group_id);
+                      return <Tag color="purple">{adminGroup ? adminGroup.name : '超级管理员'}</Tag>;
+                    })()}
+                  </CardRow>
+                ) : (
+                  <CardRow label="等级">
+                    <Tag color={record.user_group === 'vip' ? 'gold' : 'default'}>{levelName}</Tag>
+                  </CardRow>
+                )}
+                <CardRow label="注册IP"><Text type="secondary" style={{ fontSize: 12 }}>{record.register_ip || '未知'}</Text></CardRow>
+                <CardRow label="加入时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm')}</Text></CardRow>
+                <CardActions>
+                  {!isAdminPage && (
+                    <Button size="small" icon={<WalletOutlined />} style={{ color: '#52c41a', borderColor: '#52c41a' }} onClick={() => handleRechargeClick(record)} />
+                  )}
+                  <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                  <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                    <Button size="small" icon={<DeleteOutlined />} danger disabled={record.role === 'admin'} />
+                  </Popconfirm>
+                </CardActions>
+              </MobileCard>
+            );
+          }}
+        />
+      ) : (
+        <Table
+          dataSource={displayedUsers}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{ 
+            defaultPageSize: 50, 
+            pageSizeOptions: ['50', '100', '200'], 
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条数据`
+          }}
+          scroll={{ x: 'max-content' }}
+        />
+      )}
 
       <Modal
         title={editingUser ? t('users.edit_user') : (isAdminPage ? '添加管理员' : '添加普通用户')}

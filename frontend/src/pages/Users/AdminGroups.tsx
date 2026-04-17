@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Checkbox, Space, message, Card, Typography, Divider } from 'antd';
+import { Table, Button, Modal, Form, Input, Checkbox, Space, message, Card, Typography, Divider, Grid } from 'antd';
+import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import type { AdminGroup } from '../../types';
 
 const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
 
 const ALL_PERMISSIONS = [
   { label: '仪表盘 (Dashboard)', value: 'dashboard' },
@@ -26,6 +28,7 @@ const AdminGroups: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingGroup, setEditingGroup] = useState<AdminGroup | null>(null);
   const [form] = Form.useForm();
+  const screens = useBreakpoint();
 
   const fetchGroups = async () => {
     setLoading(true);
@@ -117,12 +120,33 @@ const AdminGroups: React.FC = () => {
         </Button>
       }
     >
-      <Table 
-        columns={columns} 
-        dataSource={groups} 
-        rowKey="id" 
-        loading={loading}
-      />
+      {screens.xs ? (
+        <MobileCardList
+          dataSource={groups}
+          loading={loading}
+          rowKey="id"
+          pagination={false}
+          renderCard={(record: any) => (
+            <MobileCard
+              title={<Text strong>{record.name}</Text>}
+              extra={<Text type="secondary">ID: {record.id}</Text>}
+            >
+              {record.description && <CardRow label="描述"><Text type="secondary" style={{ fontSize: 12 }}>{record.description}</Text></CardRow>}
+              <CardActions>
+                <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
+                <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)}>删除</Button>
+              </CardActions>
+            </MobileCard>
+          )}
+        />
+      ) : (
+        <Table 
+          columns={columns} 
+          dataSource={groups} 
+          rowKey="id" 
+          loading={loading}
+        />
+      )}
 
       <Modal
         title={editingGroup ? '编辑分组' : '新建分组'}

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Select, Alert, Popover } from 'antd';
+import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Select, Alert, Popover, Grid, Typography } from 'antd';
+import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CodeOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 
 const { TextArea } = Input;
+const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 interface ForwardRule {
   id: number;
@@ -26,6 +29,7 @@ const ForwardRules: React.FC = () => {
   const [editingItem, setEditingItem] = useState<ForwardRule | null>(null);
   const [currentConfig, setCurrentConfig] = useState<string>('');
   const [form] = Form.useForm();
+  const screens = useBreakpoint();
 
   const fetchItems = async () => {
     setLoading(true);
@@ -222,24 +226,58 @@ const ForwardRules: React.FC = () => {
     <div>
       <Card title={
         <Space>
-          大模型高级转发规则引擎配置
+          {!screens.xs && '大模型高级转发规则引擎配置'}
+          {screens.xs && '转发规则'}
           <Popover content={helpContent} title="什么是高级转发规则引擎？" trigger="hover" placement="bottomLeft">
             <QuestionCircleOutlined style={{ color: '#1890ff', cursor: 'pointer' }} />
           </Popover>
         </Space>
       } extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          新增定制规则
+          {screens.xs ? '新增' : '新增定制规则'}
         </Button>
       }>
-        <Table
-          dataSource={items}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 15 }}
-          size="middle"
-        />
+        {screens.xs ? (
+          <MobileCardList
+            dataSource={items}
+            loading={loading}
+            rowKey="id"
+            pagination={{ pageSize: 15 }}
+            renderCard={(record: any) => {
+              let categoryColor = 'cyan';
+              if (record.category === '聊天') categoryColor = 'blue';
+              else if (record.category === '图片') categoryColor = 'magenta';
+              else if (record.category === '视频') categoryColor = 'volcano';
+              else if (record.category === '语音') categoryColor = 'green';
+              return (
+                <MobileCard
+                  title={<Space><Tag color="blue">{record.name}</Tag></Space>}
+                  extra={<Switch checked={record.is_active === 1} disabled size="small" />}
+                >
+                  <CardRow label="模式"><Tag color="purple">{record.rule_type}</Tag></CardRow>
+                  <CardRow label="分类"><Tag color={categoryColor}>{record.category || '聊天'}</Tag></CardRow>
+                  {record.description && <CardRow label="描述"><Text type="secondary" style={{ fontSize: 12 }}>{record.description}</Text></CardRow>}
+                  <CardActions>
+                    <Button size="small" type="dashed" icon={<CodeOutlined />} onClick={() => viewConfigJson(record.config_json)}>JSON</Button>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                    <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                      <Button size="small" icon={<DeleteOutlined />} danger />
+                    </Popconfirm>
+                  </CardActions>
+                </MobileCard>
+              );
+            }}
+          />
+        ) : (
+          <Table
+            dataSource={items}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            pagination={{ pageSize: 15 }}
+            size="middle"
+          />
+        )}
       </Card>
 
       <Modal

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Grid } from 'antd';
+import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, TrophyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -8,11 +9,13 @@ import dayjs from 'dayjs';
 import type { UserLevel } from '../../types';
 
 const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
 
 
 
 const UserLevels: React.FC = () => {
   const { t } = useTranslation();
+  const screens = useBreakpoint();
   const navigate = useNavigate();
   const [levels, setLevels] = useState<UserLevel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,22 +126,59 @@ const UserLevels: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>{t('user_levels.title')}</Title>
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
+        <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('user_levels.title')}</Title>
         <Space>
           <Button icon={<SyncOutlined />} onClick={fetchLevels}>{t('common.refresh')}</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('user_levels.add_level')}</Button>
         </Space>
       </div>
 
-      <Table
-        dataSource={levels}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={false}
-        scroll={{ x: 'max-content' }}
-      />
+      {screens.xs ? (
+        <MobileCardList
+          dataSource={levels}
+          loading={loading}
+          rowKey="id"
+          pagination={false}
+          renderCard={(record: any) => {
+            const off = Math.round((1 - record.discount) * 100);
+            const up = Math.round((record.discount - 1) * 100);
+            const commPercent = Math.round((record.commission_ratio || 0) * 100);
+            return (
+              <MobileCard
+                title={<Space><TrophyOutlined style={{ color: '#faad14' }} /><Text strong>{record.name}</Text></Space>}
+                extra={<Tag color="blue">{record.group_key}</Tag>}
+              >
+                <CardRow label="折扣倍率">
+                  <Space>
+                    <Text>{record.discount.toFixed(2)}x</Text>
+                    {off > 0 && <Tag color="green">-{off}%</Tag>}
+                    {up > 0 && <Tag color="volcano">+{up}%</Tag>}
+                  </Space>
+                </CardRow>
+                <CardRow label="返利比例"><Tag color="green">{commPercent}%</Tag></CardRow>
+                {record.description && <CardRow label="说明"><Text type="secondary" style={{ fontSize: 12 }}>{record.description}</Text></CardRow>}
+                <CardRow label="创建时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD')}</Text></CardRow>
+                <CardActions>
+                  <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                  <Popconfirm title={t('user_levels.delete_confirm')} onConfirm={() => handleDelete(record.id)} disabled={record.group_key === 'default'}>
+                    <Button size="small" icon={<DeleteOutlined />} danger disabled={record.group_key === 'default'} />
+                  </Popconfirm>
+                </CardActions>
+              </MobileCard>
+            );
+          }}
+        />
+      ) : (
+        <Table
+          dataSource={levels}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={false}
+          scroll={{ x: 'max-content' }}
+        />
+      )}
 
 
     </Card>
