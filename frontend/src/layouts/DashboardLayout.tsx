@@ -214,32 +214,32 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     }
 
     if (hasPermission('channels')) {
-      menuItems.push({
-        key: 'channels-management-group',
-        icon: <ControlOutlined style={{ fontSize: '18px' }} />,
-        label: t('menu.channels'),
-        children: [
-          {
-            key: '/admin0755/channels',
-            label: <Link to="/admin0755/channels">{t('menu.channel_groups', '模型渠道分组')}</Link>,
-          },
-          {
-            key: '/admin0755/channel-configs',
-            label: <Link to="/admin0755/channel-configs">{t('menu.channel_configs', '模型渠道配置')}</Link>,
-          }
-        ]
-      });
-    }
-
-    if (hasPermission('models') || hasPermission('upstreams') || isSuperAdmin) {
-      const modelChildren = [];
-
+      const channelChildren = [
+        {
+          key: '/admin0755/channels',
+          label: <Link to="/admin0755/channels">{t('menu.channel_groups', '模型渠道分组')}</Link>,
+        },
+        {
+          key: '/admin0755/channel-configs',
+          label: <Link to="/admin0755/channel-configs">{t('menu.channel_configs', '模型渠道配置')}</Link>,
+        },
+      ];
       if (hasPermission('upstreams') || isSuperAdmin) {
-        modelChildren.push({
+        channelChildren.push({
           key: '/admin0755/upstreams',
           label: <Link to="/admin0755/upstreams">上游管理</Link>,
         });
       }
+      menuItems.push({
+        key: 'channels-management-group',
+        icon: <ControlOutlined style={{ fontSize: '18px' }} />,
+        label: t('menu.channels'),
+        children: channelChildren
+      });
+    }
+
+    if (hasPermission('models') || isSuperAdmin) {
+      const modelChildren = [];
 
       if (hasPermission('models')) {
         modelChildren.push(
