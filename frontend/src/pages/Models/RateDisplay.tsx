@@ -50,12 +50,15 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol }) => {
         return <Text type="warning" style={s}>阶梯定价 (见配置详情)</Text>;
       }
       if (rule.billing_rule === 'seedance2.0') {
+        const rates = ext.resolution_rates || {};
         return (
-          <>
-            <Text type="secondary" style={s} display="block">带视频: {currencySymbol}{ext.video_rate}/1M</Text>
-            <br/>
-            <Text type="secondary" style={s} display="block">无视频: {currencySymbol}{ext.base_rate}/1M</Text>
-          </>
+          <Space direction="vertical" size={0}>
+            {['480p', '720p', '1080p'].map(r => (
+              <Text key={r} type="secondary" style={s}>
+                {r}: {currencySymbol}{rates[r]?.with_video ?? 0}(含视频) / {currencySymbol}{rates[r]?.without_video ?? 0}(无视频)
+              </Text>
+            ))}
+          </Space>
         );
       }
       if (rule.billing_rule === 'seedance1.5pro') {

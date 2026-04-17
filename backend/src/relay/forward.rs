@@ -190,7 +190,7 @@ pub fn transform_request_body(
     body: &serde_json::Value,
     category: &str,
 ) -> serde_json::Value {
-    match resolved.target_type.as_str() {
+    let mut result = match resolved.target_type.as_str() {
         // 火山方舟图片（/api/v3/images/generations）: 保持 OpenAI 兼容格式，仅替换 model
         "volcengine_image" => {
             let mut fwd = body.clone();
@@ -299,12 +299,28 @@ pub fn transform_request_body(
             result
         }
 
-        // OpenAI 兼容 / 其他：直接透传，仅替换 model 名
         _ => {
             let mut fwd = body.clone();
             fwd["model"] = serde_json::json!(model);
             fwd
         }
+    };
+
+    // 统一后处理：web_search 联网搜索参数转换
+    convert_web_search(&mut result, body, &resolved.target_type);
+    result
+}
+
+/// 将 OpenAI 风格的 `web_search: true` 转换为目标平台的联网搜索参数。
+/// 火山方舟统一使用 `tools: [{"type": "web_search"}]` 格式。
+fn convert_web_search(result: &mut serde_json::Value, original: &serde_json::Value, target_type: &str) {
+    if !original.get("web_search").and_then(|v| v.as_bool()).unwrap_or(false) { return; }
+    match target_type {
+        "volcengine" | "volcengine_chat" | "volcengine_image" => {
+            result["tools"] = serde_json::json!([{"type": "web_search"}]);
+            if let Some(obj) = result.as_object_mut() { obj.remove("web_search"); }
+        }
+        _ => {}
     }
 }
 

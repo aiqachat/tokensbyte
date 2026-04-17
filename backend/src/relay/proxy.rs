@@ -149,9 +149,9 @@ pub async fn record_and_bill_with_prededuction(
         enable_log = m.enable_log_content;
     }
 
-    let filter_base64 = |content: Option<String>| -> Option<String> {
+    let filter_content = |content: Option<String>, respect_log_flag: bool| -> Option<String> {
         let text = content?;
-        if enable_log == 0 { return None; }
+        if respect_log_flag && enable_log == 0 { return None; }
         // 1. 标准 data URI: data:image/jpeg;base64,...
         let re1 = Regex::new(r"data:image/[^;]+;base64,[A-Za-z0-9+/=\s]{100,}").unwrap();
         let text = re1.replace_all(&text, "\"base64图片\"").to_string();
@@ -163,9 +163,9 @@ pub async fn record_and_bill_with_prededuction(
         Some(re3.replace_all(&text, "\"base64图片\"").to_string())
     };
 
-    let req_content = filter_base64(request_content);
-    let resp_content = filter_base64(response_content);
-    let upstream_req = filter_base64(upstream_req_content);
+    let req_content = filter_content(request_content, true);       // 受上下文记录开关控制
+    let resp_content = filter_content(response_content, false);    // 始终保存（计费依赖 token 用量）
+    let upstream_req = filter_content(upstream_req_content, true); // 受上下文记录开关控制
 
     let mut channel_info: Option<(String, String, String)> = None;
     if let Ok(Some(ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))

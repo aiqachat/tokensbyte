@@ -42,6 +42,21 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         }
     }
 
+    // 顶层 videos 数组（OpenAI 风格扁平请求格式，如视频生成）
+    if body.get("videos").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty()) {
+        has_video = true;
+    }
+
+    // 顶层 content 数组（火山方舟格式）
+    if let Some(content) = body.get("content").and_then(|c| c.as_array()) {
+        for item in content {
+            if let Some(t) = item.get("type").and_then(|v| v.as_str()) {
+                if t.contains("video") { has_video = true; }
+                if t.contains("audio") { has_audio = true; }
+            }
+        }
+    }
+
     // Top-level or final_result nested parameters (兼容视频 GET 两种响应格式)
     let sources = [body as &Value, body.get("final_result").unwrap_or(body)];
     for src in &sources {

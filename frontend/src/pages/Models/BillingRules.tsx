@@ -64,9 +64,10 @@ const BillingRules: React.FC = () => {
       fixed_rate: 0,
       duration_rate: 0,
       pricing_tiers: [],
-      volc_video_enabled: false, volc_video_rate: 0,
-      volc_audio_enabled: false, volc_audio_rate: 0,
-      volc_base_enabled: false, volc_base_rate: 0,
+      sd2_480p_video: 0, sd2_480p_base: 0,
+      sd2_720p_video: 0, sd2_720p_base: 0,
+      sd2_1080p_video: 0, sd2_1080p_base: 0,
+      volc_audio_rate: 0, volc_base_rate: 0,
     });
     setIsModalVisible(true);
   };
@@ -88,7 +89,12 @@ const BillingRules: React.FC = () => {
     form.setFieldsValue({
       ...item,
       pricing_tiers: tiers,
-      volc_video_rate: ext.video_rate || 0,
+      sd2_480p_video: ext.resolution_rates?.['480p']?.with_video || 0,
+      sd2_480p_base: ext.resolution_rates?.['480p']?.without_video || 0,
+      sd2_720p_video: ext.resolution_rates?.['720p']?.with_video || 0,
+      sd2_720p_base: ext.resolution_rates?.['720p']?.without_video || 0,
+      sd2_1080p_video: ext.resolution_rates?.['1080p']?.with_video || 0,
+      sd2_1080p_base: ext.resolution_rates?.['1080p']?.without_video || 0,
       volc_audio_rate: ext.audio_rate || 0,
       volc_base_rate: ext.base_rate || 0,
       is_active: item.is_active === 1,
@@ -117,8 +123,11 @@ const BillingRules: React.FC = () => {
       let extConfig = {};
       if (values.billing_rule === 'seedance2.0') {
         extConfig = {
-          video_rate: values.volc_video_rate || 0,
-          base_rate: values.volc_base_rate || 0,
+          resolution_rates: {
+            '480p': { with_video: values.sd2_480p_video || 0, without_video: values.sd2_480p_base || 0 },
+            '720p': { with_video: values.sd2_720p_video || 0, without_video: values.sd2_720p_base || 0 },
+            '1080p': { with_video: values.sd2_1080p_video || 0, without_video: values.sd2_1080p_base || 0 },
+          },
         };
       } else if (values.billing_rule === 'seedance1.5pro') {
         extConfig = {
@@ -128,7 +137,9 @@ const BillingRules: React.FC = () => {
       }
 
       // 清除表单中不应提交的临时字段
-      delete values.volc_video_rate;
+      delete values.sd2_480p_video; delete values.sd2_480p_base;
+      delete values.sd2_720p_video; delete values.sd2_720p_base;
+      delete values.sd2_1080p_video; delete values.sd2_1080p_base;
       delete values.volc_audio_rate;
       delete values.volc_base_rate;
 
@@ -286,12 +297,27 @@ const BillingRules: React.FC = () => {
                     );
                   } else if (rule === 'seedance2.0') {
                     return (
-                      <>
-                        <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
-                          <Col span={12}><Form.Item name="volc_video_rate" label="包含视频" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
-                          <Col span={12}><Form.Item name="volc_base_rate" label="不包含视频" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                      <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', marginBottom: 24, border: '1px solid #303030' }}>
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 12 }}>
+                          Seedance 2.0 — 按输出视频分辨率和输入是否包含视频区分定价 (doubao-seedance-2.0)
+                        </Text>
+                        <Row gutter={16} style={{ marginBottom: 8 }}>
+                          <Col span={6}><Text strong style={{ fontSize: '12px' }}>单价 (元/百万Token)</Text></Col>
+                          {['480p', '720p', '1080p'].map(r => <Col span={6} key={r} style={{ textAlign: 'center' }}><Text strong style={{ fontSize: '12px' }}>{r}</Text></Col>)}
                         </Row>
-                      </>
+                        <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
+                          <Col span={6}><Text style={{ fontSize: '12px' }}>包含视频输入</Text></Col>
+                          {['480p', '720p', '1080p'].map(r => (
+                            <Col span={6} key={r}><Form.Item name={`sd2_${r}_video`} noStyle rules={[{ required: true, message: '' }]}><InputNumber style={{ width: '100%' }} precision={2} min={0} /></Form.Item></Col>
+                          ))}
+                        </Row>
+                        <Row gutter={16} align="middle">
+                          <Col span={6}><Text style={{ fontSize: '12px' }}>不包含视频输入</Text></Col>
+                          {['480p', '720p', '1080p'].map(r => (
+                            <Col span={6} key={r}><Form.Item name={`sd2_${r}_base`} noStyle rules={[{ required: true, message: '' }]}><InputNumber style={{ width: '100%' }} precision={2} min={0} /></Form.Item></Col>
+                          ))}
+                        </Row>
+                      </div>
                     );
                   } else if (rule === 'seedance1.5pro') {
                     return (

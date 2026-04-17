@@ -106,17 +106,19 @@ pub async fn video_generations_status(
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
 
     // 从日志中查找原始渠道信息
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
+    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, '') FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
     let mut db_log_id: Option<i64> = None;
-    let log_row: Option<(i64, i64, String, String)> = sqlx::query_as(&log_query)
+    let mut original_request: Option<String> = None;
+    let log_row: Option<(i64, i64, String, String, String)> = sqlx::query_as(&log_query)
         .bind(format!("%{}%", task_id))
         .fetch_optional(&state.db.pool)
         .await
         .unwrap_or(None);
 
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _)) = log_row {
+    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _, req_content)) = log_row {
         db_log_id = Some(l_id);
         model_name = m_name;
+        if !req_content.is_empty() { original_request = Some(req_content); }
         if let Ok(Some(mut ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
             .bind(cid)
             .fetch_optional(&state.db.pool)
@@ -204,7 +206,15 @@ pub async fn video_generations_status(
                     } else { None }
                 } else { None };
 
-                let features = crate::relay::usage_extractor::extract_request_features(&resp_json);
+                let mut features = crate::relay::usage_extractor::extract_request_features(&resp_json);
+                // 从原始请求补充分辨率和视频输入信息（GET 响应通常不含这些字段）
+                if let Some(ref req_str) = original_request {
+                    if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(req_str) {
+                        let req_feat = crate::relay::usage_extractor::extract_request_features(&req_json);
+                        if features.resolution.is_none() { features.resolution = req_feat.resolution; }
+                        if req_feat.has_video { features.has_video = true; }
+                    }
+                }
                 let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
 
                 // 获取预扣费金额

@@ -347,15 +347,13 @@ pub fn compute_cost(
             
             if rule.billing_rule == "seedance2.0" {
                 if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
-                    if features.has_video {
-                        if let Some(vr) = ext.get("video_rate").and_then(|v| v.as_f64()) {
-                            p_rate = vr; c_rate = vr; is_overridden = true;
-                            detail_desc = format!("Seedance2.0(含视频单价:{})", vr);
-                        }
-                    } else {
-                        if let Some(br) = ext.get("base_rate").and_then(|v| v.as_f64()) {
-                            p_rate = br; c_rate = br; is_overridden = true;
-                            detail_desc = format!("Seedance2.0(无视频单价:{})", br);
+                    if let Some(rates) = ext.get("resolution_rates") {
+                        let res_key = features.resolution.as_deref().unwrap_or("720p").to_lowercase();
+                        let tier = rates.get(&res_key).or_else(|| rates.get("720p"));
+                        let (rate_field, video_label) = if features.has_video { ("with_video", "含视频") } else { ("without_video", "无视频") };
+                        if let Some(rate) = tier.and_then(|t| t.get(rate_field)).and_then(|v| v.as_f64()) {
+                            p_rate = rate; c_rate = rate; is_overridden = true;
+                            detail_desc = format!("Seedance2.0({}|{}|单价:{})", res_key, video_label, rate);
                         }
                     }
                 }
