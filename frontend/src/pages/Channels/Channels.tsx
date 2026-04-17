@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -23,6 +23,7 @@ const Channels: React.FC = () => {
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [form] = Form.useForm();
   const navigate = useNavigate();
+  const [showMapping, setShowMapping] = useState(false);
 
   const fetchChannels = async () => {
     setLoading(true);
@@ -73,6 +74,7 @@ const Channels: React.FC = () => {
   const handleAdd = () => {
     setEditingChannel(null);
     form.resetFields();
+    setShowMapping(false);
     setIsModalVisible(true);
   };
 
@@ -87,6 +89,9 @@ const Channels: React.FC = () => {
       ...record,
       model_mapping: mapping,
     });
+    // 如果有任何映射值则自动开启开关
+    const hasMapping = Object.values(mapping as Record<string, string>).some(v => v && String(v).trim());
+    setShowMapping(hasMapping);
     setIsModalVisible(true);
   };
 
@@ -289,11 +294,14 @@ const Channels: React.FC = () => {
               if (selectedModels.length === 0) return null;
               return (
                 <div style={{ marginBottom: 24, padding: 16, background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <Text strong style={{ display: 'block', marginBottom: 4 }}>模型别名映射 (Model Mapping)</Text>
-                  <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 16 }}>
-                    选择模型后，如果上游要求的模型名称与系统自带名称不一致，可在此处指定映射。默认不填写则使用原名发送。
-                  </Text>
-                  {selectedModels.map((modelId: string) => (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showMapping ? 12 : 0 }}>
+                    <div>
+                      <Text strong style={{ display: 'block', marginBottom: 2 }}>模型别名映射 (Model Mapping)</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>开启后可为每个模型指定上游别名</Text>
+                    </div>
+                    <Switch checked={showMapping} onChange={setShowMapping} size="small" />
+                  </div>
+                  {showMapping && selectedModels.map((modelId: string) => (
                     <Form.Item
                       key={modelId}
                       label={modelId}
@@ -309,6 +317,7 @@ const Channels: React.FC = () => {
               );
             }}
           </Form.Item>
+
 
           <Form.Item name="user_groups" label="支持用户等级" extra="默认不选则表示允许所有等级的用户使用该渠道">
             <Select mode="multiple" placeholder="选择开放该渠道的特定 VIP 等级（留空允许所有）" allowClear>
