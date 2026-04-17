@@ -4,6 +4,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, DeleteTwoTone } from '@ant-
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
+import RateDisplay from './RateDisplay';
 
 const { Title, Text } = Typography;
 
@@ -131,6 +132,10 @@ const BillingRules: React.FC = () => {
       delete values.volc_base_enabled;  delete values.volc_base_rate;
 
       const payload = {
+        prompt_rate: 0,
+        completion_rate: 0,
+        fixed_rate: 0,
+        duration_rate: 0,
         ...values,
         extended_config: extConfig,
         is_active: values.is_active ? 1 : 0,
@@ -176,27 +181,7 @@ const BillingRules: React.FC = () => {
       title: t('models.rates'),
       key: 'rates',
       render: (_: any, record: BillingRuleData) => {
-        if (record.billing_type === 'tokens') {
-            const unitSuffix = '/1M';
-            if (record.billing_rule === 'tiered') {
-                return <Text type="warning" style={{ fontSize: '12px' }}>{t('models.rule_tiered')} (见JSON)</Text>;
-            }
-            return (
-              <Space direction="vertical" size={0}>
-                <Text type="secondary" style={{ fontSize: '12px' }}>P: {currencySymbol}{record.prompt_rate}{unitSuffix}</Text>
-                <Text type="secondary" style={{ fontSize: '12px' }}>C: {currencySymbol}{record.completion_rate}{unitSuffix}</Text>
-              </Space>
-            );
-        } else if (record.billing_type === 'requests') {
-            if (record.billing_rule === 'per_image') {
-                return <Text type="secondary">{currencySymbol}{record.fixed_rate} / 张</Text>;
-            } else if (record.billing_rule === 'image_resolution') {
-                return <Text type="warning" style={{ fontSize: '12px' }}>按分辨率张收费 (见配置)</Text>;
-            }
-            return <Text type="secondary">{currencySymbol}{record.fixed_rate} / 请求</Text>;
-        } else {
-            return <Text type="secondary">{currencySymbol}{record.duration_rate}/s</Text>;
-        }
+        return <RateDisplay rule={record} currencySymbol={currencySymbol} />;
       }
     },
     {

@@ -132,8 +132,15 @@ pub async fn record_and_bill_with_prededuction(
     let filter_base64 = |content: Option<String>| -> Option<String> {
         let text = content?;
         if enable_log == 0 { return None; }
-        let re = Regex::new(r"data:image/[^;]+;base64,[A-Za-z0-9+/=]+").unwrap();
-        Some(re.replace_all(&text, "data:image/[type];base64,[base64 数据]").to_string())
+        // 1. 标准 data URI: data:image/jpeg;base64,...
+        let re1 = Regex::new(r"data:image/[^;]+;base64,[A-Za-z0-9+/=\s]{100,}").unwrap();
+        let text = re1.replace_all(&text, "\"base64图片\"").to_string();
+        // 2. JSON 转义 data URI: data:image\\/jpeg;base64,...
+        let re2 = Regex::new(r"data:image\\/[^;]+;base64,[A-Za-z0-9+/=\\s]{100,}").unwrap();
+        let text = re2.replace_all(&text, "\"base64图片\"").to_string();
+        // 3. 纯 base64 长串 (>200 字符的连续 base64)
+        let re3 = Regex::new(r#""[A-Za-z0-9+/]{200,}={0,2}""#).unwrap();
+        Some(re3.replace_all(&text, "\"base64图片\"").to_string())
     };
 
     let req_content = filter_base64(request_content);

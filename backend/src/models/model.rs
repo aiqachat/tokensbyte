@@ -162,6 +162,8 @@ pub struct CreateModelRequest {
     pub billing_rule_id: Option<i32>,
     pub pre_deduction: Option<f64>,
     pub forward_rule_ids: Option<Vec<i32>>,
+    pub is_active: Option<i32>,
+    pub enable_log_content: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]

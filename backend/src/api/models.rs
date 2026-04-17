@@ -90,9 +90,12 @@ pub async fn create_model(
     let mut pre_deduction = req.pre_deduction.unwrap_or(0.0);
     // 可选：如果此处有关联的 billing_rule 检查也可以做，目前统一允许设置
     
+    let is_active = req.is_active.unwrap_or(1);
+    let enable_log_content = req.enable_log_content.unwrap_or(0);
+
     let id_i32 = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO models (name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+        &state.db.format_query(r#"INSERT INTO models (name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, is_active, enable_log_content)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#)
     )
     .bind(&req.name)
@@ -103,6 +106,8 @@ pub async fn create_model(
     .bind(forward_rule_ids)
     .bind(req.billing_rule_id)
     .bind(pre_deduction)
+    .bind(is_active)
+    .bind(enable_log_content)
     .fetch_one(&state.db.pool)
     .await?
     .get::<i32, _>("id");

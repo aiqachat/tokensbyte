@@ -81,13 +81,11 @@ pub async fn video_generations(
     let data = resp.bytes().await?;
     let response_content_str = String::from_utf8_lossy(&data).to_string();
 
-    let usage_tokens = crate::relay::usage_extractor::parse_usage(&response_content_str);
-    let features = crate::relay::usage_extractor::extract_request_features(&body);
-    let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage_tokens.prompt, usage_tokens.completion, ctx.discount, &features);
-    
+    // 视频是异步任务：POST 只记录日志（0 token/0 cost），不结算预扣费
+    // 真正的 token 和计费在 GET 轮询成功后执行
     let latency_ms = start_time.elapsed().as_millis() as u32;
     let ep = format!("/v1/video/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
-    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage_tokens.prompt, usage_tokens.completion, cost, pre_deduction, 200,
+    proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, 200,
         &ep, None, latency_ms, 0,
         Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string())).await;
 
@@ -179,10 +177,65 @@ pub async fn video_generations_status(
     let get_resp_str = String::from_utf8_lossy(&data).to_string();
 
     if let Some(log_id) = db_log_id {
+        // 解析响应获取任务状态
+        let resp_json: serde_json::Value = serde_json::from_str(&get_resp_str).unwrap_or(serde_json::json!({}));
+        let task_status = resp_json.get("status").and_then(|s| s.as_str()).unwrap_or("");
+
+        // 更新日志响应内容
         let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ? WHERE id = ?"))
             .bind(&get_resp_str)
             .bind(log_id)
             .execute(&state.db.pool).await;
+
+        // 任务完成时提取 token 用量并执行计费
+        if task_status == "succeeded" {
+            let usage = crate::relay::usage_extractor::parse_usage(&get_resp_str);
+            if usage.total > 0 {
+                let db_model: Option<crate::models::Model> = sqlx::query_as(
+                    &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
+                ).bind(&model_name).fetch_optional(&state.db.pool).await.unwrap_or(None);
+
+                let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
+                    if let Some(rule_id) = m.billing_rule_id {
+                        sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+                            .bind(rule_id).fetch_optional(&state.db.pool).await.unwrap_or(None)
+                    } else { None }
+                } else { None };
+
+                let features = crate::relay::usage_extractor::extract_request_features(&resp_json);
+                let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+
+                // 获取预扣费金额
+                let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
+                // apply_balance = 实际费用 - 已预扣金额（正数=补扣，负数=退款）
+                let apply_balance = cost - pre_deduction;
+
+                // 更新日志中的 token 和费用
+                let _ = sqlx::query(&state.db.format_query(
+                    "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ? WHERE id = ?"
+                ))
+                .bind(usage.prompt).bind(usage.completion).bind(cost).bind(log_id)
+                .execute(&state.db.pool).await;
+
+                // 从用户余额结算（补扣或退款）
+                if cost > 0.0 || pre_deduction > 0.0 {
+                    let _ = sqlx::query(&state.db.format_query(
+                        "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                    ))
+                    .bind(apply_balance).bind(cost).bind(&token.user_id)
+                    .execute(&state.db.pool).await;
+
+                    let _ = sqlx::query(&state.db.format_query(
+                        "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                    ))
+                    .bind(cost).bind(token.id)
+                    .execute(&state.db.pool).await;
+
+                    tracing::info!("[Video Billing] task={}, model={}, tokens={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}", 
+                        task_id, model_name, usage.total, cost, pre_deduction, apply_balance);
+                }
+            }
+        }
     }
 
     Ok(Response::builder()

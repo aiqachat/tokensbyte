@@ -7,6 +7,7 @@ import useSettingsStore from '../../store/settings';
 import { type ModelModel, type ClassificationsResponse, type ModelProvider, type ModelType, type ClassificationCount } from '../../types';
 import ClassificationFilter from '../../components/Models/ClassificationFilter';
 import ClassificationManager from '../../components/Models/ClassificationManager';
+import RateDisplay from './RateDisplay';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -198,26 +199,14 @@ const Models: React.FC = () => {
       title: t('models.rates'),
       key: 'rates',
       render: (_: any, record: ModelModel) => {
-        const br = allBillingRules.find(b => b.id === record.billing_rule_id);
+        const br = allBillingRules.find((b: any) => b.id === record.billing_rule_id);
         if (!br) return <Text type="secondary" italic>未挂载费用模板</Text>;
-
-        if (br.billing_type === 'tokens') {
-            const unitSuffix = '/1M';
-            if (br.billing_rule === 'tiered') {
-                return <Text type="warning" style={{ fontSize: '12px' }}>{br.name} (阶梯计费策略)</Text>;
-            }
-            return (
-              <Space direction="vertical" size={0}>
-                <Text type="secondary" style={{ fontSize: '12px' }}>{br.name}</Text>
-                <Text type="secondary" style={{ fontSize: '12px' }}>P: {currencySymbol}{br.prompt_rate}{unitSuffix}</Text>
-                <Text type="secondary" style={{ fontSize: '12px' }}>C: {currencySymbol}{br.completion_rate}{unitSuffix}</Text>
-              </Space>
-            );
-        } else if (br.billing_type === 'requests') {
-            return <Space direction="vertical" size={0}><Text type="secondary" style={{ fontSize: '12px' }}>{br.name}</Text><Text type="secondary">{currencySymbol}{br.fixed_rate} / 请求</Text></Space>;
-        } else {
-            return <Space direction="vertical" size={0}><Text type="secondary" style={{ fontSize: '12px' }}>{br.name}</Text><Text type="secondary">{currencySymbol}{br.duration_rate}/s</Text></Space>;
-        }
+        return (
+          <Space direction="vertical" size={0}>
+            <RateDisplay rule={br} currencySymbol={currencySymbol} />
+            {(record.pre_deduction ?? 0) > 0 && <Text style={{ fontSize: '11px', color: '#faad14' }}>预扣: {currencySymbol}{record.pre_deduction}</Text>}
+          </Space>
+        );
       }
     },
     {
