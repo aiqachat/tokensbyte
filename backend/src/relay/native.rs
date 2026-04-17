@@ -107,7 +107,7 @@ pub async fn gemini_proxy(
     if !resp.status().is_success() {
         let err = resp.text().await?;
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, &endpoint, Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(request_content_str.clone())).await;
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, &endpoint, Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(request_content_str.clone()), None).await;
         return Err(AppError::UpstreamError(err));
     }
 
@@ -138,11 +138,11 @@ pub async fn gemini_proxy(
         let features = crate::relay::usage_extractor::extract_request_features(
             &serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}))
         );
-        let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+        let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
         tracing::info!("[Gemini] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, usage.prompt, usage.completion, cost, 200, &endpoint, None, latency_ms, is_stream, Some(request_content_str.clone()), Some(response_content_str), Some(request_content_str)).await;
+        proxy::record_and_bill(&state, &token, channel.id, model, usage.prompt, usage.completion, cost, 200, &endpoint, None, latency_ms, is_stream, Some(request_content_str.clone()), Some(response_content_str), Some(request_content_str), Some(detail)).await;
         Ok(Response::builder()
             .header("Content-Type", "application/json")
             .body(axum::body::Body::from(data))
@@ -186,7 +186,7 @@ pub async fn volcengine_submit(
     if !resp.status().is_success() {
         let err = resp.text().await?;
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, "/v1/video/generations|/api/v3/contents/generations/tasks", Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string())).await;
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, "/v1/video/generations|/api/v3/contents/generations/tasks", Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string()), None).await;
         return Err(AppError::UpstreamError(err));
     }
 
@@ -199,7 +199,7 @@ pub async fn volcengine_submit(
     let response_content_str = String::from_utf8_lossy(&data).to_string();
     let latency_ms = start_time.elapsed().as_millis() as u32;
     // 异步任务 POST 只记录，真正计费在 GET 轮询成功后执行
-    proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, 200, "/v1/video/generations|/api/v3/contents/generations/tasks", None, latency_ms, is_stream, Some(request_content_str), Some(response_content_str), Some(fwd.to_string())).await;
+    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200, "/v1/video/generations|/api/v3/contents/generations/tasks", None, latency_ms, is_stream, Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some("异步任务预扣费冻结".to_string())).await;
 
     Ok(Response::builder()
         .header("Content-Type", "application/json")
@@ -300,27 +300,27 @@ pub async fn volcengine_status(
                 } else { None };
 
                 let features = crate::relay::usage_extractor::extract_request_features(&resp_json);
-                let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+                let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
 
                 let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
                 let apply_balance = cost - pre_deduction;
 
                 // 更新日志
                 let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ? WHERE id = ?"
-                )).bind(usage.prompt).bind(usage.completion).bind(cost).bind(log_id)
+                    "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ?, billing_detail = ? WHERE id = ?"
+                )).bind(usage.prompt).bind(usage.completion).bind(cost).bind(detail).bind(log_id)
                 .execute(&state.db.pool).await;
 
                 // 余额结算
                 if cost > 0.0 || pre_deduction > 0.0 {
                     let _ = sqlx::query(&state.db.format_query(
                         "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                    )).bind(apply_balance).bind(cost).bind(&token.user_id)
+                    )).bind(apply_balance).bind(apply_balance).bind(&token.user_id)
                     .execute(&state.db.pool).await;
 
                     let _ = sqlx::query(&state.db.format_query(
                         "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                    )).bind(cost).bind(token.id)
+                    )).bind(apply_balance).bind(token.id)
                     .execute(&state.db.pool).await;
 
                     tracing::info!("[Volcengine Video Billing] task={}, model={}, tokens={}, cost={:.6}, pre_deducted={:.6}", 
@@ -373,7 +373,7 @@ pub async fn volcengine_images(
         let latency_ms = start_time.elapsed().as_millis() as u32;
         proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status,
             "/api/v3/images/generations", Some(&err), latency_ms, is_stream,
-            Some(request_content_str.clone()), None, Some(fwd.to_string())).await;
+            Some(request_content_str.clone()), None, Some(fwd.to_string()), None).await;
         return Err(AppError::UpstreamError(err));
     }
 
@@ -406,13 +406,13 @@ pub async fn volcengine_images(
         let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
     }
 
-    let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+    let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
     tracing::info!("[Volcengine Image] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
 
     let latency_ms = start_time.elapsed().as_millis() as u32;
     proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, cost, pre_deduction, 200,
         "/api/v3/images/generations", None, latency_ms, final_is_stream,
-        Some(request_content_str), Some(response_content_str), Some(fwd.to_string())).await;
+        Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some(detail)).await;
 
     Ok(Response::builder()
         .header("Content-Type", "application/json")

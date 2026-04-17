@@ -95,7 +95,8 @@ pub async fn chat_completions(
             proxy::record_and_bill(
                 &state, &token, channel.id, model, 0, 0, 0.0, status,
                 &ep, Some(&display_err), latency_ms, 1,
-                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string())
+                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
+                None
             ).await;
             return Err(AppError::UpstreamError(display_err));
         }
@@ -128,7 +129,8 @@ pub async fn chat_completions(
             proxy::record_and_bill(
                 &state, &token, channel.id, model, 0, 0, 0.0, status,
                 &ep, Some(&display_err), latency_ms, 0,
-                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string())
+                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
+                None
             ).await;
             return Err(AppError::UpstreamError(display_err));
         }
@@ -166,14 +168,15 @@ pub async fn chat_completions(
             let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
         }
 
-        let quota_used = compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, ctx.discount, &features);
+        let (quota_used, detail) = compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, ctx.discount, &features);
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
 
         proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, model, prompt_tokens, completion_tokens,
             quota_used, pre_deduction, 200, &ep, None, latency_ms, 0,
-            Some(request_content_str), Some(response_content_str.clone()), Some(upstream_body.to_string())
+            Some(request_content_str), Some(response_content_str.clone()), Some(upstream_body.to_string()),
+            Some(detail)
         ).await;
 
         // 如果上游不是 OpenAI 格式，将响应转换为 OpenAI 格式返回给用户
@@ -266,13 +269,14 @@ pub fn compute_cost(
     completion_tokens: i32, 
     discount: f64,
     features: &usage_extractor::ExtractedFeatures
-) -> f64 {
+) -> (f64, String) {
     let rule = match db_rule {
         Some(r) => r,
         None => {
             // 没有配置计费规则，走默认基础计费 1M 万字 = 1美金 等价
             let total = prompt_tokens + completion_tokens;
-            return (total as f64 / 1_000_000.0) * discount;
+            let cost = (total as f64 / 1_000_000.0) * discount;
+            return (cost, format!("无规则默认计费: {}总Tokens * 1美元/1M * {:.2}折扣", total, discount));
         }
     };
 
@@ -288,68 +292,84 @@ pub fn compute_cost(
         "requests" => {
             let mut rate = rule.fixed_rate;
             let mut count = 1.0;
+            let mut detail_desc = "固定按次计费".to_string();
 
             if rule.billing_rule == "per_image" {
                 count = if completion_tokens > 0 { completion_tokens as f64 } else { 1.0 };
+                detail_desc = "按张返回计费".to_string();
             } else if rule.billing_rule == "image_resolution" {
                 count = if completion_tokens > 0 { completion_tokens as f64 } else { 1.0 };
+                detail_desc = format!("分辨率匹配计费(默认单价: {})", rate);
                 if let Some(res) = &features.resolution {
                     if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
                         for tier in tiers {
                             if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
-                                rate = tier.rate; break;
+                                rate = tier.rate; 
+                                detail_desc = format!("命中分辨率阶梯 {} 单价: {}", res, rate);
+                                break;
                             }
                         }
                     }
                 }
             }
-            count * rate * discount
+            let cost = count * rate * discount;
+            (cost, format!("{} -> ({}量 * {}单价 * {:.2}折扣)", detail_desc, count, rate, discount))
         },
         "duration" => {
             let dur = features.duration_seconds.unwrap_or(0.0);
             let mut rate = rule.duration_rate; 
+            let mut detail_desc = "固定按秒时长计费".to_string();
 
             if rule.billing_rule == "video_resolution" {
+                detail_desc = format!("视频分辨率阶梯找寻(默认单价: {})", rate);
                 if let Some(res) = &features.resolution {
                     if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
                         for tier in tiers {
                             if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
-                                rate = tier.rate; break;
+                                rate = tier.rate; 
+                                detail_desc = format!("命中视频分辨率 {} 单价: {}", res, rate);
+                                break;
                             }
                         }
                     }
                 }
             }
 
-            dur * rate * discount
+            let cost = dur * rate * discount;
+            (cost, format!("{} -> ({:.2}秒 * {}单价 * {:.2}折扣)", detail_desc, dur, rate, discount))
         },
         _ => {
             // tokens 计费
             let mut p_rate = rule.prompt_rate;
             let mut c_rate = rule.completion_rate;
-            // Volcano 多模态特征特殊截断 3 层网逻辑
             let mut is_overridden = false;
-            // 只有当规则被显式指定为 "volcengine" 时，才激活三路特供引擎！
-            if rule.billing_rule == "volcengine" {
+            let mut detail_desc = "标准 Tokens 计费".to_string();
+            
+            if rule.billing_rule == "seedance2.0" {
                 if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
                     if features.has_video {
-                        if ext.get("volc_video_enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
-                            if let Some(vr) = ext.get("volc_video_rate").and_then(|v| v.as_f64()) {
-                                p_rate = vr; c_rate = vr; is_overridden = true;
-                            }
-                        }
-                    } else if features.has_audio {
-                        if ext.get("volc_audio_enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
-                            if let Some(ar) = ext.get("volc_audio_rate").and_then(|v| v.as_f64()) {
-                                p_rate = ar; c_rate = ar; is_overridden = true;
-                            }
+                        if let Some(vr) = ext.get("video_rate").and_then(|v| v.as_f64()) {
+                            p_rate = vr; c_rate = vr; is_overridden = true;
+                            detail_desc = format!("Seedance2.0(含视频单价:{})", vr);
                         }
                     } else {
-                        // 既无视频也无音频的纯文字请求
-                        if ext.get("volc_base_enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
-                            if let Some(br) = ext.get("volc_base_rate").and_then(|v| v.as_f64()) {
-                                p_rate = br; c_rate = br; is_overridden = true;
-                            }
+                        if let Some(br) = ext.get("base_rate").and_then(|v| v.as_f64()) {
+                            p_rate = br; c_rate = br; is_overridden = true;
+                            detail_desc = format!("Seedance2.0(无视频单价:{})", br);
+                        }
+                    }
+                }
+            } else if rule.billing_rule == "seedance1.5pro" {
+                if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    if features.has_audio {
+                        if let Some(ar) = ext.get("audio_rate").and_then(|v| v.as_f64()) {
+                            p_rate = ar; c_rate = ar; is_overridden = true;
+                            detail_desc = format!("Seedance1.5Pro(含语音单价:{})", ar);
+                        }
+                    } else {
+                        if let Some(br) = ext.get("base_rate").and_then(|v| v.as_f64()) {
+                            p_rate = br; c_rate = br; is_overridden = true;
+                            detail_desc = format!("Seedance1.5Pro(无语音单价:{})", br);
                         }
                     }
                 }
@@ -366,18 +386,21 @@ pub fn compute_cost(
                             if completion_tokens <= mc {
                                 p_rate = tier.prompt_rate;
                                 c_rate = tier.completion_rate;
+                                detail_desc = format!("阶梯计费(命中规则<={}P|<={}C)", tier.max_prompt_tokens, mc);
                                 break;
                             }
                         } else {
                             // 没有 completion 限制，直接采纳
                             p_rate = tier.prompt_rate;
                             c_rate = tier.completion_rate;
+                            detail_desc = format!("阶梯计费(命中规则<={}P)", tier.max_prompt_tokens);
                             break;
                         }
                     }
                 }
             }
-            ((prompt_tokens as f64 * p_rate + completion_tokens as f64 * c_rate) / 1_000_000.0) * discount
+            let cost = ((prompt_tokens as f64 * p_rate + completion_tokens as f64 * c_rate) / 1_000_000.0) * discount;
+            (cost, format!("{} -> ({:.6}P*{} + {:.6}C*{})/1M * {:.2}折扣", detail_desc, prompt_tokens, p_rate, completion_tokens, c_rate, discount))
         }
     }
 }

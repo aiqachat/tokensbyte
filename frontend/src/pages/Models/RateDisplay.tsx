@@ -7,7 +7,9 @@ const { Text } = Typography;
 const RULE_LABELS: Record<string, string> = {
   standard: '标准计费',
   tiered: '阶梯计费',
-  volcengine: '火山多模态特供',
+  volcengine: '火山多模态(旧)',
+  'seedance2.0': 'Seedance 2.0',
+  'seedance1.5pro': 'Seedance 1.5 Pro',
   fixed: '固定按次',
   per_image: '按张收费',
   image_resolution: '按分辨率收费',
@@ -47,6 +49,24 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol }) => {
       if (rule.billing_rule === 'tiered') {
         return <Text type="warning" style={s}>阶梯定价 (见配置详情)</Text>;
       }
+      if (rule.billing_rule === 'seedance2.0') {
+        return (
+          <>
+            <Text type="secondary" style={s} display="block">带视频: {currencySymbol}{ext.video_rate}/1M</Text>
+            <br/>
+            <Text type="secondary" style={s} display="block">无视频: {currencySymbol}{ext.base_rate}/1M</Text>
+          </>
+        );
+      }
+      if (rule.billing_rule === 'seedance1.5pro') {
+        return (
+          <>
+            <Text type="secondary" style={s} display="block">带语音: {currencySymbol}{ext.audio_rate}/1M</Text>
+            <br/>
+            <Text type="secondary" style={s} display="block">无语音: {currencySymbol}{ext.base_rate}/1M</Text>
+          </>
+        );
+      }
       if (rule.billing_rule === 'volcengine') {
         const lines: React.ReactNode[] = [];
         if (ext.volc_video_enabled) lines.push(<Text key="v" type="secondary" style={s}>含视频: {currencySymbol}{ext.volc_video_rate}/1M</Text>);
@@ -77,6 +97,7 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol }) => {
 
   const ruleColors: Record<string, string> = {
     standard: 'default', tiered: 'gold', volcengine: 'volcano',
+    'seedance2.0': 'volcano', 'seedance1.5pro': 'volcano',
     fixed: 'default', per_image: 'lime', image_resolution: 'gold',
     video_resolution: 'gold',
   };

@@ -118,8 +118,9 @@ pub async fn record_and_bill(
     prompt_tokens: i32, completion_tokens: i32, cost: f64, status_code: u16,
     endpoint: &str, error_msg: Option<&str>, latency_ms: u32, is_stream: i32,
     request_content: Option<String>, response_content: Option<String>, upstream_req_content: Option<String>,
+    billing_detail: Option<String>,
 ) {
-    record_and_bill_with_prededuction(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cost, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content).await;
+    record_and_bill_with_prededuction(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cost, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail).await;
 }
 
 pub async fn record_and_bill_with_prededuction(
@@ -139,6 +140,7 @@ pub async fn record_and_bill_with_prededuction(
     request_content: Option<String>,
     response_content: Option<String>,
     upstream_req_content: Option<String>,
+    billing_detail: Option<String>,
 ) {
     let mut enable_log: i32 = 0;
     if let Ok(Some(m)) = sqlx::query_as::<_, crate::models::Model>(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
@@ -224,8 +226,8 @@ pub async fn record_and_bill_with_prededuction(
             .await?;
         }
         sqlx::query(&state.db.format_query(
-            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ))
         .bind(&token.user_id)
         .bind(channel_id)
@@ -243,6 +245,7 @@ pub async fn record_and_bill_with_prededuction(
         .bind(is_stream)
         .bind(&final_endpoint)
         .bind(upstream_req)
+        .bind(billing_detail)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

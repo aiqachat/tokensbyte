@@ -45,9 +45,12 @@ pub async fn image_generations(
         let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status,
-            &ep, Some(&display_err), latency_ms, if is_stream {1} else {0},
-            Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string())).await;
+            proxy::record_and_bill(
+                &state, &token, channel.id, model, 0, 0, 0.0, status,
+                &ep, Some(&display_err), latency_ms, 0,
+                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
+                None
+            ).await;
         return Err(AppError::UpstreamError(display_err));
     }
 
@@ -100,13 +103,13 @@ pub async fn image_generations(
         tracing::info!("[Image] model={}, path=SYNC, prompt={}, completion={}, total={}", model, p_tokens, c_tokens, usage_tokens.total);
 
         let features = crate::relay::usage_extractor::extract_request_features(&body);
-        let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, ctx.discount, &features);
+        let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, ctx.discount, &features);
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
         proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, p_tokens, c_tokens, cost, pre_deduction, 200,
             &ep, None, latency_ms, 0,
-            Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string())).await;
+            Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(detail)).await;
 
         Ok(Response::builder()
             .header("Content-Type", "application/json")

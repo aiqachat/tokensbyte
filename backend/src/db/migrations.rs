@@ -479,6 +479,11 @@ macro_rules! pg_migration_blocks {
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN admin_remark TEXT DEFAULT ''").execute(pool).await;
 
+    // 计费明细日志扩展
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_detail TEXT DEFAULT ''")
+        .execute(pool)
+        .await?;
+
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS channel_configs (
             id SERIAL PRIMARY KEY,
@@ -1074,6 +1079,11 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             ('标准 1M 万字计费 ($1)', 'tokens', 1.0, 1.0, 0.0, 0.0, 'standard'),
             ('单次请求扣费 ($0.1)', 'requests', 0.0, 0.0, 0.1, 0.0, 'standard')
         "#).execute(pool).await?;
+    }
+
+    let count_log_bd: i32 = sqlx::query_scalar("SELECT count(*) FROM pragma_table_info('logs') WHERE name='billing_detail'").fetch_one(pool).await?;
+    if count_log_bd == 0 {
+        sqlx::query("ALTER TABLE logs ADD COLUMN billing_detail TEXT DEFAULT ''").execute(pool).await?;
     }
 
     Ok(())

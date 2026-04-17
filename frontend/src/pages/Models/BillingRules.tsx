@@ -88,12 +88,9 @@ const BillingRules: React.FC = () => {
     form.setFieldsValue({
       ...item,
       pricing_tiers: tiers,
-      volc_video_enabled: ext.volc_video_enabled || false,
-      volc_video_rate: ext.volc_video_rate || 0,
-      volc_audio_enabled: ext.volc_audio_enabled || false,
-      volc_audio_rate: ext.volc_audio_rate || 0,
-      volc_base_enabled: ext.volc_base_enabled || false,
-      volc_base_rate: ext.volc_base_rate || 0,
+      volc_video_rate: ext.video_rate || 0,
+      volc_audio_rate: ext.audio_rate || 0,
+      volc_base_rate: ext.base_rate || 0,
       is_active: item.is_active === 1,
     });
     setIsModalVisible(true);
@@ -116,20 +113,24 @@ const BillingRules: React.FC = () => {
         values.pricing_tiers = [];
       }
 
-      // 只有火山多模态规则才打包 extended_config，其他规则保持空对象
-      const extConfig = values.billing_rule === 'volcengine' ? {
-        volc_video_enabled: values.volc_video_enabled || false,
-        volc_video_rate: values.volc_video_rate || 0,
-        volc_audio_enabled: values.volc_audio_enabled || false,
-        volc_audio_rate: values.volc_audio_rate || 0,
-        volc_base_enabled: values.volc_base_enabled || false,
-        volc_base_rate: values.volc_base_rate || 0,
-      } : {};
+      // 只有特定多模态规则才打包 extended_config，其他保持空对象
+      let extConfig = {};
+      if (values.billing_rule === 'seedance2.0') {
+        extConfig = {
+          video_rate: values.volc_video_rate || 0,
+          base_rate: values.volc_base_rate || 0,
+        };
+      } else if (values.billing_rule === 'seedance1.5pro') {
+        extConfig = {
+          audio_rate: values.volc_audio_rate || 0,
+          base_rate: values.volc_base_rate || 0,
+        };
+      }
 
       // 清除表单中不应提交的临时字段
-      delete values.volc_video_enabled; delete values.volc_video_rate;
-      delete values.volc_audio_enabled; delete values.volc_audio_rate;
-      delete values.volc_base_enabled;  delete values.volc_base_rate;
+      delete values.volc_video_rate;
+      delete values.volc_audio_rate;
+      delete values.volc_base_rate;
 
       const payload = {
         prompt_rate: 0,
@@ -257,7 +258,8 @@ const BillingRules: React.FC = () => {
                 <Radio.Group optionType="button" buttonStyle="solid">
                   <Radio value="standard">{t('models.rule_standard')}</Radio>
                   <Radio value="tiered">{t('models.rule_tiered')}</Radio>
-                  <Radio value="volcengine">火山多模态特供计费</Radio>
+                  <Radio value="seedance2.0">Seedance 2.0</Radio>
+                  <Radio value="seedance1.5pro">Seedance 1.5 Pro</Radio>
                 </Radio.Group>
               </Form.Item>
 
@@ -282,20 +284,21 @@ const BillingRules: React.FC = () => {
                         </Col>
                       </Row>
                     );
-                  } else if (rule === 'volcengine') {
+                  } else if (rule === 'seedance2.0') {
                     return (
                       <>
-                        <Row gutter={8} align="middle">
-                          <Col span={18}><Form.Item name="volc_video_rate" label="包含视频" style={{ marginBottom: 4 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
-                          <Col span={6}><Form.Item name="volc_video_enabled" valuePropName="checked" style={{ marginBottom: 4 }}><Switch checkedChildren="启用" unCheckedChildren="关闭" /></Form.Item></Col>
+                        <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
+                          <Col span={12}><Form.Item name="volc_video_rate" label="包含视频" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                          <Col span={12}><Form.Item name="volc_base_rate" label="不包含视频" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
                         </Row>
-                        <Row gutter={8} align="middle">
-                          <Col span={18}><Form.Item name="volc_audio_rate" label="包含声音" style={{ marginBottom: 4 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
-                          <Col span={6}><Form.Item name="volc_audio_enabled" valuePropName="checked" style={{ marginBottom: 4 }}><Switch checkedChildren="启用" unCheckedChildren="关闭" /></Form.Item></Col>
-                        </Row>
-                        <Row gutter={8} align="middle">
-                          <Col span={18}><Form.Item name="volc_base_rate" label="不包含视频和声音" style={{ marginBottom: 4 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
-                          <Col span={6}><Form.Item name="volc_base_enabled" valuePropName="checked" style={{ marginBottom: 4 }}><Switch checkedChildren="启用" unCheckedChildren="关闭" /></Form.Item></Col>
+                      </>
+                    );
+                  } else if (rule === 'seedance1.5pro') {
+                    return (
+                      <>
+                        <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
+                          <Col span={12}><Form.Item name="volc_audio_rate" label="包含语音" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                          <Col span={12}><Form.Item name="volc_base_rate" label="不包含语音" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
                         </Row>
                       </>
                     );

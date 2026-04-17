@@ -95,14 +95,14 @@ pub async fn handle_chat_stream(
 
         let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
         let features = crate::relay::usage_extractor::extract_request_features(&req_json);
-        let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, discount, &features);
+        let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, discount, &features);
         
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/chat/completions|{}", upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,
-            Some(request_content_str), Some(full_response_text), upstream_req_content
+            Some(request_content_str), Some(full_response_text), upstream_req_content, Some(detail)
         ).await;
     });
 
@@ -201,14 +201,14 @@ pub async fn handle_image_stream(
 
         let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
         let features = crate::relay::usage_extractor::extract_request_features(&req_json);
-        let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, discount, &features);
+        let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, discount, &features);
         
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/images/generations|{}", upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,
-            Some(request_content_str), Some(full_response_text), upstream_req_content
+            Some(request_content_str), Some(full_response_text), upstream_req_content, Some(detail)
         ).await;
     });
 
@@ -309,13 +309,13 @@ pub async fn handle_native_stream(
 
         let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
         let features = crate::relay::usage_extractor::extract_request_features(&req_json);
-        let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, discount, &features);
+        let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, discount, &features);
         
         let ep = format!("{}|{}", upstream_path, upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, prompt_tokens, completion_tokens,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,
-            Some(request_content_str), Some(full_response_text), upstream_req_content
+            Some(request_content_str), Some(full_response_text), upstream_req_content, Some(detail)
         ).await;
     });
 

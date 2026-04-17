@@ -171,7 +171,11 @@ const Logs: React.FC = () => {
           </Descriptions.Item>
           <Descriptions.Item label="计费明细">
             <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>{costFormula}</Text>
+              {record.billing_detail ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>计算依据: {record.billing_detail}</Text>
+              ) : (
+                <Text type="secondary" style={{ fontSize: 12 }}>{costFormula}</Text>
+              )}
               <br />
               <Text strong style={{ fontSize: 13 }}>实际扣费: {currencySymbol}{record.cost.toFixed(6)}</Text>
               <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>（优先扣令牌配额，不足扣用户余额）</Text>

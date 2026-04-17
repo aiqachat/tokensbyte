@@ -49,7 +49,7 @@ pub async fn video_generations(
         let ep = format!("/v1/video/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
         proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status,
             &ep, Some(&display_err), latency_ms, 0,
-            Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string())).await;
+            Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()), None).await;
         return Err(AppError::UpstreamError(display_err));
     }
 
@@ -81,13 +81,13 @@ pub async fn video_generations(
     let data = resp.bytes().await?;
     let response_content_str = String::from_utf8_lossy(&data).to_string();
 
-    // 视频是异步任务：POST 只记录日志（0 token/0 cost），不结算预扣费
-    // 真正的 token 和计费在 GET 轮询成功后执行
+    // 视频是异步任务：POST 只记录日志（cost=预扣费），不执行多余结算预扣费
+    // 真正的 token 和差值结算在 GET 轮询成功后执行
     let latency_ms = start_time.elapsed().as_millis() as u32;
     let ep = format!("/v1/video/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
-    proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, 200,
+    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200,
         &ep, None, latency_ms, 0,
-        Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string())).await;
+        Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some("异步任务预扣费冻结".to_string())).await;
 
     Ok(Response::builder()
         .header("Content-Type", "application/json")
@@ -205,18 +205,18 @@ pub async fn video_generations_status(
                 } else { None };
 
                 let features = crate::relay::usage_extractor::extract_request_features(&resp_json);
-                let cost = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+                let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
 
                 // 获取预扣费金额
                 let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
                 // apply_balance = 实际费用 - 已预扣金额（正数=补扣，负数=退款）
                 let apply_balance = cost - pre_deduction;
 
-                // 更新日志中的 token 和费用
+                // 更新日志中的 token 和费用以及计费明细
                 let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ? WHERE id = ?"
+                    "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ?, billing_detail = ? WHERE id = ?"
                 ))
-                .bind(usage.prompt).bind(usage.completion).bind(cost).bind(log_id)
+                .bind(usage.prompt).bind(usage.completion).bind(cost).bind(detail).bind(log_id)
                 .execute(&state.db.pool).await;
 
                 // 从用户余额结算（补扣或退款）
@@ -224,13 +224,13 @@ pub async fn video_generations_status(
                     let _ = sqlx::query(&state.db.format_query(
                         "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
                     ))
-                    .bind(apply_balance).bind(cost).bind(&token.user_id)
+                    .bind(apply_balance).bind(apply_balance).bind(&token.user_id)
                     .execute(&state.db.pool).await;
 
                     let _ = sqlx::query(&state.db.format_query(
                         "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
                     ))
-                    .bind(cost).bind(token.id)
+                    .bind(apply_balance).bind(token.id)
                     .execute(&state.db.pool).await;
 
                     tracing::info!("[Video Billing] task={}, model={}, tokens={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}", 

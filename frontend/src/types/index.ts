@@ -190,6 +190,7 @@ export interface RequestLog {
   response_content?: string;
   upstream_req_content?: string;
   is_stream?: number;
+  billing_detail?: string;
   created_at: string;
 }
 
