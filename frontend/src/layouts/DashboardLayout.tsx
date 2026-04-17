@@ -184,13 +184,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     return plugin.allowed_levels.split(',').includes(userGroup);
   };
 
-  if (isPluginVisibleForUser('asset_manager')) {
-    menuItems.push({
-      key: isUserEnd ? '/assets' : '/admin0755/assets/user',
-      icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
-      label: <Link to={isUserEnd ? '/assets' : '/admin0755/assets/user'}>资产管理</Link>,
-    });
-  }
+
+
 
   if (isUserEnd) {
     menuItems.push(

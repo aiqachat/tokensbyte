@@ -24,8 +24,7 @@ import Logs from './pages/Logs/Logs';
 import TaskLogs from './pages/Logs/TaskLogs';
 import PluginsList from './pages/Plugins/PluginsList';
 import PluginConfig from './pages/Plugins/PluginConfig';
-import AdminAssets from './pages/Plugins/AssetManager/AdminAssets';
-import UserAssets from './pages/UserAssets/UserAssets';
+
 import Redemptions from './pages/Redemptions/Redemptions';
 import Profile from './pages/Profile/Profile';
 import Wallet from './pages/Wallet/Wallet';
@@ -75,7 +74,7 @@ const App: React.FC = () => {
           <Route path="tokens" element={<Tokens />} />
           <Route path="logs" element={<Logs />} />
           <Route path="task-logs" element={<TaskLogs />} />
-          <Route path="assets" element={<UserAssets />} />
+
           <Route path="wallet" element={<Wallet />} />
           <Route path="profile" element={<Profile />} />
         </Route>
@@ -104,7 +103,7 @@ const App: React.FC = () => {
           <Route path="task-logs" element={<TaskLogs />} />
           <Route path="plugins" element={<PluginsList />} />
           <Route path="plugins/:name/config" element={<PluginConfig />} />
-          <Route path="assets/user" element={<AdminAssets />} />
+
           <Route path="redemptions" element={<Redemptions />} />
           <Route path="users" element={<Users />} />
           <Route path="admins" element={<Users />} />
