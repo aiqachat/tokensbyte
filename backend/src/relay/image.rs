@@ -103,7 +103,10 @@ pub async fn image_generations(
         tracing::info!("[Image] model={}, path=SYNC, prompt={}, completion={}, total={}", model, p_tokens, c_tokens, usage_tokens.total);
 
         let features = crate::relay::usage_extractor::extract_request_features(&body);
-        let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, ctx.discount, &features);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, ctx.discount, &features);
+        if model != resolved_model {
+            detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
+        }
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));

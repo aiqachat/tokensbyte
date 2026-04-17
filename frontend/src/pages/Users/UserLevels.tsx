@@ -73,10 +73,12 @@ const UserLevels: React.FC = () => {
       key: 'discount',
       render: (val: number) => {
         const off = Math.round((1 - val) * 100);
+        const up = Math.round((val - 1) * 100);
         return (
           <Space>
             <Text>{val.toFixed(2)}x</Text>
-            {off > 0 && <Tag color="red">-{off}%</Tag>}
+            {off > 0 && <Tag color="green">-{off}% (优惠)</Tag>}
+            {up > 0 && <Tag color="volcano">+{up}% (涨价)</Tag>}
           </Space>
         );
       },

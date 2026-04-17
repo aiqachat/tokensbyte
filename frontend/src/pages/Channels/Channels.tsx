@@ -75,9 +75,14 @@ const Channels: React.FC = () => {
 
   const handleEdit = (record: Channel) => {
     setEditingChannel(record);
+    let mapping = {};
+    try {
+      mapping = typeof record.model_mapping === 'string' ? JSON.parse(record.model_mapping) : record.model_mapping;
+    } catch (e) {}
+
     form.setFieldsValue({
       ...record,
-      model_mapping: JSON.stringify(record.model_mapping, null, 2),
+      model_mapping: mapping,
     });
     setIsModalVisible(true);
   };
@@ -96,11 +101,20 @@ const Channels: React.FC = () => {
     navigate(`/admin0755/channels/test/${record.id}`);
   };
 
-  const handleSave = async (values: { models: string[]; model_mapping?: string; provider_type?: string; [key: string]: unknown }) => {
+  const handleSave = async (values: any) => {
+    const finalMapping: Record<string, string> = {};
+    if (values.model_mapping) {
+      for (const [k, v] of Object.entries(values.model_mapping)) {
+        if (v && String(v).trim()) {
+          finalMapping[k] = String(v).trim();
+        }
+      }
+    }
+
     const data = {
       ...values,
       provider_type: values.provider_type || 'custom',
-      model_mapping: {},
+      model_mapping: finalMapping,
     };
 
     try {
@@ -245,6 +259,33 @@ const Channels: React.FC = () => {
                     <Option key={m.model_id} value={m.model_id}>{m.name} ({m.model_id})</Option>
                 ))}
             </Select>
+          </Form.Item>
+
+          <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
+            {() => {
+              const selectedModels = form.getFieldValue('models') || [];
+              if (selectedModels.length === 0) return null;
+              return (
+                <div style={{ marginBottom: 24, padding: 16, background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <Text strong style={{ display: 'block', marginBottom: 4 }}>模型别名映射 (Model Mapping)</Text>
+                  <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 16 }}>
+                    选择模型后，如果上游要求的模型名称与系统自带名称不一致，可在此处指定映射。默认不填写则使用原名发送。
+                  </Text>
+                  {selectedModels.map((modelId: string) => (
+                    <Form.Item
+                      key={modelId}
+                      label={modelId}
+                      name={['model_mapping', modelId]}
+                      style={{ marginBottom: 12 }}
+                      labelCol={{ span: 8 }}
+                      wrapperCol={{ span: 16 }}
+                    >
+                      <Input placeholder={`默认为原名：${modelId}`} />
+                    </Form.Item>
+                  ))}
+                </div>
+              );
+            }}
           </Form.Item>
 
           <Form.Item name="user_groups" label="支持用户等级" extra="默认不选则表示允许所有等级的用户使用该渠道">

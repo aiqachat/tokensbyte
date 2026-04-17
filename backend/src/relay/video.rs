@@ -215,7 +215,11 @@ pub async fn video_generations_status(
                         if req_feat.has_video { features.has_video = true; }
                     }
                 }
-                let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+                let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+                let resolved_model = channel.resolve_model(&model_name);
+                if model_name != resolved_model {
+                    detail.push_str(&format!(" | 模型映射: {} ➞ {}", model_name, resolved_model));
+                }
 
                 // 获取预扣费金额
                 let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);

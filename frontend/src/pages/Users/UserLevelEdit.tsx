@@ -111,11 +111,11 @@ const UserLevelEdit: React.FC = () => {
             </Form.Item>
             <Form.Item 
               name="discount" 
-              label={t('user_levels.discount')} 
+              label={t('user_levels.discount', '计费倍率 (Discount/Multiplier)')} 
               rules={[{ required: true }]}
-              extra={t('user_levels.discount_hint')}
+              extra="设置用户计费的乘数。1 为原价不打折；小于1为折扣优惠（如 0.8 为 8折）；大于1为加倍收费（如 1.5 表明加价50%）。"
             >
-              <InputNumber style={{ width: '100%' }} min={0.01} max={1} step={0.01} precision={2} />
+              <InputNumber style={{ width: '100%' }} min={0.01} max={999} step={0.01} precision={2} />
             </Form.Item>
             <Form.Item name="description" label={t('user_levels.description')}>
               <Input.TextArea rows={4} placeholder="描述该组特权或补充信息..." />

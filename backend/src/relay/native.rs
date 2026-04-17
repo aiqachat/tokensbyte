@@ -138,7 +138,11 @@ pub async fn gemini_proxy(
         let features = crate::relay::usage_extractor::extract_request_features(
             &serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}))
         );
-        let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+        let resolved_model = channel.resolve_model(model);
+        if model != resolved_model {
+            detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
+        }
         tracing::info!("[Gemini] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
@@ -304,7 +308,11 @@ pub async fn volcengine_status(
                 } else { None };
 
                 let features = crate::relay::usage_extractor::extract_request_features(&resp_json);
-                let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+                let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+                let resolved_model = channel.resolve_model(&model_name);
+                if model_name != resolved_model {
+                    detail.push_str(&format!(" | 模型映射: {} ➞ {}", model_name, resolved_model));
+                }
 
                 let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
                 let apply_balance = cost - pre_deduction;
@@ -410,7 +418,11 @@ pub async fn volcengine_images(
         let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
     }
 
-    let (cost, detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+    let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+    let resolved_model = channel.resolve_model(model);
+    if model != resolved_model {
+        detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
+    }
     tracing::info!("[Volcengine Image] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
 
     let latency_ms = start_time.elapsed().as_millis() as u32;

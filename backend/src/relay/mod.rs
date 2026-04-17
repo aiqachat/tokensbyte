@@ -168,7 +168,10 @@ pub async fn chat_completions(
             let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
         }
 
-        let (quota_used, detail) = compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, ctx.discount, &features);
+        let (quota_used, mut detail) = compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, ctx.discount, &features);
+        if model != resolved_model {
+            detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
+        }
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
 
@@ -276,7 +279,7 @@ pub fn compute_cost(
             // 没有配置计费规则，走默认基础计费 1M 万字 = 1美金 等价
             let total = prompt_tokens + completion_tokens;
             let cost = (total as f64 / 1_000_000.0) * discount;
-            return (cost, format!("无规则默认计费: {}总Tokens * 1美元/1M * {:.2}折扣", total, discount));
+            return (cost, format!("无规则默认计费: {}总Tokens * 1美元/1M * {:.2}倍率", total, discount));
         }
     };
 
@@ -313,7 +316,7 @@ pub fn compute_cost(
                 }
             }
             let cost = count * rate * discount;
-            (cost, format!("{} -> ({}量 * {}单价 * {:.2}折扣)", detail_desc, count, rate, discount))
+            (cost, format!("{} -> ({}量 * {}单价 * {:.2}倍率)", detail_desc, count, rate, discount))
         },
         "duration" => {
             let dur = features.duration_seconds.unwrap_or(0.0);
@@ -336,7 +339,7 @@ pub fn compute_cost(
             }
 
             let cost = dur * rate * discount;
-            (cost, format!("{} -> ({:.2}秒 * {}单价 * {:.2}折扣)", detail_desc, dur, rate, discount))
+            (cost, format!("{} -> ({:.2}秒 * {}单价 * {:.2}倍率)", detail_desc, dur, rate, discount))
         },
         _ => {
             // tokens 计费
@@ -398,7 +401,7 @@ pub fn compute_cost(
                 }
             }
             let cost = ((prompt_tokens as f64 * p_rate + completion_tokens as f64 * c_rate) / 1_000_000.0) * discount;
-            (cost, format!("{} -> ({:.6}P*{} + {:.6}C*{})/1M * {:.2}折扣", detail_desc, prompt_tokens, p_rate, completion_tokens, c_rate, discount))
+            (cost, format!("{} -> ({:.6}P*{} + {:.6}C*{})/1M * {:.2}倍率", detail_desc, prompt_tokens, p_rate, completion_tokens, c_rate, discount))
         }
     }
 }
