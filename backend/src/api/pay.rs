@@ -6,7 +6,8 @@ use axum::{
 use axum_extra::extract::WithRejection;
 use std::sync::Arc;
 use crate::AppState;
-use crate::models::{Order, RechargeRecord};
+use crate::models::order::Order;
+use crate::models::RechargeRecord;
 use crate::error::{AppResult, AppError};
 use crate::services::payment::alipay::AlipayClient;
 use crate::services::payment::wechat::WechatClient;
@@ -30,7 +31,7 @@ pub struct CreateOrderResp {
 
 pub async fn create_order(
     State(state): State<Arc<AppState>>,
-    crate::extractors::AuthUser(user): crate::extractors::AuthUser,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
     Json(payload): Json<CreateOrderReq>,
 ) -> AppResult<Json<CreateOrderResp>> {
     if payload.amount <= 0.0 {
@@ -88,7 +89,7 @@ pub async fn create_order(
     // Save order
     sqlx::query(&state.db.format_query("INSERT INTO orders (out_trade_no, user_id, payment_method, amount, status) VALUES (?, ?, ?, ?, 'pending')"))
         .bind(&out_trade_no)
-        .bind(&user.id)
+        .bind(&claims.sub)
         .bind(&payload.payment_method)
         .bind(payload.amount)
         .execute(&state.db.pool)
@@ -107,12 +108,12 @@ pub struct OrderStatusResp {
 
 pub async fn check_status(
     State(state): State<Arc<AppState>>,
-    crate::extractors::AuthUser(user): crate::extractors::AuthUser,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
     Path(out_trade_no): Path<String>,
 ) -> AppResult<Json<OrderStatusResp>> {
     let order_status: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT status FROM orders WHERE out_trade_no = ? AND user_id = ?"))
         .bind(&out_trade_no)
-        .bind(&user.id)
+        .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?;
 

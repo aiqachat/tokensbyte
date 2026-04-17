@@ -496,8 +496,10 @@ async fn get_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> {
 
     use crate::api::settings::default_database_settings;
     let database = get_setting::<crate::models::DatabaseSettings>(state, "database_settings", default_database_settings()).await?;
+    let payment_wechat = get_setting::<Option<crate::models::PaymentWechatSettings>>(state, "payment_wechat", None).await?;
+    let payment_alipay = get_setting::<Option<crate::models::PaymentAlipaySettings>>(state, "payment_alipay", None).await?;
 
-    Ok(AllSettings { site, currency, registration, smtp, marketing, database })
+    Ok(AllSettings { site, currency, registration, smtp, marketing, database, payment_wechat, payment_alipay })
 }
 
 async fn get_setting<T: serde::de::DeserializeOwned + Clone>(state: &Arc<AppState>, key: &str, default: T) -> AppResult<T> {

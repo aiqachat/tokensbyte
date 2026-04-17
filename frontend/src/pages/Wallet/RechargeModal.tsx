@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal, Radio, Button, Typography, Space, Row, Col, QRCode, message, Spin, Result } from 'antd';
-import { Wallet, QrCode } from 'lucide-react';
+import { Wallet } from 'lucide-react';
 import request from '../../utils/request';
 
 const { Title, Text } = Typography;

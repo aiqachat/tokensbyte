@@ -236,20 +236,18 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       });
     }
 
-    if (hasPermission('upstreams') || isSuperAdmin) {
-      menuItems.push({
-        key: '/admin0755/upstreams',
-        icon: <GlobalOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/admin0755/upstreams">上游管理</Link>,
-      });
-    }
+    if (hasPermission('models') || hasPermission('upstreams') || isSuperAdmin) {
+      const modelChildren = [];
 
-    if (hasPermission('models')) {
-      menuItems.push({
-        key: 'models-management-group',
-        icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
-        label: t('menu.models', '大模型路由管理'),
-        children: [
+      if (hasPermission('upstreams') || isSuperAdmin) {
+        modelChildren.push({
+          key: '/admin0755/upstreams',
+          label: <Link to="/admin0755/upstreams">上游管理</Link>,
+        });
+      }
+
+      if (hasPermission('models')) {
+        modelChildren.push(
           {
             key: '/admin0755/models',
             label: <Link to="/admin0755/models">{t('menu.model_list', '模型列表')}</Link>,
@@ -262,8 +260,17 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             key: '/admin0755/billing-rules',
             label: <Link to="/admin0755/billing-rules">{t('menu.billing_rules', '计费配置')}</Link>,
           }
-        ]
-      });
+        );
+      }
+
+      if (modelChildren.length > 0) {
+        menuItems.push({
+          key: 'models-management-group',
+          icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
+          label: t('menu.models', '大模型路由管理'),
+          children: modelChildren
+        });
+      }
     }
 
     if (hasPermission('marketing')) {

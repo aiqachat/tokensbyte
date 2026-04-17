@@ -7,7 +7,7 @@ use rand::Rng;
 use reqwest::Client;
 use rsa::pkcs8::DecodePrivateKey;
 use rsa::pkcs1v15::SigningKey;
-use rsa::signature::Signer;
+use rsa::signature::{Signer, SignatureEncoding};
 use rsa::sha2::Sha256;
 use aes_gcm::{Aes256Gcm, Key, Nonce, KeyInit};
 use aes_gcm::aead::{Aead, Payload};

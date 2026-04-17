@@ -5,11 +5,10 @@ use base64::Engine;
 use chrono::Local;
 use rsa::pkcs8::DecodePrivateKey;
 use rsa::pkcs1v15::SigningKey;
-use rsa::signature::Signer;
+use rsa::signature::{Signer, Verifier, SignatureEncoding};
 use rsa::sha2::Sha256;
 use std::collections::BTreeMap;
 use urlencoding::encode;
-use rsa::signature::Verifier;
 use rsa::pkcs1v15::VerifyingKey;
 use rsa::pkcs8::DecodePublicKey;
 use rsa::RsaPublicKey;
@@ -98,7 +97,7 @@ impl AlipayClient {
         let signature_bytes = STANDARD.decode(signature)
             .map_err(|e| anyhow!("Base64 decode signature failed: {}", e))?;
             
-        match rsa::signature::Signature::from_bytes(&signature_bytes) {
+        match rsa::pkcs1v15::Signature::try_from(signature_bytes.as_slice()) {
             Ok(sig) => {
                 Ok(verifying_key.verify(sign_str.as_bytes(), &sig).is_ok())
             },

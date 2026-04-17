@@ -52,7 +52,8 @@
     "wallet": "我的钱包",
     "profile": "个人中心",
     "marketing": "营销管理",
-    "registration_gifts": "注册好礼"
+    "registration_gifts": "注册好礼",
+    "registration_settings": "注册设置"
   },
   "dashboard": {
     "title": "系统概览",
