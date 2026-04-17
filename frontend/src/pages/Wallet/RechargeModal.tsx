@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal, Radio, Button, Typography, Space, Row, Col, QRCode, message, Spin, Result } from 'antd';
-import { Wallet } from 'lucide-react';
+import { WalletOutlined, AlipayCircleOutlined, WechatOutlined, SafetyCertificateOutlined, LockOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 
 const { Title, Text } = Typography;
@@ -124,9 +124,16 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
     }
   };
 
+  const modalStyles = {
+    content: { background: '#141414', border: '1px solid #303030', borderRadius: 16, padding: 0 },
+    body: { padding: '28px 32px' },
+    header: { display: 'none' as const },
+    mask: { backgroundColor: 'rgba(0, 0, 0, 0.65)' },
+  };
+
   if (fetchingSettings) {
     return (
-      <Modal open={visible} footer={null} closable={false} centered>
+      <Modal open={visible} footer={null} closable={false} centered styles={modalStyles}>
         <div style={{ textAlign: 'center', padding: '40px 0' }}><Spin /></div>
       </Modal>
     );
@@ -135,7 +142,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
   // Handle No Payment Method
   if (!wechatEnabled && !alipayEnabled) {
     return (
-      <Modal open={visible} footer={null} onCancel={onCancel} centered>
+      <Modal open={visible} footer={null} onCancel={onCancel} centered styles={modalStyles}>
         <Result
           status="warning"
           title="在线充值暂不可用"
@@ -153,12 +160,29 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
       title={null}
       footer={null}
       onCancel={onCancel}
-      styles={{ body: { padding: '24px 32px' } }}
+      styles={modalStyles}
       centered
     >
-      <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <Wallet size={48} style={{ color: '#1677ff', marginBottom: 12 }} />
-        <Title level={4} style={{ margin: 0 }}>钱包余额充值</Title>
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: 28 }}>
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 56,
+          height: 56,
+          borderRadius: 16,
+          background: 'linear-gradient(135deg, #1677ff 0%, #003eb3 100%)',
+          marginBottom: 16,
+          boxShadow: '0 8px 24px rgba(22, 119, 255, 0.3)',
+        }}>
+          <WalletOutlined style={{ fontSize: 28, color: '#fff' }} />
+        </div>
+        <Title level={4} style={{ margin: 0, color: '#fff' }}>钱包余额充值</Title>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 6 }}>
+          <LockOutlined style={{ fontSize: 11, color: '#52c41a' }} />
+          <Text type="secondary" style={{ fontSize: 12 }}>安全加密支付通道</Text>
+        </div>
       </div>
 
       {payStatus === 'success' ? (
@@ -167,7 +191,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           title="支付成功！"
           subTitle="您的钱包余额已经更新"
           extra={[
-            <Button type="primary" key="console" onClick={onSuccess}>
+            <Button type="primary" key="console" onClick={onSuccess} style={{ borderRadius: 8 }}>
               完成
             </Button>
           ]}
@@ -175,67 +199,161 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
       ) : payStatus === 'paying' && paymentMethod === 'wechat' ? (
         <div style={{ textAlign: 'center' }}>
           <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>请使用微信扫一扫支付</Text>
-          <div style={{ padding: 16, background: '#fff', borderRadius: 8, display: 'inline-block', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+          <div style={{ 
+            padding: 16, 
+            background: '#fff', 
+            borderRadius: 12, 
+            display: 'inline-block', 
+            boxShadow: '0 4px 20px rgba(0,0,0,0.3)' 
+          }}>
             <QRCode value={qrCodeUrl} size={200} />
           </div>
           <div style={{ marginTop: 24 }}>
             <Title level={3} style={{ color: '#ff4d4f', margin: 0 }}>¥ {selectedAmount.toFixed(2)}</Title>
             <Text type="secondary" style={{ fontSize: 13 }}>订单号: {outTradeNo}</Text>
           </div>
-          <Button style={{ marginTop: 24 }} onClick={resetState}>返回修改</Button>
+          <Button style={{ marginTop: 24, borderRadius: 8 }} onClick={resetState}>返回修改</Button>
         </div>
       ) : (
         <div>
-          <Text strong style={{ display: 'block', marginBottom: 12 }}>选择金额 (元)</Text>
-          <Row gutter={[12, 12]}>
+          {/* Amount Selection */}
+          <Text strong style={{ display: 'block', marginBottom: 12, color: 'rgba(255,255,255,0.85)' }}>选择金额 (元)</Text>
+          <Row gutter={[10, 10]}>
             {AMOUNTS.map(amt => (
               <Col span={8} key={amt}>
                 <div 
                   onClick={() => setSelectedAmount(amt)}
                   style={{
-                    border: `2px solid ${selectedAmount === amt ? '#1677ff' : '#f0f0f0'}`,
-                    borderRadius: 8,
-                    padding: '12px 0',
+                    border: `2px solid ${selectedAmount === amt ? '#1677ff' : '#303030'}`,
+                    borderRadius: 10,
+                    padding: '14px 0',
                     textAlign: 'center',
                     cursor: 'pointer',
-                    background: selectedAmount === amt ? '#e6f4ff' : '#fff',
-                    transition: 'all 0.2s'
+                    background: selectedAmount === amt 
+                      ? 'rgba(22, 119, 255, 0.12)' 
+                      : 'rgba(255, 255, 255, 0.04)',
+                    transition: 'all 0.25s ease',
                   }}
                 >
-                  <Text strong style={{ color: selectedAmount === amt ? '#1677ff' : 'inherit', fontSize: 18 }}>{amt}</Text>
+                  <Text strong style={{ 
+                    color: selectedAmount === amt ? '#1677ff' : 'rgba(255,255,255,0.85)', 
+                    fontSize: 20 
+                  }}>
+                    {amt}
+                  </Text>
                 </div>
               </Col>
             ))}
           </Row>
 
-          <Text strong style={{ display: 'block', marginTop: 24, marginBottom: 12 }}>支付方式</Text>
-          <Radio.Group 
-            onChange={(e) => setPaymentMethod(e.target.value)} 
-            value={paymentMethod}
-            style={{ width: '100%', display: 'flex', gap: 12 }}
-          >
+          {/* Payment Method */}
+          <Text strong style={{ display: 'block', marginTop: 24, marginBottom: 12, color: 'rgba(255,255,255,0.85)' }}>支付方式</Text>
+          <Row gutter={12}>
             {alipayEnabled && (
-              <Radio.Button value="alipay" style={{ flex: 1, textAlign: 'center', height: 48, lineHeight: '46px', borderRadius: 8 }}>
-                <span style={{ color: '#1677ff', fontWeight: 500 }}>支付宝</span>
-              </Radio.Button>
+              <Col flex={1}>
+                <div
+                  onClick={() => setPaymentMethod('alipay')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    height: 52,
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    border: `2px solid ${paymentMethod === 'alipay' ? '#1677ff' : '#303030'}`,
+                    background: paymentMethod === 'alipay' 
+                      ? 'rgba(22, 119, 255, 0.12)' 
+                      : 'rgba(255, 255, 255, 0.04)',
+                    transition: 'all 0.25s ease',
+                  }}
+                >
+                  <AlipayCircleOutlined style={{ fontSize: 22, color: '#1677ff' }} />
+                  <Text strong style={{ color: '#1677ff', fontSize: 15 }}>支付宝</Text>
+                </div>
+              </Col>
             )}
             {wechatEnabled && (
-              <Radio.Button value="wechat" style={{ flex: 1, textAlign: 'center', height: 48, lineHeight: '46px', borderRadius: 8 }}>
-                 <span style={{ color: '#07c160', fontWeight: 500 }}>微信支付</span>
-              </Radio.Button>
+              <Col flex={1}>
+                <div
+                  onClick={() => setPaymentMethod('wechat')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    height: 52,
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    border: `2px solid ${paymentMethod === 'wechat' ? '#07c160' : '#303030'}`,
+                    background: paymentMethod === 'wechat' 
+                      ? 'rgba(7, 193, 96, 0.12)' 
+                      : 'rgba(255, 255, 255, 0.04)',
+                    transition: 'all 0.25s ease',
+                  }}
+                >
+                  <WechatOutlined style={{ fontSize: 22, color: '#07c160' }} />
+                  <Text strong style={{ color: '#07c160', fontSize: 15 }}>微信支付</Text>
+                </div>
+              </Col>
             )}
-          </Radio.Group>
+          </Row>
+
+          {/* Summary + Pay */}
+          <div style={{
+            marginTop: 24,
+            padding: '16px 20px',
+            background: 'rgba(255,255,255,0.03)',
+            borderRadius: 10,
+            border: '1px solid #252525',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>应付金额</Text>
+            <Title level={3} style={{ margin: 0, color: '#ff4d4f' }}>¥ {selectedAmount.toFixed(2)}</Title>
+          </div>
 
           <Button 
             type="primary" 
             block 
             size="large" 
-            style={{ marginTop: 32, borderRadius: 8, height: 48, fontSize: 16 }}
+            style={{ 
+              marginTop: 20, 
+              borderRadius: 10, 
+              height: 50, 
+              fontSize: 16,
+              fontWeight: 600,
+              background: paymentMethod === 'alipay' 
+                ? 'linear-gradient(135deg, #1677ff, #003eb3)' 
+                : 'linear-gradient(135deg, #07c160, #059048)',
+              border: 'none',
+              boxShadow: paymentMethod === 'alipay' 
+                ? '0 4px 16px rgba(22, 119, 255, 0.35)' 
+                : '0 4px 16px rgba(7, 193, 96, 0.35)',
+            }}
             loading={loading}
             onClick={handleCreateOrder}
           >
-            {paymentMethod === 'alipay' ? '去支付宝支付' : '生成微信支付码'}
+            {paymentMethod === 'alipay' ? (
+              <Space><AlipayCircleOutlined />去支付宝支付</Space>
+            ) : (
+              <Space><WechatOutlined />生成微信支付码</Space>
+            )}
           </Button>
+
+          {/* Trust badge */}
+          <div style={{ 
+            textAlign: 'center', 
+            marginTop: 16, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            gap: 6 
+          }}>
+            <SafetyCertificateOutlined style={{ fontSize: 13, color: '#52c41a' }} />
+            <Text type="secondary" style={{ fontSize: 11 }}>资金安全保障 · 充值后即时到账 · 正规支付渠道</Text>
+          </div>
         </div>
       )}
     </Modal>
