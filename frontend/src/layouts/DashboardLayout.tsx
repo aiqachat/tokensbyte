@@ -115,14 +115,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{t('menu.dashboard')}</Link>,
   });
 
-  // 2. Relay API (Admin Only)
-  if (!isUserEnd) {
-    menuItems.push({
-      key: '/admin0755/relay-api',
-      icon: <RocketOutlined style={{ fontSize: '18px' }} />,
-      label: <Link to="/admin0755/relay-api">中转网关</Link>,
-    });
-  }
+  // 2. Relay API
+  menuItems.push({
+    key: isUserEnd ? '/relay-api' : '/admin0755/relay-api',
+    icon: <RocketOutlined style={{ fontSize: '18px' }} />,
+    label: <Link to={isUserEnd ? '/relay-api' : '/admin0755/relay-api'}>中转网关</Link>,
+  });
 
   // 3. Tokens
   menuItems.push({

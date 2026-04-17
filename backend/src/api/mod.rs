@@ -50,7 +50,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/classifications/stats", get(model_classifications::get_classifications_stats))
         .route("/redemptions", get(redemptions::list_redemptions).post(redemptions::generate_redemptions))
         .route("/redemptions/{id}", delete(redemptions::delete_redemption))
-        .route("/task_logs", get(task_logs::list_task_logs))
         .route("/task_logs/mock", post(task_logs::generate_mock_task_log))
         .route("/tokens/all", get(tokens::list_all_tokens))
         .route("/settings", post(settings::update_settings))
@@ -85,6 +84,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/user/wallet", get(user::get_wallet_stats))
         .route("/user/recharge_records", get(user::list_recharge_records))
         .route("/user/affiliate/transfer", post(user::transfer_commission))
+        .route("/task_logs", get(task_logs::list_task_logs))
 
         .merge(admin_routes)
         .nest("/plugins", plugins::router())

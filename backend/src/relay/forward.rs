@@ -306,6 +306,11 @@ pub fn transform_request_body(
         }
     };
 
+    // 视频模型默认分辨率 720p（确保上游数据与计费一致）
+    if category == "视频" && result.get("resolution").is_none() {
+        result["resolution"] = serde_json::json!("720p");
+    }
+
     // 统一后处理：web_search 联网搜索参数转换
     convert_web_search(&mut result, body, &resolved.target_type);
     result

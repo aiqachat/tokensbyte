@@ -172,6 +172,10 @@ pub async fn volcengine_submit(
     let url = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
     let mut fwd = body.clone();
     fwd["model"] = serde_json::json!(resolved_model);
+    // 视频模型默认分辨率 720p（确保上游数据与计费一致）
+    if fwd.get("resolution").is_none() {
+        fwd["resolution"] = serde_json::json!("720p");
+    }
 
     let resp = state.http_client
         .post(&url)
@@ -186,7 +190,7 @@ pub async fn volcengine_submit(
     if !resp.status().is_success() {
         let err = resp.text().await?;
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, "/v1/video/generations|/api/v3/contents/generations/tasks", Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string()), None).await;
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, "/api/v3/contents/generations/tasks", Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string()), None).await;
         return Err(AppError::UpstreamError(err));
     }
 
@@ -199,7 +203,7 @@ pub async fn volcengine_submit(
     let response_content_str = String::from_utf8_lossy(&data).to_string();
     let latency_ms = start_time.elapsed().as_millis() as u32;
     // 异步任务 POST 只记录，真正计费在 GET 轮询成功后执行
-    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200, "/v1/video/generations|/api/v3/contents/generations/tasks", None, latency_ms, is_stream, Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some("异步任务预扣费冻结".to_string())).await;
+    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200, "/api/v3/contents/generations/tasks", None, latency_ms, is_stream, Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some("异步任务预扣费冻结".to_string())).await;
 
     Ok(Response::builder()
         .header("Content-Type", "application/json")

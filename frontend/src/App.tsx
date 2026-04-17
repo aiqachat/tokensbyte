@@ -70,6 +70,7 @@ const App: React.FC = () => {
           }
         >
           <Route index element={<Dashboard />} />
+          <Route path="relay-api" element={<RelayAPI />} />
           <Route path="tokens" element={<Tokens />} />
           <Route path="logs" element={<Logs />} />
           <Route path="task-logs" element={<TaskLogs />} />
