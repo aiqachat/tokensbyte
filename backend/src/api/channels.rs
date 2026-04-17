@@ -5,7 +5,7 @@ use axum::{
 use std::sync::Arc;
 use crate::AppState;
 use crate::models::{Channel, CreateChannelRequest, UpdateChannelRequest, ChannelSafe, ChannelListResponse};
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::relay::url_utils::join_url;
 
 pub async fn list_channels(
@@ -238,7 +238,7 @@ pub async fn test_channel(
 
     // ── 生成 cURL 命令 ──
     let masked_endpoint = crate::relay::forward::mask_key_in_string(&endpoint, &channel.api_key);
-    let masked_key = if channel.api_key.len() > 8 {
+    let _masked_key = if channel.api_key.len() > 8 {
         format!("{}******{}", &channel.api_key[..4], &channel.api_key[channel.api_key.len()-4..])
     } else { "******".to_string() };
 

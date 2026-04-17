@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::collections::HashMap;
 use std::future::Future;
 use std::time::Duration;
@@ -146,7 +147,7 @@ pub async fn upload_file(
     config: &TosConfig,
     object_key: &str,
     data: Vec<u8>,
-    content_type: &str,
+    _content_type: &str,
     tags: Option<&str>,
 ) -> Result<String, String> {
     let client = tos::builder::<TokioRuntime>()

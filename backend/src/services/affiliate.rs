@@ -1,4 +1,3 @@
-use crate::models::{User, UserLevel};
 use sqlx::{Any, Transaction};
 use anyhow::Result;
 

@@ -61,7 +61,7 @@ pub async fn video_generations(
     .await
     .unwrap_or(None);
 
-    let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
+    let _db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
         if let Some(rule_id) = m.billing_rule_id {
             sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
                 .bind(rule_id)

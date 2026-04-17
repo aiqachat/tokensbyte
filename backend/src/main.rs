@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
 
 /// 将 REGISTER_ENABLED 环境变量同步到数据库的 registration_settings
 async fn sync_registration_settings(db: &Database, register_enabled: bool) -> anyhow::Result<()> {
-    use sqlx::Row;
+    
     
     // 检查是否已存在 registration_settings
     let existing: Option<String> = sqlx::query_scalar(&db.format_query("SELECT value FROM settings WHERE key = 'registration_settings'"))

@@ -87,7 +87,7 @@ pub async fn create_model(
     let group_ratios = serde_json::to_string(&req.group_ratios.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     let forward_rule_ids = req.forward_rule_ids.map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "[]".to_string()));
     
-    let mut pre_deduction = req.pre_deduction.unwrap_or(0.0);
+    let pre_deduction = req.pre_deduction.unwrap_or(0.0);
     // 可选：如果此处有关联的 billing_rule 检查也可以做，目前统一允许设置
     
     let is_active = req.is_active.unwrap_or(1);

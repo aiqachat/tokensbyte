@@ -71,7 +71,7 @@ pub async fn gemini_proxy(
         .ok_or_else(|| AppError::BadRequest("Invalid path: expected {model}:{action}".into()))?;
 
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
+    let _pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
 
     // Build upstream query: replace key with channel's real key, keep other params (e.g. alt=sse)
@@ -377,7 +377,7 @@ pub async fn volcengine_images(
         return Err(AppError::UpstreamError(err));
     }
 
-    let cost = proxy::get_model_cost(&state, model, ctx.discount).await;
+    let _cost = proxy::get_model_cost(&state, model, ctx.discount).await;
     
     // 如果上游返回的是流，虽然我们缓冲返回了，也按请求标志记录
     let is_upstream_stream = resp.headers().get("content-type")

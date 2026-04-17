@@ -13,7 +13,7 @@ use crate::models::{
 use crate::error::{AppError, AppResult};
 use crate::auth;
 use crate::services::email::EmailService;
-use chrono::{DateTime, Utc, Duration};
+use chrono::{Utc, Duration};
 use rand::Rng;
 
 pub async fn login(
@@ -21,7 +21,7 @@ pub async fn login(
     Json(request): Json<LoginRequest>,
 ) -> Response {
     let result = (async {
-        let mut user: User = sqlx::query_as(
+        let user: User = sqlx::query_as(
             &state.db.format_query("SELECT * FROM users WHERE username = ? OR email = ?")
         )
         .bind(&request.username)

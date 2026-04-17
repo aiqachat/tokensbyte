@@ -1,4 +1,4 @@
-use sqlx::{Pool, Sqlite, Postgres, Any};
+use sqlx::{Pool, Any};
 
 macro_rules! pg_migration_blocks {
     ($pool:expr) => {{
@@ -23,6 +23,8 @@ macro_rules! pg_migration_blocks {
             remark TEXT,
             upstream_type TEXT NOT NULL DEFAULT 'other',
             config TEXT, referred_by TEXT, commission_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
+            register_ip TEXT DEFAULT '',
+            admin_remark TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -70,12 +72,6 @@ macro_rules! pg_migration_blocks {
     .execute(pool)
     .await?;
 
-    // Safe fallback for existing postgres deployments
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS user_groups TEXT NOT NULL DEFAULT '[]'")
-        .execute(pool)
-        .await
-        .ok();
-
     // API Tokens table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS api_tokens (
@@ -122,6 +118,7 @@ macro_rules! pg_migration_blocks {
             response_content TEXT,
             upstream_req_content TEXT,
             is_stream INTEGER NOT NULL DEFAULT 0,
+            billing_detail TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
@@ -476,8 +473,8 @@ macro_rules! pg_migration_blocks {
         "#).execute(pool).await?;
     }
 
-    let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE users ADD COLUMN admin_remark TEXT DEFAULT ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS register_ip TEXT DEFAULT ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_remark TEXT DEFAULT ''").execute(pool).await;
 
     // 计费明细日志扩展
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_detail TEXT DEFAULT ''")
@@ -496,9 +493,9 @@ macro_rules! pg_migration_blocks {
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     ).execute(pool).await?;
-    let _ = sqlx::query("ALTER TABLE channels ADD COLUMN preset_id INTEGER").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN remark TEXT").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE model_providers ADD COLUMN remark TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS preset_id INTEGER").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await;
 
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS upstreams (
@@ -553,6 +550,8 @@ macro_rules! pg_migration_blocks {
             reject_reason TEXT,
             category TEXT DEFAULT '未分类',
             asset_id TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            remark TEXT,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
@@ -617,6 +616,8 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             remark TEXT,
             upstream_type TEXT NOT NULL DEFAULT 'other',
             config TEXT, referred_by TEXT, commission_balance REAL NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
+            register_ip TEXT DEFAULT '',
+            admin_remark TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
@@ -731,6 +732,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             endpoint TEXT NOT NULL DEFAULT '',
             error_message TEXT,
             upstream_url TEXT DEFAULT '',
+            billing_detail TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
@@ -852,9 +854,9 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     // Model Providers / Types / Models (SQLite truncated for brevity but ensured relevant columns)
     // ... (rest of models migrations)
 
-    let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE users ADD COLUMN admin_remark TEXT DEFAULT ''").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE logs ADD COLUMN upstream_url TEXT DEFAULT ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE users ADD COLUMN register_ip TEXT DEFAULT ''").execute(pool).await.ok();
+    let _ = sqlx::query("ALTER TABLE users ADD COLUMN admin_remark TEXT DEFAULT ''").execute(pool).await.ok();
+    let _ = sqlx::query("ALTER TABLE logs ADD COLUMN upstream_url TEXT DEFAULT ''").execute(pool).await.ok();
 
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS channel_configs (
@@ -868,8 +870,8 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     ).execute(pool).await?;
-    let _ = sqlx::query("ALTER TABLE channels ADD COLUMN preset_id INTEGER").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN remark TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE channels ADD COLUMN preset_id INTEGER").execute(pool).await.ok();
+    let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN remark TEXT").execute(pool).await.ok();
 
     
     // Plugins table
@@ -889,7 +891,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     .await?;
 
     let _ = sqlx::query("ALTER TABLE plugins ADD COLUMN allowed_levels TEXT NOT NULL DEFAULT 'all'")
-        .execute(pool).await;
+        .execute(pool).await.ok();
 
     // Plugin Assets table
     sqlx::query(
@@ -906,6 +908,8 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             reject_reason TEXT,
             category TEXT DEFAULT '未分类',
             asset_id TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            remark TEXT,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
@@ -913,10 +917,10 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
-    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN category TEXT DEFAULT '未分类'").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN asset_id TEXT").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN remark TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN category TEXT DEFAULT '未分类'").execute(pool).await.ok();
+    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN asset_id TEXT").execute(pool).await.ok();
+    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN remark TEXT").execute(pool).await.ok();
 
     // Seed Asset Manager plugin
     sqlx::query(

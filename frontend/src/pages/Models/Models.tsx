@@ -87,13 +87,6 @@ const Models: React.FC = () => {
   };
 
   const handleEdit = (record: ModelModel) => {
-    let tiers = [];
-    try {
-      tiers = JSON.parse(record.pricing_tiers || '[]');
-    } catch (e) {
-      console.error('Failed to parse tiers', e);
-    }
-    
     setEditingModel(record);
     setBillingType('tokens');
     

@@ -148,10 +148,7 @@ const Logs: React.FC = () => {
       if (upstreamReqJson) upstreamReqJson = JSON.stringify(JSON.parse(upstreamReqJson), null, 2);
     } catch (e) { /* keep raw */ }
 
-    const modelMeta = modelsCache.find(m => m.model_id === record.model);
-    const costFormula = modelMeta
-      ? `P: ${modelMeta.prompt_rate}/1M × ${record.prompt_tokens} + C: ${modelMeta.completion_rate}/1M × ${record.completion_tokens}`
-      : '模型定价未配置';
+    const costFormula = '由绑定的计费模板动态结算';
 
     // 使用 antd theme token 来适配深色/浅色主题
     const panelBg = themeToken.colorBgElevated;

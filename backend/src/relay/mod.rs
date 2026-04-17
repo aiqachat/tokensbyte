@@ -9,7 +9,7 @@ pub mod forward;
 pub mod usage_extractor;
 
 use axum::{
-    extract::{State, Extension, Path},
+    extract::{State, Extension},
     Json,
     response::{Response, IntoResponse},
 };
@@ -263,7 +263,7 @@ fn transform_chat_response(response: &str, target_type: &str, model: &str) -> St
 
 /// 统一计费逻辑
 pub fn compute_cost(
-    db_model: Option<&crate::models::Model>, 
+    _db_model: Option<&crate::models::Model>, 
     db_rule: Option<&crate::models::BillingRule>, 
     prompt_tokens: i32, 
     completion_tokens: i32, 

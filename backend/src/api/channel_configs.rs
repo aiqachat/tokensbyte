@@ -1,14 +1,11 @@
 use axum::{
     extract::{Path, State},
-    response::{IntoResponse, Response},
     Json,
-    routing::{get, post, put, delete},
-    Router,
 };
 use std::sync::Arc;
 use crate::AppState;
 use crate::models::{
-    ChannelConfig, ChannelConfigSafe, ChannelConfigListResponse,
+    ChannelConfig, ChannelConfigListResponse,
     CreateChannelConfigRequest, UpdateChannelConfigRequest
 };
 use crate::error::AppError;

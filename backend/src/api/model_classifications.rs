@@ -6,8 +6,7 @@ use std::sync::Arc;
 use crate::AppState;
 use crate::error::AppResult;
 use crate::models::{
-    ModelProvider, ModelType, ClassificationRequest, 
-    ClassificationCount, ClassificationsResponse
+    ModelProvider, ModelType, ClassificationRequest, ClassificationsResponse
 };
 
 // --- Providers ---

@@ -4,7 +4,6 @@ use axum::{
 };
 use std::sync::Arc;
 use crate::AppState;
-use crate::models::{RequestLog, RechargeRecord};
 use crate::error::{AppResult};
 use serde::{Deserialize, Serialize};
 

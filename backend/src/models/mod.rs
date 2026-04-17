@@ -21,7 +21,6 @@ pub use redemption::*;
 pub use model::*;
 pub use settings::*;
 pub use user_level::*;
-pub use verification::*;
 pub use admin_group::*;
 pub use task_log::*;
 pub use upstream::*;

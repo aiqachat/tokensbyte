@@ -1,10 +1,10 @@
+#![allow(dead_code)]
 use std::collections::HashMap;
-use std::time::SystemTime;
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use sha2::{Sha256, Digest};
 use serde::{Deserialize, Serialize};
-use reqwest::{Client, Method, header};
+use reqwest::{Client, Method};
 use anyhow::{Result, anyhow};
 
 type HmacSha256 = Hmac<Sha256>;
