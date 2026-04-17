@@ -169,7 +169,11 @@ const Models: React.FC = () => {
           <Space size={4}>
             {record.provider_id && <Tag color="default" style={{ fontSize: '10px' }}>{getProviderName(record.provider_id)}</Tag>}
             {record.type_id && <Tag color="blue" style={{ fontSize: '10px' }}>{getTypeName(record.type_id)}</Tag>}
-            {record.billing_rule === 'tiered' && <Tag color="gold" style={{ fontSize: '10px' }}>{t('models.rule_tiered')}</Tag>}
+            {(() => {
+              const br = allBillingRules.find(b => b.id === record.billing_rule_id);
+              if (br && br.billing_rule === 'tiered') return <Tag color="gold" style={{ fontSize: '10px' }}>{t('models.rule_tiered')}</Tag>;
+              return null;
+            })()}
           </Space>
         </Space>
       ),

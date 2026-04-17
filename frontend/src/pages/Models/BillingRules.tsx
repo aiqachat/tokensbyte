@@ -253,7 +253,13 @@ const BillingRules: React.FC = () => {
           </Form.Item>
 
           <Form.Item name="billing_type" label={t('models.billing_type')} rules={[{ required: true }]}>
-            <Radio.Group optionType="button" buttonStyle="solid" onChange={(e) => setBillingType(e.target.value)}>
+            <Radio.Group optionType="button" buttonStyle="solid" onChange={(e) => {
+              const type = e.target.value;
+              setBillingType(type);
+              if (type === 'tokens') form.setFieldsValue({ billing_rule: 'standard' });
+              else if (type === 'requests') form.setFieldsValue({ billing_rule: 'fixed' });
+              else if (type === 'duration') form.setFieldsValue({ billing_rule: 'standard' });
+            }}>
               <Radio value="tokens">{t('models.type_tokens')}</Radio>
               <Radio value="requests">{t('models.type_requests')}</Radio>
               <Radio value="duration">{t('models.type_duration')}</Radio>
