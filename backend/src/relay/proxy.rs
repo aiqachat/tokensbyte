@@ -33,14 +33,32 @@ pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult
 
 // ── Access Check ────────────────────────────────────────────────
 
-pub fn check_access(token: &ApiToken, model: &str, balance: f64) -> AppResult<()> {
+pub async fn check_access(state: &Arc<AppState>, token: &ApiToken, model: &str, balance: f64) -> AppResult<f64> {
     if !token.is_model_allowed(model) {
         return Err(AppError::Forbidden(format!("Model {} not allowed for this token", model)));
     }
-    if token.quota_limit < 0.0 && balance <= 0.0 {
-        return Err(AppError::Forbidden("Insufficient user balance".into()));
+
+    let db_model: Option<crate::models::Model> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1")
+    )
+    .bind(model)
+    .fetch_optional(&state.db.pool)
+    .await
+    .unwrap_or(None);
+
+    let pre_deduction = db_model.map(|m| m.pre_deduction).unwrap_or(0.0);
+
+    if pre_deduction > 0.0 {
+        if balance < pre_deduction {
+            return Err(AppError::Forbidden(format!("Insufficient user balance for pre-deduction: need {}", pre_deduction)));
+        }
+    } else {
+        if token.quota_limit < 0.0 && balance <= 0.0 {
+            return Err(AppError::Forbidden("Insufficient user balance".into()));
+        }
     }
-    Ok(())
+
+    Ok(pre_deduction)
 }
 
 // ── Channel Selection ───────────────────────────────────────────

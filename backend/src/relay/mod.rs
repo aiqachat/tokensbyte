@@ -35,7 +35,7 @@ pub async fn chat_completions(
 
     // 2. 获取用户信息
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    proxy::check_access(&token, model, ctx.balance)?;
+    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
 
     // 3. 选择渠道
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
@@ -102,15 +102,7 @@ pub async fn chat_completions(
 
         let prompt_tokens = estimate_prompt_tokens(&body);
 
-        let db_model: Option<crate::models::Model> = sqlx::query_as(
-            &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-        )
-        .bind(&model)
-        .fetch_optional(&state.db.pool)
-        .await
-        .unwrap_or(None);
 
-        let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
         if pre_deduction > 0.0 {
             if let Err(e) = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
                 tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);

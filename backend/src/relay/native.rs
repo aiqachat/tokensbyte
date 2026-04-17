@@ -71,7 +71,7 @@ pub async fn gemini_proxy(
         .ok_or_else(|| AppError::BadRequest("Invalid path: expected {model}:{action}".into()))?;
 
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    proxy::check_access(&token, model, ctx.balance)?;
+    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
 
     // Build upstream query: replace key with channel's real key, keep other params (e.g. alt=sse)
@@ -166,7 +166,7 @@ pub async fn volcengine_submit(
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
     let model = body["model"].as_str().unwrap_or("volcengine-gen");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    proxy::check_access(&token, model, ctx.balance)?;
+    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
 
     let url = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
@@ -191,9 +191,6 @@ pub async fn volcengine_submit(
     }
 
     // 预扣费逻辑（异步任务 POST 阶段）
-    let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
-        .bind(model).fetch_optional(&state.db.pool).await.unwrap_or(None);
-    let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
     if pre_deduction > 0.0 {
         let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
     }
@@ -354,7 +351,7 @@ pub async fn volcengine_images(
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
     let model = body["model"].as_str().unwrap_or("volcengine-image");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    proxy::check_access(&token, model, ctx.balance)?;
+    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
 
     let url = join_url(&channel.base_url, "/api/v3/images/generations");
@@ -404,7 +401,7 @@ pub async fn volcengine_images(
         } else { None }
     } else { None };
 
-    let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
+    // 因为 pre_deduction 已经在前置 check_access 中获取过了
     if pre_deduction > 0.0 {
         let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
     }

@@ -131,9 +131,6 @@ const Models: React.FC = () => {
       values.enable_log_content = values.enable_log_content ? 1 : 0;
 
       const br = allBillingRules.find(b => b.id === values.billing_rule_id);
-      if (br && br.billing_type !== 'tokens') {
-        values.pre_deduction = 0.0;
-      }
 
       if (editingModel) {
         await request.put(`/models/${editingModel.id}`, values);
@@ -340,22 +337,11 @@ const Models: React.FC = () => {
                     <Switch checkedChildren="开启" unCheckedChildren="关闭" />
                  </Form.Item>
              </Col>
-             <Form.Item noStyle shouldUpdate={(prev, curr) => prev.billing_rule_id !== curr.billing_rule_id}>
-                {({ getFieldValue }) => {
-                    const rId = getFieldValue('billing_rule_id');
-                    const br = allBillingRules.find(b => b.id === rId);
-                    if (br && br.billing_type === 'tokens') {
-                        return (
-                             <Col span={8}>
-                                 <Form.Item name="pre_deduction" label="初始预扣费 (USD)" initialValue={0.0}>
-                                    <InputNumber style={{ width: '100%' }} precision={6} min={0} />
-                                 </Form.Item>
-                             </Col>
-                        );
-                    }
-                    return null;
-                }}
-             </Form.Item>
+             <Col span={8}>
+                 <Form.Item name="pre_deduction" label="初始预扣费 (USD)" initialValue={0.0}>
+                    <InputNumber style={{ width: '100%' }} precision={6} min={0} />
+                 </Form.Item>
+             </Col>
           </Row>
         </Form>
       </Modal>
