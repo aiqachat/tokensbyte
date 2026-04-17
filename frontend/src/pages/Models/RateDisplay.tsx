@@ -51,11 +51,17 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol }) => {
       }
       if (rule.billing_rule === 'seedance2.0') {
         const rates = ext.resolution_rates || {};
+        const activeRes = Object.keys(rates).filter(k => ['480p', '720p', '1080p'].includes(k));
+        
+        if (activeRes.length === 0) {
+           return <Text type="secondary" style={s}>无独立分辨率设置(自动兜底计费)</Text>;
+        }
+
         return (
           <Space direction="vertical" size={0}>
-            {['480p', '720p', '1080p'].map(r => (
+            {activeRes.map(r => (
               <Text key={r} type="secondary" style={s}>
-                {r}: {currencySymbol}{rates[r]?.with_video ?? 0}(含视频) / {currencySymbol}{rates[r]?.without_video ?? 0}(无视频)
+                {r}: {currencySymbol}{rates[r].with_video}(含视) / {currencySymbol}{rates[r].without_video}(无视)
               </Text>
             ))}
           </Space>

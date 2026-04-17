@@ -67,6 +67,9 @@ const BillingRules: React.FC = () => {
       sd2_480p_video: 0, sd2_480p_base: 0,
       sd2_720p_video: 0, sd2_720p_base: 0,
       sd2_1080p_video: 0, sd2_1080p_base: 0,
+      sd2_480p_enabled: false,
+      sd2_720p_enabled: false,
+      sd2_1080p_enabled: false,
       volc_audio_rate: 0, volc_base_rate: 0,
     });
     setIsModalVisible(true);
@@ -95,6 +98,9 @@ const BillingRules: React.FC = () => {
       sd2_720p_base: ext.resolution_rates?.['720p']?.without_video || 0,
       sd2_1080p_video: ext.resolution_rates?.['1080p']?.with_video || 0,
       sd2_1080p_base: ext.resolution_rates?.['1080p']?.without_video || 0,
+      sd2_480p_enabled: !!ext.resolution_rates?.['480p'],
+      sd2_720p_enabled: !!ext.resolution_rates?.['720p'],
+      sd2_1080p_enabled: !!ext.resolution_rates?.['1080p'],
       volc_audio_rate: ext.audio_rate || 0,
       volc_base_rate: ext.base_rate || 0,
       is_active: item.is_active === 1,
@@ -122,13 +128,17 @@ const BillingRules: React.FC = () => {
       // 只有特定多模态规则才打包 extended_config，其他保持空对象
       let extConfig = {};
       if (values.billing_rule === 'seedance2.0') {
-        extConfig = {
-          resolution_rates: {
-            '480p': { with_video: values.sd2_480p_video || 0, without_video: values.sd2_480p_base || 0 },
-            '720p': { with_video: values.sd2_720p_video || 0, without_video: values.sd2_720p_base || 0 },
-            '1080p': { with_video: values.sd2_1080p_video || 0, without_video: values.sd2_1080p_base || 0 },
-          },
-        };
+        let resRates: any = {};
+        if (values.sd2_480p_enabled) {
+          resRates['480p'] = { with_video: values.sd2_480p_video || 0, without_video: values.sd2_480p_base || 0 };
+        }
+        if (values.sd2_720p_enabled) {
+          resRates['720p'] = { with_video: values.sd2_720p_video || 0, without_video: values.sd2_720p_base || 0 };
+        }
+        if (values.sd2_1080p_enabled) {
+          resRates['1080p'] = { with_video: values.sd2_1080p_video || 0, without_video: values.sd2_1080p_base || 0 };
+        }
+        extConfig = { resolution_rates: resRates };
       } else if (values.billing_rule === 'seedance1.5pro') {
         extConfig = {
           audio_rate: values.volc_audio_rate || 0,
@@ -137,9 +147,9 @@ const BillingRules: React.FC = () => {
       }
 
       // 清除表单中不应提交的临时字段
-      delete values.sd2_480p_video; delete values.sd2_480p_base;
-      delete values.sd2_720p_video; delete values.sd2_720p_base;
-      delete values.sd2_1080p_video; delete values.sd2_1080p_base;
+      delete values.sd2_480p_video; delete values.sd2_480p_base; delete values.sd2_480p_enabled;
+      delete values.sd2_720p_video; delete values.sd2_720p_base; delete values.sd2_720p_enabled;
+      delete values.sd2_1080p_video; delete values.sd2_1080p_base; delete values.sd2_1080p_enabled;
       delete values.volc_audio_rate;
       delete values.volc_base_rate;
 
@@ -298,25 +308,37 @@ const BillingRules: React.FC = () => {
                   } else if (rule === 'seedance2.0') {
                     return (
                       <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', marginBottom: 24, border: '1px solid #303030' }}>
-                        <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 12 }}>
-                          Seedance 2.0 — 按输出视频分辨率和输入是否包含视频区分定价 (doubao-seedance-2.0)
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 16 }}>
+                          Seedance 2.0 — 指定具体支持的视频分辨率及是否包含视频输入的定价 (可分级管控)
                         </Text>
-                        <Row gutter={16} style={{ marginBottom: 8 }}>
-                          <Col span={6}><Text strong style={{ fontSize: '12px' }}>单价 (元/百万Token)</Text></Col>
-                          {['480p', '720p', '1080p'].map(r => <Col span={6} key={r} style={{ textAlign: 'center' }}><Text strong style={{ fontSize: '12px' }}>{r}</Text></Col>)}
-                        </Row>
-                        <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
-                          <Col span={6}><Text style={{ fontSize: '12px' }}>包含视频输入</Text></Col>
-                          {['480p', '720p', '1080p'].map(r => (
-                            <Col span={6} key={r}><Form.Item name={`sd2_${r}_video`} noStyle rules={[{ required: true, message: '' }]}><InputNumber style={{ width: '100%' }} precision={2} min={0} /></Form.Item></Col>
-                          ))}
-                        </Row>
-                        <Row gutter={16} align="middle">
-                          <Col span={6}><Text style={{ fontSize: '12px' }}>不包含视频输入</Text></Col>
-                          {['480p', '720p', '1080p'].map(r => (
-                            <Col span={6} key={r}><Form.Item name={`sd2_${r}_base`} noStyle rules={[{ required: true, message: '' }]}><InputNumber style={{ width: '100%' }} precision={2} min={0} /></Form.Item></Col>
-                          ))}
-                        </Row>
+                        {['480p', '720p', '1080p'].map(r => (
+                          <div key={r} style={{ marginBottom: 16, padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                              <Text strong style={{ fontSize: '13px' }}>{r} 分辨率矩阵计费</Text>
+                              <Form.Item name={`sd2_${r}_enabled`} valuePropName="checked" style={{ margin: 0 }}>
+                                <Switch size="small" checkedChildren="启用" unCheckedChildren="关闭" />
+                              </Form.Item>
+                            </div>
+                            <Form.Item noStyle dependencies={[`sd2_${r}_enabled`]}>
+                              {({ getFieldValue }) => getFieldValue(`sd2_${r}_enabled`) ? (
+                                <Row gutter={16} align="middle">
+                                  <Col span={12}>
+                                    <Form.Item name={`sd2_${r}_video`} label={<Text style={{ fontSize: '12px' }}>包含视频输入 (元/百万)</Text>} rules={[{ required: true, message: '' }]} style={{ marginBottom: 0 }}>
+                                      <InputNumber style={{ width: '100%' }} precision={6} min={0} />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={12}>
+                                    <Form.Item name={`sd2_${r}_base`} label={<Text style={{ fontSize: '12px' }}>不包含视频输入 (元/百万)</Text>} rules={[{ required: true, message: '' }]} style={{ marginBottom: 0 }}>
+                                      <InputNumber style={{ width: '100%' }} precision={6} min={0} />
+                                    </Form.Item>
+                                  </Col>
+                                </Row>
+                              ) : (
+                                <Text type="secondary" style={{ fontSize: '12px' }}>{r} 被关闭，将不响应此分辨率独立的按需定价。</Text>
+                              )}
+                            </Form.Item>
+                          </div>
+                        ))}
                       </div>
                     );
                   } else if (rule === 'seedance1.5pro') {

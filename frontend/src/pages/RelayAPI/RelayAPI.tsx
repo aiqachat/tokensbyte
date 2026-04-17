@@ -7,7 +7,10 @@ const { Title, Text, Paragraph } = Typography;
 
 const RelayAPI: React.FC = () => {
   const { t } = useTranslation();
-  const baseUrl = `${window.location.protocol}//${window.location.hostname}:3000`;
+  const isLocal = window.location.hostname === 'localhost' || /^(127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
+  const baseUrl = isLocal 
+    ? `${window.location.protocol}//${window.location.hostname}:3000` 
+    : `${window.location.protocol}//${window.location.hostname}`;
 
   const endpoints = [
     { label: 'OpenAI 聊天', path: '/v1/chat/completions', method: 'POST', type: 'openai' },
