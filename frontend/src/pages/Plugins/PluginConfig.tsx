@@ -4,7 +4,7 @@ import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, Clo
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
-import AdminPresetAssets from './AssetManager/AdminPresetAssets';
+
 
 const { Title, Text } = Typography;
 
@@ -549,7 +549,6 @@ const PluginConfig: React.FC = () => {
           { key: 'basic', label: '基本配置', children: basicTab },
           { key: 'storage', label: '存储配置', children: storageTab },
           { key: 'moderation', label: '审核配置', children: moderationTab },
-          ...(plugin.name === 'asset_manager' ? [{ key: 'preset', label: '预设素材', children: <AdminPresetAssets /> }] : []),
         ]}
       />
     </div>
