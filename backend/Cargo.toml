@@ -63,6 +63,7 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 urlencoding = "2.1"
+rsa = { version = "0.9", features = ["sha2", "pem"] }
 
 # Volcengine TOS Object Storage
 ve-tos-rust-sdk = { version = "2.9", features = ["tokio-runtime"] }

@@ -32,6 +32,7 @@ import Wallet from './pages/Wallet/Wallet';
 import RechargeRecords from './pages/Finance/RechargeRecords';
 import OrderDetails from './pages/Finance/OrderDetails';
 import Settings from './pages/admin/Settings';
+import PaymentSettings from './pages/admin/PaymentSettings';
 import RegistrationGifts from './pages/admin/Marketing/RegistrationGifts';
 import useAuthStore from './store/auth';
 import useSettingsStore from './store/settings';
@@ -113,6 +114,7 @@ const App: React.FC = () => {
           <Route path="finance/recharges" element={<RechargeRecords />} />
           <Route path="finance/orders" element={<OrderDetails />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="payment-settings" element={<PaymentSettings />} />
           <Route path="marketing/registration-gifts" element={<RegistrationGifts />} />
         </Route>
 

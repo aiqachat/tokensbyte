@@ -8,6 +8,8 @@ import useAuthStore from '../../store/auth';
 import type { WalletStats, RechargeRecord } from '../../types';
 import dayjs from 'dayjs';
 
+import RechargeModal from './RechargeModal';
+
 const { Title, Text } = Typography;
 
 const Wallet: React.FC = () => {
@@ -16,9 +18,7 @@ const Wallet: React.FC = () => {
   const { user } = useAuthStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const currencyUnit = settings?.currency?.currency_unit || '元';
-  const [stats, setStats] = useState<WalletStats | null>(null);
-  const [records, setRecords] = useState<RechargeRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rechargeModalVisible, setRechargeModalVisible] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -108,14 +108,14 @@ const Wallet: React.FC = () => {
             <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: '18px' }}>{currencyUnit}</Text>
           </div>
           <Button 
-            type="default" 
-            ghost 
+            type="primary" 
+            ghost={false}
             icon={<SwapOutlined />} 
             size="large"
-            style={{ borderRadius: 8, borderColor: 'rgba(255,255,255,0.65)', color: '#fff' }}
-            onClick={() => window.location.href = '/redemptions'} // Or open modal
+            style={{ borderRadius: 8, borderColor: 'rgba(255,255,255,0.65)', color: '#1677ff', background: '#fff' }}
+            onClick={() => setRechargeModalVisible(true)}
           >
-            {t('wallet.recharge')}
+            立即在线充值
           </Button>
         </div>
 
@@ -256,6 +256,16 @@ const Wallet: React.FC = () => {
           scroll={{ x: 'max-content' }}
         />
       </Card>
+
+      {/* Recharge Modal */}
+      <RechargeModal 
+        visible={rechargeModalVisible}
+        onCancel={() => setRechargeModalVisible(false)}
+        onSuccess={() => {
+          setRechargeModalVisible(false);
+          fetchData();
+        }}
+      />
     </div>
   );
 };

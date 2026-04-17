@@ -11,67 +11,16 @@ use crate::error::AppResult;
 pub async fn get_settings(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<AllSettings>> {
-    let site_val: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'site_settings'"))
-        .fetch_optional(&state.db.pool)
-        .await?;
-    
-    let currency_val: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'currency_settings'"))
-        .fetch_optional(&state.db.pool)
-        .await?;
-    
-    let registration_val: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'registration_settings'"))
-        .fetch_optional(&state.db.pool)
-        .await?;
+    let site = get_setting::<SiteSettings>(&state, "site_settings", default_site_settings()).await?;
+    let currency = get_setting::<CurrencySettings>(&state, "currency_settings", default_currency_settings()).await?;
+    let registration = get_setting::<RegistrationSettings>(&state, "registration_settings", default_registration_settings()).await?;
+    let smtp = get_setting::<SMTPSettings>(&state, "smtp_settings", default_smtp_settings()).await?;
+    let marketing = get_setting::<MarketingSettings>(&state, "marketing_settings", default_marketing_settings()).await?;
+    let database = get_setting::<DatabaseSettings>(&state, "database_settings", default_database_settings()).await?;
+    let payment_wechat = get_setting::<Option<crate::models::PaymentWechatSettings>>(&state, "payment_wechat", None).await?;
+    let payment_alipay = get_setting::<Option<crate::models::PaymentAlipaySettings>>(&state, "payment_alipay", None).await?;
 
-    let smtp_val: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'smtp_settings'"))
-        .fetch_optional(&state.db.pool)
-        .await?;
-
-    let marketing_val: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'marketing_settings'"))
-        .fetch_optional(&state.db.pool)
-        .await?;
-
-    let database_val: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'database_settings'"))
-        .fetch_optional(&state.db.pool)
-        .await?;
-
-    let site = if let Some(val) = site_val {
-        serde_json::from_str(&val).unwrap_or(default_site_settings())
-    } else {
-        default_site_settings()
-    };
-
-    let currency = if let Some(val) = currency_val {
-        serde_json::from_str(&val).unwrap_or(default_currency_settings())
-    } else {
-        default_currency_settings()
-    };
-
-    let registration = if let Some(val) = registration_val {
-        serde_json::from_str(&val).unwrap_or(default_registration_settings())
-    } else {
-        default_registration_settings()
-    };
-
-    let smtp = if let Some(val) = smtp_val {
-        serde_json::from_str(&val).unwrap_or(default_smtp_settings())
-    } else {
-        default_smtp_settings()
-    };
-
-    let marketing = if let Some(val) = marketing_val {
-        serde_json::from_str(&val).unwrap_or(default_marketing_settings())
-    } else {
-        default_marketing_settings()
-    };
-
-    let database = if let Some(val) = database_val {
-        serde_json::from_str(&val).unwrap_or(default_database_settings())
-    } else {
-        default_database_settings()
-    };
-
-    Ok(Json(AllSettings { site, currency, registration, smtp, marketing, database }))
+    Ok(Json(AllSettings { site, currency, registration, smtp, marketing, database, payment_wechat, payment_alipay }))
 }
 
 pub async fn update_settings(
@@ -80,61 +29,47 @@ pub async fn update_settings(
 ) -> AppResult<Json<AllSettings>> {
     if let Some(site) = request.site {
         let val = serde_json::to_string(&site).unwrap_or_default();
-        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('site_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
-            .bind(val)
-            .execute(&state.db.pool)
-            .await?;
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('site_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")).bind(val).execute(&state.db.pool).await?;
     }
-
     if let Some(currency) = request.currency {
         let val = serde_json::to_string(&currency).unwrap_or_default();
-        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('currency_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
-            .bind(val)
-            .execute(&state.db.pool)
-            .await?;
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('currency_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")).bind(val).execute(&state.db.pool).await?;
     }
-
     if let Some(registration) = request.registration {
         let val = serde_json::to_string(&registration).unwrap_or_default();
-        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('registration_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
-            .bind(val)
-            .execute(&state.db.pool)
-            .await?;
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('registration_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")).bind(val).execute(&state.db.pool).await?;
     }
-
     if let Some(smtp) = request.smtp {
         let val = serde_json::to_string(&smtp).unwrap_or_default();
-        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('smtp_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
-            .bind(val)
-            .execute(&state.db.pool)
-            .await?;
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('smtp_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")).bind(val).execute(&state.db.pool).await?;
     }
-
     if let Some(marketing) = request.marketing {
         let val = serde_json::to_string(&marketing).unwrap_or_default();
-        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('marketing_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
-            .bind(val)
-            .execute(&state.db.pool)
-            .await?;
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('marketing_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")).bind(val).execute(&state.db.pool).await?;
     }
-
     if let Some(database) = request.database {
         let val = serde_json::to_string(&database).unwrap_or_default();
-        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('database_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
-            .bind(val)
-            .execute(&state.db.pool)
-            .await?;
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('database_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")).bind(val).execute(&state.db.pool).await?;
+    }
+    if let Some(payment_wechat) = request.payment_wechat {
+        let val = serde_json::to_string(&payment_wechat).unwrap_or_default();
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('payment_wechat', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")).bind(val).execute(&state.db.pool).await?;
+    }
+    if let Some(payment_alipay) = request.payment_alipay {
+        let val = serde_json::to_string(&payment_alipay).unwrap_or_default();
+        sqlx::query(&state.db.format_query("INSERT INTO settings (key, value) VALUES ('payment_alipay', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value")).bind(val).execute(&state.db.pool).await?;
     }
 
-    // Return the updated settings
     let site = get_setting::<SiteSettings>(&state, "site_settings", default_site_settings()).await?;
     let currency = get_setting::<CurrencySettings>(&state, "currency_settings", default_currency_settings()).await?;
     let registration = get_setting::<RegistrationSettings>(&state, "registration_settings", default_registration_settings()).await?;
     let smtp = get_setting::<SMTPSettings>(&state, "smtp_settings", default_smtp_settings()).await?;
     let marketing = get_setting::<MarketingSettings>(&state, "marketing_settings", default_marketing_settings()).await?;
     let database = get_setting::<DatabaseSettings>(&state, "database_settings", default_database_settings()).await?;
+    let payment_wechat = get_setting::<Option<crate::models::PaymentWechatSettings>>(&state, "payment_wechat", None).await?;
+    let payment_alipay = get_setting::<Option<crate::models::PaymentAlipaySettings>>(&state, "payment_alipay", None).await?;
 
-    Ok(Json(AllSettings { site, currency, registration, smtp, marketing, database }))
+    Ok(Json(AllSettings { site, currency, registration, smtp, marketing, database, payment_wechat, payment_alipay }))
 }
 
 pub async fn verify_database(

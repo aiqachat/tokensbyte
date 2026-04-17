@@ -63,7 +63,31 @@ pub struct DatabaseSettings {
     pub ssl_mode: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PaymentWechatSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    pub mchid: String,
+    pub appid: String,
+    pub api_v3_key: String,
+    pub cert_serial_no: String,
+    pub private_key: String,
+}
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PaymentAlipaySettings {
+    #[serde(default)]
+    pub enabled: bool,
+    pub app_id: String,
+    pub private_key: String,
+    pub alipay_public_key: String,
+    #[serde(default = "default_sign_type")]
+    pub sign_type: String,
+}
+
+fn default_sign_type() -> String {
+    "RSA2".to_string()
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AllSettings {
@@ -73,6 +97,8 @@ pub struct AllSettings {
     pub smtp: SMTPSettings,
     pub marketing: MarketingSettings,
     pub database: DatabaseSettings,
+    pub payment_wechat: Option<PaymentWechatSettings>,
+    pub payment_alipay: Option<PaymentAlipaySettings>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -83,4 +109,7 @@ pub struct UpdateSettingsRequest {
     pub smtp: Option<SMTPSettings>,
     pub marketing: Option<MarketingSettings>,
     pub database: Option<DatabaseSettings>,
+    pub payment_wechat: Option<PaymentWechatSettings>,
+    pub payment_alipay: Option<PaymentAlipaySettings>,
 }
+

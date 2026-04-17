@@ -152,6 +152,24 @@ macro_rules! pg_migration_blocks {
     .execute(pool)
     .await?;
 
+    // Orders table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS orders (
+            id SERIAL PRIMARY KEY,
+            out_trade_no TEXT NOT NULL UNIQUE,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            payment_method TEXT NOT NULL,
+            amount DOUBLE PRECISION NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            trade_no TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            paid_at TEXT
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+
     // Task Logs table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS task_logs (
@@ -765,6 +783,24 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
+
+    // Orders table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            out_trade_no TEXT NOT NULL UNIQUE,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            payment_method TEXT NOT NULL,
+            amount REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            trade_no TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            paid_at TEXT
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
 
     // Task Logs table
     sqlx::query(

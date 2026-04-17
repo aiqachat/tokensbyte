@@ -21,6 +21,7 @@ pub mod user;
 pub mod user_levels;
 pub mod users;
 pub mod finance;
+pub mod pay;
 pub mod admin_groups;
 pub mod forward_rules;
 pub mod billing_rules;
@@ -85,14 +86,18 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/user/recharge_records", get(user::list_recharge_records))
         .route("/user/affiliate/transfer", post(user::transfer_commission))
         .route("/task_logs", get(task_logs::list_task_logs))
+        .route("/finance/pay/create", post(pay::create_order))
+        .route("/finance/pay/status/{out_trade_no}", get(pay::check_status))
 
         .merge(admin_routes)
         .nest("/plugins", plugins::router())
         .nest("/assets", assets::router())
         .layer(axum_middleware::from_fn_with_state(state.clone(), auth_middleware));
 
-
-
+    let payment_public_routes: Router<Arc<AppState>> = Router::new()
+        .route("/finance/pay/notify/wechat", post(pay::wechat_notify))
+        .route("/finance/pay/notify/alipay", post(pay::alipay_notify))
+        .with_state(state.clone());
 
     // 2. Auth APIs & Public Configs (Public)
     let auth_routes: Router<Arc<AppState>> = Router::new()
@@ -107,6 +112,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let public_v1_routes: Router<Arc<AppState>> = Router::new()
         .route("/settings", get(settings::get_settings))
         .route("/plugins/active", get(plugins::get_active_plugins_public))
+        .merge(payment_public_routes)
         .with_state(state.clone());
 
     // 3. Relay APIs (OpenAI Compatible)

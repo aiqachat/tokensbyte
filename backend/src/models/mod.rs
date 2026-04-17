@@ -11,6 +11,8 @@ pub mod verification;
 pub mod admin_group;
 pub mod task_log;
 pub mod upstream;
+pub mod plugin;
+pub mod order;
 
 pub use user::*;
 pub use channel::*;
