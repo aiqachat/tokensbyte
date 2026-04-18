@@ -214,10 +214,14 @@ pub fn transform_request_body(
             if let Some(stream_val) = fwd.get("stream") {
                 if stream_val.as_bool().unwrap_or(false) {
                     if let Some(obj) = fwd.as_object_mut() {
-                        obj.insert(
-                            "stream_options".to_string(), 
-                            serde_json::json!({ "include_usage": true })
-                        );
+                        if let Some(options) = obj.get_mut("stream_options").and_then(|v| v.as_object_mut()) {
+                            options.insert("include_usage".to_string(), serde_json::json!(true));
+                        } else {
+                            obj.insert(
+                                "stream_options".to_string(), 
+                                serde_json::json!({ "include_usage": true })
+                            );
+                        }
                     }
                 }
             }

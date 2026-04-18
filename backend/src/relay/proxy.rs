@@ -150,7 +150,8 @@ pub async fn record_and_bill_with_prededuction(
         &state.db.format_query("SELECT m.enable_log_content, t.name as category_name 
          FROM models m 
          LEFT JOIN model_types t ON m.type_id = t.id 
-         WHERE m.model_id = ? AND m.is_active = 1")
+         WHERE m.model_id = ? AND m.is_active = 1 
+         LIMIT 1")
     )
     .bind(model_name)
     .fetch_optional(&state.db.pool)
