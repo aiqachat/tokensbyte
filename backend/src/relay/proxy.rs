@@ -190,8 +190,8 @@ pub async fn record_and_bill_with_prededuction(
                 if usage_json.is_some() {
                     usage_json
                 } else if category == "图片" {
-                    // 图片模型：如果没有 token消耗 就不记录
-                    None
+                    // 图片模型：如果没有 token消耗 拿不到就存整个结果包（经过 base64 脱敏）
+                    filter_content(Some(text.clone()), false)
                 } else {
                     // 语言模型等：如果没有找到 usage，就存一个空数组，避免存入大体积的正文
                     Some("[]".to_string())
