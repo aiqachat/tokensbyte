@@ -4,6 +4,7 @@ import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, Clo
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
+import AdminPresetAssets from './AssetManager/AdminPresetAssets';
 
 
 const { Title, Text } = Typography;
@@ -65,6 +66,7 @@ const PluginConfig: React.FC = () => {
   const [savingStorage, setSavingStorage] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [activeTabKey, setActiveTabKey] = useState('basic');
 
   // 审核配置
   const [moderationConfig, setModerationConfig] = useState<ModerationConfig | null>(null);
@@ -160,7 +162,6 @@ const PluginConfig: React.FC = () => {
       setSaving(true);
       await request.post(`/plugins/${plugin.name}/config`, { allowed_levels: allowed, level_quotas: levelQuotas });
       message.success('配置已保存');
-      fetchData();
     } catch (error) {
       message.error('保存失败');
     } finally {
@@ -175,7 +176,6 @@ const PluginConfig: React.FC = () => {
       await request.post(`/plugins/${name}/storage-config`, values);
       message.success('存储配置已保存');
       setTestResult(null);
-      fetchData();
     } catch (error: any) {
       if (error?.errorFields) return; // form validation
       message.error('保存失败');
@@ -203,7 +203,6 @@ const PluginConfig: React.FC = () => {
       setSavingModeration(true);
       await request.post(`/plugins/${name}/moderation-config`, values);
       message.success('审核配置已保存');
-      fetchData();
     } catch (error: any) {
       if (error?.errorFields) return;
       message.error('保存失败');
@@ -544,11 +543,13 @@ const PluginConfig: React.FC = () => {
 
       {/* Tabs */}
       <Tabs
-        defaultActiveKey="basic"
+        activeKey={activeTabKey}
+        onChange={setActiveTabKey}
         items={[
           { key: 'basic', label: '基本配置', children: basicTab },
           { key: 'storage', label: '存储配置', children: storageTab },
           { key: 'moderation', label: '审核配置', children: moderationTab },
+          { key: 'preset', label: '预设素材', children: <AdminPresetAssets /> },
         ]}
       />
     </div>
