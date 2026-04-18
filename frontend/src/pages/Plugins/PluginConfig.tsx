@@ -59,6 +59,7 @@ const PluginConfig: React.FC = () => {
   const [isAllLevels, setIsAllLevels] = useState(true);
   const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
   const [levelQuotas, setLevelQuotas] = useState<Record<string, number>>({});
+  const [defaultQuota, setDefaultQuota] = useState<number>(100);
 
   // 存储配置
   const [storageConfig, setStorageConfig] = useState<StorageConfig | null>(null);
@@ -108,6 +109,9 @@ const PluginConfig: React.FC = () => {
         // 加载等级配额
         if (storageRes.level_quotas) {
           setLevelQuotas(storageRes.level_quotas);
+        }
+        if (storageRes.default_quota != null) {
+          setDefaultQuota(storageRes.default_quota);
         }
         // 延迟设置表单值，等待 Tabs 内的 Form 组件渲染完毕
         setTimeout(() => {
@@ -160,7 +164,7 @@ const PluginConfig: React.FC = () => {
     }
     try {
       setSaving(true);
-      await request.post(`/plugins/${plugin.name}/config`, { allowed_levels: allowed, level_quotas: levelQuotas });
+      await request.post(`/plugins/${plugin.name}/config`, { allowed_levels: allowed, level_quotas: levelQuotas, default_quota: defaultQuota });
       message.success('配置已保存');
     } catch (error) {
       message.error('保存失败');
@@ -300,37 +304,59 @@ const PluginConfig: React.FC = () => {
         )}
       </div>
 
-      {/* 存储空间配额 - 所有等级开放时也显示 */}
-      {isAllLevels && levels.length > 0 && (
+      {isAllLevels && (
         <div style={{
           background: '#141414', borderRadius: 8,
           border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
         }}>
-          <Text strong style={{ color: '#fff', fontSize: 14 }}>各等级存储空间限制</Text><br />
-          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>为每个用户等级设置素材存储空间上限，默认 100MB</Text>
+          <Text strong style={{ color: '#fff', fontSize: 14 }}>存储空间限制</Text><br />
+          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置每位用户的素材存储空间上限，也可以按等级单独设置</Text>
           <Divider style={{ borderColor: 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
-          {levels.map(lv => (
-            <div key={lv.group_key}
-              style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Text style={{ color: '#fff', fontSize: 13 }}>{lv.name}</Text>
-                <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>{lv.group_key}</Tag>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, whiteSpace: 'nowrap' }}>空间</Text>
-                <InputNumber
-                  size="small"
-                  min={1}
-                  max={10240}
-                  value={levelQuotas[lv.group_key] ?? 100}
-                  onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.group_key]: val ?? 100 }))}
-                  style={{ width: 80, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
-                  addonAfter="MB"
-                />
-              </div>
+
+          <div style={{ padding: '10px 14px', borderRadius: 6, border: '1px solid rgba(22,119,255,0.3)', background: 'rgba(22,119,255,0.04)', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>默认存储空间</Text>
+              <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>全局</Tag>
             </div>
-          ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <InputNumber
+                size="small"
+                min={1}
+                max={10240}
+                value={defaultQuota}
+                onChange={(val) => setDefaultQuota(val ?? 100)}
+                style={{ width: 80, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                addonAfter="MB"
+              />
+            </div>
+          </div>
+
+          {levels.length > 0 && (
+            <>
+              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginBottom: 8 }}>按等级单独设置（覆盖默认值）</Text>
+              {levels.map(lv => (
+                <div key={lv.group_key}
+                  style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ color: '#fff', fontSize: 13 }}>{lv.name}</Text>
+                    <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>{lv.group_key}</Tag>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <InputNumber
+                      size="small"
+                      min={1}
+                      max={10240}
+                      value={levelQuotas[lv.group_key] ?? defaultQuota}
+                      onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.group_key]: val ?? defaultQuota }))}
+                      style={{ width: 80, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                      addonAfter="MB"
+                    />
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       )}
 
