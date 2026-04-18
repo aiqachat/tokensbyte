@@ -59,29 +59,30 @@ const Settings: React.FC = () => {
     }
   };
 
-  const onFinish = async (values: any) => {
+  const handleSave = async () => {
     setLoading(true);
     try {
+      const values = form.getFieldsValue(true);
       let payload: any = {};
       
       if (tab === 'basic') {
         // Save all basic sub-tabs together
         payload.site = {
-          name: values.name,
+          name: values.name || '',
           logo: values.logo || '',
-          title: values.title,
-          keywords: values.keywords,
-          description: values.description,
+          title: values.title || '',
+          keywords: values.keywords || '',
+          description: values.description || '',
           favicon: values.favicon || '',
           login_title: values.login_title || '',
           login_subtitle: values.login_subtitle || '',
         };
         payload.registration = {
-          enable_username_registration: values.enable_username_registration,
-          enable_email_registration: values.enable_email_registration,
-          enable_password_recovery: values.enable_password_recovery,
+          enable_username_registration: !!values.enable_username_registration,
+          enable_email_registration: !!values.enable_email_registration,
+          enable_password_recovery: !!values.enable_password_recovery,
         };
-        payload.smtp = values.smtp;
+        if (values.smtp) payload.smtp = values.smtp;
       } else if (tab === 'currency') {
         payload.currency = {
           default_currency: values.default_currency,
@@ -225,7 +226,6 @@ const Settings: React.FC = () => {
       <Form
         form={form}
         layout="vertical"
-        onFinish={onFinish}
         autoComplete="off"
         initialValues={{
           database: {
@@ -363,7 +363,7 @@ const Settings: React.FC = () => {
         )}
 
         <Form.Item style={{ marginTop: 24 }}>
-          <Button type="primary" htmlType="submit" loading={loading} size="large">
+          <Button type="primary" onClick={handleSave} loading={loading} size="large">
             {t('common.save')}
           </Button>
         </Form.Item>
