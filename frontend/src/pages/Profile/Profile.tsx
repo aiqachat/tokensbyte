@@ -150,7 +150,7 @@ const Profile: React.FC = () => {
           itemLayout="horizontal"
           dataSource={[
             { label: t('profile.account'), value: profile?.username },
-            { label: t('profile.nickname'), value: profile?.nickname || t('profile.not_set') },
+            { label: t('profile.nickname'), value: profile?.nickname },
           ]}
           renderItem={(item) => (
             <List.Item 
@@ -162,8 +162,8 @@ const Profile: React.FC = () => {
               <div style={{ width: 120 }}>
                 <Text style={{ color: '#8c8c8c' }}>{item.label}</Text>
               </div>
-              <div>
-                <Text style={{ color: '#fff' }}>{item.value}</Text>
+              <div style={{ flex: 1 }}>
+                <Text style={{ color: '#fff' }}>{item.value || t('profile.not_set')}</Text>
               </div>
             </List.Item>
           )}

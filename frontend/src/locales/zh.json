@@ -242,7 +242,8 @@
     "bound": "已绑定",
     "not_bound": "未绑定",
     "not_enabled": "未开启",
-    "edit_success": "修改成功"
+    "edit_success": "修改成功",
+    "not_set": "未设置"
   },
   "wallet": {
     "title": "我的钱包",
@@ -272,6 +273,8 @@
     "recharge_type_manual": "手动调账",
     "recharge_type_redemption": "兑换码充值",
     "recharge_type_commission": "邀请返佣",
+    "recharge_type_alipay": "支付宝充值",
+    "recharge_type_wechat": "微信充值",
     "recharge_type_other": "其它"
   },
   "marketing": {
