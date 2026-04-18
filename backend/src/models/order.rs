@@ -12,13 +12,3 @@ pub struct Order {
     pub created_at: String,
     pub paid_at: Option<String>,
 }
-
-#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
-pub struct RechargeRecord {
-    pub id: i32,
-    pub user_id: String,
-    pub amount: f64,
-    pub recharge_type: String,
-    pub remark: Option<String>,
-    pub created_at: String,
-}

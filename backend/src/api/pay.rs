@@ -39,7 +39,7 @@ pub async fn create_order(
     
     let base_notify_url = std::env::var("PUBLIC_API_URL").unwrap_or_else(|_| "http://localhost:8181".to_string());
 
-    let mut payment_url = String::new();
+    let payment_url: String;
 
     if payload.payment_method == "wechat" {
         let wechat_setting: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'payment_wechat'")).fetch_optional(&state.db.pool).await?;
