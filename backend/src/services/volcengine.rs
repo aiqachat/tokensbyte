@@ -20,16 +20,16 @@ impl VolcConfig {
     pub fn from_map(map: &HashMap<String, String>) -> Option<Self> {
         let ak = map.get("volc_access_key")?.trim();
         let sk = map.get("volc_secret_key")?.trim();
-        let app_id = map.get("volc_app_id")?.trim();
+        let app_id = map.get("volc_app_id").map(|s| s.trim().to_string()).unwrap_or_default();
 
-        if ak.is_empty() || sk.is_empty() || app_id.is_empty() {
+        if ak.is_empty() || sk.is_empty() {
             return None;
         }
 
         Some(Self {
             access_key: ak.to_string(),
             secret_key: sk.to_string(),
-            app_id: app_id.to_string(),
+            app_id,
         })
     }
 }
@@ -224,46 +224,72 @@ pub struct ValidationResult {
     pub asset_group_id: Option<String>,
 }
 
+// --- 方舟 Ark 素材资产 API (ServiceName=ark, Version=2024-01-01) ---
+
+/// CreateAssetGroup 创建素材资产组合
+#[derive(Serialize)]
+pub struct CreateAssetGroupRequest {
+    #[serde(rename = "Name")]
+    pub name: String,
+    #[serde(rename = "Description")]
+    pub description: String,
+    #[serde(rename = "GroupType", skip_serializing_if = "Option::is_none")]
+    pub group_type: Option<String>, // 默认 AIGC
+    #[serde(rename = "ProjectName", skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>, // 默认 default
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CreateAssetGroupResponse {
+    #[serde(rename = "Id")]
+    pub id: String,
+}
+
+/// CreateAsset 创建素材资产（上传到方舟素材库）
 #[derive(Serialize)]
 pub struct CreateAssetRequest {
+    #[serde(rename = "GroupId")]
+    pub group_id: String,
+    #[serde(rename = "URL")]
+    pub url: String,  // 公网可访问的图片 URL
     #[serde(rename = "AssetType")]
-    pub asset_type: String, // "Human"
-    #[serde(rename = "AssetId")]
-    pub asset_id: String,
-    #[serde(rename = "AssetName")]
-    pub asset_name: String,
-    #[serde(rename = "AssetGroupId")]
-    pub asset_group_id: Option<String>,
-    #[serde(rename = "BinaryData")]
-    pub binary_data: Option<String>, // Base64 for virtual portraits
+    pub asset_type: String, // "Image" / "Video" / "Audio"
+    #[serde(rename = "Name", skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(rename = "ProjectName", skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct CreateAssetResponse {
-    #[serde(rename = "ResponseMetadata")]
-    pub metadata: ResponseMetadata,
-    #[serde(rename = "Result")]
-    pub result: Option<AssetInfo>,
+    #[serde(rename = "Id")]
+    pub id: String,  // asset-20260318071009-*****
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct AssetInfo {
-    #[serde(rename = "AssetId")]
-    pub asset_id: String,
-    #[serde(rename = "Status")]
-    pub status: String, // "Active", "Processing", etc.
-}
-
+/// GetAsset 查询素材资产信息
 #[derive(Serialize)]
 pub struct GetAssetRequest {
-    #[serde(rename = "AssetId")]
-    pub asset_id: String,
+    #[serde(rename = "Id")]
+    pub id: String,
+    #[serde(rename = "ProjectName", skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct GetAssetResponse {
-    #[serde(rename = "ResponseMetadata")]
-    pub metadata: ResponseMetadata,
-    #[serde(rename = "Result")]
-    pub result: Option<AssetInfo>,
+    #[serde(rename = "Id")]
+    pub id: String,
+    #[serde(rename = "Status")]
+    pub status: String, // "Active" / "Processing" / "Failed"
+    #[serde(rename = "GroupId")]
+    pub group_id: Option<String>,
+    #[serde(rename = "AssetType")]
+    pub asset_type: Option<String>,
+    #[serde(rename = "URL")]
+    pub url: Option<String>,
+    #[serde(rename = "CreateTime")]
+    pub create_time: Option<String>,
+    #[serde(rename = "ProjectName")]
+    pub project_name: Option<String>,
 }
+

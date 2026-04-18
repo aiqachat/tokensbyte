@@ -280,8 +280,8 @@ async fn test_tos_connection(
 #[derive(Deserialize)]
 pub struct ModerationConfigRequest {
     pub volc_access_key: String,
-    pub volc_secret_key: Option<String>, // 如果为空表示不修改
-    pub volc_app_id: String,
+    pub volc_secret_key: Option<String>,
+    pub volc_app_id: Option<String>,
 }
 
 /// 管理员：获取审核配置
@@ -334,7 +334,11 @@ async fn save_moderation_config(
     }
 
     upsert_config(&state, &name, "volc_access_key", &payload.volc_access_key).await?;
-    upsert_config(&state, &name, "volc_app_id", &payload.volc_app_id).await?;
+    if let Some(ref app_id) = payload.volc_app_id {
+        if !app_id.is_empty() {
+            upsert_config(&state, &name, "volc_app_id", app_id).await?;
+        }
+    }
 
     // secret_key 只在有值时更新
     if let Some(ref sk) = payload.volc_secret_key {

@@ -286,6 +286,23 @@ async fn admin_list_assets(
     .await
     .unwrap_or(0);
 
+    // 构建 user_id -> uid/username 映射
+    let user_ids: Vec<String> = assets.iter().map(|a| a.user_id.clone()).collect::<std::collections::HashSet<_>>().into_iter().collect();
+    let mut uid_map = serde_json::Map::new();
+    for uid_chunk in user_ids.chunks(50) {
+        let placeholders = uid_chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = state.db.format_query(&format!("SELECT id, uid, username FROM users WHERE id IN ({})", placeholders));
+        let mut q = sqlx::query_as::<_, (String, String, String)>(&sql);
+        for id in uid_chunk {
+            q = q.bind(id);
+        }
+        if let Ok(rows) = q.fetch_all(&state.db.pool).await {
+            for (id, uid, username) in rows {
+                uid_map.insert(id, json!({"uid": uid, "username": username}));
+            }
+        }
+    }
+
     Ok(Json(json!({
         "assets": assets,
         "admin_storage": {
@@ -293,7 +310,8 @@ async fn admin_list_assets(
             "used_mb": format!("{:.1}", admin_used.unwrap_or(0) as f64 / 1024.0 / 1024.0),
             "folder": "000000",
             "file_count": admin_count,
-        }
+        },
+        "uid_map": serde_json::Value::Object(uid_map)
     })))
 }
 
@@ -609,6 +627,14 @@ async fn user_storage_info(
 
     let used_mb = total_size as f64 / 1024.0 / 1024.0;
 
+    let vp_count: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COUNT(*) FROM plugin_assets WHERE user_id = ? AND category = '虚拟人像'"
+    ))
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
     Ok(Json(json!({
         "folder": folder_name,
         "files": files,
@@ -618,6 +644,8 @@ async fn user_storage_info(
         "quota_mb": quota_mb,
         "remain_mb": if quota_mb > 0 { format!("{:.1}", quota_mb as f64 - used_mb) } else { "无限制".to_string() },
         "is_admin": user.role == "admin",
+        "virtual_portrait_count": vp_count,
+        "virtual_portrait_quota": 30, // 默认 30 个分组
     })))
 }
 
@@ -834,21 +862,9 @@ async fn complete_real_person_verify(
         return Err(AppError::BadRequest("实人认证未通过".to_string()));
     }
 
-    // 2. 创建火山资产
+    // 2. 认证通过，写入本地数据库
     let asset_id = format!("real_{}_{}", claims.sub, uuid::Uuid::new_v4().simple());
-    let create_req = crate::services::volcengine::CreateAssetRequest {
-        asset_type: "Human".to_string(),
-        asset_id: asset_id.clone(),
-        asset_name: "真人认证人像".to_string(),
-        asset_group_id: result.asset_group_id,
-        binary_data: None,
-    };
 
-    let asset_res: crate::services::volcengine::CreateAssetResponse = client.call_api(
-        "visual", "cn-north-1", "CreateAsset", "2022-03-25", create_req
-    ).await.map_err(|e| AppError::Internal(format!("创建数字人资产失败: {}", e)))?;
-
-    // 3. 写入本地数据库
     sqlx::query(&state.db.format_query(
         "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, category, asset_id) 
          VALUES (?, 'image', 'user', 'approved', ?, ?, '真人人像', ?)"
@@ -859,7 +875,7 @@ async fn complete_real_person_verify(
     .bind(&asset_id)
     .execute(&state.db.pool).await?;
 
-    Ok(Json(json!({ "message": "认证成功", "asset": asset_res.result })))
+    Ok(Json(json!({ "message": "认证成功", "asset_id": asset_id })))
 }
 
 /// 用户：上传虚拟人像（阶段一：仅上传至 TOS 存储，不调用火山引擎）
@@ -956,7 +972,7 @@ async fn submit_virtual_portrait_review(
     .await?
     .ok_or_else(|| AppError::BadRequest("素材不存在或已提交".to_string()))?;
 
-    // 从 TOS 下载文件数据
+    // 获取 TOS 配置，构建公网 URL
     let tos_config = crate::api::plugins::get_tos_config(&state, "asset_manager").await
         .ok_or_else(|| AppError::BadRequest("存储未配置".to_string()))?;
 
@@ -968,30 +984,53 @@ async fn submit_virtual_portrait_review(
     .await?
     .ok_or_else(|| AppError::Unauthorized)?;
 
+    // 构建公网可访问的 URL（使用 tos_custom_domain）
     let folder_name = user.uid.clone();
     let filename = asset.file_url.split('/').last().unwrap_or("");
     let object_key = tos_config.full_key(&format!("{}/{}", folder_name, filename));
-
-    let file_data = crate::services::tos::download_file(&tos_config, &object_key).await
-        .map_err(|e| AppError::Internal(format!("从 TOS 下载文件失败: {}", e)))?;
-
-    let b64_data = base64::engine::general_purpose::STANDARD.encode(&file_data);
-    let volc_asset_id = format!("v_{}_{}", claims.sub, uuid::Uuid::new_v4().simple());
-
-    let client = crate::services::volcengine::VolcClient::new(volc_config.clone());
-    let create_req = crate::services::volcengine::CreateAssetRequest {
-        asset_type: "Human".to_string(),
-        asset_id: volc_asset_id.clone(),
-        asset_name: format!("虚拟人像: {}", asset.file_name),
-        asset_group_id: None,
-        binary_data: Some(b64_data),
+    
+    let public_url = if !tos_config.custom_domain.is_empty() {
+        let domain = tos_config.custom_domain.trim_end_matches('/');
+        format!("https://{}/{}", domain, object_key)
+    } else {
+        format!("https://{}.{}/{}", tos_config.bucket, tos_config.endpoint, object_key)
     };
 
-    let _asset_res: crate::services::volcengine::CreateAssetResponse = client.call_api(
-        "visual", "cn-north-1", "CreateAsset", "2022-03-25", create_req
+    let client = crate::services::volcengine::VolcClient::new(volc_config.clone());
+
+    // 1. 检查用户是否已有 AssetGroup，如果没有则创建
+    let group_config_key = format!("volc_asset_group_{}", claims.sub);
+    let existing_group: Option<String> = sqlx::query_scalar(&state.db.format_query(
+        "SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?"
+    ))
+    .bind(&group_config_key)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    let group_id = if let Some(gid) = existing_group {
+        if !gid.is_empty() { gid } else {
+            create_user_asset_group(&state, &client, &claims.sub, &user.uid, &group_config_key).await?
+        }
+    } else {
+        create_user_asset_group(&state, &client, &claims.sub, &user.uid, &group_config_key).await?
+    };
+
+    // 2. 调用 CreateAsset
+    let create_req = crate::services::volcengine::CreateAssetRequest {
+        group_id: group_id.clone(),
+        url: public_url.clone(),
+        asset_type: "Image".to_string(),
+        name: Some(asset.file_name.clone()),
+        project_name: Some("default".to_string()),
+    };
+
+    let asset_res: crate::services::volcengine::CreateAssetResponse = client.call_api(
+        "ark", "cn-beijing", "CreateAsset", "2024-01-01", create_req
     ).await.map_err(|e| AppError::Internal(format!("提交审核失败: {}", e)))?;
 
-    // 更新数据库：状态改为 processing，写入 asset_id
+    let volc_asset_id = asset_res.id;
+
+    // 3. 更新数据库：状态改为 processing，写入 asset_id
     sqlx::query(&state.db.format_query(
         "UPDATE plugin_assets SET status = 'processing', asset_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
     ))
@@ -1002,7 +1041,50 @@ async fn submit_virtual_portrait_review(
     Ok(Json(json!({ "message": "已提交审核", "asset_id": volc_asset_id })))
 }
 
-/// 用户：查询虚拟人像审核状态（轮询火山引擎 GetAsset）
+/// 辅助：为用户创建 AssetGroup
+async fn create_user_asset_group(
+    state: &AppState,
+    client: &crate::services::volcengine::VolcClient,
+    user_id: &str,
+    user_uid: &str,
+    config_key: &str,
+) -> Result<String, AppError> {
+    let create_group_req = crate::services::volcengine::CreateAssetGroupRequest {
+        name: format!("user_{}", user_uid),
+        description: format!("用户 {} 的虚拟人像素材组合", user_uid),
+        group_type: Some("AIGC".to_string()),
+        project_name: Some("default".to_string()),
+    };
+
+    let group_res: crate::services::volcengine::CreateAssetGroupResponse = client.call_api(
+        "ark", "cn-beijing", "CreateAssetGroup", "2024-01-01", create_group_req
+    ).await.map_err(|e| AppError::Internal(format!("创建素材组合失败: {}", e)))?;
+
+    let group_id = group_res.id;
+
+    // 存储到 plugin_configs
+    let result = sqlx::query(&state.db.format_query(
+        "UPDATE plugin_configs SET config_value = ?, updated_at = CURRENT_TIMESTAMP WHERE plugin_name = 'asset_manager' AND config_key = ?"
+    ))
+    .bind(&group_id)
+    .bind(config_key)
+    .execute(&state.db.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        sqlx::query(&state.db.format_query(
+            "INSERT INTO plugin_configs (plugin_name, config_key, config_value) VALUES ('asset_manager', ?, ?)"
+        ))
+        .bind(config_key)
+        .bind(&group_id)
+        .execute(&state.db.pool)
+        .await?;
+    }
+
+    Ok(group_id)
+}
+
+/// 用户：查询虚拟人像审核状态（轮询方舟 GetAsset）
 async fn check_asset_status(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
@@ -1022,7 +1104,7 @@ async fn check_asset_status(
         return Ok(Json(json!({ "status": asset.status })));
     }
 
-    // processing 状态：调用火山引擎查询实际状态
+    // processing 状态：调用方舟 GetAsset 查询实际状态
     let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await;
     let asset_id_val = asset.asset_id.unwrap_or_default();
 
@@ -1030,40 +1112,39 @@ async fn check_asset_status(
         if !asset_id_val.is_empty() {
             let client = crate::services::volcengine::VolcClient::new(vc);
             let get_req = crate::services::volcengine::GetAssetRequest {
-                asset_id: asset_id_val.clone(),
+                id: asset_id_val.clone(),
+                project_name: Some("default".to_string()),
             };
 
             match client.call_api::<_, crate::services::volcengine::GetAssetResponse>(
-                "visual", "cn-north-1", "GetAsset", "2022-03-25", get_req
+                "ark", "cn-beijing", "GetAsset", "2024-01-01", get_req
             ).await {
                 Ok(res) => {
-                    if let Some(info) = res.result {
-                        match info.status.as_str() {
-                            "Active" => {
-                                sqlx::query(&state.db.format_query(
-                                    "UPDATE plugin_assets SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                                ))
-                                .bind(id)
-                                .execute(&state.db.pool).await?;
-                                return Ok(Json(json!({ "status": "approved" })));
-                            }
-                            "Failed" => {
-                                sqlx::query(&state.db.format_query(
-                                    "UPDATE plugin_assets SET status = 'rejected', reject_reason = '火山引擎审核未通过', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                                ))
-                                .bind(id)
-                                .execute(&state.db.pool).await?;
-                                return Ok(Json(json!({ "status": "rejected", "reason": "火山引擎审核未通过" })));
-                            }
-                            _ => {
-                                // Processing or other, keep polling
-                                return Ok(Json(json!({ "status": "processing" })));
-                            }
+                    match res.status.as_str() {
+                        "Active" => {
+                            sqlx::query(&state.db.format_query(
+                                "UPDATE plugin_assets SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                            ))
+                            .bind(id)
+                            .execute(&state.db.pool).await?;
+                            return Ok(Json(json!({ "status": "approved" })));
+                        }
+                        "Failed" => {
+                            sqlx::query(&state.db.format_query(
+                                "UPDATE plugin_assets SET status = 'rejected', reject_reason = '素材审核未通过', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                            ))
+                            .bind(id)
+                            .execute(&state.db.pool).await?;
+                            return Ok(Json(json!({ "status": "rejected", "reason": "素材审核未通过" })));
+                        }
+                        _ => {
+                            // Processing or other, keep polling
+                            return Ok(Json(json!({ "status": "processing" })));
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("查询火山引擎资产状态失败: {}", e);
+                    tracing::warn!("查询方舟素材资产状态失败: {}", e);
                 }
             }
         }
@@ -1071,4 +1152,5 @@ async fn check_asset_status(
 
     Ok(Json(json!({ "status": "processing" })))
 }
+
 

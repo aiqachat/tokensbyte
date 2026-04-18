@@ -22,18 +22,18 @@ interface StorageInfo {
     last_modified: string;
   }>;
   file_count: number;
-  total_size: number;
   total_size_mb: string;
   quota_mb: number;
   remain_mb: string;
   is_admin: boolean;
+  virtual_portrait_count?: number;
+  virtual_portrait_quota?: number;
 }
 
 // 我的素材固定二级分类
 const MY_ASSET_SUBCATEGORIES = [
-  { key: 'my_all_my', label: '全部', icon: <AppstoreOutlined />, filter: {} },
-  { key: 'my_real_portrait', label: '真人人像', icon: <UserAddOutlined />, filter: { category: '真人人像' } },
   { key: 'my_virtual_portrait', label: '虚拟人像', icon: <UserOutlined />, filter: { category: '虚拟人像' } },
+  { key: 'my_real_portrait', label: '真人人像', icon: <UserAddOutlined />, filter: { category: '真人人像' } },
 ];
 
 const UserAssets: React.FC = () => {
@@ -48,7 +48,7 @@ const UserAssets: React.FC = () => {
     { key: '素材库', label: '素材库', children: ['视频', '图片', '音频'] },
     { key: '虚拟人像库', label: '虚拟人像库', children: [] }
   ];
-  const [selectedKey, setSelectedKey] = useState<string>('preset_模版库'); // 默认选中第一个预设分类
+  const [selectedKey, setSelectedKey] = useState<string>('my_virtual_portrait'); // 默认选中我的素材
 
   // 上传弹窗
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -61,32 +61,6 @@ const UserAssets: React.FC = () => {
   const [editingAsset, setEditingAsset] = useState<PluginAsset | null>(null);
   const [editForm] = Form.useForm();
   const [savingEdit, setSavingEdit] = useState(false);
-
-  // 提交审核
-  const [submittingReview, setSubmittingReview] = useState<number | null>(null);
-
-  // 轮询 processing 状态
-  useEffect(() => {
-    const processingAssets = assets.filter(a => a.status === 'processing');
-    if (processingAssets.length === 0) return;
-    
-    const timer = setInterval(async () => {
-      for (const asset of processingAssets) {
-        try {
-          const res = await (request.get(`/assets/user/asset-status/${asset.id}`) as any);
-          if (res.status && res.status !== 'processing') {
-            // 状态已更新，刷新列表
-            fetchAssets();
-            break;
-          }
-        } catch (e) {
-          console.error('轮询状态失败', e);
-        }
-      }
-    }, 5000);
-
-    return () => clearInterval(timer);
-  }, [assets, fetchAssets]);
 
   const handleEditAsset = async () => {
     try {
@@ -146,6 +120,31 @@ const UserAssets: React.FC = () => {
       setLoading(false);
     }
   }, [buildQueryParams]);
+
+  // 提交审核
+  const [submittingReview, setSubmittingReview] = useState<number | null>(null);
+
+  // 轮询 processing 状态
+  useEffect(() => {
+    const processingAssets = assets.filter(a => a.status === 'processing');
+    if (processingAssets.length === 0) return;
+    
+    const timer = setInterval(async () => {
+      for (const asset of processingAssets) {
+        try {
+          const res = await (request.get(`/assets/user/asset-status/${asset.id}`) as any);
+          if (res.status && res.status !== 'processing') {
+            fetchAssets();
+            break;
+          }
+        } catch (e) {
+          console.error('轮询状态失败', e);
+        }
+      }
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [assets, fetchAssets]);
 
   const fetchStorageInfo = async () => {
     try {
@@ -474,13 +473,13 @@ const UserAssets: React.FC = () => {
               {/* 一级分类：预设分类 + 我的素材 */}
               <Segmented
                 options={[
-                  ...PRESET_CATEGORIES.map(cat => ({ label: cat.label, value: `top_preset_${cat.key}` })),
-                  { label: '我的素材', value: 'top_my' }
+                  { label: '我的素材', value: 'top_my' },
+                  ...PRESET_CATEGORIES.map(cat => ({ label: cat.label, value: `top_preset_${cat.key}` }))
                 ]}
                 value={selectedKey.startsWith('my_') ? 'top_my' : `top_preset_${selectedKey.replace('preset_', '').split('/')[0]}`}
                 onChange={(val) => {
                   if (val === 'top_my') {
-                    setSelectedKey('my_all_my');
+                    setSelectedKey('my_virtual_portrait');
                   } else {
                     const catKey = (val as string).replace('top_preset_', '');
                     setSelectedKey(`preset_${catKey}`);
@@ -566,6 +565,11 @@ const UserAssets: React.FC = () => {
                 <Text style={{ marginLeft: 12, color: 'rgba(255,255,255,0.35)' }}>
                   共 {assets.length} 个素材
                 </Text>
+                {currentCategoryName === '虚拟人像' && storage?.virtual_portrait_quota !== undefined && (
+                  <Text style={{ marginLeft: 12, color: 'rgba(255,255,255,0.45)' }}>
+                    (可以新加 {Math.max(0, storage.virtual_portrait_quota - (storage.virtual_portrait_count || 0))} 个 AssetGroups 的素材组合)
+                  </Text>
+                )}
               </Text>
             </div>
 

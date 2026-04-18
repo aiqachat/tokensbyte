@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Switch, Button, message, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Typography, Switch, Button, message, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table } from 'antd';
+import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
@@ -67,16 +67,45 @@ const PluginConfig: React.FC = () => {
   const [savingStorage, setSavingStorage] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [activeTabKey, setActiveTabKey] = useState('basic');
+  const [activeTabKey, setActiveTabKey] = useState(() => {
+    const hash = window.location.hash.replace('#', '');
+    return ['basic', 'storage', 'moderation', 'preset', 'audit_log'].includes(hash) ? hash : 'basic';
+  });
+  const handleTabChange = (key: string) => {
+    setActiveTabKey(key);
+    window.location.hash = key;
+  };
 
   // 审核配置
   const [moderationConfig, setModerationConfig] = useState<ModerationConfig | null>(null);
   const [moderationForm] = Form.useForm();
   const [savingModeration, setSavingModeration] = useState(false);
 
+  // 审核日志
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditUidMap, setAuditUidMap] = useState<Record<string, {uid: string; username: string}>>({});
+
   useEffect(() => {
     fetchData();
   }, [name]);
+
+  useEffect(() => {
+    if (activeTabKey === 'audit_log' && !loading) {
+      (async () => {
+        try {
+          setAuditLoading(true);
+          const res = await (request.get(`/assets/admin/list?category=虚拟人像`) as any);
+          if (res.assets) setAuditLogs(res.assets);
+          if (res.uid_map) setAuditUidMap(res.uid_map);
+        } catch (e) {
+          console.error('获取审核日志失败', e);
+        } finally {
+          setAuditLoading(false);
+        }
+      })();
+    }
+  }, [activeTabKey, loading]);
 
   const fetchData = async () => {
     try {
@@ -543,6 +572,113 @@ const PluginConfig: React.FC = () => {
     </div>
   );
 
+  // ====== 审核日志 Tab ======
+
+
+  const fetchAuditLogs = async () => {
+    try {
+      setAuditLoading(true);
+      const res = await (request.get(`/assets/admin/list?category=虚拟人像`) as any);
+      if (res.assets) {
+        setAuditLogs(res.assets);
+      }
+      if (res.uid_map) {
+        setAuditUidMap(res.uid_map);
+      }
+    } catch (e) {
+      console.error('获取审核日志失败', e);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const auditLogColumns = [
+    {
+      title: '用户 UID',
+      dataIndex: 'user_id',
+      key: 'user_id',
+      width: 140,
+      render: (userId: string) => {
+        const info = auditUidMap[userId];
+        return info ? (
+          <span>
+            <Text copyable style={{ fontSize: 12 }}>{info.uid}</Text>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{info.username}</div>
+          </span>
+        ) : <Text style={{ fontSize: 12 }}>{userId?.slice(0, 8)}...</Text>;
+      },
+    },
+    {
+      title: '文件名',
+      dataIndex: 'file_name',
+      key: 'file_name',
+      ellipsis: true,
+    },
+    {
+      title: '预览',
+      key: 'preview',
+      width: 80,
+      render: (_: any, record: any) => {
+        if (record.file_url) {
+          let url = record.file_url;
+          if (!url.startsWith('http') && !url.startsWith('/')) url = `https://${url}`;
+          return <img src={url} alt="" style={{ width: 50, height: 50, objectFit: 'cover', borderRadius: 4 }} />;
+        }
+        return <Text type="secondary">-</Text>;
+      }
+    },
+    {
+      title: 'Asset ID',
+      dataIndex: 'asset_id',
+      key: 'asset_id',
+      width: 160,
+      render: (aid: string) => aid ? <Text code style={{ fontSize: 11 }}>{aid.slice(0, 20)}...</Text> : <Text type="secondary">暂无</Text>,
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 120,
+      render: (status: string, record: any) => {
+        if (status === 'uploaded') return <Tag color="blue" icon={<SendOutlined />}>待提交审核</Tag>;
+        if (status === 'processing') return <Tag color="processing" icon={<LoadingOutlined spin />}>审核中</Tag>;
+        if (status === 'approved') return <Tag color="success" icon={<CheckCircleOutlined />}>已通过</Tag>;
+        if (status === 'rejected') return (
+          <span>
+            <Tag color="error" icon={<CloseCircleOutlined />}>已驳回</Tag>
+            {record.reject_reason && <div style={{ fontSize: 11, color: '#ff4d4f', marginTop: 2 }}>{record.reject_reason}</div>}
+          </span>
+        );
+        if (status === 'pending') return <Tag color="warning">待审核</Tag>;
+        return <Tag>{status}</Tag>;
+      }
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 160,
+      render: (t: string) => t ? <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> : '-',
+    },
+  ];
+
+  const auditLogTab = (
+    <div>
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>共 {auditLogs.length} 条虚拟人像上传记录</Text>
+        <Button size="small" onClick={fetchAuditLogs} loading={auditLoading}>刷新</Button>
+      </div>
+      <Table
+        dataSource={auditLogs}
+        columns={auditLogColumns}
+        rowKey="id"
+        loading={auditLoading}
+        size="small"
+        pagination={{ pageSize: 15 }}
+      />
+    </div>
+  );
+
   return (
     <div>
       {/* 页头 */}
@@ -571,12 +707,13 @@ const PluginConfig: React.FC = () => {
       {/* Tabs */}
       <Tabs
         activeKey={activeTabKey}
-        onChange={setActiveTabKey}
+        onChange={handleTabChange}
         items={[
           { key: 'basic', label: '基本配置', children: basicTab },
           { key: 'storage', label: '存储配置', children: storageTab },
           { key: 'moderation', label: '审核配置', children: moderationTab },
           { key: 'preset', label: '预设素材', children: <AdminPresetAssets /> },
+          { key: 'audit_log', label: '审核日志', children: auditLogTab },
         ]}
       />
     </div>
