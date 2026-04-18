@@ -143,10 +143,22 @@ pub async fn record_and_bill_with_prededuction(
     billing_detail: Option<String>,
 ) {
     let mut enable_log: i32 = 0;
-    if let Ok(Some(m)) = sqlx::query_as::<_, crate::models::Model>(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
-        .bind(model_name).fetch_optional(&state.db.pool).await 
+    let mut category = String::new();
+    
+    // 查询模型同时关联 model_types 获取 category
+    if let Ok(Some(row)) = sqlx::query(
+        "SELECT m.enable_log_content, t.name as category_name 
+         FROM models m 
+         LEFT JOIN model_types t ON m.type_id = t.id 
+         WHERE m.model_id = ? AND m.is_active = 1"
+    )
+    .bind(model_name)
+    .fetch_optional(&state.db.pool)
+    .await 
     {
-        enable_log = m.enable_log_content;
+        use sqlx::Row;
+        enable_log = row.try_get("enable_log_content").unwrap_or(0);
+        category = row.try_get("category_name").unwrap_or_default();
     }
 
     let filter_content = |content: Option<String>, respect_log_flag: bool| -> Option<String> {
@@ -164,8 +176,34 @@ pub async fn record_and_bill_with_prededuction(
     };
 
     let req_content = filter_content(request_content, true);       // 受上下文记录开关控制
-    let resp_content = filter_content(response_content, false);    // 始终保存（计费依赖 token 用量）
     let upstream_req = filter_content(upstream_req_content, true); // 受上下文记录开关控制
+    
+    // 灵活处理 response_content 的存储
+    let resp_content = if enable_log == 0 {
+        if category == "视频" {
+            // 视频模型：结果始终保留（需要提取生成的资源URL等）
+            filter_content(response_content, false)
+        } else {
+            // 聊天、文本、图片等
+            if let Some(ref text) = response_content {
+                let usage_json = crate::relay::usage_extractor::extract_usage_json_string(text);
+                if usage_json.is_some() {
+                    usage_json
+                } else if category == "图片" {
+                    // 图片模型：如果没有 token消耗 就不记录
+                    None
+                } else {
+                    // 语言模型等：如果没有找到 usage，就存一个空数组，避免存入大体积的正文
+                    Some("[]".to_string())
+                }
+            } else {
+                None
+            }
+        }
+    } else {
+        // 如果开启了上下文，始终保存处理后的内容
+        filter_content(response_content, false)
+    };
 
     let mut channel_info: Option<(String, String, String)> = None;
     if let Ok(Some(ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
