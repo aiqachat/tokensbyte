@@ -223,18 +223,10 @@ pub async fn wechat_notify(
         return (StatusCode::OK, Json(resp_success));
     }
 
-    // 4. 事务处理：更新订单 + 充值余额 + 写充值记录
-    let mut tx = match state.db.pool.begin().await {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::error!("[微信回调] 开启事务失败: {:?}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(resp_fail));
-        }
-    };
-
+    // 4. 前置检查：事务外查询，避免不必要的事务开销
     let order: Option<Order> = sqlx::query_as(&state.db.format_query("SELECT * FROM orders WHERE out_trade_no = ?"))
         .bind(out_trade_no)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&state.db.pool)
         .await
         .unwrap_or(None);
 
@@ -249,15 +241,33 @@ pub async fn wechat_notify(
         return (StatusCode::OK, Json(resp_success));
     }
 
+    // 5. 事务处理：更新订单 + 充值余额 + 写充值记录
+    let mut tx = match state.db.pool.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("[微信回调] 开启事务失败: {:?}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(resp_fail));
+        }
+    };
+
     let amount = order.amount;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    if let Err(e) = sqlx::query(&state.db.format_query("UPDATE orders SET status = 'paid', trade_no = ?, paid_at = ? WHERE out_trade_no = ?"))
+    let result = sqlx::query(&state.db.format_query("UPDATE orders SET status = 'paid', trade_no = ?, paid_at = ? WHERE out_trade_no = ? AND status = 'pending'"))
         .bind(trade_no).bind(&now).bind(out_trade_no)
-        .execute(&mut *tx).await {
-        tracing::error!("[微信回调] 更新订单状态失败: {:?}", e);
-        let _ = tx.rollback().await;
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(resp_fail));
+        .execute(&mut *tx).await;
+    match result {
+        Ok(r) if r.rows_affected() == 0 => {
+            tracing::info!("[微信回调] 订单已被并发处理，跳过: {}", out_trade_no);
+            let _ = tx.rollback().await;
+            return (StatusCode::OK, Json(resp_success));
+        }
+        Err(e) => {
+            tracing::error!("[微信回调] 更新订单状态失败: {:?}", e);
+            let _ = tx.rollback().await;
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(resp_fail));
+        }
+        _ => {}
     }
 
     if let Err(e) = sqlx::query(&state.db.format_query("UPDATE users SET balance = balance + ? WHERE id = ?"))
@@ -334,18 +344,10 @@ pub async fn alipay_notify(
         }
     }
 
-    // 事务处理
-    let mut tx = match state.db.pool.begin().await {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::error!("[支付宝回调] 开启事务失败: {:?}", e);
-            return "fail".to_string();
-        }
-    };
-
+    // 前置检查：事务外查询
     let order: Option<Order> = sqlx::query_as(&state.db.format_query("SELECT * FROM orders WHERE out_trade_no = ?"))
         .bind(&out_trade_no)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&state.db.pool)
         .await.unwrap_or(None);
 
     if order.is_none() {
@@ -359,15 +361,33 @@ pub async fn alipay_notify(
         return "success".to_string();
     }
 
+    // 事务处理
+    let mut tx = match state.db.pool.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("[支付宝回调] 开启事务失败: {:?}", e);
+            return "fail".to_string();
+        }
+    };
+
     let amount = order.amount;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    if let Err(e) = sqlx::query(&state.db.format_query("UPDATE orders SET status = 'paid', trade_no = ?, paid_at = ? WHERE out_trade_no = ?"))
+    let result = sqlx::query(&state.db.format_query("UPDATE orders SET status = 'paid', trade_no = ?, paid_at = ? WHERE out_trade_no = ? AND status = 'pending'"))
         .bind(&trade_no).bind(&now).bind(&out_trade_no)
-        .execute(&mut *tx).await {
-        tracing::error!("[支付宝回调] 更新订单失败: {:?}", e);
-        let _ = tx.rollback().await;
-        return "fail".to_string();
+        .execute(&mut *tx).await;
+    match result {
+        Ok(r) if r.rows_affected() == 0 => {
+            tracing::info!("[支付宝回调] 订单已被并发处理，跳过: {}", out_trade_no);
+            let _ = tx.rollback().await;
+            return "success".to_string();
+        }
+        Err(e) => {
+            tracing::error!("[支付宝回调] 更新订单失败: {:?}", e);
+            let _ = tx.rollback().await;
+            return "fail".to_string();
+        }
+        _ => {}
     }
 
     if let Err(e) = sqlx::query(&state.db.format_query("UPDATE users SET balance = balance + ? WHERE id = ?"))
