@@ -492,16 +492,16 @@ const PluginConfig: React.FC = () => {
               type="success"
               showIcon
               icon={<CheckCircleOutlined />}
-              message="审核服务已配置"
-              description={`已关联 AppID: ${moderationConfig.volc_app_id}`}
+              message="私域素材资产库已配置"
+              description="Access Key 已配置，可正常使用虚拟人像上传与审核功能"
               style={{ background: 'rgba(82,196,26,0.06)', border: '1px solid rgba(82,196,26,0.2)' }}
             />
           ) : (
             <Alert
               type="warning"
               showIcon
-              message="审核服务未配置"
-              description="真人核验和虚拟人像功能需要配置火山引擎 2D 数字人相关凭证"
+              message="私域素材资产库未配置"
+              description="虚拟人像功能需要配置火山引擎 API 访问密钥，请前往火山引擎控制台获取"
               style={{ background: 'rgba(250,173,20,0.06)', border: '1px solid rgba(250,173,20,0.2)' }}
             />
           )}
@@ -512,29 +512,28 @@ const PluginConfig: React.FC = () => {
         background: '#141414', borderRadius: 8,
         border: '1px solid rgba(255,255,255,0.08)', padding: '20px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <ApiOutlined style={{ color: '#1677ff', fontSize: 16 }} />
-          <Text strong style={{ color: '#fff', fontSize: 14 }}>火山引擎核验与数字人配置</Text>
+          <Text strong style={{ color: '#fff', fontSize: 14 }}>私域虚拟人像素材资产库配置</Text>
         </div>
+        <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginBottom: 16 }}>
+          请前往火山引擎控制台 → 头像下拉菜单 →「API访问密钥」页面，创建并获取 Access Key ID 和 Secret Access Key
+        </Text>
 
         <Form form={moderationForm} layout="vertical" requiredMark={false}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Access Key</Text>} name="volc_access_key" rules={[{ required: true, message: '请输入 Access Key' }]}>
-              <Input placeholder="火山引擎 Access Key" style={inputStyle} />
+            <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Access Key ID</Text>} name="volc_access_key" rules={[{ required: true, message: '请输入 Access Key ID' }]}>
+              <Input placeholder="Access Key ID" style={inputStyle} />
             </Form.Item>
             <Form.Item
-              label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Secret Key</Text>}
+              label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Secret Access Key</Text>}
               name="volc_secret_key"
-              rules={[{ required: !moderationConfig?.is_configured, message: '请输入 Secret Key' }]}
+              rules={[{ required: !moderationConfig?.is_configured, message: '请输入 Secret Access Key' }]}
               extra={moderationConfig?.volc_secret_key_masked ? <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>当前: {moderationConfig.volc_secret_key_masked}（留空则不修改）</Text> : undefined}
             >
-              <Input.Password placeholder="火山引擎 Secret Key" style={inputStyle} />
+              <Input.Password placeholder="Secret Access Key" style={inputStyle} />
             </Form.Item>
           </div>
-
-          <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>App ID</Text>} name="volc_app_id" rules={[{ required: true, message: '请输入 App ID' }]}>
-            <Input placeholder="数字人应用 App ID" style={inputStyle} />
-          </Form.Item>
         </Form>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
