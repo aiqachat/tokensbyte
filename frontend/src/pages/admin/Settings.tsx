@@ -72,6 +72,7 @@ const Settings: React.FC = () => {
           title: values.title,
           keywords: values.keywords,
           description: values.description,
+          favicon: values.favicon || '',
         };
       } else if (tab === 'currency') {
         payload.currency = {
@@ -138,6 +139,13 @@ const Settings: React.FC = () => {
             </Form.Item>
             <Form.Item label={t('settings.site_title')} name="title" rules={[{ required: true }]}>
               <Input placeholder="TokensByte - LLM API Gateway" />
+            </Form.Item>
+            <Form.Item 
+              label="站点图标 (Favicon)" 
+              name="favicon" 
+              extra={<Text type="secondary">支持 .ico / .png / .svg 格式的图片链接，留空则使用默认图标</Text>}
+            >
+              <Input placeholder="https://example.com/favicon.ico" />
             </Form.Item>
             <Form.Item label={t('settings.site_keywords')} name="keywords">
               <Input.TextArea rows={2} placeholder="LLM, API, Gateway" />

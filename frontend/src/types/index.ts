@@ -219,6 +219,7 @@ export interface SiteSettings {
   title: string;
   keywords: string;
   description: string;
+  favicon?: string;
 }
 
 export interface CurrencySettings {
