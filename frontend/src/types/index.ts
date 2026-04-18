@@ -304,7 +304,7 @@ export interface PluginAsset {
   user_id: string;
   asset_type: 'image' | 'video';
   source: 'builtin' | 'user';
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'uploaded' | 'pending' | 'processing' | 'approved' | 'rejected';
   file_name: string;
   file_url: string;
   mime_type?: string;

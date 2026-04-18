@@ -3,7 +3,8 @@ import { Table, Button, Space, message, Card, Typography, Upload, Tag, Progress,
 import {
   UploadOutlined, CloudOutlined, FolderOutlined, FileOutlined,
   PictureOutlined, VideoCameraOutlined, UserOutlined, AppstoreOutlined,
-  StarOutlined, InboxOutlined, AudioOutlined, UserAddOutlined, EditOutlined
+  StarOutlined, InboxOutlined, AudioOutlined, UserAddOutlined, EditOutlined,
+  SendOutlined, LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined
 } from '@ant-design/icons';
 import request from '../../utils/request';
 import type { PluginAsset } from '../../types';
@@ -60,6 +61,32 @@ const UserAssets: React.FC = () => {
   const [editingAsset, setEditingAsset] = useState<PluginAsset | null>(null);
   const [editForm] = Form.useForm();
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // 提交审核
+  const [submittingReview, setSubmittingReview] = useState<number | null>(null);
+
+  // 轮询 processing 状态
+  useEffect(() => {
+    const processingAssets = assets.filter(a => a.status === 'processing');
+    if (processingAssets.length === 0) return;
+    
+    const timer = setInterval(async () => {
+      for (const asset of processingAssets) {
+        try {
+          const res = await (request.get(`/assets/user/asset-status/${asset.id}`) as any);
+          if (res.status && res.status !== 'processing') {
+            // 状态已更新，刷新列表
+            fetchAssets();
+            break;
+          }
+        } catch (e) {
+          console.error('轮询状态失败', e);
+        }
+      }
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [assets, fetchAssets]);
 
   const handleEditAsset = async () => {
     try {
@@ -216,10 +243,12 @@ const UserAssets: React.FC = () => {
 
       await Promise.all(uploadPromises);
 
-      message.success(category === '虚拟人像' ? '上传成功，正在合规审核' : '上传成功，等待管理员审核');
+      message.success('上传成功，请点击「提交审核」');
       setIsUploadModalOpen(false);
       uploadForm.resetFields();
       setFileList([]);
+      // 切换到虚拟人像分类查看结果
+      setSelectedKey('my_virtual_portrait');
       fetchAssets();
       fetchStorageInfo();
     } catch (error) {
@@ -227,6 +256,21 @@ const UserAssets: React.FC = () => {
       message.error('上传失败');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // 提交审核
+  const handleSubmitReview = async (assetId: number) => {
+    try {
+      setSubmittingReview(assetId);
+      await request.post(`/assets/user/submit-review/${assetId}`, {});
+      message.success('已提交审核，请等待审核结果');
+      fetchAssets();
+    } catch (error: any) {
+      const rawMsg = error?.response?.data?.error?.message || '';
+      message.error(rawMsg || '提交审核失败');
+    } finally {
+      setSubmittingReview(null);
     }
   };
 
@@ -307,16 +351,19 @@ const UserAssets: React.FC = () => {
       key: 'status',
       render: (_: any, record: PluginAsset) => {
         if (record.source === 'builtin') return <Tag color="gold">预设</Tag>;
-        if (record.status === 'approved') return <Tag color="success">已通过</Tag>;
+        if (record.status === 'uploaded') return <Tag color="blue" icon={<SendOutlined />}>待提交审核</Tag>;
+        if (record.status === 'processing') return <Tag color="processing" icon={<LoadingOutlined spin />}>审核中</Tag>;
+        if (record.status === 'approved') return <Tag color="success" icon={<CheckCircleOutlined />}>已通过</Tag>;
         if (record.status === 'rejected') return (
           <>
-            <Tag color="error">已驳回</Tag>
+            <Tag color="error" icon={<CloseCircleOutlined />}>已驳回</Tag>
             <div style={{ fontSize: '12px', color: '#ff4d4f', marginTop: 4 }}>
               原因: {record.reject_reason || '无'}
             </div>
           </>
         );
-        return <Tag color="warning">审核中</Tag>;
+        if (record.status === 'pending') return <Tag color="warning">审核中</Tag>;
+        return <Tag>{record.status}</Tag>;
       }
     },
     {
@@ -324,6 +371,17 @@ const UserAssets: React.FC = () => {
       key: 'action',
       render: (_: any, record: PluginAsset) => (
         <Space size="middle">
+          {record.source === 'user' && record.status === 'uploaded' && (
+            <Button
+              type="primary"
+              size="small"
+              icon={<SendOutlined />}
+              loading={submittingReview === record.id}
+              onClick={() => handleSubmitReview(record.id)}
+            >
+              提交审核
+            </Button>
+          )}
           {record.source === 'user' && (
             <Button 
               type="text" 

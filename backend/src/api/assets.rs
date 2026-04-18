@@ -30,6 +30,8 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/user/init-real-person-verify", post(init_real_person_verify))
         .route("/user/complete-real-person-verify", post(complete_real_person_verify))
         .route("/user/upload-virtual-portrait", post(upload_virtual_portrait))
+        .route("/user/submit-review/{id}", post(submit_virtual_portrait_review))
+        .route("/user/asset-status/{id}", get(check_asset_status))
         .layer(DefaultBodyLimit::disable())
 }
 
@@ -860,57 +862,213 @@ async fn complete_real_person_verify(
     Ok(Json(json!({ "message": "认证成功", "asset": asset_res.result })))
 }
 
-/// 用户：上传虚拟人像
+/// 用户：上传虚拟人像（阶段一：仅上传至 TOS 存储，不调用火山引擎）
 async fn upload_virtual_portrait(
     State(state): State<Arc<AppState>>,
     axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
     mut multipart: Multipart,
 ) -> AppResult<Json<serde_json::Value>> {
-    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
-        .ok_or_else(|| AppError::BadRequest("审核配置未完成".to_string()))?;
+    // 检查 TOS 存储配置
+    let tos_config = crate::api::plugins::get_tos_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("存储未配置，请联系管理员".to_string()))?;
 
-    let mut file_data = Vec::new();
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query(
+        "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+    ))
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized)?;
+
+    let mut file_data: Option<axum::body::Bytes> = None;
     let mut file_name = String::new();
+    let mut mime_type = String::new();
 
     while let Some(field) = multipart.next_field().await.map_err(|e| AppError::BadRequest(e.to_string()))? {
         let name = field.name().unwrap_or_default().to_string();
         if name == "file" {
             file_name = field.file_name().unwrap_or("virtual_portrait.jpg").to_string();
-            file_data = field.bytes().await.map_err(|e| AppError::BadRequest(e.to_string()))?.to_vec();
+            mime_type = field.content_type().unwrap_or("image/jpeg").to_string();
+            file_data = Some(field.bytes().await.map_err(|e| AppError::BadRequest(e.to_string()))?);
         }
     }
 
-    if file_data.is_empty() {
-        return Err(AppError::BadRequest("未检测到文件".to_string()));
+    let data = file_data.ok_or_else(|| AppError::BadRequest("未检测到文件".to_string()))?;
+    let size = data.len() as i64;
+
+    if size > 30 * 1024 * 1024 {
+        return Err(AppError::BadRequest("图片不能超过 30MB".to_string()));
     }
 
+    // 上传到 TOS
+    let ext = std::path::Path::new(&file_name)
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or("jpg");
+    let file_id = uuid::Uuid::new_v4().to_string();
+    let safe_filename = format!("{}.{}", file_id, ext);
+    let folder_name = user.uid.clone();
+    let object_key = tos_config.full_key(&format!("{}/{}", folder_name, safe_filename));
+
+    let file_url = crate::services::tos::upload_file(
+        &tos_config,
+        &object_key,
+        data.to_vec(),
+        &mime_type,
+        None,
+    ).await.map_err(|e| {
+        tracing::error!("TOS upload failed: {}", e);
+        AppError::Internal(format!("文件上传失败: {}", e))
+    })?;
+
+    // 写入数据库，状态为 uploaded（待提交审核）
+    let asset: PluginAsset = sqlx::query_as(&state.db.format_query(
+        "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, mime_type, size, category)
+         VALUES (?, 'image', 'user', 'uploaded', ?, ?, ?, ?, '虚拟人像')
+         RETURNING *"
+    ))
+    .bind(&claims.sub)
+    .bind(&file_name)
+    .bind(&file_url)
+    .bind(&mime_type)
+    .bind(size)
+    .fetch_one(&state.db.pool).await?;
+
+    Ok(Json(json!({ "message": "上传成功，请提交审核", "asset": asset })))
+}
+
+/// 用户：提交虚拟人像审核（阶段二：调用火山引擎 CreateAsset）
+async fn submit_virtual_portrait_review(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("审核配置未完成，请联系管理员".to_string()))?;
+
+    // 查找素材，确认归属当前用户且状态为 uploaded
+    let asset: PluginAsset = sqlx::query_as(&state.db.format_query(
+        "SELECT * FROM plugin_assets WHERE id = ? AND user_id = ? AND status = 'uploaded'"
+    ))
+    .bind(id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::BadRequest("素材不存在或已提交".to_string()))?;
+
+    // 从 TOS 下载文件数据
+    let tos_config = crate::api::plugins::get_tos_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("存储未配置".to_string()))?;
+
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query(
+        "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+    ))
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::Unauthorized)?;
+
+    let folder_name = user.uid.clone();
+    let filename = asset.file_url.split('/').last().unwrap_or("");
+    let object_key = tos_config.full_key(&format!("{}/{}", folder_name, filename));
+
+    let file_data = crate::services::tos::download_file(&tos_config, &object_key).await
+        .map_err(|e| AppError::Internal(format!("从 TOS 下载文件失败: {}", e)))?;
+
     let b64_data = base64::engine::general_purpose::STANDARD.encode(&file_data);
-    let asset_id = format!("v_{}_{}", claims.sub, uuid::Uuid::new_v4().simple());
-    
+    let volc_asset_id = format!("v_{}_{}", claims.sub, uuid::Uuid::new_v4().simple());
+
     let client = crate::services::volcengine::VolcClient::new(volc_config.clone());
     let create_req = crate::services::volcengine::CreateAssetRequest {
         asset_type: "Human".to_string(),
-        asset_id: asset_id.clone(),
-        asset_name: format!("虚拟人像: {}", file_name),
+        asset_id: volc_asset_id.clone(),
+        asset_name: format!("虚拟人像: {}", asset.file_name),
         asset_group_id: None,
         binary_data: Some(b64_data),
     };
 
-    let asset_res: crate::services::volcengine::CreateAssetResponse = client.call_api(
+    let _asset_res: crate::services::volcengine::CreateAssetResponse = client.call_api(
         "visual", "cn-north-1", "CreateAsset", "2022-03-25", create_req
-    ).await.map_err(|e| AppError::Internal(format!("创建虚拟人像失败: {}", e)))?;
+    ).await.map_err(|e| AppError::Internal(format!("提交审核失败: {}", e)))?;
 
-    // 写入本地数据库 (状态为审核中)
+    // 更新数据库：状态改为 processing，写入 asset_id
     sqlx::query(&state.db.format_query(
-        "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, category, asset_id) 
-         VALUES (?, 'image', 'user', 'pending', ?, ?, '虚拟人像', ?)"
+        "UPDATE plugin_assets SET status = 'processing', asset_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
     ))
-    .bind(&claims.sub)
-    .bind(&file_name)
-    .bind("") // 暂且留空
-    .bind(&asset_id)
+    .bind(&volc_asset_id)
+    .bind(id)
     .execute(&state.db.pool).await?;
 
-    Ok(Json(json!({ "message": "上传成功，正在进行合规审核", "asset": asset_res.result })))
+    Ok(Json(json!({ "message": "已提交审核", "asset_id": volc_asset_id })))
+}
+
+/// 用户：查询虚拟人像审核状态（轮询火山引擎 GetAsset）
+async fn check_asset_status(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let asset: PluginAsset = sqlx::query_as(&state.db.format_query(
+        "SELECT * FROM plugin_assets WHERE id = ? AND user_id = ?"
+    ))
+    .bind(id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::BadRequest("素材不存在".to_string()))?;
+
+    // 如果不是 processing 状态，直接返回当前数据库状态
+    if asset.status != "processing" {
+        return Ok(Json(json!({ "status": asset.status })));
+    }
+
+    // processing 状态：调用火山引擎查询实际状态
+    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await;
+    let asset_id_val = asset.asset_id.unwrap_or_default();
+
+    if let Some(vc) = volc_config {
+        if !asset_id_val.is_empty() {
+            let client = crate::services::volcengine::VolcClient::new(vc);
+            let get_req = crate::services::volcengine::GetAssetRequest {
+                asset_id: asset_id_val.clone(),
+            };
+
+            match client.call_api::<_, crate::services::volcengine::GetAssetResponse>(
+                "visual", "cn-north-1", "GetAsset", "2022-03-25", get_req
+            ).await {
+                Ok(res) => {
+                    if let Some(info) = res.result {
+                        match info.status.as_str() {
+                            "Active" => {
+                                sqlx::query(&state.db.format_query(
+                                    "UPDATE plugin_assets SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                                ))
+                                .bind(id)
+                                .execute(&state.db.pool).await?;
+                                return Ok(Json(json!({ "status": "approved" })));
+                            }
+                            "Failed" => {
+                                sqlx::query(&state.db.format_query(
+                                    "UPDATE plugin_assets SET status = 'rejected', reject_reason = '火山引擎审核未通过', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                                ))
+                                .bind(id)
+                                .execute(&state.db.pool).await?;
+                                return Ok(Json(json!({ "status": "rejected", "reason": "火山引擎审核未通过" })));
+                            }
+                            _ => {
+                                // Processing or other, keep polling
+                                return Ok(Json(json!({ "status": "processing" })));
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("查询火山引擎资产状态失败: {}", e);
+                }
+            }
+        }
+    }
+
+    Ok(Json(json!({ "status": "processing" })))
 }
 
