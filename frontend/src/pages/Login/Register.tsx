@@ -89,7 +89,15 @@ const Register: React.FC = () => {
       message.success(t('auth.register_success'));
       navigate('/login');
     } catch (error: any) {
-      message.error(error.response?.data?.error?.message || t('common.error'));
+      const rawMsg = error.response?.data?.error?.message || '';
+      const errorMap: Record<string, string> = {
+        'User already exists': '该用户名已被注册',
+        'Email already exists': '该邮箱已被注册',
+        'Invalid verification code': '验证码错误或已过期',
+        'Username registration is disabled': '用户名注册已关闭',
+        'Email registration is disabled': '邮箱注册已关闭',
+      };
+      message.error(errorMap[rawMsg] || rawMsg || t('common.error'));
     } finally {
       setLoading(false);
     }
