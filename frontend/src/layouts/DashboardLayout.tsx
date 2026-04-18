@@ -351,14 +351,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/settings?tab=basic">{t('menu.basic_settings')}</Link>,
           },
           {
-            key: '/admin0755/settings?tab=login',
-            label: <Link to="/admin0755/settings?tab=login">登录设置</Link>,
-          },
-          {
-            key: '/admin0755/settings?tab=registration',
-            label: <Link to="/admin0755/settings?tab=registration">{t('menu.registration_settings')}</Link>,
-          },
-          {
             key: '/admin0755/settings?tab=currency',
             label: <Link to="/admin0755/settings?tab=currency">{t('menu.currency_settings')}</Link>,
           },

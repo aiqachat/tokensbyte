@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Form, Input, Button, InputNumber, message, Typography, Space, Switch, Radio } from 'antd';
+import { Card, Form, Input, Button, InputNumber, message, Typography, Space, Switch, Radio, Tabs } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 
 const { Text } = Typography;
-
-
 
 const Settings: React.FC = () => {
   const { t } = useTranslation();
@@ -17,12 +15,11 @@ const Settings: React.FC = () => {
 
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [basicSubTab, setBasicSubTab] = useState('site');
 
   const getTitle = () => {
     switch(tab) {
       case 'currency': return t('menu.currency_settings');
-      case 'registration': return t('settings.registration_title');
-      case 'login': return '登录设置';
       case 'database': return '数据库设置';
       default: return t('menu.basic_settings');
     }
@@ -68,6 +65,7 @@ const Settings: React.FC = () => {
       let payload: any = {};
       
       if (tab === 'basic') {
+        // Save all basic sub-tabs together
         payload.site = {
           name: values.name,
           logo: values.logo || '',
@@ -75,7 +73,15 @@ const Settings: React.FC = () => {
           keywords: values.keywords,
           description: values.description,
           favicon: values.favicon || '',
+          login_title: values.login_title || '',
+          login_subtitle: values.login_subtitle || '',
         };
+        payload.registration = {
+          enable_username_registration: values.enable_username_registration,
+          enable_email_registration: values.enable_email_registration,
+          enable_password_recovery: values.enable_password_recovery,
+        };
+        payload.smtp = values.smtp;
       } else if (tab === 'currency') {
         payload.currency = {
           default_currency: values.default_currency,
@@ -83,18 +89,6 @@ const Settings: React.FC = () => {
           currency_unit: values.currency_unit,
           token_ratio: values.token_ratio,
         };
-      } else if (tab === 'login') {
-        payload.site = {
-          login_title: values.login_title || '',
-          login_subtitle: values.login_subtitle || '',
-        };
-      } else if (tab === 'registration') {
-        payload.registration = {
-          enable_username_registration: values.enable_username_registration,
-          enable_email_registration: values.enable_email_registration,
-          enable_password_recovery: values.enable_password_recovery,
-        };
-        payload.smtp = values.smtp;
       } else if (tab === 'database') {
         payload.database = values.database;
       }
@@ -115,6 +109,112 @@ const Settings: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const siteSettingsContent = (
+    <div style={{ maxWidth: 600 }}>
+      <Form.Item label={t('settings.site_name')} name="name" rules={[{ required: true }]}>
+        <Input placeholder="TokensByte" />
+      </Form.Item>
+      <Form.Item 
+        label="站点 Logo" 
+        name="logo" 
+        extra={<Text type="secondary">支持图片链接，建议尺寸 32x32 或 40x40，留空则仅显示站点名称文字</Text>}
+      >
+        <Input placeholder="https://example.com/logo.png" />
+      </Form.Item>
+      <Form.Item label={t('settings.site_title')} name="title" rules={[{ required: true }]}>
+        <Input placeholder="TokensByte - LLM API Gateway" />
+      </Form.Item>
+      <Form.Item 
+        label="站点图标 (Favicon)" 
+        name="favicon" 
+        extra={<Text type="secondary">支持 .ico / .png / .svg 格式的图片链接，留空则使用默认图标</Text>}
+      >
+        <Input placeholder="https://example.com/favicon.ico" />
+      </Form.Item>
+      <Form.Item label={t('settings.site_keywords')} name="keywords">
+        <Input.TextArea rows={2} placeholder="LLM, API, Gateway" />
+      </Form.Item>
+      <Form.Item label={t('settings.site_description')} name="description">
+        <Input.TextArea rows={4} placeholder="Description..." />
+      </Form.Item>
+    </div>
+  );
+
+  const loginSettingsContent = (
+    <div style={{ maxWidth: 600 }}>
+      <Form.Item 
+        label="登录页标题" 
+        name="login_title" 
+        extra={<Text type="secondary">显示在登录页面的主标题位置，留空则使用站点名称</Text>}
+      >
+        <Input placeholder="例如：TokensByte" />
+      </Form.Item>
+      <Form.Item 
+        label="登录页副标题" 
+        name="login_subtitle" 
+        extra={<Text type="secondary">显示在登录页标题下方的描述文字，留空则使用默认文字</Text>}
+      >
+        <Input placeholder="例如：Next-gen LLM API Gateway" />
+      </Form.Item>
+    </div>
+  );
+
+  const registrationSettingsContent = (
+    <div style={{ maxWidth: 600 }}>
+      <Form.Item 
+        label={t('settings.enable_username_reg')} 
+        name="enable_username_registration" 
+        valuePropName="checked"
+      >
+        <Switch />
+      </Form.Item>
+      <Form.Item 
+        label={t('settings.enable_email_reg')} 
+        name="enable_email_registration" 
+        valuePropName="checked"
+      >
+        <Switch />
+      </Form.Item>
+
+      <Form.Item noStyle dependencies={['enable_email_registration']}>
+        {({ getFieldValue }) => {
+          const enableEmailReg = getFieldValue('enable_email_registration');
+          return enableEmailReg ? (
+            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', marginBottom: '24px' }}>
+              <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 16 }}>{t('settings.smtp_title')}</Typography.Title>
+              <Form.Item label={t('settings.smtp_host')} name={['smtp', 'host']} rules={[{ required: true }]}>
+                <Input placeholder="smtp.gmail.com" />
+              </Form.Item>
+              <Form.Item label={t('settings.smtp_port')} name={['smtp', 'port']} rules={[{ required: true }]}>
+                <InputNumber style={{ width: '100%' }} placeholder="465" />
+              </Form.Item>
+              <Form.Item label={t('settings.smtp_user')} name={['smtp', 'username']} rules={[{ required: true }]}>
+                <Input placeholder="user@gmail.com" />
+              </Form.Item>
+              <Form.Item label={t('settings.smtp_pass')} name={['smtp', 'password']}>
+                <Input.Password placeholder="Leave empty to keep current password" />
+              </Form.Item>
+              <Form.Item label={t('settings.from_address')} name={['smtp', 'from_address']} rules={[{ required: true }]}>
+                <Input placeholder="noreply@tokensbyte.com" />
+              </Form.Item>
+              <Form.Item label={t('settings.from_name')} name={['smtp', 'from_name']} rules={[{ required: true }]}>
+                <Input placeholder="TokensByte" />
+              </Form.Item>
+            </div>
+          ) : null;
+        }}
+      </Form.Item>
+
+      <Form.Item 
+        label={t('settings.enable_password_recovery')} 
+        name="enable_password_recovery" 
+        valuePropName="checked"
+      >
+        <Switch />
+      </Form.Item>
+    </div>
+  );
 
   return (
     <Card 
@@ -140,53 +240,15 @@ const Settings: React.FC = () => {
         }}
       >
         {tab === 'basic' && (
-          <div style={{ maxWidth: 600 }}>
-            <Form.Item label={t('settings.site_name')} name="name" rules={[{ required: true }]}>
-              <Input placeholder="TokensByte" />
-            </Form.Item>
-            <Form.Item 
-              label="站点 Logo" 
-              name="logo" 
-              extra={<Text type="secondary">支持图片链接，建议尺寸 32x32 或 40x40，留空则仅显示站点名称文字</Text>}
-            >
-              <Input placeholder="https://example.com/logo.png" />
-            </Form.Item>
-            <Form.Item label={t('settings.site_title')} name="title" rules={[{ required: true }]}>
-              <Input placeholder="TokensByte - LLM API Gateway" />
-            </Form.Item>
-            <Form.Item 
-              label="站点图标 (Favicon)" 
-              name="favicon" 
-              extra={<Text type="secondary">支持 .ico / .png / .svg 格式的图片链接，留空则使用默认图标</Text>}
-            >
-              <Input placeholder="https://example.com/favicon.ico" />
-            </Form.Item>
-            <Form.Item label={t('settings.site_keywords')} name="keywords">
-              <Input.TextArea rows={2} placeholder="LLM, API, Gateway" />
-            </Form.Item>
-            <Form.Item label={t('settings.site_description')} name="description">
-              <Input.TextArea rows={4} placeholder="Description..." />
-            </Form.Item>
-          </div>
-        )}
-
-        {tab === 'login' && (
-          <div style={{ maxWidth: 600 }}>
-            <Form.Item 
-              label="登录页标题" 
-              name="login_title" 
-              extra={<Text type="secondary">显示在登录页面的主标题位置，留空则使用站点名称</Text>}
-            >
-              <Input placeholder="例如：TokensByte" />
-            </Form.Item>
-            <Form.Item 
-              label="登录页副标题" 
-              name="login_subtitle" 
-              extra={<Text type="secondary">显示在登录页标题下方的描述文字，留空则使用默认文字</Text>}
-            >
-              <Input placeholder="例如：Next-gen LLM API Gateway" />
-            </Form.Item>
-          </div>
+          <Tabs
+            activeKey={basicSubTab}
+            onChange={setBasicSubTab}
+            items={[
+              { key: 'site', label: '站点信息', children: siteSettingsContent },
+              { key: 'login', label: '登录设置', children: loginSettingsContent },
+              { key: 'registration', label: '注册设置', children: registrationSettingsContent },
+            ]}
+          />
         )}
 
         {tab === 'currency' && (
@@ -214,62 +276,6 @@ const Settings: React.FC = () => {
                   </Form.Item>
                 );
               }}
-            </Form.Item>
-          </div>
-        )}
-
-        {tab === 'registration' && (
-          <div style={{ maxWidth: 600 }}>
-            <Form.Item 
-              label={t('settings.enable_username_reg')} 
-              name="enable_username_registration" 
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
-            <Form.Item 
-              label={t('settings.enable_email_reg')} 
-              name="enable_email_registration" 
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
-
-            <Form.Item noStyle dependencies={['enable_email_registration']}>
-              {({ getFieldValue }) => {
-                const enableEmailReg = getFieldValue('enable_email_registration');
-                return enableEmailReg ? (
-                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', marginBottom: '24px' }}>
-                    <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 16 }}>{t('settings.smtp_title')}</Typography.Title>
-                    <Form.Item label={t('settings.smtp_host')} name={['smtp', 'host']} rules={[{ required: true }]}>
-                      <Input placeholder="smtp.gmail.com" />
-                    </Form.Item>
-                    <Form.Item label={t('settings.smtp_port')} name={['smtp', 'port']} rules={[{ required: true }]}>
-                      <InputNumber style={{ width: '100%' }} placeholder="465" />
-                    </Form.Item>
-                    <Form.Item label={t('settings.smtp_user')} name={['smtp', 'username']} rules={[{ required: true }]}>
-                      <Input placeholder="user@gmail.com" />
-                    </Form.Item>
-                    <Form.Item label={t('settings.smtp_pass')} name={['smtp', 'password']}>
-                      <Input.Password placeholder="Leave empty to keep current password" />
-                    </Form.Item>
-                    <Form.Item label={t('settings.from_address')} name={['smtp', 'from_address']} rules={[{ required: true }]}>
-                      <Input placeholder="noreply@tokensbyte.com" />
-                    </Form.Item>
-                    <Form.Item label={t('settings.from_name')} name={['smtp', 'from_name']} rules={[{ required: true }]}>
-                      <Input placeholder="TokensByte" />
-                    </Form.Item>
-                  </div>
-                ) : null;
-              }}
-            </Form.Item>
-
-            <Form.Item 
-              label={t('settings.enable_password_recovery')} 
-              name="enable_password_recovery" 
-              valuePropName="checked"
-            >
-              <Switch />
             </Form.Item>
           </div>
         )}
