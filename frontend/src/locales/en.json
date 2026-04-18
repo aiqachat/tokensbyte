@@ -239,7 +239,8 @@
     "bound": "Bound",
     "not_bound": "Not Bound",
     "not_enabled": "Not Enabled",
-    "edit_success": "Modified Successfully"
+    "edit_success": "Modified Successfully",
+    "not_set": "Not Set"
   },
   "wallet": {
     "title": "My Wallet",
@@ -269,6 +270,8 @@
     "recharge_type_manual": "Manual Adjustment",
     "recharge_type_redemption": "Redemption Code",
     "recharge_type_commission": "Invite Commission",
+    "recharge_type_alipay": "Alipay",
+    "recharge_type_wechat": "WeChat Pay",
     "recharge_type_other": "Other"
   },
   "marketing": {

@@ -93,33 +93,54 @@ pub struct UsageTokens {
 
 pub fn parse_usage(response: &str) -> UsageTokens {
     let mut u = UsageTokens { prompt: 0, completion: 0, total: 0 };
-    let v: Value = match serde_json::from_str(response) {
-        Ok(v) => v,
-        Err(_) => return u,
+    
+    let mut extract_from_value = |v: &Value| -> bool {
+        let mut found = false;
+        // 1. OpenAI / Volcengine Chat / Image (Seedream)
+        if let Some(usage) = v.get("usage") {
+            u.prompt = usage.get("prompt_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+            u.completion = usage.get("completion_tokens")
+                .or_else(|| usage.get("output_tokens"))
+                .and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+            u.total = usage.get("total_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+            found = true;
+        }
+        // 2. Google Gemini
+        if let Some(usage) = v.get("usageMetadata") {
+            u.prompt = usage.get("promptTokenCount").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+            u.completion = usage.get("candidatesTokenCount").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+            u.total = usage.get("totalTokenCount").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+            found = true;
+        }
+        // 3. Volcengine Video (final_result.usage)
+        if let Some(fr) = v.get("final_result") {
+            if let Some(usage) = fr.get("usage") {
+                 u.prompt = usage.get("prompt_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                 u.completion = usage.get("completion_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                 u.total = usage.get("total_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                 found = true;
+            }
+        }
+        found
     };
-    
-    // 1. OpenAI / Volcengine Chat / Image (Seedream)
-    if let Some(usage) = v.get("usage") {
-        u.prompt = usage.get("prompt_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        u.completion = usage.get("completion_tokens")
-            .or_else(|| usage.get("output_tokens"))
-            .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        u.total = usage.get("total_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-    }
-    
-    // 2. Google Gemini
-    if let Some(usage) = v.get("usageMetadata") {
-        u.prompt = usage.get("promptTokenCount").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        u.completion = usage.get("candidatesTokenCount").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        u.total = usage.get("totalTokenCount").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-    }
-    
-    // 3. Volcengine Video (final_result.usage)
-    if let Some(fr) = v.get("final_result") {
-        if let Some(usage) = fr.get("usage") {
-             u.prompt = usage.get("prompt_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-             u.completion = usage.get("completion_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-             u.total = usage.get("total_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+
+    if let Ok(v) = serde_json::from_str::<Value>(response) {
+        extract_from_value(&v);
+    } else {
+        // SSE流的情况下按行解析（兼容有无 data: 前缀的情况）
+        for line in response.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.ends_with("[DONE]") { continue; }
+            
+            let json_str = if line.starts_with("data: ") {
+                &line[6..]
+            } else {
+                line
+            };
+            
+            if let Ok(v) = serde_json::from_str::<Value>(json_str) {
+                extract_from_value(&v);
+            }
         }
     }
     
@@ -128,4 +149,35 @@ pub fn parse_usage(response: &str) -> UsageTokens {
     }
     
     u
+}
+
+pub fn extract_usage_json_string(response: &str) -> Option<String> {
+    if let Ok(v) = serde_json::from_str::<Value>(response) {
+        if v.get("usage").is_some() || v.get("usageMetadata").is_some() || v.get("final_result").and_then(|fr| fr.get("usage")).is_some() {
+            return Some(response.to_string());
+        }
+    } else {
+        // SSE 模式下，寻找最后一条包含 usage 字段的 chunk
+        let mut last_usage_chunk = None;
+        for line in response.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.ends_with("[DONE]") { continue; }
+
+            let json_str = if line.starts_with("data: ") {
+                &line[6..]
+            } else {
+                line
+            };
+            
+            if let Ok(v) = serde_json::from_str::<Value>(json_str) {
+                if v.get("usage").is_some() || v.get("usageMetadata").is_some() {
+                    last_usage_chunk = Some(v.to_string());
+                }
+            }
+        }
+        if last_usage_chunk.is_some() {
+            return last_usage_chunk;
+        }
+    }
+    None
 }

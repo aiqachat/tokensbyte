@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Modal, Radio, Button, Typography, Space, Row, Col, QRCode, message, Spin, Result } from 'antd';
+import { Modal, Button, Typography, Space, Row, Col, QRCode, message, Spin, Result, InputNumber } from 'antd';
 import { WalletOutlined, AlipayCircleOutlined, WechatOutlined, SafetyCertificateOutlined, LockOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 
@@ -14,21 +14,23 @@ interface RechargeModalProps {
 const AMOUNTS = [10, 50, 100, 200, 500, 1000];
 
 const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSuccess }) => {
-  const [selectedAmount, setSelectedAmount] = useState<number>(50);
+  const [selectedAmount, setSelectedAmount] = useState<number | null>(50);
+  const [customAmount, setCustomAmount] = useState<number | null>(null);
+  const [isCustom, setIsCustom] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'wechat' | 'alipay'>('alipay');
   const [loading, setLoading] = useState(false);
   
-  // Settings
   const [wechatEnabled, setWechatEnabled] = useState(false);
   const [alipayEnabled, setAlipayEnabled] = useState(false);
   const [fetchingSettings, setFetchingSettings] = useState(true);
 
-  // Pay state
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const [outTradeNo, setOutTradeNo] = useState<string>('');
   const [payStatus, setPayStatus] = useState<'idle' | 'paying' | 'success'>('idle');
   
   const timerRef = useRef<any>(null);
+
+  const finalAmount = isCustom ? (customAmount || 0) : (selectedAmount || 0);
 
   useEffect(() => {
     if (visible) {
@@ -44,6 +46,9 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
     setQrCodeUrl('');
     setOutTradeNo('');
     setPayStatus('idle');
+    setSelectedAmount(50);
+    setCustomAmount(null);
+    setIsCustom(false);
   };
 
   const clearTimer = () => {
@@ -84,25 +89,23 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           clearTimer();
           setPayStatus('success');
           message.success('充值成功！');
-          setTimeout(() => {
-            onSuccess();
-          }, 2000);
+          setTimeout(() => { onSuccess(); }, 2000);
         }
       } catch (err) {
         console.error('Polling error', err);
       }
-    }, 3000); // 3 seconds interval
+    }, 3000);
   };
 
   const handleCreateOrder = async () => {
-    if (selectedAmount <= 0) {
-      message.error('请选择充值金额');
+    if (finalAmount < 0.01) {
+      message.error('充值金额不能小于 0.01 元');
       return;
     }
     setLoading(true);
     try {
       const res = await (request.post('/finance/pay/create', {
-        amount: selectedAmount,
+        amount: finalAmount,
         payment_method: paymentMethod
       }) as any);
       
@@ -110,18 +113,27 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
       setPayStatus('paying');
       
       if (paymentMethod === 'alipay') {
-        // Redirect to Alipay
         window.location.href = res.payment_url;
       } else if (paymentMethod === 'wechat') {
-        // Show QR Code directly
         setQrCodeUrl(res.payment_url);
         startPolling(res.out_trade_no);
       }
     } catch (err: any) {
-      message.error(err.response?.data?.error || err.message || '获取支付二维码失败');
+      message.error(err.response?.data?.error || err.message || '获取支付信息失败');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePresetClick = (amt: number) => {
+    setSelectedAmount(amt);
+    setIsCustom(false);
+    setCustomAmount(null);
+  };
+
+  const handleCustomFocus = () => {
+    setIsCustom(true);
+    setSelectedAmount(null);
   };
 
   const modalStyles = {
@@ -139,7 +151,6 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
     );
   }
 
-  // Handle No Payment Method
   if (!wechatEnabled && !alipayEnabled) {
     return (
       <Modal open={visible} footer={null} onCancel={onCancel} centered styles={modalStyles}>
@@ -191,25 +202,17 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           title="支付成功！"
           subTitle="您的钱包余额已经更新"
           extra={[
-            <Button type="primary" key="console" onClick={onSuccess} style={{ borderRadius: 8 }}>
-              完成
-            </Button>
+            <Button type="primary" key="done" onClick={onSuccess} style={{ borderRadius: 8 }}>完成</Button>
           ]}
         />
       ) : payStatus === 'paying' && paymentMethod === 'wechat' ? (
         <div style={{ textAlign: 'center' }}>
           <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>请使用微信扫一扫支付</Text>
-          <div style={{ 
-            padding: 16, 
-            background: '#fff', 
-            borderRadius: 12, 
-            display: 'inline-block', 
-            boxShadow: '0 4px 20px rgba(0,0,0,0.3)' 
-          }}>
-            <QRCode value={qrCodeUrl} size={200} />
+          <div style={{ padding: 16, background: '#fff', borderRadius: 12, display: 'inline-block', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
+            <QRCode value={qrCodeUrl} size={200} color="#000000" />
           </div>
           <div style={{ marginTop: 24 }}>
-            <Title level={3} style={{ color: '#ff4d4f', margin: 0 }}>¥ {selectedAmount.toFixed(2)}</Title>
+            <Title level={3} style={{ color: '#ff4d4f', margin: 0 }}>¥ {finalAmount.toFixed(2)}</Title>
             <Text type="secondary" style={{ fontSize: 13 }}>订单号: {outTradeNo}</Text>
           </div>
           <Button style={{ marginTop: 24, borderRadius: 8 }} onClick={resetState}>返回修改</Button>
@@ -221,23 +224,23 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           <Row gutter={[10, 10]}>
             {AMOUNTS.map(amt => (
               <Col span={8} key={amt}>
-                <div 
-                  onClick={() => setSelectedAmount(amt)}
+                <div
+                  onClick={() => handlePresetClick(amt)}
                   style={{
-                    border: `2px solid ${selectedAmount === amt ? '#1677ff' : '#303030'}`,
+                    border: `2px solid ${!isCustom && selectedAmount === amt ? '#1677ff' : '#303030'}`,
                     borderRadius: 10,
                     padding: '14px 0',
                     textAlign: 'center',
                     cursor: 'pointer',
-                    background: selectedAmount === amt 
-                      ? 'rgba(22, 119, 255, 0.12)' 
+                    background: !isCustom && selectedAmount === amt
+                      ? 'rgba(22, 119, 255, 0.12)'
                       : 'rgba(255, 255, 255, 0.04)',
                     transition: 'all 0.25s ease',
                   }}
                 >
-                  <Text strong style={{ 
-                    color: selectedAmount === amt ? '#1677ff' : 'rgba(255,255,255,0.85)', 
-                    fontSize: 20 
+                  <Text strong style={{
+                    color: !isCustom && selectedAmount === amt ? '#1677ff' : 'rgba(255,255,255,0.85)',
+                    fontSize: 20,
                   }}>
                     {amt}
                   </Text>
@@ -245,6 +248,37 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
               </Col>
             ))}
           </Row>
+
+          {/* Custom Amount Input */}
+          <div
+            onClick={handleCustomFocus}
+            style={{
+              marginTop: 12,
+              border: `2px solid ${isCustom ? '#1677ff' : '#303030'}`,
+              borderRadius: 10,
+              padding: '8px 16px',
+              background: isCustom ? 'rgba(22, 119, 255, 0.12)' : 'rgba(255, 255, 255, 0.04)',
+              transition: 'all 0.25s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <Text style={{ color: 'rgba(255,255,255,0.65)', whiteSpace: 'nowrap' }}>自定义</Text>
+            <InputNumber
+              min={0.01}
+              max={50000}
+              precision={2}
+              placeholder="输入金额"
+              value={customAmount}
+              onChange={(val) => { setCustomAmount(val); setIsCustom(true); setSelectedAmount(null); }}
+              onFocus={handleCustomFocus}
+              controls={false}
+              variant="borderless"
+              style={{ flex: 1, background: 'transparent' }}
+            />
+            <Text style={{ color: 'rgba(255,255,255,0.45)' }}>元</Text>
+          </div>
 
           {/* Payment Method */}
           <Text strong style={{ display: 'block', marginTop: 24, marginBottom: 12, color: 'rgba(255,255,255,0.85)' }}>支付方式</Text>
@@ -254,17 +288,10 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
                 <div
                   onClick={() => setPaymentMethod('alipay')}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    height: 52,
-                    borderRadius: 10,
-                    cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    height: 52, borderRadius: 10, cursor: 'pointer',
                     border: `2px solid ${paymentMethod === 'alipay' ? '#1677ff' : '#303030'}`,
-                    background: paymentMethod === 'alipay' 
-                      ? 'rgba(22, 119, 255, 0.12)' 
-                      : 'rgba(255, 255, 255, 0.04)',
+                    background: paymentMethod === 'alipay' ? 'rgba(22, 119, 255, 0.12)' : 'rgba(255, 255, 255, 0.04)',
                     transition: 'all 0.25s ease',
                   }}
                 >
@@ -278,17 +305,10 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
                 <div
                   onClick={() => setPaymentMethod('wechat')}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    height: 52,
-                    borderRadius: 10,
-                    cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    height: 52, borderRadius: 10, cursor: 'pointer',
                     border: `2px solid ${paymentMethod === 'wechat' ? '#07c160' : '#303030'}`,
-                    background: paymentMethod === 'wechat' 
-                      ? 'rgba(7, 193, 96, 0.12)' 
-                      : 'rgba(255, 255, 255, 0.04)',
+                    background: paymentMethod === 'wechat' ? 'rgba(7, 193, 96, 0.12)' : 'rgba(255, 255, 255, 0.04)',
                     transition: 'all 0.25s ease',
                   }}
                 >
@@ -299,41 +319,33 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
             )}
           </Row>
 
-          {/* Summary + Pay */}
+          {/* Summary */}
           <div style={{
-            marginTop: 24,
-            padding: '16px 20px',
-            background: 'rgba(255,255,255,0.03)',
-            borderRadius: 10,
-            border: '1px solid #252525',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            marginTop: 24, padding: '16px 20px',
+            background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid #252525',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
             <Text type="secondary" style={{ fontSize: 13 }}>应付金额</Text>
-            <Title level={3} style={{ margin: 0, color: '#ff4d4f' }}>¥ {selectedAmount.toFixed(2)}</Title>
+            <Title level={3} style={{ margin: 0, color: '#ff4d4f' }}>¥ {finalAmount.toFixed(2)}</Title>
           </div>
 
-          <Button 
-            type="primary" 
-            block 
-            size="large" 
-            style={{ 
-              marginTop: 20, 
-              borderRadius: 10, 
-              height: 50, 
-              fontSize: 16,
-              fontWeight: 600,
-              background: paymentMethod === 'alipay' 
-                ? 'linear-gradient(135deg, #1677ff, #003eb3)' 
+          <Button
+            type="primary"
+            block
+            size="large"
+            style={{
+              marginTop: 20, borderRadius: 10, height: 50, fontSize: 16, fontWeight: 600,
+              background: paymentMethod === 'alipay'
+                ? 'linear-gradient(135deg, #1677ff, #003eb3)'
                 : 'linear-gradient(135deg, #07c160, #059048)',
               border: 'none',
-              boxShadow: paymentMethod === 'alipay' 
-                ? '0 4px 16px rgba(22, 119, 255, 0.35)' 
+              boxShadow: paymentMethod === 'alipay'
+                ? '0 4px 16px rgba(22, 119, 255, 0.35)'
                 : '0 4px 16px rgba(7, 193, 96, 0.35)',
             }}
             loading={loading}
             onClick={handleCreateOrder}
+            disabled={finalAmount < 0.01}
           >
             {paymentMethod === 'alipay' ? (
               <Space><AlipayCircleOutlined />去支付宝支付</Space>
@@ -343,14 +355,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           </Button>
 
           {/* Trust badge */}
-          <div style={{ 
-            textAlign: 'center', 
-            marginTop: 16, 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            gap: 6 
-          }}>
+          <div style={{ textAlign: 'center', marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
             <SafetyCertificateOutlined style={{ fontSize: 13, color: '#52c41a' }} />
             <Text type="secondary" style={{ fontSize: 11 }}>资金安全保障 · 充值后即时到账 · 正规支付渠道</Text>
           </div>

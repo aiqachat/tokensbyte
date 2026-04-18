@@ -92,6 +92,7 @@ impl WechatClient {
             .header("Authorization", auth_header)
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
+            .header("User-Agent", "TokensByte/1.0")
             .body(body_str)
             .send()
             .await?;

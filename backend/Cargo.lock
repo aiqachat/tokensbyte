@@ -3245,6 +3245,7 @@ dependencies = [
  "dashmap",
  "dotenvy",
  "eventsource-stream",
+ "form_urlencoded",
  "futures",
  "governor",
  "hex",

@@ -143,29 +143,69 @@ pub async fn record_and_bill_with_prededuction(
     billing_detail: Option<String>,
 ) {
     let mut enable_log: i32 = 0;
-    if let Ok(Some(m)) = sqlx::query_as::<_, crate::models::Model>(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
-        .bind(model_name).fetch_optional(&state.db.pool).await 
+    let mut category = String::new();
+    
+    // 查询模型同时关联 model_types 获取 category
+    if let Ok(Some(row)) = sqlx::query(
+        &state.db.format_query("SELECT m.enable_log_content, t.name as category_name 
+         FROM models m 
+         LEFT JOIN model_types t ON m.type_id = t.id 
+         WHERE m.model_id = ? AND m.is_active = 1 
+         LIMIT 1")
+    )
+    .bind(model_name)
+    .fetch_optional(&state.db.pool)
+    .await 
     {
-        enable_log = m.enable_log_content;
+        use sqlx::Row;
+        enable_log = row.try_get("enable_log_content").unwrap_or(0);
+        category = row.try_get("category_name").unwrap_or_default();
     }
 
     let filter_content = |content: Option<String>, respect_log_flag: bool| -> Option<String> {
         let text = content?;
         if respect_log_flag && enable_log == 0 { return None; }
-        // 1. 标准 data URI: data:image/jpeg;base64,...
-        let re1 = Regex::new(r"data:image/[^;]+;base64,[A-Za-z0-9+/=\s]{100,}").unwrap();
-        let text = re1.replace_all(&text, "\"base64图片\"").to_string();
-        // 2. JSON 转义 data URI: data:image\\/jpeg;base64,...
-        let re2 = Regex::new(r"data:image\\/[^;]+;base64,[A-Za-z0-9+/=\\s]{100,}").unwrap();
-        let text = re2.replace_all(&text, "\"base64图片\"").to_string();
+        // 1. 标准 data URI (兼容各类 data:协议 长尾内容)
+        let re1 = Regex::new(r"data:[^;]+;base64,[A-Za-z0-9+/=\s]{100,}").unwrap();
+        let text = re1.replace_all(&text, "\"base64数据\"").to_string();
+        // 2. JSON 转义 data URI (兼容反斜杠)
+        let re2 = Regex::new(r"data:[^;]+;base64,[A-Za-z0-9+/=\\s]{100,}").unwrap();
+        let text = re2.replace_all(&text, "\"base64数据\"").to_string();
         // 3. 纯 base64 长串 (>200 字符的连续 base64)
         let re3 = Regex::new(r#""[A-Za-z0-9+/]{200,}={0,2}""#).unwrap();
-        Some(re3.replace_all(&text, "\"base64图片\"").to_string())
+        Some(re3.replace_all(&text, "\"base64数据\"").to_string())
     };
 
     let req_content = filter_content(request_content, true);       // 受上下文记录开关控制
-    let resp_content = filter_content(response_content, false);    // 始终保存（计费依赖 token 用量）
     let upstream_req = filter_content(upstream_req_content, true); // 受上下文记录开关控制
+    
+    // 灵活处理 response_content 的存储
+    let resp_content = if enable_log == 0 {
+        if category == "视频" || category == "图片" {
+            // 视频和图片模型：结果始终保留（需要提取生成的资源URL等）
+            filter_content(response_content, false)
+        } else {
+            if let Some(ref text) = response_content {
+                let usage_json = crate::relay::usage_extractor::extract_usage_json_string(text);
+                if usage_json.is_some() {
+                    // 只要成功提取出 token 的 usage JSON，则为节省日志空间仅存 usage
+                    usage_json
+                } else if category == "聊天" || category == "文本" {
+                    // 纯文本语言模型：如果既没查到usage又关闭了上下文，避免存入大文本影响性能，做极简化占位
+                    Some("[]".to_string())
+                } else {
+                    // 语音及未来新增的其他异构模型类型：
+                    // 如果没有找到 usage 数据提取格式，基于严谨性，兜底保留经过 Base64 等脱敏后的完整请求包！
+                    filter_content(Some(text.clone()), false)
+                }
+            } else {
+                None
+            }
+        }
+    } else {
+        // 如果开启了上下文，始终保存处理后的内容
+        filter_content(response_content, false)
+    };
 
     let mut channel_info: Option<(String, String, String)> = None;
     if let Ok(Some(ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))

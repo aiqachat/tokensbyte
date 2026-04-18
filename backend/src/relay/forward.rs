@@ -208,6 +208,24 @@ pub fn transform_request_body(
         "volcengine_chat" | "volcengine" => {
             let mut fwd = body.clone();
             fwd["model"] = serde_json::json!(model);
+            
+            // 优化火山引擎流式返回：如果 stream 为 true，设置 stream_options.include_usage = true
+            // 以便在流模式下也能获取到 tokens 使用量进行计费
+            if let Some(stream_val) = fwd.get("stream") {
+                if stream_val.as_bool().unwrap_or(false) {
+                    if let Some(obj) = fwd.as_object_mut() {
+                        if let Some(options) = obj.get_mut("stream_options").and_then(|v| v.as_object_mut()) {
+                            options.insert("include_usage".to_string(), serde_json::json!(true));
+                        } else {
+                            obj.insert(
+                                "stream_options".to_string(), 
+                                serde_json::json!({ "include_usage": true })
+                            );
+                        }
+                    }
+                }
+            }
+            
             fwd
         }
 
@@ -218,7 +236,7 @@ pub fn transform_request_body(
                 .unwrap_or("Generate an image");
             serde_json::json!({
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}
+                "generationConfig": {"responseModalities": ["IMAGE"]}
             })
         }
 
