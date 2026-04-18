@@ -208,8 +208,9 @@ const PluginConfig: React.FC = () => {
       await request.post(`/plugins/${name}/moderation-config`, values);
       message.success('审核配置已保存');
     } catch (error: any) {
-      if (error?.errorFields) return;
-      message.error('保存失败');
+      if (error?.errorFields) return; // 表单验证失败
+      const rawMsg = error?.response?.data?.error?.message || '';
+      message.error(rawMsg || '保存审核配置失败');
     } finally {
       setSavingModeration(false);
     }
@@ -524,6 +525,7 @@ const PluginConfig: React.FC = () => {
             <Form.Item
               label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Secret Key</Text>}
               name="volc_secret_key"
+              rules={[{ required: !moderationConfig?.is_configured, message: '请输入 Secret Key' }]}
               extra={moderationConfig?.volc_secret_key_masked ? <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>当前: {moderationConfig.volc_secret_key_masked}（留空则不修改）</Text> : undefined}
             >
               <Input.Password placeholder="火山引擎 Secret Key" style={inputStyle} />
