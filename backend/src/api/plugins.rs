@@ -23,6 +23,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/{name}/storage-config", get(get_storage_config).post(save_storage_config))
         .route("/{name}/moderation-config", get(get_moderation_config).post(save_moderation_config))
         .route("/{name}/test-connection", post(test_tos_connection))
+        .route("/{name}/api-logs", get(get_plugin_api_logs))
 }
 
 /// 管理员：获取所有插件列表
@@ -356,8 +357,70 @@ pub async fn get_volc_config(state: &AppState, plugin_name: &str) -> Option<crat
     crate::services::volcengine::VolcConfig::from_map(&configs)
 }
 
-/// 公开辅助：加载插件的 TOS 配置（供 assets 模块调用）
 pub async fn get_tos_config(state: &AppState, plugin_name: &str) -> Option<TosConfig> {
     let configs = load_plugin_configs(state, plugin_name).await.ok()?;
     TosConfig::from_map(&configs)
 }
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+pub struct PluginApiLog {
+    pub id: i32,
+    pub user_id: String,
+    pub plugin_name: String,
+    pub api_endpoint: String,
+    pub request_payload: Option<String>,
+    pub response_payload: Option<String>,
+    pub status_code: Option<i32>,
+    pub created_at: String,
+}
+
+#[derive(serde::Deserialize)]
+pub struct LogQuery {
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+}
+
+/// 管理员：获取插件 API 日志
+async fn get_plugin_api_logs(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<LogQuery>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .unwrap_or_default();
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let page = query.page.unwrap_or(1).max(1);
+    let page_size = query.page_size.unwrap_or(20).clamp(1, 100);
+    let offset = (page - 1) * page_size;
+
+    let total: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COUNT(*) FROM plugin_api_logs WHERE plugin_name = ?"
+    ))
+    .bind(&name)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    let logs: Vec<PluginApiLog> = sqlx::query_as(&state.db.format_query(
+        "SELECT * FROM plugin_api_logs WHERE plugin_name = ? ORDER BY id DESC LIMIT ? OFFSET ?"
+    ))
+    .bind(&name)
+    .bind(page_size)
+    .bind(offset)
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    Ok(Json(json!({
+        "logs": logs,
+        "total": total,
+        "page": page,
+        "page_size": page_size
+    })))
+}
+

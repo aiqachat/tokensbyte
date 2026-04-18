@@ -29,6 +29,7 @@ pub struct PluginAsset {
     pub asset_id: Option<String>,
     pub remark: Option<String>,
     pub sort_order: Option<i64>,
+    pub group_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -37,4 +38,15 @@ pub struct PluginAsset {
 pub struct AssetAuditRequest {
     pub status: String,
     pub reject_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct PluginAssetGroup {
+    pub id: i64,
+    pub user_id: String,
+    pub group_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }

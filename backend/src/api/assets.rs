@@ -32,6 +32,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/user/upload-virtual-portrait", post(upload_virtual_portrait))
         .route("/user/submit-review/{id}", post(submit_virtual_portrait_review))
         .route("/user/asset-status/{id}", get(check_asset_status))
+        .route("/user/groups", get(user_list_groups).post(user_create_group))
         .layer(DefaultBodyLimit::disable())
 }
 
@@ -804,7 +805,7 @@ pub struct CompleteVerifyRequest {
 /// 用户：发起真人核验 (H5)
 async fn init_real_person_verify(
     State(state): State<Arc<AppState>>,
-    axum::extract::Extension(_claims): axum::extract::Extension<crate::auth::Claims>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
     Json(payload): Json<serde_json::Value>,
 ) -> AppResult<Json<serde_json::Value>> {
     let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
@@ -814,7 +815,8 @@ async fn init_real_person_verify(
         .and_then(|v| v.as_str())
         .ok_or_else(|| AppError::BadRequest("缺少 callback_url".to_string()))?;
 
-    let client = crate::services::volcengine::VolcClient::new(volc_config.clone());
+    let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
+        .with_logger(state.db.clone(), claims.sub.clone());
     
     let req = crate::services::volcengine::CreateVisualValidateSessionRequest {
         app_id: volc_config.app_id.clone(),
@@ -846,7 +848,8 @@ async fn complete_real_person_verify(
     let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
         .ok_or_else(|| AppError::BadRequest("实人认证功能未配置".to_string()))?;
 
-    let client = crate::services::volcengine::VolcClient::new(volc_config.clone());
+    let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
+        .with_logger(state.db.clone(), claims.sub.clone());
 
     // 1. 获取核验结果
     let res: crate::services::volcengine::GetVisualValidateResultResponse = client.call_api(
@@ -899,6 +902,7 @@ async fn upload_virtual_portrait(
     let mut file_data: Option<axum::body::Bytes> = None;
     let mut file_name = String::new();
     let mut mime_type = String::new();
+    let mut group_id = String::new();
 
     while let Some(field) = multipart.next_field().await.map_err(|e| AppError::BadRequest(e.to_string()))? {
         let name = field.name().unwrap_or_default().to_string();
@@ -906,7 +910,13 @@ async fn upload_virtual_portrait(
             file_name = field.file_name().unwrap_or("virtual_portrait.jpg").to_string();
             mime_type = field.content_type().unwrap_or("image/jpeg").to_string();
             file_data = Some(field.bytes().await.map_err(|e| AppError::BadRequest(e.to_string()))?);
+        } else if name == "group_id" {
+            group_id = field.text().await.unwrap_or_default();
         }
+    }
+
+    if group_id.is_empty() {
+        return Err(AppError::BadRequest("未指定素材组合 (group_id)".to_string()));
     }
 
     let data = file_data.ok_or_else(|| AppError::BadRequest("未检测到文件".to_string()))?;
@@ -939,8 +949,8 @@ async fn upload_virtual_portrait(
 
     // 写入数据库，状态为 uploaded（待提交审核）
     let asset: PluginAsset = sqlx::query_as(&state.db.format_query(
-        "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, mime_type, size, category)
-         VALUES (?, 'image', 'user', 'uploaded', ?, ?, ?, ?, '虚拟人像')
+        "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, mime_type, size, category, group_id)
+         VALUES (?, 'image', 'user', 'uploaded', ?, ?, ?, ?, '虚拟人像', ?)
          RETURNING *"
     ))
     .bind(&claims.sub)
@@ -948,6 +958,7 @@ async fn upload_virtual_portrait(
     .bind(&file_url)
     .bind(&mime_type)
     .bind(size)
+    .bind(&group_id)
     .fetch_one(&state.db.pool).await?;
 
     Ok(Json(json!({ "message": "上传成功，请提交审核", "asset": asset })))
@@ -996,24 +1007,11 @@ async fn submit_virtual_portrait_review(
         format!("https://{}.{}/{}", tos_config.bucket, tos_config.endpoint, object_key)
     };
 
-    let client = crate::services::volcengine::VolcClient::new(volc_config.clone());
+    let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
+        .with_logger(state.db.clone(), claims.sub.clone());
 
-    // 1. 检查用户是否已有 AssetGroup，如果没有则创建
-    let group_config_key = format!("volc_asset_group_{}", claims.sub);
-    let existing_group: Option<String> = sqlx::query_scalar(&state.db.format_query(
-        "SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?"
-    ))
-    .bind(&group_config_key)
-    .fetch_optional(&state.db.pool)
-    .await?;
-
-    let group_id = if let Some(gid) = existing_group {
-        if !gid.is_empty() { gid } else {
-            create_user_asset_group(&state, &client, &claims.sub, &user.uid, &group_config_key).await?
-        }
-    } else {
-        create_user_asset_group(&state, &client, &claims.sub, &user.uid, &group_config_key).await?
-    };
+    // 1. 获取并检查 group_id
+    let group_id = asset.group_id.clone().ok_or_else(|| AppError::BadRequest("该素材未绑定任何组合，无法提交".to_string()))?;
 
     // 2. 调用 CreateAsset
     let create_req = crate::services::volcengine::CreateAssetRequest {
@@ -1041,47 +1039,77 @@ async fn submit_virtual_portrait_review(
     Ok(Json(json!({ "message": "已提交审核", "asset_id": volc_asset_id })))
 }
 
-/// 辅助：为用户创建 AssetGroup
-async fn create_user_asset_group(
-    state: &AppState,
-    client: &crate::services::volcengine::VolcClient,
-    user_id: &str,
-    user_uid: &str,
-    config_key: &str,
-) -> Result<String, AppError> {
+#[derive(Deserialize)]
+pub struct CreateGroupRequest {
+    pub name: String,
+    pub description: String,
+}
+
+/// 用户：获取自己的素材组合列表
+async fn user_list_groups(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let groups: Vec<crate::models::PluginAssetGroup> = sqlx::query_as(&state.db.format_query(
+        "SELECT * FROM plugin_asset_groups WHERE user_id = ? ORDER BY id DESC"
+    ))
+    .bind(&claims.sub)
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    Ok(Json(json!({ "groups": groups })))
+}
+
+/// 用户：新建素材组合 (调用方舟API)
+async fn user_create_group(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    Json(payload): Json<CreateGroupRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let count: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COUNT(*) FROM plugin_asset_groups WHERE user_id = ?"
+    ))
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
+    let quota = 30; // 默认 30
+    if count >= quota {
+        return Err(AppError::BadRequest(format!("最多只能创建 {} 个素材组合", quota)));
+    }
+
+    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("API配置未完成".to_string()))?;
+    let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
+        .with_logger(state.db.clone(), claims.sub.clone());
+
     let create_group_req = crate::services::volcengine::CreateAssetGroupRequest {
-        name: format!("user_{}", user_uid),
-        description: format!("用户 {} 的虚拟人像素材组合", user_uid),
+        name: payload.name.clone(),
+        description: payload.description.clone(),
         group_type: Some("AIGC".to_string()),
         project_name: Some("default".to_string()),
     };
 
     let group_res: crate::services::volcengine::CreateAssetGroupResponse = client.call_api(
         "ark", "cn-beijing", "CreateAssetGroup", "2024-01-01", create_group_req
-    ).await.map_err(|e| AppError::Internal(format!("创建素材组合失败: {}", e)))?;
+    ).await.map_err(|e| AppError::Internal(format!("创建方舟组合失败: {}", e)))?;
 
     let group_id = group_res.id;
 
-    // 存储到 plugin_configs
-    let result = sqlx::query(&state.db.format_query(
-        "UPDATE plugin_configs SET config_value = ?, updated_at = CURRENT_TIMESTAMP WHERE plugin_name = 'asset_manager' AND config_key = ?"
+    let group: crate::models::PluginAssetGroup = sqlx::query_as(&state.db.format_query(
+        "INSERT INTO plugin_asset_groups (user_id, group_id, name, description)
+         VALUES (?, ?, ?, ?)
+         RETURNING *"
     ))
+    .bind(&claims.sub)
     .bind(&group_id)
-    .bind(config_key)
-    .execute(&state.db.pool)
+    .bind(&payload.name)
+    .bind(&payload.description)
+    .fetch_one(&state.db.pool)
     .await?;
 
-    if result.rows_affected() == 0 {
-        sqlx::query(&state.db.format_query(
-            "INSERT INTO plugin_configs (plugin_name, config_key, config_value) VALUES ('asset_manager', ?, ?)"
-        ))
-        .bind(config_key)
-        .bind(&group_id)
-        .execute(&state.db.pool)
-        .await?;
-    }
-
-    Ok(group_id)
+    Ok(Json(json!({ "message": "创建成功", "group": group })))
 }
 
 /// 用户：查询虚拟人像审核状态（轮询方舟 GetAsset）
@@ -1110,7 +1138,8 @@ async fn check_asset_status(
 
     if let Some(vc) = volc_config {
         if !asset_id_val.is_empty() {
-            let client = crate::services::volcengine::VolcClient::new(vc);
+            let client = crate::services::volcengine::VolcClient::new(vc)
+                .with_logger(state.db.clone(), claims.sub.clone());
             let get_req = crate::services::volcengine::GetAssetRequest {
                 id: asset_id_val.clone(),
                 project_name: Some("default".to_string()),

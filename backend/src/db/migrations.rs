@@ -191,6 +191,22 @@ macro_rules! pg_migration_blocks {
     .execute(pool)
     .await?;
 
+    // Plugin API Logs table (PG)
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS plugin_api_logs (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            plugin_name TEXT NOT NULL,
+            api_endpoint TEXT NOT NULL,
+            request_payload TEXT,
+            response_payload TEXT,
+            status_code INTEGER,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // User levels table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS user_levels (
@@ -553,6 +569,21 @@ macro_rules! pg_migration_blocks {
     let _ = sqlx::query("ALTER TABLE plugins ADD COLUMN IF NOT EXISTS allowed_levels TEXT NOT NULL DEFAULT 'all'")
         .execute(pool).await;
 
+    // Plugin Asset Groups table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS plugin_asset_groups (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            group_id TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // Plugin Assets table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS plugin_assets (
@@ -570,6 +601,7 @@ macro_rules! pg_migration_blocks {
             asset_id TEXT,
             sort_order INTEGER NOT NULL DEFAULT 0,
             remark TEXT,
+            group_id TEXT,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
@@ -582,6 +614,7 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS asset_id TEXT").execute(pool).await.ok();
     sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
     sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS group_id TEXT").execute(pool).await.ok();
 
     // Seed Asset Manager plugin
     sqlx::query(
@@ -929,6 +962,21 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     let _ = sqlx::query("ALTER TABLE plugins ADD COLUMN allowed_levels TEXT NOT NULL DEFAULT 'all'")
         .execute(pool).await.ok();
 
+    // Plugin Asset Groups table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS plugin_asset_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            group_id TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // Plugin Assets table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS plugin_assets (
@@ -946,6 +994,7 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
             asset_id TEXT,
             sort_order INTEGER NOT NULL DEFAULT 0,
             remark TEXT,
+            group_id TEXT,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
@@ -957,6 +1006,23 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN asset_id TEXT").execute(pool).await.ok();
     let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
     let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN remark TEXT").execute(pool).await.ok();
+    let _ = sqlx::query("ALTER TABLE plugin_assets ADD COLUMN group_id TEXT").execute(pool).await.ok();
+
+    // Plugin API Logs table (SQLite)
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS plugin_api_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            plugin_name TEXT NOT NULL,
+            api_endpoint TEXT NOT NULL,
+            request_payload TEXT,
+            response_payload TEXT,
+            status_code INTEGER,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
 
     // Seed Asset Manager plugin
     sqlx::query(

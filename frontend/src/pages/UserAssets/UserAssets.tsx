@@ -12,6 +12,17 @@ import type { MenuProps } from 'antd';
 
 const { Title, Text } = Typography;
 
+
+interface AssetGroup {
+  id: number;
+  user_id: string;
+  group_id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface StorageInfo {
   folder: string;
   files: Array<{
@@ -55,6 +66,31 @@ const UserAssets: React.FC = () => {
   const [uploadForm] = Form.useForm();
   const [fileList, setFileList] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
+
+  // 组状态
+  const [groups, setGroups] = useState<AssetGroup[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [currentGroup, setCurrentGroup] = useState<AssetGroup | null>(null);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [groupForm] = Form.useForm();
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      setLoadingGroups(true);
+      const res = await (request.get('/assets/user/groups') as any);
+      if (res.groups) setGroups(res.groups);
+    } catch (e) {
+      console.error(e);
+      message.error('获取文件夹列表失败');
+    } finally {
+      setLoadingGroups(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedKey === 'my_virtual_portrait') fetchGroups();
+  }, [selectedKey, fetchGroups]);
+
 
   // 编辑弹窗
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -219,6 +255,25 @@ const UserAssets: React.FC = () => {
   }, [fetchAssets]);
 
   // 上传处理
+  
+  const handleCreateGroup = async () => {
+    try {
+      const vals = await groupForm.validateFields();
+      setLoadingGroups(true);
+      await request.post('/assets/user/groups', vals);
+      message.success('创建组合成功');
+      setIsGroupModalOpen(false);
+      groupForm.resetFields();
+      fetchGroups();
+      fetchStorageInfo();
+    } catch (error: any) {
+      const msg = error?.response?.data?.error?.message || '创建失败';
+      if (!error?.errorFields) message.error(msg); // Only show message if it's not a validation error
+    } finally {
+      setLoadingGroups(false);
+    }
+  };
+
   const handleCustomUpload = async () => {
     try {
       const values = await uploadForm.validateFields();
@@ -235,6 +290,7 @@ const UserAssets: React.FC = () => {
         const formData = new FormData();
         formData.append('file', fileItem.originFileObj as any);
         formData.append('category', category);
+        if (category === '虚拟人像' && currentGroup) { formData.append('group_id', currentGroup.group_id); }
         return request.post(api, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
@@ -513,16 +569,11 @@ const UserAssets: React.FC = () => {
                       )}
                       {selectedKey === 'my_virtual_portrait' && (
                         <Button
-                          icon={<UploadOutlined />}
+                          icon={<FolderOutlined />}
                           type="primary"
-                          onClick={() => {
-                            setIsUploadModalOpen(true);
-                            setTimeout(() => {
-                              uploadForm.setFieldsValue({ category: '虚拟人像' });
-                            }, 50);
-                          }}
+                          onClick={() => setIsGroupModalOpen(true)}
                         >
-                          上传虚拟人像
+                          新建人物文件夹
                         </Button>
                       )}
                     </div>
@@ -554,36 +605,117 @@ const UserAssets: React.FC = () => {
 
           {/* 下方素材列表 */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              marginBottom: 12,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}>
-              <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
-                当前分类：<Text strong style={{ color: '#1677ff' }}>{currentCategoryName}</Text>
-                <Text style={{ marginLeft: 12, color: 'rgba(255,255,255,0.35)' }}>
-                  共 {assets.length} 个素材
-                </Text>
-                {currentCategoryName === '虚拟人像' && storage?.virtual_portrait_quota !== undefined && (
-                  <Text style={{ marginLeft: 12, color: 'rgba(255,255,255,0.45)' }}>
-                    (可以新加 {Math.max(0, storage.virtual_portrait_quota - (storage.virtual_portrait_count || 0))} 个 AssetGroups 的素材组合)
+            {selectedKey === 'my_virtual_portrait' && !currentGroup ? (
+              <Spin spinning={loadingGroups}>
+                <div style={{
+                  marginBottom: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
+                    <Text strong style={{ color: '#1677ff' }}>人物文件夹列表</Text>
+                    <Text style={{ marginLeft: 12, color: 'rgba(255,255,255,0.35)' }}>
+                      （您有 {groups.length} 个人物组合文件夹）
+                    </Text>
+                    {storage?.virtual_portrait_quota !== undefined && (
+                      <Text style={{ marginLeft: 12, color: 'rgba(255,255,255,0.45)' }}>
+                        (还可以新加 {Math.max(0, storage.virtual_portrait_quota - groups.length)} 个组合)
+                      </Text>
+                    )}
                   </Text>
-                )}
-              </Text>
-            </div>
+               </div>
+               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                 {groups.length === 0 && !loadingGroups && <Text type="secondary" style={{ marginTop: 20 }}>暂无人物文件夹，请先新建人物文件夹。</Text>}
+                 {groups.map(g => (
+                   <Card key={g.id} hoverable style={{ width: 220, borderRadius: 12, border: '1px solid #303030' }} onClick={() => setCurrentGroup(g)} bodyStyle={{ padding: 16 }}>
+                     <div style={{ display: 'flex', gap: 12 }}>
+                       <FolderOutlined style={{ fontSize: 40, color: '#1677ff', flexShrink: 0 }} />
+                       <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                         <Text strong style={{ fontSize: 16 }} ellipsis={{ tooltip: g.name }}>{g.name}</Text>
+                         {g.description && <Text type="secondary" style={{ fontSize: 12 }} ellipsis={{ tooltip: g.description }}>{g.description}</Text>}
+                       </div>
+                     </div>
+                   </Card>
+                 ))}
+               </div>
+              </Spin>
+            ) : (
+              // 以下为原素材列表的渲染
+              <>
+                <div style={{
+                  marginBottom: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    {currentGroup && (
+                      <Button style={{ marginRight: 8 }} onClick={() => setCurrentGroup(null)}>返回主列表</Button>
+                    )}
+                    <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
+                      当前分类：<Text strong style={{ color: '#1677ff' }}>
+                        {currentGroup ? `虚拟人像 / ${currentGroup.name}` : currentCategoryName}
+                      </Text>
+                      <Text style={{ marginLeft: 12, color: 'rgba(255,255,255,0.35)' }}>
+                        共 {currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id).length : assets.length} 个素材
+                      </Text>
+                      {!currentGroup && currentCategoryName === '虚拟人像' && storage?.virtual_portrait_quota !== undefined && (
+                        <Text style={{ marginLeft: 12, color: 'rgba(255,255,255,0.45)' }}>
+                          (可以新加 {Math.max(0, storage.virtual_portrait_quota - (storage?.virtual_portrait_count || 0))} 个 AssetGroups 的素材组合)
+                        </Text>
+                      )}
+                    </Text>
+                  </div>
+                  {currentGroup && (
+                    <Button
+                      icon={<UploadOutlined />}
+                      type="primary"
+                      onClick={() => {
+                        setIsUploadModalOpen(true);
+                        setTimeout(() => {
+                          uploadForm.setFieldsValue({ category: '虚拟人像' });
+                        }, 50);
+                      }}
+                    >
+                      上传此人物的资产
+                    </Button>
+                  )}
+                </div>
 
-            <Table
-              dataSource={assets}
-              columns={columns}
-              rowKey="id"
-              loading={loading}
-              pagination={{ pageSize: 10 }}
-              size="middle"
-            />
+                <Table
+                  dataSource={currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id) : assets}
+                  columns={columns}
+                  rowKey="id"
+                  loading={loading}
+                  pagination={{ pageSize: 10 }}
+                  size="middle"
+                />
+              </>
+            )}
           </div>
-        </div>
+</div>
       </Card>
+
+      
+      {/* 新建人物文件夹弹窗 */}
+      <Modal
+        title="新建人物文件夹"
+        open={isGroupModalOpen}
+        onCancel={() => { setIsGroupModalOpen(false); groupForm.resetFields(); }}
+        onOk={handleCreateGroup}
+        confirmLoading={loadingGroups}
+        okText="创建"
+      >
+        <Form form={groupForm} layout="vertical">
+          <Form.Item label="人物名称" name="name" rules={[{ required: true, message: '请填写人物名称' }]}>
+            <Input placeholder="输入该人物的称呼或名字..." />
+          </Form.Item>
+          <Form.Item label="描述" name="description">
+            <Input.TextArea placeholder="这会在方舟平台记录为对该虚拟人像素材组合的简短说明..." />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       {/* 上传虚拟人像弹窗 */}
       <Modal

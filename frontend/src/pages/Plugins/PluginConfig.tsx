@@ -69,7 +69,7 @@ const PluginConfig: React.FC = () => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [activeTabKey, setActiveTabKey] = useState(() => {
     const hash = window.location.hash.replace('#', '');
-    return ['basic', 'storage', 'moderation', 'preset', 'audit_log'].includes(hash) ? hash : 'basic';
+    return ['basic', 'storage', 'moderation', 'preset', 'audit_log', 'api_log'].includes(hash) ? hash : 'basic';
   });
   const handleTabChange = (key: string) => {
     setActiveTabKey(key);
@@ -81,6 +81,27 @@ const PluginConfig: React.FC = () => {
   const [moderationForm] = Form.useForm();
   const [savingModeration, setSavingModeration] = useState(false);
 
+
+  // 接口日志
+  const [apiLogs, setApiLogs] = useState<any[]>([]);
+  const [apiLogsTotal, setApiLogsTotal] = useState(0);
+  const [apiLogsPage, setApiLogsPage] = useState(1);
+  const [apiLogsLoading, setApiLogsLoading] = useState(false);
+
+  const fetchApiLogs = async (page = 1) => {
+    try {
+      setApiLogsLoading(true);
+      const res = await (request.get(`/plugins/${name}/api-logs`, { params: { page, page_size: 15 } }) as any);
+      if (res.logs) setApiLogs(res.logs);
+      if (res.total) setApiLogsTotal(res.total);
+      setApiLogsPage(res.page || page);
+    } catch (e) {
+      console.error('获取接口日志失败', e);
+    } finally {
+      setApiLogsLoading(false);
+    }
+  };
+
   // 审核日志
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -91,6 +112,9 @@ const PluginConfig: React.FC = () => {
   }, [name]);
 
   useEffect(() => {
+    if (activeTabKey === 'api_log' && !loading && apiLogs.length === 0) {
+      fetchApiLogs(1);
+    }
     if (activeTabKey === 'audit_log' && !loading) {
       (async () => {
         try {
@@ -303,7 +327,72 @@ const PluginConfig: React.FC = () => {
             <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedLevels.length} 个等级</Text>
             {levels.map(lv => {
               const isSelected = selectedLevels.includes(lv.group_key);
-              return (
+            
+  const apiLogColumns = [
+    { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
+    { title: 'User ID', dataIndex: 'user_id', key: 'user_id', width: 140, render: (u: string) => <Text copyable>{u ? (u.substring(0,8) + '...') : ''}</Text> },
+    { title: '接口名称', dataIndex: 'api_endpoint', key: 'api_endpoint', width: 200, render: (r: string) => <Tag color="cyan">{r}</Tag> },
+    { 
+      title: '状态', 
+      dataIndex: 'status_code', 
+      key: 'status_code', 
+      width: 100, 
+      render: (s: number) => {
+        if (s === 200) return <Tag color="success">成功 ({s})</Tag>;
+        return <Tag color="error">失败 ({s})</Tag>;
+      } 
+    },
+    { title: '请求时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (t: string) => <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> },
+  ];
+
+  const apiLogTab = (
+    <div>
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>共 {apiLogsTotal} 条接口请求记录</Text>
+        <Button size="small" onClick={() => fetchApiLogs(apiLogsPage)} loading={apiLogsLoading}>刷新</Button>
+      </div>
+      <Table
+        dataSource={apiLogs}
+        columns={apiLogColumns}
+        rowKey="id"
+        loading={apiLogsLoading}
+        size="small"
+        pagination={{ 
+          current: apiLogsPage,
+          total: apiLogsTotal,
+          pageSize: 15,
+          onChange: (page) => fetchApiLogs(page)
+        }}
+        expandable={{
+          expandedRowRender: record => (
+            <div style={{ margin: 0, padding: 16, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+              <div style={{ marginBottom: 16 }}>
+                <Text strong style={{ color: '#1677ff' }}>Request Payload:</Text>
+                <Input.TextArea 
+                  value={record.request_payload} 
+                  autoSize={{ minRows: 2, maxRows: 10 }} 
+                  readOnly 
+                  style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 12 }} 
+                />
+              </div>
+              <div>
+                <Text strong style={{ color: '#faad14' }}>Response Payload:</Text>
+                <Input.TextArea 
+                  value={record.response_payload} 
+                  autoSize={{ minRows: 2, maxRows: 10 }} 
+                  readOnly 
+                  style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 12 }} 
+                />
+              </div>
+            </div>
+          ),
+        }}
+      />
+    </div>
+  );
+
+  return (
+
                 <div key={lv.group_key}
                   style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.15s' }}
                 >
@@ -679,7 +768,72 @@ const PluginConfig: React.FC = () => {
     </div>
   );
 
+
+  const apiLogColumns = [
+    { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
+    { title: 'User ID', dataIndex: 'user_id', key: 'user_id', width: 140, render: (u: string) => <Text copyable>{u ? (u.substring(0,8) + '...') : ''}</Text> },
+    { title: '接口名称', dataIndex: 'api_endpoint', key: 'api_endpoint', width: 200, render: (r: string) => <Tag color="cyan">{r}</Tag> },
+    { 
+      title: '状态', 
+      dataIndex: 'status_code', 
+      key: 'status_code', 
+      width: 100, 
+      render: (s: number) => {
+        if (s === 200) return <Tag color="success">成功 ({s})</Tag>;
+        return <Tag color="error">失败 ({s})</Tag>;
+      } 
+    },
+    { title: '请求时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (t: string) => <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> },
+  ];
+
+  const apiLogTab = (
+    <div>
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>共 {apiLogsTotal} 条接口请求记录</Text>
+        <Button size="small" onClick={() => fetchApiLogs(apiLogsPage)} loading={apiLogsLoading}>刷新</Button>
+      </div>
+      <Table
+        dataSource={apiLogs}
+        columns={apiLogColumns}
+        rowKey="id"
+        loading={apiLogsLoading}
+        size="small"
+        pagination={{ 
+          current: apiLogsPage,
+          total: apiLogsTotal,
+          pageSize: 15,
+          onChange: (page) => fetchApiLogs(page)
+        }}
+        expandable={{
+          expandedRowRender: record => (
+            <div style={{ margin: 0, padding: 16, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+              <div style={{ marginBottom: 16 }}>
+                <Text strong style={{ color: '#1677ff' }}>Request Payload:</Text>
+                <Input.TextArea 
+                  value={record.request_payload} 
+                  autoSize={{ minRows: 2, maxRows: 10 }} 
+                  readOnly 
+                  style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 12 }} 
+                />
+              </div>
+              <div>
+                <Text strong style={{ color: '#faad14' }}>Response Payload:</Text>
+                <Input.TextArea 
+                  value={record.response_payload} 
+                  autoSize={{ minRows: 2, maxRows: 10 }} 
+                  readOnly 
+                  style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 12 }} 
+                />
+              </div>
+            </div>
+          ),
+        }}
+      />
+    </div>
+  );
+
   return (
+
     <div>
       {/* 页头 */}
       <div style={{
@@ -714,6 +868,7 @@ const PluginConfig: React.FC = () => {
           { key: 'moderation', label: '审核配置', children: moderationTab },
           { key: 'preset', label: '预设素材', children: <AdminPresetAssets /> },
           { key: 'audit_log', label: '审核日志', children: auditLogTab },
+          { key: 'api_log', label: '接口日志', children: apiLogTab },
         ]}
       />
     </div>

@@ -37,6 +37,7 @@ impl VolcConfig {
 pub struct VolcClient {
     config: VolcConfig,
     client: Client,
+    logger: Option<(crate::db::Database, String)>,
 }
 
 impl VolcClient {
@@ -44,7 +45,13 @@ impl VolcClient {
         Self {
             config,
             client: Client::new(),
+            logger: None,
         }
+    }
+
+    pub fn with_logger(mut self, db: crate::db::Database, user_id: String) -> Self {
+        self.logger = Some((db, user_id));
+        self
     }
 
     /// Implement Volcengine Signature V4
@@ -119,7 +126,12 @@ impl VolcClient {
         version: &str,
         body: T,
     ) -> Result<R> {
-        let host = format!("{}.volcengineapi.com", service);
+        // ark 素材资产管理 API 使用 open.volcengineapi.com，其他服务如 visual 仍用 {service}.volcengineapi.com
+        let host = if service == "ark" {
+            "open.volcengineapi.com".to_string()
+        } else {
+            format!("{}.volcengineapi.com", service)
+        };
         let url = format!("https://{}/?Action={}&Version={}", host, action, version);
         let path = "/";
         let query = format!("Action={}&Version={}", action, version);
@@ -133,13 +145,37 @@ impl VolcClient {
             .header("X-Date", now.format("%Y%m%dT%H%M%SZ").to_string())
             .header("X-Content-Sha256", hex::encode(Sha256::digest(&payload)))
             .header("Authorization", auth)
-            .body(payload)
+            .body(payload.clone())
             .send()
             .await?;
 
         let status = res.status();
         let text = res.text().await?;
-        
+        let status_code = status.as_u16();
+
+        // 异步记录日志：不阻塞主流程，直接丢进数据库
+        if let Some((db, user_id)) = &self.logger {
+            let req_payload = String::from_utf8_lossy(&payload).into_owned();
+            let res_payload = text.clone();
+            let db_clone = db.clone();
+            let uid_clone = user_id.clone();
+            let action_clone = action.to_string();
+            
+            tokio::spawn(async move {
+                let _ = sqlx::query(&db_clone.format_query(
+                    "INSERT INTO plugin_api_logs (user_id, plugin_name, api_endpoint, request_payload, response_payload, status_code) 
+                     VALUES (?, 'asset_manager', ?, ?, ?, ?)"
+                ))
+                .bind(&uid_clone)
+                .bind(&action_clone)
+                .bind(&req_payload)
+                .bind(&res_payload)
+                .bind(status_code as i32)
+                .execute(&db_clone.pool)
+                .await;
+            });
+        }
+
         if !status.is_success() {
             return Err(anyhow!("Volcengine API error: {} - {}", status, text));
         }
