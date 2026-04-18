@@ -232,7 +232,7 @@ pub fn transform_request_body(
                 .unwrap_or("Generate an image");
             serde_json::json!({
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}
+                "generationConfig": {"responseModalities": ["IMAGE"]}
             })
         }
 
