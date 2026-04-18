@@ -175,6 +175,8 @@ pub fn default_site_settings() -> SiteSettings {
         description: "Next-gen LLM API Distribution & Management Platform".to_string(),
         favicon: String::new(),
         logo: String::new(),
+        login_title: String::new(),
+        login_subtitle: String::new(),
     }
 }
 

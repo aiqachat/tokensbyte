@@ -22,6 +22,7 @@ const Settings: React.FC = () => {
     switch(tab) {
       case 'currency': return t('menu.currency_settings');
       case 'registration': return t('settings.registration_title');
+      case 'login': return '登录设置';
       case 'database': return '数据库设置';
       default: return t('menu.basic_settings');
     }
@@ -81,6 +82,11 @@ const Settings: React.FC = () => {
           currency_symbol: values.currency_symbol,
           currency_unit: values.currency_unit,
           token_ratio: values.token_ratio,
+        };
+      } else if (tab === 'login') {
+        payload.site = {
+          login_title: values.login_title || '',
+          login_subtitle: values.login_subtitle || '',
         };
       } else if (tab === 'registration') {
         payload.registration = {
@@ -160,6 +166,25 @@ const Settings: React.FC = () => {
             </Form.Item>
             <Form.Item label={t('settings.site_description')} name="description">
               <Input.TextArea rows={4} placeholder="Description..." />
+            </Form.Item>
+          </div>
+        )}
+
+        {tab === 'login' && (
+          <div style={{ maxWidth: 600 }}>
+            <Form.Item 
+              label="登录页标题" 
+              name="login_title" 
+              extra={<Text type="secondary">显示在登录页面的主标题位置，留空则使用站点名称</Text>}
+            >
+              <Input placeholder="例如：TokensByte" />
+            </Form.Item>
+            <Form.Item 
+              label="登录页副标题" 
+              name="login_subtitle" 
+              extra={<Text type="secondary">显示在登录页标题下方的描述文字，留空则使用默认文字</Text>}
+            >
+              <Input placeholder="例如：Next-gen LLM API Gateway" />
             </Form.Item>
           </div>
         )}

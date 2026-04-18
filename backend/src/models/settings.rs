@@ -10,6 +10,10 @@ pub struct SiteSettings {
     pub favicon: String,
     #[serde(default)]
     pub logo: String,
+    #[serde(default)]
+    pub login_title: String,
+    #[serde(default)]
+    pub login_subtitle: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

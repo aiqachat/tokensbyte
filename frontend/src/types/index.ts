@@ -221,6 +221,8 @@ export interface SiteSettings {
   description: string;
   favicon?: string;
   logo?: string;
+  login_title?: string;
+  login_subtitle?: string;
 }
 
 export interface CurrencySettings {
