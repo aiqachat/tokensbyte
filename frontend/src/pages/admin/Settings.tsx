@@ -69,6 +69,7 @@ const Settings: React.FC = () => {
       if (tab === 'basic') {
         payload.site = {
           name: values.name,
+          logo: values.logo || '',
           title: values.title,
           keywords: values.keywords,
           description: values.description,
@@ -136,6 +137,13 @@ const Settings: React.FC = () => {
           <div style={{ maxWidth: 600 }}>
             <Form.Item label={t('settings.site_name')} name="name" rules={[{ required: true }]}>
               <Input placeholder="TokensByte" />
+            </Form.Item>
+            <Form.Item 
+              label="站点 Logo" 
+              name="logo" 
+              extra={<Text type="secondary">支持图片链接，建议尺寸 32x32 或 40x40，留空则仅显示站点名称文字</Text>}
+            >
+              <Input placeholder="https://example.com/logo.png" />
             </Form.Item>
             <Form.Item label={t('settings.site_title')} name="title" rules={[{ required: true }]}>
               <Input placeholder="TokensByte - LLM API Gateway" />

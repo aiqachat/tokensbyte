@@ -44,6 +44,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [siteName, setSiteName] = useState(isUserEnd ? 'TokensByte' : t('common.admin_title'));
+  const [siteLogo, setSiteLogo] = useState<string>('');
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
 
 
@@ -73,6 +74,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       }
       if (site.name && isUserEnd) {
         setSiteName(site.name);
+      }
+      if (site.logo) {
+        setSiteLogo(site.logo);
       }
     } catch (error) {
       console.error('Failed to fetch global settings:', error);
@@ -419,10 +423,22 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           }}
         >
           <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-            <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-              {(collapsed && !screens.xs) ? 'TB' : siteName}
-            </Title>
-
+            {siteLogo ? (
+              (collapsed && !screens.xs) ? (
+                <img src={siteLogo} alt="logo" style={{ width: 32, height: 32, objectFit: 'contain' }} />
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
+                  <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    {siteName}
+                  </Title>
+                </div>
+              )
+            ) : (
+              <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                {(collapsed && !screens.xs) ? 'TB' : siteName}
+              </Title>
+            )}
           </div>
           <ConfigProvider 
             theme={{ 
@@ -465,9 +481,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 style={{ fontSize: '16px', width: 64, height: 64, color: '#fff' }}
               />
               {screens.xs && (
-                <Title level={5} style={{ color: '#fff', margin: 0, marginLeft: 8 }}>
-                  {siteName}
-                </Title>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }}>
+                  {siteLogo && <img src={siteLogo} alt="logo" style={{ width: 24, height: 24, objectFit: 'contain' }} />}
+                  <Title level={5} style={{ color: '#fff', margin: 0 }}>
+                    {siteName}
+                  </Title>
+                </div>
               )}
             </div>
             

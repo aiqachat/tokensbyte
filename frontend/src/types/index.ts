@@ -220,6 +220,7 @@ export interface SiteSettings {
   keywords: string;
   description: string;
   favicon?: string;
+  logo?: string;
 }
 
 export interface CurrencySettings {
