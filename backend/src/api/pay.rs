@@ -293,15 +293,10 @@ pub async fn alipay_notify(
     tracing::info!("[支付宝回调] 收到回调通知, body长度: {}", body.len());
     tracing::debug!("[支付宝回调] 原始数据: {}", body);
 
-    let mut params = BTreeMap::new();
-    for pair in body.split('&') {
-        let mut parts = pair.splitn(2, '=');
-        let k = parts.next().unwrap_or("");
-        let v = parts.next().unwrap_or("");
-        if let Ok(dec_v) = urlencoding::decode(v) {
-            params.insert(k.to_string(), dec_v.into_owned());
-        }
-    }
+    // 使用标准 form_urlencoded 解析，正确处理 %2B → + 等编码
+    let params: BTreeMap<String, String> = form_urlencoded::parse(body.as_bytes())
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
 
     let sign = params.get("sign").cloned().unwrap_or_default();
     let out_trade_no = params.get("out_trade_no").cloned().unwrap_or_default();

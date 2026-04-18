@@ -63,6 +63,7 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 urlencoding = "2.1"
+form_urlencoded = "1"
 rsa = { version = "0.9", features = ["sha2", "pem"] }
 
 # Volcengine TOS Object Storage
