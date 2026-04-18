@@ -173,6 +173,8 @@ pub fn default_site_settings() -> SiteSettings {
         title: "TokensByte - LLM API Gateway".to_string(),
         keywords: "LLM, API, Gateway, Rust".to_string(),
         description: "Next-gen LLM API Distribution & Management Platform".to_string(),
+        favicon: String::new(),
+        logo: String::new(),
     }
 }
 
