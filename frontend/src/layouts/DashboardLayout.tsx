@@ -20,6 +20,7 @@ import {
   HistoryOutlined,
   ScheduleOutlined,
   RocketOutlined,
+  PictureOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
@@ -192,6 +193,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
 
 
   if (isUserEnd) {
+    // 插件菜单：素材资产管理
+    if (isPluginVisibleForUser('asset_manager')) {
+      menuItems.push({
+        key: '/assets',
+        icon: <PictureOutlined style={{ fontSize: '18px' }} />,
+        label: <Link to="/assets">素材管理</Link>,
+      });
+    }
+
     menuItems.push(
       {
         key: '/wallet',

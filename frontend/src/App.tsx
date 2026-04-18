@@ -24,6 +24,7 @@ import Logs from './pages/Logs/Logs';
 import TaskLogs from './pages/Logs/TaskLogs';
 import PluginsList from './pages/Plugins/PluginsList';
 import PluginConfig from './pages/Plugins/PluginConfig';
+import UserAssets from './pages/UserAssets/UserAssets';
 
 import Redemptions from './pages/Redemptions/Redemptions';
 import Profile from './pages/Profile/Profile';
@@ -76,6 +77,7 @@ const App: React.FC = () => {
           <Route path="task-logs" element={<TaskLogs />} />
 
           <Route path="wallet" element={<Wallet />} />
+          <Route path="assets" element={<UserAssets />} />
           <Route path="profile" element={<Profile />} />
         </Route>
 
