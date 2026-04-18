@@ -1,47 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
   <defs>
-    <linearGradient id="primary" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#1890ff" />
       <stop offset="100%" stop-color="#722ed1" />
     </linearGradient>
-    <linearGradient id="secondary" x1="100%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#13c2c2" />
-      <stop offset="100%" stop-color="#1890ff" />
-    </linearGradient>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="6" result="blur" />
-      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-    </filter>
   </defs>
-
-  <rect width="200" height="200" rx="40" fill="#0A0A0A" />
   
-  <g transform="translate(100, 100)">
-    <!-- Circuit outer hexagon -->
-    <path d="M0 -60 L-50 -30 L-50 30 L0 60 L50 30 L50 -30 Z" fill="none" stroke="url(#primary)" stroke-width="8" stroke-linejoin="round" />
+  <g transform="translate(50, 50)">
+    <!-- Circuit single hexagon -->
+    <path d="M0 -40 L-34.6 -20 L-34.6 20 L0 40 L34.6 20 L34.6 -20 Z" stroke="url(#gradient)" stroke-width="10" stroke-linejoin="round" />
     
-    <!-- Circuit inner hexagon -->
-    <path d="M0 -30 L-25 -15 L-25 15 L0 30 L25 15 L25 -15 Z" fill="none" stroke="url(#secondary)" stroke-width="6" stroke-linejoin="round" />
+    <!-- Three connecting lines to center -->
+    <path d="M0 0 L0 -40 M0 0 L-34.6 20 M0 0 L34.6 20" stroke="url(#gradient)" stroke-width="10" stroke-linecap="round" />
     
-    <!-- Connecting lines to center -->
-    <path d="M0 0 L0 -60 M0 0 L-50 30 M0 0 L50 30" stroke="url(#primary)" stroke-width="6" stroke-linecap="round" />
-    
-    <!-- Outer nodes -->
-    <circle cx="0" cy="-60" r="10" fill="#00e8ff" filter="url(#glow)"/>
-    <circle cx="-50" cy="30" r="10" fill="#ff4d4f" filter="url(#glow)"/>
-    <circle cx="50" cy="30" r="10" fill="#1890ff" filter="url(#glow)"/>
-    
-    <circle cx="50" cy="-30" r="6" fill="#722ed1" filter="url(#glow)"/>
-    <circle cx="-50" cy="-30" r="6" fill="#13c2c2" filter="url(#glow)"/>
-    <circle cx="0" cy="60" r="6" fill="#faad14" filter="url(#glow)"/>
-    
-    <!-- Inner nodes -->
-    <circle cx="0" cy="-30" r="6" fill="#fff" />
-    <circle cx="-25" cy="15" r="6" fill="#fff" />
-    <circle cx="25" cy="15" r="6" fill="#fff" />
+    <!-- Three outer nodes -->
+    <circle cx="0" cy="-40" r="8" fill="#00e8ff" />
+    <circle cx="-34.6" cy="20" r="8" fill="#1890ff" />
+    <circle cx="34.6" cy="20" r="8" fill="#722ed1" />
     
     <!-- Center Core -->
-    <circle cx="0" cy="0" r="14" fill="url(#primary)" filter="url(#glow)"/>
+    <circle cx="0" cy="0" r="14" fill="url(#gradient)" />
     <circle cx="0" cy="0" r="6" fill="#fff" />
   </g>
 </svg>
