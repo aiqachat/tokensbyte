@@ -393,7 +393,7 @@ const Channels: React.FC = () => {
                   min={-1} 
                   style={{ width: '100%' }} 
                   formatter={(val) => (val === -1 || val === '-1') ? '无限额' : `${val}`}
-                  parser={(val) => val === '无限额' ? -1 : parseFloat(val as string) || 0}
+                  parser={(val) => (val === '无限额' ? -1 : parseFloat(val as string) || 0) as -1}
                 />
               </Form.Item>
             </Col>

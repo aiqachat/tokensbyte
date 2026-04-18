@@ -28,7 +28,7 @@ function MobileCardList<T extends Record<string, any>>({
 }: MobileCardListProps<T>) {
   const [currentPage, setCurrentPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(
-    (pagination && pagination !== false && pagination.pageSize) || 10
+    pagination && typeof pagination === 'object' && pagination.pageSize || 10
   );
 
   const getKey = (item: T, index: number): string | number => {
@@ -45,7 +45,7 @@ function MobileCardList<T extends Record<string, any>>({
   const handlePageChange = (page: number, size: number) => {
     setCurrentPage(page);
     setPageSize(size);
-    if (pagination && pagination !== false && pagination.onChange) {
+    if (pagination && typeof pagination === 'object' && pagination.onChange) {
       pagination.onChange(page, size);
     }
   };

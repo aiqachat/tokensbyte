@@ -254,7 +254,7 @@ const Tokens: React.FC = () => {
               min={-1}
               style={{ width: '100%' }} 
               formatter={(val) => (val === -1 || val === '-1') ? t('tokens.unlimited_quota') : `${val}`}
-              parser={(val) => val === t('tokens.unlimited_quota') ? -1 : parseFloat(val as string) || 0}
+              parser={(val) => (val === t('tokens.unlimited_quota') ? -1 : parseFloat(val as string) || 0) as -1}
             />
           </Form.Item>
 

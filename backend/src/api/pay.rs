@@ -3,11 +3,9 @@ use axum::{
     Json,
     response::IntoResponse,
 };
-use axum_extra::extract::WithRejection;
 use std::sync::Arc;
 use crate::AppState;
 use crate::models::order::Order;
-use crate::models::RechargeRecord;
 use crate::error::{AppResult, AppError};
 use crate::services::payment::alipay::AlipayClient;
 use crate::services::payment::wechat::WechatClient;
@@ -15,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::Local;
 use std::collections::BTreeMap;
-use reqwest::StatusCode;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateOrderReq {
@@ -40,21 +37,6 @@ pub async fn create_order(
 
     let out_trade_no = format!("T{}R{}", Local::now().format("%Y%m%d%H%M%S"), Uuid::new_v4().simple().to_string()[..8].to_string());
     
-    // Check if method is enabled
-    let site_url = {
-        let setting: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'site_settings'"))
-            .fetch_optional(&state.db.pool)
-            .await?;
-        let mut base_url = "http://localhost:8181".to_string(); // Fallback
-        if let Some(val) = setting {
-            // Ideally we'd have site.url but let's just use request header or hardcode a fallback for now.
-            // Since this isn't provided directly, we'll construct it or assume frontend handles relative.
-        }
-        // Let's rely on standard config or just build notify url dynamically if request context is available.
-        // For now:
-        "https://api.example.com".to_string() // TODO: Fetch real domain somehow
-    };
-
     let base_notify_url = std::env::var("PUBLIC_API_URL").unwrap_or_else(|_| "http://localhost:8181".to_string());
 
     let mut payment_url = String::new();
@@ -130,9 +112,8 @@ pub async fn wechat_notify(
     State(state): State<Arc<AppState>>,
     body: String,
 ) -> impl IntoResponse {
-    use axum::response::IntoResponse;
-    use reqwest::StatusCode;
     use crate::models::PaymentWechatSettings;
+    use axum::http::StatusCode;
     
     tracing::info!("Received wechat notify: {}", body);
     
@@ -236,7 +217,7 @@ pub async fn alipay_notify(
     let out_trade_no = params.get("out_trade_no").unwrap_or(&"".to_string()).clone();
     let trade_no = params.get("trade_no").unwrap_or(&"".to_string()).clone();
     let trade_status = params.get("trade_status").unwrap_or(&"".to_string()).clone();
-    let total_amount_str = params.get("total_amount").unwrap_or(&"0".to_string()).clone();
+    let _total_amount_str = params.get("total_amount").unwrap_or(&"0".to_string()).clone();
 
     if trade_status != "TRADE_SUCCESS" && trade_status != "TRADE_FINISHED" {
         return "success".to_string();
