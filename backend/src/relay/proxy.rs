@@ -147,10 +147,10 @@ pub async fn record_and_bill_with_prededuction(
     
     // 查询模型同时关联 model_types 获取 category
     if let Ok(Some(row)) = sqlx::query(
-        "SELECT m.enable_log_content, t.name as category_name 
+        &state.db.format_query("SELECT m.enable_log_content, t.name as category_name 
          FROM models m 
          LEFT JOIN model_types t ON m.type_id = t.id 
-         WHERE m.model_id = ? AND m.is_active = 1"
+         WHERE m.model_id = ? AND m.is_active = 1")
     )
     .bind(model_name)
     .fetch_optional(&state.db.pool)
@@ -164,15 +164,15 @@ pub async fn record_and_bill_with_prededuction(
     let filter_content = |content: Option<String>, respect_log_flag: bool| -> Option<String> {
         let text = content?;
         if respect_log_flag && enable_log == 0 { return None; }
-        // 1. 标准 data URI: data:image/jpeg;base64,...
-        let re1 = Regex::new(r"data:image/[^;]+;base64,[A-Za-z0-9+/=\s]{100,}").unwrap();
-        let text = re1.replace_all(&text, "\"base64图片\"").to_string();
-        // 2. JSON 转义 data URI: data:image\\/jpeg;base64,...
-        let re2 = Regex::new(r"data:image\\/[^;]+;base64,[A-Za-z0-9+/=\\s]{100,}").unwrap();
-        let text = re2.replace_all(&text, "\"base64图片\"").to_string();
+        // 1. 标准 data URI (兼容各类 data:协议 长尾内容)
+        let re1 = Regex::new(r"data:[^;]+;base64,[A-Za-z0-9+/=\s]{100,}").unwrap();
+        let text = re1.replace_all(&text, "\"base64数据\"").to_string();
+        // 2. JSON 转义 data URI (兼容反斜杠)
+        let re2 = Regex::new(r"data:[^;]+;base64,[A-Za-z0-9+/=\\s]{100,}").unwrap();
+        let text = re2.replace_all(&text, "\"base64数据\"").to_string();
         // 3. 纯 base64 长串 (>200 字符的连续 base64)
         let re3 = Regex::new(r#""[A-Za-z0-9+/]{200,}={0,2}""#).unwrap();
-        Some(re3.replace_all(&text, "\"base64图片\"").to_string())
+        Some(re3.replace_all(&text, "\"base64数据\"").to_string())
     };
 
     let req_content = filter_content(request_content, true);       // 受上下文记录开关控制
@@ -180,21 +180,22 @@ pub async fn record_and_bill_with_prededuction(
     
     // 灵活处理 response_content 的存储
     let resp_content = if enable_log == 0 {
-        if category == "视频" {
-            // 视频模型：结果始终保留（需要提取生成的资源URL等）
+        if category == "视频" || category == "图片" {
+            // 视频和图片模型：结果始终保留（需要提取生成的资源URL等）
             filter_content(response_content, false)
         } else {
-            // 聊天、文本、图片等
             if let Some(ref text) = response_content {
                 let usage_json = crate::relay::usage_extractor::extract_usage_json_string(text);
                 if usage_json.is_some() {
+                    // 只要成功提取出 token 的 usage JSON，则为节省日志空间仅存 usage
                     usage_json
-                } else if category == "图片" {
-                    // 图片模型：如果没有 token消耗 拿不到就存整个结果包（经过 base64 脱敏）
-                    filter_content(Some(text.clone()), false)
-                } else {
-                    // 语言模型等：如果没有找到 usage，就存一个空数组，避免存入大体积的正文
+                } else if category == "聊天" || category == "文本" {
+                    // 纯文本语言模型：如果既没查到usage又关闭了上下文，避免存入大文本影响性能，做极简化占位
                     Some("[]".to_string())
+                } else {
+                    // 语音及未来新增的其他异构模型类型：
+                    // 如果没有找到 usage 数据提取格式，基于严谨性，兜底保留经过 Base64 等脱敏后的完整请求包！
+                    filter_content(Some(text.clone()), false)
                 }
             } else {
                 None

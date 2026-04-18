@@ -51,7 +51,7 @@ pub async fn handle_chat_stream(
                         // Transform and count
                         if let Some(transformed) = crate::relay::forward::transform_sse_line(&target_type, line, &model) {
                             // Extract content length for rough token count if not provided
-                            if target_type != "openai" {
+                            if target_type != "openai" && target_type != "volcengine_chat" && target_type != "volcengine" {
                                 total_completion_tokens += 1; 
                             }
                             
@@ -70,11 +70,20 @@ pub async fn handle_chat_stream(
         // Finalize billing
         let _ = tx.send(Ok("data: [DONE]\n\n".to_string())).await;
         
-        // Fallback: 如果 SSE 解析未获取到 token，从完整响应体中提取
-        if total_prompt_tokens == 0 && total_completion_tokens == 0 && !full_response_text.is_empty() {
-            let fallback = crate::relay::usage_extractor::parse_usage(&full_response_text);
-            total_prompt_tokens = fallback.prompt;
-            total_completion_tokens = fallback.completion;
+        // 以响应中返回的真实 token 为准进行计费核算
+        if !full_response_text.is_empty() {
+            let actual_usage = crate::relay::usage_extractor::parse_usage(&full_response_text);
+            if actual_usage.prompt > 0 {
+                total_prompt_tokens = actual_usage.prompt;
+            }
+            if actual_usage.completion > 0 {
+                total_completion_tokens = actual_usage.completion;
+            }
+        }
+        
+        // 避免出现空计费
+        if total_prompt_tokens == 0 && total_completion_tokens == 0 {
+            total_completion_tokens = 1; // 至少为 1 以防异常
         }
         
         let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))

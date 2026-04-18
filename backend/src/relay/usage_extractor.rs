@@ -127,14 +127,19 @@ pub fn parse_usage(response: &str) -> UsageTokens {
     if let Ok(v) = serde_json::from_str::<Value>(response) {
         extract_from_value(&v);
     } else {
-        // SSE流的情况下按行解析
+        // SSE流的情况下按行解析（兼容有无 data: 前缀的情况）
         for line in response.lines() {
             let line = line.trim();
-            if line.starts_with("data: ") && line != "data: [DONE]" {
-                let json_str = &line[6..];
-                if let Ok(v) = serde_json::from_str::<Value>(json_str) {
-                    extract_from_value(&v);
-                }
+            if line.is_empty() || line.ends_with("[DONE]") { continue; }
+            
+            let json_str = if line.starts_with("data: ") {
+                &line[6..]
+            } else {
+                line
+            };
+            
+            if let Ok(v) = serde_json::from_str::<Value>(json_str) {
+                extract_from_value(&v);
             }
         }
     }
@@ -156,12 +161,17 @@ pub fn extract_usage_json_string(response: &str) -> Option<String> {
         let mut last_usage_chunk = None;
         for line in response.lines() {
             let line = line.trim();
-            if line.starts_with("data: ") && line != "data: [DONE]" {
-                let json_str = &line[6..];
-                if let Ok(v) = serde_json::from_str::<Value>(json_str) {
-                    if v.get("usage").is_some() || v.get("usageMetadata").is_some() {
-                        last_usage_chunk = Some(v.to_string());
-                    }
+            if line.is_empty() || line.ends_with("[DONE]") { continue; }
+
+            let json_str = if line.starts_with("data: ") {
+                &line[6..]
+            } else {
+                line
+            };
+            
+            if let Ok(v) = serde_json::from_str::<Value>(json_str) {
+                if v.get("usage").is_some() || v.get("usageMetadata").is_some() {
+                    last_usage_chunk = Some(v.to_string());
                 }
             }
         }
