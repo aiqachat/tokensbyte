@@ -492,29 +492,32 @@ const UserAssets: React.FC = () => {
       okText: '删除',
       okType: 'danger',
       cancelText: '取消',
-      onOk: async () => {
+      onOk: () => {
         const idsToDelete = Array.from(selectedAssetIds);
         setBatchProgress({ action: 'delete', total: idsToDelete.length, done: 0, failed: 0, active: true });
-        let successCount = 0;
-        let failCount = 0;
-        for (const id of idsToDelete) {
-          try {
-            await request.delete(`/assets/user/asset/${id}`, { skipErrorHandler: true } as any);
-            successCount++;
-          } catch {
-            failCount++;
+        // 异步执行批量删除，不阻塞弹窗关闭
+        (async () => {
+          let successCount = 0;
+          let failCount = 0;
+          for (const id of idsToDelete) {
+            try {
+              await request.delete(`/assets/user/${id}`, { skipErrorHandler: true } as any);
+              successCount++;
+            } catch {
+              failCount++;
+            }
+            setBatchProgress({ action: 'delete', total: idsToDelete.length, done: successCount, failed: failCount, active: true });
           }
-          setBatchProgress({ action: 'delete', total: idsToDelete.length, done: successCount, failed: failCount, active: true });
-        }
-        if (failCount === 0) {
-          message.success(`成功删除 ${successCount} 个素材`);
-        } else {
-          message.warning(`删除完成：${successCount} 成功，${failCount} 失败`);
-        }
-        setSelectedAssetIds(new Set());
-        fetchAssets();
-        fetchStorageInfo();
-        setTimeout(() => setBatchProgress(null), 3000);
+          if (failCount === 0) {
+            message.success(`成功删除 ${successCount} 个素材`);
+          } else {
+            message.warning(`删除完成：${successCount} 成功，${failCount} 失败`);
+          }
+          setSelectedAssetIds(new Set());
+          fetchAssets();
+          fetchStorageInfo();
+          setTimeout(() => setBatchProgress(null), 3000);
+        })();
       }
     });
   };
