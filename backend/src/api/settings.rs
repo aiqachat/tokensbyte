@@ -177,6 +177,7 @@ pub fn default_site_settings() -> SiteSettings {
         logo: String::new(),
         login_title: String::new(),
         login_subtitle: String::new(),
+        enable_multilingual: true,
     }
 }
 

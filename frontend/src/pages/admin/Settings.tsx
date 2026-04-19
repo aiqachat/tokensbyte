@@ -76,6 +76,7 @@ const Settings: React.FC = () => {
           favicon: values.favicon || '',
           login_title: values.login_title || '',
           login_subtitle: values.login_subtitle || '',
+          enable_multilingual: values.enable_multilingual !== false,
         };
         payload.registration = {
           enable_username_registration: !!values.enable_username_registration,
@@ -138,6 +139,14 @@ const Settings: React.FC = () => {
       </Form.Item>
       <Form.Item label={t('settings.site_description')} name="description">
         <Input.TextArea rows={4} placeholder="Description..." />
+      </Form.Item>
+      <Form.Item 
+        label="站点多语言" 
+        name="enable_multilingual" 
+        valuePropName="checked"
+        extra={<Text type="secondary">开启后，页面右上角将显示中英文语言切换按钮</Text>}
+      >
+        <Switch />
       </Form.Item>
     </div>
   );

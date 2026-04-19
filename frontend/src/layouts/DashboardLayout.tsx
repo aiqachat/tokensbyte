@@ -47,6 +47,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const [siteName, setSiteName] = useState(isUserEnd ? 'TokensByte' : t('common.admin_title'));
   const [siteLogo, setSiteLogo] = useState<string>('');
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
+  const [enableMultilingual, setEnableMultilingual] = useState(true);
 
 
   useEffect(() => {
@@ -78,6 +79,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       }
       if (site.logo) {
         setSiteLogo(site.logo);
+      }
+      if (site.enable_multilingual !== undefined) {
+        setEnableMultilingual(site.enable_multilingual);
       }
     } catch (error) {
       console.error('Failed to fetch global settings:', error);
@@ -497,11 +501,13 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             </div>
             
             <Space size={screens.xs ? "small" : "large"}>
-              <Dropdown menu={{ items: langItems }} placement="bottomRight">
-                <Button type="text" icon={<GlobalOutlined />} style={{ color: '#fff' }}>
-                  {!screens.xs && (i18n.language === 'zh' ? '中文' : 'EN')}
-                </Button>
-              </Dropdown>
+              {enableMultilingual && (
+                <Dropdown menu={{ items: langItems }} placement="bottomRight">
+                  <Button type="text" icon={<GlobalOutlined />} style={{ color: '#fff' }}>
+                    {!screens.xs && (i18n.language === 'zh' ? '中文' : 'EN')}
+                  </Button>
+                </Dropdown>
+              )}
               {!screens.xs && (
                 <span style={{ color: '#fff' }}>
                   <Title level={5} style={{ margin: 0, color: '#fff' }}>{user?.username}</Title>
@@ -520,11 +526,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
 
           </Header>
           <Content style={{ 
-            margin: screens.xs ? '12px 8px' : '24px 16px', 
-            padding: screens.xs ? 12 : 24, 
+            margin: screens.xs ? '8px' : '12px', 
+            padding: screens.xs ? 12 : 16, 
             minHeight: 280, 
             background: '#000', 
-            borderRadius: 12, 
+            borderRadius: 8, 
             overflow: 'auto' 
           }}>
             <Outlet />

@@ -83,6 +83,10 @@ const PluginConfig: React.FC = () => {
   const [moderationForm] = Form.useForm();
   const [savingModeration, setSavingModeration] = useState(false);
 
+  // 审核日志展开详情
+  const [expandedAssetInfo, setExpandedAssetInfo] = useState<Record<string, any>>({});
+  const [loadingAssetInfo, setLoadingAssetInfo] = useState<Record<string, boolean>>({});
+
 
   // 接口日志
   const [apiLogs, setApiLogs] = useState<any[]>([]);
@@ -330,11 +334,7 @@ const PluginConfig: React.FC = () => {
             <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedLevels.length} 个等级</Text>
             {levels.map(lv => {
               const isSelected = selectedLevels.includes(lv.group_key);
-            
-
-
-  return (
-
+              return (
                 <div key={lv.group_key}
                   style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.15s' }}
                 >
@@ -700,8 +700,6 @@ const PluginConfig: React.FC = () => {
     },
   ];
 
-  const [expandedAssetInfo, setExpandedAssetInfo] = useState<Record<string, any>>({});
-  const [loadingAssetInfo, setLoadingAssetInfo] = useState<Record<string, boolean>>({});
 
   const fetchAssetInfo = async (assetId: string) => {
     if (!assetId || expandedAssetInfo[assetId]) return;

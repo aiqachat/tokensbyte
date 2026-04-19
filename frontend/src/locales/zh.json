@@ -44,8 +44,8 @@
     "admin_list": "管理员列表",
     "user_levels": "用户等级",
     "finance": "财务管理",
-    "finance_recharges": "充值明细",
-    "finance_orders": "订单明细",
+    "finance_recharges": "资金明细",
+    "finance_orders": "在线充值明细",
     "settings": "站点设置",
     "basic_settings": "基础设置",
     "currency_settings": "货币设置",
@@ -258,8 +258,8 @@
     "time": "时间"
   },
   "finance": {
-    "recharge_title": "充值明细",
-    "order_title": "订单明细",
+    "recharge_title": "资金明细",
+    "order_title": "在线充值明细",
     "amount": "金额",
     "remark": "备注",
     "tokens": "Token 数",

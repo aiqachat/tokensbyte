@@ -592,6 +592,27 @@ async fn user_storage_info(
             (vec![], 0)
         });
 
+    // 从数据库兜底统计（当 TOS 返回空时仍能展示有效数据）
+    let db_file_count: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COUNT(*) FROM plugin_assets WHERE user_id = ? AND source = 'user'"
+    ))
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
+    let db_total_size: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COALESCE(SUM(size), 0) FROM plugin_assets WHERE user_id = ? AND source = 'user'"
+    ))
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
+    // 优先使用 TOS 数据，TOS 为空时使用数据库数据
+    let final_file_count = if tos_files.is_empty() { db_file_count as usize } else { tos_files.len() };
+    let final_total_size = if total_size == 0 && db_total_size > 0 { db_total_size } else { total_size };
+
     // 获取配额（管理员无限制，普通用户按等级）
     let quota_mb: i64 = if user.role == "admin" {
         0 // 0 表示无限制
@@ -627,7 +648,7 @@ async fn user_storage_info(
         })
     }).collect();
 
-    let used_mb = total_size as f64 / 1024.0 / 1024.0;
+    let used_mb = final_total_size as f64 / 1024.0 / 1024.0;
 
     let vp_count: i64 = sqlx::query_scalar(&state.db.format_query(
         "SELECT COUNT(*) FROM plugin_assets WHERE user_id = ? AND category = '虚拟人像'"
@@ -640,14 +661,14 @@ async fn user_storage_info(
     Ok(Json(json!({
         "folder": folder_name,
         "files": files,
-        "file_count": files.len(),
-        "total_size": total_size,
+        "file_count": final_file_count,
+        "total_size": final_total_size,
         "total_size_mb": format!("{:.1}", used_mb),
         "quota_mb": quota_mb,
         "remain_mb": if quota_mb > 0 { format!("{:.1}", quota_mb as f64 - used_mb) } else { "无限制".to_string() },
         "is_admin": user.role == "admin",
         "virtual_portrait_count": vp_count,
-        "virtual_portrait_quota": 30, // 默认 30 个分组
+        "virtual_portrait_quota": 20, // 默认 20 个分组
     })))
 }
 
@@ -904,15 +925,18 @@ async fn upload_virtual_portrait(
     let mut file_name = String::new();
     let mut mime_type = String::new();
     let mut group_id = String::new();
+    let mut asset_type = "image".to_string();
 
     while let Some(field) = multipart.next_field().await.map_err(|e| AppError::BadRequest(e.to_string()))? {
         let name = field.name().unwrap_or_default().to_string();
         if name == "file" {
-            file_name = field.file_name().unwrap_or("virtual_portrait.jpg").to_string();
-            mime_type = field.content_type().unwrap_or("image/jpeg").to_string();
+            file_name = field.file_name().unwrap_or("asset_file").to_string();
+            mime_type = field.content_type().unwrap_or("application/octet-stream").to_string();
             file_data = Some(field.bytes().await.map_err(|e| AppError::BadRequest(e.to_string()))?);
         } else if name == "group_id" {
             group_id = field.text().await.unwrap_or_default();
+        } else if name == "asset_type" {
+            asset_type = field.text().await.unwrap_or_else(|_| "image".to_string());
         }
     }
 
@@ -923,8 +947,13 @@ async fn upload_virtual_portrait(
     let data = file_data.ok_or_else(|| AppError::BadRequest("未检测到文件".to_string()))?;
     let size = data.len() as i64;
 
-    if size > 30 * 1024 * 1024 {
-        return Err(AppError::BadRequest("图片不能超过 30MB".to_string()));
+    let max_size: i64 = match asset_type.as_str() {
+        "video" => 300 * 1024 * 1024,
+        "audio" => 100 * 1024 * 1024,
+        _ => 30 * 1024 * 1024, // image
+    };
+    if size > max_size {
+        return Err(AppError::BadRequest(format!("文件不能超过 {} MB", max_size / 1024 / 1024)));
     }
 
     // 上传到 TOS
@@ -951,10 +980,11 @@ async fn upload_virtual_portrait(
     // 写入数据库，状态为 uploaded（待提交审核）
     let asset: PluginAsset = sqlx::query_as(&state.db.format_query(
         "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, mime_type, size, category, group_id)
-         VALUES (?, 'image', 'user', 'uploaded', ?, ?, ?, ?, '虚拟人像', ?)
+         VALUES (?, ?, 'user', 'uploaded', ?, ?, ?, ?, '虚拟人像', ?)
          RETURNING *"
     ))
     .bind(&claims.sub)
+    .bind(&asset_type)
     .bind(&file_name)
     .bind(&file_url)
     .bind(&mime_type)
@@ -1021,7 +1051,11 @@ async fn submit_virtual_portrait_review(
     let create_req = crate::services::volcengine::CreateAssetRequest {
         group_id: group_id.clone(),
         url: public_url.clone(),
-        asset_type: "Image".to_string(),
+        asset_type: match asset.asset_type.as_str() {
+            "video" => "Video".to_string(),
+            "audio" => "Audio".to_string(),
+            _ => "Image".to_string(),
+        },
         name: Some(asset.file_name.clone()),
         project_name: Some(volc_config.project_name.clone()),
     };
@@ -1078,7 +1112,7 @@ async fn user_create_group(
     .await
     .unwrap_or(0);
 
-    let quota = 30; // 默认 30
+    let quota = 20; // 默认 20
     if count >= quota {
         return Err(AppError::BadRequest(format!("最多只能创建 {} 个素材组合", quota)));
     }
