@@ -628,12 +628,26 @@ const UserAssets: React.FC = () => {
                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
                  {groups.length === 0 && !loadingGroups && <Text type="secondary" style={{ marginTop: 20 }}>暂无人物文件夹，请先新建人物文件夹。</Text>}
                  {groups.map(g => (
-                   <Card key={g.id} hoverable style={{ width: 220, borderRadius: 12, border: '1px solid #303030' }} onClick={() => setCurrentGroup(g)} bodyStyle={{ padding: 16 }}>
-                     <div style={{ display: 'flex', gap: 12 }}>
-                       <FolderOutlined style={{ fontSize: 40, color: '#1677ff', flexShrink: 0 }} />
-                       <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                         <Text strong style={{ fontSize: 16 }} ellipsis={{ tooltip: g.name }}>{g.name}</Text>
+                   <Card key={g.id} hoverable style={{ width: 280, borderRadius: 12, border: '1px solid #303030', background: '#1a1a1a' }} onClick={() => setCurrentGroup(g)} bodyStyle={{ padding: 16 }}>
+                     <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
+                       <FolderOutlined style={{ fontSize: 36, color: '#1677ff', flexShrink: 0, marginTop: 2 }} />
+                       <div style={{ overflow: 'hidden', flex: 1 }}>
+                         <Text strong style={{ fontSize: 15, display: 'block' }} ellipsis={{ tooltip: g.name }}>{g.name}</Text>
                          {g.description && <Text type="secondary" style={{ fontSize: 12 }} ellipsis={{ tooltip: g.description }}>{g.description}</Text>}
+                       </div>
+                     </div>
+                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                         <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>Group ID</Text>
+                         <Text copyable={{ text: g.group_id }} style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', fontFamily: 'monospace' }}>{g.group_id?.substring(0, 24)}{g.group_id?.length > 24 ? '...' : ''}</Text>
+                       </div>
+                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                         <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>素材数量</Text>
+                         <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>{assets.filter(a => a.group_id === g.group_id).length} 个</Text>
+                       </div>
+                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                         <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>创建时间</Text>
+                         <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>{new Date(g.created_at).toLocaleString('zh-CN')}</Text>
                        </div>
                      </div>
                    </Card>

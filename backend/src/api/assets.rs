@@ -33,6 +33,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/user/submit-review/{id}", post(submit_virtual_portrait_review))
         .route("/user/asset-status/{id}", get(check_asset_status))
         .route("/user/groups", get(user_list_groups).post(user_create_group))
+        .route("/admin/get-asset-info/{asset_id}", get(admin_get_asset_info))
         .layer(DefaultBodyLimit::disable())
 }
 
@@ -1001,7 +1002,10 @@ async fn submit_virtual_portrait_review(
     let object_key = tos_config.full_key(&format!("{}/{}", folder_name, filename));
     
     let public_url = if !tos_config.custom_domain.is_empty() {
-        let domain = tos_config.custom_domain.trim_end_matches('/');
+        let domain = tos_config.custom_domain
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_end_matches('/');
         format!("https://{}/{}", domain, object_key)
     } else {
         format!("https://{}.{}/{}", tos_config.bucket, tos_config.endpoint, object_key)
@@ -1019,7 +1023,7 @@ async fn submit_virtual_portrait_review(
         url: public_url.clone(),
         asset_type: "Image".to_string(),
         name: Some(asset.file_name.clone()),
-        project_name: Some("default".to_string()),
+        project_name: Some(volc_config.project_name.clone()),
     };
 
     let asset_res: crate::services::volcengine::CreateAssetResponse = client.call_api(
@@ -1088,7 +1092,7 @@ async fn user_create_group(
         name: payload.name.clone(),
         description: payload.description.clone(),
         group_type: Some("AIGC".to_string()),
-        project_name: Some("default".to_string()),
+        project_name: Some(volc_config.project_name.clone()),
     };
 
     let group_res: crate::services::volcengine::CreateAssetGroupResponse = client.call_api(
@@ -1138,11 +1142,12 @@ async fn check_asset_status(
 
     if let Some(vc) = volc_config {
         if !asset_id_val.is_empty() {
+            let pn = vc.project_name.clone();
             let client = crate::services::volcengine::VolcClient::new(vc)
                 .with_logger(state.db.clone(), claims.sub.clone());
             let get_req = crate::services::volcengine::GetAssetRequest {
                 id: asset_id_val.clone(),
-                project_name: Some("default".to_string()),
+                project_name: Some(pn),
             };
 
             match client.call_api::<_, crate::services::volcengine::GetAssetResponse>(
@@ -1182,4 +1187,44 @@ async fn check_asset_status(
     Ok(Json(json!({ "status": "processing" })))
 }
 
+/// 管理员：通过火山引擎 GetAsset API 查询素材详情
+async fn admin_get_asset_info(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    Path(asset_id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 验证管理员身份
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
 
+    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("API配置未完成".to_string()))?;
+
+    let pn = volc_config.project_name.clone();
+    let client = crate::services::volcengine::VolcClient::new(volc_config)
+        .with_logger(state.db.clone(), claims.sub.clone());
+
+    let get_req = crate::services::volcengine::GetAssetRequest {
+        id: asset_id.clone(),
+        project_name: Some(pn),
+    };
+
+    let res: crate::services::volcengine::GetAssetResponse = client.call_api(
+        "ark", "cn-beijing", "GetAsset", "2024-01-01", get_req
+    ).await.map_err(|e| AppError::Internal(format!("查询素材详情失败: {}", e)))?;
+
+    Ok(Json(json!({
+        "Id": res.id,
+        "Status": res.status,
+        "GroupId": res.group_id,
+        "AssetType": res.asset_type,
+        "URL": res.url,
+        "CreateTime": res.create_time,
+        "ProjectName": res.project_name,
+    })))
+}

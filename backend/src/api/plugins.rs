@@ -283,6 +283,7 @@ pub struct ModerationConfigRequest {
     pub volc_access_key: String,
     pub volc_secret_key: Option<String>,
     pub volc_app_id: Option<String>,
+    pub volc_project_name: Option<String>,
 }
 
 /// 管理员：获取审核配置
@@ -315,6 +316,7 @@ async fn get_moderation_config(
         "volc_access_key": configs.get("volc_access_key").cloned().unwrap_or_default(),
         "volc_secret_key_masked": masked_sk,
         "volc_app_id": configs.get("volc_app_id").cloned().unwrap_or_default(),
+        "volc_project_name": configs.get("volc_project_name").cloned().unwrap_or_else(|| "default".to_string()),
         "is_configured": !configs.get("volc_access_key").cloned().unwrap_or_default().is_empty(),
     })))
 }
@@ -346,6 +348,12 @@ async fn save_moderation_config(
         if !sk.is_empty() && !sk.contains("****") {
             upsert_config(&state, &name, "volc_secret_key", sk).await?;
         }
+    }
+
+    // project_name
+    if let Some(ref pn) = payload.volc_project_name {
+        let pn_val = if pn.trim().is_empty() { "default" } else { pn.trim() };
+        upsert_config(&state, &name, "volc_project_name", pn_val).await?;
     }
 
     Ok(Json(json!({ "message": "审核配置已保存" })))

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.1",
+    "@uiw/react-json-view": "^2.0.0-alpha.41",
     "antd": "^6.3.5",
     "axios": "^1.14.0",
     "dayjs": "^1.11.20",

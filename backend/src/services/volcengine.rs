@@ -14,6 +14,7 @@ pub struct VolcConfig {
     pub access_key: String,
     pub secret_key: String,
     pub app_id: String,
+    pub project_name: String,
 }
 
 impl VolcConfig {
@@ -21,6 +22,10 @@ impl VolcConfig {
         let ak = map.get("volc_access_key")?.trim();
         let sk = map.get("volc_secret_key")?.trim();
         let app_id = map.get("volc_app_id").map(|s| s.trim().to_string()).unwrap_or_default();
+        let project_name = map.get("volc_project_name")
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| "default".to_string());
+        let project_name = if project_name.is_empty() { "default".to_string() } else { project_name };
 
         if ak.is_empty() || sk.is_empty() {
             return None;
@@ -30,6 +35,7 @@ impl VolcConfig {
             access_key: ak.to_string(),
             secret_key: sk.to_string(),
             app_id,
+            project_name,
         })
     }
 }
@@ -98,8 +104,8 @@ impl VolcClient {
             hashed_canonical_request
         );
 
-        // 3. Signature
-        let k_date = self.hmac_sha256(format!("HMAC-V4{}", self.config.secret_key).as_bytes(), date_short.as_bytes());
+        // 3. Signature - 使用原始 SecretKey（不加前缀），与火山引擎官方 SDK 一致
+        let k_date = self.hmac_sha256(self.config.secret_key.as_bytes(), date_short.as_bytes());
         let k_region = self.hmac_sha256(&k_date, region.as_bytes());
         let k_service = self.hmac_sha256(&k_region, service.as_bytes());
         let k_signing = self.hmac_sha256(&k_service, b"request");
@@ -180,7 +186,24 @@ impl VolcClient {
             return Err(anyhow!("Volcengine API error: {} - {}", status, text));
         }
 
-        serde_json::from_str(&text).map_err(|e| anyhow!("Failed to parse Volcengine response: {} - Raw: {}", e, text))
+        // 火山引擎 API 响应有两种结构：
+        // 1. visual 等服务：Response struct 自己定义了 ResponseMetadata + Result → 直接反序列化
+        // 2. ark 素材 API：Response struct 只定义了 Result 内部字段 → 需要提取 Result 再反序列化
+        let raw: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| anyhow!("Failed to parse Volcengine response JSON: {} - Raw: {}", e, text))?;
+
+        // 先尝试直接反序列化整个响应（兼容自带 ResponseMetadata 包装的结构体）
+        if let Ok(parsed) = serde_json::from_value::<R>(raw.clone()) {
+            return Ok(parsed);
+        }
+
+        // 再尝试从 "Result" 字段提取（Ark API 的标准响应格式）
+        if let Some(result_val) = raw.get("Result") {
+            return serde_json::from_value(result_val.clone())
+                .map_err(|e| anyhow!("Failed to parse Volcengine Result: {} - Raw: {}", e, text));
+        }
+
+        Err(anyhow!("Volcengine response missing 'Result' field - Raw: {}", text))
     }
 }
 

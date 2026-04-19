@@ -5,7 +5,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
 import AdminPresetAssets from './AssetManager/AdminPresetAssets';
-
+import JsonView from '@uiw/react-json-view';
+import { darkTheme } from '@uiw/react-json-view/dark';
 
 const { Title, Text } = Typography;
 
@@ -32,6 +33,7 @@ interface ModerationConfig {
   volc_access_key: string;
   volc_secret_key_masked: string;
   volc_app_id: string;
+  volc_project_name: string;
   is_configured: boolean;
 }
 
@@ -69,7 +71,7 @@ const PluginConfig: React.FC = () => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [activeTabKey, setActiveTabKey] = useState(() => {
     const hash = window.location.hash.replace('#', '');
-    return ['basic', 'storage', 'moderation', 'preset', 'audit_log', 'api_log'].includes(hash) ? hash : 'basic';
+    return ['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log'].includes(hash) ? hash : 'audit_log';
   });
   const handleTabChange = (key: string) => {
     setActiveTabKey(key);
@@ -187,6 +189,7 @@ const PluginConfig: React.FC = () => {
             volc_access_key: moderationRes.volc_access_key || '',
             volc_secret_key: '',
             volc_app_id: moderationRes.volc_app_id || '',
+            volc_project_name: moderationRes.volc_project_name || 'default',
           });
         }, 0);
       }
@@ -328,68 +331,7 @@ const PluginConfig: React.FC = () => {
             {levels.map(lv => {
               const isSelected = selectedLevels.includes(lv.group_key);
             
-  const apiLogColumns = [
-    { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
-    { title: 'User ID', dataIndex: 'user_id', key: 'user_id', width: 140, render: (u: string) => <Text copyable>{u ? (u.substring(0,8) + '...') : ''}</Text> },
-    { title: '接口名称', dataIndex: 'api_endpoint', key: 'api_endpoint', width: 200, render: (r: string) => <Tag color="cyan">{r}</Tag> },
-    { 
-      title: '状态', 
-      dataIndex: 'status_code', 
-      key: 'status_code', 
-      width: 100, 
-      render: (s: number) => {
-        if (s === 200) return <Tag color="success">成功 ({s})</Tag>;
-        return <Tag color="error">失败 ({s})</Tag>;
-      } 
-    },
-    { title: '请求时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (t: string) => <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> },
-  ];
 
-  const apiLogTab = (
-    <div>
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>共 {apiLogsTotal} 条接口请求记录</Text>
-        <Button size="small" onClick={() => fetchApiLogs(apiLogsPage)} loading={apiLogsLoading}>刷新</Button>
-      </div>
-      <Table
-        dataSource={apiLogs}
-        columns={apiLogColumns}
-        rowKey="id"
-        loading={apiLogsLoading}
-        size="small"
-        pagination={{ 
-          current: apiLogsPage,
-          total: apiLogsTotal,
-          pageSize: 15,
-          onChange: (page) => fetchApiLogs(page)
-        }}
-        expandable={{
-          expandedRowRender: record => (
-            <div style={{ margin: 0, padding: 16, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
-              <div style={{ marginBottom: 16 }}>
-                <Text strong style={{ color: '#1677ff' }}>Request Payload:</Text>
-                <Input.TextArea 
-                  value={record.request_payload} 
-                  autoSize={{ minRows: 2, maxRows: 10 }} 
-                  readOnly 
-                  style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 12 }} 
-                />
-              </div>
-              <div>
-                <Text strong style={{ color: '#faad14' }}>Response Payload:</Text>
-                <Input.TextArea 
-                  value={record.response_payload} 
-                  autoSize={{ minRows: 2, maxRows: 10 }} 
-                  readOnly 
-                  style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 12 }} 
-                />
-              </div>
-            </div>
-          ),
-        }}
-      />
-    </div>
-  );
 
   return (
 
@@ -652,6 +594,13 @@ const PluginConfig: React.FC = () => {
               <Input.Password placeholder="Secret Access Key" style={inputStyle} />
             </Form.Item>
           </div>
+          <Form.Item
+            label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>使用项目名称 (ProjectName)</Text>}
+            name="volc_project_name"
+            extra={<Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>接口调用时使用的项目名称，留空则默认为 default</Text>}
+          >
+            <Input placeholder="default" style={inputStyle} />
+          </Form.Item>
         </Form>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
@@ -751,6 +700,22 @@ const PluginConfig: React.FC = () => {
     },
   ];
 
+  const [expandedAssetInfo, setExpandedAssetInfo] = useState<Record<string, any>>({});
+  const [loadingAssetInfo, setLoadingAssetInfo] = useState<Record<string, boolean>>({});
+
+  const fetchAssetInfo = async (assetId: string) => {
+    if (!assetId || expandedAssetInfo[assetId]) return;
+    try {
+      setLoadingAssetInfo(prev => ({ ...prev, [assetId]: true }));
+      const res = await (request.get(`/assets/admin/get-asset-info/${assetId}`) as any);
+      setExpandedAssetInfo(prev => ({ ...prev, [assetId]: res }));
+    } catch (e: any) {
+      setExpandedAssetInfo(prev => ({ ...prev, [assetId]: { error: e?.response?.data?.error?.message || '查询失败' } }));
+    } finally {
+      setLoadingAssetInfo(prev => ({ ...prev, [assetId]: false }));
+    }
+  };
+
   const auditLogTab = (
     <div>
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -764,6 +729,34 @@ const PluginConfig: React.FC = () => {
         loading={auditLoading}
         size="small"
         pagination={{ pageSize: 15 }}
+        expandable={{
+          expandedRowRender: record => {
+            const aid = record.asset_id;
+            if (!aid) return <Text type="secondary">该素材尚未提交到火山引擎，无详细信息</Text>;
+            const info = expandedAssetInfo[aid];
+            const loading = loadingAssetInfo[aid];
+            if (loading || !info) return <Spin size="small" />;
+            if (info?.error) return <Text type="danger">查询失败: {info.error}</Text>;
+            if (!info) return <Spin size="small" />;
+            return (
+              <div style={{ padding: 16, background: '#1a1a1a', borderRadius: 8 }}>
+                <Text strong style={{ color: '#1677ff', display: 'block', marginBottom: 12, fontSize: 14 }}>📄 火山引擎素材详情 (GetAsset)</Text>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
+                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Asset ID</Text><br/><Text copyable style={{ fontSize: 13, fontFamily: 'monospace' }}>{info.Id}</Text></div>
+                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Group ID</Text><br/><Text copyable style={{ fontSize: 13, fontFamily: 'monospace' }}>{info.GroupId}</Text></div>
+                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>状态 (Status)</Text><br/><Tag color={info.Status === 'Active' ? 'success' : info.Status === 'Failed' ? 'error' : 'processing'}>{info.Status}</Tag></div>
+                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>素材类型 (AssetType)</Text><br/><Text style={{ fontSize: 13 }}>{info.AssetType}</Text></div>
+                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>项目名称 (ProjectName)</Text><br/><Text style={{ fontSize: 13 }}>{info.ProjectName}</Text></div>
+                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>创建时间 (CreateTime)</Text><br/><Text style={{ fontSize: 13 }}>{info.CreateTime ? new Date(info.CreateTime).toLocaleString('zh-CN') : '-'}</Text></div>
+                  <div style={{ gridColumn: '1 / -1' }}><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>URL</Text><br/><Text copyable style={{ fontSize: 12, fontFamily: 'monospace', wordBreak: 'break-all' }}>{info.URL}</Text></div>
+                </div>
+              </div>
+            );
+          },
+          onExpand: (expanded, record) => {
+            if (expanded && record.asset_id) fetchAssetInfo(record.asset_id);
+          },
+        }}
       />
     </div>
   );
@@ -805,28 +798,27 @@ const PluginConfig: React.FC = () => {
           onChange: (page) => fetchApiLogs(page)
         }}
         expandable={{
-          expandedRowRender: record => (
-            <div style={{ margin: 0, padding: 16, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
-              <div style={{ marginBottom: 16 }}>
-                <Text strong style={{ color: '#1677ff' }}>Request Payload:</Text>
-                <Input.TextArea 
-                  value={record.request_payload} 
-                  autoSize={{ minRows: 2, maxRows: 10 }} 
-                  readOnly 
-                  style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 12 }} 
-                />
+          expandedRowRender: record => {
+            const safeParse = (str: string) => {
+              try { return typeof str === 'string' ? JSON.parse(str) : str; } catch { return { raw_text: str || '(空)' }; }
+            };
+            return (
+              <div style={{ margin: 0, padding: 16, background: '#1e1e1e', borderRadius: 8 }}>
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong style={{ color: '#1677ff', display: 'block', marginBottom: 8 }}>📤 Request Payload</Text>
+                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '350px', overflow: 'auto', border: '1px solid #303030' }}>
+                    <JsonView value={safeParse(record.request_payload)} style={darkTheme} collapsed={1} displayDataTypes={false} displayObjectSize={false} />
+                  </div>
+                </div>
+                <div>
+                  <Text strong style={{ color: '#faad14', display: 'block', marginBottom: 8 }}>📥 Response Payload</Text>
+                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '450px', overflow: 'auto', border: '1px solid #303030' }}>
+                    <JsonView value={safeParse(record.response_payload)} style={darkTheme} collapsed={2} displayDataTypes={false} displayObjectSize={false} />
+                  </div>
+                </div>
               </div>
-              <div>
-                <Text strong style={{ color: '#faad14' }}>Response Payload:</Text>
-                <Input.TextArea 
-                  value={record.response_payload} 
-                  autoSize={{ minRows: 2, maxRows: 10 }} 
-                  readOnly 
-                  style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 12 }} 
-                />
-              </div>
-            </div>
-          ),
+            );
+          },
         }}
       />
     </div>
@@ -863,11 +855,11 @@ const PluginConfig: React.FC = () => {
         activeKey={activeTabKey}
         onChange={handleTabChange}
         items={[
+          { key: 'audit_log', label: '审核日志', children: auditLogTab },
           { key: 'basic', label: '基本配置', children: basicTab },
           { key: 'storage', label: '存储配置', children: storageTab },
           { key: 'moderation', label: '审核配置', children: moderationTab },
           { key: 'preset', label: '预设素材', children: <AdminPresetAssets /> },
-          { key: 'audit_log', label: '审核日志', children: auditLogTab },
           { key: 'api_log', label: '接口日志', children: apiLogTab },
         ]}
       />
