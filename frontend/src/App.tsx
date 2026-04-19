@@ -38,10 +38,11 @@ import useAuthStore from './store/auth';
 import useSettingsStore from './store/settings';
 import { useEffect } from 'react';
 
-const PrivateRoute = ({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) => {
+const PrivateRoute = ({ children, adminOnly = false, userOnly = false }: { children: React.ReactNode, adminOnly?: boolean, userOnly?: boolean }) => {
   const { token, user } = useAuthStore();
   if (!token) return <Navigate to="/login" />;
   if (adminOnly && user?.role !== 'admin') return <Navigate to="/" />;
+  if (userOnly && user?.role === 'admin') return <Navigate to="/admin0755/dashboard" />;
   return <>{children}</>;
 };
 
@@ -65,7 +66,7 @@ const App: React.FC = () => {
         <Route
           path="/"
           element={
-            <PrivateRoute>
+            <PrivateRoute userOnly={true}>
               <DashboardLayout isUserEnd={true} />
             </PrivateRoute>
           }

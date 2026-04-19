@@ -1,6 +1,9 @@
 import axios from 'axios';
 import { message } from 'antd';
 
+// 全局限制同时最多显示 3 条消息
+message.config({ maxCount: 3 });
+
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '/api/v1',
   timeout: 300000, // 5 minutes timeout for long-running requests like image generation
@@ -24,7 +27,11 @@ request.interceptors.response.use(
     return response.data;
   },
   (error) => {
-    const { response } = error;
+    const { response, config } = error;
+    // 如果请求配置了 skipErrorHandler，则不弹出全局错误提示
+    if ((config as any)?.skipErrorHandler) {
+      return Promise.reject(error);
+    }
     if (response) {
       const { status, data } = response;
       if (status === 401) {

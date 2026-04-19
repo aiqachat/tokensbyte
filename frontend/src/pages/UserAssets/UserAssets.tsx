@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Table, Button, Space, message, Card, Typography, Upload, Tag, Progress, Spin, Menu, Modal, Select, Form, Segmented, Input, Image, Divider } from 'antd';
+import { Table, Button, Space, message, Card, Typography, Upload, Tag, Progress, Spin, Menu, Modal, Select, Form, Segmented, Input, Image, Divider, Dropdown, Checkbox } from 'antd';
 import {
   UploadOutlined, CloudOutlined, FolderOutlined, FolderFilled, FileOutlined,
   PictureOutlined, VideoCameraOutlined, UserOutlined, AppstoreOutlined,
   StarOutlined, InboxOutlined, AudioOutlined, UserAddOutlined, EditOutlined,
   SendOutlined, LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  CheckCircleFilled, DownloadOutlined, DeleteOutlined
+  CheckCircleFilled, DownloadOutlined, DeleteOutlined, FilterOutlined, LoginOutlined
 } from '@ant-design/icons';
 import request from '../../utils/request';
 import type { PluginAsset } from '../../types';
@@ -64,13 +64,16 @@ const UserAssets: React.FC = () => {
     return new URLSearchParams(window.location.search).get('tab') || 'my_virtual_portrait';
   });
 
+  // 资源筛选器状态
+  const [assetFilter, setAssetFilter] = useState<string>('全部类型');
+
   // 上传弹窗
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadForm] = Form.useForm();
   const [fileList, setFileList] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadAssetType, setUploadAssetType] = useState<'image' | 'video' | 'audio'>('image');
-  const [uploadProgress, setUploadProgress] = useState<{ total: number; done: number; failed: number; active: boolean } | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{ action: 'upload' | 'submit' | 'delete'; total: number; done: number; failed: number; active: boolean } | null>(null);
 
   // 组状态
   const [groups, setGroups] = useState<AssetGroup[]>([]);
@@ -93,7 +96,11 @@ const UserAssets: React.FC = () => {
   const [selectedRecord, setSelectedRecord] = useState<SelectedRecord | null>(null);
   const [mediaInfo, setMediaInfo] = useState<{ width?: number; height?: number; duration?: number } | null>(null);
 
+  // 多选状态
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<number>>(new Set());
+
   // 同步当前选项和文件夹状态到 URL
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let changed = false;
@@ -107,16 +114,18 @@ const UserAssets: React.FC = () => {
     if (params.get('group') !== currentGroupId) {
       if (currentGroupId) {
         params.set('group', currentGroupId);
-      } else {
+        changed = true;
+      } else if (groupsLoaded) {
+        // 仅在 groups 已加载后才清除 group 参数，避免初始化时误删
         params.delete('group');
+        changed = true;
       }
-      changed = true;
     }
     
     if (changed) {
       window.history.replaceState(null, '', '?' + params.toString());
     }
-  }, [selectedKey, currentGroup]);
+  }, [selectedKey, currentGroup, groupsLoaded]);
   // 当选中素材变化时，自动探测媒体元数据
   useEffect(() => {
     if (!selectedRecord || selectedRecord.type !== 'asset') {
@@ -171,6 +180,7 @@ const UserAssets: React.FC = () => {
       message.error('获取文件夹列表失败');
     } finally {
       setLoadingGroups(false);
+      setGroupsLoaded(true);
     }
   }, []);
 
@@ -284,13 +294,16 @@ const UserAssets: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchStorageInfo();
+    if (!storage) {
+      fetchStorageInfo();
+    }
   }, []);
 
   // 当 selectedKey 改变时重新获取素材并清空选中
   useEffect(() => {
     if (selectedKey) {
       setSelectedRecord(null);
+      setSelectedAssetIds(new Set());
       fetchAssets();
     }
   }, [selectedKey, fetchAssets]);
@@ -379,7 +392,7 @@ const UserAssets: React.FC = () => {
       setIsUploadModalOpen(false);
       uploadForm.resetFields();
       setFileList([]);
-      setUploadProgress({ total: filesToUpload.length, done: 0, failed: 0, active: true });
+      setBatchProgress({ action: 'upload', total: filesToUpload.length, done: 0, failed: 0, active: true });
 
       // 逐个上传文件，实时更新进度
       let doneCount = 0;
@@ -401,7 +414,7 @@ const UserAssets: React.FC = () => {
           console.error(`上传 ${fileItem.name} 失败`, e);
           failCount++;
         }
-        setUploadProgress({ total: filesToUpload.length, done: doneCount, failed: failCount, active: true });
+        setBatchProgress({ action: 'upload', total: filesToUpload.length, done: doneCount, failed: failCount, active: true });
       }
 
       // 上传完毕
@@ -414,11 +427,11 @@ const UserAssets: React.FC = () => {
       fetchAssets();
       fetchStorageInfo();
       // 3 秒后自动隐藏进度条
-      setTimeout(() => setUploadProgress(null), 3000);
+      setTimeout(() => setBatchProgress(null), 3000);
     } catch (error) {
       console.error(error);
       message.error('上传失败');
-      setUploadProgress(null);
+      setBatchProgress(null);
     }
   };
 
@@ -435,6 +448,75 @@ const UserAssets: React.FC = () => {
     } finally {
       setSubmittingReview(null);
     }
+  };
+
+  // 批量提交审核
+  const handleBatchSubmitReview = async () => {
+    // 找出选中的素材中需要提交审核的（过滤掉已通过、审核中的）
+    const needReviewIds = Array.from(selectedAssetIds).filter(id => {
+      const asset = assets.find(a => a.id === id);
+      return asset && asset.source === 'user' && asset.status === 'uploaded';
+    });
+    if (needReviewIds.length === 0) {
+      message.info('选中的素材中没有需要提交审核的项目');
+      return;
+    }
+    setBatchProgress({ action: 'submit', total: needReviewIds.length, done: 0, failed: 0, active: true });
+    let successCount = 0;
+    let failCount = 0;
+    for (const id of needReviewIds) {
+      try {
+        await request.post(`/assets/user/submit-review/${id}`, { skipErrorHandler: true });
+        successCount++;
+      } catch {
+        failCount++;
+      }
+      setBatchProgress({ action: 'submit', total: needReviewIds.length, done: successCount, failed: failCount, active: true });
+    }
+    if (failCount === 0) {
+      message.success(`已成功提交 ${successCount} 个素材审核`);
+    } else {
+      message.warning(`提交完成：${successCount} 成功，${failCount} 失败`);
+    }
+    setSelectedAssetIds(new Set());
+    fetchAssets();
+    setTimeout(() => setBatchProgress(null), 3000);
+  };
+
+  // 批量删除
+  const handleBatchDelete = () => {
+    if (selectedAssetIds.size === 0) return;
+    Modal.confirm({
+      title: '确认批量删除',
+      content: `确定要删除选中的 ${selectedAssetIds.size} 个素材吗？此操作不可恢复。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        const idsToDelete = Array.from(selectedAssetIds);
+        setBatchProgress({ action: 'delete', total: idsToDelete.length, done: 0, failed: 0, active: true });
+        let successCount = 0;
+        let failCount = 0;
+        for (const id of idsToDelete) {
+          try {
+            await request.delete(`/assets/user/asset/${id}`, { skipErrorHandler: true } as any);
+            successCount++;
+          } catch {
+            failCount++;
+          }
+          setBatchProgress({ action: 'delete', total: idsToDelete.length, done: successCount, failed: failCount, active: true });
+        }
+        if (failCount === 0) {
+          message.success(`成功删除 ${successCount} 个素材`);
+        } else {
+          message.warning(`删除完成：${successCount} 成功，${failCount} 失败`);
+        }
+        setSelectedAssetIds(new Set());
+        fetchAssets();
+        fetchStorageInfo();
+        setTimeout(() => setBatchProgress(null), 3000);
+      }
+    });
   };
 
   // 存储空间计算
@@ -567,7 +649,7 @@ const UserAssets: React.FC = () => {
   const renderRightPanel = () => {
     if (!selectedRecord) {
       return (
-        <div style={{ width: 350, flexShrink: 0, background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
           <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)' }}>
             <AppstoreOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }} />
             <div style={{ fontSize: 16 }}>请选择一个项目以查看详情</div>
@@ -581,7 +663,7 @@ const UserAssets: React.FC = () => {
       const g = selectedRecord.data as AssetGroup;
       const groupAssets = assets.filter(a => a.group_id === g.group_id);
       return (
-        <div style={{ width: 350, flexShrink: 0, background: 'linear-gradient(180deg, rgba(22,119,255,0.05) 0%, rgba(255,255,255,0.02) 100%)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'linear-gradient(180deg, rgba(22,119,255,0.05) 0%, rgba(255,255,255,0.02) 100%)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '32px 24px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <FolderOutlined style={{ fontSize: 64, color: '#1677ff', marginBottom: 16 }} />
             <Title level={4} style={{ margin: 0, color: '#fff' }}>{g.name}</Title>
@@ -600,39 +682,64 @@ const UserAssets: React.FC = () => {
               <Text type="secondary">创建时间</Text>
               <Text style={{ color: 'rgba(255,255,255,0.65)' }}>{new Date(g.created_at).toLocaleString()}</Text>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Text type="secondary">最近更新</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.65)' }}>{g.updated_at ? new Date(g.updated_at).toLocaleString() : new Date(g.created_at).toLocaleString()}</Text>
+            </div>
             <div style={{ flex: 1 }} />
             {/* 操作按钮组 */}
-            <div style={{ display: 'flex', gap: 12 }}>
-              <Button type="primary" icon={<EditOutlined />} style={{ flex: 1, borderRadius: 8 }} onClick={() => {
-                setEditingGroup(g);
-                editGroupForm.setFieldsValue({ name: g.name, description: g.description || '' });
-                setIsEditGroupModalOpen(true);
-              }}>
-                编辑
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Button 
+                  icon={<EditOutlined style={{ color: 'rgba(255,255,255,0.85)' }} />} 
+                  style={{ flex: 1, background: '#262626', border: 'none', color: 'rgba(255,255,255,0.85)', height: 40, borderRadius: 8, fontSize: 14 }} 
+                  onClick={() => {
+                    setEditingGroup(g);
+                    editGroupForm.setFieldsValue({ name: g.name, description: g.description || '' });
+                    setIsEditGroupModalOpen(true);
+                  }}>
+                  编辑
+                </Button>
+                <Button 
+                  icon={<DeleteOutlined style={{ color: '#ff7875' }} />} 
+                  style={{ flex: 1, background: '#262626', border: 'none', color: '#ff7875', height: 40, borderRadius: 8, fontSize: 14 }} 
+                  onClick={() => {
+                    Modal.confirm({
+                      title: '确认删除文件夹',
+                      content: `确定要删除「${g.name}」文件夹吗？此操作不可恢复。文件夹中有素材时无法删除。`,
+                      okText: '删除',
+                      cancelText: '取消',
+                      okButtonProps: { danger: true },
+                      onOk: async () => {
+                        try {
+                          await (request as any).delete(`/assets/user/groups/${g.group_id}`);
+                          message.success('文件夹已删除');
+                          setSelectedRecord(null);
+                          fetchGroups();
+                        } catch (e: any) {
+                          // 拦截器已弹出错误提示，此处不重复弹出
+                        }
+                      }
+                    });
+                  }}>
+                  删除
+                </Button>
+              </div>
+              <Button 
+                type="primary" 
+                size="large" 
+                block 
+                icon={<LoginOutlined />} 
+                onClick={() => { setCurrentGroup(g); setSelectedRecord(null); }} 
+                style={{ 
+                  borderRadius: 8, 
+                  height: 48, 
+                  fontSize: 16, 
+                  fontWeight: 500
+                }}>
+                进入文件夹
               </Button>
-              <Button danger icon={<DeleteOutlined />} style={{ borderRadius: 8 }} onClick={() => {
-                Modal.confirm({
-                  title: '确认删除文件夹',
-                  content: `确定要删除「${g.name}」文件夹吗？此操作不可恢复。文件夹中有素材时无法删除。`,
-                  okText: '删除',
-                  cancelText: '取消',
-                  okButtonProps: { danger: true },
-                  onOk: async () => {
-                    try {
-                      await (request as any).delete(`/assets/user/groups/${g.group_id}`);
-                      message.success('文件夹已删除');
-                      setSelectedRecord(null);
-                      fetchGroups();
-                    } catch (e: any) {
-                      message.error(e?.response?.data?.message || e?.message || '删除失败');
-                    }
-                  }
-                });
-              }} />
             </div>
-            <Button type="primary" size="large" block onClick={() => { setCurrentGroup(g); setSelectedRecord(null); }} style={{ borderRadius: 8 }}>
-              进入文件夹
-            </Button>
           </div>
         </div>
       );
@@ -663,7 +770,7 @@ const UserAssets: React.FC = () => {
       };
 
       return (
-        <div style={{ width: 350, flexShrink: 0, background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
           {/* 顶部标题 */}
           <div style={{ padding: '16px 20px 0', fontSize: 16, fontWeight: 600, color: '#fff' }}>详情</div>
 
@@ -854,11 +961,11 @@ const UserAssets: React.FC = () => {
     <div style={{ padding: 0, height: 'calc(100vh - 56px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <Card
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
             <Title level={4} style={{ margin: 0 }}>我的资产库</Title>
             <Spin spinning={storageLoading} size="small">
               {storage && (
-                <div style={{
+                <div className="mobile-scroll-bar" style={{
                   display: 'flex', alignItems: 'center', gap: 12, fontSize: 13,
                   background: 'linear-gradient(90deg, rgba(22,119,255,0.1) 0%, rgba(22,119,255,0.02) 100%)',
                   border: '1px solid rgba(22,119,255,0.2)',
@@ -867,15 +974,15 @@ const UserAssets: React.FC = () => {
                   boxShadow: '0 4px 16px rgba(0,0,0,0.15), inset 0 1px 1px rgba(255,255,255,0.05)',
                   color: 'rgba(255,255,255,0.7)',
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div className="hide-on-mobile" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <CloudOutlined style={{ color: '#1677ff' }} />
                     <span>文件夹: <Text style={{ color: '#1677ff', fontWeight: 600 }}>{storage.folder || '未初始化'}</Text></span>
                   </div>
 
-                  <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+                  <div className="hide-on-mobile" style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>已用空间: <Text style={{ color: progressColor, fontWeight: 600, textShadow: `0 0 10px ${progressColor}40` }}>{usedMB.toFixed(1)} <span style={{ fontSize: 11 }}>MB</span></Text></span>
+                    <span>已用: <Text style={{ color: progressColor, fontWeight: 600, textShadow: `0 0 10px ${progressColor}40` }}>{usedMB.toFixed(1)} <span style={{ fontSize: 11 }}>MB</span></Text></span>
 
                     {!isAdmin ? (
                       <div style={{
@@ -914,49 +1021,100 @@ const UserAssets: React.FC = () => {
         style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '16px 24px' } }}
       >
-        {/* 异步上传进度条 */}
-        {uploadProgress && (
+        {/* 异步批量操作进度条 */}
+        {batchProgress && (
           <div style={{
             marginBottom: 16,
             padding: '12px 16px',
-            background: 'linear-gradient(135deg, rgba(22,119,255,0.08) 0%, rgba(22,119,255,0.02) 100%)',
+            background: batchProgress.action === 'delete' 
+              ? 'linear-gradient(135deg, rgba(255,77,79,0.08) 0%, rgba(255,77,79,0.02) 100%)'
+              : 'linear-gradient(135deg, rgba(22,119,255,0.08) 0%, rgba(22,119,255,0.02) 100%)',
             borderRadius: 10,
-            border: '1px solid rgba(22,119,255,0.15)',
+            border: batchProgress.action === 'delete'
+              ? '1px solid rgba(255,77,79,0.15)'
+              : '1px solid rgba(22,119,255,0.15)',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {uploadProgress.done < uploadProgress.total ? (
-                  <LoadingOutlined style={{ color: '#1677ff', fontSize: 16 }} />
+                {batchProgress.done < batchProgress.total ? (
+                  <LoadingOutlined style={{ color: batchProgress.action === 'delete' ? '#ff4d4f' : '#1677ff', fontSize: 16 }} />
                 ) : (
                   <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />
                 )}
                 <Text style={{ color: '#fff', fontSize: 14, fontWeight: 500 }}>
-                  {uploadProgress.done < uploadProgress.total
-                    ? `正在上传文件... (${uploadProgress.done}/${uploadProgress.total})`
-                    : `上传完成 (${uploadProgress.done}/${uploadProgress.total})`
+                  {batchProgress.done < batchProgress.total
+                    ? `正在${batchProgress.action === 'upload' ? '上传' : batchProgress.action === 'submit' ? '提交' : '删除'}... (${batchProgress.done}/${batchProgress.total})`
+                    : `${batchProgress.action === 'upload' ? '上传' : batchProgress.action === 'submit' ? '提交' : '删除'}完成 (${batchProgress.done}/${batchProgress.total})`
                   }
                 </Text>
               </div>
-              {uploadProgress.failed > 0 && (
-                <Tag color="red" style={{ margin: 0 }}>{uploadProgress.failed} 个失败</Tag>
+              {batchProgress.failed > 0 && (
+                <Tag color="red" style={{ margin: 0 }}>{batchProgress.failed} 个失败</Tag>
               )}
-              {uploadProgress.done >= uploadProgress.total && (
-                <Button type="text" size="small" onClick={() => setUploadProgress(null)} style={{ color: 'rgba(255,255,255,0.45)' }}>关闭</Button>
+              {batchProgress.done >= batchProgress.total && (
+                <Button type="text" size="small" onClick={() => setBatchProgress(null)} style={{ color: 'rgba(255,255,255,0.45)' }}>关闭</Button>
               )}
             </div>
             <Progress
-              percent={Math.round((uploadProgress.done / uploadProgress.total) * 100)}
-              strokeColor={{ from: '#1677ff', to: '#52c41a' }}
+              percent={Math.round((batchProgress.done / batchProgress.total) * 100)}
+              strokeColor={batchProgress.action === 'delete' ? { from: '#ff4d4f', to: '#ff7875' } : { from: '#1677ff', to: '#52c41a' }}
               trailColor="rgba(255,255,255,0.06)"
               size="small"
-              status={uploadProgress.done < uploadProgress.total ? 'active' : uploadProgress.failed > 0 ? 'exception' : 'success'}
+              status={batchProgress.done < batchProgress.total ? 'active' : batchProgress.failed > 0 ? 'exception' : 'success'}
             />
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 24, flex: 1, overflow: 'hidden' }}>
+        <style>
+          {`
+            .assets-layout-container {
+              display: flex;
+              gap: 24px;
+              flex: 1;
+              overflow: hidden;
+            }
+            .assets-left-panel {
+              flex: 1;
+              min-width: 0;
+              display: flex;
+              flex-direction: column;
+              gap: 16px;
+              overflow-y: auto;
+              padding-right: 4px;
+            }
+            @media (max-width: 768px) {
+              .assets-layout-container {
+                flex-direction: column !important;
+                overflow-y: auto !important;
+              }
+              .assets-left-panel {
+                overflow-y: visible !important;
+                flex: none !important;
+              }
+              .assets-right-panel-wrapper {
+                width: 100% !important;
+                margin-top: 24px;
+              }
+              .ant-card-body {
+                padding: 12px 16px !important;
+              }
+              .mobile-scroll-bar {
+                flex-wrap: nowrap !important;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+              }
+              .mobile-scroll-bar::-webkit-scrollbar {
+                display: none;
+              }
+              .hide-on-mobile {
+                display: none !important;
+              }
+            }
+          `}
+        </style>
+        <div className="assets-layout-container">
           {/* 左侧为主视图 */}
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', paddingRight: 4 }}>
+          <div className="assets-left-panel">
             {/* 上方横向分类导航 */}
             <div style={{
               display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 20px',
@@ -987,13 +1145,56 @@ const UserAssets: React.FC = () => {
                 if (selectedKey.startsWith('my_')) {
                   // 我的素材的二级分类
                   return (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', alignItems: 'center' }}>
                       <Segmented
                         options={MY_ASSET_SUBCATEGORIES.map(sub => ({ label: sub.label, value: sub.key }))}
                         value={selectedKey}
                         onChange={(val) => setSelectedKey(val as string)}
                         style={{ alignSelf: 'flex-start' }}
                       />
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <Dropdown
+                          menu={{
+                            items: [
+                              { key: '全部类型', label: '全部类型' },
+                              { key: '图片', label: '图片' },
+                              { key: '视频', label: '视频' },
+                              { key: '声音', label: '声音' },
+                            ],
+                            selectable: true,
+                            defaultSelectedKeys: ['全部类型'],
+                            selectedKeys: [assetFilter],
+                            onClick: (e) => setAssetFilter(e.key),
+                          }}
+                        >
+                          <Button style={{ background: '#1a1a1a', border: '1px solid #333', color: '#fff' }}>
+                            <FilterOutlined /> 筛选
+                          </Button>
+                        </Dropdown>
+                        
+                        <Button 
+                          style={{ background: '#1a1a1a', border: '1px solid #333', color: '#fff' }} 
+                          icon={<UploadOutlined />}
+                          onClick={() => {
+                            if (selectedKey === 'my_virtual_portrait' && !currentGroup) {
+                              message.warning('请先选择或进入一个人物文件夹，再上传素材');
+                              return;
+                            }
+                            setIsUploadModalOpen(true);
+                            setTimeout(() => {
+                              uploadForm.setFieldsValue({ category: selectedKey === 'my_virtual_portrait' ? '虚拟人像' : '真人人像' });
+                            }, 50);
+                          }}
+                        >
+                          上传素材
+                        </Button>
+
+                        {selectedKey === 'my_virtual_portrait' && (
+                          <Button type="primary" icon={<FolderOutlined />} onClick={() => setIsGroupModalOpen(true)}>
+                            创建素材组合
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   );
                 } else {
@@ -1025,42 +1226,38 @@ const UserAssets: React.FC = () => {
             {selectedKey === 'my_virtual_portrait' && (
               <Spin spinning={loadingGroups}>
                 <div style={{ marginBottom: 32 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <div style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>人物文件夹列表</div>
-                      <Text style={{ marginLeft: 16, color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
-                        （已创建 {groups.length} 个人物组
-                        {storage?.virtual_portrait_quota !== undefined && (
-                          <> / 可创建人物组 {storage.virtual_portrait_quota} 个</>
-                        )}
-                        ）
-                      </Text>
-                    </div>
-                    <Button type="text" icon={<FolderOutlined />} onClick={() => setIsGroupModalOpen(true)} style={{ color: '#1677ff' }}>
-                      新建人物文件夹
-                    </Button>
+                  <div style={{ marginBottom: 16 }}>
+                    <span style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>素材资产文件夹列表</span>
+                    <Text style={{ marginLeft: 10, color: 'rgba(255,255,255,0.45)', fontSize: 13, wordBreak: 'break-all' }}>
+                      （已创建 {groups.length} 个素材组
+                      {storage?.virtual_portrait_quota !== undefined && (
+                        <> / 可创建素材组 {storage.virtual_portrait_quota} 个</>
+                      )}
+                      ）
+                    </Text>
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(max(150px, calc(16.666% - 10px)), 1fr))', gap: 12 }}>
                     {groups.length === 0 && !loadingGroups && <Text type="secondary" style={{ marginTop: 20 }}>暂无人物文件夹，请先新建以存放素材。</Text>}
                     {groups.map(g => {
                       const groupAssetsCount = assets.filter(a => a.group_id === g.group_id).length;
                       const isSelected = currentGroup?.id === g.id;
                       return (
-                        <div 
+                        <div
+                          className="asset-folder-card"
                           key={g.id} 
                           onClick={() => {
                             setCurrentGroup(g);
                             setSelectedRecord({ type: 'group', data: g });
                           }}
                           style={{ 
-                            width: 220, 
+                            width: '100%', 
                             borderRadius: 12, 
                             background: isSelected ? 'rgba(255,255,255,0.1)' : '#262626', 
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            padding: '12px 16px',
-                            gap: 16,
+                            padding: '10px 14px',
+                            gap: 12,
                             border: isSelected ? '1px solid rgba(255,255,255,0.15)' : '1px solid transparent',
                             transition: 'all 0.2s ease',
                           }}
@@ -1070,7 +1267,7 @@ const UserAssets: React.FC = () => {
                           </div>
                           <div style={{ overflow: 'hidden' }}>
                             <div style={{ color: '#fff', fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</div>
-                            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2 }}>{groupAssetsCount} items</div>
+                            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2 }}>{groupAssetsCount} 项</div>
                           </div>
                         </div>
                       );
@@ -1086,8 +1283,10 @@ const UserAssets: React.FC = () => {
                 <div style={{
                   marginBottom: 12,
                   display: 'flex',
+                  flexWrap: 'wrap',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  gap: 12,
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                     <div style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>
@@ -1097,30 +1296,109 @@ const UserAssets: React.FC = () => {
                       </Text>
                     </div>
                   </div>
-                  {currentGroup && selectedKey.startsWith('my_') && (
-                    <Button
-                      icon={<UploadOutlined />}
-                      type="primary"
-                      onClick={() => {
-                        setIsUploadModalOpen(true);
-                        setTimeout(() => {
-                          uploadForm.setFieldsValue({ category: '虚拟人像' });
-                        }, 50);
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <Checkbox
+                      checked={(() => {
+                        const visibleAssets = (currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id) : assets)
+                          .filter(a => {
+                            if (assetFilter === '全部类型') return true;
+                            const ext = a.file_name?.split('.').pop()?.toUpperCase() || '';
+                            if (assetFilter === '图片') return a.asset_type === 'image' || ['JPG','JPEG','PNG','WEBP','GIF','HEIC'].includes(ext);
+                            if (assetFilter === '视频') return a.asset_type === 'video' || ['MP4','MOV','WEBM','AVI','MKV'].includes(ext);
+                            if (assetFilter === '声音') return a.asset_type === 'audio' || ['MP3','WAV','AAC','FLAC','OGG','M4A'].includes(ext);
+                            return true;
+                          });
+                        return visibleAssets.length > 0 && visibleAssets.every(a => selectedAssetIds.has(a.id));
+                      })()}
+                      indeterminate={(() => {
+                        const visibleAssets = (currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id) : assets)
+                          .filter(a => {
+                            if (assetFilter === '全部类型') return true;
+                            const ext = a.file_name?.split('.').pop()?.toUpperCase() || '';
+                            if (assetFilter === '图片') return a.asset_type === 'image' || ['JPG','JPEG','PNG','WEBP','GIF','HEIC'].includes(ext);
+                            if (assetFilter === '视频') return a.asset_type === 'video' || ['MP4','MOV','WEBM','AVI','MKV'].includes(ext);
+                            if (assetFilter === '声音') return a.asset_type === 'audio' || ['MP3','WAV','AAC','FLAC','OGG','M4A'].includes(ext);
+                            return true;
+                          });
+                        const selectedCount = visibleAssets.filter(a => selectedAssetIds.has(a.id)).length;
+                        return selectedCount > 0 && selectedCount < visibleAssets.length;
+                      })()}
+                      onChange={(e) => {
+                        const visibleAssets = (currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id) : assets)
+                          .filter(a => {
+                            if (assetFilter === '全部类型') return true;
+                            const ext = a.file_name?.split('.').pop()?.toUpperCase() || '';
+                            if (assetFilter === '图片') return a.asset_type === 'image' || ['JPG','JPEG','PNG','WEBP','GIF','HEIC'].includes(ext);
+                            if (assetFilter === '视频') return a.asset_type === 'video' || ['MP4','MOV','WEBM','AVI','MKV'].includes(ext);
+                            if (assetFilter === '声音') return a.asset_type === 'audio' || ['MP3','WAV','AAC','FLAC','OGG','M4A'].includes(ext);
+                            return true;
+                          });
+                        if (e.target.checked) {
+                          const newSet = new Set(selectedAssetIds);
+                          visibleAssets.forEach(a => newSet.add(a.id));
+                          setSelectedAssetIds(newSet);
+                        } else {
+                          const newSet = new Set(selectedAssetIds);
+                          visibleAssets.forEach(a => newSet.delete(a.id));
+                          setSelectedAssetIds(newSet);
+                        }
                       }}
                     >
-                      上传此人物的资产
-                    </Button>
-                  )}
+                      <span style={{ color: 'rgba(255,255,255,0.65)' }}>全选</span>
+                    </Checkbox>
+                    {selectedAssetIds.size > 0 && (
+                      <>
+                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>已选 {selectedAssetIds.size} 项</Text>
+                        <Button
+                          type="primary"
+                          size="small"
+                          icon={<SendOutlined />}
+                          loading={batchProgress?.action === 'submit'}
+                          onClick={handleBatchSubmitReview}
+                          style={{ borderRadius: 6 }}
+                        >
+                          批量提交
+                        </Button>
+                        <Button
+                          danger
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          loading={batchProgress?.action === 'delete'}
+                          onClick={handleBatchDelete}
+                          style={{ borderRadius: 6 }}
+                        >
+                          批量删除
+                        </Button>
+                        <Button
+                          type="text"
+                          size="small"
+                          onClick={() => setSelectedAssetIds(new Set())}
+                          style={{ color: 'rgba(255,255,255,0.45)' }}
+                        >
+                          取消选择
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '24px', minHeight: 200 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(max(180px, calc(16.666% - 20px)), 1fr))', gap: '24px', minHeight: 200 }}>
                   {loading && assets.length === 0 ? (
                     <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
                       <Spin />
                     </div>
                   ) : null}
 
-                  {(currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id) : assets).map((asset) => {
+                  {(currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id) : assets)
+                    .filter(a => {
+                      if (assetFilter === '全部类型') return true;
+                      const ext = a.file_name?.split('.').pop()?.toUpperCase() || '';
+                      if (assetFilter === '图片') return a.asset_type === 'image' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'HEIC'].includes(ext);
+                      if (assetFilter === '视频') return a.asset_type === 'video' || ['MP4', 'MOV', 'WEBM', 'AVI', 'MKV'].includes(ext);
+                      if (assetFilter === '声音') return a.asset_type === 'audio' || ['MP3', 'WAV', 'AAC', 'FLAC', 'OGG', 'M4A'].includes(ext);
+                      return true;
+                    })
+                    .map((asset) => {
                     const isSelected = selectedRecord?.type === 'asset' && selectedRecord.data.id === asset.id;
                     
                     let fullUrl = asset.file_url || '';
@@ -1135,6 +1413,7 @@ const UserAssets: React.FC = () => {
                     const dateStr = asset.created_at ? new Date(asset.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
                     const isImage = asset.asset_type === 'image' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'HEIC'].includes(ext);
                     
+                    const isChecked = selectedAssetIds.has(asset.id);
                     return (
                       <div 
                         key={asset.id}
@@ -1149,7 +1428,7 @@ const UserAssets: React.FC = () => {
                           aspectRatio: '1/1',
                           borderRadius: 8,
                           background: '#1a1a1a',
-                          border: isSelected ? '2px solid #91caff' : '2px solid transparent',
+                          border: isChecked ? '2px solid #1677ff' : isSelected ? '2px solid #91caff' : '2px solid transparent',
                           overflow: 'hidden',
                           display: 'flex',
                           alignItems: 'center',
@@ -1158,20 +1437,27 @@ const UserAssets: React.FC = () => {
                           transition: 'all 0.2s ease',
                           padding: isImage ? 0 : 20,
                         }}>
-                          {isSelected && (
-                            <div style={{
+                          {/* 多选勾选框 */}
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const newSet = new Set(selectedAssetIds);
+                              if (newSet.has(asset.id)) {
+                                newSet.delete(asset.id);
+                              } else {
+                                newSet.add(asset.id);
+                              }
+                              setSelectedAssetIds(newSet);
+                            }}
+                            style={{
                               position: 'absolute',
                               top: 8,
                               left: 8,
                               zIndex: 10,
-                              background: '#fff',
-                              borderRadius: '50%',
-                              width: 24, height: 24,
-                              display: 'flex', alignItems: 'center', justifyContent: 'center'
-                            }}>
-                              <CheckCircleFilled style={{ color: '#1677ff', fontSize: 22 }} />
-                            </div>
-                          )}
+                            }}
+                          >
+                            <Checkbox checked={isChecked} />
+                          </div>
                           
                           {/* 待审核标记 */}
                           {asset.status !== 'approved' && asset.source === 'user' && (
@@ -1247,21 +1533,22 @@ const UserAssets: React.FC = () => {
       </Card>
 
       
-      {/* 新建人物文件夹弹窗 */}
+      {/* 创建素材组合弹窗 */}
       <Modal
-        title="新建人物文件夹"
+        title="创建素材资产组合"
         open={isGroupModalOpen}
         onCancel={() => { setIsGroupModalOpen(false); groupForm.resetFields(); }}
         onOk={handleCreateGroup}
         confirmLoading={loadingGroups}
         okText="创建"
+        cancelText="取消"
       >
         <Form form={groupForm} layout="vertical">
-          <Form.Item label="人物名称" name="name" rules={[{ required: true, message: '请填写人物名称' }]}>
-            <Input placeholder="输入该人物的称呼或名字..." />
+          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}>
+            <Input placeholder="输入素材资产组合名称..." maxLength={64} />
           </Form.Item>
-          <Form.Item label="描述" name="description">
-            <Input.TextArea placeholder="这会在方舟平台记录为对该虚拟人像素材组合的简短说明..." />
+          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}>
+            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} />
           </Form.Item>
         </Form>
       </Modal>
@@ -1354,13 +1641,13 @@ const UserAssets: React.FC = () => {
         </Form>
       </Modal>
 
-      {/* 编辑文件夹弹窗 */}
+      {/* 编辑素材资产组合弹窗 */}
       <Modal
-        title="编辑文件夹"
+        title="编辑素材资产组合"
         open={isEditGroupModalOpen}
         onCancel={() => setIsEditGroupModalOpen(false)}
         confirmLoading={savingGroup}
-        okText="确定"
+        okText="保存"
         cancelText="取消"
         onOk={async () => {
           try {
@@ -1371,25 +1658,24 @@ const UserAssets: React.FC = () => {
               name: values.name,
               description: values.description,
             });
-            message.success('文件夹更新成功');
+            message.success('素材资产组合更新成功');
             setIsEditGroupModalOpen(false);
             fetchGroups();
             // 更新右侧面板显示
             setSelectedRecord({ type: 'group', data: { ...editingGroup, name: values.name, description: values.description } });
           } catch (error: any) {
-            console.error('更新文件夹失败', error);
-            message.error(error?.response?.data?.message || '更新文件夹失败');
+            console.error('更新失败', error);
           } finally {
             setSavingGroup(false);
           }
         }}
       >
         <Form form={editGroupForm} layout="vertical">
-          <Form.Item label="文件夹名称" name="name" rules={[{ required: true, message: '请输入文件夹名称' }]}>
-            <Input placeholder="输入文件夹名称" />
+          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}>
+            <Input placeholder="输入素材资产组合名称..." maxLength={64} />
           </Form.Item>
-          <Form.Item label="描述" name="description">
-            <Input.TextArea placeholder="输入描述（可选）" rows={3} />
+          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}>
+            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} />
           </Form.Item>
         </Form>
       </Modal>

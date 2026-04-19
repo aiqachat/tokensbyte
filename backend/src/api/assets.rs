@@ -402,7 +402,7 @@ async fn user_delete_asset(
     }
 
     // 获取用户信息用于构建 TOS 路径
-    let user: crate::models::User = sqlx::query_as(&state.db.format_query(
+    let _user: crate::models::User = sqlx::query_as(&state.db.format_query(
         "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
     ))
     .bind(&claims.sub)
@@ -413,20 +413,21 @@ async fn user_delete_asset(
     // 尝试从 TOS 删除文件
     let mut tos_deleted = false;
     if let Some(tos_config) = crate::api::plugins::get_tos_config(&state, "asset_manager").await {
-        let folder_name = if user.role == "admin" { "000000".to_string() } else { user.uid.clone() };
-        let object_key = {
-            let filename = asset.file_url.split('/').last().unwrap_or("");
-            tos_config.full_key(&format!("{}/{}", folder_name, filename))
-        };
+        // 从 file_url 反推出 object key（支持任意目录嵌套）
+        let object_key = tos_config.extract_object_key(&asset.file_url);
 
-        match crate::services::tos::delete_file(&tos_config, &object_key).await {
-            Ok(()) => {
-                tracing::info!("用户 {} 删除 TOS 文件: {}", claims.sub, object_key);
-                tos_deleted = true;
+        if let Some(ref key) = object_key {
+            match crate::services::tos::delete_file(&tos_config, key).await {
+                Ok(()) => {
+                    tracing::info!("用户 {} 删除 TOS 文件: {}", claims.sub, key);
+                    tos_deleted = true;
+                }
+                Err(e) => {
+                    tracing::warn!("TOS 文件删除失败: {} - {}", key, e);
+                }
             }
-            Err(e) => {
-                tracing::warn!("TOS 文件删除失败: {} - {}", object_key, e);
-            }
+        } else {
+            tracing::warn!("无法从 file_url 反推 object_key: {}", asset.file_url);
         }
     }
 
@@ -1057,7 +1058,34 @@ async fn upload_virtual_portrait(
     let file_id = uuid::Uuid::new_v4().to_string();
     let safe_filename = format!("{}.{}", file_id, ext);
     let folder_name = user.uid.clone();
-    let object_key = tos_config.full_key(&format!("{}/{}", folder_name, safe_filename));
+
+    // 查出文件夹名称用于构建 TOS 路径: uid/group_name/filename
+    let group_folder: Option<String> = sqlx::query_scalar(&state.db.format_query(
+        "SELECT name FROM plugin_asset_groups WHERE group_id = ? AND user_id = ?"
+    ))
+    .bind(&group_id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    // 检查该文件夹下的素材数量是否已达上限（每个文件夹最多100个）
+    let group_asset_count: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COUNT(*) FROM plugin_assets WHERE group_id = ? AND user_id = ?"
+    ))
+    .bind(&group_id)
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    if group_asset_count >= 100 {
+        return Err(AppError::BadRequest("该素材组合已达上限（最多100个素材文件），请清理后再上传".to_string()));
+    }
+
+    let object_key = if let Some(ref gf) = group_folder {
+        tos_config.full_key(&format!("{}/{}/{}", folder_name, gf, safe_filename))
+    } else {
+        tos_config.full_key(&format!("{}/{}", folder_name, safe_filename))
+    };
 
     let file_url = crate::services::tos::upload_file(
         &tos_config,
@@ -1094,6 +1122,7 @@ async fn submit_virtual_portrait_review(
     Path(id): Path<i64>,
     axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
+    // 获取 volc_config
     let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
         .ok_or_else(|| AppError::BadRequest("审核配置未完成，请联系管理员".to_string()))?;
 
@@ -1107,32 +1136,7 @@ async fn submit_virtual_portrait_review(
     .await?
     .ok_or_else(|| AppError::BadRequest("素材不存在或已提交".to_string()))?;
 
-    // 获取 TOS 配置，构建公网 URL
-    let tos_config = crate::api::plugins::get_tos_config(&state, "asset_manager").await
-        .ok_or_else(|| AppError::BadRequest("存储未配置".to_string()))?;
-
-    let user: crate::models::User = sqlx::query_as(&state.db.format_query(
-        "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
-    ))
-    .bind(&claims.sub)
-    .fetch_optional(&state.db.pool)
-    .await?
-    .ok_or_else(|| AppError::Unauthorized)?;
-
-    // 构建公网可访问的 URL（使用 tos_custom_domain）
-    let folder_name = user.uid.clone();
-    let filename = asset.file_url.split('/').last().unwrap_or("");
-    let object_key = tos_config.full_key(&format!("{}/{}", folder_name, filename));
-    
-    let public_url = if !tos_config.custom_domain.is_empty() {
-        let domain = tos_config.custom_domain
-            .trim_start_matches("https://")
-            .trim_start_matches("http://")
-            .trim_end_matches('/');
-        format!("https://{}/{}", domain, object_key)
-    } else {
-        format!("https://{}.{}/{}", tos_config.bucket, tos_config.endpoint, object_key)
-    };
+    let public_url = asset.file_url.clone();
 
     let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
         .with_logger(state.db.clone(), claims.sub.clone());
@@ -1373,7 +1377,7 @@ async fn user_delete_group(
         }
     }
 
-    // 2. 删除 TOS 上的文件夹占位符
+    // 2. 删除 TOS 上的文件夹及其内容
     let mut tos_deleted = false;
     if let Some(tos_config) = crate::api::plugins::get_tos_config(&state, "asset_manager").await {
         let user: crate::models::User = sqlx::query_as(&state.db.format_query(
@@ -1385,17 +1389,26 @@ async fn user_delete_group(
         .ok_or_else(|| crate::error::AppError::Unauthorized)?;
 
         let folder_name = if user.role == "admin" { "000000".to_string() } else { user.uid.clone() };
-        let folder_key = tos_config.full_key(&format!("{}/{}/", folder_name, group.name));
+        let folder_prefix = format!("{}/{}", folder_name, group.name);
 
-        match crate::services::tos::delete_file(&tos_config, &folder_key).await {
-            Ok(()) => {
-                tracing::info!("TOS 文件夹占位符已删除: {}", folder_key);
-                tos_deleted = true;
+        // 列出文件夹下所有文件并逐个删除
+        match crate::services::tos::list_folder(&tos_config, &folder_prefix).await {
+            Ok((objects, _)) => {
+                for obj in &objects {
+                    let _ = crate::services::tos::delete_file(&tos_config, &obj.key).await;
+                    tracing::info!("TOS 文件已删除: {}", obj.key);
+                }
             }
             Err(e) => {
-                tracing::warn!("TOS 文件夹占位符删除失败: {} - {}", folder_key, e);
+                tracing::warn!("列出 TOS 文件夹内容失败: {}", e);
             }
         }
+
+        // 删除文件夹占位符本身
+        let folder_key = tos_config.full_key(&format!("{}/", folder_prefix));
+        let _ = crate::services::tos::delete_file(&tos_config, &folder_key).await;
+        tracing::info!("TOS 文件夹占位符已删除: {}", folder_key);
+        tos_deleted = true;
     }
 
     // 3. 删除数据库记录

@@ -804,14 +804,14 @@ const PluginConfig: React.FC = () => {
               <div style={{ margin: 0, padding: 16, background: '#1e1e1e', borderRadius: 8 }}>
                 <div style={{ marginBottom: 16 }}>
                   <Text strong style={{ color: '#1677ff', display: 'block', marginBottom: 8 }}>📤 Request Payload</Text>
-                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '350px', overflow: 'auto', border: '1px solid #303030' }}>
-                    <JsonView value={safeParse(record.request_payload)} style={darkTheme} collapsed={1} displayDataTypes={false} displayObjectSize={false} />
+                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '500px', overflow: 'auto', border: '1px solid #303030' }}>
+                    <JsonView value={safeParse(record.request_payload)} style={darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
                   </div>
                 </div>
                 <div>
                   <Text strong style={{ color: '#faad14', display: 'block', marginBottom: 8 }}>📥 Response Payload</Text>
-                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '450px', overflow: 'auto', border: '1px solid #303030' }}>
-                    <JsonView value={safeParse(record.response_payload)} style={darkTheme} collapsed={2} displayDataTypes={false} displayObjectSize={false} />
+                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '600px', overflow: 'auto', border: '1px solid #303030' }}>
+                    <JsonView value={safeParse(record.response_payload)} style={darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
                   </div>
                 </div>
               </div>
