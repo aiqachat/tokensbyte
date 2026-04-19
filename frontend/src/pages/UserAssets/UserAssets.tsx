@@ -60,7 +60,9 @@ const UserAssets: React.FC = () => {
     { key: '素材库', label: '素材库', children: ['视频', '图片', '音频'] },
     { key: '虚拟人像库', label: '虚拟人像库', children: [] }
   ];
-  const [selectedKey, setSelectedKey] = useState<string>('my_virtual_portrait'); // 默认选中我的素材
+  const [selectedKey, setSelectedKey] = useState<string>(() => {
+    return new URLSearchParams(window.location.search).get('tab') || 'my_virtual_portrait';
+  });
 
   // 上传弹窗
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -77,6 +79,12 @@ const UserAssets: React.FC = () => {
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [groupForm] = Form.useForm();
 
+  // 编辑文件夹状态
+  const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<AssetGroup | null>(null);
+  const [editGroupForm] = Form.useForm();
+  const [savingGroup, setSavingGroup] = useState(false);
+
   // 选中状态 (右侧面板)
   interface SelectedRecord {
     type: 'group' | 'asset';
@@ -85,6 +93,30 @@ const UserAssets: React.FC = () => {
   const [selectedRecord, setSelectedRecord] = useState<SelectedRecord | null>(null);
   const [mediaInfo, setMediaInfo] = useState<{ width?: number; height?: number; duration?: number } | null>(null);
 
+  // 同步当前选项和文件夹状态到 URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    let changed = false;
+    
+    if (params.get('tab') !== selectedKey) {
+      params.set('tab', selectedKey);
+      changed = true;
+    }
+    
+    const currentGroupId = currentGroup ? currentGroup.group_id : null;
+    if (params.get('group') !== currentGroupId) {
+      if (currentGroupId) {
+        params.set('group', currentGroupId);
+      } else {
+        params.delete('group');
+      }
+      changed = true;
+    }
+    
+    if (changed) {
+      window.history.replaceState(null, '', '?' + params.toString());
+    }
+  }, [selectedKey, currentGroup]);
   // 当选中素材变化时，自动探测媒体元数据
   useEffect(() => {
     if (!selectedRecord || selectedRecord.type !== 'asset') {
@@ -126,7 +158,14 @@ const UserAssets: React.FC = () => {
     try {
       setLoadingGroups(true);
       const res = await (request.get('/assets/user/groups') as any);
-      if (res.groups) setGroups(res.groups);
+      if (res.groups) {
+        setGroups(res.groups);
+        const groupParam = new URLSearchParams(window.location.search).get('group');
+        if (groupParam) {
+          const found = res.groups.find((g: any) => g.group_id === groupParam);
+          if (found) setCurrentGroup(found);
+        }
+      }
     } catch (e) {
       console.error(e);
       message.error('获取文件夹列表失败');
@@ -562,6 +601,35 @@ const UserAssets: React.FC = () => {
               <Text style={{ color: 'rgba(255,255,255,0.65)' }}>{new Date(g.created_at).toLocaleString()}</Text>
             </div>
             <div style={{ flex: 1 }} />
+            {/* 操作按钮组 */}
+            <div style={{ display: 'flex', gap: 12 }}>
+              <Button type="primary" icon={<EditOutlined />} style={{ flex: 1, borderRadius: 8 }} onClick={() => {
+                setEditingGroup(g);
+                editGroupForm.setFieldsValue({ name: g.name, description: g.description || '' });
+                setIsEditGroupModalOpen(true);
+              }}>
+                编辑
+              </Button>
+              <Button danger icon={<DeleteOutlined />} style={{ borderRadius: 8 }} onClick={() => {
+                Modal.confirm({
+                  title: '确认删除文件夹',
+                  content: `确定要删除「${g.name}」文件夹吗？此操作不可恢复。文件夹中有素材时无法删除。`,
+                  okText: '删除',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: async () => {
+                    try {
+                      await (request as any).delete(`/assets/user/groups/${g.group_id}`);
+                      message.success('文件夹已删除');
+                      setSelectedRecord(null);
+                      fetchGroups();
+                    } catch (e: any) {
+                      message.error(e?.response?.data?.message || e?.message || '删除失败');
+                    }
+                  }
+                });
+              }} />
+            </div>
             <Button type="primary" size="large" block onClick={() => { setCurrentGroup(g); setSelectedRecord(null); }} style={{ borderRadius: 8 }}>
               进入文件夹
             </Button>
@@ -600,11 +668,11 @@ const UserAssets: React.FC = () => {
           <div style={{ padding: '16px 20px 0', fontSize: 16, fontWeight: 600, color: '#fff' }}>详情</div>
 
           {/* 预览区 */}
-          <div style={{ margin: '16px 20px 0', borderRadius: 10, overflow: 'hidden', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ margin: '16px 20px 0', borderRadius: 10, overflow: 'hidden', background: '#111', flexShrink: 0 }}>
             {isImage ? (
-              <Image src={fullUrl} alt={a.file_name} style={{ width: '100%', display: 'block', objectFit: 'contain' }} preview={{ mask: <span style={{ color: '#fff' }}>点击预览</span> }} />
+              <Image src={fullUrl} alt={a.file_name} style={{ width: '100%', display: 'block' }} preview={{ mask: <span style={{ color: '#fff' }}>点击预览</span> }} />
             ) : isVideo ? (
-              <video src={fullUrl} controls style={{ width: '100%', objectFit: 'contain' }} />
+              <video src={fullUrl} controls style={{ width: '100%', display: 'block' }} />
             ) : isAudio ? (
               <div style={{ width: '100%', padding: '16px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                 <AudioOutlined style={{ fontSize: 36, color: '#1677ff' }} />
@@ -719,7 +787,7 @@ const UserAssets: React.FC = () => {
             <div style={{ borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
               <div style={infoRowStyle}>
                 <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>资产 ID</Text>
-                <Text copyable={a.asset_id ? { text: a.asset_id } : undefined} style={{ color: '#fff', fontSize: 13 }}>{a.asset_id || `TB-${a.id}`}</Text>
+                <Text copyable={a.asset_id ? { text: a.asset_id } : undefined} style={{ color: a.asset_id ? '#fff' : 'rgba(255,255,255,0.35)', fontSize: 13 }}>{a.asset_id || '未生成'}</Text>
               </div>
               <div style={infoRowStyle}>
                 <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>类型</Text>
@@ -926,17 +994,6 @@ const UserAssets: React.FC = () => {
                         onChange={(val) => setSelectedKey(val as string)}
                         style={{ alignSelf: 'flex-start' }}
                       />
-                      {selectedKey === 'my_real_portrait' && (
-                        <Button
-                          icon={<UserAddOutlined />}
-                          type="primary"
-                          onClick={handleRealPortraitVerify}
-                          loading={loading}
-                        >
-                          上传真人人像
-                        </Button>
-                      )}
-
                     </div>
                   );
                 } else {
@@ -1040,7 +1097,7 @@ const UserAssets: React.FC = () => {
                       </Text>
                     </div>
                   </div>
-                  {currentGroup && (
+                  {currentGroup && selectedKey.startsWith('my_') && (
                     <Button
                       icon={<UploadOutlined />}
                       type="primary"
@@ -1297,6 +1354,46 @@ const UserAssets: React.FC = () => {
         </Form>
       </Modal>
 
+      {/* 编辑文件夹弹窗 */}
+      <Modal
+        title="编辑文件夹"
+        open={isEditGroupModalOpen}
+        onCancel={() => setIsEditGroupModalOpen(false)}
+        confirmLoading={savingGroup}
+        okText="确定"
+        cancelText="取消"
+        onOk={async () => {
+          try {
+            const values = await editGroupForm.validateFields();
+            if (!editingGroup) return;
+            setSavingGroup(true);
+            await request.put(`/assets/user/groups/${editingGroup.group_id}`, {
+              name: values.name,
+              description: values.description,
+            });
+            message.success('文件夹更新成功');
+            setIsEditGroupModalOpen(false);
+            fetchGroups();
+            // 更新右侧面板显示
+            setSelectedRecord({ type: 'group', data: { ...editingGroup, name: values.name, description: values.description } });
+          } catch (error: any) {
+            console.error('更新文件夹失败', error);
+            message.error(error?.response?.data?.message || '更新文件夹失败');
+          } finally {
+            setSavingGroup(false);
+          }
+        }}
+      >
+        <Form form={editGroupForm} layout="vertical">
+          <Form.Item label="文件夹名称" name="name" rules={[{ required: true, message: '请输入文件夹名称' }]}>
+            <Input placeholder="输入文件夹名称" />
+          </Form.Item>
+          <Form.Item label="描述" name="description">
+            <Input.TextArea placeholder="输入描述（可选）" rows={3} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       {/* 修改素材信息弹窗 */}
       <Modal
         title="修改素材信息"
@@ -1304,13 +1401,15 @@ const UserAssets: React.FC = () => {
         onCancel={() => setIsEditModalOpen(false)}
         onOk={handleEditAsset}
         confirmLoading={savingEdit}
+        okText="确定"
+        cancelText="取消"
       >
         <Form form={editForm} layout="vertical">
           <Form.Item label="素材名称" name="file_name" rules={[{ required: true, message: '请输入素材名称' }]}>
             <Input placeholder="输入新的素材名称" />
           </Form.Item>
           <Form.Item label="素材分类" name="category" rules={[{ required: true, message: '请选择分类' }]}>
-            <Select placeholder="请选择分类">
+            <Select placeholder="请选择分类" disabled>
               <Select.Option value="真人人像">真人人像</Select.Option>
               <Select.Option value="虚拟人像">虚拟人像</Select.Option>
             </Select>
