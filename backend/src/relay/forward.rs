@@ -271,14 +271,23 @@ pub fn transform_request_body(
             if let Some(si) = system_instruction {
                 result["systemInstruction"] = si;
             }
-            // 透传 generationConfig 参数
-            let mut gen_config = serde_json::Map::new();
-            if let Some(t) = body.get("temperature") { gen_config.insert("temperature".to_string(), t.clone()); }
-            if let Some(t) = body.get("top_p") { gen_config.insert("topP".to_string(), t.clone()); }
-            if let Some(t) = body.get("max_tokens") { gen_config.insert("maxOutputTokens".to_string(), t.clone()); }
-            if !gen_config.is_empty() {
-                result["generationConfig"] = serde_json::Value::Object(gen_config);
+            // 透传 generationConfig 和 stream_options（允许对象或null值）
+            if let Some(gc) = body.get("generationConfig") {
+                result["generationConfig"] = gc.clone();
+            } else {
+                let mut gen_config = serde_json::Map::new();
+                if let Some(t) = body.get("temperature") { gen_config.insert("temperature".to_string(), t.clone()); }
+                if let Some(t) = body.get("top_p") { gen_config.insert("topP".to_string(), t.clone()); }
+                if let Some(t) = body.get("max_tokens") { gen_config.insert("maxOutputTokens".to_string(), t.clone()); }
+                if !gen_config.is_empty() {
+                    result["generationConfig"] = serde_json::Value::Object(gen_config);
+                }
             }
+
+            if let Some(opts) = body.get("stream_options") {
+                result["stream_options"] = opts.clone();
+            }
+
             result
         }
 

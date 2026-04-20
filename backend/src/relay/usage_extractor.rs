@@ -108,8 +108,9 @@ pub fn parse_usage(response: &str) -> UsageTokens {
         // 2. Google Gemini
         if let Some(usage) = v.get("usageMetadata") {
             u.prompt = usage.get("promptTokenCount").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
-            u.completion = usage.get("candidatesTokenCount").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
-            u.total = usage.get("totalTokenCount").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+            let total = usage.get("totalTokenCount").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+            u.total = total;
+            u.completion = if total >= u.prompt { total - u.prompt } else { 0 };
             found = true;
         }
         // 3. Volcengine Video (final_result.usage)

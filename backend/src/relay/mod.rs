@@ -65,16 +65,20 @@ pub async fn chat_completions(
         let mut stream_body = upstream_body.clone();
         stream_body["stream"] = serde_json::json!(true);
         // Gemini 流式需要特殊处理 URL
+        let mut final_upstream_path = resolved.upstream_path.replace("${model}", &resolved_model);
         let stream_url = if target_type == "gemini" {
-            let stream_path = resolved.upstream_path
+            final_upstream_path = final_upstream_path
                 .replace(":generateContent", ":streamGenerateContent")
                 + "?alt=sse";
-            let path_with_model = stream_path.replace("${model}", &resolved_model);
+            let mut final_url = url_utils::join_url(&channel.base_url, &final_upstream_path);
             if resolved.auth_type == "query_key" {
-                format!("{}?key={}", url_utils::join_url(&channel.base_url, &path_with_model), channel.api_key)
-            } else {
-                url_utils::join_url(&channel.base_url, &path_with_model)
+                if final_url.contains('?') {
+                    final_url = format!("{}&key={}", final_url, channel.api_key);
+                } else {
+                    final_url = format!("{}?key={}", final_url, channel.api_key);
+                }
             }
+            final_url
         } else {
             url.clone()
         };
@@ -91,7 +95,7 @@ pub async fn chat_completions(
             let err = resp.text().await?;
             let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
             let latency_ms = start_time.elapsed().as_millis() as u32;
-            let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+            let ep = format!("/v1/chat/completions|{}", final_upstream_path);
             proxy::record_and_bill(
                 &state, &token, channel.id, model, 0, 0, 0.0, status,
                 &ep, Some(&display_err), latency_ms, 1,
@@ -113,7 +117,7 @@ pub async fn chat_completions(
         Ok(stream::handle_chat_stream(
             state, token, channel, model.to_string(), resp,
             ctx.discount, prompt_tokens, request_content_str, start_time, target_type,
-            resolved.upstream_path.replace("${model}", &resolved_model),
+            final_upstream_path,
             Some(upstream_body.to_string()),
             pre_deduction
         ).await.into_response())

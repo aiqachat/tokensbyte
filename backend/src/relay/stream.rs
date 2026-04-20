@@ -32,6 +32,7 @@ pub async fn handle_chat_stream(
         let mut total_completion_tokens = 0;
         let mut buffer = String::new();
         let mut full_response_text = String::new();
+        let mut raw_response_text = String::new();
         
         let target_type = target_type.clone();
         
@@ -47,6 +48,8 @@ pub async fn handle_chat_stream(
                         let line = line.trim();
                         
                         if line.is_empty() { continue; }
+                        raw_response_text.push_str(line);
+                        raw_response_text.push('\n');
                         
                         // Transform and count
                         if let Some(transformed) = crate::relay::forward::transform_sse_line(&target_type, line, &model) {
@@ -71,12 +74,10 @@ pub async fn handle_chat_stream(
         let _ = tx.send(Ok("data: [DONE]\n\n".to_string())).await;
         
         // 以响应中返回的真实 token 为准进行计费核算
-        if !full_response_text.is_empty() {
-            let actual_usage = crate::relay::usage_extractor::parse_usage(&full_response_text);
-            if actual_usage.prompt > 0 {
+        if !raw_response_text.is_empty() {
+            let actual_usage = crate::relay::usage_extractor::parse_usage(&raw_response_text);
+            if actual_usage.prompt > 0 || actual_usage.completion > 0 {
                 total_prompt_tokens = actual_usage.prompt;
-            }
-            if actual_usage.completion > 0 {
                 total_completion_tokens = actual_usage.completion;
             }
         }
@@ -115,7 +116,7 @@ pub async fn handle_chat_stream(
         crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,
-            Some(request_content_str), Some(full_response_text), upstream_req_content, Some(detail)
+            Some(request_content_str), Some(raw_response_text), upstream_req_content, Some(detail)
         ).await;
     });
 
