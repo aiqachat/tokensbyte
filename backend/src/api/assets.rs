@@ -1,6 +1,6 @@
 use axum::{
     extract::{Multipart, State, Query, Path},
-    routing::{get, post, put},
+    routing::{get, post, put, delete},
     Json, Router,
 };
 use std::sync::Arc;
@@ -33,6 +33,8 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/user/submit-review/{id}", post(submit_virtual_portrait_review))
         .route("/user/asset-status/{id}", get(check_asset_status))
         .route("/user/groups", get(user_list_groups).post(user_create_group))
+        .route("/user/groups/{group_id}", put(user_update_group).delete(user_delete_group))
+        .route("/user/{id}", delete(user_delete_asset))
         .route("/admin/get-asset-info/{asset_id}", get(admin_get_asset_info))
         .layer(DefaultBodyLimit::disable())
 }
@@ -382,6 +384,98 @@ async fn delete_asset(
     Ok(Json(json!({ "message": msg, "tos_deleted": tos_deleted })))
 }
 
+// 用户端删除素材（仅允许删除自己上传的素材）
+async fn user_delete_asset(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 查出素材并验证归属
+    let asset: PluginAsset = sqlx::query_as(&state.db.format_query("SELECT * FROM plugin_assets WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("素材不存在".to_string()))?;
+
+    if asset.user_id != claims.sub {
+        return Err(AppError::BadRequest("无权删除此素材".to_string()));
+    }
+
+    // 获取用户信息用于构建 TOS 路径
+    let _user: crate::models::User = sqlx::query_as(&state.db.format_query(
+        "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+    ))
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| crate::error::AppError::Unauthorized)?;
+
+    // 尝试从 TOS 删除文件
+    let mut tos_deleted = false;
+    if let Some(tos_config) = crate::api::plugins::get_tos_config(&state, "asset_manager").await {
+        // 从 file_url 反推出 object key（支持任意目录嵌套）
+        let object_key = tos_config.extract_object_key(&asset.file_url);
+
+        if let Some(ref key) = object_key {
+            match crate::services::tos::delete_file(&tos_config, key).await {
+                Ok(()) => {
+                    tracing::info!("用户 {} 删除 TOS 文件: {}", claims.sub, key);
+                    tos_deleted = true;
+                }
+                Err(e) => {
+                    tracing::warn!("TOS 文件删除失败: {} - {}", key, e);
+                }
+            }
+        } else {
+            tracing::warn!("无法从 file_url 反推 object_key: {}", asset.file_url);
+        }
+    }
+
+    // 如果已提交审核（有 asset_id），调用火山引擎 DeleteAsset API 删除方舟平台上的素材
+    let mut ark_deleted = false;
+    if let Some(ref asset_id) = asset.asset_id {
+        if !asset_id.is_empty() {
+            if let Some(volc_config) = crate::api::plugins::get_volc_config(&state, "asset_manager").await {
+                let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
+                    .with_logger(state.db.clone(), claims.sub.clone());
+
+                let req = crate::services::volcengine::DeleteAssetRequest {
+                    id: asset_id.clone(),
+                    project_name: Some(volc_config.project_name.clone()),
+                };
+
+                match client.call_api::<_, crate::services::volcengine::DeleteAssetResponse>(
+                    "ark", "cn-beijing", "DeleteAsset", "2024-01-01", req
+                ).await {
+                    Ok(_) => {
+                        tracing::info!("用户 {} 删除方舟素材资产: {}", claims.sub, asset_id);
+                        ark_deleted = true;
+                    }
+                    Err(e) => {
+                        tracing::warn!("方舟 DeleteAsset 失败: {} - {}", asset_id, e);
+                    }
+                }
+            }
+        }
+    }
+
+    // 删除数据库记录
+    sqlx::query(&state.db.format_query("DELETE FROM plugin_assets WHERE id = ? AND user_id = ?"))
+        .bind(id)
+        .bind(&claims.sub)
+        .execute(&state.db.pool)
+        .await?;
+
+    let msg = match (tos_deleted, ark_deleted) {
+        (true, true) => "素材已完全删除（数据库 + TOS 文件 + 方舟资产）",
+        (true, false) => "素材已删除（数据库 + TOS 文件）",
+        (false, true) => "素材已删除（数据库 + 方舟资产）",
+        (false, false) => "素材数据库记录已删除",
+    };
+
+    Ok(Json(json!({ "message": msg, "tos_deleted": tos_deleted, "ark_deleted": ark_deleted })))
+}
+
 #[derive(Deserialize)]
 pub struct ReorderRequest {
     pub ids: Vec<i64>,
@@ -592,6 +686,27 @@ async fn user_storage_info(
             (vec![], 0)
         });
 
+    // 从数据库兜底统计（当 TOS 返回空时仍能展示有效数据）
+    let db_file_count: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COUNT(*) FROM plugin_assets WHERE user_id = ? AND source = 'user'"
+    ))
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
+    let db_total_size: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COALESCE(SUM(size), 0) FROM plugin_assets WHERE user_id = ? AND source = 'user'"
+    ))
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
+    // 优先使用 TOS 数据，TOS 为空时使用数据库数据
+    let final_file_count = if tos_files.is_empty() { db_file_count as usize } else { tos_files.len() };
+    let final_total_size = if total_size == 0 && db_total_size > 0 { db_total_size } else { total_size };
+
     // 获取配额（管理员无限制，普通用户按等级）
     let quota_mb: i64 = if user.role == "admin" {
         0 // 0 表示无限制
@@ -627,7 +742,7 @@ async fn user_storage_info(
         })
     }).collect();
 
-    let used_mb = total_size as f64 / 1024.0 / 1024.0;
+    let used_mb = final_total_size as f64 / 1024.0 / 1024.0;
 
     let vp_count: i64 = sqlx::query_scalar(&state.db.format_query(
         "SELECT COUNT(*) FROM plugin_assets WHERE user_id = ? AND category = '虚拟人像'"
@@ -640,14 +755,14 @@ async fn user_storage_info(
     Ok(Json(json!({
         "folder": folder_name,
         "files": files,
-        "file_count": files.len(),
-        "total_size": total_size,
+        "file_count": final_file_count,
+        "total_size": final_total_size,
         "total_size_mb": format!("{:.1}", used_mb),
         "quota_mb": quota_mb,
         "remain_mb": if quota_mb > 0 { format!("{:.1}", quota_mb as f64 - used_mb) } else { "无限制".to_string() },
         "is_admin": user.role == "admin",
         "virtual_portrait_count": vp_count,
-        "virtual_portrait_quota": 30, // 默认 30 个分组
+        "virtual_portrait_quota": 20, // 默认 20 个分组
     })))
 }
 
@@ -904,15 +1019,18 @@ async fn upload_virtual_portrait(
     let mut file_name = String::new();
     let mut mime_type = String::new();
     let mut group_id = String::new();
+    let mut asset_type = "image".to_string();
 
     while let Some(field) = multipart.next_field().await.map_err(|e| AppError::BadRequest(e.to_string()))? {
         let name = field.name().unwrap_or_default().to_string();
         if name == "file" {
-            file_name = field.file_name().unwrap_or("virtual_portrait.jpg").to_string();
-            mime_type = field.content_type().unwrap_or("image/jpeg").to_string();
+            file_name = field.file_name().unwrap_or("asset_file").to_string();
+            mime_type = field.content_type().unwrap_or("application/octet-stream").to_string();
             file_data = Some(field.bytes().await.map_err(|e| AppError::BadRequest(e.to_string()))?);
         } else if name == "group_id" {
             group_id = field.text().await.unwrap_or_default();
+        } else if name == "asset_type" {
+            asset_type = field.text().await.unwrap_or_else(|_| "image".to_string());
         }
     }
 
@@ -923,8 +1041,13 @@ async fn upload_virtual_portrait(
     let data = file_data.ok_or_else(|| AppError::BadRequest("未检测到文件".to_string()))?;
     let size = data.len() as i64;
 
-    if size > 30 * 1024 * 1024 {
-        return Err(AppError::BadRequest("图片不能超过 30MB".to_string()));
+    let max_size: i64 = match asset_type.as_str() {
+        "video" => 300 * 1024 * 1024,
+        "audio" => 100 * 1024 * 1024,
+        _ => 30 * 1024 * 1024, // image
+    };
+    if size > max_size {
+        return Err(AppError::BadRequest(format!("文件不能超过 {} MB", max_size / 1024 / 1024)));
     }
 
     // 上传到 TOS
@@ -935,7 +1058,34 @@ async fn upload_virtual_portrait(
     let file_id = uuid::Uuid::new_v4().to_string();
     let safe_filename = format!("{}.{}", file_id, ext);
     let folder_name = user.uid.clone();
-    let object_key = tos_config.full_key(&format!("{}/{}", folder_name, safe_filename));
+
+    // 查出文件夹名称用于构建 TOS 路径: uid/group_name/filename
+    let group_folder: Option<String> = sqlx::query_scalar(&state.db.format_query(
+        "SELECT name FROM plugin_asset_groups WHERE group_id = ? AND user_id = ?"
+    ))
+    .bind(&group_id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    // 检查该文件夹下的素材数量是否已达上限（每个文件夹最多100个）
+    let group_asset_count: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COUNT(*) FROM plugin_assets WHERE group_id = ? AND user_id = ?"
+    ))
+    .bind(&group_id)
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    if group_asset_count >= 100 {
+        return Err(AppError::BadRequest("该素材组合已达上限（最多100个素材文件），请清理后再上传".to_string()));
+    }
+
+    let object_key = if let Some(ref gf) = group_folder {
+        tos_config.full_key(&format!("{}/{}/{}", folder_name, gf, safe_filename))
+    } else {
+        tos_config.full_key(&format!("{}/{}", folder_name, safe_filename))
+    };
 
     let file_url = crate::services::tos::upload_file(
         &tos_config,
@@ -951,10 +1101,11 @@ async fn upload_virtual_portrait(
     // 写入数据库，状态为 uploaded（待提交审核）
     let asset: PluginAsset = sqlx::query_as(&state.db.format_query(
         "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, mime_type, size, category, group_id)
-         VALUES (?, 'image', 'user', 'uploaded', ?, ?, ?, ?, '虚拟人像', ?)
+         VALUES (?, ?, 'user', 'uploaded', ?, ?, ?, ?, '虚拟人像', ?)
          RETURNING *"
     ))
     .bind(&claims.sub)
+    .bind(&asset_type)
     .bind(&file_name)
     .bind(&file_url)
     .bind(&mime_type)
@@ -971,6 +1122,7 @@ async fn submit_virtual_portrait_review(
     Path(id): Path<i64>,
     axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
+    // 获取 volc_config
     let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
         .ok_or_else(|| AppError::BadRequest("审核配置未完成，请联系管理员".to_string()))?;
 
@@ -984,32 +1136,7 @@ async fn submit_virtual_portrait_review(
     .await?
     .ok_or_else(|| AppError::BadRequest("素材不存在或已提交".to_string()))?;
 
-    // 获取 TOS 配置，构建公网 URL
-    let tos_config = crate::api::plugins::get_tos_config(&state, "asset_manager").await
-        .ok_or_else(|| AppError::BadRequest("存储未配置".to_string()))?;
-
-    let user: crate::models::User = sqlx::query_as(&state.db.format_query(
-        "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
-    ))
-    .bind(&claims.sub)
-    .fetch_optional(&state.db.pool)
-    .await?
-    .ok_or_else(|| AppError::Unauthorized)?;
-
-    // 构建公网可访问的 URL（使用 tos_custom_domain）
-    let folder_name = user.uid.clone();
-    let filename = asset.file_url.split('/').last().unwrap_or("");
-    let object_key = tos_config.full_key(&format!("{}/{}", folder_name, filename));
-    
-    let public_url = if !tos_config.custom_domain.is_empty() {
-        let domain = tos_config.custom_domain
-            .trim_start_matches("https://")
-            .trim_start_matches("http://")
-            .trim_end_matches('/');
-        format!("https://{}/{}", domain, object_key)
-    } else {
-        format!("https://{}.{}/{}", tos_config.bucket, tos_config.endpoint, object_key)
-    };
+    let public_url = asset.file_url.clone();
 
     let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
         .with_logger(state.db.clone(), claims.sub.clone());
@@ -1021,7 +1148,11 @@ async fn submit_virtual_portrait_review(
     let create_req = crate::services::volcengine::CreateAssetRequest {
         group_id: group_id.clone(),
         url: public_url.clone(),
-        asset_type: "Image".to_string(),
+        asset_type: match asset.asset_type.as_str() {
+            "video" => "Video".to_string(),
+            "audio" => "Audio".to_string(),
+            _ => "Image".to_string(),
+        },
         name: Some(asset.file_name.clone()),
         project_name: Some(volc_config.project_name.clone()),
     };
@@ -1078,7 +1209,7 @@ async fn user_create_group(
     .await
     .unwrap_or(0);
 
-    let quota = 30; // 默认 30
+    let quota = 20; // 默认 20
     if count >= quota {
         return Err(AppError::BadRequest(format!("最多只能创建 {} 个素材组合", quota)));
     }
@@ -1101,6 +1232,23 @@ async fn user_create_group(
 
     let group_id = group_res.id;
 
+    // 在 TOS 上创建对应的文件夹（上传一个 0 字节占位符）
+    if let Some(tos_config) = crate::api::plugins::get_tos_config(&state, "asset_manager").await {
+        let user: crate::models::User = sqlx::query_as(&state.db.format_query(
+            "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+        ))
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| crate::error::AppError::Unauthorized)?;
+
+        let folder_name = if user.role == "admin" { "000000".to_string() } else { user.uid.clone() };
+        let folder_key = tos_config.full_key(&format!("{}/{}/", folder_name, payload.name));
+        // 上传 0 字节占位符表示文件夹
+        let _ = crate::services::tos::upload_file(&tos_config, &folder_key, vec![], "application/x-directory", None).await;
+        tracing::info!("TOS 文件夹已创建: {}", folder_key);
+    }
+
     let group: crate::models::PluginAssetGroup = sqlx::query_as(&state.db.format_query(
         "INSERT INTO plugin_asset_groups (user_id, group_id, name, description)
          VALUES (?, ?, ?, ?)
@@ -1114,6 +1262,165 @@ async fn user_create_group(
     .await?;
 
     Ok(Json(json!({ "message": "创建成功", "group": group })))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateGroupRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+}
+
+/// 用户：更新素材组合（调用方舟 UpdateAssetGroup API）
+async fn user_update_group(
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<String>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    Json(payload): Json<UpdateGroupRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 验证归属
+    let group: crate::models::PluginAssetGroup = sqlx::query_as(&state.db.format_query(
+        "SELECT * FROM plugin_asset_groups WHERE group_id = ? AND user_id = ?"
+    ))
+    .bind(&group_id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::BadRequest("文件夹不存在或无权操作".to_string()))?;
+
+    // 调用方舟 UpdateAssetGroup API
+    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("API配置未完成".to_string()))?;
+    let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
+        .with_logger(state.db.clone(), claims.sub.clone());
+
+    let update_req = crate::services::volcengine::UpdateAssetGroupRequest {
+        id: group_id.clone(),
+        name: payload.name.clone(),
+        description: payload.description.clone(),
+        project_name: Some(volc_config.project_name.clone()),
+    };
+
+    let _: crate::services::volcengine::UpdateAssetGroupResponse = client.call_api(
+        "ark", "cn-beijing", "UpdateAssetGroup", "2024-01-01", update_req
+    ).await.map_err(|e| AppError::Internal(format!("更新方舟组合失败: {}", e)))?;
+
+    // 如果修改了名字，需要在 TOS 上重命名文件夹（TOS 不支持直接重命名，但占位符可以更新）
+    let old_name = group.name.clone();
+    let new_name = payload.name.clone().unwrap_or_else(|| old_name.clone());
+    let new_desc = payload.description.clone().unwrap_or_else(|| group.description.clone().unwrap_or_default());
+
+    // 更新数据库
+    sqlx::query(&state.db.format_query(
+        "UPDATE plugin_asset_groups SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE group_id = ? AND user_id = ?"
+    ))
+    .bind(&new_name)
+    .bind(&new_desc)
+    .bind(&group_id)
+    .bind(&claims.sub)
+    .execute(&state.db.pool)
+    .await?;
+
+    Ok(Json(json!({ "message": "更新成功" })))
+}
+
+/// 用户：删除素材组合（调用方舟 DeleteAssetGroup API + 清理 TOS + 清理数据库）
+async fn user_delete_group(
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<String>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 验证归属
+    let group: crate::models::PluginAssetGroup = sqlx::query_as(&state.db.format_query(
+        "SELECT * FROM plugin_asset_groups WHERE group_id = ? AND user_id = ?"
+    ))
+    .bind(&group_id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::BadRequest("文件夹不存在或无权操作".to_string()))?;
+
+    // 检查文件夹下是否还有素材
+    let asset_count: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COUNT(*) FROM plugin_assets WHERE group_id = ? AND user_id = ?"
+    ))
+    .bind(&group_id)
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
+    if asset_count > 0 {
+        return Err(AppError::BadRequest(format!("文件夹中还有 {} 个素材，请先删除素材后再删除文件夹", asset_count)));
+    }
+
+    // 1. 调用方舟 DeleteAssetGroup API
+    let mut ark_deleted = false;
+    if let Some(volc_config) = crate::api::plugins::get_volc_config(&state, "asset_manager").await {
+        let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
+            .with_logger(state.db.clone(), claims.sub.clone());
+
+        let delete_req = crate::services::volcengine::DeleteAssetGroupRequest {
+            id: group_id.clone(),
+            project_name: Some(volc_config.project_name.clone()),
+        };
+
+        match client.call_api::<_, crate::services::volcengine::DeleteAssetGroupResponse>(
+            "ark", "cn-beijing", "DeleteAssetGroup", "2024-01-01", delete_req
+        ).await {
+            Ok(_) => {
+                tracing::info!("用户 {} 删除方舟组合: {}", claims.sub, group_id);
+                ark_deleted = true;
+            }
+            Err(e) => {
+                tracing::warn!("方舟 DeleteAssetGroup 失败: {} - {}", group_id, e);
+            }
+        }
+    }
+
+    // 2. 删除 TOS 上的文件夹及其内容
+    let mut tos_deleted = false;
+    if let Some(tos_config) = crate::api::plugins::get_tos_config(&state, "asset_manager").await {
+        let user: crate::models::User = sqlx::query_as(&state.db.format_query(
+            "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+        ))
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| crate::error::AppError::Unauthorized)?;
+
+        let folder_name = if user.role == "admin" { "000000".to_string() } else { user.uid.clone() };
+        let folder_prefix = format!("{}/{}", folder_name, group.name);
+
+        // 列出文件夹下所有文件并逐个删除
+        match crate::services::tos::list_folder(&tos_config, &folder_prefix).await {
+            Ok((objects, _)) => {
+                for obj in &objects {
+                    let _ = crate::services::tos::delete_file(&tos_config, &obj.key).await;
+                    tracing::info!("TOS 文件已删除: {}", obj.key);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("列出 TOS 文件夹内容失败: {}", e);
+            }
+        }
+
+        // 删除文件夹占位符本身
+        let folder_key = tos_config.full_key(&format!("{}/", folder_prefix));
+        let _ = crate::services::tos::delete_file(&tos_config, &folder_key).await;
+        tracing::info!("TOS 文件夹占位符已删除: {}", folder_key);
+        tos_deleted = true;
+    }
+
+    // 3. 删除数据库记录
+    sqlx::query(&state.db.format_query(
+        "DELETE FROM plugin_asset_groups WHERE group_id = ? AND user_id = ?"
+    ))
+    .bind(&group_id)
+    .bind(&claims.sub)
+    .execute(&state.db.pool)
+    .await?;
+
+    Ok(Json(json!({ "message": "文件夹已删除", "ark_deleted": ark_deleted, "tos_deleted": tos_deleted })))
 }
 
 /// 用户：查询虚拟人像审核状态（轮询方舟 GetAsset）

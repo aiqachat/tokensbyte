@@ -352,3 +352,45 @@ pub struct GetAssetResponse {
     pub project_name: Option<String>,
 }
 
+/// DeleteAsset 删除素材资产
+#[derive(Serialize)]
+pub struct DeleteAssetRequest {
+    #[serde(rename = "Id")]
+    pub id: String,
+    #[serde(rename = "ProjectName", skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct DeleteAssetResponse {}
+
+/// UpdateAssetGroup 更新素材资产组合
+#[derive(Serialize)]
+pub struct UpdateAssetGroupRequest {
+    #[serde(rename = "Id")]
+    pub id: String,
+    #[serde(rename = "Name", skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(rename = "Description", skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "ProjectName", skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct UpdateAssetGroupResponse {
+    #[serde(rename = "Id")]
+    pub id: String,
+}
+
+/// DeleteAssetGroup 删除素材资产组合
+#[derive(Serialize)]
+pub struct DeleteAssetGroupRequest {
+    #[serde(rename = "Id")]
+    pub id: String,
+    #[serde(rename = "ProjectName", skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct DeleteAssetGroupResponse {}

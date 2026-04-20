@@ -223,6 +223,7 @@ export interface SiteSettings {
   logo?: string;
   login_title?: string;
   login_subtitle?: string;
+  enable_multilingual?: boolean;
 }
 
 export interface CurrencySettings {
@@ -302,8 +303,7 @@ export interface Plugin {
 export interface PluginAsset {
   id: number;
   user_id: string;
-  group_id?: string;
-  asset_type: 'image' | 'video';
+  asset_type: 'image' | 'video' | 'audio';
   source: 'builtin' | 'user';
   status: 'uploaded' | 'pending' | 'processing' | 'approved' | 'rejected';
   file_name: string;
@@ -312,6 +312,7 @@ export interface PluginAsset {
   size?: number;
   reject_reason?: string;
   category?: string;
+  group_id?: string;
   asset_id?: string;
   sort_order?: number;
   created_at: string;

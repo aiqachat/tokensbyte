@@ -83,6 +83,10 @@ const PluginConfig: React.FC = () => {
   const [moderationForm] = Form.useForm();
   const [savingModeration, setSavingModeration] = useState(false);
 
+  // 审核日志展开详情
+  const [expandedAssetInfo, setExpandedAssetInfo] = useState<Record<string, any>>({});
+  const [loadingAssetInfo, setLoadingAssetInfo] = useState<Record<string, boolean>>({});
+
 
   // 接口日志
   const [apiLogs, setApiLogs] = useState<any[]>([]);
@@ -330,11 +334,7 @@ const PluginConfig: React.FC = () => {
             <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedLevels.length} 个等级</Text>
             {levels.map(lv => {
               const isSelected = selectedLevels.includes(lv.group_key);
-            
-
-
-  return (
-
+              return (
                 <div key={lv.group_key}
                   style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.15s' }}
                 >
@@ -700,8 +700,6 @@ const PluginConfig: React.FC = () => {
     },
   ];
 
-  const [expandedAssetInfo, setExpandedAssetInfo] = useState<Record<string, any>>({});
-  const [loadingAssetInfo, setLoadingAssetInfo] = useState<Record<string, boolean>>({});
 
   const fetchAssetInfo = async (assetId: string) => {
     if (!assetId || expandedAssetInfo[assetId]) return;
@@ -806,14 +804,14 @@ const PluginConfig: React.FC = () => {
               <div style={{ margin: 0, padding: 16, background: '#1e1e1e', borderRadius: 8 }}>
                 <div style={{ marginBottom: 16 }}>
                   <Text strong style={{ color: '#1677ff', display: 'block', marginBottom: 8 }}>📤 Request Payload</Text>
-                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '350px', overflow: 'auto', border: '1px solid #303030' }}>
-                    <JsonView value={safeParse(record.request_payload)} style={darkTheme} collapsed={1} displayDataTypes={false} displayObjectSize={false} />
+                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '500px', overflow: 'auto', border: '1px solid #303030' }}>
+                    <JsonView value={safeParse(record.request_payload)} style={darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
                   </div>
                 </div>
                 <div>
                   <Text strong style={{ color: '#faad14', display: 'block', marginBottom: 8 }}>📥 Response Payload</Text>
-                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '450px', overflow: 'auto', border: '1px solid #303030' }}>
-                    <JsonView value={safeParse(record.response_payload)} style={darkTheme} collapsed={2} displayDataTypes={false} displayObjectSize={false} />
+                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '600px', overflow: 'auto', border: '1px solid #303030' }}>
+                    <JsonView value={safeParse(record.response_payload)} style={darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
                   </div>
                 </div>
               </div>

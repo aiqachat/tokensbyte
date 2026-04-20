@@ -89,6 +89,49 @@ impl TosConfig {
             format!("{}/{}", prefix, filename)
         }
     }
+
+    /// 从 file_url 反推 object key
+    pub fn extract_object_key(&self, file_url: &str) -> Option<String> {
+        // 自定义域名: https://custom_domain/object_key
+        if !self.custom_domain.is_empty() {
+            let domain = self.custom_domain.trim_end_matches('/');
+            let domain_with_prefix = if domain.starts_with("http") {
+                domain.to_string()
+            } else {
+                format!("https://{}", domain)
+            };
+            if let Some(rest) = file_url.strip_prefix(&format!("{}/", domain_with_prefix)) {
+                return Some(rest.to_string());
+            }
+        }
+
+        // Virtual-hosted style: https://bucket.endpoint/object_key
+        // Path style: https://endpoint/bucket/object_key
+        let ep = self.endpoint.trim_end_matches('/');
+        let ep_domain = if ep.starts_with("https://") {
+            &ep[8..]
+        } else if ep.starts_with("http://") {
+            &ep[7..]
+        } else {
+            ep
+        };
+
+        if self.bucket.contains('.') {
+            // Path-style
+            let base = format!("https://{}/{}/", ep_domain, self.bucket);
+            if let Some(rest) = file_url.strip_prefix(&base) {
+                return Some(rest.to_string());
+            }
+        } else {
+            // Virtual-hosted style
+            let base = format!("https://{}.{}/", self.bucket, ep_domain);
+            if let Some(rest) = file_url.strip_prefix(&base) {
+                return Some(rest.to_string());
+            }
+        }
+
+        None
+    }
 }
 
 /// Tokio 运行时适配器

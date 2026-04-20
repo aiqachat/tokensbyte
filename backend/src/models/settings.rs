@@ -14,6 +14,12 @@ pub struct SiteSettings {
     pub login_title: String,
     #[serde(default)]
     pub login_subtitle: String,
+    #[serde(default = "default_enable_multilingual")]
+    pub enable_multilingual: bool,
+}
+
+fn default_enable_multilingual() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
