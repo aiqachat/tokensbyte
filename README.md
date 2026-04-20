@@ -22,17 +22,36 @@
 本项目支持多种部署方式，满足从本地测试到企业生产的各类需求。所有容器化配置文件均已内置。
 
 ### 方式一：快速起步（本地/测试环境）
-使用 SQLite 和基础配置，最快体验全功能：
+使用内置 PostgreSQL 和基础配置，最快体验全功能：
 ```bash
 git clone <repository-url>
 cd tokensbyte
-docker-compose up -d
+docker compose up -d
 ```
 > [!NOTE]
 > 成功启动后，浏览器访问 `http://localhost:5173/admin0755`。默认超管账号：`admin` / `123456`（请在控制台及时修改）。
 
-### 方式二：标准生产环境部署（推荐）
-针对生产环境，推荐挂载外部 PostgreSQL 并开启生产环境构建：
+### 方式二：一键交互式部署（推荐新手）
+使用内置的部署脚本，自动引导配置环境变量并部署：
+
+**Linux/Mac:**
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+.\deploy.ps1
+```
+
+脚本会自动引导完成：
+1. 生成强密码（数据库密码、JWT密钥）
+2. 设置管理员账号和注册开关
+3. 选择部署模式（开发/生产）
+
+### 方式三：标准生产环境部署（推荐）
+针对生产环境，推荐使用预构建镜像并连接外部 PostgreSQL：
 
 1. **初始化配置**：
    ```bash
@@ -41,10 +60,10 @@ docker-compose up -d
    ```
 2. **使用专用的生产 Compose 文件启动**（详情参阅内置的 [`docker-compose.prod.yml`](docker-compose.prod.yml)）：
    ```bash
-   docker-compose -f docker-compose.prod.yml up -d
+   docker compose -f docker-compose.prod.yml up -d
    ```
 
-### 方式三：离线/云端加速部署（针对国内慢速网络）
+### 方式四：离线/云端加速部署（针对国内慢速网络）
 如果您在云服务器上的构建速度过慢，我们在工程中自带了一键导出/导入脚本：
 1. **本地打包**：Windows 运行 `.\export-images.ps1`（Mac/Linux 运行 `./export-images.sh`）。
 2. **上传并在服务器激活**：将生成的 `docker-images` 文件夹丢到服务器运行 `./import-images.sh`。
@@ -55,9 +74,64 @@ docker-compose up -d
 - **Base URL**: `http://localhost:3000`
 - **API Key**: `sk-xxxx` (在 TokensByte 后台生成)
 
+### 📊 部署模式对比
+
+| 配置文件 | 数据库 | 适用场景 | 特点 |
+|---------|--------|---------|------|
+| `docker-compose.yml` | 内置 PostgreSQL | 快速测试/开发 | 一键启动，包含数据库服务 |
+| `docker-compose.prod.yml` | 外部 PostgreSQL | 生产环境 | 预构建镜像、健康检查、资源限制 |
+| `docker-compose.dev.yml` | 继承基础配置 | 日常开发 | 源码挂载、热重载、增量编译 |
+
+### 💡 数据库部署选择建议
+
+**Docker 内置 PostgreSQL vs 独立安装？**
+
+| 维度 | Docker内置 | 独立安装/外部数据库 |
+|------|-----------|-------------------|
+| **性能（Linux）** | 几乎无损（<2%） | 原生性能 |
+| **性能（Windows/Mac）** | I/O损耗 15-40% | 原生性能 |
+| **运维复杂度** | 低（一键部署） | 中（需手动管理） |
+| **数据备份** | 数据卷备份 | 原生pg_dump工具 |
+| **性能调优** | 受限 | 完全可控 |
+
+**推荐策略：**
+- ✅ **开发/测试环境**：Docker内置足够用
+- ✅ **Linux生产环境**（数据量<50GB）：Docker内置性能损耗可忽略
+- ✅ **Windows/Mac生产环境**：建议独立安装或使用云数据库（RDS等）
+- ✅ **大规模生产环境**（数据量>100GB）：建议独立安装并深度调优
+
+> [!TIP]
+> `docker-compose.dev.yml` 是一个**补充配置文件**，不能单独使用。需要与基础配置叠加：
+> ```bash
+> docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+> ```
+
 ## 🛠️ 开发环境搭建
 
-### 后端 (Backend)
+### 方式一：Docker 热重载开发模式（推荐）
+
+如果你在 Windows 等非原生 Linux 环境下开发，每次修改 Rust 会面临锁文件或编译缓慢的问题。我们提供了基于 Docker + `cargo-watch` 的**零配置热重载开发环境**：
+
+只需在工程根目录执行（一次性拉起前后端与数据库）：
+
+**Windows (PowerShell):**
+```powershell
+.\dev.ps1
+```
+
+**Linux/Mac:**
+```bash
+chmod +x dev.sh
+./dev.sh
+```
+
+*保存任意 `backend/src/*.rs` 文件，后端即会在容器内秒级自动增量编译并热重载。`target` 缓存亦通过专用 Volume 隔离，不污染宿主机。*
+
+### 方式二：传统原生单机模式
+
+需要你本地已安装完整的 Rust 和 Node.js 环境。
+
+**后端 (Backend):**
 
 后端采用 Rust 开发，配置管理遵循 **环境变量优先** 原则（配置优先级：系统环境变量 > `.env` 文件 > 内置默认值）。
 
@@ -68,23 +142,13 @@ docker-compose up -d
    # 根据注释修改 .env （可参考内置的 .env.example 文件）
    ```
 
-2. **运行（推荐：全自动热重载开发模式）**：
-   如果你在 Windows 等非原生 Linux 环境下开发，每次修改 Rust 会面临锁文件或编译缓慢的问题。我们提供了基于 Docker + `cargo-watch` 的**零配置热重载开发环境**：
-   
-   只需在工程根目录执行（一次性拉起前后端与数据库）：
-   ```powershell
-   .\dev.ps1
-   ```
-   *保存任意 `backend/src/*.rs` 文件，后端即会在容器内秒级自动增量编译并热重载。`target` 缓存亦通过专用 Volume 隔离，不污染宿主机。*
-
-3. **运行（传统原生单机模式）**：
-   需要你本地已安装完整的 Rust 环境。
+2. **运行后端**：
    ```bash
    cargo run
    # 或构建生产版本: cargo build --release
    ```
 
-### 前端 (Frontend)
+**前端 (Frontend):**
 
 ```bash
 cd frontend
@@ -130,7 +194,7 @@ npm run preview
 ### 部署
 - **容器化**：Docker + Docker Compose
 - **反向代理**：Nginx
-- **数据库**：PostgreSQL 14+ (生产推荐) / SQLite (开发测试)
+- **数据库**：PostgreSQL 15+ (生产推荐) / SQLite (开发测试)
 
 ## 📁 项目结构
 
@@ -169,8 +233,13 @@ tokensbyte/
 │   ├── vite.config.ts      # Vite 配置
 │   └── Dockerfile          # 前端 Docker 配置
 │
-├── docker-compose.yml      # Docker Compose 配置（开发）
+├── docker-compose.yml      # Docker Compose 配置（基础版，含内置PostgreSQL）
+├── docker-compose.prod.yml # Docker Compose 配置（生产环境，外部数据库）
+├── docker-compose.dev.yml  # Docker Compose 配置（开发热重载叠加层）
+├── deploy.sh               # Linux/Mac 一键部署脚本
+├── deploy.ps1              # Windows 一键部署脚本
 ├── README.md               # 项目文档
+├── DEPLOY-SCRIPT-GUIDE.md  # 部署脚本使用指南
 └── data/                   # 数据持久化目录
 ```
 
@@ -214,7 +283,17 @@ A: 系统底部驱动 `sqlx` 会严格根据环境变量 `DATABASE_URL` 的**协
 - **使用 SQLite（推荐本地开发测试）**：
   在 `.env` 或系统中配置 `DATABASE_URL=sqlite://data/tokensbyte.db`
 
-*注：在 `docker-compose.prod.yml` 中默认预配置的正是 PostgreSQL 环境。如果没有显式声明该变量，系统也会默认尝试连接本地默认的 PG 实例。*
+*注：项目当前默认使用 PostgreSQL。`docker-compose.yml` 内置了 PostgreSQL 服务，`docker-compose.prod.yml` 则配置为连接外部数据库。*
+
+### Q: Docker 内置 PostgreSQL 和独立安装有什么区别？
+
+A: 主要差异在于性能和运维管理：
+- **Linux 环境**：Docker 内置性能损耗极小（<2%），完全可用于生产
+- **Windows/Mac 环境**：Docker 文件系统映射会导致 15-40% 的 I/O 损耗，建议独立安装
+- **运维管理**：独立安装可以使用原生 pg_dump 工具，调优更灵活
+- **推荐使用**：开发测试用 Docker 内置，大规模生产用独立安装或云数据库
+
+详细对比请参阅上方「💡 数据库部署选择建议」章节。
 
 ### Q: 支持哪些模型？
 
