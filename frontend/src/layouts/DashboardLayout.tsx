@@ -21,6 +21,7 @@ import {
   ScheduleOutlined,
   RocketOutlined,
   PictureOutlined,
+  ExperimentOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
@@ -212,6 +213,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         key: '/advanced-marketing',
         icon: <TeamOutlined style={{ fontSize: '18px' }} />,
         label: <Link to="/advanced-marketing">高级营销</Link>,
+      });
+    }
+
+    // 插件菜单：模型体验中心
+    if (isPluginVisibleForUser('playground')) {
+      menuItems.push({
+        key: '/playground',
+        icon: <ExperimentOutlined style={{ fontSize: '18px' }} />,
+        label: <Link to="/playground" target="_blank">体验中心</Link>,
       });
     }
 

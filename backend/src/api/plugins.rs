@@ -22,6 +22,8 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/{name}/config", post(update_plugin_config))
         .route("/{name}/storage-config", get(get_storage_config).post(save_storage_config))
         .route("/{name}/moderation-config", get(get_moderation_config).post(save_moderation_config))
+        .route("/{name}/playground-config", get(get_playground_config).post(save_playground_config))
+        .route("/{name}/playground-public-config", get(get_playground_public_config))
         .route("/{name}/test-connection", post(test_tos_connection))
         .route("/{name}/api-logs", get(get_plugin_api_logs))
 }
@@ -433,3 +435,129 @@ async fn get_plugin_api_logs(
     })))
 }
 
+// ========== 体验中心配置 (Playground) ==========
+
+#[derive(Deserialize)]
+pub struct PlaygroundConfigRequest {
+    pub video_models: Option<Vec<String>>,
+    pub image_models: Option<Vec<String>>,
+    pub chat_models: Option<Vec<String>>,
+    pub audio_models: Option<Vec<String>>,
+    pub enable_video: Option<bool>,
+    pub enable_image: Option<bool>,
+    pub enable_chat: Option<bool>,
+    pub enable_audio: Option<bool>,
+}
+
+/// 管理员：获取体验中心配置
+async fn get_playground_config(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let configs = load_plugin_configs(&state, &name).await?;
+
+    let parse_list = |key: &str| -> Vec<String> {
+        configs.get(key)
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default()
+    };
+    
+    let parse_bool = |key: &str| -> bool {
+        configs.get(key)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(true) // 默认开启
+    };
+
+    Ok(Json(json!({
+        "video_models": parse_list("video_models"),
+        "image_models": parse_list("image_models"),
+        "chat_models": parse_list("chat_models"),
+        "audio_models": parse_list("audio_models"),
+        "enable_video": parse_bool("enable_video"),
+        "enable_image": parse_bool("enable_image"),
+        "enable_chat": parse_bool("enable_chat"),
+        "enable_audio": parse_bool("enable_audio"),
+    })))
+}
+
+/// 管理员：保存体验中心配置
+async fn save_playground_config(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+    Json(payload): Json<PlaygroundConfigRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    if let Some(video_models) = payload.video_models {
+        upsert_config(&state, &name, "video_models", &serde_json::to_string(&video_models).unwrap_or_default()).await?;
+    }
+    if let Some(image_models) = payload.image_models {
+        upsert_config(&state, &name, "image_models", &serde_json::to_string(&image_models).unwrap_or_default()).await?;
+    }
+    if let Some(chat_models) = payload.chat_models {
+        upsert_config(&state, &name, "chat_models", &serde_json::to_string(&chat_models).unwrap_or_default()).await?;
+    }
+    if let Some(audio_models) = payload.audio_models {
+        upsert_config(&state, &name, "audio_models", &serde_json::to_string(&audio_models).unwrap_or_default()).await?;
+    }
+    
+    if let Some(enable) = payload.enable_video {
+        upsert_config(&state, &name, "enable_video", &enable.to_string()).await?;
+    }
+    if let Some(enable) = payload.enable_image {
+        upsert_config(&state, &name, "enable_image", &enable.to_string()).await?;
+    }
+    if let Some(enable) = payload.enable_chat {
+        upsert_config(&state, &name, "enable_chat", &enable.to_string()).await?;
+    }
+    if let Some(enable) = payload.enable_audio {
+        upsert_config(&state, &name, "enable_audio", &enable.to_string()).await?;
+    }
+
+    Ok(Json(json!({ "message": "体验中心配置已保存" })))
+}
+
+/// 公开：获取体验中心配置供前端使用
+async fn get_playground_public_config(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<serde_json::Value>> {
+    let configs = load_plugin_configs(&state, "playground").await?;
+    let parse_list = |key: &str| -> Vec<String> {
+        configs.get(key)
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default()
+    };
+    
+    let parse_bool = |key: &str| -> bool {
+        configs.get(key)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(true) // 默认开启
+    };
+
+    Ok(Json(json!({
+        "video_models": parse_list("video_models"),
+        "image_models": parse_list("image_models"),
+        "chat_models": parse_list("chat_models"),
+        "audio_models": parse_list("audio_models"),
+        "enable_video": parse_bool("enable_video"),
+        "enable_image": parse_bool("enable_image"),
+        "enable_chat": parse_bool("enable_chat"),
+        "enable_audio": parse_bool("enable_audio"),
+    })))
+}

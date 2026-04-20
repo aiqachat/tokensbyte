@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Typography, Switch, Button, message, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
@@ -51,6 +51,7 @@ const TOS_REGIONS = [
 const pluginIcons: Record<string, React.ReactNode> = {
   asset_manager: <PictureOutlined style={{ fontSize: 20 }} />,
   team_marketing: <TeamOutlined style={{ fontSize: 20 }} />,
+  playground: <ExperimentOutlined style={{ fontSize: 20 }} />,
 };
 
 const PluginConfig: React.FC = () => {
@@ -96,6 +97,53 @@ const PluginConfig: React.FC = () => {
   const [apiLogsTotal, setApiLogsTotal] = useState(0);
   const [apiLogsPage, setApiLogsPage] = useState(1);
   const [apiLogsLoading, setApiLogsLoading] = useState(false);
+
+  // ====== 体验中心 (Playground) 配置 Tab ======
+  const [playgroundConfig, setPlaygroundConfig] = useState<any>({
+    video_models: [], image_models: [], chat_models: [], audio_models: [],
+    enable_video: true, enable_image: true, enable_chat: true, enable_audio: true
+  });
+  const [savingPlayground, setSavingPlayground] = useState(false);
+  const [availableModels, setAvailableModels] = useState<any[]>([]);
+
+  const fetchPlaygroundConfigBase = async () => {
+    try {
+      const res = await request.get(`/plugins/${name}/playground-config`) as any;
+      setPlaygroundConfig({
+        video_models: res.video_models || [],
+        image_models: res.image_models || [],
+        chat_models: res.chat_models || [],
+        audio_models: res.audio_models || [],
+        enable_video: res.enable_video ?? true,
+        enable_image: res.enable_image ?? true,
+        enable_chat: res.enable_chat ?? true,
+        enable_audio: res.enable_audio ?? true,
+      });
+      const modelsRes = await request.get('/models?page_size=1000') as any;
+      if (modelsRes.models) setAvailableModels(modelsRes.models);
+      else if (Array.isArray(modelsRes)) setAvailableModels(modelsRes);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    if (name === 'playground') {
+      fetchPlaygroundConfigBase();
+    }
+  }, [name]);
+
+  const handleSavePlaygroundConfig = async () => {
+    try {
+      setSavingPlayground(true);
+      await request.post(`/plugins/${name}/playground-config`, playgroundConfig);
+      message.success('体验配置保存成功');
+    } catch (e) {
+      message.error('保存失败');
+    } finally {
+      setSavingPlayground(false);
+    }
+  };
 
   const fetchApiLogs = async (page = 1) => {
     try {
@@ -348,7 +396,7 @@ const PluginConfig: React.FC = () => {
                     <Text style={{ color: '#fff', fontSize: 13 }}>{lv.name}</Text>
                     <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>{lv.group_key}</Tag>
                   </div>
-                  {name !== 'team_marketing' && (
+                  {(name !== 'team_marketing' && name !== 'playground') && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
                     <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, whiteSpace: 'nowrap' }}>空间</Text>
                     <InputNumber
@@ -370,7 +418,7 @@ const PluginConfig: React.FC = () => {
         )}
       </div>
 
-      {isAllLevels && name !== 'team_marketing' && (
+      {isAllLevels && (name !== 'team_marketing' && name !== 'playground') && (
         <div style={{
           background: '#141414', borderRadius: 8,
           border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
@@ -827,6 +875,63 @@ const PluginConfig: React.FC = () => {
     </div>
   );
 
+  // ====== 体验中心 (Playground) 配置 Tab 视图渲染 ======
+  const renderPlaygroundTab = (type: 'video_models' | 'image_models' | 'chat_models' | 'audio_models', title: string) => {
+    const enableKey = type.replace('_models', '') as 'video' | 'image' | 'chat' | 'audio';
+    const isEnabled = playgroundConfig[`enable_${enableKey}`] ?? true;
+
+    if (type === 'audio_models') {
+      return (
+        <div style={{ background: '#141414', borderRadius: 8, padding: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text strong style={{ color: '#fff', fontSize: 14 }}>{title}</Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text style={{ color: isEnabled ? '#52c41a' : 'rgba(255,255,255,0.35)', fontSize: 13 }}>{isEnabled ? '在此菜单中呈启' : '已停用菜单'}</Text>
+              <Switch checked={isEnabled} onChange={(val) => setPlaygroundConfig({ ...playgroundConfig, [`enable_${enableKey}`]: val })} />
+            </div>
+          </div>
+          <Divider style={{ margin: '14px 0', borderColor: 'rgba(255,255,255,0.06)' }} />
+          <Alert type="info" showIcon message="功能预留" description="声音模型体验功能暂未开放接入，敬请期待。" style={{background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)'}} />
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ background: '#141414', borderRadius: 8, padding: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <Text strong style={{ color: '#fff', fontSize: 14 }}>{title}</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
+              选择可供用户在体验中心使用的模型（可多选），这些模型会在前台向该等级用户展现。
+            </Text>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text style={{ color: isEnabled ? '#52c41a' : 'rgba(255,255,255,0.35)', fontSize: 13 }}>{isEnabled ? '开放体验通道' : '暂停体验通道'}</Text>
+            <Switch checked={isEnabled} onChange={(val) => setPlaygroundConfig({ ...playgroundConfig, [`enable_${enableKey}`]: val })} />
+          </div>
+        </div>
+        <Divider style={{ margin: '14px 0', borderColor: 'rgba(255,255,255,0.06)' }} />
+        
+        <Select
+          mode="multiple"
+          placeholder={`请选择需要开放的 ${title} 模型`}
+          style={{ width: '100%', marginBottom: 16 }}
+          value={playgroundConfig[type]}
+          onChange={(val) => setPlaygroundConfig({ ...playgroundConfig, [type]: val })}
+          options={availableModels.map(m => ({ label: m.name, value: m.name }))}
+          popupClassName="dark-select-dropdown"
+          optionFilterProp="label"
+        />
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button type="primary" loading={savingPlayground} onClick={handleSavePlaygroundConfig} icon={<SaveOutlined />}>
+            保存配置
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   return (
 
     <div>
@@ -862,6 +967,14 @@ const PluginConfig: React.FC = () => {
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
                 { key: 'team_config', label: '团队配置', children: <TeamConfig /> },
+              ]
+            : plugin.name === 'playground'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'video_models', label: '视频体验配置', children: renderPlaygroundTab('video_models', '视频体验模型') },
+                { key: 'image_models', label: '图片体验配置', children: renderPlaygroundTab('image_models', '图片体验模型') },
+                { key: 'chat_models', label: '聊天体验配置', children: renderPlaygroundTab('chat_models', '聊天体验模型') },
+                { key: 'audio_models', label: '声音体验配置', children: renderPlaygroundTab('audio_models', '声音体验模型') },
               ]
             : [
                 { key: 'audit_log', label: '审核日志', children: auditLogTab },

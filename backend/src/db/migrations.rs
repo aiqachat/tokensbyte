@@ -614,6 +614,15 @@ macro_rules! pg_migration_blocks {
     .execute(pool)
     .await?;
 
+    // Seed Playground plugin
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled)
+           VALUES ('playground', '模型体验中心', '提供直接的视频、图片、声音、聊天模型体验服务', 0)
+           ON CONFLICT (name) DO NOTHING"#
+    )
+    .execute(pool)
+    .await?;
+
     // Marketing Teams table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS marketing_teams (
