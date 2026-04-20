@@ -460,7 +460,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             <Menu
               theme="dark"
               mode="inline"
-              selectedKeys={[location.pathname]}
+              selectedKeys={[location.pathname + location.search]}
+              defaultOpenKeys={menuItems
+                .filter((item: any) => item?.children?.some((child: any) => child.key === location.pathname + location.search))
+                .map((item: any) => item.key)}
               items={menuItems}
               style={{ border: 'none', background: 'transparent', marginTop: 8 }}
               onClick={() => {

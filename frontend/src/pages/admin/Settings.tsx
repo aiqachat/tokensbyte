@@ -18,7 +18,7 @@ const Settings: React.FC = () => {
   const [basicSubTab, setBasicSubTab] = useState('site');
 
   const getTitle = () => {
-    switch(tab) {
+    switch (tab) {
       case 'currency': return t('menu.currency_settings');
       case 'database': return '数据库设置';
       default: return t('menu.basic_settings');
@@ -33,7 +33,7 @@ const Settings: React.FC = () => {
     try {
       const response = await (request.get('/settings') as any);
       const { site, currency, registration, smtp, database: backendDatabase } = response;
-      
+
       const defaultDatabase = {
         db_type: 'postgres',
         host: 'localhost',
@@ -64,7 +64,7 @@ const Settings: React.FC = () => {
     try {
       const values = form.getFieldsValue(true);
       let payload: any = {};
-      
+
       if (tab === 'basic') {
         // Save all basic sub-tabs together
         payload.site = {
@@ -96,12 +96,12 @@ const Settings: React.FC = () => {
 
       const updatedSettings = await (request.post('/settings', payload) as any);
       message.success(t('settings.save_success'));
-      
+
       // Update global store
       updateStoreSettings(updatedSettings);
-      
+
       if (payload.site?.title) {
-          document.title = payload.site.title;
+        document.title = payload.site.title;
       }
     } catch (error) {
       console.error('Failed to update settings:', error);
@@ -116,9 +116,9 @@ const Settings: React.FC = () => {
       <Form.Item label={t('settings.site_name')} name="name" rules={[{ required: true }]}>
         <Input placeholder="TokensByte" />
       </Form.Item>
-      <Form.Item 
-        label="站点 Logo" 
-        name="logo" 
+      <Form.Item
+        label="站点 Logo"
+        name="logo"
         extra={<Text type="secondary">支持图片链接，建议尺寸 32x32 或 40x40，留空则仅显示站点名称文字</Text>}
       >
         <Input placeholder="https://example.com/logo.png" />
@@ -126,9 +126,9 @@ const Settings: React.FC = () => {
       <Form.Item label={t('settings.site_title')} name="title" rules={[{ required: true }]}>
         <Input placeholder="TokensByte - LLM API Gateway" />
       </Form.Item>
-      <Form.Item 
-        label="站点图标 (Favicon)" 
-        name="favicon" 
+      <Form.Item
+        label="站点图标 (Favicon)"
+        name="favicon"
         extra={<Text type="secondary">支持 .ico / .png / .svg 格式的图片链接，留空则使用默认图标</Text>}
       >
         <Input placeholder="https://example.com/favicon.ico" />
@@ -144,16 +144,16 @@ const Settings: React.FC = () => {
 
   const loginSettingsContent = (
     <div style={{ maxWidth: 600 }}>
-      <Form.Item 
-        label="登录页标题" 
-        name="login_title" 
+      <Form.Item
+        label="登录页标题"
+        name="login_title"
         extra={<Text type="secondary">显示在登录页面的主标题位置，留空则使用站点名称</Text>}
       >
         <Input placeholder="例如：TokensByte" />
       </Form.Item>
-      <Form.Item 
-        label="登录页副标题" 
-        name="login_subtitle" 
+      <Form.Item
+        label="登录页副标题"
+        name="login_subtitle"
         extra={<Text type="secondary">显示在登录页标题下方的描述文字，留空则使用默认文字</Text>}
       >
         <Input placeholder="例如：Next-gen LLM API Gateway" />
@@ -163,16 +163,16 @@ const Settings: React.FC = () => {
 
   const registrationSettingsContent = (
     <div style={{ maxWidth: 600 }}>
-      <Form.Item 
-        label={t('settings.enable_username_reg')} 
-        name="enable_username_registration" 
+      <Form.Item
+        label={t('settings.enable_username_reg')}
+        name="enable_username_registration"
         valuePropName="checked"
       >
         <Switch />
       </Form.Item>
-      <Form.Item 
-        label={t('settings.enable_email_reg')} 
-        name="enable_email_registration" 
+      <Form.Item
+        label={t('settings.enable_email_reg')}
+        name="enable_email_registration"
         valuePropName="checked"
       >
         <Switch />
@@ -207,9 +207,9 @@ const Settings: React.FC = () => {
         }}
       </Form.Item>
 
-      <Form.Item 
-        label={t('settings.enable_password_recovery')} 
-        name="enable_password_recovery" 
+      <Form.Item
+        label={t('settings.enable_password_recovery')}
+        name="enable_password_recovery"
         valuePropName="checked"
       >
         <Switch />
@@ -218,8 +218,8 @@ const Settings: React.FC = () => {
   );
 
   return (
-    <Card 
-      bordered={false} 
+    <Card
+      bordered={false}
       title={getTitle()}
       style={{ borderRadius: 12 }}
     >
@@ -266,9 +266,9 @@ const Settings: React.FC = () => {
               {({ getFieldValue }) => {
                 const defaultCurrency = getFieldValue('default_currency') || 'USD';
                 return (
-                  <Form.Item 
-                    label={t('settings.token_ratio')} 
-                    name="token_ratio" 
+                  <Form.Item
+                    label={t('settings.token_ratio')}
+                    name="token_ratio"
                     rules={[{ required: true }]}
                     extra={<Text type="secondary">{`1 ${defaultCurrency} = N Tokens`}</Text>}
                   >
@@ -305,9 +305,9 @@ const Settings: React.FC = () => {
             <Form.Item label="启用 SSL" name={['database', 'ssl_mode']} valuePropName="checked">
               <Switch />
             </Form.Item>
-            
+
             <Space style={{ marginBottom: 24 }}>
-              <Button 
+              <Button
                 onClick={async () => {
                   try {
                     const values = await form.validateFields();
@@ -324,7 +324,7 @@ const Settings: React.FC = () => {
               >
                 测试连接
               </Button>
-              <Button 
+              <Button
                 danger
                 onClick={async () => {
                   try {
@@ -342,9 +342,9 @@ const Settings: React.FC = () => {
               >
                 初始化数据库
               </Button>
-              <Button 
+              <Button
                 onClick={async () => {
-                   try {
+                  try {
                     const res = await (request.post('/settings/database/backup') as any);
                     if (res.success) {
                       message.success(res.message);
