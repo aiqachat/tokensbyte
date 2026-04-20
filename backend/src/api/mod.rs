@@ -101,6 +101,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(admin_routes)
         .nest("/plugins", plugins::router())
         .nest("/assets", assets::router())
+        .nest("/team-marketing", team_marketing::router())
         .layer(axum_middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     let payment_public_routes: Router<Arc<AppState>> = Router::new()
@@ -168,3 +169,4 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
 pub mod plugins;
 pub mod assets;
+pub mod team_marketing;

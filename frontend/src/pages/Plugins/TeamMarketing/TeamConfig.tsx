@@ -1,0 +1,316 @@
+import React, { useState, useEffect } from 'react';
+import { Typography, Button, Table, Modal, Input, Select, Space, Tag, message, Popconfirm, Spin } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, TeamOutlined, CrownOutlined } from '@ant-design/icons';
+import request from '../../../utils/request';
+import type { MarketingTeam, TeamMember } from '../../../types';
+
+const { Text } = Typography;
+
+interface UserOption {
+  user_id: string;
+  username: string;
+  uid: string;
+}
+
+const TeamConfig: React.FC = () => {
+  const [teams, setTeams] = useState<MarketingTeam[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<MarketingTeam | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Form fields
+  const [teamName, setTeamName] = useState('');
+  const [teamDesc, setTeamDesc] = useState('');
+  const [selectedLeaders, setSelectedLeaders] = useState<string[]>([]);
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [userOptions, setUserOptions] = useState<UserOption[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  useEffect(() => {
+    fetchTeams();
+  }, []);
+
+  const fetchTeams = async () => {
+    try {
+      setLoading(true);
+      const res = await (request.get('/team-marketing/teams') as any);
+      if (res.teams) setTeams(res.teams);
+    } catch (e) {
+      message.error('获取团队列表失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const searchUsers = async (keyword: string) => {
+    if (!keyword || keyword.length < 1) return;
+    try {
+      setSearchLoading(true);
+      const res = await (request.get('/team-marketing/search-users', { params: { keyword } }) as any);
+      if (res.users) setUserOptions(res.users);
+    } catch (e) {
+      console.error('搜索用户失败', e);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const openCreateModal = () => {
+    setEditingTeam(null);
+    setTeamName('');
+    setTeamDesc('');
+    setSelectedLeaders([]);
+    setSelectedMembers([]);
+    setUserOptions([]);
+    setModalVisible(true);
+  };
+
+  const openEditModal = (team: MarketingTeam) => {
+    setEditingTeam(team);
+    setTeamName(team.name);
+    setTeamDesc(team.description || '');
+    setSelectedLeaders(team.leaders.map(l => l.user_id));
+    setSelectedMembers(team.members.map(m => m.user_id));
+    // Pre-populate user options with existing leaders and members
+    const existingUsers: UserOption[] = [
+      ...team.leaders.map(l => ({ user_id: l.user_id, username: l.username, uid: l.uid })),
+      ...team.members.map(m => ({ user_id: m.user_id, username: m.username, uid: m.uid })),
+    ];
+    // Deduplicate
+    const seen = new Set<string>();
+    const deduped = existingUsers.filter(u => {
+      if (seen.has(u.user_id)) return false;
+      seen.add(u.user_id);
+      return true;
+    });
+    setUserOptions(deduped);
+    setModalVisible(true);
+  };
+
+  const handleSave = async () => {
+    if (!teamName.trim()) {
+      message.warning('请输入团队名称');
+      return;
+    }
+    if (selectedLeaders.length === 0) {
+      message.warning('请至少选择一个负责人');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const payload = {
+        name: teamName.trim(),
+        description: teamDesc.trim() || null,
+        leader_ids: selectedLeaders,
+        member_ids: selectedMembers,
+      };
+
+      if (editingTeam) {
+        await request.put(`/team-marketing/teams/${editingTeam.id}`, payload);
+        message.success('团队更新成功');
+      } else {
+        await request.post('/team-marketing/teams', payload);
+        message.success('团队创建成功');
+      }
+      setModalVisible(false);
+      fetchTeams();
+    } catch (e: any) {
+      message.error(e?.response?.data?.error?.message || '操作失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await request.delete(`/team-marketing/teams/${id}`);
+      message.success('团队已删除');
+      fetchTeams();
+    } catch (e) {
+      message.error('删除失败');
+    }
+  };
+
+  const selectOptions = userOptions.map(u => ({
+    value: u.user_id,
+    label: `${u.username} (${u.uid})`,
+  }));
+
+  const columns = [
+    {
+      title: '团队名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string) => <Text strong style={{ color: '#fff' }}>{name}</Text>,
+    },
+    {
+      title: '负责人',
+      dataIndex: 'leaders',
+      key: 'leaders',
+      render: (leaders: TeamMember[]) => (
+        <Space wrap size={4}>
+          {leaders.map(l => (
+            <Tag key={l.user_id} icon={<CrownOutlined />} color="gold" style={{ margin: 0, borderRadius: 4 }}>
+              {l.username}
+            </Tag>
+          ))}
+          {leaders.length === 0 && <Text type="secondary">未设置</Text>}
+        </Space>
+      ),
+    },
+    {
+      title: '团队成员',
+      dataIndex: 'members',
+      key: 'members',
+      render: (members: TeamMember[]) => (
+        <Space wrap size={4}>
+          {members.slice(0, 5).map(m => (
+            <Tag key={m.user_id} icon={<TeamOutlined />} style={{ margin: 0, borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
+              {m.username}
+            </Tag>
+          ))}
+          {members.length > 5 && <Tag style={{ margin: 0, borderRadius: 4 }}>+{members.length - 5}</Tag>}
+          {members.length === 0 && <Text type="secondary">暂无成员</Text>}
+        </Space>
+      ),
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 180,
+      render: (t: string) => <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text>,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_: any, record: MarketingTeam) => (
+        <Space size={4}>
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => openEditModal(record)}
+            style={{ color: '#1677ff' }}
+          />
+          <Popconfirm title="确定删除此团队？" onConfirm={() => handleDelete(record.id)} okText="删除" cancelText="取消">
+            <Button type="text" size="small" icon={<DeleteOutlined />} danger />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
+          共 {teams.length} 个推广团队
+        </Text>
+        <Space>
+          <Button size="small" onClick={fetchTeams} loading={loading}>刷新</Button>
+          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openCreateModal}>
+            新建团队
+          </Button>
+        </Space>
+      </div>
+
+      <Table
+        dataSource={teams}
+        columns={columns}
+        rowKey="id"
+        loading={loading}
+        size="small"
+        pagination={{ pageSize: 10 }}
+      />
+
+      {/* Create/Edit Modal */}
+      <Modal
+        title={editingTeam ? '编辑推广团队' : '新建推广团队'}
+        open={modalVisible}
+        onCancel={() => setModalVisible(false)}
+        onOk={handleSave}
+        confirmLoading={saving}
+        okText={editingTeam ? '保存' : '创建'}
+        width={600}
+        destroyOnClose
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
+          <div>
+            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+              团队名称 <span style={{ color: '#ff4d4f' }}>*</span>
+            </Text>
+            <Input
+              value={teamName}
+              onChange={(e) => setTeamName(e.target.value)}
+              placeholder="输入团队名称"
+              style={{ background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+            />
+          </div>
+
+          <div>
+            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+              团队描述
+            </Text>
+            <Input.TextArea
+              value={teamDesc}
+              onChange={(e) => setTeamDesc(e.target.value)}
+              placeholder="简要描述团队用途（可选）"
+              rows={2}
+              style={{ background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+            />
+          </div>
+
+          <div>
+            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+              <CrownOutlined style={{ color: '#faad14', marginRight: 4 }} />
+              团队负责人 <span style={{ color: '#ff4d4f' }}>*</span>
+              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可以查看团队成员的推广详细数据</Text>
+            </Text>
+            <Select
+              mode="multiple"
+              value={selectedLeaders}
+              onChange={setSelectedLeaders}
+              options={selectOptions}
+              placeholder="搜索并选择负责人..."
+              showSearch
+              filterOption={false}
+              onSearch={searchUsers}
+              loading={searchLoading}
+              notFoundContent={searchLoading ? <Spin size="small" /> : '输入关键词搜索用户'}
+              style={{ width: '100%' }}
+              suffixIcon={<SearchOutlined />}
+            />
+          </div>
+
+          <div>
+            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+              <TeamOutlined style={{ color: '#1677ff', marginRight: 4 }} />
+              团队成员
+              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>选择此团队的推广人员</Text>
+            </Text>
+            <Select
+              mode="multiple"
+              value={selectedMembers}
+              onChange={setSelectedMembers}
+              options={selectOptions}
+              placeholder="搜索并选择团队成员..."
+              showSearch
+              filterOption={false}
+              onSearch={searchUsers}
+              loading={searchLoading}
+              notFoundContent={searchLoading ? <Spin size="small" /> : '输入关键词搜索用户'}
+              style={{ width: '100%' }}
+              suffixIcon={<SearchOutlined />}
+            />
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+export default TeamConfig;

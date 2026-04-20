@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Switch, message, Typography, Row, Col, Tag, Button, Space, Spin } from 'antd';
-import { SettingOutlined, AppstoreOutlined, PictureOutlined, ReloadOutlined } from '@ant-design/icons';
+import { SettingOutlined, AppstoreOutlined, PictureOutlined, ReloadOutlined, TeamOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
@@ -9,6 +9,7 @@ const { Title, Text } = Typography;
 
 const pluginIcons: Record<string, React.ReactNode> = {
   asset_manager: <PictureOutlined style={{ fontSize: 22 }} />,
+  team_marketing: <TeamOutlined style={{ fontSize: 22 }} />,
 };
 
 const PluginsList: React.FC = () => {

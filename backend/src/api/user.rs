@@ -271,10 +271,10 @@ pub async fn get_wallet_stats(
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<WalletStats>> {
     let user_id = &claims.sub;
-    
+
     let balance: f64 = sqlx::query_scalar(&state.db.format_query("SELECT balance FROM users WHERE id = ?"))
         .bind(user_id).fetch_one(&state.db.pool).await?;
-        
+
     let stats: (f64, i64, i64) = sqlx::query_as(
         &state.db.format_query(r#"SELECT 
             COALESCE(SUM(cost), 0.0) as total_consumption,

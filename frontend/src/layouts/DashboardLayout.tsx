@@ -206,6 +206,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       });
     }
 
+    // 插件菜单：团队营销管理
+    if (isPluginVisibleForUser('team_marketing')) {
+      menuItems.push({
+        key: '/advanced-marketing',
+        icon: <TeamOutlined style={{ fontSize: '18px' }} />,
+        label: <Link to="/advanced-marketing">高级营销</Link>,
+      });
+    }
+
     menuItems.push(
       {
         key: '/wallet',

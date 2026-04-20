@@ -412,7 +412,7 @@ macro_rules! pg_migration_blocks {
     sqlx::query(r#"
         INSERT INTO forward_rules (name, rule_type, description, config_json, category, is_system)
         SELECT t.name, t.rule_type, t.description, t.config_json, t.category, t.is_system
-        FROM (VALUES 
+        FROM (VALUES
             ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天', 1),
             ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片', 1),
             ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频', 1),
@@ -604,6 +604,55 @@ macro_rules! pg_migration_blocks {
     )
     .execute(pool)
     .await?;
+
+    // Seed Team Marketing plugin
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled)
+           VALUES ('team_marketing', '团队营销管理', '提供营销团队的用户管理，支持推广团队创建与成员管理', 0)
+           ON CONFLICT (name) DO NOTHING"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Marketing Teams table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS marketing_teams (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Marketing Team Leaders table (many-to-many)
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS marketing_team_leaders (
+            id SERIAL PRIMARY KEY,
+            team_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            UNIQUE(team_id, user_id)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Marketing Team Members table (many-to-many)
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS marketing_team_members (
+            id SERIAL PRIMARY KEY,
+            team_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            UNIQUE(team_id, user_id)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // Plugin Configs table (for TOS storage, etc.)
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS plugin_configs (
