@@ -8,6 +8,7 @@ export interface User {
   nickname?: string;
   mobile?: string;
   wechat_id?: string;
+  google_id?: string;
   role: 'admin' | 'user';
   balance: number;
   used_quota: number;
@@ -233,10 +234,24 @@ export interface CurrencySettings {
   token_ratio: number;
 }
 
+export interface LoginSettings {
+  enable_username_login: boolean;
+  enable_mobile_login: boolean;
+  enable_email_login: boolean;
+  enable_wechat_login: boolean;
+  enable_google_login: boolean;
+}
+
 export interface RegistrationSettings {
   enable_username_registration: boolean;
   enable_email_registration: boolean;
+  enable_mobile_registration: boolean;
   enable_password_recovery: boolean;
+  ip_rate_limit_enabled: boolean;
+  ip_daily_limit: number;
+  email_validation_strict: boolean;
+  email_whitelist_enabled: boolean;
+  email_whitelist: string[];
 }
 
 export interface SMTPSettings {
@@ -246,6 +261,24 @@ export interface SMTPSettings {
   password?: string;
   from_address: string;
   from_name: string;
+}
+
+export interface SmsSettings {
+  secret_id: string;
+  secret_key: string;
+  sdk_app_id: string;
+  sign_name: string;
+  template_id: string;
+}
+
+export interface GoogleOAuthSettings {
+  client_id: string;
+  client_secret: string;
+}
+
+export interface WechatOAuthSettings {
+  app_id: string;
+  app_secret: string;
 }
 
 export interface MarketingSettings {
@@ -259,9 +292,13 @@ export interface MarketingSettings {
 export interface AllSettings {
   site: SiteSettings;
   currency: CurrencySettings;
+  login: LoginSettings;
   registration: RegistrationSettings;
   smtp: SMTPSettings;
+  sms?: SmsSettings;
   marketing: MarketingSettings;
+  google_oauth?: GoogleOAuthSettings;
+  wechat_oauth?: WechatOAuthSettings;
 }
 
 export interface ChannelConfig {

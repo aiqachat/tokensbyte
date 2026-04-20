@@ -373,6 +373,18 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/payment-settings">支付设置</Link>,
           },
           {
+            key: '/admin0755/email-notification',
+            label: <Link to="/admin0755/email-notification">{t('menu.email_notification')}</Link>,
+          },
+          {
+            key: '/admin0755/sms-notification',
+            label: <Link to="/admin0755/sms-notification">{t('menu.sms_notification')}</Link>,
+          },
+          {
+            key: '/admin0755/oauth-settings',
+            label: <Link to="/admin0755/oauth-settings">{t('menu.oauth_settings')}</Link>,
+          },
+          {
             key: '/admin0755/settings?tab=database',
             label: <Link to="/admin0755/settings?tab=database">数据库设置</Link>,
           }

@@ -1,282 +1,231 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Card, Typography, Space, Tabs, message, Tag, ConfigProvider, theme } from 'antd';
-import { 
-  UserOutlined, 
-  LockOutlined, 
-  MailOutlined, 
-  SafetyCertificateOutlined,
-  CheckCircleFilled,
-  ArrowRightOutlined 
-} from '@ant-design/icons';
+import { Card, Form, Input, Button, Typography, Space, message, ConfigProvider, theme, Divider, Tooltip } from 'antd';
+import { UserOutlined, LockOutlined, MailOutlined, MobileOutlined, SafetyOutlined, RocketOutlined, WechatOutlined, GoogleOutlined } from '@ant-design/icons';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import axios, { AxiosError } from 'axios';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
-import request from '../../utils/request';
+import useAuthStore from '../../store/auth';
 import useSettingsStore from '../../store/settings';
 
 const { Title, Text } = Typography;
 
 const Register: React.FC = () => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { settings } = useSettingsStore();
   const [loading, setLoading] = useState(false);
-  const [sendingCode, setSendingCode] = useState(false);
   const [countdown, setCountdown] = useState(0);
-  const [form] = Form.useForm();
-  const [activeTab, setActiveTab] = useState<'username' | 'email'>('username');
+  const navigate = useNavigate();
+  const { setToken, setUser } = useAuthStore();
+  const { settings, fetchSettings } = useSettingsStore();
+  const [searchParams] = useSearchParams();
+  const aff = searchParams.get('aff') || '';
 
+  useEffect(() => { if (!settings) fetchSettings(); }, []);
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const aff = params.get('aff');
-    if (aff) {
-      form.setFieldsValue({ aff });
-    }
-  }, [location, form]);
-
-  useEffect(() => {
-    if (settings) {
-      if (!settings.registration.enable_username_registration && !settings.registration.enable_email_registration) {
-        message.warning(t('auth.registration_disabled'));
-        navigate('/login');
-      } else if (!settings.registration.enable_username_registration && settings.registration.enable_email_registration) {
-        setActiveTab('email');
-      }
-    }
-  }, [settings, navigate, t]);
-
-  useEffect(() => {
-    let timer: any;
-    if (countdown > 0) {
-      timer = setInterval(() => setCountdown(c => c - 1), 1000);
-    }
-    return () => clearInterval(timer);
+    if (countdown > 0) { const t = setTimeout(() => setCountdown(c => c - 1), 1000); return () => clearTimeout(t); }
   }, [countdown]);
 
-  const onSendCode = async () => {
+  const reg = settings?.registration;
+  const login = settings?.login;
+  const siteLogo = settings?.site?.logo;
+
+  const regTabs: { key: string; label: string; icon: React.ReactNode }[] = [];
+  if (reg?.enable_username_registration) regTabs.push({ key: 'username', label: t('auth.username_reg'), icon: <UserOutlined /> });
+  if (reg?.enable_mobile_registration) regTabs.push({ key: 'mobile', label: '手机号注册', icon: <MobileOutlined /> });
+  if (reg?.enable_email_registration) regTabs.push({ key: 'email', label: t('auth.email_reg'), icon: <MailOutlined /> });
+
+  const [activeTab, setActiveTab] = useState('');
+  useEffect(() => { if (regTabs.length > 0 && !activeTab) setActiveTab(regTabs[0].key); }, [reg]);
+
+  const noRegistration = regTabs.length === 0;
+
+  const sendEmailCode = async (email: string) => {
+    if (countdown > 0) return;
     try {
-      const email = await form.validateFields(['email']);
-      setSendingCode(true);
-      await request.post('/auth/send-code', { email: email.email, purpose: 'register' });
+      await axios.post('/api/v1/auth/send-code', { email, purpose: 'register' });
       message.success(t('auth.code_sent'));
       setCountdown(60);
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.response?.data?.error?.message || t('common.error'));
-    } finally {
-      setSendingCode(false);
+    } catch (e: any) {
+      message.error(e?.response?.data?.error?.message || '发送失败');
     }
   };
 
-  const onFinish = async (values: any) => {
+  const sendSmsCode = async (mobile: string) => {
+    if (countdown > 0) return;
+    try {
+      await axios.post('/api/v1/auth/send-sms-code', { mobile, purpose: 'register' });
+      message.success('验证码已发送');
+      setCountdown(60);
+    } catch (e: any) {
+      message.error(e?.response?.data?.error?.message || '发送失败');
+    }
+  };
+
+  const onFinishUsername = async (values: any) => {
+    if (loading) return;
     setLoading(true);
     try {
-      if (activeTab === 'email') {
-        await request.post('/auth/register-email', {
-          email: values.email,
-          code: values.code,
-          password: values.password,
-          aff: values.aff,
-        });
-      } else {
-        await request.post('/auth/register', {
-          username: values.username,
-          email: values.email || '',
-          password: values.password,
-          aff: values.aff,
-        });
-      }
-      message.success(t('auth.register_success'));
-      navigate('/login');
-    } catch (error: any) {
-      const rawMsg = error.response?.data?.error?.message || '';
-      const errorMap: Record<string, string> = {
-        'User already exists': '该用户名已被注册',
-        'Email already exists': '该邮箱已被注册',
-        'Invalid verification code': '验证码错误或已过期',
-        'Username registration is disabled': '用户名注册已关闭',
-        'Email registration is disabled': '邮箱注册已关闭',
-      };
-      message.error(errorMap[rawMsg] || rawMsg || t('common.error'));
-    } finally {
-      setLoading(false);
-    }
+      const res = await axios.post('/api/v1/auth/register', { ...values, aff });
+      setToken(res.data.token); setUser(res.data.user);
+      message.success(t('auth.register_success')); navigate('/');
+    } catch (e: any) {
+      message.error(e?.response?.data?.error?.message || t('common.error'));
+    } finally { setTimeout(() => setLoading(false), 800); }
   };
 
-  if (!settings) return null;
+  const onFinishEmail = async (values: any) => {
+    if (loading) return;
+    if (values.password !== values.confirm_password) { message.error(t('auth.passwords_not_match')); return; }
+    setLoading(true);
+    try {
+      const res = await axios.post('/api/v1/auth/register-email', { email: values.email, code: values.code, password: values.password, aff });
+      setToken(res.data.token); setUser(res.data.user);
+      message.success(t('auth.register_success')); navigate('/');
+    } catch (e: any) {
+      message.error(e?.response?.data?.error?.message || t('common.error'));
+    } finally { setTimeout(() => setLoading(false), 800); }
+  };
+
+  const onFinishMobile = async (values: any) => {
+    if (loading) return;
+    if (values.password !== values.confirm_password) { message.error(t('auth.passwords_not_match')); return; }
+    setLoading(true);
+    try {
+      const res = await axios.post('/api/v1/auth/register-mobile', { mobile: values.mobile, code: values.code, password: values.password, aff });
+      setToken(res.data.token); setUser(res.data.user);
+      message.success(t('auth.register_success')); navigate('/');
+    } catch (e: any) {
+      message.error(e?.response?.data?.error?.message || t('common.error'));
+    } finally { setTimeout(() => setLoading(false), 800); }
+  };
+
+  const usernameForm = (
+    <Form name="reg_username" size="large" onFinish={onFinishUsername} autoComplete="off">
+      <Form.Item name="username" rules={[{ required: true, message: t('auth.username_required') }]}>
+        <Input prefix={<UserOutlined />} placeholder={t('auth.username_placeholder')} />
+      </Form.Item>
+      <Form.Item name="email"><Input prefix={<MailOutlined />} placeholder={t('auth.email_optional')} /></Form.Item>
+      <Form.Item name="password" rules={[{ required: true, message: t('auth.password_required') }]}>
+        <Input.Password prefix={<LockOutlined />} placeholder={t('auth.password_placeholder')} />
+      </Form.Item>
+      <Form.Item name="confirm_password" rules={[{ required: true, message: t('auth.confirm_password_required') }]}>
+        <Input.Password prefix={<LockOutlined />} placeholder={t('auth.confirm_password_placeholder')} />
+      </Form.Item>
+      <Form.Item><Button type="primary" htmlType="submit" block loading={loading}>{t('auth.register_btn')}</Button></Form.Item>
+    </Form>
+  );
+
+  const emailForm = (
+    <Form name="reg_email" size="large" onFinish={onFinishEmail} autoComplete="off">
+      <Form.Item name="email" rules={[{ required: true, message: t('auth.email_required') }, { type: 'email', message: t('auth.email_invalid') }]}>
+        <Input prefix={<MailOutlined />} placeholder={t('auth.email_placeholder')} />
+      </Form.Item>
+      <Form.Item name="code" rules={[{ required: true, message: t('auth.code_required') }]}>
+        <Input prefix={<SafetyOutlined />} placeholder={t('auth.code_placeholder')}
+          suffix={<Button type="link" size="small" disabled={countdown > 0}
+            onClick={() => { const e = document.querySelector<HTMLInputElement>('input[id="reg_email_email"]'); if (e?.value) sendEmailCode(e.value); else message.warning(t('auth.email_required')); }}>
+            {countdown > 0 ? `${countdown}s` : t('auth.send_code')}
+          </Button>} />
+      </Form.Item>
+      <Form.Item name="password" rules={[{ required: true, message: t('auth.password_required') }]}>
+        <Input.Password prefix={<LockOutlined />} placeholder={t('auth.password_placeholder')} />
+      </Form.Item>
+      <Form.Item name="confirm_password" rules={[{ required: true, message: t('auth.confirm_password_required') }]}>
+        <Input.Password prefix={<LockOutlined />} placeholder={t('auth.confirm_password_placeholder')} />
+      </Form.Item>
+      <Form.Item><Button type="primary" htmlType="submit" block loading={loading}>{t('auth.register_btn')}</Button></Form.Item>
+    </Form>
+  );
+
+  const mobileForm = (
+    <Form name="reg_mobile" size="large" onFinish={onFinishMobile} autoComplete="off">
+      <Form.Item name="mobile" rules={[{ required: true, message: '请输入手机号' }]}>
+        <Input prefix={<MobileOutlined />} placeholder="手机号" />
+      </Form.Item>
+      <Form.Item name="code" rules={[{ required: true, message: t('auth.code_required') }]}>
+        <Input prefix={<SafetyOutlined />} placeholder={t('auth.code_placeholder')}
+          suffix={<Button type="link" size="small" disabled={countdown > 0}
+            onClick={() => { const e = document.querySelector<HTMLInputElement>('input[id="reg_mobile_mobile"]'); if (e?.value) sendSmsCode(e.value); else message.warning('请输入手机号'); }}>
+            {countdown > 0 ? `${countdown}s` : t('auth.send_code')}
+          </Button>} />
+      </Form.Item>
+      <Form.Item name="password" rules={[{ required: true, message: t('auth.password_required') }]}>
+        <Input.Password prefix={<LockOutlined />} placeholder={t('auth.password_placeholder')} />
+      </Form.Item>
+      <Form.Item name="confirm_password" rules={[{ required: true, message: t('auth.confirm_password_required') }]}>
+        <Input.Password prefix={<LockOutlined />} placeholder={t('auth.confirm_password_placeholder')} />
+      </Form.Item>
+      <Form.Item><Button type="primary" htmlType="submit" block loading={loading}>{t('auth.register_btn')}</Button></Form.Item>
+    </Form>
+  );
+
+  const tabContent: Record<string, React.ReactNode> = { username: usernameForm, email: emailForm, mobile: mobileForm };
+
+  const handleOAuth = (type: 'wechat' | 'google') => {
+    window.location.href = `/api/v1/auth/oauth/${type}`;
+  };
+
+  const renderIconBtn = (key: string, icon: React.ReactNode, label: string, onClick: () => void, brandColor?: string) => {
+    const isActive = activeTab === key;
+    return (
+      <Tooltip key={key} title={label}>
+        <Button
+          shape="circle"
+          size="large"
+          icon={icon}
+          onClick={onClick}
+          style={{
+            background: isActive ? (brandColor || '#1677ff') : 'transparent',
+            borderColor: isActive ? (brandColor || '#1677ff') : (brandColor || '#303030'),
+            color: isActive ? '#fff' : (brandColor || '#8c8c8c'),
+            transition: 'all 0.3s'
+          }}
+        />
+      </Tooltip>
+    );
+  };
 
   return (
     <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
       <div style={{
-      height: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: '#000',
-      backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
-    }}>
-      <Card style={{ 
-        width: 'min(400px, 92vw)', 
-        borderRadius: 16, 
-        background: '#141414', 
-        border: '1px solid #303030',
-        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
+        height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: '#000', backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
       }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <Space direction="vertical">
-            <UserOutlined style={{ fontSize: 48, color: '#1677ff' }} />
-            <Title level={2} style={{ margin: 0 }}>TokensByte</Title>
-            <Text type="secondary">{t('auth.register_title')}</Text>
-          </Space>
-        </div>
+        <Card style={{
+          width: 'min(420px, 92vw)', borderRadius: 16, background: '#141414',
+          border: '1px solid #303030', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            <Space direction="vertical" size={4}>
+              {siteLogo ? (
+                <img src={siteLogo} alt="logo" style={{ width: 48, height: 48, objectFit: 'contain' }} />
+              ) : (
+                <RocketOutlined style={{ fontSize: 48, color: '#1677ff' }} />
+              )}
+              <Title level={3} style={{ margin: 0 }}>{t('auth.register_title')}</Title>
+              <Text type="secondary">{t('auth.register_subtitle')}</Text>
+            </Space>
+          </div>
 
-        <Form
-          form={form}
-          onFinish={onFinish}
-          layout="vertical"
-          size="large"
-        >
-            {(settings.registration.enable_username_registration && settings.registration.enable_email_registration) && (
-              <Tabs
-                activeKey={activeTab}
-                onChange={(key) => setActiveTab(key as any)}
-                centered
-                style={{ marginBottom: 24 }}
-                items={[
-                  { key: 'username', label: t('auth.username_reg') },
-                  { key: 'email', label: t('auth.email_reg') },
-                ]}
-              />
-            )}
-
-            {activeTab === 'username' ? (
-              <>
-                <Form.Item
-                  name="username"
-                  rules={[{ required: true, message: t('auth.username_required') }]}
-                >
-                  <Input 
-                    prefix={<UserOutlined />} 
-                    placeholder={t('auth.username_placeholder')} 
-                  />
-                </Form.Item>
-                <Form.Item
-                  name="email"
-                  rules={[{ type: 'email', message: t('auth.email_invalid') }]}
-                >
-                  <Input 
-                    prefix={<MailOutlined />} 
-                    placeholder={t('auth.email_optional')} 
-                  />
-                </Form.Item>
-              </>
-            ) : (
-              <>
-                <Form.Item
-                  name="email"
-                  rules={[{ required: true, type: 'email', message: t('auth.email_required') }]}
-                >
-                  <Input 
-                    prefix={<MailOutlined />} 
-                    placeholder={t('auth.email_placeholder')} 
-                  />
-                </Form.Item>
-                <Form.Item
-                  name="code"
-                  rules={[{ required: true, message: t('auth.code_required') }]}
-                >
-                  <div style={{ display: 'flex', gap: 12 }}>
-                    <Input 
-                      prefix={<SafetyCertificateOutlined />} 
-                      placeholder={t('auth.code_placeholder')} 
-                    />
-                    <Button 
-                      onClick={onSendCode} 
-                      disabled={countdown > 0} 
-                      loading={sendingCode}
-                      style={{ minWidth: 120 }}
-                    >
-                      {countdown > 0 ? `${countdown}s` : t('auth.send_code')}
-                    </Button>
-                  </div>
-                </Form.Item>
-              </>
-            )}
-
-            <Form.Item
-              name="password"
-              rules={[{ required: true, message: t('auth.password_required') }, { min: 6, message: '密码至少 6 位' }]}
-            >
-              <Input.Password 
-                prefix={<LockOutlined />} 
-                placeholder={t('auth.password_placeholder')} 
-              />
-            </Form.Item>
-
-            <Form.Item
-              name="confirm"
-              dependencies={['password']}
-              rules={[
-                { required: true, message: t('auth.confirm_password_required') },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    if (!value || getFieldValue('password') === value) return Promise.resolve();
-                    return Promise.reject(new Error(t('auth.passwords_not_match')));
-                  },
-                }),
-              ]}
-            >
-              <Input.Password 
-                prefix={<LockOutlined />} 
-                placeholder={t('auth.confirm_password_placeholder')} 
-              />
-            </Form.Item>
-
-            <Form.Item name="aff" noStyle>
-              {({ getFieldValue }) => {
-                const aff = getFieldValue('aff');
-                return aff ? (
-                  <div style={{ 
-                    marginBottom: 24, 
-                    padding: '12px', 
-                    borderRadius: '12px', 
-                    background: 'rgba(22, 119, 255, 0.05)',
-                    border: '1px dashed rgba(22, 119, 255, 0.3)',
-                    textAlign: 'center'
-                  }}>
-                    <Tag color="cyan" icon={<CheckCircleFilled />} style={{ border: 'none', background: 'transparent', fontSize: 13 }}>
-                      您由用户 {aff} 邀请
-                    </Tag>
-                  </div>
-                ) : null;
-              }}
-            </Form.Item>
-            <Form.Item name="aff" hidden>
-              <Input />
-            </Form.Item>
-
-            <Form.Item style={{ marginBottom: 24 }}>
-              <Button 
-                type="primary" 
-                htmlType="submit" 
-                loading={loading} 
-                block 
-                icon={<ArrowRightOutlined />}
-              >
-                {t('auth.register_btn')}
-              </Button>
-            </Form.Item>
-
-            <div style={{ textAlign: 'center' }}>
-              <Text type="secondary">
-                {t('auth.have_account')} {' '}
-                <Link to="/login" style={{ color: '#1677ff', fontWeight: 600 }}>
-                  {t('auth.login_link')}
-                </Link>
-              </Text>
+          {noRegistration ? (
+            <div style={{ textAlign: 'center', padding: '24px 0' }}>
+              <Text type="secondary">{t('auth.registration_disabled')}</Text>
             </div>
-        </Form>
-      </Card>
+          ) : (
+            <>
+              {tabContent[activeTab]}
+            </>
+          )}
+
+          <div style={{ textAlign: 'center', marginTop: 8 }}>
+            <Text type="secondary">{t('auth.have_account')}</Text>{' '}
+            <Link to="/login">{t('auth.login_link')}</Link>
+          </div>
+
+          <Divider style={{ margin: '24px 0 16px', color: '#666', fontSize: 12 }}>注册方式</Divider>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
+            {regTabs.map(tab => renderIconBtn(tab.key, tab.icon, tab.label, () => setActiveTab(tab.key)))}
+          </div>
+        </Card>
       </div>
     </ConfigProvider>
   );

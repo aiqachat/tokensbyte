@@ -9,6 +9,8 @@ pub struct AppConfig {
     pub admin_password: String,
     pub default_user_quota: f64,
     pub register_enabled: bool,
+    /// 站点域名（OAuth 回调等场景使用）
+    pub base_url: String,
 }
 
 impl AppConfig {
@@ -54,6 +56,8 @@ impl AppConfig {
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
                 .unwrap_or(true),
+            base_url: std::env::var("BASE_URL")
+                .unwrap_or_else(|_| "http://localhost:3000".to_string()),
         }
     }
 }

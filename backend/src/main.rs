@@ -57,23 +57,16 @@ async fn main() -> anyhow::Result<()> {
 
 /// 将 REGISTER_ENABLED 环境变量同步到数据库的 registration_settings
 async fn sync_registration_settings(db: &Database, register_enabled: bool) -> anyhow::Result<()> {
-    
-    
-    // 检查是否已存在 registration_settings
+    use crate::api::settings::default_registration_settings;
+
     let existing: Option<String> = sqlx::query_scalar(&db.format_query("SELECT value FROM settings WHERE key = 'registration_settings'"))
         .fetch_optional(&db.pool)
         .await?;
-    
+
     let settings = if let Some(val) = existing {
-        // 已存在，更新注册开关
+        // 已有设置时，仅根据 REGISTER_ENABLED 覆盖注册开关
         let mut settings: models::RegistrationSettings = serde_json::from_str(&val)
-            .unwrap_or_else(|_| models::RegistrationSettings {
-                enable_username_registration: false,
-                enable_email_registration: false,
-                enable_password_recovery: false,
-            });
-        
-        // 根据 REGISTER_ENABLED 设置注册方式
+            .unwrap_or_else(|_| default_registration_settings());
         if register_enabled {
             settings.enable_username_registration = true;
             settings.enable_email_registration = true;
@@ -81,30 +74,29 @@ async fn sync_registration_settings(db: &Database, register_enabled: bool) -> an
             settings.enable_username_registration = false;
             settings.enable_email_registration = false;
         }
-        
         settings
     } else {
-        // 不存在，创建新设置
-        models::RegistrationSettings {
-            enable_username_registration: register_enabled,
-            enable_email_registration: register_enabled,
-            enable_password_recovery: true,
-        }
+        // 不存在时用默认值
+        let mut s = default_registration_settings();
+        s.enable_username_registration = register_enabled;
+        s.enable_email_registration = register_enabled;
+        s.enable_password_recovery = true;
+        s
     };
-    
-    // 保存到数据库
+
     let val = serde_json::to_string(&settings).unwrap_or_default();
     sqlx::query(&db.format_query("INSERT INTO settings (key, value) VALUES ('registration_settings', ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"))
         .bind(val)
         .execute(&db.pool)
         .await?;
-    
+
     tracing::info!(
-        "📝 Registration settings synced: username={}, email={}, password_recovery={}",
+        "📝 Registration settings synced: username={}, email={}, mobile={}, password_recovery={}",
         settings.enable_username_registration,
         settings.enable_email_registration,
-        settings.enable_password_recovery
+        settings.enable_mobile_registration,
+        settings.enable_password_recovery,
     );
-    
+
     Ok(())
 }

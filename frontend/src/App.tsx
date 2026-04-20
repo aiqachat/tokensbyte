@@ -33,6 +33,9 @@ import RechargeRecords from './pages/Finance/RechargeRecords';
 import OrderDetails from './pages/Finance/OrderDetails';
 import Settings from './pages/admin/Settings';
 import PaymentSettings from './pages/admin/PaymentSettings';
+import EmailNotification from './pages/admin/EmailNotification';
+import SmsNotification from './pages/admin/SmsNotification';
+import OAuthSettings from './pages/admin/OAuthSettings';
 import RegistrationGifts from './pages/admin/Marketing/RegistrationGifts';
 import useAuthStore from './store/auth';
 import useSettingsStore from './store/settings';
@@ -117,6 +120,9 @@ const App: React.FC = () => {
           <Route path="finance/orders" element={<OrderDetails />} />
           <Route path="settings" element={<Settings />} />
           <Route path="payment-settings" element={<PaymentSettings />} />
+          <Route path="email-notification" element={<EmailNotification />} />
+          <Route path="sms-notification" element={<SmsNotification />} />
+          <Route path="oauth-settings" element={<OAuthSettings />} />
           <Route path="marketing/registration-gifts" element={<RegistrationGifts />} />
         </Route>
 

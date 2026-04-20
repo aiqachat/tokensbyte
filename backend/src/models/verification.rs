@@ -6,14 +6,18 @@ use serde::{Deserialize, Serialize};
 pub enum VerificationPurpose {
     Register,
     ResetPassword,
+    BindMobile,
+    BindEmail,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct VerificationCode {
     pub id: i64,
     pub email: String,
+    /// 手机号（短信验证码时使用）
+    pub phone: String,
     pub code: String,
-    pub purpose: String, // Stored as string in SQLite for simplicity
+    pub purpose: String,
     pub expires_at: String,
     pub created_at: String,
 }

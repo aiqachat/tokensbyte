@@ -12,6 +12,8 @@ pub struct User {
     pub nickname: Option<String>,
     pub mobile: Option<String>,
     pub wechat_id: Option<String>,
+    /// 谷歌 OAuth 唯一标识
+    pub google_id: Option<String>,
     pub role: String,
     pub balance: f64,
     #[sqlx(default)]
@@ -57,6 +59,7 @@ pub struct UpdateUserRequest {
     pub nickname: Option<String>,
     pub mobile: Option<String>,
     pub wechat_id: Option<String>,
+    pub google_id: Option<String>,
     pub role: Option<String>,
     pub balance: Option<f64>,
     pub user_group: Option<String>,
@@ -102,6 +105,7 @@ pub struct WalletStats {
     pub total_referred: i64,
 }
 
+/// 用户名+密码登录（保持原有接口兼容）
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
     pub username: String,
@@ -120,12 +124,21 @@ pub struct UserListResponse {
     pub total: i64,
 }
 
+/// 发送邮箱验证码请求
 #[derive(Debug, Deserialize)]
 pub struct SendCodeRequest {
     pub email: String,
-    pub purpose: String, // register, reset_password
+    pub purpose: String, // register, reset_password, bind_email
 }
 
+/// 发送短信验证码请求
+#[derive(Debug, Deserialize)]
+pub struct SendSmsCodeRequest {
+    pub mobile: String,
+    pub purpose: String, // register, bind_mobile
+}
+
+/// 邮箱注册请求
 #[derive(Debug, Deserialize)]
 pub struct EmailRegisterRequest {
     pub email: String,
@@ -134,9 +147,49 @@ pub struct EmailRegisterRequest {
     pub aff: Option<String>,
 }
 
+/// 手机号注册请求
+#[derive(Debug, Deserialize)]
+pub struct MobileRegisterRequest {
+    pub mobile: String,
+    pub code: String,
+    pub password: String,
+    pub aff: Option<String>,
+}
+
+/// 重置密码请求
 #[derive(Debug, Deserialize)]
 pub struct ResetPasswordRequest {
-    pub email: String,
+    pub email: Option<String>,
+    pub mobile: Option<String>,
     pub code: String,
     pub new_password: String,
+}
+
+/// 绑定/换绑手机请求
+#[derive(Debug, Deserialize)]
+pub struct BindMobileRequest {
+    /// 原手机验证码（换绑时必填）
+    pub old_code: Option<String>,
+    /// 新手机号
+    pub mobile: String,
+    /// 新手机验证码
+    pub code: String,
+}
+
+/// 绑定/换绑邮箱请求
+#[derive(Debug, Deserialize)]
+pub struct BindEmailRequest {
+    /// 原邮箱验证码（换绑时必填）
+    pub old_code: Option<String>,
+    /// 新邮箱
+    pub email: String,
+    /// 新邮箱验证码
+    pub code: String,
+}
+
+/// 解绑第三方请求
+#[derive(Debug, Deserialize)]
+pub struct UnbindRequest {
+    /// 当前登录密码（安全校验）
+    pub password: String,
 }

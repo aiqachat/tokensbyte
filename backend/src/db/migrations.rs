@@ -639,6 +639,15 @@ macro_rules! pg_migration_blocks {
     .execute(pool)
     .await?;
 
+    // -- 多方式登录注册扩展 --
+    // users 表新增 google_id（谷歌 OAuth 唯一标识）
+    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT")
+        .execute(pool).await.ok();
+
+    // verification_codes 表新增 phone 字段（短信验证码使用）
+    sqlx::query("ALTER TABLE verification_codes ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};
