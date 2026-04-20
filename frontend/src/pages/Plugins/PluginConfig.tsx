@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Typography, Switch, Button, message, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
 import AdminPresetAssets from './AssetManager/AdminPresetAssets';
+import TeamConfig from './TeamMarketing/TeamConfig';
 import JsonView from '@uiw/react-json-view';
 import { darkTheme } from '@uiw/react-json-view/dark';
 
@@ -49,6 +50,7 @@ const TOS_REGIONS = [
 
 const pluginIcons: Record<string, React.ReactNode> = {
   asset_manager: <PictureOutlined style={{ fontSize: 20 }} />,
+  team_marketing: <TeamOutlined style={{ fontSize: 20 }} />,
 };
 
 const PluginConfig: React.FC = () => {
@@ -71,7 +73,8 @@ const PluginConfig: React.FC = () => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [activeTabKey, setActiveTabKey] = useState(() => {
     const hash = window.location.hash.replace('#', '');
-    return ['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log'].includes(hash) ? hash : 'audit_log';
+    if (['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log', 'team_config'].includes(hash)) return hash;
+    return 'basic'; // default to basic, will be adjusted when plugin loads
   });
   const handleTabChange = (key: string) => {
     setActiveTabKey(key);
@@ -345,6 +348,7 @@ const PluginConfig: React.FC = () => {
                     <Text style={{ color: '#fff', fontSize: 13 }}>{lv.name}</Text>
                     <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>{lv.group_key}</Tag>
                   </div>
+                  {name !== 'team_marketing' && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
                     <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, whiteSpace: 'nowrap' }}>空间</Text>
                     <InputNumber
@@ -357,6 +361,7 @@ const PluginConfig: React.FC = () => {
                       addonAfter="MB"
                     />
                   </div>
+                  )}
                 </div>
               );
             })}
@@ -365,7 +370,7 @@ const PluginConfig: React.FC = () => {
         )}
       </div>
 
-      {isAllLevels && (
+      {isAllLevels && name !== 'team_marketing' && (
         <div style={{
           background: '#141414', borderRadius: 8,
           border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
@@ -852,14 +857,21 @@ const PluginConfig: React.FC = () => {
       <Tabs
         activeKey={activeTabKey}
         onChange={handleTabChange}
-        items={[
-          { key: 'audit_log', label: '审核日志', children: auditLogTab },
-          { key: 'basic', label: '基本配置', children: basicTab },
-          { key: 'storage', label: '存储配置', children: storageTab },
-          { key: 'moderation', label: '审核配置', children: moderationTab },
-          { key: 'preset', label: '预设素材', children: <AdminPresetAssets /> },
-          { key: 'api_log', label: '接口日志', children: apiLogTab },
-        ]}
+        items={
+          plugin.name === 'team_marketing'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'team_config', label: '团队配置', children: <TeamConfig /> },
+              ]
+            : [
+                { key: 'audit_log', label: '审核日志', children: auditLogTab },
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'storage', label: '存储配置', children: storageTab },
+                { key: 'moderation', label: '审核配置', children: moderationTab },
+                { key: 'preset', label: '预设素材', children: <AdminPresetAssets /> },
+                { key: 'api_log', label: '接口日志', children: apiLogTab },
+              ]
+        }
       />
     </div>
   );

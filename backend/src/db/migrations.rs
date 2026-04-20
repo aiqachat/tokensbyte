@@ -624,6 +624,55 @@ macro_rules! pg_migration_blocks {
     )
     .execute(pool)
     .await?;
+
+    // Seed Team Marketing plugin
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled)
+           VALUES ('team_marketing', '团队营销管理', '提供营销团队的用户管理，支持推广团队创建与成员管理', 0)
+           ON CONFLICT (name) DO NOTHING"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Marketing Teams table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS marketing_teams (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Marketing Team Leaders table (many-to-many)
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS marketing_team_leaders (
+            id SERIAL PRIMARY KEY,
+            team_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            UNIQUE(team_id, user_id)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Marketing Team Members table (many-to-many)
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS marketing_team_members (
+            id SERIAL PRIMARY KEY,
+            team_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            UNIQUE(team_id, user_id)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // Plugin Configs table (for TOS storage, etc.)
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS plugin_configs (
@@ -1032,6 +1081,55 @@ pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
+
+    // Seed Team Marketing plugin
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled)
+           VALUES ('team_marketing', '团队营销管理', '提供营销团队的用户管理，支持推广团队创建与成员管理', 0)
+           ON CONFLICT (name) DO NOTHING"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Marketing Teams table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS marketing_teams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Marketing Team Leaders table (many-to-many)
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS marketing_team_leaders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            UNIQUE(team_id, user_id)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    // Marketing Team Members table (many-to-many)
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS marketing_team_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+            UNIQUE(team_id, user_id)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // Plugin Configs table (for TOS storage, etc.)
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS plugin_configs (

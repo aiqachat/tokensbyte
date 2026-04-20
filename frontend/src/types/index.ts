@@ -318,3 +318,41 @@ export interface PluginAsset {
   created_at: string;
   updated_at: string;
 }
+
+export interface MarketingTeam {
+  id: number;
+  name: string;
+  description?: string;
+  leaders: TeamMember[];
+  members: TeamMember[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamMember {
+  user_id: string;
+  username: string;
+  uid: string;
+}
+
+export interface ReferralUser {
+  id: string;
+  uid: string;
+  username: string;
+  email: string;
+  user_group: string;
+  level_name?: string;
+  balance: number;
+  is_active: number;
+  created_at: string;
+  total_recharge: number;
+}
+
+export interface ReferralRecharge {
+  id: number;
+  user_id: string;
+  amount: number;
+  recharge_type: string;
+  remark?: string;
+  created_at: string;
+}
