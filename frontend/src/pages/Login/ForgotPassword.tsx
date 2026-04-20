@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Card, Typography, Space, message, ConfigProvider, theme, Divider, Tooltip } from 'antd';
+import { Form, Input, Button, Typography, message, ConfigProvider, theme } from 'antd';
 import { MailOutlined, MobileOutlined, LockOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, Link } from 'react-router-dom';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
+import AuthLayout from '../../layouts/AuthLayout';
+import type { AuthMethodOption } from '../../layouts/AuthLayout';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const ForgotPassword: React.FC = () => {
   const { t } = useTranslation();
@@ -109,133 +111,88 @@ const ForgotPassword: React.FC = () => {
     }
   };
 
-  const renderIconBtn = (key: string, icon: React.ReactNode, label: string, onClick: () => void, brandColor?: string) => {
-    const isActive = activeTab === key;
-    return (
-      <Tooltip key={key} title={label}>
-        <Button
-          shape="circle"
-          size="large"
-          icon={icon}
-          onClick={onClick}
-          style={{
-            background: isActive ? (brandColor || '#1677ff') : 'transparent',
-            borderColor: isActive ? (brandColor || '#1677ff') : (brandColor || '#303030'),
-            color: isActive ? '#fff' : (brandColor || '#8c8c8c'),
-            transition: 'all 0.3s'
-          }}
-        />
-      </Tooltip>
-    );
-  };
+  const layoutMethods: AuthMethodOption[] = recoveryTabs.map(tab => ({ key: tab.key, label: tab.label, icon: tab.icon }));
+
+  const bottomLinks = (
+    <Text type="secondary">
+      <Link to="/login" style={{ color: '#1677ff' }}>{t('auth.back_to_login')}</Link>
+    </Text>
+  );
 
   return (
-    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-      <div style={{
-      height: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: '#000',
-      backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
-    }}>
-      <Card style={{ 
-        width: 'min(420px, 92vw)', 
-        borderRadius: 16, 
-        background: '#141414', 
-        border: '1px solid #303030',
-        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <Space direction="vertical">
-            <LockOutlined style={{ fontSize: 48, color: '#1677ff' }} />
-            <Title level={3} style={{ margin: 0 }}>{t('auth.reset_password_title')}</Title>
-            <Text type="secondary">{t('auth.reset_password_subtitle')}</Text>
-          </Space>
-        </div>
-
-        {activeTab && (
-          <Form
-            form={form}
-            onFinish={onFinish}
-            layout="vertical"
-            size="large"
+    <AuthLayout
+      title={t('auth.reset_password_title')}
+      subtitle={t('auth.reset_password_subtitle')}
+      methodsLabel="找回方式"
+      methods={recoveryTabs.length > 1 ? layoutMethods : undefined}
+      activeMethod={activeTab}
+      onMethodChange={setActiveTab}
+      bottomLinks={bottomLinks}
+    >
+      {activeTab && (
+        <Form
+          form={form}
+          onFinish={onFinish}
+          size="large"
+        >
+          <Form.Item
+            name="target"
+            rules={[
+              { required: true, message: currentTab.key === 'email' ? t('auth.email_required') : '请输入手机号' },
+              currentTab.key === 'email' ? { type: 'email', message: t('auth.email_invalid') } : {}
+            ]}
           >
-            <Form.Item
-              name="target"
-              rules={[
-                { required: true, message: currentTab.key === 'email' ? t('auth.email_required') : '请输入手机号' },
-                currentTab.key === 'email' ? { type: 'email', message: t('auth.email_invalid') } : {}
-              ]}
-            >
-              <Input prefix={currentTab.icon} placeholder={currentTab.placeholder} />
-            </Form.Item>
+            <Input prefix={currentTab.icon} placeholder={currentTab.placeholder} />
+          </Form.Item>
 
-            <Form.Item
-              name="code"
-              rules={[{ required: true, message: t('auth.code_required') }]}
-            >
-              <Input 
-                prefix={<SafetyCertificateOutlined />} 
-                placeholder={t('auth.code_placeholder')} 
-                suffix={
-                  <Button type="link" size="small" disabled={countdown > 0} loading={sendingCode} onClick={onSendCode}>
-                    {countdown > 0 ? `${countdown}s` : t('auth.send_code')}
-                  </Button>
-                }
-              />
-            </Form.Item>
+          <Form.Item
+            name="code"
+            rules={[{ required: true, message: t('auth.code_required') }]}
+          >
+            <Input 
+              prefix={<SafetyCertificateOutlined />} 
+              placeholder={t('auth.code_placeholder')} 
+              suffix={
+                <Button type="link" size="small" disabled={countdown > 0} loading={sendingCode} onClick={onSendCode}>
+                  {countdown > 0 ? `${countdown}s` : t('auth.send_code')}
+                </Button>
+              }
+            />
+          </Form.Item>
 
-            <Form.Item
-              name="password"
-              rules={[{ required: true, message: t('auth.new_password_required') }]}
-            >
-              <Input.Password prefix={<LockOutlined />} placeholder={t('auth.new_password_placeholder')} />
-            </Form.Item>
+          <Form.Item
+            name="password"
+            rules={[{ required: true, message: t('auth.new_password_required') }]}
+          >
+            <Input.Password prefix={<LockOutlined />} placeholder={t('auth.new_password_placeholder')} />
+          </Form.Item>
 
-            <Form.Item
-              name="confirm"
-              dependencies={['password']}
-              rules={[
-                { required: true, message: t('auth.confirm_password_required') },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    if (!value || getFieldValue('password') === value) {
-                      return Promise.resolve();
-                    }
-                    return Promise.reject(new Error(t('auth.passwords_not_match')));
-                  },
-                }),
-              ]}
-            >
-              <Input.Password prefix={<LockOutlined />} placeholder={t('auth.confirm_password_placeholder')} />
-            </Form.Item>
+          <Form.Item
+            name="confirm"
+            dependencies={['password']}
+            rules={[
+              { required: true, message: t('auth.confirm_password_required') },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('password') === value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error(t('auth.passwords_not_match')));
+                },
+              }),
+            ]}
+          >
+            <Input.Password prefix={<LockOutlined />} placeholder={t('auth.confirm_password_placeholder')} />
+          </Form.Item>
 
-            <Form.Item>
-              <Button type="primary" htmlType="submit" loading={loading} block>
-                {t('auth.reset_password_btn')}
-              </Button>
-            </Form.Item>
-
-            <div style={{ textAlign: 'center' }}>
-              <Text type="secondary">
-                <Link to="/login" style={{ color: '#1677ff' }}>{t('auth.back_to_login')}</Link>
-              </Text>
-            </div>
-          </Form>
-        )}
-
-        {recoveryTabs.length > 1 && (
-          <>
-            <Divider style={{ margin: '24px 0 16px', color: '#666', fontSize: 12 }}>找回方式</Divider>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
-              {recoveryTabs.map(tab => renderIconBtn(tab.key, tab.icon, tab.label, () => setActiveTab(tab.key)))}
-            </div>
-          </>
-        )}
-      </Card>
-      </div>
-    </ConfigProvider>
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Button type="primary" htmlType="submit" loading={loading} block>
+              {t('auth.reset_password_btn')}
+            </Button>
+          </Form.Item>
+        </Form>
+      )}
+    </AuthLayout>
   );
 };
 

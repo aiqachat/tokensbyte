@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, Typography, Space, message, ConfigProvider, theme, Divider, Tooltip } from 'antd';
-import { UserOutlined, LockOutlined, RocketOutlined, MobileOutlined, MailOutlined, WechatOutlined, GoogleOutlined } from '@ant-design/icons';
+import { Form, Input, Button, message } from 'antd';
+import { UserOutlined, LockOutlined, MobileOutlined, MailOutlined, WechatOutlined, GoogleOutlined } from '@ant-design/icons';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import axios, { AxiosError } from 'axios';
 import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/auth';
 import useSettingsStore from '../../store/settings';
 import type { User } from '../../types';
-
-const { Title, Text } = Typography;
+import AuthLayout from '../../layouts/AuthLayout';
+import type { AuthMethodOption } from '../../layouts/AuthLayout';
 
 interface LoginResponse { token: string; user: User; }
 
@@ -78,74 +78,41 @@ const Login: React.FC = () => {
   const [activeTab, setActiveTab] = useState(loginTabs[0]?.key || 'username');
   const currentTab = loginTabs.find(t => t.key === activeTab) || loginTabs[0];
 
-  const renderIconBtn = (key: string, icon: React.ReactNode, label: string, onClick: () => void, brandColor?: string) => {
-    const isActive = activeTab === key;
-    return (
-      <Tooltip key={key} title={label}>
-        <Button
-          shape="circle"
-          size="large"
-          icon={icon}
-          onClick={onClick}
-          style={{
-            background: isActive ? (brandColor || '#1677ff') : 'transparent',
-            borderColor: isActive ? (brandColor || '#1677ff') : (brandColor || '#303030'),
-            color: isActive ? '#fff' : (brandColor || '#8c8c8c'),
-            transition: 'all 0.3s'
-          }}
-        />
-      </Tooltip>
-    );
-  };
+  const layoutMethods: AuthMethodOption[] = loginTabs.map(tab => ({ key: tab.key, label: tab.label, icon: tab.icon }));
+  if (login?.enable_wechat_login) layoutMethods.push({ key: 'wechat', label: '微信登录', icon: <WechatOutlined />, onClick: () => handleOAuth('wechat') });
+  if (login?.enable_google_login) layoutMethods.push({ key: 'google', label: '谷歌登录', icon: <GoogleOutlined />, onClick: () => handleOAuth('google') });
+
+  const bottomLinks = (
+    <>
+      <Link to="/register" style={{ color: '#8c8c8c' }}>{t('auth.register_link')}</Link>
+      <span style={{ color: '#444' }}>|</span>
+      <Link to="/forgot-password" style={{ color: '#8c8c8c' }}>{t('auth.forgot_password_link')}</Link>
+    </>
+  );
 
   return (
-    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-      <div style={{
-        height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: '#000', backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
-      }}>
-        <Card style={{
-          width: 'min(420px, 92vw)', borderRadius: 16, background: '#141414',
-          border: '1px solid #303030', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
-        }}>
-          <div style={{ textAlign: 'center', marginBottom: 24 }}>
-            <Space direction="vertical" size={4}>
-              {siteLogo ? (
-                <img src={siteLogo} alt="logo" style={{ width: 48, height: 48, objectFit: 'contain' }} />
-              ) : (
-                <RocketOutlined style={{ fontSize: 48, color: '#1677ff' }} />
-              )}
-              <Title level={2} style={{ margin: 0 }}>{loginTitle}</Title>
-              <Text type="secondary">{loginSubtitle}</Text>
-            </Space>
-          </div>
-
-          <Form name="login" size="large" onFinish={onFinish} autoComplete="off">
-            <Form.Item name="username" rules={[{ required: true, message: currentTab?.placeholder }]}>
-              <Input prefix={currentTab?.icon || <UserOutlined />} placeholder={currentTab?.placeholder || t('login.username_or_email')} />
-            </Form.Item>
-            <Form.Item name="password" rules={[{ required: true, message: t('login.password') }]}>
-              <Input.Password prefix={<LockOutlined />} placeholder={t('login.password')} />
-            </Form.Item>
-            <Form.Item>
-              <Button type="primary" htmlType="submit" block loading={loading}>{t('login.sign_in')}</Button>
-            </Form.Item>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: -12 }}>
-              <Link to="/register">{t('auth.register_link')}</Link>
-              <Link to="/forgot-password">{t('auth.forgot_password_link')}</Link>
-            </div>
-          </Form>
-
-          <Divider style={{ margin: '24px 0 16px', color: '#666', fontSize: 12 }}>登录方式</Divider>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
-            {loginTabs.map(tab => renderIconBtn(tab.key, tab.icon, tab.label, () => setActiveTab(tab.key)))}
-            {login?.enable_wechat_login && renderIconBtn('wechat', <WechatOutlined />, '微信登录', () => handleOAuth('wechat'), '#07c160')}
-            {login?.enable_google_login && renderIconBtn('google', <GoogleOutlined />, '谷歌登录', () => handleOAuth('google'), '#4285f4')}
-          </div>
-        </Card>
-      </div>
-    </ConfigProvider>
+    <AuthLayout
+      title={loginTitle}
+      subtitle={loginSubtitle}
+      logo={siteLogo}
+      methodsLabel="登录方式"
+      methods={layoutMethods}
+      activeMethod={activeTab}
+      onMethodChange={setActiveTab}
+      bottomLinks={bottomLinks}
+    >
+      <Form name="login" size="large" onFinish={onFinish} autoComplete="off">
+        <Form.Item name="username" rules={[{ required: true, message: currentTab?.placeholder }]}>
+          <Input prefix={currentTab?.icon || <UserOutlined />} placeholder={currentTab?.placeholder || t('login.username_or_email')} />
+        </Form.Item>
+        <Form.Item name="password" rules={[{ required: true, message: t('login.password') }]}>
+          <Input.Password prefix={<LockOutlined />} placeholder={t('login.password')} />
+        </Form.Item>
+        <Form.Item style={{ marginBottom: 0 }}>
+          <Button type="primary" htmlType="submit" block loading={loading}>{t('login.sign_in')}</Button>
+        </Form.Item>
+      </Form>
+    </AuthLayout>
   );
 };
 

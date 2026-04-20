@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, Typography, Space, message, ConfigProvider, theme, Divider, Tooltip } from 'antd';
-import { UserOutlined, LockOutlined, MailOutlined, MobileOutlined, SafetyOutlined, RocketOutlined, WechatOutlined, GoogleOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Typography, message } from 'antd';
+import { UserOutlined, LockOutlined, MailOutlined, MobileOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/auth';
 import useSettingsStore from '../../store/settings';
+import AuthLayout from '../../layouts/AuthLayout';
+import type { AuthMethodOption } from '../../layouts/AuthLayout';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const Register: React.FC = () => {
   const { t } = useTranslation();
@@ -160,74 +162,36 @@ const Register: React.FC = () => {
 
   const tabContent: Record<string, React.ReactNode> = { username: usernameForm, email: emailForm, mobile: mobileForm };
 
-  const handleOAuth = (type: 'wechat' | 'google') => {
-    window.location.href = `/api/v1/auth/oauth/${type}`;
-  };
+  const layoutMethods: AuthMethodOption[] = regTabs.map(tab => ({ key: tab.key, label: tab.label, icon: tab.icon }));
 
-  const renderIconBtn = (key: string, icon: React.ReactNode, label: string, onClick: () => void, brandColor?: string) => {
-    const isActive = activeTab === key;
-    return (
-      <Tooltip key={key} title={label}>
-        <Button
-          shape="circle"
-          size="large"
-          icon={icon}
-          onClick={onClick}
-          style={{
-            background: isActive ? (brandColor || '#1677ff') : 'transparent',
-            borderColor: isActive ? (brandColor || '#1677ff') : (brandColor || '#303030'),
-            color: isActive ? '#fff' : (brandColor || '#8c8c8c'),
-            transition: 'all 0.3s'
-          }}
-        />
-      </Tooltip>
-    );
-  };
+  const bottomLinks = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <Text type="secondary">{t('auth.have_account')}</Text>
+      <Link to="/login" style={{ color: '#1677ff' }}>{t('auth.login_link')}</Link>
+    </div>
+  );
 
   return (
-    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-      <div style={{
-        height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: '#000', backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
-      }}>
-        <Card style={{
-          width: 'min(420px, 92vw)', borderRadius: 16, background: '#141414',
-          border: '1px solid #303030', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
-        }}>
-          <div style={{ textAlign: 'center', marginBottom: 24 }}>
-            <Space direction="vertical" size={4}>
-              {siteLogo ? (
-                <img src={siteLogo} alt="logo" style={{ width: 48, height: 48, objectFit: 'contain' }} />
-              ) : (
-                <RocketOutlined style={{ fontSize: 48, color: '#1677ff' }} />
-              )}
-              <Title level={3} style={{ margin: 0 }}>{t('auth.register_title')}</Title>
-              <Text type="secondary">{t('auth.register_subtitle')}</Text>
-            </Space>
-          </div>
-
-          {noRegistration ? (
-            <div style={{ textAlign: 'center', padding: '24px 0' }}>
-              <Text type="secondary">{t('auth.registration_disabled')}</Text>
-            </div>
-          ) : (
-            <>
-              {tabContent[activeTab]}
-            </>
-          )}
-
-          <div style={{ textAlign: 'center', marginTop: 8 }}>
-            <Text type="secondary">{t('auth.have_account')}</Text>{' '}
-            <Link to="/login">{t('auth.login_link')}</Link>
-          </div>
-
-          <Divider style={{ margin: '24px 0 16px', color: '#666', fontSize: 12 }}>注册方式</Divider>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
-            {regTabs.map(tab => renderIconBtn(tab.key, tab.icon, tab.label, () => setActiveTab(tab.key)))}
-          </div>
-        </Card>
-      </div>
-    </ConfigProvider>
+    <AuthLayout
+      title={t('auth.register_title')}
+      subtitle={t('auth.register_subtitle')}
+      logo={siteLogo}
+      methodsLabel="注册方式"
+      methods={layoutMethods}
+      activeMethod={activeTab}
+      onMethodChange={setActiveTab}
+      bottomLinks={bottomLinks}
+    >
+      {noRegistration ? (
+        <div style={{ textAlign: 'center', padding: '24px 0' }}>
+          <Text type="secondary">{t('auth.registration_disabled')}</Text>
+        </div>
+      ) : (
+        <div style={{ marginTop: 8 }}>
+          {tabContent[activeTab]}
+        </div>
+      )}
+    </AuthLayout>
   );
 };
 
