@@ -168,8 +168,8 @@ fi
 # 询问部署模式
 echo ""
 echo "请选择部署模式:"
-echo "  1) 开发环境 (SQLite，快速测试)"
-echo "  2) 生产环境 (PostgreSQL，推荐)"
+echo "  1) 开发环境 (内置PostgreSQL，快速测试)"
+echo "  2) 生产环境 (外部PostgreSQL，推荐)"
 echo ""
 read -p "请输入选项 (1/2): " mode
 
