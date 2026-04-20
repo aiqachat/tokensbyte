@@ -377,7 +377,7 @@ const Models: React.FC = () => {
                  </Form.Item>
              </Col>
              <Col span={8}>
-                 <Form.Item name="pre_deduction" label="初始预扣费 (USD)" initialValue={0.0}>
+                 <Form.Item name="pre_deduction" label={`初始预扣费 (${settings?.currency?.default_currency || 'USD'})`} initialValue={0.0}>
                     <InputNumber style={{ width: '100%' }} precision={6} min={0} />
                  </Form.Item>
              </Col>

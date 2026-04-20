@@ -28,17 +28,14 @@ pub async fn chat_completions(
     let model = body["model"].as_str().unwrap_or("gpt-3.5-turbo");
     let is_stream = body["stream"].as_bool().unwrap_or(false);
 
-    // 1. 验证模型访问权限
-    if !token.is_model_allowed(model) {
-        return Err(AppError::Forbidden(format!("Model {} not allowed for this token", model)));
-    }
+
 
     // 2. 获取用户信息
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
 
     // 3. 选择渠道
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/v1/chat/completions").await?;
 
     // 4. 解析转发规则，未绑定规则时根据域名智能推断
     let resolved = forward::resolve_forward_rule(&state, model, "聊天", "/v1/chat/completions")
@@ -283,7 +280,7 @@ pub fn compute_cost(
             // 没有配置计费规则，走默认基础计费 1M 万字 = 1美金 等价
             let total = prompt_tokens + completion_tokens;
             let cost = (total as f64 / 1_000_000.0) * discount;
-            return (cost, format!("无规则默认计费: {}总Tokens * 1美元/1M * {:.2}倍率", total, discount));
+            return (cost, format!("无规则默认计费: {}总Tokens * 1/1M * {:.2}倍率", total, discount));
         }
     };
 

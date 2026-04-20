@@ -21,6 +21,8 @@ pub struct Channel {
     pub status: i32,           // 1=active, 0=disabled, 2=testing
     pub balance: Option<f64>,
     pub max_rps: Option<i32>,
+    pub quota_limit: f64,      // 渠道使用最大额度（上限），-1 即代表无限额
+    pub quota_used: f64,       // 该渠道累计真实消耗金额
     pub config: String,        // JSON extras
     pub created_at: String,
     pub updated_at: String,
@@ -81,6 +83,8 @@ pub struct CreateChannelRequest {
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub max_rps: Option<i32>,
+    pub quota_limit: Option<f64>,
+    pub quota_used: Option<f64>,
     pub config: Option<serde_json::Value>,
 }
 
@@ -99,6 +103,8 @@ pub struct UpdateChannelRequest {
     pub weight: Option<i32>,
     pub status: Option<i32>,
     pub max_rps: Option<i32>,
+    pub quota_limit: Option<f64>,
+    pub quota_used: Option<f64>,
     pub config: Option<serde_json::Value>,
 }
 
@@ -126,6 +132,8 @@ pub struct ChannelSafe {
     pub status: i32,
     pub balance: Option<f64>,
     pub max_rps: Option<i32>,
+    pub quota_limit: f64,      // 渠道额度上限
+    pub quota_used: f64,       // 当前消耗总计
     pub created_at: String,
     pub updated_at: String,
 }
@@ -151,6 +159,8 @@ impl From<Channel> for ChannelSafe {
             status: ch.status,
             balance: ch.balance,
             max_rps: ch.max_rps,
+            quota_limit: ch.quota_limit,
+            quota_used: ch.quota_used,
             created_at: ch.created_at,
             updated_at: ch.updated_at,
         }

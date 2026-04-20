@@ -48,6 +48,7 @@ pub struct LogQuery {
     pub model: Option<String>,
     pub channel_id: Option<i64>,
     pub token_id: Option<i64>,
+    pub status: Option<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
 }

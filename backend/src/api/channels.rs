@@ -49,8 +49,8 @@ pub async fn create_channel(
         group_aid_val = rand::thread_rng().gen_range(1000..10000).to_string(); // fallback
     }
 
-    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, group_aid, preset_id, priority, weight, status, max_rps, config)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING id"#;
+    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, group_aid, preset_id, priority, weight, status, max_rps, quota_limit, quota_used, config)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?) RETURNING id"#;
 
     let id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(sql))
         .bind(&request.name)
@@ -65,6 +65,8 @@ pub async fn create_channel(
         .bind(request.priority.unwrap_or(0))
         .bind(request.weight.unwrap_or(1))
         .bind(request.max_rps.unwrap_or(0))
+        .bind(request.quota_limit.unwrap_or(-1.0))
+        .bind(request.quota_used.unwrap_or(0.0))
         .bind(&config_json)
         .fetch_one(&state.db.pool)
         .await?;
@@ -101,6 +103,8 @@ pub async fn update_channel(
     if let Some(weight) = request.weight { channel.weight = weight; }
     if let Some(status) = request.status { channel.status = status; }
     if let Some(max_rps) = request.max_rps { channel.max_rps = Some(max_rps); }
+    if let Some(quota_limit) = request.quota_limit { channel.quota_limit = quota_limit; }
+    if let Some(quota_used) = request.quota_used { channel.quota_used = quota_used; }
     if let Some(config) = request.config { channel.config = serde_json::to_string(&config).unwrap_or_else(|_| "{}".to_string()); }
 
     let mut group_aid_val = channel.group_aid.clone().unwrap_or_default();
@@ -125,7 +129,7 @@ pub async fn update_channel(
 
     sqlx::query(
         &state.db.format_query(r#"UPDATE channels SET name = ?, provider_type = ?, base_url = ?, api_key = ?, models = ?, 
-           model_mapping = ?, user_groups = ?, preset_id = ?, priority = ?, weight = ?, status = ?, max_rps = ?, config = ?, group_aid = ?, updated_at = CURRENT_TIMESTAMP
+           model_mapping = ?, user_groups = ?, preset_id = ?, priority = ?, weight = ?, status = ?, max_rps = ?, quota_limit = ?, quota_used = ?, config = ?, group_aid = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&channel.name)
@@ -140,6 +144,8 @@ pub async fn update_channel(
     .bind(channel.weight)
     .bind(channel.status)
     .bind(channel.max_rps)
+    .bind(channel.quota_limit)
+    .bind(channel.quota_used)
     .bind(&channel.config)
     .bind(&group_aid_val)
     .bind(id)
@@ -171,6 +177,10 @@ pub async fn test_channel(
         .bind(id)
         .fetch_one(&state.db.pool)
         .await?;
+
+    if channel.quota_limit >= 0.0 && channel.quota_used >= channel.quota_limit {
+        return Err(crate::error::AppError::Forbidden("该渠道可用额度已耗尽，处于熔断状态，测试请求被拦截".to_string()));
+    }
 
     if let Some(pid) = channel.preset_id {
         let preset: Option<crate::models::ChannelConfig> = sqlx::query_as(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))

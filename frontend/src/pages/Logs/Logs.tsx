@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid } from 'antd';
+import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid, Select } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { SyncOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
+import useAuthStore from '../../store/auth';
 import type { RequestLog, ModelModel } from '../../types';
 import dayjs from 'dayjs';
+
+const { Option } = Select;
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -22,15 +25,29 @@ const Logs: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [modelFilter, setModelFilter] = useState('');
-  const [modelsCache, setModelsCache] = useState<ModelModel[]>([]);
+  const [userFilter, setUserFilter] = useState<string | undefined>(undefined);
+  const [channelFilter, setChannelFilter] = useState<number | undefined>(undefined);
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [channelsList, setChannelsList] = useState<any[]>([]);
+  const { user } = useAuthStore();
   const screens = useBreakpoint();
+
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      request.get('/users').then((res: any) => setUsersList(res.data || [])).catch(console.error);
+      request.get('/channels').then((res: any) => setChannelsList(res.data || [])).catch(console.error);
+    }
+  }, [user]);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      const resp = await (request.get('/logs', {
-        params: { page, per_page: pageSize, model: modelFilter || undefined }
-      }) as unknown as Promise<{ data: RequestLog[]; total: number }>);
+      const params: any = { page, per_page: pageSize, model: modelFilter || undefined };
+      if (userFilter) params.user_id = userFilter;
+      if (channelFilter) params.channel_id = channelFilter;
+      if (statusFilter) params.status = statusFilter;
+      const resp = await (request.get('/logs', { params }) as unknown as Promise<{ data: RequestLog[]; total: number }>);
       setLogs(resp.data);
       setTotal(resp.total);
     } catch (e) {
@@ -38,11 +55,10 @@ const Logs: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, modelFilter]);
+  }, [page, pageSize, modelFilter, userFilter, channelFilter, statusFilter]);
 
   useEffect(() => {
     fetchLogs();
-    request.get('/models').then((res: any) => setModelsCache(res.data || [])).catch(console.error);
   }, [fetchLogs]);
 
   const columns = [
@@ -87,11 +103,11 @@ const Logs: React.FC = () => {
       },
     },
     {
-      title: '分组',
-      dataIndex: 'user_group',
-      key: 'user_group',
+      title: '渠道AID',
+      dataIndex: 'channel_group_aid',
+      key: 'channel_group_aid',
       width: 80,
-      render: (text: string) => <Tag color="purple">{text || 'default'}</Tag>,
+      render: (text: string) => <Tag color="purple">{text || '-'}</Tag>,
     },
     {
       title: t('logs.usage'),
@@ -233,13 +249,58 @@ const Logs: React.FC = () => {
           {t('menu.usage_logs', '使用日志')}
         </Typography.Title>
         <Space wrap>
+          {user?.role === 'admin' && (
+            <>
+              <Select
+                showSearch
+                placeholder="筛选用户"
+                allowClear
+                style={{ width: 140 }}
+                value={userFilter}
+                onChange={setUserFilter}
+                optionFilterProp="children"
+              >
+                <Option value="unknown">未知用户 (unknown)</Option>
+                {usersList.map(u => (
+                  <Option key={u.id} value={u.id}>
+                    {u.username} {u.nickname ? `(${u.nickname})` : ''}
+                  </Option>
+                ))}
+              </Select>
+              <Select
+                showSearch
+                placeholder="筛选渠道"
+                allowClear
+                style={{ width: 140 }}
+                value={channelFilter}
+                onChange={setChannelFilter}
+                optionFilterProp="children"
+              >
+                {channelsList.map(c => (
+                  <Option key={c.id} value={c.id}>
+                    #{c.id} {c.name}
+                  </Option>
+                ))}
+              </Select>
+            </>
+          )}
+          <Select
+            placeholder="请求状态"
+            allowClear
+            style={{ width: 110 }}
+            value={statusFilter}
+            onChange={setStatusFilter}
+          >
+            <Option value="success">成功</Option>
+            <Option value="fail">失败</Option>
+          </Select>
           <Input
             placeholder={t('logs.search_model')}
             prefix={<SearchOutlined />}
             value={modelFilter}
             onChange={e => setModelFilter(e.target.value)}
             onPressEnter={fetchLogs}
-            style={{ width: screens.xs ? '100%' : undefined }}
+            style={{ width: screens.xs ? '100%' : 140 }}
           />
           <Button icon={<SyncOutlined />} onClick={fetchLogs}>{t('common.refresh')}</Button>
         </Space>

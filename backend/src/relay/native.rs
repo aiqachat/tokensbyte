@@ -72,7 +72,7 @@ pub async fn gemini_proxy(
 
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, action).await?;
 
     // Build upstream query: replace key with channel's real key, keep other params (e.g. alt=sse)
     let mut qs = format!("key={}", channel.api_key);
@@ -177,7 +177,7 @@ pub async fn volcengine_submit(
     let model = body["model"].as_str().unwrap_or("volcengine-gen");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/api/v3/contents/generations/tasks").await?;
 
     let url = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
     let mut fwd = body.clone();
@@ -268,7 +268,7 @@ pub async fn volcengine_status(
     let (channel, _) = if let Some(ch) = channel_opt {
         (ch, "".to_string())
     } else {
-        proxy::select_channel_for_model(&state, &model_name, &ctx.user_group).await?
+        proxy::select_channel_for_model(&state, &token, &model_name, &ctx.user_group, "/api/v3/contents/generations/tasks/{task_id}").await?
     };
 
     let url = join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id));
@@ -370,7 +370,7 @@ pub async fn volcengine_images(
     let model = body["model"].as_str().unwrap_or("volcengine-image");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/api/v3/images/generations").await?;
 
     let url = join_url(&channel.base_url, "/api/v3/images/generations");
     let mut fwd = body.clone();

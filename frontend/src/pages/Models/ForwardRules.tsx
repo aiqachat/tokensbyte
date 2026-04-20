@@ -17,6 +17,7 @@ interface ForwardRule {
   config_json: string;
   description?: string;
   is_active: number;
+  is_system?: number;
   created_at: string;
 }
 
@@ -66,6 +67,19 @@ const ForwardRules: React.FC = () => {
       is_active: item.is_active === 1,
     });
     setIsModalVisible(true);
+  };
+
+  const handleStatusChange = async (record: ForwardRule, checked: boolean) => {
+    try {
+      await request.put(`/forward-rules/${record.id}`, {
+        is_active: checked ? 1 : 0
+      });
+      message.success(t('common.success'));
+      fetchItems();
+    } catch (e) {
+      console.error(e);
+      message.error(t('common.error'));
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -133,7 +147,14 @@ const ForwardRules: React.FC = () => {
       dataIndex: 'name',
       key: 'name',
       width: 200,
-      render: (text: string) => <Tag color="blue">{text}</Tag>
+      render: (text: string) => <Text strong>{text}</Text>
+    },
+    {
+      title: '来源类型',
+      dataIndex: 'is_system',
+      key: 'is_system',
+      width: 100,
+      render: (is_system: number) => is_system === 1 ? <Tag color="blue">系统内置</Tag> : <Tag color="default">自定义</Tag>
     },
     {
       title: '模式/厂商类型',
@@ -176,8 +197,8 @@ const ForwardRules: React.FC = () => {
       title: t('common.status'),
       dataIndex: 'is_active',
       key: 'is_active',
-      render: (active: number) => (
-        <Switch checked={active === 1} disabled />
+      render: (active: number, record: ForwardRule) => (
+        <Switch checked={active === 1} onChange={(checked) => handleStatusChange(record, checked)} />
       ),
       width: 100,
     },
@@ -186,10 +207,12 @@ const ForwardRules: React.FC = () => {
       key: 'actions',
       render: (_: any, record: ForwardRule) => (
         <Space>
-          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />
-          <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-            <Button icon={<DeleteOutlined />} danger size="small" />
-          </Popconfirm>
+          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" disabled={record.is_system === 1} />
+          {record.is_system === 1 ? null : (
+            <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+              <Button icon={<DeleteOutlined />} danger size="small" />
+            </Popconfirm>
+          )}
         </Space>
       ),
       width: 120,
@@ -251,18 +274,21 @@ const ForwardRules: React.FC = () => {
               else if (record.category === '语音') categoryColor = 'green';
               return (
                 <MobileCard
-                  title={<Space><Tag color="blue">{record.name}</Tag></Space>}
-                  extra={<Switch checked={record.is_active === 1} disabled size="small" />}
+                  title={<Space><Text strong>{record.name}</Text></Space>}
+                  extra={<Switch checked={record.is_active === 1} size="small" onChange={(checked) => handleStatusChange(record, checked)} />}
                 >
+                  <CardRow label="来源类型">{record.is_system === 1 ? <Tag color="blue">系统内置</Tag> : <Tag color="default">自定义</Tag>}</CardRow>
                   <CardRow label="模式"><Tag color="purple">{record.rule_type}</Tag></CardRow>
                   <CardRow label="分类"><Tag color={categoryColor}>{record.category || '聊天'}</Tag></CardRow>
                   {record.description && <CardRow label="描述"><Text type="secondary" style={{ fontSize: 12 }}>{record.description}</Text></CardRow>}
                   <CardActions>
                     <Button size="small" type="dashed" icon={<CodeOutlined />} onClick={() => viewConfigJson(record.config_json)}>JSON</Button>
-                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-                    <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-                      <Button size="small" icon={<DeleteOutlined />} danger />
-                    </Popconfirm>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} disabled={record.is_system === 1} />
+                    {record.is_system !== 1 && (
+                      <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                        <Button size="small" icon={<DeleteOutlined />} danger />
+                      </Popconfirm>
+                    )}
                   </CardActions>
                 </MobileCard>
               );

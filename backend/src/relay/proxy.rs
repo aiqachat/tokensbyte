@@ -35,7 +35,9 @@ pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult
 
 pub async fn check_access(state: &Arc<AppState>, token: &ApiToken, model: &str, balance: f64) -> AppResult<f64> {
     if !token.is_model_allowed(model) {
-        return Err(AppError::Forbidden(format!("Model {} not allowed for this token", model)));
+        let msg = format!("Model {} not allowed for this token", model);
+        record_error_log(state, &token.user_id, None, model, 403, "/v1/chat/completions", &msg).await;
+        return Err(AppError::Forbidden(msg));
     }
 
     let db_model: Option<crate::models::Model> = sqlx::query_as(
@@ -50,11 +52,15 @@ pub async fn check_access(state: &Arc<AppState>, token: &ApiToken, model: &str, 
 
     if pre_deduction > 0.0 {
         if balance < pre_deduction {
-            return Err(AppError::Forbidden(format!("Insufficient user balance for pre-deduction: need {}", pre_deduction)));
+            let msg = format!("Insufficient user balance for pre-deduction: need {}", pre_deduction);
+            record_error_log(state, &token.user_id, None, model, 403, "/v1/chat/completions", &msg).await;
+            return Err(AppError::Forbidden(msg));
         }
     } else {
         if token.quota_limit < 0.0 && balance <= 0.0 {
-            return Err(AppError::Forbidden("Insufficient user balance".into()));
+            let msg = "Insufficient user balance";
+            record_error_log(state, &token.user_id, None, model, 403, "/v1/chat/completions", &msg).await;
+            return Err(AppError::Forbidden(msg.into()));
         }
     }
 
@@ -64,11 +70,19 @@ pub async fn check_access(state: &Arc<AppState>, token: &ApiToken, model: &str, 
 // ── Channel Selection ───────────────────────────────────────────
 
 pub async fn select_channel_for_model(
-    state: &Arc<AppState>, model: &str, user_group: &str,
+    state: &Arc<AppState>, token: &ApiToken, model: &str, user_group: &str, endpoint: &str,
 ) -> AppResult<(Channel, String)> {
-    let ch = router::select_channel(state, model, user_group).await?;
-    let resolved = ch.resolve_model(model);
-    Ok((ch, resolved))
+    match router::select_channel(state, model, user_group).await {
+        Ok(ch) => {
+            let resolved = ch.resolve_model(model);
+            Ok((ch, resolved))
+        },
+        Err(e) => {
+            let msg = if let AppError::NotFound(ref m) = e { m.clone() } else { e.to_string() };
+            record_error_log(state, &token.user_id, None, model, 404, endpoint, &msg).await;
+            Err(e)
+        }
+    }
 }
 
 // ── Cost Lookup ─────────────────────────────────────────────────
@@ -111,6 +125,36 @@ pub async fn pre_deduct(state: &Arc<AppState>, user_id: &str, amount: f64) -> Re
             .await?;
     }
     Ok(())
+}
+
+
+pub async fn record_error_log(
+    state: &Arc<AppState>,
+    user_id: &str,
+    channel_id: Option<i64>,
+    model: &str,
+    status_code: u16,
+    endpoint: &str,
+    error_msg: &str,
+) {
+    let sql = state.db.format_query(
+        "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens,          cost, status_code, endpoint, error_message, latency_ms, request_content, response_content,          is_stream, upstream_url) VALUES (?, ?, 0, ?, 0, 0, 0.0, ?, ?, ?, 0, NULL, NULL, 0, '')"
+    );
+    let cid = channel_id.unwrap_or(0);
+    
+    let res = sqlx::query(&sql)
+        .bind(user_id)
+        .bind(cid)
+        .bind(model)
+        .bind(status_code as i32)
+        .bind(endpoint)
+        .bind(error_msg)
+        .execute(&state.db.pool)
+        .await;
+
+    if let Err(e) = res {
+        tracing::error!("Failed to record error log: {:?}", e);
+    }
 }
 
 pub async fn record_and_bill(
@@ -264,6 +308,16 @@ pub async fn record_and_bill_with_prededuction(
             .bind(&token.user_id)
             .execute(&mut *tx)
             .await?;
+            
+            if channel_id > 0 {
+                sqlx::query(&state.db.format_query(
+                    "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                ))
+                .bind(cost)
+                .bind(channel_id)
+                .execute(&mut *tx)
+                .await?;
+            }
         }
         sqlx::query(&state.db.format_query(
             "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail) \

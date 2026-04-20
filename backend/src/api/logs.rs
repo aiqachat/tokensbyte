@@ -33,8 +33,12 @@ pub async fn list_logs(
         sql.push_str(" AND l.user_id = ?");
         binds.push(claims.sub.clone());
     } else if let Some(ref user_id) = query.user_id {
-        sql.push_str(" AND l.user_id = ?");
-        binds.push(user_id.clone());
+        if user_id == "unknown" {
+            sql.push_str(" AND (l.user_id = 'unknown' OR l.user_id IS NULL OR l.user_id = '')");
+        } else {
+            sql.push_str(" AND l.user_id = ?");
+            binds.push(user_id.clone());
+        }
     }
 
     if let Some(ref model) = query.model {
@@ -43,8 +47,16 @@ pub async fn list_logs(
     }
 
     if let Some(channel_id) = query.channel_id {
-        sql.push_str(" AND l.channel_id = ?");
+        sql.push_str(" AND l.channel_id = CAST(? AS BIGINT)");
         binds.push(channel_id.to_string());
+    }
+
+    if let Some(ref status) = query.status {
+        if status == "success" {
+            sql.push_str(" AND l.status_code >= 200 AND l.status_code < 400");
+        } else if status == "fail" {
+            sql.push_str(" AND (l.status_code >= 400 OR l.status_code < 200)");
+        }
     }
 
     let count_sql = if let Some(from_idx) = sql.find("FROM logs") {

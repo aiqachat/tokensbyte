@@ -81,6 +81,7 @@ pub struct ForwardRule {
     pub config_json: String,
     pub description: Option<String>,
     pub is_active: i32,
+    pub is_system: i32, // 1 for built-in, 0 for custom
     pub created_at: String,
     pub updated_at: String,
 }

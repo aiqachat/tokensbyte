@@ -42,7 +42,7 @@ pub async fn create_rule(
     let category_val = req.category.unwrap_or_else(|| "聊天".to_string());
 
     let rule = sqlx::query_as(
-        &state.db.format_query("INSERT INTO forward_rules (name, rule_type, category, description, config_json, is_active) VALUES (?, ?, ?, ?, ?, ?) RETURNING *")
+        &state.db.format_query("INSERT INTO forward_rules (name, rule_type, category, description, config_json, is_active, is_system) VALUES (?, ?, ?, ?, ?, ?, 0) RETURNING *")
     )
     .bind(&req.name)
     .bind(&req.rule_type)
@@ -61,6 +61,27 @@ pub async fn update_rule(
     Path(id): Path<i32>,
     Json(mut req): Json<UpdateRuleRequest>,
 ) -> AppResult<Json<ForwardRule>> {
+    let existing: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT is_system FROM forward_rules WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(&state.db.pool)
+        .await?;
+    
+    if let Some(sys) = existing {
+        if sys == 1 {
+            let is_only_updating_active = req.name.is_none() 
+                && req.rule_type.is_none() 
+                && req.category.is_none() 
+                && req.config_json.is_none() 
+                && req.description.is_none();
+                
+            if !is_only_updating_active {
+                return Err(crate::error::AppError::Forbidden("系统内置规则仅允许启停，禁止修改常规配置".to_string()));
+            }
+        }
+    } else {
+        return Err(crate::error::AppError::NotFound("规则不存在".to_string()));
+    }
+
     // Basic trimming if fields are provided
     if let Some(name) = &mut req.name {
         *name = name.trim().to_string();
@@ -111,6 +132,19 @@ pub async fn delete_rule(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i32>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let existing: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT is_system FROM forward_rules WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(&state.db.pool)
+        .await?;
+    
+    if let Some(sys) = existing {
+        if sys == 1 {
+            return Err(crate::error::AppError::Forbidden("系统内置规则禁止删除".to_string()));
+        }
+    } else {
+        return Err(crate::error::AppError::NotFound("规则不存在".to_string()));
+    }
+
     // Check if the rule is being used by any models by checking JSON structure 
     // Usually handled logically, here we let it vanish, models matching parsing will gracefully fall back
     sqlx::query(&state.db.format_query("DELETE FROM forward_rules WHERE id = ?"))

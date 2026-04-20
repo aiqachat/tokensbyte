@@ -12,6 +12,7 @@ pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str
     let channels: Vec<Channel> = sqlx::query_as(
         &state.db.format_query(r#"SELECT * FROM channels 
            WHERE status = 1 
+           AND (quota_limit < 0 OR quota_used < quota_limit)
            AND (models LIKE ? OR models = '[]')
            AND (user_groups LIKE ? OR user_groups = '[]')
            ORDER BY priority DESC"#)

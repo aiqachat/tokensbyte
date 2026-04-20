@@ -80,17 +80,24 @@ pub async fn api_key_middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
+    let path = request.uri().path().to_string();
     let auth_header = match request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok()) {
             Some(h) => h,
-            None => return AppError::Unauthorized.into_response(),
+            None => {
+                crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Missing Authorization Header").await;
+                return AppError::Unauthorized.into_response();
+            }
         };
 
     let api_key = match auth_header.strip_prefix("Bearer ") {
         Some(k) => k,
-        None => return AppError::Unauthorized.into_response(),
+        None => {
+            crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Invalid Bearer Token Format").await;
+            return AppError::Unauthorized.into_response();
+        }
     };
 
     // Look up the API token
@@ -101,18 +108,26 @@ pub async fn api_key_middleware(
     .fetch_optional(&state.db.pool)
     .await {
         Ok(Some(t)) if t.is_active != 0 => t,
-        Ok(Some(_)) => return AppError::Forbidden("Token disabled".to_string()).into_response(),
-        Ok(None) => return AppError::Unauthorized.into_response(),
+        Ok(Some(t)) => {
+            crate::relay::proxy::record_error_log(&state, &t.user_id, None, "unknown", 403, &path, "Token disabled").await;
+            return AppError::Forbidden("Token disabled".to_string()).into_response();
+        },
+        Ok(None) => {
+            crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Invalid API Key").await;
+            return AppError::Unauthorized.into_response();
+        },
         Err(e) => return AppError::Internal(format!("Database error: {}", e)).into_response(),
     };
 
     // Check expiry
     if token.is_expired() {
+        crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 403, &path, "Token expired").await;
         return AppError::Forbidden("Token expired".to_string()).into_response();
     }
 
     // Check quota
     if !token.has_quota() {
+        crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 403, &path, "Token quota exceeded").await;
         return AppError::Forbidden("Quota exceeded".to_string()).into_response();
     }
 
@@ -135,13 +150,16 @@ pub async fn api_key_middleware(
             }
         }
         if !is_allowed {
-            return AppError::Forbidden(format!("IP {} not whitelisted", client_ip)).into_response();
+            let msg = format!("IP {} not whitelisted", client_ip);
+            crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 403, &path, &msg).await;
+            return AppError::Forbidden(msg).into_response();
         }
     }
 
     // Check Rate Limits
     if token.rps_limit > 0 {
         if !state.rate_limiter.check(token.id, token.rps_limit) {
+            crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 429, &path, "Rate limit exceeded").await;
             return AppError::TooManyRequests("Rate limit exceeded".to_string()).into_response();
         }
     }

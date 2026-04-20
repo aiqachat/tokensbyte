@@ -20,7 +20,7 @@ pub async fn video_generations(
     let model = body["model"].as_str().unwrap_or("video-gen");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/v1/videos/generations").await?;
 
     // 解析转发规则
     let resolved = forward::resolve_forward_rule(&state, model, "视频", "/v1/video/generations")
@@ -145,7 +145,7 @@ pub async fn video_generations_status(
     let (channel, _) = if let Some(ch) = channel_opt {
         (ch, "".to_string())
     } else {
-        proxy::select_channel_for_model(&state, &model_name, &ctx.user_group).await?
+        proxy::select_channel_for_model(&state, &token, &model_name, &ctx.user_group, "/v1/video/generations/{task_id}").await?
     };
 
     // 解析转发规则决定查询路径
