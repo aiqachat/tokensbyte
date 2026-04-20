@@ -105,7 +105,12 @@ const Users: React.FC = () => {
   const handleSave = async (values: { [key: string]: unknown }) => {
     try {
       if (editingUser) {
-        await request.put(`/users/${editingUser.id}`, values);
+        // 编辑时如果密码为空则不发送，避免意外重置密码
+        const payload = { ...values };
+        if (!payload.password || (payload.password as string).trim() === '') {
+          delete payload.password;
+        }
+        await request.put(`/users/${editingUser.id}`, payload);
         message.success(t('common.success'));
       } else {
         const payload = { ...values, role: targetRole };

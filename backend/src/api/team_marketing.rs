@@ -322,17 +322,26 @@ async fn my_referrals(
 ) -> AppResult<Json<serde_json::Value>> {
     let user_id = &claims.sub;
 
+    // 获取当前用户的 uid，因为 referred_by 可能存的是 id 或 uid
+    let my_uid: String = sqlx::query_scalar(
+        &state.db.format_query("SELECT uid FROM users WHERE id = ?")
+    )
+    .bind(user_id)
+    .fetch_one(&state.db.pool)
+    .await?;
+
     let referrals: Vec<ReferralUser> = sqlx::query_as(
         &state.db.format_query(
             r#"SELECT u.id, u.uid, u.username, u.email, u.user_group, ul.name as level_name,
                       u.balance, u.is_active, u.created_at
                FROM users u
                LEFT JOIN user_levels ul ON u.user_group = ul.group_key
-               WHERE u.referred_by = ?
+               WHERE u.referred_by = ? OR u.referred_by = ?
                ORDER BY u.created_at DESC"#
         )
     )
     .bind(user_id)
+    .bind(&my_uid)
     .fetch_all(&state.db.pool)
     .await?;
 
@@ -372,12 +381,21 @@ async fn referral_recharges(
 ) -> AppResult<Json<serde_json::Value>> {
     let my_id = &claims.sub;
 
+    // 获取当前用户 uid
+    let my_uid: String = sqlx::query_scalar(
+        &state.db.format_query("SELECT uid FROM users WHERE id = ?")
+    )
+    .bind(my_id)
+    .fetch_one(&state.db.pool)
+    .await?;
+
     // Verify: target user must be referred by current user, OR current user is a team leader of that user
     let is_referred: i64 = sqlx::query_scalar(
-        &state.db.format_query("SELECT COUNT(*) FROM users WHERE id = ? AND referred_by = ?")
+        &state.db.format_query("SELECT COUNT(*) FROM users WHERE id = ? AND (referred_by = ? OR referred_by = ?)")
     )
     .bind(&target_user_id)
     .bind(my_id)
+    .bind(&my_uid)
     .fetch_one(&state.db.pool)
     .await?;
 

@@ -85,13 +85,21 @@ pub async fn get_wallet_stats(
     .await?;
 
     // 3. Get affiliate stats
+    let my_uid: String = sqlx::query_scalar(
+        &state.db.format_query("SELECT uid FROM users WHERE id = ?")
+    )
+    .bind(user_id)
+    .fetch_one(&state.db.pool)
+    .await?;
+
     let affiliate_stats: (f64, i64) = sqlx::query_as(
         &state.db.format_query(r#"SELECT 
             commission_balance,
-            (SELECT COUNT(*) FROM users WHERE referred_by = ?) as total_referred
+            (SELECT COUNT(*) FROM users WHERE referred_by = ? OR referred_by = ?) as total_referred
            FROM users WHERE id = ?"#)
     )
     .bind(user_id)
+    .bind(&my_uid)
     .bind(user_id)
     .fetch_one(&state.db.pool)
     .await?;
