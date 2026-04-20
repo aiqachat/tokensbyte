@@ -302,6 +302,7 @@ export interface Plugin {
 export interface PluginAsset {
   id: number;
   user_id: string;
+  group_id?: string;
   asset_type: 'image' | 'video';
   source: 'builtin' | 'user';
   status: 'uploaded' | 'pending' | 'processing' | 'approved' | 'rejected';
