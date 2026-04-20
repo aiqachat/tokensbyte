@@ -1,5 +1,4 @@
 use lettre::transport::smtp::authentication::Credentials;
-use lettre::message::header::ContentType;
 use lettre::message::SinglePart;
 use lettre::{Message, SmtpTransport, Transport};
 use crate::models::SMTPSettings;

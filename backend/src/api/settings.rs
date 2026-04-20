@@ -8,7 +8,7 @@ use crate::AppState;
 use crate::models::{
     SiteSettings, CurrencySettings, LoginSettings, RegistrationSettings,
     SMTPSettings, SmsSettings, MarketingSettings, DatabaseSettings,
-    GoogleOAuthSettings, WechatOAuthSettings, AllSettings, UpdateSettingsRequest,
+    AllSettings, UpdateSettingsRequest,
 };
 use crate::error::{AppError, AppResult};
 

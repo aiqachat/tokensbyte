@@ -9,8 +9,7 @@ use crate::models::{
     LoginRequest, LoginResponse, CreateUserRequest, User,
     SendCodeRequest, EmailRegisterRequest, ResetPasswordRequest,
     SendSmsCodeRequest, MobileRegisterRequest,
-    AllSettings, SiteSettings, CurrencySettings, LoginSettings,
-    RegistrationSettings, SMTPSettings, SmsSettings,
+    AllSettings, RegistrationSettings,
 };
 use crate::error::{AppError, AppResult};
 use crate::auth;
@@ -24,15 +23,17 @@ pub async fn login(
     Json(request): Json<LoginRequest>,
 ) -> Response {
     let result = (async {
-        let user: User = sqlx::query_as(
-            &state.db.format_query("SELECT * FROM users WHERE username = ? OR email = ? OR mobile = ?")
-        )
-        .bind(&request.username)
-        .bind(&request.username)
+        let (query_str, err_msg) = match request.login_type.as_deref() {
+            Some("email") => ("SELECT * FROM users WHERE email = ?", "未找到该邮箱对应的账号"),
+            Some("mobile") => ("SELECT * FROM users WHERE mobile = ?", "未找到该手机号对应的账号"),
+            _ => ("SELECT * FROM users WHERE username = ?", "未找到此账号，请检查用户名"),
+        };
+
+        let user: User = sqlx::query_as(&state.db.format_query(query_str))
         .bind(&request.username)
         .fetch_optional(&state.db.pool)
         .await?
-        .ok_or_else(|| AppError::AuthFailed("没有此用户，请核对您的账号".to_string()))?;
+        .ok_or_else(|| AppError::AuthFailed(err_msg.to_string()))?;
 
         if user.role != "user" {
             return Err(AppError::Forbidden("Only users can login from here".to_string()));
@@ -580,7 +581,7 @@ pub async fn oauth_wechat(
         let base_url = format!("{}/api/v1/auth/oauth/wechat/callback",
             state.config.base_url.trim_end_matches('/'));
         // bind_user_id 用于绑定场景
-        let bind_user_id = params.get("bind_user_id").cloned().unwrap_or_default();
+        let _bind_user_id = params.get("bind_user_id").cloned().unwrap_or_default();
         let state_val = format!("wechat_{}", uuid::Uuid::new_v4().simple());
         let url = crate::services::oauth::OAuthService::wechat_auth_url(
             &wechat.app_id, &base_url, &state_val,
@@ -652,7 +653,7 @@ pub async fn oauth_wechat_callback(
 /// 谷歌 OAuth — 获取授权 URL 并重定向
 pub async fn oauth_google(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<std::collections::HashMap<String, String>>,
+    Query(_params): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     let result = (async {
         let settings = get_all_settings(&state).await?;

@@ -108,6 +108,7 @@ pub struct WalletStats {
 /// 用户名+密码登录（保持原有接口兼容）
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
+    pub login_type: Option<String>,
     pub username: String,
     pub password: String,
 }

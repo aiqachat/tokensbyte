@@ -45,7 +45,8 @@ const Login: React.FC = () => {
     setLoading(true);
     message.destroy();
     try {
-      const response = await axios.post<LoginResponse>('/api/v1/auth/login', values);
+      const payload = { ...values, login_type: activeTab };
+      const response = await axios.post<LoginResponse>('/api/v1/auth/login', payload);
       const { token, user } = response.data;
       setToken(token);
       setUser(user);
