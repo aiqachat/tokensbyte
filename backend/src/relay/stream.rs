@@ -31,7 +31,6 @@ pub async fn handle_chat_stream(
         let mut total_prompt_tokens = prompt_tokens;
         let mut total_completion_tokens = 0;
         let mut buffer = String::new();
-        let mut full_response_text = String::new();
         let mut raw_response_text = String::new();
         
         let target_type = target_type.clone();
@@ -61,8 +60,6 @@ pub async fn handle_chat_stream(
                             if tx.send(Ok::<_, axum::Error>(format!("data: {}\n\n", transformed))).await.is_err() {
                                 break;
                             }
-                            full_response_text.push_str(&transformed);
-                            full_response_text.push('\n');
                         }
                     }
                 }

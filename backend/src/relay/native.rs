@@ -71,7 +71,7 @@ pub async fn gemini_proxy(
         .ok_or_else(|| AppError::BadRequest("Invalid path: expected {model}:{action}".into()))?;
 
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    let _pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
+    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, model, &ctx.user_group).await?;
 
     // Build upstream query: replace key with channel's real key, keep other params (e.g. alt=sse)
@@ -112,11 +112,17 @@ pub async fn gemini_proxy(
     }
 
 
+    // 预扣费
+    if pre_deduction > 0.0 {
+        if let Err(e) = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
+            tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+        }
+    }
 
     if action.starts_with("streamGenerateContent") || is_stream == 1 {
         Ok(crate::relay::stream::handle_native_stream(
             state, token.clone(), channel.clone(), model.to_string(), resp, ctx.discount,
-            request_content_str.clone(), start_time, endpoint, Some(request_content_str), 0.0
+            request_content_str.clone(), start_time, endpoint, Some(request_content_str), pre_deduction
         ).await.into_response())
     } else {
         let data = resp.bytes().await?;
@@ -146,7 +152,7 @@ pub async fn gemini_proxy(
         tracing::info!("[Gemini] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, usage.prompt, usage.completion, cost, 200, &endpoint, None, latency_ms, is_stream, Some(request_content_str.clone()), Some(response_content_str), Some(request_content_str), Some(detail)).await;
+        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, cost, pre_deduction, 200, &endpoint, None, latency_ms, is_stream, Some(request_content_str.clone()), Some(response_content_str), Some(request_content_str), Some(detail)).await;
         Ok(Response::builder()
             .header("Content-Type", "application/json")
             .body(axum::body::Body::from(data))
