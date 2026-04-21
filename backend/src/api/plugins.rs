@@ -447,9 +447,13 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "支持多种分辨率和时长，适合高品质视频生成",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1","4:3","3:4","21:9"], "default": "16:9"},
-                {"key": "duration", "label": "视频时长", "type": "select", "options": [5,10], "default": 5, "unit": "秒"},
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["21:9","16:9","4:3","1:1","3:4","9:16","adaptive"], "default": "16:9"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [-1,5,10], "default": 5, "unit": "秒", "hint": "-1 表示由模型智能选择"},
+                {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p","1080p"], "default": "720p"},
+                {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
+                {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
+                {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
@@ -460,9 +464,13 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "快速生成，参数精简，适合快速预览",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1"], "default": "16:9"},
-                {"key": "duration", "label": "视频时长", "type": "select", "options": [5], "default": 5, "unit": "秒"},
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["21:9","16:9","4:3","1:1","3:4","9:16","adaptive"], "default": "16:9"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [-1,5,10], "default": 5, "unit": "秒", "hint": "-1 表示由模型智能选择"},
+                {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p"], "default": "720p"},
+                {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
+                {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
+                {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
@@ -489,9 +497,12 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "poll_endpoint": "/api/v3/contents/generations/tasks/{task_id}",
             "description": "支持文生视频和图生视频，可生成音频，适用于 doubao-seedance-1-0-pro 系列模型",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1","4:3","3:4","adaptive"], "default": "16:9"},
-                {"key": "duration", "label": "视频时长", "type": "select", "options": [5,10], "default": 5, "unit": "秒"},
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["21:9","16:9","4:3","1:1","3:4","9:16","adaptive"], "default": "16:9"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [-1,5,10], "default": 5, "unit": "秒", "hint": "-1 表示由模型智能选择"},
+                {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
+                {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
+                {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
                 {"key": "image_url", "label": "参考图片 URL", "type": "input", "default": "", "placeholder": "可选，填入图片链接可实现图生视频"},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]

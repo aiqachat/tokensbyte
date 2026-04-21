@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Layout, Typography, ConfigProvider, theme, Button, Select, Input, Spin, Tooltip, Radio, Drawer, Tag, Dropdown, message, Switch, Modal } from 'antd';
+import { Layout, Typography, ConfigProvider, theme, Button, Select, Input, InputNumber, Spin, Tooltip, Radio, Drawer, Tag, Dropdown, message, Switch, Modal } from 'antd';
 import { 
     VideoCameraOutlined, PictureOutlined, MessageOutlined, AudioOutlined, 
     SettingOutlined, CompassOutlined, CloseOutlined, 
@@ -312,9 +312,46 @@ const Playground: React.FC = () => {
     setTimeout(poll, 3000);
   };
 
+  // 分辨率与比例对应的像素映射表
+  const RESOLUTION_MAP: Record<string, Record<string, string>> = {
+    '480p': {
+      '16:9': '864×496', '4:3': '752×560', '1:1': '640×640',
+      '3:4': '560×752', '9:16': '496×864', '21:9': '992×432',
+    },
+    '720p': {
+      '16:9': '1280×720', '4:3': '1112×834', '1:1': '960×960',
+      '3:4': '834×1112', '9:16': '720×1280', '21:9': '1470×630',
+    },
+    '1080p': {
+      '16:9': '1920×1080', '4:3': '1664×1248', '1:1': '1440×1440',
+      '3:4': '1248×1664', '9:16': '1080×1920', '21:9': '2206×946',
+    },
+  };
+
   // 渲染动态参数面板
   const renderParamControl = (param: SchemeParam) => {
     const value = paramValues[param.key] ?? param.default;
+
+    // 对 resolution 类型的 select 动态追加像素标注
+    if (param.key === 'resolution' && param.type === 'select' && param.options) {
+      const currentRatio = paramValues['ratio'] || '';
+      return (
+        <div key={param.key}>
+          <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+          <Select 
+            style={{ width: '100%' }} size="large" 
+            value={value} 
+            onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))} 
+            popupClassName="dark-select-dropdown"
+            options={param.options.map(opt => {
+              const res = String(opt);
+              const pixels = RESOLUTION_MAP[res]?.[currentRatio];
+              return { label: pixels ? `${res} (${pixels})` : res, value: opt };
+            })}
+          />
+        </div>
+      );
+    }
 
     if (param.type === 'radio' && param.options) {
       return (
@@ -365,6 +402,24 @@ const Playground: React.FC = () => {
             popupClassName="dark-select-dropdown"
             options={param.options.map(opt => ({ label: `${opt}${param.unit ? ' ' + param.unit : ''}`, value: opt }))}
           />
+          {(param as any).hint && <Text style={{ display: 'block', marginTop: 4, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{(param as any).hint}</Text>}
+        </div>
+      );
+    }
+
+    if (param.type === 'number') {
+      return (
+        <div key={param.key}>
+          <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+          <InputNumber
+            size="large"
+            style={{ width: '100%', background: '#17181A' }}
+            value={value}
+            min={(param as any).min ?? undefined}
+            max={(param as any).max ?? undefined}
+            onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))}
+          />
+          {(param as any).hint && <Text style={{ display: 'block', marginTop: 4, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{(param as any).hint}</Text>}
         </div>
       );
     }
@@ -505,7 +560,7 @@ const Playground: React.FC = () => {
         {/* 中央工作视口 Canvas */}
         <Layout style={{ background: 'transparent', display: 'flex', flexDirection: 'column', padding: '16px', position: 'relative' }}>
             <div style={{ padding: '8px 12px 16px 12px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Title level={4} style={{ margin: 0, color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>Playground</Title>
+                <Title level={4} style={{ margin: 0, color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>创作中心</Title>
             </div>
 
             {!isSettingsOpen && (
