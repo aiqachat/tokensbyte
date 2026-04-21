@@ -7,9 +7,11 @@ services:
     volumes:
       # 将宿主机的后台源码映射入容器内，以便感知文件变动
       - ./backend:/usr/src/app
-      # 映射独立的 target 构建缓存，防止在 Windows 系统和 Linux 容器之间出现 target 锁死或交叉污染
+      # 将 Git 挂载入内，允许构建过程能够提取版本日志
+      - ./.git:/usr/src/app/.git:ro
+      # 映射独立的 target 构建缓存
       - backend-target:/usr/src/app/target
-      # 映射 Cargo 安装包目录，加速每次重建依赖的下载
+      # 映射 Cargo 安装包目录，加速构建
       - cargo-registry:/usr/local/cargo/registry
     environment:
       - CARGO_TARGET_DIR=/usr/src/app/target

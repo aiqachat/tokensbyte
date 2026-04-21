@@ -418,7 +418,12 @@ const BillingRules: React.FC = () => {
                         marginBottom: '24px',
                         border: '1px solid #303030'
                       }}>
-                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>{t('models.pricing_tiers')}</Title>
+                        <div style={{ marginBottom: 16 }}>
+                          <Title level={5} style={{ marginBottom: 6, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>{t('models.pricing_tiers')}</Title>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            界定说明：输入界限与输出上限填写的数值单位是以“千(K)”为步长判定的（例如输入 128 即为 128K Token）。命中落区后，最终费用将结合后面配置的费率采用 1M (一百万) 定标结算。
+                          </Text>
+                        </div>
                         <Form.List name="pricing_tiers" initialValue={[]}>
                           {(fields, { add, remove }) => (
                             <>
@@ -427,10 +432,10 @@ const BillingRules: React.FC = () => {
                                   <Col span={9}>
                                     <Space.Compact style={{ width: '100%' }}>
                                       <Form.Item {...restField} name={[name, 'max_prompt_tokens']} rules={[{ required: true, message: '' }]} noStyle>
-                                        <InputNumber placeholder="输入界限(Token)" style={{ width: '50%' }} />
+                                        <InputNumber placeholder="输入界限(千Token)" style={{ width: '50%' }} />
                                       </Form.Item>
                                       <Form.Item {...restField} name={[name, 'max_completion_tokens']} noStyle>
-                                        <InputNumber placeholder="输出上限(选填)" style={{ width: '50%' }} />
+                                        <InputNumber placeholder="输出上限(千Token/选填)" style={{ width: '50%' }} />
                                       </Form.Item>
                                     </Space.Compact>
                                   </Col>
