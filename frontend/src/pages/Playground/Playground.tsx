@@ -8,6 +8,7 @@ import {
     LoadingOutlined, PlayCircleOutlined, CheckCircleOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import request from '../../utils/request';
 import './Playground.css';
 
@@ -32,6 +33,8 @@ interface PlaygroundModel {
   scheme_id: string;
   scheme_name: string;
   scheme_type: string;
+  endpoint?: string;
+  poll_endpoint?: string;
   params: SchemeParam[];
 }
 
@@ -93,6 +96,13 @@ const Playground: React.FC = () => {
 
       if (tokensRes?.data && Array.isArray(tokensRes.data)) {
         setApiTokens(tokensRes.data);
+        const savedToken = localStorage.getItem('playground_saved_token');
+        if (savedToken && tokensRes.data.some(t => t.token_key === savedToken)) {
+          setSelectedTokenKey(savedToken);
+        } else if (tokensRes.data.length > 0) {
+          setSelectedTokenKey(tokensRes.data[0].token_key);
+          localStorage.setItem('playground_saved_token', tokensRes.data[0].token_key);
+        }
       }
     } catch (e) {
       console.error('Data initialization failed', e);
@@ -192,7 +202,31 @@ const Playground: React.FC = () => {
 
       let endpoint = '';
       if (schemeType === 'video' || currentModel.type_name.includes('视频')) {
-        endpoint = '/v1/video/generations';
+        // 优先使用方案定义的 endpoint，否则走默认
+        endpoint = currentModel.endpoint || '/v1/video/generations';
+        
+        // 自定义 endpoint（如 /api/v3/contents/generations/tasks）始终使用 content 数组格式
+        if (currentModel.endpoint) {
+          const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
+          const imageUrl = paramValues.image_url;
+          if (imageUrl && String(imageUrl).trim()) {
+            contentArr.push({ type: 'image_url', image_url: { url: String(imageUrl).trim() } });
+          }
+          body.content = contentArr;
+          delete body.prompt;
+        } else {
+          // 默认 /v1/video/generations，仅在有 image_url 时使用 content 数组
+          const imageUrl = paramValues.image_url;
+          if (imageUrl && String(imageUrl).trim()) {
+            body.content = [
+              { type: 'text', text: prompt.trim() },
+              { type: 'image_url', image_url: { url: String(imageUrl).trim() } }
+            ];
+            delete body.prompt;
+          }
+        }
+        // 删除不应该发送到 API 的参数
+        delete body.image_url;
       } else if (schemeType === 'image' || currentModel.type_name.includes('图片')) {
         endpoint = '/v1/images/generations';
       } else {
@@ -201,14 +235,19 @@ const Playground: React.FC = () => {
         delete body.prompt;
       }
 
-      const res = await (request.post(endpoint, body, {
-        headers: { 'Authorization': `Bearer ${selectedTokenKey}` }
-      }) as Promise<any>);
+      const res = await axios.post(endpoint, body, {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${selectedTokenKey}` 
+        }
+      }).then(r => r.data);
 
       // 视频异步任务需要轮询
-      if (endpoint === '/v1/video/generations' && res?.id) {
-        setGenerationResult({ status: 'processing', task_id: res.id, ...res });
-        pollTaskStatus(res.id, currentModel.model_id);
+      const isVideoEndpoint = endpoint.includes('video') || endpoint.includes('contents/generations');
+      if (isVideoEndpoint && (res?.id || res?.data?.task_id)) {
+        const taskId = res?.id || res?.data?.task_id;
+        setGenerationResult({ status: 'processing', task_id: taskId, ...res });
+        pollTaskStatus(taskId, currentModel.model_id, currentModel.poll_endpoint);
       } else {
         setGenerationResult({ status: 'completed', data: res });
         setGenerating(false);
@@ -222,10 +261,18 @@ const Playground: React.FC = () => {
   };
 
   // 轮询视频任务状态
-  const pollTaskStatus = async (taskId: string, modelId: string) => {
+  const pollTaskStatus = async (taskId: string, modelId: string, pollEndpointTemplate?: string) => {
     setTaskPolling(true);
     let attempts = 0;
-    const maxAttempts = 120; // 最多等待 10 分钟
+    const maxAttempts = 120;
+
+    // 构建轮询 URL
+    const buildPollUrl = () => {
+      if (pollEndpointTemplate) {
+        return pollEndpointTemplate.replace('{task_id}', taskId);
+      }
+      return `/v1/video/generations/${taskId}?model=${modelId}`;
+    };
 
     const poll = async () => {
       if (attempts >= maxAttempts) {
@@ -237,9 +284,9 @@ const Playground: React.FC = () => {
       attempts++;
 
       try {
-        const res = await (request.get(`/v1/video/generations/${taskId}?model=${modelId}`, {
+        const res = await axios.get(buildPollUrl(), {
           headers: { 'Authorization': `Bearer ${selectedTokenKey}` }
-        }) as Promise<any>);
+        }).then(r => r.data);
 
         const status = res?.status || res?.final_result?.status || '';
         
@@ -329,6 +376,21 @@ const Playground: React.FC = () => {
           <Switch 
             checked={!!value}
             onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))}
+          />
+        </div>
+      );
+    }
+
+    if (param.type === 'input') {
+      return (
+        <div key={param.key}>
+          <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+          <Input
+            size="large"
+            value={value || ''}
+            onChange={(e) => setParamValues(prev => ({ ...prev, [param.key]: e.target.value }))}
+            placeholder={(param as any).placeholder || ''}
+            style={{ background: '#17181A', borderColor: 'rgba(255,255,255,0.08)' }}
           />
         </div>
       );
@@ -506,24 +568,31 @@ const Playground: React.FC = () => {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'rgba(0,0,0,0.1)' }}>
                             <div style={{ display: 'flex', gap: 12 }}>
                                 <Tooltip title={selectedTokenKey ? "更换 API 密钥" : "选择 API 密钥"}>
-                                    <Button 
-                                        type="text" 
-                                        shape="circle" 
+                                    <div 
                                         onClick={() => setIsTokenModalVisible(true)}
-                                        icon={
-                                            selectedTokenKey ? <KeyOutlined /> : (
-                                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    <KeyOutlined />
-                                                    <div style={{ position: 'absolute', width: '100%', height: 1.5, background: 'currentColor', transform: 'rotate(45deg)' }} />
-                                                </div>
-                                            )
-                                        } 
                                         style={{ 
-                                            color: selectedTokenKey ? '#1677ff' : 'rgba(255,255,255,0.4)', 
-                                            background: selectedTokenKey ? 'rgba(22,119,255,0.1)' : 'rgba(255,255,255,0.03)',
-                                            border: selectedTokenKey ? '1px solid rgba(22,119,255,0.2)' : 'none'
-                                        }} 
-                                    />
+                                            display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', 
+                                            background: selectedTokenKey ? 'rgba(255,255,255,0.05)' : 'rgba(255,100,100,0.1)', 
+                                            border: `1px solid ${selectedTokenKey ? 'rgba(255,255,255,0.12)' : 'rgba(255,100,100,0.3)'}`,
+                                            borderRadius: 20, cursor: 'pointer', transition: 'all 0.2s',
+                                            color: selectedTokenKey ? 'rgba(255,255,255,0.7)' : '#ff7875', fontSize: 13, fontWeight: 500
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.background = selectedTokenKey ? 'rgba(255,255,255,0.1)' : 'rgba(255,100,100,0.15)';
+                                            e.currentTarget.style.color = selectedTokenKey ? '#fff' : '#ff7875';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.background = selectedTokenKey ? 'rgba(255,255,255,0.05)' : 'rgba(255,100,100,0.1)';
+                                            e.currentTarget.style.color = selectedTokenKey ? 'rgba(255,255,255,0.7)' : '#ff7875';
+                                        }}
+                                    >
+                                        <KeyOutlined style={{ fontSize: 14 }} />
+                                        <span>
+                                            {selectedTokenKey 
+                                                ? (apiTokens.find(t => t.token_key === selectedTokenKey)?.name || 'Using Token') 
+                                                : '未选择密钥'}
+                                        </span>
+                                    </div>
                                 </Tooltip>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -712,6 +781,7 @@ const Playground: React.FC = () => {
                                 key={t.token_key}
                                 onClick={() => {
                                     setSelectedTokenKey(t.token_key);
+                                    localStorage.setItem('playground_saved_token', t.token_key);
                                     setIsTokenModalVisible(false);
                                     message.success('已切换当前调用的令牌密钥');
                                 }}

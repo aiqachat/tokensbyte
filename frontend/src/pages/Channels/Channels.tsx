@@ -313,21 +313,6 @@ const Channels: React.FC = () => {
             </Select>
           </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={24}>
-              <Form.Item name="provider_type" label="服务商类型" required>
-                <Input placeholder="例如：openai" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item name="base_url" label={t('channels.base_url')} extra="若已选择配置归属，此项只做备用或可为空">
-            <Input placeholder="https://api.openai.com/v1" />
-          </Form.Item>
-
-          <Form.Item name="api_key" label={t('channels.api_key')} extra="若已选择配置归属，此项只做备用或可为空">
-            <Input.Password placeholder="sk-..." />
-          </Form.Item>
 
           <Form.Item name="models" label={t('channels.models')} rules={[{ required: true }]}>
             <Select mode="multiple" placeholder="Select Models">

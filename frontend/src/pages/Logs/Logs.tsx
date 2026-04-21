@@ -175,15 +175,37 @@ const Logs: React.FC = () => {
     const codeBorder = themeToken.colorBorderSecondary;
 
     return (
-      <div style={{ padding: 16, background: panelBg, borderRadius: 8 }}>
-        <Descriptions size="small" column={1} labelStyle={{ width: '100px', color: themeToken.colorTextSecondary }}>
+      <div style={{ 
+        padding: 16, background: panelBg, borderRadius: 8, 
+        maxWidth: screens.xs ? 'calc(100vw - 64px)' : 'calc(100vw - 320px)', 
+        overflowX: 'auto', boxSizing: 'border-box'
+      }}>
+        <Descriptions size="small" column={1} labelStyle={{ width: '100px', color: themeToken.colorTextSecondary }} contentStyle={{ wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
           <Descriptions.Item label="系统请求路径">
             {record.endpoint.startsWith('http') ? record.endpoint : `${window.location.origin}${record.endpoint.startsWith('/') ? '' : '/'}${record.endpoint}`}
           </Descriptions.Item>
           {record.upstream_url && <Descriptions.Item label="真实上游地址">{record.upstream_url}</Descriptions.Item>}
           <Descriptions.Item label="渠道标识">{record.channel_group_aid || '-'}</Descriptions.Item>
           <Descriptions.Item label="错误信息">
-            {record.error_message ? <Text type="danger">{record.error_message}</Text> : <Text type="secondary">无</Text>}
+            {(() => {
+              if (!record.error_message) return <Text type="secondary">无</Text>;
+              try {
+                const parsed = JSON.parse(record.error_message);
+                return (
+                  <div style={{
+                    marginTop: 4, maxHeight: 300, overflow: 'auto',
+                    background: codeBg, border: `1px solid ${codeBorder}`,
+                    padding: 8, borderRadius: 6,
+                  }}>
+                    <pre style={{ margin: 0, fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: themeToken.colorError }}>
+                      {JSON.stringify(parsed, null, 2)}
+                    </pre>
+                  </div>
+                );
+              } catch (e) {
+                return <Text type="danger">{record.error_message}</Text>;
+              }
+            })()}
           </Descriptions.Item>
           <Descriptions.Item label="计费明细">
             <div>

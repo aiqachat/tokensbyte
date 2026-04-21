@@ -480,6 +480,22 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
+        json!({
+            "id": "seedance1.5pro",
+            "name": "Seedance 1.5 Pro 方案",
+            "type": "video",
+            "is_system": true,
+            "endpoint": "/api/v3/contents/generations/tasks",
+            "poll_endpoint": "/api/v3/contents/generations/tasks/{task_id}",
+            "description": "支持文生视频和图生视频，可生成音频，适用于 doubao-seedance-1-0-pro 系列模型",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1","4:3","3:4","adaptive"], "default": "16:9"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [5,10], "default": 5, "unit": "秒"},
+                {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
+                {"key": "image_url", "label": "参考图片 URL", "type": "input", "default": "", "placeholder": "可选，填入图片链接可实现图生视频"},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        }),
     ]
 }
 
@@ -687,6 +703,8 @@ async fn get_playground_public_config(
             "scheme_id": scheme_id,
             "scheme_name": scheme.and_then(|s| s.get("name")).and_then(|v| v.as_str()).unwrap_or(""),
             "scheme_type": scheme_type,
+            "endpoint": scheme.and_then(|s| s.get("endpoint")).and_then(|v| v.as_str()).unwrap_or(""),
+            "poll_endpoint": scheme.and_then(|s| s.get("poll_endpoint")).and_then(|v| v.as_str()).unwrap_or(""),
             "params": scheme.and_then(|s| s.get("params")).cloned().unwrap_or(json!([])),
         }));
     }
