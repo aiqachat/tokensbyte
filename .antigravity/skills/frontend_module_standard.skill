@@ -1,121 +1,63 @@
-# TokensByte 前端页面模块化规范
+# Playground 无限画布模块开发规范
 
 ## 适用范围
-本规范适用于 `frontend/src/pages/` 下的所有复杂页面模块。当一个页面文件超过 **300 行** 或包含 **3 个以上独立功能区域** 时，必须按本规范进行模块化拆分。
+本规范**仅适用于** `frontend/src/pages/Playground/` 无限画布创作中心模块。
 
 ---
 
-## 目录结构规范
+## 目录结构
 
 ```
-PageName/
-├── PageName.tsx          # 入口组件，仅做编排（挂载 Provider + 组合子组件），控制在 80 行以内
-├── PageName.css          # 页面级全局样式覆盖
-├── types.ts              # 所有 TypeScript 类型/接口定义，零 React 依赖
-├── constants.ts          # 常量、映射表、纯函数工具，零状态依赖
+Playground/
+├── Playground.tsx              # 入口编排壳（仅挂载 Provider + 组合子组件，控制在 80 行以内）
+├── Playground.css              # 页面级全局样式覆盖
+├── types.ts                    # 所有 TypeScript 类型/接口定义
+├── constants.ts                # 常量（分辨率映射表）、纯函数工具（类别图标/标签）
 ├── context/
-│   └── PageNameContext.tsx  # 状态管理 Context（遵循性能分离原则）
+│   └── PlaygroundContext.tsx    # 双 Context 状态管理（高频画布 + 低频业务）
 ├── hooks/
-│   ├── useXxxInteraction.ts # 交互逻辑 hook（鼠标事件、键盘事件等）
-│   └── useXxxLogic.ts       # 业务逻辑 hook（API 调用、数据处理等）
+│   ├── useCanvasInteraction.ts  # 画布平移/缩放/节点拖拽/面板拖拽的鼠标事件逻辑
+│   └── useGeneration.ts         # API 生成调用 + 视频任务轮询 + 节点生命周期
 ├── components/
-│   ├── ComponentA.tsx       # 独立 UI 组件
-│   ├── ComponentB.tsx       # 独立 UI 组件
-│   └── sub-feature/         # 可扩展子系统（如节点系统）
-│       ├── BaseComponent.tsx # 外壳组件
-│       ├── VariantA.tsx      # 变体 A
-│       └── VariantB.tsx      # 变体 B
+│   ├── InfiniteCanvas.tsx       # 无限画布容器（网格背景 + 变换层 + 鼠标事件代理）
+│   ├── FloatingHeader.tsx       # 左上角悬浮"创作中心"标头
+│   ├── FloatingToolbar.tsx      # 左侧工具胶囊栏（指针/抓手/画笔/重置视图）
+│   ├── PromptInput.tsx          # 底部悬浮提示词输入框 + API密钥选择 + 生成按钮
+│   ├── SettingsWidget.tsx       # 右侧可拖拽可折叠的悬浮参数面板（含类别切换+模型选择+参数面板）
+│   ├── ParamControl.tsx         # 单个参数控件渲染器（radio/select/number/switch/input）
+│   ├── ModelDrawer.tsx          # 模型全景选择器抽屉
+│   ├── TokenModal.tsx           # API 密钥选择弹窗
+│   └── nodes/                   # 可扩展节点系统
+│       ├── CanvasNode.tsx       # 节点外壳（标题栏 + 拖拽手柄 + 关闭按钮 + 内容委托）
+│       ├── VideoNodeContent.tsx # 视频类型节点内容
+│       ├── ImageNodeContent.tsx # 图片类型节点内容
+│       └── TextNodeContent.tsx  # 文本类型节点内容
 ```
 
 ---
 
-## 核心原则
+## 关键架构规则
 
-### 1. 类型集中 (`types.ts`)
-- 所有页面内共享的 interface/type 定义在 `types.ts`
-- 所有模块从 `types.ts` import，**禁止跨组件文件 import 类型**
-- 避免循环依赖
+### 1. 双 Context 性能分离
+`PlaygroundContext.tsx` 内部维护**两个独立 Context**：
+- **CanvasContext**（高频）：画布变换 `canvasTransform`、拖拽状态、节点数组 `nodes` 等 —— 仅 `InfiniteCanvas` 和 `CanvasNode` 订阅
+- **PlaygroundContext**（低频）：模型列表、参数值、token、UI 开关等 —— `SettingsWidget`、`PromptInput` 等面板组件订阅
 
-### 2. 状态管理 (`context/`)
-- 使用 React Context 管理共享状态
-- **性能关键**：当页面同时存在高频交互区域（如画布拖拽）和低频 UI 区域（如表单面板）时，**必须拆分为两个独立 Context**
-  - 高频 Context：画布变换、拖拽状态等（仅画布组件订阅）
-  - 低频 Context：模型数据、表单值、UI 开关等（面板组件订阅）
-- 派生数据使用 `useMemo`
-- 回调函数使用 `useCallback`
+> 这样画布拖拽时不会触发参数面板等无关组件重新渲染。
 
-### 3. Hooks 封装 (`hooks/`)
-- 将复杂的事件处理逻辑封装为 custom hook
-- 将 API 调用、轮询等异步逻辑封装为 custom hook
-- hook 内部通过 Context 读写状态，**不通过 props 透传**
+### 2. 节点系统扩展方式
+新增节点类型（如音频、3D模型等）：
+1. 在 `types.ts` 的 `CanvasNode.type` 联合类型中添加新值
+2. 在 `nodes/` 下新建 `XxxNodeContent.tsx`
+3. 在 `CanvasNode.tsx` 的内容区域添加一个条件渲染分支
 
-### 4. 组件职责 (`components/`)
-- 每个组件文件只负责**一个独立的 UI 区域**
-- 所有组件使用 `React.memo()` 包裹，设置 `displayName`
-- 组件通过 `usePlayground()` / `useCanvas()` 等 hook 消费状态
-- **禁止** props drilling 超过 2 层
+### 3. 组件约束
+- 所有组件使用 `React.memo()` 包裹并设置 `displayName`
+- 组件通过 `useCanvas()` / `usePlayground()` 消费 Context 状态
+- 事件处理函数使用 `useCallback()`，派生数据使用 `useMemo()`
+- 禁止 props drilling 超过 2 层
 
-### 5. 可扩展子系统
-- 当某一类组件可能持续扩展（如节点类型、插件类型）时，使用子目录组织
-- 外壳组件负责通用逻辑（拖拽、选中、删除）
-- 内容组件按类型拆分，新增类型只需新增文件 + 在外壳中注册
-
----
-
-## 性能优化 Checklist
-
-- [ ] 双 Context 分离（高频 vs 低频）
-- [ ] 所有子组件 `React.memo()`
-- [ ] 事件处理函数 `useCallback()`
-- [ ] 派生数据 `useMemo()`
-- [ ] 懒加载内容（如：仅 status === 'completed' 时挂载媒体元素）
-- [ ] 避免在 render 中创建新对象/数组（提取为常量或 useMemo）
-
----
-
-## 命名规范
-
-| 类型 | 命名格式 | 示例 |
-|------|----------|------|
-| 页面目录 | PascalCase | `Playground/` |
-| 类型文件 | 固定 | `types.ts` |
-| 常量文件 | 固定 | `constants.ts` |
-| Context | `PageNameContext.tsx` | `PlaygroundContext.tsx` |
-| Hook | `useXxxYyy.ts` | `useCanvasInteraction.ts` |
-| 组件 | PascalCase | `FloatingToolbar.tsx` |
-| 节点内容 | `XxxNodeContent.tsx` | `VideoNodeContent.tsx` |
-
----
-
-## 入口组件模板
-
-```tsx
-import React from 'react';
-import { ConfigProvider, theme } from 'antd';
-import { PageProvider } from './context/PageContext';
-import ComponentA from './components/ComponentA';
-import ComponentB from './components/ComponentB';
-import './Page.css';
-
-const PageLayout: React.FC = () => (
-  <div style={{ height: '100vh', width: '100vw' }}>
-    <ComponentA />
-    <ComponentB />
-  </div>
-);
-
-const PageName: React.FC = () => (
-  <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-    <PageProvider>
-      <PageLayout />
-    </PageProvider>
-  </ConfigProvider>
-);
-
-export default PageName;
-```
-
----
-
-## 参考实现
-- 标杆页面：`src/pages/Playground/` — 完整的无限画布工作区实现
+### 4. 状态读写路径
+- 组件 → `useCanvas()` / `usePlayground()` → Context
+- 交互事件 → `useCanvasInteraction` hook
+- API 调用 → `useGeneration` hook
