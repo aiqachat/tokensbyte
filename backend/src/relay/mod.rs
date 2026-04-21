@@ -373,15 +373,40 @@ pub fn compute_cost(
                 }
             } else if rule.billing_rule == "seedance1.5pro" {
                 if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    let mut rate = None;
+                    let mut desc = String::new();
                     if features.has_audio {
                         if let Some(ar) = ext.get("audio_rate").and_then(|v| v.as_f64()) {
-                            p_rate = ar; c_rate = ar; is_overridden = true;
-                            detail_desc = format!("Seedance1.5Pro(含语音单价:{})", ar);
+                            rate = Some(ar);
+                            desc = format!("Seedance1.5Pro(含语音单价:{})", ar);
                         }
                     } else {
                         if let Some(br) = ext.get("base_rate").and_then(|v| v.as_f64()) {
-                            p_rate = br; c_rate = br; is_overridden = true;
-                            detail_desc = format!("Seedance1.5Pro(无语音单价:{})", br);
+                            rate = Some(br);
+                            desc = format!("Seedance1.5Pro(无语音单价:{})", br);
+                        }
+                    }
+                    if let Some(mut r) = rate {
+                        if features.service_tier.as_deref() == Some("flex") {
+                            let discount = ext.get("offline_discount").and_then(|v| v.as_f64()).unwrap_or(0.5);
+                            r *= discount;
+                            desc.push_str(" [离线推理]");
+                        }
+                        p_rate = r; c_rate = r; is_overridden = true;
+                        detail_desc = desc;
+                    }
+                }
+            } else if rule.billing_rule == "seedance1.0" {
+                if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    if features.service_tier.as_deref() == Some("flex") {
+                        if let Some(off_rate) = ext.get("offline_rate").and_then(|v| v.as_f64()) {
+                            p_rate = off_rate; c_rate = off_rate; is_overridden = true;
+                            detail_desc = format!("Seedance1.0(离线推理单价:{})", off_rate);
+                        }
+                    } else {
+                        if let Some(on_rate) = ext.get("online_rate").and_then(|v| v.as_f64()) {
+                            p_rate = on_rate; c_rate = on_rate; is_overridden = true;
+                            detail_desc = format!("Seedance1.0(在线推理单价:{})", on_rate);
                         }
                     }
                 }

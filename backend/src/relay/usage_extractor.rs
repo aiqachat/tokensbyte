@@ -8,6 +8,8 @@ pub struct ExtractedFeatures {
     pub resolution: Option<String>,
     /// 图片数量（用于按张计费）：请求阶段取 n，响应阶段取实际返回数量
     pub image_count: Option<i32>,
+    /// 服务等级（用于离线推理等特定计费，如 flex）
+    pub service_tier: Option<String>,
 }
 
 pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
@@ -15,6 +17,11 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
     let mut has_audio = false;
     let mut duration_seconds = None;
     let mut resolution = None;
+
+    // Check service tier (支持火山等在根或者parameters内)
+    let service_tier = body.get("service_tier")
+        .or_else(|| body.get("parameters").and_then(|p| p.get("service_tier")))
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
 
     // Check OpenAI modalities: ["audio", ...]
     if let Some(mods) = body.get("modalities").and_then(|m| m.as_array()) {
@@ -90,6 +97,7 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         duration_seconds,
         resolution,
         image_count,
+        service_tier,
     }
 }
 
