@@ -23,6 +23,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/{name}/storage-config", get(get_storage_config).post(save_storage_config))
         .route("/{name}/moderation-config", get(get_moderation_config).post(save_moderation_config))
         .route("/{name}/playground-config", get(get_playground_config).post(save_playground_config))
+        .route("/{name}/playground-schemes", get(get_playground_schemes).post(save_playground_schemes))
         .route("/{name}/playground-public-config", get(get_playground_public_config))
         .route("/{name}/test-connection", post(test_tos_connection))
         .route("/{name}/api-logs", get(get_plugin_api_logs))
@@ -437,19 +438,80 @@ async fn get_plugin_api_logs(
 
 // ========== 体验中心配置 (Playground) ==========
 
-#[derive(Deserialize)]
-pub struct PlaygroundConfigRequest {
-    pub video_models: Option<Vec<String>>,
-    pub image_models: Option<Vec<String>>,
-    pub chat_models: Option<Vec<String>>,
-    pub audio_models: Option<Vec<String>>,
-    pub enable_video: Option<bool>,
-    pub enable_image: Option<bool>,
-    pub enable_chat: Option<bool>,
-    pub enable_audio: Option<bool>,
+/// 系统内置体验方案默认种子（仅当 DB 中无自定义方案时用作初始化）
+fn get_default_schemes() -> Vec<serde_json::Value> {
+    vec![
+        json!({
+            "id": "seedance2.0",
+            "name": "Seedance 2.0 标准方案",
+            "type": "video",
+            "is_system": true,
+            "description": "支持多种分辨率和时长，适合高品质视频生成",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1","4:3","3:4","21:9"], "default": "16:9"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [5,10], "default": 5, "unit": "秒"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p","1080p"], "default": "720p"},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        }),
+        json!({
+            "id": "seedance2.0fast",
+            "name": "Seedance 2.0 快速方案",
+            "type": "video",
+            "is_system": true,
+            "description": "快速生成，参数精简，适合快速预览",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1"], "default": "16:9"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [5], "default": 5, "unit": "秒"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p"], "default": "720p"},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        }),
+        json!({
+            "id": "seedream",
+            "name": "Seedream 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "支持多种尺寸和比例的高质量 AI 图片生成，适用于 doubao-seedream 系列模型",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","16:9","9:16","4:3","3:4","3:2","2:3"], "default": "1:1"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["512x512","1024x1024","1280x720","720x1280","1024x768","768x1024"], "default": "1024x1024"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
+                {"key": "guidance_scale", "label": "引导强度", "type": "select", "options": [3,5,7,9,12], "default": 7},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        }),
+    ]
 }
 
-/// 管理员：获取体验中心配置
+/// 从 DB 加载方案列表（优先使用 DB 存储，DB 为空时 fallback 到内置默认）
+async fn load_schemes_from_db(state: &AppState, plugin_name: &str) -> Vec<serde_json::Value> {
+    let configs = load_plugin_configs(state, plugin_name).await.unwrap_or_default();
+    if let Some(schemes_str) = configs.get("pg_schemes") {
+        if let Ok(schemes) = serde_json::from_str::<Vec<serde_json::Value>>(schemes_str) {
+            if !schemes.is_empty() {
+                return schemes;
+            }
+        }
+    }
+    // DB 中没有或解析失败，返回内置默认
+    get_default_schemes()
+}
+
+/// 每个模型的体验配置（启用状态 + 绑定方案）
+#[derive(Deserialize)]
+pub struct PlaygroundModelConfig {
+    pub mid: String,
+    pub enabled: bool,
+    pub scheme_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PlaygroundConfigRequest {
+    pub models: Vec<PlaygroundModelConfig>,
+}
+
+/// 管理员：获取体验中心配置（返回全部模型 + 每个模型的启用/方案信息）
 async fn get_playground_config(
     State(state): State<Arc<AppState>>,
     Path(name): Path<String>,
@@ -465,31 +527,48 @@ async fn get_playground_config(
 
     let configs = load_plugin_configs(&state, &name).await?;
 
-    let parse_list = |key: &str| -> Vec<String> {
-        configs.get(key)
+    // 查出全部模型及其 type 信息
+    let models: Vec<crate::models::Model> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM models ORDER BY id DESC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let types: Vec<crate::models::ModelType> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM model_types ORDER BY sort_order ASC")
+    ).fetch_all(&state.db.pool).await?;
+
+    // 为每个模型附加启用和方案配置
+    let mut model_list = Vec::new();
+    for m in &models {
+        let config_key = format!("pg_model_{}", m.mid);
+        let model_conf: serde_json::Value = configs.get(&config_key)
             .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or_default()
-    };
-    
-    let parse_bool = |key: &str| -> bool {
-        configs.get(key)
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(true) // 默认开启
-    };
+            .unwrap_or(json!({"enabled": false, "scheme_id": null}));
+
+        let type_name = m.type_id
+            .and_then(|tid| types.iter().find(|t| t.id == tid))
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
+
+        model_list.push(json!({
+            "id": m.id,
+            "mid": m.mid,
+            "name": m.name,
+            "model_id": m.model_id,
+            "type_id": m.type_id,
+            "type_name": type_name,
+            "is_active": m.is_active,
+            "pg_enabled": model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+            "pg_scheme_id": model_conf.get("scheme_id").and_then(|v| v.as_str()).unwrap_or(""),
+        }));
+    }
 
     Ok(Json(json!({
-        "video_models": parse_list("video_models"),
-        "image_models": parse_list("image_models"),
-        "chat_models": parse_list("chat_models"),
-        "audio_models": parse_list("audio_models"),
-        "enable_video": parse_bool("enable_video"),
-        "enable_image": parse_bool("enable_image"),
-        "enable_chat": parse_bool("enable_chat"),
-        "enable_audio": parse_bool("enable_audio"),
+        "models": model_list,
+        "schemes": load_schemes_from_db(&state, &name).await,
     })))
 }
 
-/// 管理员：保存体验中心配置
+/// 管理员：保存体验中心配置（按模型逐个保存启用状态和方案绑定）
 async fn save_playground_config(
     State(state): State<Arc<AppState>>,
     Path(name): Path<String>,
@@ -504,60 +583,116 @@ async fn save_playground_config(
         return Err(AppError::Unauthorized);
     }
 
-    if let Some(video_models) = payload.video_models {
-        upsert_config(&state, &name, "video_models", &serde_json::to_string(&video_models).unwrap_or_default()).await?;
-    }
-    if let Some(image_models) = payload.image_models {
-        upsert_config(&state, &name, "image_models", &serde_json::to_string(&image_models).unwrap_or_default()).await?;
-    }
-    if let Some(chat_models) = payload.chat_models {
-        upsert_config(&state, &name, "chat_models", &serde_json::to_string(&chat_models).unwrap_or_default()).await?;
-    }
-    if let Some(audio_models) = payload.audio_models {
-        upsert_config(&state, &name, "audio_models", &serde_json::to_string(&audio_models).unwrap_or_default()).await?;
-    }
-    
-    if let Some(enable) = payload.enable_video {
-        upsert_config(&state, &name, "enable_video", &enable.to_string()).await?;
-    }
-    if let Some(enable) = payload.enable_image {
-        upsert_config(&state, &name, "enable_image", &enable.to_string()).await?;
-    }
-    if let Some(enable) = payload.enable_chat {
-        upsert_config(&state, &name, "enable_chat", &enable.to_string()).await?;
-    }
-    if let Some(enable) = payload.enable_audio {
-        upsert_config(&state, &name, "enable_audio", &enable.to_string()).await?;
+    for mc in &payload.models {
+        let config_key = format!("pg_model_{}", mc.mid);
+        let val = json!({
+            "enabled": mc.enabled,
+            "scheme_id": mc.scheme_id,
+        });
+        upsert_config(&state, &name, &config_key, &val.to_string()).await?;
     }
 
     Ok(Json(json!({ "message": "体验中心配置已保存" })))
 }
 
-/// 公开：获取体验中心配置供前端使用
+/// 管理员：获取体验方案列表（从 DB 加载，含内置 + 自定义）
+async fn get_playground_schemes(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let _ = claims;
+    let schemes = load_schemes_from_db(&state, &name).await;
+    Ok(Json(json!({ "schemes": schemes, "defaults": get_default_schemes() })))
+}
+
+/// 管理员：保存体验方案列表（全量覆盖）
+async fn save_playground_schemes(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+    Json(payload): Json<serde_json::Value>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let schemes = payload.get("schemes")
+        .ok_or_else(|| AppError::BadRequest("缺少 schemes 字段".to_string()))?;
+    
+    let schemes_str = serde_json::to_string(schemes)
+        .map_err(|_| AppError::BadRequest("方案数据序列化失败".to_string()))?;
+    
+    upsert_config(&state, &name, "pg_schemes", &schemes_str).await?;
+
+    Ok(Json(json!({ "message": "体验方案已保存" })))
+}
+
+/// 公开：获取体验中心配置供前端用户使用
+/// 返回已启用的模型列表 + 各模型绑定的方案参数
 async fn get_playground_public_config(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<serde_json::Value>> {
     let configs = load_plugin_configs(&state, "playground").await?;
-    let parse_list = |key: &str| -> Vec<String> {
-        configs.get(key)
+    let schemes = load_schemes_from_db(&state, "playground").await;
+
+    // 查出全部模型及其 type 信息
+    let models: Vec<crate::models::Model> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM models WHERE is_active = 1 ORDER BY id DESC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let types: Vec<crate::models::ModelType> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM model_types ORDER BY sort_order ASC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let mut enabled_models = Vec::new();
+    for m in &models {
+        let config_key = format!("pg_model_{}", m.mid);
+        let model_conf: serde_json::Value = configs.get(&config_key)
             .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or_default()
-    };
-    
-    let parse_bool = |key: &str| -> bool {
-        configs.get(key)
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(true) // 默认开启
-    };
+            .unwrap_or(json!({"enabled": false, "scheme_id": null}));
+
+        let is_enabled = model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !is_enabled { continue; }
+
+        let scheme_id = model_conf.get("scheme_id").and_then(|v| v.as_str()).unwrap_or("");
+        let mut scheme = schemes.iter().find(|s| s.get("id").and_then(|v| v.as_str()) == Some(scheme_id));
+
+        let type_name = m.type_id
+            .and_then(|tid| types.iter().find(|t| t.id == tid))
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
+
+        // 如果未绑定方案或方案不存在，按模型类型自动匹配第一个同类方案
+        if scheme.is_none() && !type_name.is_empty() {
+            let type_key = if type_name.contains("视频") { "video" }
+                else if type_name.contains("图片") { "image" }
+                else if type_name.contains("聊天") { "chat" }
+                else { "" };
+            if !type_key.is_empty() {
+                scheme = schemes.iter().find(|s| s.get("type").and_then(|v| v.as_str()) == Some(type_key));
+            }
+        }
+
+        let scheme_type = scheme.and_then(|s| s.get("type")).and_then(|v| v.as_str()).unwrap_or("");
+
+        enabled_models.push(json!({
+            "mid": m.mid,
+            "name": m.name,
+            "model_id": m.model_id,
+            "type_name": type_name,
+            "scheme_id": scheme_id,
+            "scheme_name": scheme.and_then(|s| s.get("name")).and_then(|v| v.as_str()).unwrap_or(""),
+            "scheme_type": scheme_type,
+            "params": scheme.and_then(|s| s.get("params")).cloned().unwrap_or(json!([])),
+        }));
+    }
 
     Ok(Json(json!({
-        "video_models": parse_list("video_models"),
-        "image_models": parse_list("image_models"),
-        "chat_models": parse_list("chat_models"),
-        "audio_models": parse_list("audio_models"),
-        "enable_video": parse_bool("enable_video"),
-        "enable_image": parse_bool("enable_image"),
-        "enable_chat": parse_bool("enable_chat"),
-        "enable_audio": parse_bool("enable_audio"),
+        "models": enabled_models,
     })))
 }

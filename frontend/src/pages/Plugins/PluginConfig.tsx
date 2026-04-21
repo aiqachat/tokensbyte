@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Switch, Button, message, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined } from '@ant-design/icons';
+import { Typography, Switch, Button, message, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio } from 'antd';
+import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
@@ -99,36 +99,19 @@ const PluginConfig: React.FC = () => {
   const [apiLogsLoading, setApiLogsLoading] = useState(false);
 
   // ====== 体验中心 (Playground) 配置 Tab ======
-  const [playgroundConfig, setPlaygroundConfig] = useState<any>({
-    video_models: [], image_models: [], chat_models: [], audio_models: [],
-    enable_video: true, enable_image: true, enable_chat: true, enable_audio: true
-  });
+  const [pgModels, setPgModels] = useState<any[]>([]);
+  const [pgSchemes, setPgSchemes] = useState<any[]>([]);
   const [savingPlayground, setSavingPlayground] = useState(false);
-  const [availableModels, setAvailableModels] = useState<any[]>([]);
-  const [modelTypes, setModelTypes] = useState<any[]>([]);
+  const [pgSearchKeyword, setPgSearchKeyword] = useState('');
+  const [pgSchemeDrawerVisible, setPgSchemeDrawerVisible] = useState(false);
+  const [pgCurrentMid, setPgCurrentMid] = useState('');
+  const [pgSelectedSchemeId, setPgSelectedSchemeId] = useState<string>('');
 
   const fetchPlaygroundConfigBase = async () => {
     try {
-      const [res, modelsRes, typesRes] = await Promise.all([
-        request.get(`/plugins/${name}/playground-config`) as Promise<any>,
-        request.get('/models?page_size=1000') as Promise<any>,
-        request.get('/model-types') as Promise<any>
-      ]);
-      setPlaygroundConfig({
-        video_models: res.video_models || [],
-        image_models: res.image_models || [],
-        chat_models: res.chat_models || [],
-        audio_models: res.audio_models || [],
-        enable_video: res.enable_video ?? true,
-        enable_image: res.enable_image ?? true,
-        enable_chat: res.enable_chat ?? true,
-        enable_audio: res.enable_audio ?? true,
-      });
-      if (modelsRes.models) setAvailableModels(modelsRes.models);
-      else if (modelsRes.data && Array.isArray(modelsRes.data)) setAvailableModels(modelsRes.data);
-      else if (Array.isArray(modelsRes)) setAvailableModels(modelsRes);
-
-      if (Array.isArray(typesRes)) setModelTypes(typesRes);
+      const res = await (request.get(`/plugins/${name}/playground-config`) as Promise<any>);
+      if (res.models) setPgModels(res.models);
+      if (res.schemes) setPgSchemes(res.schemes);
     } catch (e) {
       console.error(e);
     }
@@ -143,13 +126,126 @@ const PluginConfig: React.FC = () => {
   const handleSavePlaygroundConfig = async () => {
     try {
       setSavingPlayground(true);
-      await request.post(`/plugins/${name}/playground-config`, playgroundConfig);
+      const payload = {
+        models: pgModels.map(m => ({
+          mid: m.mid,
+          enabled: m.pg_enabled,
+          scheme_id: m.pg_scheme_id || null,
+        }))
+      };
+      await request.post(`/plugins/${name}/playground-config`, payload);
       message.success('体验配置保存成功');
     } catch (e) {
       message.error('保存失败');
     } finally {
       setSavingPlayground(false);
     }
+  };
+
+  const handlePgToggle = (mid: string, enabled: boolean) => {
+    setPgModels(prev => prev.map(m => m.mid === mid ? { ...m, pg_enabled: enabled } : m));
+  };
+
+  const handleOpenSchemeDrawer = (mid: string, currentSchemeId: string) => {
+    setPgCurrentMid(mid);
+    setPgSelectedSchemeId(currentSchemeId || '');
+    setPgSchemeDrawerVisible(true);
+  };
+
+  const handleConfirmScheme = () => {
+    setPgModels(prev => prev.map(m => m.mid === pgCurrentMid ? { ...m, pg_scheme_id: pgSelectedSchemeId } : m));
+    setPgSchemeDrawerVisible(false);
+  };
+
+  // ====== 体验方案配置 Tab ======
+  const [schemeList, setSchemeList] = useState<any[]>([]);
+  const [savingSchemes, setSavingSchemes] = useState(false);
+  const [schemeEditVisible, setSchemeEditVisible] = useState(false);
+  const [editingScheme, setEditingScheme] = useState<any>(null);
+  const [editingSchemeIndex, setEditingSchemeIndex] = useState<number>(-1);
+
+  const fetchSchemeList = async () => {
+    try {
+      const res = await (request.get(`/plugins/${name}/playground-schemes`) as Promise<any>);
+      if (res.schemes) setSchemeList(res.schemes);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    if (name === 'playground') {
+      fetchSchemeList();
+    }
+  }, [name]);
+
+  const handleSaveAllSchemes = async () => {
+    try {
+      setSavingSchemes(true);
+      await request.post(`/plugins/${name}/playground-schemes`, { schemes: schemeList });
+      message.success('方案配置已保存');
+    } catch (e) {
+      message.error('保存失败');
+    } finally {
+      setSavingSchemes(false);
+    }
+  };
+
+  const handleAddScheme = () => {
+    const newScheme = {
+      id: `custom_${Date.now()}`,
+      name: '新建体验方案',
+      type: 'video',
+      is_system: false,
+      description: '请填写方案描述',
+      params: [
+        { key: 'ratio', label: '画面比例', type: 'radio', options: ['16:9', '9:16', '1:1'], default: '16:9' },
+      ]
+    };
+    setEditingScheme(JSON.parse(JSON.stringify(newScheme)));
+    setEditingSchemeIndex(-1);
+    setSchemeEditVisible(true);
+  };
+
+  const handleEditScheme = (scheme: any, index: number) => {
+    setEditingScheme(JSON.parse(JSON.stringify(scheme)));
+    setEditingSchemeIndex(index);
+    setSchemeEditVisible(true);
+  };
+
+  const handleDeleteScheme = (index: number) => {
+    setSchemeList(prev => prev.filter((_, i) => i !== index));
+    message.success('方案已删除，请点击保存生效');
+  };
+
+  const handleSaveEditingScheme = () => {
+    if (!editingScheme) return;
+    if (editingSchemeIndex >= 0) {
+      setSchemeList(prev => prev.map((s, i) => i === editingSchemeIndex ? editingScheme : s));
+    } else {
+      setSchemeList(prev => [...prev, editingScheme]);
+    }
+    setSchemeEditVisible(false);
+    message.success('方案已更新，请点击保存生效');
+  };
+
+  const handleEditingSchemeParamChange = (paramIndex: number, field: string, value: any) => {
+    if (!editingScheme) return;
+    const newParams = [...editingScheme.params];
+    newParams[paramIndex] = { ...newParams[paramIndex], [field]: value };
+    setEditingScheme({ ...editingScheme, params: newParams });
+  };
+
+  const handleAddParam = () => {
+    if (!editingScheme) return;
+    const newParams = [...editingScheme.params, { key: `param_${Date.now()}`, label: '新参数', type: 'select', options: ['选项1'], default: '选项1' }];
+    setEditingScheme({ ...editingScheme, params: newParams });
+  };
+
+  const handleRemoveParam = (paramIndex: number) => {
+    if (!editingScheme) return;
+    const newParams = editingScheme.params.filter((_: any, i: number) => i !== paramIndex);
+    setEditingScheme({ ...editingScheme, params: newParams });
   };
 
   const fetchApiLogs = async (page = 1) => {
@@ -882,85 +978,323 @@ const PluginConfig: React.FC = () => {
     </div>
   );
 
-  // ====== 体验中心 (Playground) 配置 Tab 视图渲染 ======
-  const renderPlaygroundTab = (type: 'video_models' | 'image_models' | 'chat_models' | 'audio_models', title: string) => {
-    const enableKey = type.replace('_models', '') as 'video' | 'image' | 'chat' | 'audio';
-    const isEnabled = playgroundConfig[`enable_${enableKey}`] ?? true;
+  // ====== 体验中心 (Playground) 统一模型管理 Tab ======
+  const filteredPgModels = pgModels.filter(m => {
+    if (!pgSearchKeyword) return true;
+    const kw = pgSearchKeyword.toLowerCase();
+    return m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid.includes(kw);
+  });
 
-    if (type === 'audio_models') {
-      return (
-        <div style={{ background: '#141414', borderRadius: 8, padding: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text strong style={{ color: '#fff', fontSize: 14 }}>{title}</Text>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Text style={{ color: isEnabled ? '#52c41a' : 'rgba(255,255,255,0.35)', fontSize: 13 }}>{isEnabled ? '在此菜单中呈启' : '已停用菜单'}</Text>
-              <Switch checked={isEnabled} onChange={(val) => setPlaygroundConfig({ ...playgroundConfig, [`enable_${enableKey}`]: val })} />
-            </div>
-          </div>
-          <Divider style={{ margin: '14px 0', borderColor: 'rgba(255,255,255,0.06)' }} />
-          <Alert type="info" showIcon message="功能预留" description="声音模型体验功能暂未开放接入，敬请期待。" style={{background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)'}} />
+  const pgModelColumns = [
+    {
+      title: '模型名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string, record: any) => (
+        <div>
+          <Text strong style={{ color: '#fff', fontSize: 13 }}>{name}</Text>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
         </div>
-      );
-    }
+      ),
+    },
+    {
+      title: '类型',
+      dataIndex: 'type_name',
+      key: 'type_name',
+      width: 100,
+      render: (t: string) => t ? (
+        <Tag style={{ borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>
+          {t.includes('视频') ? <VideoCameraOutlined style={{ marginRight: 4 }} /> : t.includes('图片') ? <PictureOutlined style={{ marginRight: 4 }} /> : null}
+          {t}
+        </Tag>
+      ) : <Text type="secondary">-</Text>,
+    },
+    {
+      title: '体验开关',
+      key: 'pg_enabled',
+      width: 100,
+      render: (_: any, record: any) => (
+        <Switch
+          checked={record.pg_enabled}
+          onChange={(val) => handlePgToggle(record.mid, val)}
+          checkedChildren="开启"
+          unCheckedChildren="关闭"
+        />
+      ),
+    },
+    {
+      title: '绑定方案',
+      key: 'pg_scheme_id',
+      width: 200,
+      render: (_: any, record: any) => {
+        const scheme = pgSchemes.find(s => s.id === record.pg_scheme_id);
+        return scheme ? (
+          <Tag color="blue" style={{ borderRadius: 12, fontSize: 12 }}>{scheme.name}</Tag>
+        ) : (
+          <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>未绑定</Text>
+        );
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 80,
+      render: (_: any, record: any) => (
+        <Button
+          type="text"
+          icon={<SettingOutlined />}
+          onClick={() => handleOpenSchemeDrawer(record.mid, record.pg_scheme_id)}
+          style={{ color: '#1677ff' }}
+        >
+          配置
+        </Button>
+      ),
+    },
+  ];
 
-    const typeNameMapping: Record<string, string> = {
-      'video_models': '视频',
-      'image_models': '图片',
-      'chat_models': '聊天',
-      'audio_models': '音频',
-    };
-    const targetTypeObj = modelTypes.find(t => t.name.includes(typeNameMapping[type]));
-    const filteredModels = targetTypeObj 
-      ? availableModels.filter(m => m.type_id === targetTypeObj.id) 
-      : availableModels;
-
-    return (
+  const playgroundModelTab = (
+    <div>
       <div style={{ background: '#141414', borderRadius: 8, padding: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div>
-            <Text strong style={{ color: '#fff', fontSize: 14 }}>{title}</Text>
+            <Text strong style={{ color: '#fff', fontSize: 14 }}>可体验模型列表</Text>
             <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
-              选择可供用户在体验中心使用的模型（可多选），这些模型会在前台向该等级用户展现。
+              开启体验开关并绑定方案后，用户即可在体验中心使用该模型。已开启 {pgModels.filter(m => m.pg_enabled).length} / {pgModels.length} 个模型
             </Text>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Text style={{ color: isEnabled ? '#52c41a' : 'rgba(255,255,255,0.35)', fontSize: 13 }}>{isEnabled ? '开放体验通道' : '暂停体验通道'}</Text>
-            <Switch checked={isEnabled} onChange={(val) => setPlaygroundConfig({ ...playgroundConfig, [`enable_${enableKey}`]: val })} />
-          </div>
+          <Input
+            placeholder="搜索模型..."
+            value={pgSearchKeyword}
+            onChange={e => setPgSearchKeyword(e.target.value)}
+            style={{ width: 220, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+            allowClear
+          />
         </div>
-        <Divider style={{ margin: '14px 0', borderColor: 'rgba(255,255,255,0.06)' }} />
-        
-        <Select
-          mode="multiple"
-          placeholder={`请选择需要开放的 ${title} 模型`}
-          style={{ width: '100%', marginBottom: 16 }}
-          value={playgroundConfig[type]}
-          onChange={(val) => setPlaygroundConfig({ ...playgroundConfig, [type]: val })}
-          options={filteredModels.map(m => ({
-            label: (
-              <span>
-                {m.name}
-                {m.mid && (
-                  <span style={{ marginLeft: 8, fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>
-                    MID:{m.mid}
-                  </span>
-                )}
-              </span>
-            ),
-            value: m.mid || m.name,  // 优先使用 mid，没有 mid 的旧数据降级用 name
-          }))}
-          popupClassName="dark-select-dropdown"
-          optionFilterProp="label"
+
+        <Table
+          dataSource={filteredPgModels}
+          columns={pgModelColumns}
+          rowKey="mid"
+          size="small"
+          pagination={{ pageSize: 20 }}
+          style={{ marginBottom: 16 }}
         />
 
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Button type="primary" loading={savingPlayground} onClick={handleSavePlaygroundConfig} icon={<SaveOutlined />}>
-            保存配置
+            保存全部配置
           </Button>
         </div>
       </div>
-    );
-  };
+
+      {/* 方案选择 Drawer */}
+      <Drawer
+        title="选择体验方案"
+        open={pgSchemeDrawerVisible}
+        onClose={() => setPgSchemeDrawerVisible(false)}
+        width={420}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button onClick={() => { setPgSelectedSchemeId(''); handleConfirmScheme(); }}>取消绑定</Button>
+            <Button type="primary" onClick={handleConfirmScheme}>确认绑定</Button>
+          </div>
+        }
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
+            为模型 <Text strong style={{ color: '#1677ff' }}>{pgModels.find(m => m.mid === pgCurrentMid)?.name}</Text> 选择一个体验方案
+          </Text>
+        </div>
+        <Radio.Group
+          value={pgSelectedSchemeId}
+          onChange={e => setPgSelectedSchemeId(e.target.value)}
+          style={{ width: '100%' }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {pgSchemes.map(scheme => (
+              <div
+                key={scheme.id}
+                style={{
+                  padding: '16px', borderRadius: 8,
+                  border: pgSelectedSchemeId === scheme.id ? '1px solid rgba(22,119,255,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                  background: pgSelectedSchemeId === scheme.id ? 'rgba(22,119,255,0.06)' : '#141414',
+                  cursor: 'pointer', transition: 'all 0.2s',
+                }}
+                onClick={() => setPgSelectedSchemeId(scheme.id)}
+              >
+                <Radio value={scheme.id}>
+                  <Text strong style={{ color: '#fff', fontSize: 14 }}>{scheme.name}</Text>
+                </Radio>
+                <div style={{ marginTop: 8, marginLeft: 24 }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>{scheme.description}</Text>
+                  <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {scheme.params?.map((p: any) => (
+                      <Tag key={p.key} style={{ fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
+                        {p.label}: {Array.isArray(p.options) ? p.options.join('/') : String(p.default)}
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Radio.Group>
+      </Drawer>
+    </div>
+  );
+
+  // ====== 体验方案配置 Tab ======
+  const playgroundSchemeTab = (
+    <div>
+      <div style={{ background: '#141414', borderRadius: 8, padding: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div>
+            <Text strong style={{ color: '#fff', fontSize: 14 }}>体验方案列表</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
+              管理内置和自定义的体验方案。每个方案定义了可配置的参数模板，绑定到模型后用户侧会动态展示。
+            </Text>
+          </div>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAddScheme}>新增方案</Button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {schemeList.map((scheme, idx) => (
+            <div key={scheme.id} style={{
+              padding: '16px 20px', borderRadius: 10,
+              border: '1px solid rgba(255,255,255,0.06)', background: '#1a1a1a',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <Text strong style={{ color: '#fff', fontSize: 14 }}>{scheme.name}</Text>
+                  {scheme.is_system && <Tag color="gold" style={{ fontSize: 10, borderRadius: 8, lineHeight: '18px' }}>内置</Tag>}
+                  <Tag style={{ fontSize: 10, borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>{scheme.type}</Tag>
+                </div>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 8 }}>{scheme.description}</Text>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {scheme.params?.map((p: any) => (
+                    <Tag key={p.key} style={{ fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)' }}>
+                      {p.label}: {Array.isArray(p.options) ? p.options.join('/') : String(p.default)}{p.unit ? ` ${p.unit}` : ''}
+                    </Tag>
+                  ))}
+                </div>
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace', display: 'block', marginTop: 6 }}>ID: {scheme.id}</Text>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <Button type="text" icon={<EditOutlined />} onClick={() => handleEditScheme(scheme, idx)} style={{ color: '#1677ff' }}>编辑</Button>
+                <Button type="text" icon={<DeleteOutlined />} onClick={() => handleDeleteScheme(idx)} danger disabled={!!scheme.is_system}>删除</Button>
+              </div>
+            </div>
+          ))}
+          {schemeList.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.3)' }}>暂无方案，点击「新增方案」创建</div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+          <Button type="primary" loading={savingSchemes} onClick={handleSaveAllSchemes} icon={<SaveOutlined />}>
+            保存全部方案
+          </Button>
+        </div>
+      </div>
+
+      {/* 方案编辑 Drawer */}
+      <Drawer
+        title={editingSchemeIndex >= 0 ? '编辑体验方案' : '新建体验方案'}
+        open={schemeEditVisible}
+        onClose={() => setSchemeEditVisible(false)}
+        width={600}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button onClick={() => setSchemeEditVisible(false)}>取消</Button>
+            <Button type="primary" onClick={handleSaveEditingScheme}>确认</Button>
+          </div>
+        }
+      >
+        {editingScheme && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* 基本信息 */}
+            <div>
+              <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>方案名称</Text>
+              <Input value={editingScheme.name} onChange={e => setEditingScheme({...editingScheme, name: e.target.value})} />
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>方案 ID</Text>
+                <Input value={editingScheme.id} onChange={e => setEditingScheme({...editingScheme, id: e.target.value})} disabled={!!editingScheme.is_system} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>类型</Text>
+                <Select value={editingScheme.type} onChange={v => setEditingScheme({...editingScheme, type: v})} style={{ width: '100%' }}
+                  options={[{ label: '视频 (video)', value: 'video' }, { label: '图片 (image)', value: 'image' }, { label: '聊天 (chat)', value: 'chat' }]}
+                />
+              </div>
+            </div>
+            <div>
+              <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>描述</Text>
+              <Input.TextArea value={editingScheme.description} onChange={e => setEditingScheme({...editingScheme, description: e.target.value})} autoSize={{ minRows: 2, maxRows: 4 }} />
+            </div>
+
+            <Divider style={{ margin: '8px 0', borderColor: 'rgba(255,255,255,0.06)' }} />
+
+            {/* 参数列表 */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text strong style={{ color: '#fff', fontSize: 14 }}>参数配置</Text>
+              <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={handleAddParam}>添加参数</Button>
+            </div>
+
+            {editingScheme.params?.map((param: any, pIdx: number) => (
+              <div key={pIdx} style={{ background: '#1a1a1a', borderRadius: 8, padding: 14, border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>参数 #{pIdx + 1}</Text>
+                  <Button type="text" size="small" icon={<DeleteOutlined />} danger onClick={() => handleRemoveParam(pIdx)} />
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Key</Text>
+                    <Input size="small" value={param.key} onChange={e => handleEditingSchemeParamChange(pIdx, 'key', e.target.value)} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>显示标签</Text>
+                    <Input size="small" value={param.label} onChange={e => handleEditingSchemeParamChange(pIdx, 'label', e.target.value)} />
+                  </div>
+                  <div style={{ width: 120 }}>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>控件类型</Text>
+                    <Select size="small" value={param.type} onChange={v => handleEditingSchemeParamChange(pIdx, 'type', v)} style={{ width: '100%' }}
+                      options={[{ label: 'Radio 单选', value: 'radio' }, { label: 'Select 下拉', value: 'select' }, { label: 'Switch 开关', value: 'switch' }]}
+                    />
+                  </div>
+                </div>
+                {param.type !== 'switch' && (
+                  <div style={{ marginBottom: 8 }}>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>选项列表（用英文逗号分隔）</Text>
+                    <Input size="small" value={Array.isArray(param.options) ? param.options.join(',') : ''}
+                      onChange={e => handleEditingSchemeParamChange(pIdx, 'options', e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean))}
+                      placeholder="例如: 16:9,9:16,1:1 或 480p,720p,1080p"
+                    />
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>默认值</Text>
+                    {param.type === 'switch' ? (
+                      <Switch checked={!!param.default} onChange={v => handleEditingSchemeParamChange(pIdx, 'default', v)} />
+                    ) : (
+                      <Input size="small" value={String(param.default ?? '')} onChange={e => handleEditingSchemeParamChange(pIdx, 'default', e.target.value)} />
+                    )}
+                  </div>
+                  <div style={{ width: 100 }}>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>单位</Text>
+                    <Input size="small" value={param.unit || ''} onChange={e => handleEditingSchemeParamChange(pIdx, 'unit', e.target.value)} placeholder="可选" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Drawer>
+    </div>
+  );
 
   return (
 
@@ -1001,10 +1335,8 @@ const PluginConfig: React.FC = () => {
             : plugin.name === 'playground'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
-                { key: 'video_models', label: '视频体验配置', children: renderPlaygroundTab('video_models', '视频体验模型') },
-                { key: 'image_models', label: '图片体验配置', children: renderPlaygroundTab('image_models', '图片体验模型') },
-                { key: 'chat_models', label: '聊天体验配置', children: renderPlaygroundTab('chat_models', '聊天体验模型') },
-                { key: 'audio_models', label: '声音体验配置', children: renderPlaygroundTab('audio_models', '声音体验模型') },
+                { key: 'playground_models', label: '体验模型管理', children: playgroundModelTab },
+                { key: 'playground_schemes', label: '体验方案配置', children: playgroundSchemeTab },
               ]
             : [
                 { key: 'audit_log', label: '审核日志', children: auditLogTab },

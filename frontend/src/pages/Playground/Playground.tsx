@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Layout, Typography, ConfigProvider, theme, Button, Select, Input, Spin, Tooltip, Radio, Drawer, Tag, Dropdown, message } from 'antd';
+import { Layout, Typography, ConfigProvider, theme, Button, Select, Input, Spin, Tooltip, Radio, Drawer, Tag, Dropdown, message, Switch, Modal } from 'antd';
 import { 
     VideoCameraOutlined, PictureOutlined, MessageOutlined, AudioOutlined, 
-    SettingOutlined, CompassOutlined, BulbOutlined, CloseOutlined, 
-    SlidersOutlined, PlusOutlined, AppstoreAddOutlined, DownOutlined, SearchOutlined,
-    StarOutlined, CopyOutlined, FileTextOutlined, InfoCircleOutlined, DollarOutlined, LockOutlined, KeyOutlined
+    SettingOutlined, CompassOutlined, CloseOutlined, 
+    SlidersOutlined, AppstoreAddOutlined, DownOutlined, SearchOutlined,
+    StarOutlined, CopyOutlined, FileTextOutlined, InfoCircleOutlined, DollarOutlined, KeyOutlined,
+    LoadingOutlined, PlayCircleOutlined, CheckCircleOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
@@ -14,78 +15,83 @@ const { Sider } = Layout;
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
+interface SchemeParam {
+  key: string;
+  label: string;
+  type: 'radio' | 'select' | 'switch';
+  options?: (string | number)[];
+  default: any;
+  unit?: string;
+}
+
+interface PlaygroundModel {
+  mid: string;
+  name: string;
+  model_id: string;
+  type_name: string;
+  scheme_id: string;
+  scheme_name: string;
+  scheme_type: string;
+  params: SchemeParam[];
+}
+
 const Playground: React.FC = () => {
   const navigate = useNavigate();
-  const [activeMenu, setActiveMenu] = useState('video');
   const [loading, setLoading] = useState(true);
-  const [config, setConfig] = useState<any>({});
-  
-  const [allModelsDetail, setAllModelsDetail] = useState<any[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [models, setModels] = useState<PlaygroundModel[]>([]);
+  const [selectedMid, setSelectedMid] = useState<string>('');
   const [prompt, setPrompt] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(true);
 
-  // 控制高级模型弹窗
-  const [isModelModalVisible, setIsModelModalVisible] = useState(false);
+  // 模型选择 Drawer
+  const [isModelDrawerVisible, setIsModelDrawerVisible] = useState(false);
   const [searchModelKeyword, setSearchModelKeyword] = useState('');
   
   // 用户令牌密钥
   const [apiTokens, setApiTokens] = useState<any[]>([]);
   const [selectedTokenKey, setSelectedTokenKey] = useState<string>('');
-  const [activeModelTab, setActiveModelTab] = useState('All');
+  const [isTokenModalVisible, setIsTokenModalVisible] = useState(false);
 
-  // 设置面板占位状态
-  const [aspectRatio, setAspectRatio] = useState('16:9');
-  const [videoDuration, setVideoDuration] = useState('8s');
-  const [frameRate, setFrameRate] = useState('24 fps');
-  const [resolution, setResolution] = useState('720p');
+  // 动态参数值
+  const [paramValues, setParamValues] = useState<Record<string, any>>({});
+
+  // 生成状态
+  const [generating, setGenerating] = useState(false);
+  const [generationResult, setGenerationResult] = useState<any>(null);
+  const [taskPolling, setTaskPolling] = useState(false);
+
+  // 当前活跃类别
+  const [activeCategory, setActiveCategory] = useState<string>('');
 
   useEffect(() => {
     document.title = 'TokensByte AI Studio';
     fetchInitialData();
   }, []);
 
-  useEffect(() => {
-    const rawMenuItems = [
-      { key: 'video', enabled: config.enable_video !== false },
-      { key: 'image', enabled: config.enable_image !== false },
-      { key: 'chat', enabled: config.enable_chat !== false },
-      { key: 'audio', enabled: config.enable_audio !== false },
-    ];
-    const activatedItems = rawMenuItems.filter(item => item.enabled);
-
-    if (Object.keys(config).length > 0) {
-      if (activatedItems.length > 0 && !activatedItems.find(m => m.key === activeMenu)) {
-        setActiveMenu(activatedItems[0].key);
-      }
-    }
-
-    const models = config[`${activeMenu}_models`] || [];
-    if (models.length > 0) {
-      setSelectedModel(models[0]);
-    } else {
-      setSelectedModel('');
-    }
-  }, [activeMenu, config]);
-
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const [configRes, modelsRes, tokensRes] = await Promise.all([
+      const [configRes, tokensRes] = await Promise.all([
           request.get('/plugins/playground/playground-public-config') as Promise<any>,
-          request.get('/models?page_size=1000') as Promise<any>,
           request.get('/tokens').catch(() => ({ data: [] })) as Promise<any>
       ]);
-      setConfig(configRes || {});
       
-      let allModels = [];
-      if (modelsRes && modelsRes.models) allModels = modelsRes.models;
-      else if (modelsRes && modelsRes.data && Array.isArray(modelsRes.data)) allModels = modelsRes.data;
-      else if (Array.isArray(modelsRes)) allModels = modelsRes;
-      
-      setAllModelsDetail(allModels);
+      const enabledModels: PlaygroundModel[] = configRes?.models || [];
+      setModels(enabledModels);
 
-      if (tokensRes && tokensRes.data && Array.isArray(tokensRes.data)) {
+      // 自动选择第一个类别和模型
+      if (enabledModels.length > 0) {
+        const categories = [...new Set(enabledModels.map(m => m.scheme_type || m.type_name))];
+        const firstCat = categories[0] || '';
+        setActiveCategory(firstCat);
+        const firstModel = enabledModels.find(m => (m.scheme_type || m.type_name) === firstCat);
+        if (firstModel) {
+          setSelectedMid(firstModel.mid);
+          initParamDefaults(firstModel.params);
+        }
+      }
+
+      if (tokensRes?.data && Array.isArray(tokensRes.data)) {
         setApiTokens(tokensRes.data);
       }
     } catch (e) {
@@ -95,64 +101,310 @@ const Playground: React.FC = () => {
     }
   };
 
-  const getMenuIcon = (key: string, isActive: boolean) => {
+  const initParamDefaults = (params: SchemeParam[]) => {
+    const defaults: Record<string, any> = {};
+    for (const p of params) {
+      defaults[p.key] = p.default;
+    }
+    setParamValues(defaults);
+  };
+
+  // 当前选中的模型对象
+  const currentModel = useMemo(() => {
+    return models.find(m => m.mid === selectedMid) || null;
+  }, [selectedMid, models]);
+
+  // 可用类别列表
+  const categories = useMemo(() => {
+    const cats = [...new Set(models.map(m => m.scheme_type || m.type_name))];
+    return cats.filter(Boolean);
+  }, [models]);
+
+  // 当前类别下的模型
+  const modelsInCategory = useMemo(() => {
+    return models.filter(m => {
+      const cat = m.scheme_type || m.type_name;
+      return cat === activeCategory;
+    }).filter(m => {
+      if (!searchModelKeyword) return true;
+      return m.name.toLowerCase().includes(searchModelKeyword.toLowerCase());
+    });
+  }, [models, activeCategory, searchModelKeyword]);
+
+  const getCategoryIcon = (cat: string, isActive: boolean) => {
     const color = isActive ? '#fff' : 'rgba(255,255,255,0.45)';
     const size = 20;
-    switch(key) {
-      case 'video': return <VideoCameraOutlined style={{ color, fontSize: size }} />;
-      case 'image': return <PictureOutlined style={{ color, fontSize: size }} />;
-      case 'chat': return <MessageOutlined style={{ color, fontSize: size }} />;
-      case 'audio': return <AudioOutlined style={{ color, fontSize: size }} />;
-      default: return <SettingOutlined />;
+    if (cat === 'video' || cat.includes('视频')) return <VideoCameraOutlined style={{ color, fontSize: size }} />;
+    if (cat === 'image' || cat.includes('图片')) return <PictureOutlined style={{ color, fontSize: size }} />;
+    if (cat === 'chat' || cat.includes('聊天')) return <MessageOutlined style={{ color, fontSize: size }} />;
+    if (cat === 'audio' || cat.includes('音频')) return <AudioOutlined style={{ color, fontSize: size }} />;
+    return <CompassOutlined style={{ color, fontSize: size }} />;
+  };
+
+  const getCategoryLabel = (cat: string) => {
+    if (cat === 'video' || cat.includes('视频')) return 'Video Gen';
+    if (cat === 'image' || cat.includes('图片')) return 'Image Gen';
+    if (cat === 'chat' || cat.includes('聊天')) return 'Chat';
+    if (cat === 'audio' || cat.includes('音频')) return 'Audio Voice';
+    return cat;
+  };
+
+  // 切换类别时自动选中该类别第一个模型
+  const handleCategoryChange = (cat: string) => {
+    setActiveCategory(cat);
+    const first = models.find(m => (m.scheme_type || m.type_name) === cat);
+    if (first) {
+      setSelectedMid(first.mid);
+      initParamDefaults(first.params);
+    }
+    setGenerationResult(null);
+  };
+
+  // 选中模型时初始化参数
+  const handleSelectModel = (mid: string) => {
+    setSelectedMid(mid);
+    const model = models.find(m => m.mid === mid);
+    if (model) {
+      initParamDefaults(model.params);
+    }
+    setIsModelDrawerVisible(false);
+    setGenerationResult(null);
+  };
+
+  // 发送生成请求
+  const handleGenerate = async () => {
+    if (!currentModel || !prompt.trim()) return;
+    if (!selectedTokenKey) {
+      message.warning('请先选择一个 API 密钥');
+      return;
+    }
+
+    setGenerating(true);
+    setGenerationResult(null);
+
+    try {
+      const schemeType = currentModel.scheme_type || '';
+      const body: any = {
+        model: currentModel.model_id,
+        prompt: prompt.trim(),
+        ...paramValues,
+      };
+
+      let endpoint = '';
+      if (schemeType === 'video' || currentModel.type_name.includes('视频')) {
+        endpoint = '/v1/video/generations';
+      } else if (schemeType === 'image' || currentModel.type_name.includes('图片')) {
+        endpoint = '/v1/images/generations';
+      } else {
+        endpoint = '/v1/chat/completions';
+        body.messages = [{ role: 'user', content: prompt.trim() }];
+        delete body.prompt;
+      }
+
+      const res = await (request.post(endpoint, body, {
+        headers: { 'Authorization': `Bearer ${selectedTokenKey}` }
+      }) as Promise<any>);
+
+      // 视频异步任务需要轮询
+      if (endpoint === '/v1/video/generations' && res?.id) {
+        setGenerationResult({ status: 'processing', task_id: res.id, ...res });
+        pollTaskStatus(res.id, currentModel.model_id);
+      } else {
+        setGenerationResult({ status: 'completed', data: res });
+        setGenerating(false);
+      }
+    } catch (e: any) {
+      const errMsg = e?.response?.data?.error?.message || e?.message || '生成失败';
+      message.error(errMsg);
+      setGenerationResult({ status: 'error', message: errMsg });
+      setGenerating(false);
     }
   };
 
-  // 通过 mid 匹配获得详细的选中模型对象数据（mid 不变，改名称不会失效）
-  const currentModelDetail = useMemo(() => {
-      if (!selectedModel || !allModelsDetail) return null;
-      // 优先用 mid 匹配，兼容旧版本用 name 得到的数据
-      return allModelsDetail.find(m => m.mid === selectedModel) 
-          || allModelsDetail.find(m => m.name === selectedModel);
-  }, [selectedModel, allModelsDetail]);
+  // 轮询视频任务状态
+  const pollTaskStatus = async (taskId: string, modelId: string) => {
+    setTaskPolling(true);
+    let attempts = 0;
+    const maxAttempts = 120; // 最多等待 10 分钟
 
-  const getMenuLabel = (key: string) => {
-    switch(key) {
-      case 'video': return 'Video Gen';
-      case 'image': return 'Image Gen';
-      case 'chat': return 'Chat';
-      case 'audio': return 'Audio Voice';
-      default: return '';
-    }
+    const poll = async () => {
+      if (attempts >= maxAttempts) {
+        setGenerationResult((prev: any) => ({ ...prev, status: 'timeout', message: '生成超时，请稍后在日志中查看结果' }));
+        setGenerating(false);
+        setTaskPolling(false);
+        return;
+      }
+      attempts++;
+
+      try {
+        const res = await (request.get(`/v1/video/generations/${taskId}?model=${modelId}`, {
+          headers: { 'Authorization': `Bearer ${selectedTokenKey}` }
+        }) as Promise<any>);
+
+        const status = res?.status || res?.final_result?.status || '';
+        
+        if (status === 'succeeded') {
+          setGenerationResult({ status: 'completed', data: res });
+          setGenerating(false);
+          setTaskPolling(false);
+          return;
+        } else if (status === 'failed') {
+          setGenerationResult({ status: 'error', message: res?.error?.message || '生成失败', data: res });
+          setGenerating(false);
+          setTaskPolling(false);
+          return;
+        }
+
+        // 继续轮询
+        setTimeout(poll, 5000);
+      } catch (e) {
+        setTimeout(poll, 5000);
+      }
+    };
+
+    setTimeout(poll, 3000);
   };
 
-  const renderSidebarItem = (key: string) => {
-    if (config[`enable_${key}`] === false) return null;
-    const isActive = activeMenu === key;
-    return (
-      <Tooltip placement="right" title={getMenuLabel(key)} key={key}>
-        <div 
-          onClick={() => setActiveMenu(key)}
-          style={{
-            width: 48, height: 48, borderRadius: 12, margin: '8px auto', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', background: isActive ? 'rgba(255, 255, 255, 0.08)' : 'transparent', transition: 'all 0.2s',
-            boxShadow: isActive ? 'inset 0 0 0 1px rgba(255,255,255,0.1)' : 'none'
-          }}
-        >
-          {getMenuIcon(key, isActive)}
+  // 渲染动态参数面板
+  const renderParamControl = (param: SchemeParam) => {
+    const value = paramValues[param.key] ?? param.default;
+
+    if (param.type === 'radio' && param.options) {
+      return (
+        <div key={param.key}>
+          <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+          <div style={{ width: '100%', display: 'flex', height: 68, background: '#17181A', borderRadius: 12, padding: 4 }}>
+            {param.options.map(opt => {
+              const isActive = value === opt;
+              return (
+                <div 
+                  key={String(opt)}
+                  onClick={() => setParamValues(prev => ({ ...prev, [param.key]: opt }))}
+                  style={{ 
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
+                    cursor: 'pointer', background: isActive ? '#33373E' : 'transparent', borderRadius: 8, 
+                    color: isActive ? '#fff' : 'rgba(255,255,255,0.45)', transition: 'all 0.2s',
+                    fontSize: 13, fontWeight: 500,
+                  }}
+                >
+                  {String(opt).includes(':') ? (
+                    <>
+                      <div style={{ 
+                        width: String(opt) === '16:9' || String(opt) === '21:9' ? 22 : String(opt) === '9:16' ? 12 : String(opt) === '1:1' ? 16 : String(opt) === '4:3' ? 18 : String(opt) === '3:4' ? 14 : 16,
+                        height: String(opt) === '16:9' || String(opt) === '21:9' ? 12 : String(opt) === '9:16' ? 22 : String(opt) === '1:1' ? 16 : String(opt) === '4:3' ? 14 : String(opt) === '3:4' ? 18 : 16,
+                        border: '1.5px solid currentColor', borderRadius: 2, marginBottom: 6
+                      }}></div>
+                      <span>{String(opt)}</span>
+                    </>
+                  ) : (
+                    <span>{String(opt)}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </Tooltip>
-    );
+      );
+    }
+
+    if (param.type === 'select' && param.options) {
+      return (
+        <div key={param.key}>
+          <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+          <Select 
+            style={{ width: '100%' }} size="large" 
+            value={value} 
+            onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))} 
+            popupClassName="dark-select-dropdown"
+            options={param.options.map(opt => ({ label: `${opt}${param.unit ? ' ' + param.unit : ''}`, value: opt }))}
+          />
+        </div>
+      );
+    }
+
+    if (param.type === 'switch') {
+      return (
+        <div key={param.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+          <Switch 
+            checked={!!value}
+            onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))}
+          />
+        </div>
+      );
+    }
+
+    return null;
   };
 
-  // 弹窗中过滤出属于当前频道的可用模型表（通过 mid 匹配，妁dad name 兼容）
-  const availableModelsInCurrentMenu = useMemo(() => {
-      const activeMenuStrModels: string[] = config[`${activeMenu}_models`] || [];
-      return allModelsDetail.filter(am => 
-          activeMenuStrModels.includes(am.mid) || activeMenuStrModels.includes(am.name)
-      ).filter(am => 
-          !searchModelKeyword || am.name.toLowerCase().includes(searchModelKeyword.toLowerCase())
+  // 渲染生成结果
+  const renderResult = () => {
+    if (!generationResult) return null;
+
+    if (generationResult.status === 'processing') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 16 }}>
+          <LoadingOutlined style={{ fontSize: 48, color: '#A2C1FF' }} />
+          <Title level={4} style={{ color: 'rgba(255,255,255,0.9)', margin: 0 }}>正在生成中...</Title>
+          <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>任务ID: {generationResult.task_id}</Text>
+        </div>
       );
-  }, [activeMenu, config, allModelsDetail, searchModelKeyword]);
+    }
+
+    if (generationResult.status === 'error') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 16 }}>
+          <Text style={{ color: '#ff4d4f', fontSize: 16 }}>生成失败</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, maxWidth: 400, textAlign: 'center' }}>{generationResult.message}</Text>
+        </div>
+      );
+    }
+
+    if (generationResult.status === 'completed') {
+      const data = generationResult.data;
+      
+      // 视频结果
+      const videoUrl = data?.content?.video_url || data?.final_result?.video_url || data?.video_url;
+      if (videoUrl) {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 16, padding: 24 }}>
+            <CheckCircleOutlined style={{ fontSize: 24, color: '#52c41a' }} />
+            <video src={videoUrl} controls style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: 12 }} />
+            <Button type="link" href={videoUrl} target="_blank">下载视频</Button>
+          </div>
+        );
+      }
+
+      // 图片结果
+      const imageData = data?.data?.[0] || data?.content?.image_url;
+      const imageUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
+      if (imageUrl) {
+        const isBase64 = imageUrl.length > 200;
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 16, padding: 24 }}>
+            <CheckCircleOutlined style={{ fontSize: 24, color: '#52c41a' }} />
+            <img 
+              src={isBase64 ? `data:image/png;base64,${imageUrl}` : imageUrl} 
+              alt="Generated" 
+              style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: 12 }} 
+            />
+          </div>
+        );
+      }
+
+      // 通用 JSON 结果
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 16, padding: 24 }}>
+          <CheckCircleOutlined style={{ fontSize: 24, color: '#52c41a' }} />
+          <pre style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, maxHeight: '60vh', overflow: 'auto', background: '#1A1B1E', padding: 16, borderRadius: 8, width: '100%', maxWidth: 600 }}>
+            {JSON.stringify(data, null, 2)}
+          </pre>
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <ConfigProvider theme={{ algorithm: theme.darkAlgorithm, token: { colorPrimary: '#A2C1FF', borderRadius: 12, colorBgContainer: '#1E1F22', colorBorder: 'rgba(255,255,255,0.08)' } }}>
@@ -168,10 +420,23 @@ const Playground: React.FC = () => {
               />
           </div>
           <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {renderSidebarItem('video')}
-            {renderSidebarItem('image')}
-            {renderSidebarItem('chat')}
-            {renderSidebarItem('audio')}
+            {categories.map(cat => {
+              const isActive = activeCategory === cat;
+              return (
+                <Tooltip placement="right" title={getCategoryLabel(cat)} key={cat}>
+                  <div 
+                    onClick={() => handleCategoryChange(cat)}
+                    style={{
+                      width: 48, height: 48, borderRadius: 12, margin: '8px auto', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', background: isActive ? 'rgba(255, 255, 255, 0.08)' : 'transparent', transition: 'all 0.2s',
+                      boxShadow: isActive ? 'inset 0 0 0 1px rgba(255,255,255,0.1)' : 'none'
+                    }}
+                  >
+                    {getCategoryIcon(cat, isActive)}
+                  </div>
+                </Tooltip>
+              );
+            })}
           </div>
         </Sider>
 
@@ -209,13 +474,21 @@ const Playground: React.FC = () => {
                 ) : (
                   <>
                     <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                        <CompassOutlined style={{ fontSize: 48, color: 'rgba(255,255,255,0.05)', marginBottom: 20 }} />
-                        <Title level={2} style={{ color: 'rgba(255,255,255,0.9)', letterSpacing: '0.5px', margin: '0 0 16px 0' }}>
-                            Upgrade to unlock {activeMenu === 'image' ? 'Pro Generation' : 'Veo Series'}
-                        </Title>
-                        <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, maxWidth: 400, textAlign: 'center', lineHeight: 1.6 }}>
-                            This is an immersive environment for {getMenuLabel(activeMenu)}. Describe your vision below to begin testing models.
-                        </Text>
+                        {generationResult ? (
+                          renderResult()
+                        ) : (
+                          <>
+                            <CompassOutlined style={{ fontSize: 48, color: 'rgba(255,255,255,0.05)', marginBottom: 20 }} />
+                            <Title level={2} style={{ color: 'rgba(255,255,255,0.9)', letterSpacing: '0.5px', margin: '0 0 16px 0' }}>
+                                {currentModel ? currentModel.name : 'AI Experience Center'}
+                            </Title>
+                            <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, maxWidth: 400, textAlign: 'center', lineHeight: 1.6 }}>
+                                {currentModel 
+                                  ? `使用 ${currentModel.scheme_name || '默认方案'} 进行体验。选择右侧参数后输入提示词开始生成。`
+                                  : '请在右侧面板选择一个模型，然后描述你的创意开始体验。'}
+                            </Text>
+                          </>
+                        )}
                     </div>
 
                     <div style={{
@@ -225,69 +498,49 @@ const Playground: React.FC = () => {
                         <TextArea 
                             value={prompt}
                             onChange={e => setPrompt(e.target.value)}
-                            placeholder={`Describe your ${activeMenu}...`}
+                            placeholder={currentModel ? `描述你的${getCategoryLabel(activeCategory)}创意...` : '请先选择模型...'}
                             autoSize={{ minRows: 3, maxRows: 8 }}
                             bordered={false}
                             style={{ color: '#E8EAED', resize: 'none', padding: '16px', fontSize: 15, lineHeight: '1.6', background: 'transparent' }}
                         />
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'rgba(0,0,0,0.1)' }}>
                             <div style={{ display: 'flex', gap: 12 }}>
-                                <Dropdown 
-                                    trigger={['click']}
-                                    placement="topLeft"
-                                    menu={{
-                                        items: apiTokens.map(t => ({
-                                            key: t.token_key,
-                                            label: (
-                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                    <span style={{ fontWeight: 500 }}>{t.name}</span>
-                                                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontFamily: 'monospace' }}>
-                                                        {t.token_key.substring(0, 8)}...{t.token_key.substring(t.token_key.length - 4)}
-                                                    </span>
+                                <Tooltip title={selectedTokenKey ? "更换 API 密钥" : "选择 API 密钥"}>
+                                    <Button 
+                                        type="text" 
+                                        shape="circle" 
+                                        onClick={() => setIsTokenModalVisible(true)}
+                                        icon={
+                                            selectedTokenKey ? <KeyOutlined /> : (
+                                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <KeyOutlined />
+                                                    <div style={{ position: 'absolute', width: '100%', height: 1.5, background: 'currentColor', transform: 'rotate(45deg)' }} />
                                                 </div>
                                             )
-                                        })),
-                                        onClick: (e) => {
-                                            setSelectedTokenKey(e.key);
-                                            message.success('已切换当前调用的令牌密钥');
-                                        }
-                                    }}
-                                >
-                                    <Tooltip title={selectedTokenKey ? "更换 API 密钥" : "选择 API 密钥"}>
-                                        <Button 
-                                            type="text" 
-                                            shape="circle" 
-                                            icon={
-                                                selectedTokenKey ? <KeyOutlined /> : (
-                                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                        <KeyOutlined />
-                                                        <div style={{ position: 'absolute', width: '100%', height: 1.5, background: 'currentColor', transform: 'rotate(45deg)' }} />
-                                                    </div>
-                                                )
-                                            } 
-                                            style={{ 
-                                                color: selectedTokenKey ? '#1677ff' : 'rgba(255,255,255,0.4)', 
-                                                background: selectedTokenKey ? 'rgba(22,119,255,0.1)' : 'rgba(255,255,255,0.03)',
-                                                border: selectedTokenKey ? '1px solid rgba(22,119,255,0.2)' : 'none'
-                                            }} 
-                                        />
-                                    </Tooltip>
-                                </Dropdown>
-                                <Button icon={<AppstoreAddOutlined />} style={{ background: 'rgba(255,255,255,0.03)', border: 'none', color: 'rgba(255,255,255,0.4)', borderRadius: 20 }}>Tools</Button>
+                                        } 
+                                        style={{ 
+                                            color: selectedTokenKey ? '#1677ff' : 'rgba(255,255,255,0.4)', 
+                                            background: selectedTokenKey ? 'rgba(22,119,255,0.1)' : 'rgba(255,255,255,0.03)',
+                                            border: selectedTokenKey ? '1px solid rgba(22,119,255,0.2)' : 'none'
+                                        }} 
+                                    />
+                                </Tooltip>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <Tooltip title="Add reference"><Button type="text" shape="circle" icon={<PlusOutlined />} style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.03)' }} /></Tooltip>
                                 <Button 
                                     type="primary" 
-                                    disabled={!selectedModel || !prompt.trim()}
+                                    disabled={!currentModel || !prompt.trim() || generating}
+                                    loading={generating}
+                                    onClick={handleGenerate}
+                                    icon={generating ? undefined : <PlayCircleOutlined />}
                                     style={{
                                         height: 38, borderRadius: 19, padding: '0 20px', fontWeight: 500,
-                                        background: selectedModel && prompt.trim() ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)',
-                                        color: selectedModel && prompt.trim() ? '#fff' : 'rgba(255,255,255,0.3)',
-                                        border: 'none', boxShadow: 'none'
+                                        background: currentModel && prompt.trim() && !generating ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'rgba(255,255,255,0.03)',
+                                        color: currentModel && prompt.trim() ? '#fff' : 'rgba(255,255,255,0.3)',
+                                        border: 'none', boxShadow: currentModel && prompt.trim() && !generating ? '0 4px 15px rgba(102,126,234,0.4)' : 'none'
                                     }}
                                 >
-                                    Run ⌘ ↵
+                                    {generating ? '生成中...' : 'Run ⌘ ↵'}
                                 </Button>
                             </div>
                         </div>
@@ -319,10 +572,10 @@ const Playground: React.FC = () => {
                 </div>
                 
                 <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
-                    {/* 高仿 AI Studio 模型的粗体厚重卡片入口 */}
+                    {/* 模型选择卡片 */}
                     <div>
                         <div 
-                            onClick={() => setIsModelModalVisible(true)}
+                            onClick={() => setIsModelDrawerVisible(true)}
                             className="studio-model-card"
                             style={{ 
                                 background: '#202124', borderRadius: 12, padding: '16px', 
@@ -331,89 +584,52 @@ const Playground: React.FC = () => {
                             }}
                         >
                             <div style={{ color: '#E8eaed', fontSize: 17, fontWeight: 500, marginBottom: 8, paddingRight: 24 }}>
-                                {selectedModel || 'Select a model...'}
+                                {currentModel?.name || '选择模型...'}
                             </div>
                             <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                                {currentModelDetail?.model_desc || 'Select the most appropriate generative model to process your workflow requirement. Available to all platform registered developers.'}
+                                {currentModel?.scheme_name 
+                                  ? `${currentModel.scheme_name} · ${currentModel.model_id}`
+                                  : '选择适合的生成模型来处理你的工作流需求。'}
                             </div>
                             <div style={{ position: 'absolute', right: 16, top: 16, color: 'rgba(255,255,255,0.4)' }}><DownOutlined /></div>
                         </div>
                     </div>
 
-                    {/* Placeholder Settings specific to Video */}
-                    {(activeMenu === 'video') && (
-                        <>
-                          <div>
-                              <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>Aspect ratio</Text>
-                              <div style={{ width: '100%', display: 'flex', height: 68, background: '#17181A', borderRadius: 12, padding: 4 }}>
-                                 <div 
-                                    onClick={() => setAspectRatio('16:9')}
-                                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: aspectRatio === '16:9' ? '#33373E' : 'transparent', borderRadius: 8, color: aspectRatio === '16:9' ? '#fff' : 'rgba(255,255,255,0.45)', transition: 'all 0.2s' }}
-                                 >
-                                    <div style={{ width: 22, height: 12, border: '1.5px solid currentColor', borderRadius: 2, marginBottom: 6 }}></div>
-                                    <span style={{ fontSize: 13, fontWeight: 500 }}>16:9</span>
-                                 </div>
-                                 <div 
-                                    onClick={() => setAspectRatio('9:16')}
-                                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: aspectRatio === '9:16' ? '#33373E' : 'transparent', borderRadius: 8, color: aspectRatio === '9:16' ? '#fff' : 'rgba(255,255,255,0.45)', transition: 'all 0.2s' }}
-                                 >
-                                    <div style={{ width: 12, height: 22, border: '1.5px solid currentColor', borderRadius: 2, marginBottom: 6 }}></div>
-                                    <span style={{ fontSize: 13, fontWeight: 500 }}>9:16</span>
-                                 </div>
-                              </div>
-                          </div>
-                          
-                          <div>
-                              <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>Video duration</Text>
-                              <Select style={{ width: '100%' }} size="large" value={videoDuration} onChange={setVideoDuration} popupClassName="dark-select-dropdown"
-                                  options={[{ label: '8s', value: '8s' }, { label: '16s', value: '16s' }]}
-                              />
-                          </div>
-
-                          <div>
-                              <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>Frame rate</Text>
-                              <Select style={{ width: '100%' }} size="large" value={frameRate} onChange={setFrameRate} popupClassName="dark-select-dropdown"
-                                  options={[{ label: '24 fps', value: '24 fps' }, { label: '30 fps', value: '30 fps' }]}
-                              />
-                          </div>
-
-                          <div>
-                              <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>Output resolution</Text>
-                              <Select style={{ width: '100%' }} size="large" value={resolution} onChange={setResolution} popupClassName="dark-select-dropdown"
-                                  options={[{ label: '720p', value: '720p' }, { label: '1080p', value: '1080p' }]}
-                              />
-                          </div>
-                        </>
+                    {/* 动态参数面板 — 根据模型绑定的方案渲染 */}
+                    {currentModel?.params && currentModel.params.length > 0 && (
+                      currentModel.params.map(param => renderParamControl(param))
                     )}
 
-                    {(activeMenu === 'image') && (
-                        <>
-                          <div>
-                              <Text style={{ display: 'block', margin: '20px 0 12px 0', fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>Output resolution</Text>
-                              <Select style={{ width: '100%' }} size="large" value={resolution} onChange={setResolution} popupClassName="dark-select-dropdown"
-                                  options={[{ label: '1024x1024', value: '1024x1024' }, { label: '1920x1080', value: '1920x1080' }]}
-                              />
-                          </div>
-                        </>
+                    {/* 无参数时的提示 */}
+                    {currentModel && (!currentModel.params || currentModel.params.length === 0) && (
+                      <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>该模型未绑定体验方案，无可配置参数</Text>
+                      </div>
+                    )}
+
+                    {!currentModel && (
+                      <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>请先选择一个模型</Text>
+                      </div>
                     )}
                 </div>
             </div>
         </Sider>
 
-        {/* 模型全景选择器抽屉 (取代之前的弹窗，实现从右向左滑入的覆盖抽屉效果) */}
+        {/* 模型全景选择器抽屉 */}
         <Drawer
             title={<span style={{ fontSize: 18, fontWeight: 600, color: '#e8eaed' }}>Model selection</span>}
-            open={isModelModalVisible}
-            onClose={() => setIsModelModalVisible(false)}
+            open={isModelDrawerVisible}
+            onClose={() => setIsModelDrawerVisible(false)}
             placement="right"
             width={480}
-            mask={false} /* 移除黑底，产生直接在页面操作侧滑覆盖的连续感 */
+            mask={false}
             rootClassName="studio-model-drawer"
             closeIcon={<CloseOutlined style={{ color: '#e8eaed' }} />}
             style={{ background: '#1c1c1f', borderLeft: '1px solid rgba(255,255,255,0.06)' }}
-            getContainer={false} /* 可以限制在布局内，但全屏时 false 或挂在 body 都一样 */
+            getContainer={false}
         >
-            <div style={{}}>
+            <div>
                 <Input 
                     size="large" prefix={<SearchOutlined style={{ color: 'rgba(255,255,255,0.4)', paddingRight: 8 }} />} 
                     placeholder="Search for a model" 
@@ -421,73 +637,46 @@ const Playground: React.FC = () => {
                     style={{ background: '#131416', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', borderRadius: 8 }}
                 />
             </div>
-            
-            {/* Tag Tabs 横条 */}
-            <div style={{ display: 'flex', gap: 8, padding: '16px 0', overflowX: 'auto', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                {['All', 'Video', 'Images', 'Featured', 'Gemini'].map(t => (
-                    <div 
-                        key={t} onClick={() => setActiveModelTab(t)}
-                        style={{ 
-                            padding: '6px 16px', borderRadius: 20, cursor: 'pointer', fontSize: 13,
-                            background: activeModelTab === t ? 'rgba(255,255,255,0.1)' : 'transparent',
-                            border: activeModelTab === t ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.08)',
-                            color: activeModelTab === t ? '#fff' : 'rgba(255,255,255,0.6)',
-                            whiteSpace: 'nowrap'
-                        }}
-                    >
-                        {t}
-                    </div>
-                ))}
-            </div>
 
-            {/* 模型列表大画卷 */}
-            <div style={{ height: 450, overflowY: 'auto', paddingRight: '4px', marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {availableModelsInCurrentMenu.length === 0 ? (
-                    <div style={{ color: 'rgba(255,255,255,0.4)', textAlign: 'center', padding: '60px 0' }}>No models found for this category.</div>
+            {/* 模型列表 */}
+            <div style={{ height: 500, overflowY: 'auto', paddingRight: '4px', marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {modelsInCategory.length === 0 ? (
+                    <div style={{ color: 'rgba(255,255,255,0.4)', textAlign: 'center', padding: '60px 0' }}>该类别下暂无可体验的模型。</div>
                 ) : (
-                    availableModelsInCurrentMenu.map(model => (
+                    modelsInCategory.map(model => (
                         <div 
-                            key={model.id}
+                            key={model.mid}
                             className="studio-model-list-item"
-                            onClick={() => { setSelectedModel(model.mid || model.name); setIsModelModalVisible(false); }}
+                            onClick={() => handleSelectModel(model.mid)}
                             style={{ 
-                                background: '#1c1c1f', padding: '16px 20px', borderRadius: 12,
-                                border: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer', display: 'flex', gap: 16
+                                background: selectedMid === model.mid ? 'rgba(22,119,255,0.06)' : '#1c1c1f', 
+                                padding: '16px 20px', borderRadius: 12,
+                                border: selectedMid === model.mid ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.03)', 
+                                cursor: 'pointer', display: 'flex', gap: 16
                             }}
                         >
-                            {/* 左侧图标 */}
                             <div style={{ fontSize: 24, padding: 4, opacity: 0.8, color: '#A2C1FF' }}>
-                                {activeMenu === 'video' ? <VideoCameraOutlined /> : (activeMenu === 'chat' ? <MessageOutlined /> : <PictureOutlined/>)}
+                                {getCategoryIcon(activeCategory, true)}
                             </div>
                             
-                            {/* 内容主体 */}
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, flexWrap: 'wrap' }}>
                                         <div style={{ color: '#E8eaed', fontSize: 16, fontWeight: 500, wordBreak: 'break-word', lineHeight: 1.4 }}>{model.name}</div>
-                                        <div style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 12, fontSize: 12, color: '#bfbfbf', whiteSpace: 'nowrap', flexShrink: 0, marginTop: 2 }}>• Paid</div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 12, color: 'rgba(255,255,255,0.4)', flexShrink: 0, marginTop: 4 }}>
-                                        <StarOutlined />
-                                        <CopyOutlined />
-                                        <FileTextOutlined />
                                     </div>
                                 </div>
-                                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginTop: 4 }}>ID: {model.code || model.name}</div>
+                                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginTop: 4 }}>ID: {model.model_id}</div>
                                 
-                                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, marginTop: 16, lineHeight: 1.5 }}>
-                                    <InfoCircleOutlined style={{ marginRight: 6 }} />
-                                    {model.model_desc || 'A standard generative model configured via TokensByte core. Provides steady generation speed.'}
-                                </div>
+                                {model.scheme_name && (
+                                  <div style={{ marginTop: 8 }}>
+                                    <Tag color="blue" style={{ borderRadius: 12, fontSize: 11 }}>{model.scheme_name}</Tag>
+                                  </div>
+                                )}
                                 
-                                <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
+                                <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
                                     <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
                                         <DollarOutlined style={{ marginRight: 6 }} />
-                                        Usage cost standard active
-                                    </div>
-                                    <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
-                                        <LockOutlined style={{ marginRight: 6 }} />
-                                        Knowledge cutoff: Unknown
+                                        按量计费
                                     </div>
                                 </div>
                             </div>
@@ -496,6 +685,62 @@ const Playground: React.FC = () => {
                 )}
             </div>
         </Drawer>
+
+        {/* 关联付费 API 密钥 Modal */}
+        <Modal
+            title="关联付费 API 密钥"
+            open={isTokenModalVisible}
+            onCancel={() => setIsTokenModalVisible(false)}
+            footer={null}
+            width={480}
+            styles={{
+                content: { backgroundColor: '#1E1F22', border: '1px solid rgba(255,255,255,0.08)' },
+                header: { backgroundColor: '#1E1F22', borderBottom: '1px solid rgba(255,255,255,0.08)' },
+                title: { color: '#E8EAED', fontWeight: 500 }
+            }}
+            closeIcon={<CloseOutlined style={{ color: 'rgba(255,255,255,0.45)' }} />}
+        >
+            <div style={{ maxHeight: 400, overflowY: 'auto', padding: '12px 0' }}>
+                {apiTokens.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)', padding: '60px 0' }}>
+                        暂无可用的接口密钥，请先在「接口令牌」页创建
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {apiTokens.map(t => (
+                            <div 
+                                key={t.token_key}
+                                onClick={() => {
+                                    setSelectedTokenKey(t.token_key);
+                                    setIsTokenModalVisible(false);
+                                    message.success('已切换当前调用的令牌密钥');
+                                }}
+                                style={{
+                                    padding: '16px',
+                                    borderRadius: 8,
+                                    background: selectedTokenKey === t.token_key ? 'rgba(22,119,255,0.1)' : 'rgba(255,255,255,0.02)',
+                                    border: `1px solid ${selectedTokenKey === t.token_key ? '#1677ff' : 'rgba(255,255,255,0.06)'}`,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.3s'
+                                }}
+                            >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ fontWeight: 500, color: '#E8EAED', fontSize: 15, marginBottom: 4 }}>{t.name}</span>
+                                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', fontFamily: 'monospace' }}>
+                                            {t.token_key.substring(0, 12)}...{t.token_key.substring(t.token_key.length - 6)}
+                                        </span>
+                                    </div>
+                                    {selectedTokenKey === t.token_key && (
+                                        <CheckCircleOutlined style={{ color: '#1677ff', fontSize: 18 }} />
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </Modal>
 
       </Layout>
     </ConfigProvider>

@@ -121,10 +121,44 @@ pub async fn backup_database(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<serde_json::Value>> {
     let db_url = &state.config.database_url;
+    let now = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let file_name = format!("tb{}", now);
+    
+    // Ensure data directory exists
+    if let Err(e) = std::fs::create_dir_all("data") {
+        return Ok(Json(serde_json::json!({"success": false, "message": format!("无法创建备份目录: {}", e)})));
+    }
+
     if db_url.starts_with("postgres:") || db_url.starts_with("postgresql:") {
-        Ok(Json(serde_json::json!({"success": true, "message": "PostgreSQL 备份应使用 pg_dump 工具进行，系统已记录备份请求（演示版）"})))
+        let output_path = format!("data/{}.sql", file_name);
+        // Execute pg_dump
+        let output = std::process::Command::new("pg_dump")
+            .arg(db_url)
+            .arg("-f")
+            .arg(&output_path)
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                Ok(Json(serde_json::json!({"success": true, "message": format!("数据库备份成功，保存在 {}", output_path)})))
+            }
+            Ok(out) => {
+                let err_str = String::from_utf8_lossy(&out.stderr);
+                Ok(Json(serde_json::json!({"success": false, "message": format!("pg_dump 执行失败: {}", err_str)})))
+            }
+            Err(e) => {
+                Ok(Json(serde_json::json!({"success": false, "message": format!("执行备份程序异常 (系统可能未安装 postgresql-client 命令行工具): {}", e)})))
+            }
+        }
+    } else if db_url.starts_with("sqlite:") {
+        let path = db_url.trim_start_matches("sqlite:").split('?').next().unwrap_or("./data/tokensbyte.db");
+        let output_path = format!("data/{}.db", file_name);
+        match std::fs::copy(path, &output_path) {
+            Ok(_) => Ok(Json(serde_json::json!({"success": true, "message": format!("数据库备份成功，保存在 {}", output_path)}))),
+            Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("SQLite 复制备份失败: {}", e)}))),
+        }
     } else {
-        Ok(Json(serde_json::json!({"success": false, "message": "不支持的数据库类型，无法备份"})))
+        Ok(Json(serde_json::json!({"success": false, "message": "不支持的数据库类型，暂无法备份"})))
     }
 }
 
