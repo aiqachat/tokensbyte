@@ -17,6 +17,28 @@ use crate::services::email::EmailService;
 use chrono::{Utc, Duration};
 use rand::Rng;
 
+pub fn get_base_url_from_req(headers: &axum::http::HeaderMap, fallback: &str) -> String {
+    std::env::var("PUBLIC_API_URL").ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            headers.get("origin").and_then(|v| v.to_str().ok())
+                .filter(|s| !s.is_empty() && *s != "null")
+                .map(|s| s.to_string())
+        })
+        .or_else(|| {
+            let host = headers.get("x-forwarded-host")
+                .or_else(|| headers.get("host"))
+                .and_then(|v| v.to_str().ok())?;
+            let scheme = headers.get("x-forwarded-proto")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or(if host.contains("localhost") || host.contains("127.0.0.1") { "http" } else { "https" });
+            Some(format!("{}://{}", scheme, host))
+        })
+        .unwrap_or_else(|| fallback.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
 /// 用户登录 — 支持用户名/邮箱/手机号 + 密码（复用同一接口）
 pub async fn login(
     State(state): State<Arc<AppState>>,
@@ -569,6 +591,7 @@ pub struct OAuthCallbackQuery {
 /// 微信 OAuth — 获取授权 URL 并重定向
 pub async fn oauth_wechat(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     let result = (async {
@@ -578,8 +601,8 @@ pub async fn oauth_wechat(
             return Err(AppError::BadRequest("微信授权登录未配置".to_string()));
         }
 
-        let base_url = format!("{}/api/v1/auth/oauth/wechat/callback",
-            state.config.base_url.trim_end_matches('/'));
+        let req_base_url = get_base_url_from_req(&headers, &state.config.base_url);
+        let base_url = format!("{}/api/v1/auth/oauth/wechat/callback", req_base_url);
         // bind_user_id 用于绑定场景
         let _bind_user_id = params.get("bind_user_id").cloned().unwrap_or_default();
         let state_val = format!("wechat_{}", uuid::Uuid::new_v4().simple());
@@ -653,6 +676,7 @@ pub async fn oauth_wechat_callback(
 /// 谷歌 OAuth — 获取授权 URL 并重定向
 pub async fn oauth_google(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Query(_params): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     let result = (async {
@@ -662,8 +686,8 @@ pub async fn oauth_google(
             return Err(AppError::BadRequest("谷歌授权登录未配置".to_string()));
         }
 
-        let redirect_uri = format!("{}/api/v1/auth/oauth/google/callback",
-            state.config.base_url.trim_end_matches('/'));
+        let req_base_url = get_base_url_from_req(&headers, &state.config.base_url);
+        let redirect_uri = format!("{}/api/v1/auth/oauth/google/callback", req_base_url);
         let state_val = format!("google_{}", uuid::Uuid::new_v4().simple());
         let url = crate::services::oauth::OAuthService::google_auth_url(
             &google.client_id, &redirect_uri, &state_val,
@@ -680,6 +704,7 @@ pub async fn oauth_google(
 /// 谷歌 OAuth 回调 — 自动注册/登录
 pub async fn oauth_google_callback(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Query(query): Query<OAuthCallbackQuery>,
 ) -> Response {
     let result = (async {
@@ -687,8 +712,8 @@ pub async fn oauth_google_callback(
         let settings = get_all_settings(&state).await?;
         let google = settings.google_oauth.ok_or_else(|| AppError::BadRequest("谷歌授权未配置".to_string()))?;
 
-        let redirect_uri = format!("{}/api/v1/auth/oauth/google/callback",
-            state.config.base_url.trim_end_matches('/'));
+        let req_base_url = get_base_url_from_req(&headers, &state.config.base_url);
+        let redirect_uri = format!("{}/api/v1/auth/oauth/google/callback", req_base_url);
 
         let info = crate::services::oauth::OAuthService::google_exchange(
             &google.client_id, &google.client_secret, &code, &redirect_uri,
