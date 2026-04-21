@@ -67,7 +67,7 @@
     "model_list": "Models",
     "forward_rules": "Forward Rules",
     "billing_rules": "Billing Rules",
-    "admin_routing": "Model Routing",
+    "admin_routing": "Model Manager",
     "admin_groups": "Admin Groups",
     "payment_settings": "Payment",
     "message_notification": "Notifications",

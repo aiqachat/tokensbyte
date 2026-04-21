@@ -38,6 +38,7 @@ const Login: React.FC = () => {
   const loginTitle = settings?.site?.login_title || settings?.site?.name || 'TokensByte';
   const loginSubtitle = settings?.site?.login_subtitle || 'Next-gen LLM API Gateway';
   const login = settings?.login;
+  const reg = settings?.registration;
 
   const onFinish = async (values: any) => {
     if (loading) return;
@@ -56,7 +57,7 @@ const Login: React.FC = () => {
   };
 
   const loginTabs: { key: string; label: string; icon: React.ReactNode; placeholder: string }[] = [];
-  if (!login || login.enable_username_registration || login.enable_username_login)
+  if (!login || reg?.enable_username_registration || login.enable_username_login)
     loginTabs.push({ key: 'username', label: t('login.username_login'), icon: <UserOutlined />, placeholder: t('login.username_or_email') });
   if (login?.enable_mobile_login)
     loginTabs.push({ key: 'mobile', label: t('login.mobile_login'), icon: <MobileOutlined />, placeholder: t('auth.mobile_placeholder') });

@@ -393,7 +393,7 @@ const BillingRules: React.FC = () => {
                         <Row gutter={16} align="middle">
                           <Col span={8}><Form.Item name="volc_audio_rate" label="包含语音" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
                           <Col span={8}><Form.Item name="volc_base_rate" label="不包含语音" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
-                          <Col span={8}><Form.Item name="volc_offline_discount" label="离线推理(flex)折扣倍率" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={2} step={0.1} tooltip="例如 0.5 即等于最终价格减半" /></Form.Item></Col>
+                          <Col span={8}><Form.Item name="volc_offline_discount" label="离线推理(flex)折扣倍率" tooltip="例如 0.5 即等于最终价格减半" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={2} step={0.1} /></Form.Item></Col>
                         </Row>
                       </div>
                     );

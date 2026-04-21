@@ -68,7 +68,7 @@
     "model_list": "模型列表",
     "forward_rules": "转发规则",
     "billing_rules": "计费配置",
-    "admin_routing": "大模型路由管理",
+    "admin_routing": "模型管理",
     "admin_groups": "管理员分组",
     "payment_settings": "支付设置",
     "message_notification": "消息通知",
