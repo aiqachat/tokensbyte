@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Layout, Typography, ConfigProvider, theme, Button, Select, Input, Spin, Tooltip, Radio, Drawer, Tag } from 'antd';
+import { Layout, Typography, ConfigProvider, theme, Button, Select, Input, Spin, Tooltip, Radio, Drawer, Tag, Dropdown, message } from 'antd';
 import { 
     VideoCameraOutlined, PictureOutlined, MessageOutlined, AudioOutlined, 
     SettingOutlined, CompassOutlined, BulbOutlined, CloseOutlined, 
     SlidersOutlined, PlusOutlined, AppstoreAddOutlined, DownOutlined, SearchOutlined,
-    StarOutlined, CopyOutlined, FileTextOutlined, InfoCircleOutlined, DollarOutlined, LockOutlined
+    StarOutlined, CopyOutlined, FileTextOutlined, InfoCircleOutlined, DollarOutlined, LockOutlined, KeyOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
@@ -28,6 +28,10 @@ const Playground: React.FC = () => {
   // 控制高级模型弹窗
   const [isModelModalVisible, setIsModelModalVisible] = useState(false);
   const [searchModelKeyword, setSearchModelKeyword] = useState('');
+  
+  // 用户令牌密钥
+  const [apiTokens, setApiTokens] = useState<any[]>([]);
+  const [selectedTokenKey, setSelectedTokenKey] = useState<string>('');
   const [activeModelTab, setActiveModelTab] = useState('All');
 
   // 设置面板占位状态
@@ -67,9 +71,10 @@ const Playground: React.FC = () => {
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const [configRes, modelsRes] = await Promise.all([
+      const [configRes, modelsRes, tokensRes] = await Promise.all([
           request.get('/plugins/playground/playground-public-config') as Promise<any>,
-          request.get('/models?page_size=1000') as Promise<any>
+          request.get('/models?page_size=1000') as Promise<any>,
+          request.get('/tokens').catch(() => ({ data: [] })) as Promise<any>
       ]);
       setConfig(configRes || {});
       
@@ -80,6 +85,9 @@ const Playground: React.FC = () => {
       
       setAllModelsDetail(allModels);
 
+      if (tokensRes && tokensRes.data && Array.isArray(tokensRes.data)) {
+        setApiTokens(tokensRes.data);
+      }
     } catch (e) {
       console.error('Data initialization failed', e);
     } finally {
@@ -99,10 +107,12 @@ const Playground: React.FC = () => {
     }
   };
 
-  // 通过比对获得详细的选中模型对象数据
+  // 通过 mid 匹配获得详细的选中模型对象数据（mid 不变，改名称不会失效）
   const currentModelDetail = useMemo(() => {
       if (!selectedModel || !allModelsDetail) return null;
-      return allModelsDetail.find(m => m.name === selectedModel);
+      // 优先用 mid 匹配，兼容旧版本用 name 得到的数据
+      return allModelsDetail.find(m => m.mid === selectedModel) 
+          || allModelsDetail.find(m => m.name === selectedModel);
   }, [selectedModel, allModelsDetail]);
 
   const getMenuLabel = (key: string) => {
@@ -134,10 +144,12 @@ const Playground: React.FC = () => {
     );
   };
 
-  // 弹窗中过滤出属于当前频道的可用模型表
+  // 弹窗中过滤出属于当前频道的可用模型表（通过 mid 匹配，妁dad name 兼容）
   const availableModelsInCurrentMenu = useMemo(() => {
-      const activeMenuStrModels = config[`${activeMenu}_models`] || [];
-      return allModelsDetail.filter(am => activeMenuStrModels.includes(am.name)).filter(am => 
+      const activeMenuStrModels: string[] = config[`${activeMenu}_models`] || [];
+      return allModelsDetail.filter(am => 
+          activeMenuStrModels.includes(am.mid) || activeMenuStrModels.includes(am.name)
+      ).filter(am => 
           !searchModelKeyword || am.name.toLowerCase().includes(searchModelKeyword.toLowerCase())
       );
   }, [activeMenu, config, allModelsDetail, searchModelKeyword]);
@@ -220,7 +232,47 @@ const Playground: React.FC = () => {
                         />
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'rgba(0,0,0,0.1)' }}>
                             <div style={{ display: 'flex', gap: 12 }}>
-                                <Tooltip title="Clear or attachments"><Button type="text" shape="circle" icon={<BulbOutlined />} style={{ color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.03)' }} /></Tooltip>
+                                <Dropdown 
+                                    trigger={['click']}
+                                    placement="topLeft"
+                                    menu={{
+                                        items: apiTokens.map(t => ({
+                                            key: t.token_key,
+                                            label: (
+                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                    <span style={{ fontWeight: 500 }}>{t.name}</span>
+                                                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontFamily: 'monospace' }}>
+                                                        {t.token_key.substring(0, 8)}...{t.token_key.substring(t.token_key.length - 4)}
+                                                    </span>
+                                                </div>
+                                            )
+                                        })),
+                                        onClick: (e) => {
+                                            setSelectedTokenKey(e.key);
+                                            message.success('已切换当前调用的令牌密钥');
+                                        }
+                                    }}
+                                >
+                                    <Tooltip title={selectedTokenKey ? "更换 API 密钥" : "选择 API 密钥"}>
+                                        <Button 
+                                            type="text" 
+                                            shape="circle" 
+                                            icon={
+                                                selectedTokenKey ? <KeyOutlined /> : (
+                                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <KeyOutlined />
+                                                        <div style={{ position: 'absolute', width: '100%', height: 1.5, background: 'currentColor', transform: 'rotate(45deg)' }} />
+                                                    </div>
+                                                )
+                                            } 
+                                            style={{ 
+                                                color: selectedTokenKey ? '#1677ff' : 'rgba(255,255,255,0.4)', 
+                                                background: selectedTokenKey ? 'rgba(22,119,255,0.1)' : 'rgba(255,255,255,0.03)',
+                                                border: selectedTokenKey ? '1px solid rgba(22,119,255,0.2)' : 'none'
+                                            }} 
+                                        />
+                                    </Tooltip>
+                                </Dropdown>
                                 <Button icon={<AppstoreAddOutlined />} style={{ background: 'rgba(255,255,255,0.03)', border: 'none', color: 'rgba(255,255,255,0.4)', borderRadius: 20 }}>Tools</Button>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -397,7 +449,7 @@ const Playground: React.FC = () => {
                         <div 
                             key={model.id}
                             className="studio-model-list-item"
-                            onClick={() => { setSelectedModel(model.name); setIsModelModalVisible(false); }}
+                            onClick={() => { setSelectedModel(model.mid || model.name); setIsModelModalVisible(false); }}
                             style={{ 
                                 background: '#1c1c1f', padding: '16px 20px', borderRadius: 12,
                                 border: '1px solid rgba(255,255,255,0.03)', cursor: 'pointer', display: 'flex', gap: 16
