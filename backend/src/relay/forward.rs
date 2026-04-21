@@ -563,6 +563,7 @@ const VOLCENGINE_CONTENT_PASSTHROUGH_KEYS: &[&str] = &[
     // 流式/回调
     "stream",            // 是否流式返回
     "callback_url",      // 回调地址
+    "service_tier",      // 服务等级（如 flex 离线减半）
 ];
 
 /// 构建火山方舟 /api/v3/contents/generations/tasks 请求体。

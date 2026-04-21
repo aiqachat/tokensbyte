@@ -373,15 +373,40 @@ pub fn compute_cost(
                 }
             } else if rule.billing_rule == "seedance1.5pro" {
                 if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    let mut rate = None;
+                    let mut desc = String::new();
                     if features.has_audio {
                         if let Some(ar) = ext.get("audio_rate").and_then(|v| v.as_f64()) {
-                            p_rate = ar; c_rate = ar; is_overridden = true;
-                            detail_desc = format!("Seedance1.5Pro(含语音单价:{})", ar);
+                            rate = Some(ar);
+                            desc = format!("Seedance1.5Pro(含语音单价:{})", ar);
                         }
                     } else {
                         if let Some(br) = ext.get("base_rate").and_then(|v| v.as_f64()) {
-                            p_rate = br; c_rate = br; is_overridden = true;
-                            detail_desc = format!("Seedance1.5Pro(无语音单价:{})", br);
+                            rate = Some(br);
+                            desc = format!("Seedance1.5Pro(无语音单价:{})", br);
+                        }
+                    }
+                    if let Some(mut r) = rate {
+                        if features.service_tier.as_deref() == Some("flex") {
+                            let discount = ext.get("offline_discount").and_then(|v| v.as_f64()).unwrap_or(0.5);
+                            r *= discount;
+                            desc.push_str(" [离线推理]");
+                        }
+                        p_rate = r; c_rate = r; is_overridden = true;
+                        detail_desc = desc;
+                    }
+                }
+            } else if rule.billing_rule == "seedance1.0" {
+                if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    if features.service_tier.as_deref() == Some("flex") {
+                        if let Some(off_rate) = ext.get("offline_rate").and_then(|v| v.as_f64()) {
+                            p_rate = off_rate; c_rate = off_rate; is_overridden = true;
+                            detail_desc = format!("Seedance1.0(离线推理单价:{})", off_rate);
+                        }
+                    } else {
+                        if let Some(on_rate) = ext.get("online_rate").and_then(|v| v.as_f64()) {
+                            p_rate = on_rate; c_rate = on_rate; is_overridden = true;
+                            detail_desc = format!("Seedance1.0(在线推理单价:{})", on_rate);
                         }
                     }
                 }
@@ -392,19 +417,24 @@ pub fn compute_cost(
                 // 确保按照 prompt 升序
                 tiers.sort_by_key(|t| t.max_prompt_tokens);
                 let mut matched = false;
+
+                // 核心修复：前端录入的界限单位是千 (K)，需要将真实消耗转换成千再比较
+                let p_k = prompt_tokens as f64 / 1000.0;
+                let c_k = completion_tokens as f64 / 1000.0;
+
                 for tier in &tiers {
                     // prompt 和 completion 同时满足才命中该阶梯
-                    let prompt_ok = prompt_tokens <= tier.max_prompt_tokens;
+                    let prompt_ok = p_k <= tier.max_prompt_tokens as f64;
                     let completion_ok = match tier.max_completion_tokens {
-                        Some(mc) => completion_tokens <= mc,
+                        Some(mc) => c_k <= mc as f64,
                         None => true,
                     };
                     if prompt_ok && completion_ok {
                         p_rate = tier.prompt_rate;
                         c_rate = tier.completion_rate;
                         detail_desc = match tier.max_completion_tokens {
-                            Some(mc) => format!("阶梯计费(命中<={}P|<={}C)", tier.max_prompt_tokens, mc),
-                            None => format!("阶梯计费(命中<={}P)", tier.max_prompt_tokens),
+                            Some(mc) => format!("阶梯计费(命中<={}K_P|<={}K_C)", tier.max_prompt_tokens, mc),
+                            None => format!("阶梯计费(命中<={}K_P)", tier.max_prompt_tokens),
                         };
                         matched = true;
                         break;
@@ -415,7 +445,7 @@ pub fn compute_cost(
                     if let Some(last) = tiers.last() {
                         p_rate = last.prompt_rate;
                         c_rate = last.completion_rate;
-                        detail_desc = format!("阶梯计费(超出阶梯上限,按最高档{}P/{}C费率)",
+                        detail_desc = format!("阶梯计费(超出上限,按最高档{}K_P/{}K_C费率)",
                             last.max_prompt_tokens, last.max_completion_tokens.map(|c| c.to_string()).unwrap_or("-".to_string()));
                     }
                 }

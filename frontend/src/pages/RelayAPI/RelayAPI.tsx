@@ -188,6 +188,7 @@ const RelayAPI: React.FC = () => {
                   <Descriptions.Item label={<Text code>generate_audio</Text>}>是否生成音频 (true/false)</Descriptions.Item>
                   <Descriptions.Item label={<Text code>return_last_frame</Text>}>是否返回末帧 (true/false)</Descriptions.Item>
                   <Descriptions.Item label={<Text code>watermark</Text>}>是否添加水印 (true/false)</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>service_tier</Text>}>服务等级，如 <Text code>flex</Text> (离线减半) 或 <Text code>default</Text> (在线)</Descriptions.Item>
                   <Descriptions.Item label={<Text code>stream</Text>}>是否流式返回 (true/false)</Descriptions.Item>
                   <Descriptions.Item label={<Text code>callback_url</Text>}>任务完成回调地址（URL）</Descriptions.Item>
                 </Descriptions>
