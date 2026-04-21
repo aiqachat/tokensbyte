@@ -5,7 +5,7 @@ import {
     SettingOutlined, CompassOutlined, CloseOutlined, 
     SlidersOutlined, AppstoreAddOutlined, DownOutlined, SearchOutlined,
     StarOutlined, CopyOutlined, FileTextOutlined, InfoCircleOutlined, DollarOutlined, KeyOutlined,
-    LoadingOutlined, PlayCircleOutlined, CheckCircleOutlined
+    LoadingOutlined, PlayCircleOutlined, CheckCircleOutlined, FolderOpenOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -152,10 +152,10 @@ const Playground: React.FC = () => {
   };
 
   const getCategoryLabel = (cat: string) => {
-    if (cat === 'video' || cat.includes('视频')) return 'Video Gen';
-    if (cat === 'image' || cat.includes('图片')) return 'Image Gen';
-    if (cat === 'chat' || cat.includes('聊天')) return 'Chat';
-    if (cat === 'audio' || cat.includes('音频')) return 'Audio Voice';
+    if (cat === 'video' || cat.includes('视频')) return '视频创作';
+    if (cat === 'image' || cat.includes('图片')) return '图片创作';
+    if (cat === 'chat' || cat.includes('聊天')) return '聊天问答';
+    if (cat === 'audio' || cat.includes('音频')) return '语音合成';
     return cat;
   };
 
@@ -555,6 +555,29 @@ const Playground: React.FC = () => {
               );
             })}
           </div>
+          
+          {/* 底部：我的素材 功能入口 */}
+          <div style={{ paddingBottom: 24, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <Tooltip placement="right" title="我的素材">
+              <div 
+                onClick={() => message.info('即将开放：此处将用于保存和管理每次生成后的视频及图片素材。')}
+                style={{
+                  width: 48, height: 48, borderRadius: 12, margin: '8px auto', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', background: 'transparent', transition: 'all 0.2s', color: 'rgba(255,255,255,0.45)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#fff';
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'rgba(255,255,255,0.45)';
+                  e.currentTarget.style.background = 'transparent';
+                }}
+              >
+                <FolderOpenOutlined style={{ fontSize: 20 }} />
+              </div>
+            </Tooltip>
+          </div>
         </Sider>
 
         {/* 中央工作视口 Canvas */}
@@ -565,7 +588,7 @@ const Playground: React.FC = () => {
 
             {!isSettingsOpen && (
                 <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 100, display: 'flex', gap: 12 }}>
-                    <Tooltip title="Run settings" placement="left">
+                    <Tooltip title="模型选择" placement="left">
                         <Button 
                             type="text" shape="circle" icon={<SlidersOutlined />} 
                             onClick={() => setIsSettingsOpen(true)}
@@ -609,7 +632,8 @@ const Playground: React.FC = () => {
                     </div>
 
                     <div style={{
-                        margin: '0 24px 24px 24px', background: '#1A1B1E', borderRadius: 16,
+                        width: 'calc(100% - 48px)', maxWidth: 640, margin: '0 auto 24px auto',
+                        background: '#1A1B1E', borderRadius: 16,
                         border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', overflow: 'hidden'
                     }}>
                         <TextArea 
