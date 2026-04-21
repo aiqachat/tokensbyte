@@ -55,7 +55,27 @@
     "profile": "Personal Center",
     "marketing": "Marketing",
     "registration_gifts": "Registration Gifts",
-    "registration_settings": "Registration Settings"
+    "registration_gifts": "Registration Gifts",
+    "registration_settings": "Registration Settings",
+    "relay_api": "Relay Gateway",
+    "usage_logs": "Usage Logs",
+    "task_logs": "Task Logs",
+    "assets": "Assets Manager",
+    "advanced_marketing": "Team Marketing",
+    "playground": "Playground",
+    "upstreams": "Upstreams",
+    "model_list": "Models",
+    "forward_rules": "Forward Rules",
+    "billing_rules": "Billing Rules",
+    "admin_routing": "Model Routing",
+    "admin_groups": "Admin Groups",
+    "payment_settings": "Payment",
+    "message_notification": "Notifications",
+    "database_settings": "Database",
+    "plugins": "Plugins",
+    "system_about": "About System",
+    "channel_groups": "Channel Groups",
+    "channel_configs": "Channel Configs"
   },
   "dashboard": {
     "title": "System Overview",
@@ -78,7 +98,9 @@
     "mobile_login": "Mobile Login",
     "email_login": "Email Login",
     "wechat_login": "WeChat Login",
-    "google_login": "Google Login"
+    "google_login": "Google Login",
+    "confirm_password": "Confirm Password",
+    "password_mismatch": "Passwords do not match"
   },
   "channels": {
     "title": "Channel Management",
@@ -290,6 +312,7 @@
     "google": "Google Login",
     "rebind": "Rebind",
     "bind_email_title": "Bind Email",
+    "bind_mobile_title": "Bind Mobile",
     "current_mobile": "Current Mobile",
     "current_email": "Current Email",
     "new_mobile_placeholder": "Enter new mobile",
@@ -308,7 +331,9 @@
     "bind_wechat": "Bind WeChat",
     "rebind_wechat": "Rebind WeChat",
     "bind_google": "Bind Google",
-    "unbind_success": "Unbound Successfully"
+    "unbind_success": "Unbound Successfully",
+    "modify_nickname": "Modify Nickname",
+    "modify_password": "Modify Password"
   },
   "wallet": {
     "title": "My Wallet",

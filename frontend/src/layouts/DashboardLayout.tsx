@@ -134,7 +134,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   menuItems.push({
     key: isUserEnd ? '/relay-api' : '/admin0755/relay-api',
     icon: <RocketOutlined style={{ fontSize: '18px' }} />,
-    label: <Link to={isUserEnd ? '/relay-api' : '/admin0755/relay-api'}>中转网关</Link>,
+    label: <Link to={isUserEnd ? '/relay-api' : '/admin0755/relay-api'}>{t('menu.relay_api')}</Link>,
   });
 
   // 3. Tokens
@@ -148,14 +148,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   menuItems.push({
     key: isUserEnd ? '/logs' : '/admin0755/logs',
     icon: <HistoryOutlined style={{ fontSize: '18px' }} />,
-    label: <Link to={isUserEnd ? '/logs' : '/admin0755/logs'}>{t('menu.usage_logs', '使用日志')}</Link>,
+    label: <Link to={isUserEnd ? '/logs' : '/admin0755/logs'}>{t('menu.usage_logs')}</Link>,
   });
 
   // 5. Task Logs
   menuItems.push({
     key: isUserEnd ? '/task-logs' : '/admin0755/task-logs',
     icon: <ScheduleOutlined style={{ fontSize: '18px' }} />,
-    label: <Link to={isUserEnd ? '/task-logs' : '/admin0755/task-logs'}>{t('menu.task_logs', '任务日志')}</Link>,
+    label: <Link to={isUserEnd ? '/task-logs' : '/admin0755/task-logs'}>{t('menu.task_logs')}</Link>,
   });
 
   const isSuperAdmin = !isUserEnd && user?.role === 'admin' && !user.admin_group_id;
@@ -208,7 +208,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       menuItems.push({
         key: '/assets',
         icon: <PictureOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/assets">素材管理</Link>,
+        label: <Link to="/assets">{t('menu.assets')}</Link>,
       });
     }
 
@@ -217,7 +217,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       menuItems.push({
         key: '/advanced-marketing',
         icon: <TeamOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/advanced-marketing">高级营销</Link>,
+        label: <Link to="/advanced-marketing">{t('menu.advanced_marketing')}</Link>,
       });
     }
 
@@ -226,7 +226,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       menuItems.push({
         key: '/playground',
         icon: <ExperimentOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/playground" target="_blank">体验中心</Link>,
+        label: <Link to="/playground" target="_blank">{t('menu.playground')}</Link>,
       });
     }
 
@@ -269,7 +269,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       if (hasPermission('upstreams') || isSuperAdmin) {
         channelChildren.push({
           key: '/admin0755/upstreams',
-          label: <Link to="/admin0755/upstreams">上游管理</Link>,
+          label: <Link to="/admin0755/upstreams">{t('menu.upstreams', '上游管理')}</Link>,
         });
       }
       menuItems.push({
@@ -287,15 +287,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         modelChildren.push(
           {
             key: '/admin0755/models',
-            label: <Link to="/admin0755/models">{t('menu.model_list', '模型列表')}</Link>,
+            label: <Link to="/admin0755/models">{t('menu.model_list')}</Link>,
           },
           {
             key: '/admin0755/forward-rules',
-            label: <Link to="/admin0755/forward-rules">{t('menu.forward_rules', '转发规则')}</Link>,
+            label: <Link to="/admin0755/forward-rules">{t('menu.forward_rules')}</Link>,
           },
           {
             key: '/admin0755/billing-rules',
-            label: <Link to="/admin0755/billing-rules">{t('menu.billing_rules', '计费配置')}</Link>,
+            label: <Link to="/admin0755/billing-rules">{t('menu.billing_rules')}</Link>,
           }
         );
       }
@@ -304,7 +304,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         menuItems.push({
           key: 'models-management-group',
           icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
-          label: t('menu.models', '大模型路由管理'),
+          label: t('menu.admin_routing'),
           children: modelChildren
         });
       }
@@ -348,7 +348,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       if (hasPermission('admin_groups')) {
         userItems.push({
           key: '/admin0755/admin-groups',
-          label: <Link to="/admin0755/admin-groups">管理员分组</Link>,
+          label: <Link to="/admin0755/admin-groups">{t('menu.admin_groups')}</Link>,
         });
       }
 
@@ -394,11 +394,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           },
           {
             key: '/admin0755/payment-settings',
-            label: <Link to="/admin0755/payment-settings">支付设置</Link>,
+            label: <Link to="/admin0755/payment-settings">{t('menu.payment_settings')}</Link>,
           },
           {
             key: '/admin0755/message-notification',
-            label: <Link to="/admin0755/message-notification">消息通知</Link>,
+            label: <Link to="/admin0755/message-notification">{t('menu.message_notification')}</Link>,
           },
           {
             key: '/admin0755/oauth-settings',
@@ -406,7 +406,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           },
           {
             key: '/admin0755/settings?tab=database',
-            label: <Link to="/admin0755/settings?tab=database">数据库设置</Link>,
+            label: <Link to="/admin0755/settings?tab=database">{t('menu.database_settings')}</Link>,
           }
         ]
       });
@@ -416,7 +416,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       menuItems.push({
         key: '/admin0755/plugins',
         icon: <AppstoreOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/admin0755/plugins">站点插件</Link>,
+        label: <Link to="/admin0755/plugins">{t('menu.plugins')}</Link>,
       });
     }
   }
@@ -519,9 +519,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                   icon={<InfoCircleOutlined style={{ fontSize: '18px' }} />} 
                   style={{ color: 'rgba(255,255,255,0.65)', width: '100%', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start' }}
                   onClick={showSystemAbout}
-                  title="系统关于"
+                  title={t('menu.system_about')}
                 >
-                  {(!collapsed) && <span style={{ marginLeft: 8 }}>系统关于</span>}
+                  {(!collapsed) && <span style={{ marginLeft: 8 }}>{t('menu.system_about')}</span>}
                 </Button>
               </div>
             )}

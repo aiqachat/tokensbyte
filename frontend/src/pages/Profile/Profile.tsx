@@ -19,7 +19,11 @@ const Profile: React.FC = () => {
   const [form] = Form.useForm();
   const { setUser } = useAuthStore();
   const { settings } = useSettingsStore();
-  const [countdown, setCountdown] = useState(0);
+  const [countdowns, setCountdowns] = useState<Record<string, number>>({});
+
+  const startCountdown = (key: string) => {
+    setCountdowns(prev => ({ ...prev, [key]: 60 }));
+  };
 
   const login = settings?.login;
 
@@ -34,9 +38,27 @@ const Profile: React.FC = () => {
   };
 
   useEffect(() => { fetchProfile(); }, []);
+
   useEffect(() => {
-    if (countdown > 0) { const t = setTimeout(() => setCountdown(c => c - 1), 1000); return () => clearTimeout(t); }
-  }, [countdown]);
+    const activeKeys = Object.keys(countdowns).filter(k => countdowns[k] > 0);
+    if (activeKeys.length === 0) return;
+
+    const timer = setInterval(() => {
+      setCountdowns(prev => {
+        const next = { ...prev };
+        let changed = false;
+        Object.keys(next).forEach(k => {
+          if (next[k] > 0) {
+            next[k] -= 1;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [countdowns]);
 
   const handleAction = (type: string) => {
     setModalType(type);
@@ -90,16 +112,17 @@ const Profile: React.FC = () => {
   };
 
   // 发送验证码
-  const sendCode = async (target: string, type: 'email' | 'sms', purpose: string) => {
-    if (countdown > 0) return;
+  const sendCode = async (target: string, type: 'email' | 'sms', purpose: string, timerKey: string) => {
+    if (countdowns[timerKey] > 0) return;
     try {
       if (type === 'email') {
         await request.post('/auth/send-code', { email: target, purpose });
+        message.success(t('auth.code_sent'));
       } else {
         await request.post('/auth/send-sms-code', { mobile: target, purpose });
+        message.success(t('auth.sms_code_sent'));
       }
-      message.success(t('auth.sms_code_sent'));
-      setCountdown(60);
+      startCountdown(timerKey);
     } catch (e: any) {
       console.error(e);
     }
@@ -187,13 +210,13 @@ const Profile: React.FC = () => {
         return (
           <>
             <Form.Item name="password" label={t('profile.password')} rules={[{ required: true, min: 6 }]}>
-              <Input.Password placeholder={t('profile.password')} />
+              <Input.Password placeholder={t('auth.password_placeholder')} />
             </Form.Item>
             <Form.Item name="confirm" label={t('login.confirm_password')} dependencies={['password']}
-              rules={[{ required: true }, ({ getFieldValue }) => ({
-                validator(_, value) { return !value || getFieldValue('password') === value ? Promise.resolve() : Promise.reject(new Error(t('login.password_mismatch'))); },
+              rules={[{ required: true, message: t('auth.confirm_password_required') }, ({ getFieldValue }) => ({
+                validator(_, value) { return !value || getFieldValue('password') === value ? Promise.resolve() : Promise.reject(new Error(t('auth.passwords_not_match'))); },
               })]}>
-              <Input.Password />
+              <Input.Password placeholder={t('auth.confirm_password_placeholder')} />
             </Form.Item>
           </>
         );
@@ -202,24 +225,24 @@ const Profile: React.FC = () => {
           <Form form={form} layout="vertical" onFinish={handleBindMobile}>
             {profile?.mobile && (
               <>
-                <Text type="secondary">{t('profile.current_mobile')}：{profile.mobile}</Text>
-                <Form.Item name="old_code" label={t('profile.old_mobile_code')} rules={[{ required: true }]} style={{ marginTop: 12 }}>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>{t('profile.current_mobile')}: {profile.mobile}</Text>
+                <Form.Item name="old_code" label={t('profile.old_mobile_code')} rules={[{ required: true, message: t('auth.code_required') }]}>
                   <Input prefix={<SafetyOutlined />} placeholder={t('profile.enter_old_code')}
-                    suffix={<Button type="link" size="small" disabled={countdown > 0}
-                      onClick={() => sendCode(profile.mobile!, 'sms', 'bind_mobile')}>
-                      {countdown > 0 ? `${countdown}s` : t('auth.send_code')}
+                    suffix={<Button type="link" size="small" disabled={countdowns['old_mobile'] > 0}
+                      onClick={() => sendCode(profile.mobile!, 'sms', 'bind_mobile', 'old_mobile')}>
+                      {countdowns['old_mobile'] > 0 ? `${countdowns['old_mobile']}s` : t('auth.send_code')}
                     </Button>} />
                 </Form.Item>
               </>
             )}
-            <Form.Item name="mobile" label={t('profile.bind_mobile_title')} rules={[{ required: true }]}>
+            <Form.Item name="mobile" label={t('profile.bind_mobile_title')} rules={[{ required: true, message: t('auth.mobile_required') }]}>
               <Input prefix={<MobileOutlined />} placeholder={t('profile.new_mobile_placeholder')} />
             </Form.Item>
-            <Form.Item name="code" label={t('profile.new_mobile_code')} rules={[{ required: true }]}>
+            <Form.Item name="code" label={t('profile.new_mobile_code')} rules={[{ required: true, message: t('auth.code_required') }]}>
               <Input prefix={<SafetyOutlined />} placeholder={t('profile.enter_new_code')}
-                suffix={<Button type="link" size="small" disabled={countdown > 0}
-                  onClick={() => { const v = form.getFieldValue('mobile'); if (v) sendCode(v, 'sms', 'bind_mobile'); else message.warning(t('auth.mobile_required')); }}>
-                  {countdown > 0 ? `${countdown}s` : t('auth.send_code')}
+                suffix={<Button type="link" size="small" disabled={countdowns['new_mobile'] > 0}
+                  onClick={() => { const v = form.getFieldValue('mobile'); if (v) sendCode(v, 'sms', 'bind_mobile', 'new_mobile'); else message.warning(t('auth.mobile_required')); }}>
+                  {countdowns['new_mobile'] > 0 ? `${countdowns['new_mobile']}s` : t('auth.send_code')}
                 </Button>} />
             </Form.Item>
           </Form>
@@ -229,24 +252,24 @@ const Profile: React.FC = () => {
           <Form form={form} layout="vertical" onFinish={handleBindEmail}>
             {profile?.email && !profile.email.endsWith('@tokensbyte.local') && (
               <>
-                <Text type="secondary">{t('profile.current_email')}：{profile.email}</Text>
-                <Form.Item name="old_code" label={t('profile.old_email_code')} rules={[{ required: true }]} style={{ marginTop: 12 }}>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>{t('profile.current_email')}: {profile.email}</Text>
+                <Form.Item name="old_code" label={t('profile.old_email_code')} rules={[{ required: true, message: t('auth.code_required') }]}>
                   <Input prefix={<SafetyOutlined />} placeholder={t('profile.enter_old_code')}
-                    suffix={<Button type="link" size="small" disabled={countdown > 0}
-                      onClick={() => sendCode(profile.email, 'email', 'bind_email')}>
-                      {countdown > 0 ? `${countdown}s` : t('auth.send_code')}
+                    suffix={<Button type="link" size="small" disabled={countdowns['old_email'] > 0}
+                      onClick={() => sendCode(profile.email, 'email', 'bind_email', 'old_email')}>
+                      {countdowns['old_email'] > 0 ? `${countdowns['old_email']}s` : t('auth.send_code')}
                     </Button>} />
                 </Form.Item>
               </>
             )}
-            <Form.Item name="email" label={t('profile.bind_email_title')} rules={[{ required: true, type: 'email' }]}>
+            <Form.Item name="email" label={t('profile.bind_email_title')} rules={[{ required: true, type: 'email', message: t('auth.email_required') }]}>
               <Input prefix={<MailOutlined />} placeholder={t('profile.new_email_placeholder')} />
             </Form.Item>
-            <Form.Item name="code" label={t('profile.new_email_code')} rules={[{ required: true }]}>
+            <Form.Item name="code" label={t('profile.new_email_code')} rules={[{ required: true, message: t('auth.code_required') }]}>
               <Input prefix={<SafetyOutlined />} placeholder={t('profile.enter_new_code')}
-                suffix={<Button type="link" size="small" disabled={countdown > 0}
-                  onClick={() => { const v = form.getFieldValue('email'); if (v) sendCode(v, 'email', 'bind_email'); else message.warning(t('auth.email_required')); }}>
-                  {countdown > 0 ? `${countdown}s` : t('auth.send_code')}
+                suffix={<Button type="link" size="small" disabled={countdowns['new_email'] > 0}
+                  onClick={() => { const v = form.getFieldValue('email'); if (v) sendCode(v, 'email', 'bind_email', 'new_email'); else message.warning(t('auth.email_required')); }}>
+                  {countdowns['new_email'] > 0 ? `${countdowns['new_email']}s` : t('auth.send_code')}
                 </Button>} />
             </Form.Item>
           </Form>
@@ -367,7 +390,7 @@ const Profile: React.FC = () => {
       </Card>
 
       <Modal
-        title={isBindModal ? (modalType === 'bind_mobile' ? t('profile.bind_mobile_title') : t('profile.bind_email_title')) : t(`profile.${modalType}`)}
+        title={isBindModal ? (modalType === 'bind_mobile' ? t('profile.bind_mobile_title') : t('profile.bind_email_title')) : (modalType === 'nickname' ? t('profile.modify_nickname') : (modalType === 'password' ? t('profile.modify_password') : t(`profile.${modalType}`)))}
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         onOk={handleModalOk}

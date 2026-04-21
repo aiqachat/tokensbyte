@@ -56,7 +56,27 @@
     "profile": "个人中心",
     "marketing": "营销管理",
     "registration_gifts": "注册好礼",
-    "registration_settings": "注册设置"
+    "registration_gifts": "注册好礼",
+    "registration_settings": "注册设置",
+    "relay_api": "中转网关",
+    "usage_logs": "使用日志",
+    "task_logs": "任务日志",
+    "assets": "素材管理",
+    "advanced_marketing": "高级营销",
+    "playground": "体验中心",
+    "upstreams": "上游管理",
+    "model_list": "模型列表",
+    "forward_rules": "转发规则",
+    "billing_rules": "计费配置",
+    "admin_routing": "大模型路由管理",
+    "admin_groups": "管理员分组",
+    "payment_settings": "支付设置",
+    "message_notification": "消息通知",
+    "database_settings": "数据库设置",
+    "plugins": "站点插件",
+    "system_about": "系统关于",
+    "channel_groups": "模型渠道分组",
+    "channel_configs": "模型渠道配置"
   },
   "dashboard": {
     "title": "系统概览",
@@ -80,7 +100,9 @@
     "mobile_login": "手机号登录",
     "email_login": "邮箱登录",
     "wechat_login": "微信登录",
-    "google_login": "谷歌登录"
+    "google_login": "谷歌登录",
+    "confirm_password": "确认密码",
+    "password_mismatch": "两次填写的密码不一致"
   },
   "channels": {
     "title": "渠道分组管理",
@@ -292,6 +314,7 @@
     "google": "谷歌登录",
     "rebind": "换绑",
     "bind_email_title": "绑定邮箱",
+    "bind_mobile_title": "绑定手机",
     "current_mobile": "当前手机号",
     "current_email": "当前邮箱",
     "new_mobile_placeholder": "输入新手机号",
@@ -310,7 +333,9 @@
     "bind_wechat": "绑定微信",
     "rebind_wechat": "换绑微信",
     "bind_google": "绑定谷歌",
-    "unbind_success": "解绑成功"
+    "unbind_success": "解绑成功",
+    "modify_nickname": "修改昵称",
+    "modify_password": "修改密码"
   },
   "wallet": {
     "title": "我的钱包",

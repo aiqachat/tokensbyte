@@ -66,8 +66,8 @@ const Register: React.FC = () => {
     if (loading) return;
     setLoading(true);
     try {
-      const res = await axios.post('/api/v1/auth/register', { ...values, aff });
-      setToken(res.data.token); setUser(res.data.user);
+      const res = await (request.post('/auth/register', { ...values, aff }) as any);
+      setToken(res.token); setUser(res.user);
       message.success(t('auth.register_success')); navigate('/');
     } catch (e: any) {
       message.error(e?.response?.data?.error?.message || t('common.error'));
@@ -79,8 +79,8 @@ const Register: React.FC = () => {
     if (values.password !== values.confirm_password) { message.error(t('auth.passwords_not_match')); return; }
     setLoading(true);
     try {
-      const res = await axios.post('/api/v1/auth/register-email', { email: values.email, code: values.code, password: values.password, aff });
-      setToken(res.data.token); setUser(res.data.user);
+      const res = await (request.post('/auth/register-email', { email: values.email, code: values.code, password: values.password, aff }) as any);
+      setToken(res.token); setUser(res.user);
       message.success(t('auth.register_success')); navigate('/');
     } catch (e: any) {
       message.error(e?.response?.data?.error?.message || t('common.error'));
@@ -92,8 +92,8 @@ const Register: React.FC = () => {
     if (values.password !== values.confirm_password) { message.error(t('auth.passwords_not_match')); return; }
     setLoading(true);
     try {
-      const res = await axios.post('/api/v1/auth/register-mobile', { mobile: values.mobile, code: values.code, password: values.password, aff });
-      setToken(res.data.token); setUser(res.data.user);
+      const res = await (request.post('/auth/register-mobile', { mobile: values.mobile, code: values.code, password: values.password, aff }) as any);
+      setToken(res.token); setUser(res.user);
       message.success(t('auth.register_success')); navigate('/');
     } catch (e: any) {
       message.error(e?.response?.data?.error?.message || t('common.error'));
@@ -175,6 +175,7 @@ const Register: React.FC = () => {
       title={t('auth.register_title')}
       subtitle={t('auth.register_subtitle')}
       logo={siteLogo}
+      loading={!settings}
       methodsLabel={t('auth.register_method')}
       methods={layoutMethods}
       activeMethod={activeTab}

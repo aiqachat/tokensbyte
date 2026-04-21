@@ -54,16 +54,6 @@ const ForgotPassword: React.FC = () => {
     return () => clearInterval(timer);
   }, [countdown]);
 
-  if (!settings) {
-    return (
-      <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#000' }}>
-          <Text type="secondary">{t('common.loading')}</Text>
-        </div>
-      </ConfigProvider>
-    );
-  }
-
   const currentTab = recoveryTabs.find(t => t.key === activeTab) || recoveryTabs[0];
 
   const onSendCode = async () => {
@@ -123,6 +113,7 @@ const ForgotPassword: React.FC = () => {
     <AuthLayout
       title={t('auth.reset_password_title')}
       subtitle={t('auth.reset_password_subtitle')}
+      loading={!settings}
       methodsLabel={t('auth.recovery_method')}
       methods={recoveryTabs.length > 1 ? layoutMethods : undefined}
       activeMethod={activeTab}

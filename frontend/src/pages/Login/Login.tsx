@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, message } from 'antd';
 import { UserOutlined, LockOutlined, MobileOutlined, MailOutlined, WechatOutlined, GoogleOutlined } from '@ant-design/icons';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import axios, { AxiosError } from 'axios';
+import request from '../../utils/request';
 import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/auth';
 import useSettingsStore from '../../store/settings';
@@ -29,11 +29,11 @@ const Login: React.FC = () => {
     const token = searchParams.get('token');
     if (token) {
       setToken(token);
-      axios.get('/api/v1/user/profile', { headers: { Authorization: `Bearer ${token}` } })
-        .then(res => { setUser(res.data); navigate('/'); })
+      request.get('/user/profile')
+        .then((res: any) => { setUser(res); navigate('/'); })
         .catch(() => navigate('/'));
     }
-  }, [searchParams]);
+  }, [searchParams, setToken, setUser, navigate]);
 
   const loginTitle = settings?.site?.login_title || settings?.site?.name || 'TokensByte';
   const loginSubtitle = settings?.site?.login_subtitle || 'Next-gen LLM API Gateway';
@@ -44,14 +44,12 @@ const Login: React.FC = () => {
     setLoading(true);
     message.destroy();
     try {
-      const response = await axios.post<LoginResponse>('/api/v1/auth/login', { ...values, login_type: activeTab });
-      const { token, user } = response.data;
-      setToken(token); setUser(user);
-      message.success(t('login.welcome') + ', ' + (user.nickname || user.username));
+      const res = await (request.post('/auth/login', { ...values, login_type: activeTab }) as any);
+      setToken(res.token); setUser(res.user);
+      message.success(t('login.welcome') + ', ' + (res.user.nickname || res.user.username));
       navigate('/');
     } catch (error) {
-      const axiosError = error as AxiosError<{ error: { message: string } }>;
-      message.error(axiosError.response?.data?.error?.message || t('common.error'));
+      console.error(error);
     } finally {
       setTimeout(() => setLoading(false), 800);
     }
@@ -91,6 +89,7 @@ const Login: React.FC = () => {
       title={loginTitle}
       subtitle={loginSubtitle}
       logo={settings?.site?.logo}
+      loading={!settings}
       methodsLabel={t('login.title')}
       methods={layoutMethods}
       activeMethod={activeTab}
@@ -98,7 +97,7 @@ const Login: React.FC = () => {
       bottomLinks={bottomLinks}
     >
       {activeTab === 'wechat' ? (
-        <div style={{ textAlign: 'center', padding: '8px 0' }}>
+        <div style={{ textAlign: 'center', padding: '12px 0' }}>
           <WechatQR appId={wechatAppId} redirectUri={wechatRedirectUri} state={wechatState} />
         </div>
       ) : (
