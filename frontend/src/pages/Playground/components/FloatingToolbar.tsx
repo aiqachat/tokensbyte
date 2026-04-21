@@ -23,7 +23,7 @@ const FloatingToolbar: React.FC = React.memo(() => {
       padding: '12px 8px', borderRadius: 30,
       border: '1px solid rgba(255,255,255,0.05)',
       boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 1000
-    }}>
+    }} onWheel={(e) => e.stopPropagation()}>
       <Tooltip title="指针工具 (V)" placement="right">
         <Button
           shape="circle"

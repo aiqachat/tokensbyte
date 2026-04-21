@@ -5,7 +5,7 @@
  * - CanvasContext: 高频变化（画布变换、拖拽状态）—— 仅画布相关组件订阅
  * - PlaygroundContext: 低频变化（模型、参数、token）—— 面板等 UI 组件订阅
  * 
- * 这样画布拖拽时不会触发参数面板等无关组件的重新渲染
+ * 拖拽操作（画布/节点/面板）已改为 ref+DOM 驱动，不再于拖拽期间更新 Context
  */
 import React, { createContext, useContext, useState, useMemo, useCallback, useRef } from 'react';
 import type { CanvasNode, CanvasTransform, ActiveTool, Point, PlaygroundModel, SchemeParam } from '../types';
@@ -21,20 +21,14 @@ interface CanvasContextValue {
   // 活跃工具
   activeTool: ActiveTool;
   setActiveTool: React.Dispatch<React.SetStateAction<ActiveTool>>;
-  // 拖拽状态
+  // 键盘状态
   isSpaceDown: boolean;
-  setIsSpaceDown: React.Dispatch<React.SetStateAction<boolean>>;
+  // 画布拖拽中标记（用于 cursor 样式）
   isDraggingCanvas: boolean;
   setIsDraggingCanvas: React.Dispatch<React.SetStateAction<boolean>>;
-  dragStartPos: Point;
-  setDragStartPos: React.Dispatch<React.SetStateAction<Point>>;
-  dragStartTransform: Point;
-  setDragStartTransform: React.Dispatch<React.SetStateAction<Point>>;
   // 节点拖拽
   draggingNodeId: string | null;
   setDraggingNodeId: React.Dispatch<React.SetStateAction<string | null>>;
-  nodeDragOffset: Point;
-  setNodeDragOffset: React.Dispatch<React.SetStateAction<Point>>;
   // 节点数据
   nodes: CanvasNode[];
   setNodes: React.Dispatch<React.SetStateAction<CanvasNode[]>>;
@@ -43,9 +37,7 @@ interface CanvasContextValue {
   setMaxZIndex: React.Dispatch<React.SetStateAction<number>>;
   // ref
   canvasRef: React.RefObject<HTMLDivElement>;
-  // 悬浮面板拖拽
-  isSettingsDragging: boolean;
-  setIsSettingsDragging: React.Dispatch<React.SetStateAction<boolean>>;
+  // 悬浮面板位置（仅初始化和 mouseup 时写入）
   settingsWidgetPos: Point;
   setSettingsWidgetPos: React.Dispatch<React.SetStateAction<Point>>;
 }
@@ -135,12 +127,8 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [activeTool, setActiveTool] = useState<ActiveTool>('pointer');
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
-  const [dragStartPos, setDragStartPos] = useState<Point>({ x: 0, y: 0 });
-  const [dragStartTransform, setDragStartTransform] = useState<Point>({ x: 0, y: 0 });
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
-  const [nodeDragOffset, setNodeDragOffset] = useState<Point>({ x: 0, y: 0 });
   const [maxZIndex, setMaxZIndex] = useState(10);
-  const [isSettingsDragging, setIsSettingsDragging] = useState(false);
   const [settingsWidgetPos, setSettingsWidgetPos] = useState<Point>({ x: window.innerWidth - 380, y: 32 });
   const canvasRef = useRef<HTMLDivElement>(null!);
 
@@ -248,21 +236,16 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const canvasValue = useMemo<CanvasContextValue>(() => ({
     canvasTransform, setCanvasTransform,
     activeTool, setActiveTool,
-    isSpaceDown, setIsSpaceDown,
+    isSpaceDown,
     isDraggingCanvas, setIsDraggingCanvas,
-    dragStartPos, setDragStartPos,
-    dragStartTransform, setDragStartTransform,
     draggingNodeId, setDraggingNodeId,
-    nodeDragOffset, setNodeDragOffset,
     nodes, setNodes,
     maxZIndex, setMaxZIndex,
     canvasRef,
-    isSettingsDragging, setIsSettingsDragging,
     settingsWidgetPos, setSettingsWidgetPos,
   }), [
     canvasTransform, activeTool, isSpaceDown, isDraggingCanvas,
-    dragStartPos, dragStartTransform, draggingNodeId, nodeDragOffset,
-    nodes, maxZIndex, isSettingsDragging, settingsWidgetPos
+    draggingNodeId, nodes, maxZIndex, settingsWidgetPos
   ]);
 
   const playgroundValue = useMemo<PlaygroundContextValue>(() => ({

@@ -38,6 +38,7 @@ const CanvasNode: React.FC<Props> = React.memo(({ node }) => {
 
   return (
     <div
+      data-node-id={node.id}
       style={{
         position: 'absolute',
         left: node.x,

@@ -12,6 +12,7 @@ import PromptInput from './components/PromptInput';
 import SettingsWidget from './components/SettingsWidget';
 import ModelDrawer from './components/ModelDrawer';
 import TokenModal from './components/TokenModal';
+import ZoomIndicator from './components/ZoomIndicator';
 import './Playground.css';
 
 /** 内部布局层，在 Provider 内部消费 Context */
@@ -27,6 +28,7 @@ const PlaygroundLayout: React.FC = () => {
 
       {/* 悬浮 UI 层 */}
       <FloatingHeader />
+      <ZoomIndicator />
       <SettingsWidget />
 
       {/* 弹出层 */}

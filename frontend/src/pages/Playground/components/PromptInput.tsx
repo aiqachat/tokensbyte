@@ -29,7 +29,7 @@ const PromptInput: React.FC = React.memo(() => {
       border: '1px solid rgba(255,255,255,0.06)',
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
       boxShadow: '0 24px 60px rgba(0,0,0,0.5)', zIndex: 1000
-    }}>
+    }} onWheel={(e) => e.stopPropagation()}>
       <TextArea
         value={prompt}
         onChange={e => setPrompt(e.target.value)}

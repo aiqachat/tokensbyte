@@ -1,89 +1,154 @@
 /**
- * 画布交互 Hook
- * 封装画布平移/缩放、节点拖拽、悬浮面板拖拽的所有鼠标事件逻辑
+ * 画布交互 Hook（高性能版）
+ * 
+ * 核心优化：所有拖拽操作（画布平移、节点拖拽）使用 useRef 存储中间值，
+ * 通过 requestAnimationFrame 批量更新 DOM，仅在 mouseup 时提交最终状态到 React。
+ * 
+ * 这样每次 mousemove 不再触发 React re-render，实现 60fps 流畅拖拽。
  */
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useCanvas } from '../context/PlaygroundContext';
+import type { CanvasTransform } from '../types';
 
 export const useCanvasInteraction = () => {
   const {
     canvasTransform, setCanvasTransform,
     activeTool, isSpaceDown,
-    isDraggingCanvas, setIsDraggingCanvas,
-    dragStartPos, setDragStartPos,
-    dragStartTransform, setDragStartTransform,
-    draggingNodeId, setDraggingNodeId,
-    nodeDragOffset, setNodeDragOffset,
+    setIsDraggingCanvas,
+    setDraggingNodeId,
     nodes, setNodes,
     maxZIndex, setMaxZIndex,
     canvasRef,
-    isSettingsDragging, setIsSettingsDragging,
-    settingsWidgetPos, setSettingsWidgetPos,
   } = useCanvas();
 
-  /** 滚轮缩放（以鼠标指针为中心） */
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
+  // --- Ref-based 拖拽中间状态（不触发 React 渲染） ---
+  const canvasDragRef = useRef({
+    isDragging: false,
+    startX: 0, startY: 0,
+    startTransformX: 0, startTransformY: 0,
+  });
+  const nodeDragRef = useRef({
+    nodeId: null as string | null,
+    offsetX: 0, offsetY: 0,
+  });
+  const rafRef = useRef<number>(0);
+  // 缓存最新的 canvasTransform，在闭包中使用
+  const transformRef = useRef<CanvasTransform>(canvasTransform);
+  transformRef.current = canvasTransform;
+
+  /** 滚轮缩放（以鼠标指针为中心），兼容原生 WheelEvent 和 React.WheelEvent */
+  const handleWheel = useCallback((e: WheelEvent | React.WheelEvent) => {
+    const ct = transformRef.current;
     const zoomFactor = -e.deltaY * 0.001;
-    const newScale = Math.min(Math.max(0.1, canvasTransform.scale + zoomFactor), 5);
+    const newScale = Math.min(Math.max(0.1, ct.scale + zoomFactor), 5);
     const rect = canvasRef.current?.getBoundingClientRect();
     if (rect) {
       const pointerX = e.clientX - rect.left;
       const pointerY = e.clientY - rect.top;
-      const ratio = newScale / canvasTransform.scale;
-      const newX = pointerX - (pointerX - canvasTransform.x) * ratio;
-      const newY = pointerY - (pointerY - canvasTransform.y) * ratio;
+      const ratio = newScale / ct.scale;
+      const newX = pointerX - (pointerX - ct.x) * ratio;
+      const newY = pointerY - (pointerY - ct.y) * ratio;
       setCanvasTransform({ x: newX, y: newY, scale: newScale });
     }
-  }, [canvasTransform, canvasRef, setCanvasTransform]);
+  }, [canvasRef, setCanvasTransform]);
 
-  /** 画布鼠标按下（启动平移） */
+  /** 画布鼠标按下 */
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
     if (activeTool === 'hand' || isSpaceDown) {
+      canvasDragRef.current = {
+        isDragging: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        startTransformX: transformRef.current.x,
+        startTransformY: transformRef.current.y,
+      };
       setIsDraggingCanvas(true);
-      setDragStartPos({ x: e.clientX, y: e.clientY });
-      setDragStartTransform({ x: canvasTransform.x, y: canvasTransform.y });
     }
-  }, [activeTool, isSpaceDown, canvasTransform, setIsDraggingCanvas, setDragStartPos, setDragStartTransform]);
+  }, [activeTool, isSpaceDown, setIsDraggingCanvas]);
 
-  /** 画布鼠标移动（处理平移、节点拖拽、面板拖拽） */
+  /** 画布鼠标移动 — 全部通过 RAF + 直接 DOM 更新 */
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
-    if (isSettingsDragging) {
-      setSettingsWidgetPos(prev => ({
-        x: prev.x + (e.clientX - dragStartPos.x),
-        y: prev.y + (e.clientY - dragStartPos.y)
-      }));
-      setDragStartPos({ x: e.clientX, y: e.clientY });
-    } else if (isDraggingCanvas) {
-      setCanvasTransform({
-        ...canvasTransform,
-        x: dragStartTransform.x + (e.clientX - dragStartPos.x),
-        y: dragStartTransform.y + (e.clientY - dragStartPos.y)
+    const cd = canvasDragRef.current;
+    const nd = nodeDragRef.current;
+
+    if (cd.isDragging) {
+      // 画布平移：直接计算新位置，通过 RAF 更新 transform 层 DOM
+      const newX = cd.startTransformX + (e.clientX - cd.startX);
+      const newY = cd.startTransformY + (e.clientY - cd.startY);
+
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        // 直接操作画布内的 transform 层 DOM
+        const transformLayer = canvasRef.current?.firstElementChild as HTMLElement | null;
+        if (transformLayer) {
+          transformLayer.style.transform = `translate(${newX}px, ${newY}px) scale(${transformRef.current.scale})`;
+        }
+        // 更新网格背景位置
+        if (canvasRef.current) {
+          canvasRef.current.style.backgroundPosition = `${newX}px ${newY}px`;
+        }
       });
-    } else if (draggingNodeId) {
+
+      // 缓存最新位置供 mouseup 使用
+      transformRef.current = { ...transformRef.current, x: newX, y: newY };
+
+    } else if (nd.nodeId) {
+      // 节点拖拽：直接操作节点 DOM
       const rect = canvasRef.current?.getBoundingClientRect();
       if (rect) {
-        const pointerX = (e.clientX - rect.left - canvasTransform.x) / canvasTransform.scale;
-        const pointerY = (e.clientY - rect.top - canvasTransform.y) / canvasTransform.scale;
-        setNodes(prev => prev.map(n =>
-          n.id === draggingNodeId
-            ? { ...n, x: pointerX - nodeDragOffset.x, y: pointerY - nodeDragOffset.y }
-            : n
-        ));
+        const ct = transformRef.current;
+        const pointerX = (e.clientX - rect.left - ct.x) / ct.scale;
+        const pointerY = (e.clientY - rect.top - ct.y) / ct.scale;
+        const newNodeX = pointerX - nd.offsetX;
+        const newNodeY = pointerY - nd.offsetY;
+
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = requestAnimationFrame(() => {
+          // 找到正在拖拽的节点 DOM 元素并直接更新位置
+          const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${nd.nodeId}"]`) as HTMLElement | null;
+          if (nodeEl) {
+            nodeEl.style.left = `${newNodeX}px`;
+            nodeEl.style.top = `${newNodeY}px`;
+          }
+        });
       }
     }
-  }, [
-    isSettingsDragging, isDraggingCanvas, draggingNodeId,
-    canvasTransform, dragStartPos, dragStartTransform, nodeDragOffset,
-    canvasRef, setCanvasTransform, setNodes, setSettingsWidgetPos, setDragStartPos
-  ]);
+  }, [canvasRef]);
 
-  /** 鼠标松开（清除所有拖拽状态） */
+  /** 鼠标松开 — 将最终位置一次性提交到 React state */
   const handleCanvasMouseUp = useCallback(() => {
-    setIsDraggingCanvas(false);
-    setDraggingNodeId(null);
-    setIsSettingsDragging(false);
-  }, [setIsDraggingCanvas, setDraggingNodeId, setIsSettingsDragging]);
+    const cd = canvasDragRef.current;
+    const nd = nodeDragRef.current;
+
+    if (cd.isDragging) {
+      // 提交最终画布位置到 React state
+      setCanvasTransform({
+        x: transformRef.current.x,
+        y: transformRef.current.y,
+        scale: transformRef.current.scale,
+      });
+      cd.isDragging = false;
+      setIsDraggingCanvas(false);
+    }
+
+    if (nd.nodeId) {
+      // 提交最终节点位置到 React state
+      const rect = canvasRef.current?.getBoundingClientRect();
+      const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${nd.nodeId}"]`) as HTMLElement | null;
+      if (nodeEl && rect) {
+        const finalX = parseFloat(nodeEl.style.left);
+        const finalY = parseFloat(nodeEl.style.top);
+        const draggedId = nd.nodeId;
+        setNodes(prev => prev.map(n =>
+          n.id === draggedId ? { ...n, x: finalX, y: finalY } : n
+        ));
+      }
+      nd.nodeId = null;
+      setDraggingNodeId(null);
+    }
+
+    cancelAnimationFrame(rafRef.current);
+  }, [canvasRef, setCanvasTransform, setIsDraggingCanvas, setNodes, setDraggingNodeId]);
 
   /** 节点鼠标按下（启动节点拖拽并置顶） */
   const handleNodeMouseDown = useCallback((e: React.MouseEvent, nodeId: string, nodeX: number, nodeY: number) => {
@@ -93,11 +158,16 @@ export const useCanvasInteraction = () => {
       const newZ = maxZIndex + 1;
       setMaxZIndex(newZ);
       setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, zIndex: newZ } : n));
-      const startX = (e.clientX - canvasTransform.x) / canvasTransform.scale;
-      const startY = (e.clientY - canvasTransform.y) / canvasTransform.scale;
-      setNodeDragOffset({ x: startX - nodeX, y: startY - nodeY });
+      const ct = transformRef.current;
+      const startX = (e.clientX - ct.x) / ct.scale;
+      const startY = (e.clientY - ct.y) / ct.scale;
+      nodeDragRef.current = {
+        nodeId,
+        offsetX: startX - nodeX,
+        offsetY: startY - nodeY,
+      };
     }
-  }, [activeTool, maxZIndex, canvasTransform, setDraggingNodeId, setMaxZIndex, setNodes, setNodeDragOffset]);
+  }, [activeTool, maxZIndex, setDraggingNodeId, setMaxZIndex, setNodes]);
 
   /** 移除节点 */
   const removeNode = useCallback((id: string) => {

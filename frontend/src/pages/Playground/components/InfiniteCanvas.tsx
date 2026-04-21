@@ -1,8 +1,12 @@
 /**
  * 无限画布容器
  * 负责网格背景、变换层、鼠标事件代理
+ * 
+ * 性能关键：使用原生 addEventListener({ passive: false }) 挂载 wheel 事件
+ * React 的 onWheel 是 passive 的，preventDefault() 不生效，
+ * 导致 Mac 触控板的双指缩放会触发浏览器原生页面缩放。
  */
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Typography, Spin } from 'antd';
 import { CompassOutlined } from '@ant-design/icons';
 import { useCanvas } from '../context/PlaygroundContext';
@@ -24,6 +28,21 @@ const InfiniteCanvas: React.FC = React.memo(() => {
     handleCanvasMouseMove, handleCanvasMouseUp,
   } = useCanvasInteraction();
 
+  // 原生 wheel 事件监听器（非 passive），确保 Mac 触控板缩放时 preventDefault 生效
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const nativeWheelHandler = (e: WheelEvent) => {
+      e.preventDefault();
+      // 调用 React handler 的逻辑（通过自定义事件桥接）
+      handleWheel(e as any);
+    };
+
+    el.addEventListener('wheel', nativeWheelHandler, { passive: false });
+    return () => el.removeEventListener('wheel', nativeWheelHandler);
+  }, [canvasRef, handleWheel]);
+
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
@@ -44,7 +63,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
         backgroundSize: `${20 * canvasTransform.scale}px ${20 * canvasTransform.scale}px`,
         backgroundPosition: `${canvasTransform.x}px ${canvasTransform.y}px`
       }}
-      onWheel={handleWheel}
+      // 不再使用 React onWheel（passive 的，preventDefault 无效）
       onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}

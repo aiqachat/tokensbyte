@@ -1,8 +1,10 @@
 /**
  * 悬浮参数设置面板 (可拖拽、可折叠)
- * 包含类别切换、模型选择、参数面板、我的素材入口
+ * 
+ * 性能关键：拖拽期间完全绕过 React 状态系统，直接操作 DOM
+ * 仅在 mouseup 时提交最终位置到 Context state
  */
-import React from 'react';
+import React, { useRef, useCallback, useEffect } from 'react';
 import { Typography, Button, Tooltip, message } from 'antd';
 import { FolderOpenOutlined, DownOutlined } from '@ant-design/icons';
 import { useCanvas } from '../context/PlaygroundContext';
@@ -13,45 +15,100 @@ import ParamControl from './ParamControl';
 const { Text } = Typography;
 
 const SettingsWidget: React.FC = React.memo(() => {
-  const {
-    isSettingsDragging, setIsSettingsDragging,
-    settingsWidgetPos, setDragStartPos,
-  } = useCanvas();
+  const { settingsWidgetPos, setSettingsWidgetPos } = useCanvas();
   const {
     isSettingsCollapsed, setIsSettingsCollapsed,
     categories, activeCategory, handleCategoryChange,
     currentModel, setIsModelDrawerVisible,
   } = usePlayground();
 
+  // --- 高性能拖拽：全部通过 ref + DOM 操作，零 React re-render ---
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const posRef = useRef({ x: settingsWidgetPos.x, y: settingsWidgetPos.y });
+
+  // 同步 state 变化到 ref（仅在非拖拽时）
+  useEffect(() => {
+    if (!isDraggingRef.current) {
+      posRef.current = { x: settingsWidgetPos.x, y: settingsWidgetPos.y };
+    }
+  }, [settingsWidgetPos]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // 忽略来自按钮等交互元素的事件
+    if ((e.target as HTMLElement).closest('button, .ant-tooltip-open')) return;
+    
+    isDraggingRef.current = true;
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    
+    if (containerRef.current) {
+      containerRef.current.style.transition = 'none';
+      containerRef.current.style.cursor = 'grabbing';
+    }
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!isDraggingRef.current || !containerRef.current) return;
+      
+      const dx = ev.clientX - dragStartRef.current.x;
+      const dy = ev.clientY - dragStartRef.current.y;
+      dragStartRef.current = { x: ev.clientX, y: ev.clientY };
+      
+      posRef.current.x += dx;
+      posRef.current.y += dy;
+
+      // 直接操作 DOM，完全不触发 React 渲染
+      containerRef.current.style.left = `${posRef.current.x}px`;
+      containerRef.current.style.top = `${posRef.current.y}px`;
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+      if (containerRef.current) {
+        containerRef.current.style.cursor = 'grab';
+      }
+      // 仅在松手时一次性提交到 React state
+      setSettingsWidgetPos({ x: posRef.current.x, y: posRef.current.y });
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    // 挂载到 document 级别，确保鼠标移出元素也能继续跟踪
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [setSettingsWidgetPos]);
+
   return (
-    <div style={{
-      position: 'absolute',
-      left: settingsWidgetPos.x,
-      top: settingsWidgetPos.y,
-      width: 360,
-      background: 'rgba(18, 19, 21, 0.85)',
-      borderRadius: 24,
-      border: '1px solid rgba(255,255,255,0.08)',
-      boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
-      backdropFilter: 'blur(24px)',
-      display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      zIndex: 1000,
-      transition: isSettingsDragging ? 'none' : 'height 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-      height: isSettingsCollapsed ? 64 : Math.min(800, window.innerHeight - settingsWidgetPos.y - 24)
-    }}>
+    <div
+      ref={containerRef}
+      style={{
+        position: 'absolute',
+        left: settingsWidgetPos.x,
+        top: settingsWidgetPos.y,
+        width: 360,
+        background: 'rgba(18, 19, 21, 0.85)',
+        borderRadius: 24,
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(24px)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        zIndex: 1000,
+        transition: 'height 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        height: isSettingsCollapsed ? 64 : Math.min(800, window.innerHeight - settingsWidgetPos.y - 24)
+      }}
+      onWheel={(e) => e.stopPropagation()}
+    >
       {/* 拖拽标题栏 */}
       <div
-        onMouseDown={(e) => {
-          setIsSettingsDragging(true);
-          setDragStartPos({ x: e.clientX, y: e.clientY });
-        }}
+        onMouseDown={handleMouseDown}
         onDoubleClick={() => setIsSettingsCollapsed(!isSettingsCollapsed)}
         style={{
           padding: '0 24px', height: 64, minHeight: 64,
           borderBottom: isSettingsCollapsed ? 'none' : '1px solid rgba(255,255,255,0.05)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          cursor: isSettingsDragging ? 'grabbing' : 'grab',
-          background: 'rgba(255,255,255,0.02)'
+          cursor: 'grab',
+          background: 'rgba(255,255,255,0.02)',
+          userSelect: 'none',
         }}
       >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>

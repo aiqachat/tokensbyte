@@ -19,7 +19,7 @@ const FloatingHeader: React.FC = React.memo(() => {
       background: 'rgba(30, 31, 34, 0.6)', padding: '8px 24px 8px 8px', borderRadius: 32,
       border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(20px)',
       boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
-    }}>
+    }} onWheel={(e) => e.stopPropagation()}>
       <Button
         type="primary" shape="circle" icon={<CloseOutlined />}
         onClick={() => { window.close(); navigate('/'); }}
