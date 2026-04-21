@@ -75,7 +75,12 @@
     "username_or_email": "用户名 或 邮箱帐号",
     "password": "密码",
     "sign_in": "登录系统",
-    "welcome": "欢迎回来"
+    "welcome": "欢迎回来",
+    "username_login": "账号登录",
+    "mobile_login": "手机号登录",
+    "email_login": "邮箱登录",
+    "wechat_login": "微信登录",
+    "google_login": "谷歌登录"
   },
   "channels": {
     "title": "渠道分组管理",
@@ -286,13 +291,26 @@
     "not_set": "未设置",
     "google": "谷歌登录",
     "rebind": "换绑",
-    "bind_mobile_title": "绑定手机号",
     "bind_email_title": "绑定邮箱",
+    "current_mobile": "当前手机号",
+    "current_email": "当前邮箱",
     "new_mobile_placeholder": "输入新手机号",
     "new_email_placeholder": "输入新邮箱",
+    "old_mobile_code": "原手机验证码",
+    "old_email_code": "原邮箱验证码",
+    "new_mobile_code": "新手机验证码",
+    "new_email_code": "新邮箱验证码",
+    "enter_old_code": "输入原验证码",
+    "enter_new_code": "输入新验证码",
     "verify_old": "请先验证原手机/邮箱",
+    "membership_default": "普通会员",
     "unbind_confirm": "确定要解绑吗？",
-    "unbind_password": "输入登录密码确认"
+    "unbind_password": "输入登录密码确认",
+    "unbind_ok": "确定解绑",
+    "bind_wechat": "绑定微信",
+    "rebind_wechat": "换绑微信",
+    "bind_google": "绑定谷歌",
+    "unbind_success": "解绑成功"
   },
   "wallet": {
     "title": "我的钱包",
@@ -342,6 +360,11 @@
     "register_subtitle": "开始您的 AI 探索之旅",
     "username_reg": "用户名注册",
     "email_reg": "邮箱注册",
+    "mobile_reg": "手机号注册",
+    "email_recovery": "邮箱找回",
+    "mobile_recovery": "手机号找回",
+    "register_method": "注册方式",
+    "recovery_method": "找回方式",
     "username_placeholder": "输入用户名",
     "email_placeholder": "输入邮箱地址",
     "email_optional": "输入邮箱 (可选)",
@@ -371,6 +394,10 @@
     "confirm_password_required": "请再次输入密码",
     "passwords_not_match": "两次填写的密码不一致",
     "registration_disabled": "暂时不支持自主注册",
+    "mobile_reg": "手机号注册",
+    "mobile_placeholder": "输入手机号",
+    "mobile_required": "请输入手机号",
+    "sms_code_sent": "验证码已发送到您的手机",
     "admin_success": "认证成功，欢迎，操作员。"
   }
 }

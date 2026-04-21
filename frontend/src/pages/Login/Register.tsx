@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined, MobileOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import request from '../../utils/request';
 import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/auth';
 import useSettingsStore from '../../store/settings';
@@ -32,7 +32,7 @@ const Register: React.FC = () => {
 
   const regTabs: { key: string; label: string; icon: React.ReactNode }[] = [];
   if (reg?.enable_username_registration) regTabs.push({ key: 'username', label: t('auth.username_reg'), icon: <UserOutlined /> });
-  if (reg?.enable_mobile_registration) regTabs.push({ key: 'mobile', label: '手机号注册', icon: <MobileOutlined /> });
+  if (reg?.enable_mobile_registration) regTabs.push({ key: 'mobile', label: t('auth.mobile_reg'), icon: <MobileOutlined /> });
   if (reg?.enable_email_registration) regTabs.push({ key: 'email', label: t('auth.email_reg'), icon: <MailOutlined /> });
 
   const [activeTab, setActiveTab] = useState('');
@@ -43,22 +43,22 @@ const Register: React.FC = () => {
   const sendEmailCode = async (email: string) => {
     if (countdown > 0) return;
     try {
-      await axios.post('/api/v1/auth/send-code', { email, purpose: 'register' });
+      await request.post('/auth/send-code', { email, purpose: 'register' });
       message.success(t('auth.code_sent'));
       setCountdown(60);
     } catch (e: any) {
-      message.error(e?.response?.data?.error?.message || '发送失败');
+      console.error(e);
     }
   };
 
   const sendSmsCode = async (mobile: string) => {
     if (countdown > 0) return;
     try {
-      await axios.post('/api/v1/auth/send-sms-code', { mobile, purpose: 'register' });
-      message.success('验证码已发送');
+      await request.post('/auth/send-sms-code', { mobile, purpose: 'register' });
+      message.success(t('auth.sms_code_sent'));
       setCountdown(60);
     } catch (e: any) {
-      message.error(e?.response?.data?.error?.message || '发送失败');
+      console.error(e);
     }
   };
 
@@ -139,13 +139,13 @@ const Register: React.FC = () => {
 
   const mobileForm = (
     <Form name="reg_mobile" size="large" onFinish={onFinishMobile} autoComplete="off">
-      <Form.Item name="mobile" rules={[{ required: true, message: '请输入手机号' }]}>
-        <Input prefix={<MobileOutlined />} placeholder="手机号" />
+      <Form.Item name="mobile" rules={[{ required: true, message: t('auth.mobile_required') }]}>
+        <Input prefix={<MobileOutlined />} placeholder={t('auth.mobile_placeholder')} />
       </Form.Item>
       <Form.Item name="code" rules={[{ required: true, message: t('auth.code_required') }]}>
         <Input prefix={<SafetyOutlined />} placeholder={t('auth.code_placeholder')}
           suffix={<Button type="link" size="small" disabled={countdown > 0}
-            onClick={() => { const e = document.querySelector<HTMLInputElement>('input[id="reg_mobile_mobile"]'); if (e?.value) sendSmsCode(e.value); else message.warning('请输入手机号'); }}>
+            onClick={() => { const e = document.querySelector<HTMLInputElement>('input[id="reg_mobile_mobile"]'); if (e?.value) sendSmsCode(e.value); else message.warning(t('auth.mobile_required')); }}>
             {countdown > 0 ? `${countdown}s` : t('auth.send_code')}
           </Button>} />
       </Form.Item>
@@ -175,7 +175,7 @@ const Register: React.FC = () => {
       title={t('auth.register_title')}
       subtitle={t('auth.register_subtitle')}
       logo={siteLogo}
-      methodsLabel="注册方式"
+      methodsLabel={t('auth.register_method')}
       methods={layoutMethods}
       activeMethod={activeTab}
       onMethodChange={setActiveTab}

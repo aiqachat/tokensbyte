@@ -588,11 +588,11 @@ pub struct OAuthCallbackQuery {
     pub state: Option<String>,
 }
 
-/// 微信 OAuth — 获取授权 URL 并重定向
+/// 微信 OAuth — 获取授权 URL 并重定向（兼容旧流程）
 pub async fn oauth_wechat(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
-    Query(params): Query<std::collections::HashMap<String, String>>,
+    Query(_params): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     let result = (async {
         let settings = get_all_settings(&state).await?;
@@ -600,23 +600,20 @@ pub async fn oauth_wechat(
         if wechat.app_id.is_empty() {
             return Err(AppError::BadRequest("微信授权登录未配置".to_string()));
         }
-
         let req_base_url = get_base_url_from_req(&headers, &state.config.base_url);
-        let base_url = format!("{}/api/v1/auth/oauth/wechat/callback", req_base_url);
-        // bind_user_id 用于绑定场景
-        let _bind_user_id = params.get("bind_user_id").cloned().unwrap_or_default();
+        let redirect_uri = format!("{}/api/v1/auth/oauth/wechat/callback", req_base_url);
         let state_val = format!("wechat_{}", uuid::Uuid::new_v4().simple());
         let url = crate::services::oauth::OAuthService::wechat_auth_url(
-            &wechat.app_id, &base_url, &state_val,
+            &wechat.app_id, &redirect_uri, &state_val,
         );
         Ok::<_, AppError>(url)
     }).await;
-
     match result {
         Ok(url) => Redirect::temporary(&url).into_response(),
         Err(err) => err.into_response(),
     }
 }
+
 
 /// 微信 OAuth 回调 — 自动注册/登录
 pub async fn oauth_wechat_callback(

@@ -127,6 +127,7 @@ pub async fn bind_email(
     Ok(Json(serde_json::json!({"success": true, "message": "邮箱绑定成功"})))
 }
 
+
 /// 绑定/换绑微信 — 发起授权跳转
 pub async fn bind_wechat(
     State(state): State<Arc<AppState>>,
