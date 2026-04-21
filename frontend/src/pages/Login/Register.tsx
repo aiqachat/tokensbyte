@@ -105,7 +105,6 @@ const Register: React.FC = () => {
       <Form.Item name="username" rules={[{ required: true, message: t('auth.username_required') }]}>
         <Input prefix={<UserOutlined />} placeholder={t('auth.username_placeholder')} />
       </Form.Item>
-      <Form.Item name="email"><Input prefix={<MailOutlined />} placeholder={t('auth.email_optional')} /></Form.Item>
       <Form.Item name="password" rules={[{ required: true, message: t('auth.password_required') }]}>
         <Input.Password prefix={<LockOutlined />} placeholder={t('auth.password_placeholder')} />
       </Form.Item>
