@@ -614,6 +614,15 @@ macro_rules! pg_migration_blocks {
     .execute(pool)
     .await?;
 
+    // Seed Playground plugin
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled)
+           VALUES ('playground', '模型体验中心', '提供直接的视频、图片、声音、聊天模型体验服务', 0)
+           ON CONFLICT (name) DO NOTHING"#
+    )
+    .execute(pool)
+    .await?;
+
     // Marketing Teams table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS marketing_teams (
@@ -675,6 +684,28 @@ macro_rules! pg_migration_blocks {
 
     // verification_codes 表新增 phone 字段（短信验证码使用）
     sqlx::query("ALTER TABLE verification_codes ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+
+    // 模型供应商和类型：新增 is_system 字段并植入内置常量配置
+    sqlx::query("ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE model_types ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+
+    // 内置服务商: 火山引擎、谷歌、阿里云
+    sqlx::query(
+        "INSERT INTO model_providers (name, sort_order, is_system)
+         VALUES ('火山引擎', 1, 1), ('谷歌', 2, 1), ('阿里云', 3, 1)
+         ON CONFLICT(name) DO UPDATE SET is_system = 1"
+    ).execute(pool).await?;
+
+    // 内置类型: 视频、图片、音频、聊天
+    sqlx::query(
+        "INSERT INTO model_types (name, sort_order, is_system)
+         VALUES ('视频', 1, 1), ('图片', 2, 1), ('音频', 3, 1), ('聊天', 4, 1)
+         ON CONFLICT(name) DO UPDATE SET is_system = 1"
+    ).execute(pool).await?;
+
+    // 为 models 表增加 mid 列（系统识别码，6位数字）
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS mid TEXT NOT NULL DEFAULT ''")
         .execute(pool).await.ok();
 
     // models 表新增全站折扣字段

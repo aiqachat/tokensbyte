@@ -269,3 +269,24 @@ pub fn default_database_settings() -> DatabaseSettings {
         ssl_mode: false,
     }
 }
+
+pub async fn system_about() -> AppResult<Json<serde_json::Value>> {
+    let output = std::process::Command::new("git")
+        .arg("log")
+        .arg("-1")
+        .arg("--format=Commit: %h%nAuthor: %an%nDate: %cd%nMessage: %s")
+        .arg("--date=format:%Y-%m-%d %H:%M:%S")
+        .output();
+
+    let version_info = match output {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).to_string()
+        }
+        _ => "无法获取版本信息 (Git 暂不可用)".to_string(),
+    };
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "version_info": version_info
+    })))
+}

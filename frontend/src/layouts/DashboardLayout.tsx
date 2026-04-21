@@ -21,11 +21,13 @@ import {
   ScheduleOutlined,
   RocketOutlined,
   PictureOutlined,
+  ExperimentOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Dropdown } from 'antd';
+import { Dropdown, Modal, message } from 'antd';
 import type { MenuProps } from 'antd';
 import useAuthStore from '../store/auth';
 
@@ -90,11 +92,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
 
   const handleLogout = () => {
     logout();
-  if (isUserEnd) {
+    if (isUserEnd) {
       navigate('/login');
     } else {
       navigate('/admin0755');
     }
+  };
+
+  const showSystemAbout = () => {
+    navigate('/admin0755/about');
   };
 
   const changeLanguage = (lng: string) => {
@@ -212,6 +218,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         key: '/advanced-marketing',
         icon: <TeamOutlined style={{ fontSize: '18px' }} />,
         label: <Link to="/advanced-marketing">高级营销</Link>,
+      });
+    }
+
+    // 插件菜单：模型体验中心
+    if (isPluginVisibleForUser('playground')) {
+      menuItems.push({
+        key: '/playground',
+        icon: <ExperimentOutlined style={{ fontSize: '18px' }} />,
+        label: <Link to="/playground" target="_blank">体验中心</Link>,
       });
     }
 
@@ -427,7 +442,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         }
       }}
     >
-      <Layout style={{ minHeight: '100vh' }}>
+      <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Sider 
           trigger={null} 
           collapsible 
@@ -443,55 +458,74 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             boxShadow: '2px 0 8px 0 rgba(29,35,41,.05)',
             zIndex: 10,
             position: screens.xs ? 'fixed' : 'relative',
-            height: '100vh',
+            height: '100%',
             left: 0,
             top: 0,
             bottom: 0,
+            overflow: 'hidden',
           }}
+          className="custom-sider"
         >
-          <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-            {siteLogo ? (
-              (collapsed && !screens.xs) ? (
-                <img src={siteLogo} alt="logo" style={{ width: 32, height: 32, objectFit: 'contain' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              {siteLogo ? (
+                (collapsed && !screens.xs) ? (
+                  <img src={siteLogo} alt="logo" style={{ width: 32, height: 32, objectFit: 'contain' }} />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
+                    <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {siteName}
+                    </Title>
+                  </div>
+                )
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-                  <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                    {siteName}
-                  </Title>
-                </div>
-              )
-            ) : (
-              <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                {(collapsed && !screens.xs) ? 'TB' : siteName}
-              </Title>
+                <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  {(collapsed && !screens.xs) ? 'TB' : siteName}
+                </Title>
+              )}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+              <ConfigProvider 
+                theme={{ 
+                  components: { 
+                    Menu: { 
+                      itemHeight: 36, // default is 40
+                      itemMarginInline: 8, 
+                      itemMarginBlock: 2, 
+                    } 
+                  } 
+                }}
+              >
+                <Menu
+                  theme="dark"
+                  mode="inline"
+                  selectedKeys={[location.pathname + location.search]}
+                  defaultOpenKeys={menuItems
+                    .filter((item: any) => item?.children?.some((child: any) => child.key === location.pathname + location.search))
+                    .map((item: any) => item.key)}
+                  items={menuItems}
+                  style={{ border: 'none', background: 'transparent', marginTop: 8 }}
+                  onClick={() => {
+                    if (screens.xs) setCollapsed(true);
+                  }}
+                />
+              </ConfigProvider>
+            </div>
+            {!isUserEnd && (
+              <div style={{ padding: '16px 8px', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'center' }}>
+                <Button 
+                  type="text" 
+                  icon={<InfoCircleOutlined style={{ fontSize: '18px' }} />} 
+                  style={{ color: 'rgba(255,255,255,0.65)', width: '100%', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start' }}
+                  onClick={showSystemAbout}
+                  title="系统关于"
+                >
+                  {(!collapsed) && <span style={{ marginLeft: 8 }}>系统关于</span>}
+                </Button>
+              </div>
             )}
           </div>
-          <ConfigProvider 
-            theme={{ 
-              components: { 
-                Menu: { 
-                  itemHeight: 36, // default is 40
-                  itemMarginInline: 8, 
-                  itemMarginBlock: 2, 
-                } 
-              } 
-            }}
-          >
-            <Menu
-              theme="dark"
-              mode="inline"
-              selectedKeys={[location.pathname + location.search]}
-              defaultOpenKeys={menuItems
-                .filter((item: any) => item?.children?.some((child: any) => child.key === location.pathname + location.search))
-                .map((item: any) => item.key)}
-              items={menuItems}
-              style={{ border: 'none', background: 'transparent', marginTop: 8 }}
-              onClick={() => {
-                if (screens.xs) setCollapsed(true);
-              }}
-            />
-          </ConfigProvider>
         </Sider>
         <Layout style={{ marginLeft: (screens.xs || collapsed) ? 0 : 0 }}>
           <Header style={{ 

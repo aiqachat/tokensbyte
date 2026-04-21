@@ -26,6 +26,7 @@ import PluginsList from './pages/Plugins/PluginsList';
 import PluginConfig from './pages/Plugins/PluginConfig';
 import UserAssets from './pages/UserAssets/UserAssets';
 import AdvancedMarketing from './pages/AdvancedMarketing/AdvancedMarketing';
+import Playground from './pages/Playground/Playground';
 
 import Redemptions from './pages/Redemptions/Redemptions';
 import Profile from './pages/Profile/Profile';
@@ -37,6 +38,7 @@ import PaymentSettings from './pages/admin/PaymentSettings';
 import MessageNotification from './pages/admin/MessageNotification';
 import OAuthSettings from './pages/admin/OAuthSettings';
 import RegistrationGifts from './pages/admin/Marketing/RegistrationGifts';
+import SystemAbout from './pages/admin/SystemAbout';
 import useAuthStore from './store/auth';
 import useSettingsStore from './store/settings';
 import { useEffect } from 'react';
@@ -64,6 +66,16 @@ const App: React.FC = () => {
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/admin0755" element={<AdminLogin />} />
+
+        {/* Playground Route (Full Screen, Independent) */}
+        <Route
+          path="/playground"
+          element={
+            <PrivateRoute userOnly={true}>
+              <Playground />
+            </PrivateRoute>
+          }
+        />
 
         {/* User End Routes (Default) */}
         <Route
@@ -124,6 +136,7 @@ const App: React.FC = () => {
           <Route path="message-notification" element={<MessageNotification />} />
           <Route path="oauth-settings" element={<OAuthSettings />} />
           <Route path="marketing/registration-gifts" element={<RegistrationGifts />} />
+          <Route path="about" element={<SystemAbout />} />
         </Route>
 
         {/* Fallback */}

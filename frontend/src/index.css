@@ -139,3 +139,11 @@ code {
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* 修复 Ant Design Sider 内部 children 容器不撑满高度导致底部空白 */
+.custom-sider .ant-layout-sider-children {
+  height: 100% !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

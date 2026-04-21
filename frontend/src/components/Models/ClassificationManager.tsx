@@ -8,8 +8,8 @@ import { type ModelProvider, type ModelType } from '../../types';
 interface ClassificationItem {
   id: number;
   name: string;
-  sort_order: number;
   is_active: boolean;
+  is_system?: number;
 }
 
 interface ClassificationManagerProps {
@@ -119,14 +119,21 @@ const ClassificationManager: React.FC<ClassificationManagerProps> = ({
     {
       title: t('common.actions'),
       key: 'actions',
-      render: (_: any, record: ClassificationItem) => (
-        <Space>
-          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />
-          <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-            <Button icon={<DeleteOutlined />} danger size="small" />
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: any, record: ClassificationItem) => {
+        const isBuiltin = record.is_system === 1;
+        return (
+          <Space>
+            <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />
+            {isBuiltin ? (
+              <Button icon={<DeleteOutlined />} danger size="small" disabled title="系统预设禁止删除" />
+            ) : (
+              <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                <Button icon={<DeleteOutlined />} danger size="small" />
+              </Popconfirm>
+            )}
+          </Space>
+        );
+      },
       width: 120,
     },
   ];
@@ -165,7 +172,7 @@ const ClassificationManager: React.FC<ClassificationManagerProps> = ({
       >
         <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ sort_order: 0, is_active: true }}>
           <Form.Item name="name" label={t('common.name')} rules={[{ required: true }]}>
-            <Input />
+            <Input disabled={editingItem?.is_system === 1} />
           </Form.Item>
           <Form.Item name="sort_order" label={t('models.sort_order')}>
             <InputNumber style={{ width: '100%' }} />
