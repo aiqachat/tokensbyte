@@ -10,10 +10,14 @@ pub struct Model {
     pub type_id: Option<i32>,
     pub group_ratios: String, // {"default": 1.0, "vip": 0.8}
     pub billing_rule_id: Option<i32>,
-    pub pre_deduction: f64, // 新增预扣费
+    pub pre_deduction: f64,
     pub is_active: i32,
     pub forward_rule_ids: Option<String>,
     pub enable_log_content: i32,
+    #[sqlx(default)]
+    pub site_discount: f64,         // 全站折扣倍率（1.0=原价）
+    #[sqlx(default)]
+    pub site_discount_enabled: i32, // 全站折扣开关（0=关，1=开，开启后优先于等级折扣）
     pub created_at: String,
     pub updated_at: String,
 }
@@ -166,6 +170,8 @@ pub struct CreateModelRequest {
     pub forward_rule_ids: Option<Vec<i32>>,
     pub is_active: Option<i32>,
     pub enable_log_content: Option<i32>,
+    pub site_discount: Option<f64>,
+    pub site_discount_enabled: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -180,6 +186,8 @@ pub struct UpdateModelRequest {
     pub is_active: Option<i32>,
     pub forward_rule_ids: Option<Vec<i32>>,
     pub enable_log_content: Option<i32>,
+    pub site_discount: Option<f64>,
+    pub site_discount_enabled: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]

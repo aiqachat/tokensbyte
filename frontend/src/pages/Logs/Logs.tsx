@@ -178,7 +178,7 @@ const Logs: React.FC = () => {
       <div style={{ padding: 16, background: panelBg, borderRadius: 8 }}>
         <Descriptions size="small" column={1} labelStyle={{ width: '100px', color: themeToken.colorTextSecondary }}>
           <Descriptions.Item label="系统请求路径">
-            {record.endpoint.startsWith('http') ? record.endpoint : `${window.location.protocol}//${window.location.hostname}:3000${record.endpoint.startsWith('/') ? '' : '/'}${record.endpoint}`}
+            {record.endpoint.startsWith('http') ? record.endpoint : `${window.location.origin}${record.endpoint.startsWith('/') ? '' : '/'}${record.endpoint}`}
           </Descriptions.Item>
           {record.upstream_url && <Descriptions.Item label="真实上游地址">{record.upstream_url}</Descriptions.Item>}
           <Descriptions.Item label="渠道标识">{record.channel_group_aid || '-'}</Descriptions.Item>

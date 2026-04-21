@@ -107,7 +107,9 @@ pub async fn image_generations(
         if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
             features.image_count = Some(resp_count);
         }
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, ctx.discount, &features);
+        let (final_discount, discount_source) = proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, final_discount, &features);
+        detail.push_str(&format!(" | {}", discount_source));
         if model != resolved_model {
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
         }

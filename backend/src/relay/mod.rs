@@ -169,7 +169,10 @@ pub async fn chat_completions(
             let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
         }
 
-        let (quota_used, mut detail) = compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, ctx.discount, &features);
+        let (final_discount, discount_source) = proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+
+        let (quota_used, mut detail) = compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, final_discount, &features);
+        detail.push_str(&format!(" | {}", discount_source));
         if model != resolved_model {
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
         }

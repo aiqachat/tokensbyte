@@ -215,7 +215,9 @@ pub async fn video_generations_status(
                         if req_feat.has_video { features.has_video = true; }
                     }
                 }
-                let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+                let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+                let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+                detail.push_str(&format!(" | {}", discount_source));
                 let resolved_model = channel.resolve_model(&model_name);
                 if model_name != resolved_model {
                     detail.push_str(&format!(" | 模型映射: {} ➞ {}", model_name, resolved_model));

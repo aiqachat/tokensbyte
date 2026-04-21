@@ -148,7 +148,9 @@ pub async fn gemini_proxy(
         if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
             features.image_count = Some(resp_count);
         }
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+        let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+        detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(model);
         if model != resolved_model {
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
@@ -318,7 +320,9 @@ pub async fn volcengine_status(
                 } else { None };
 
                 let features = crate::relay::usage_extractor::extract_request_features(&resp_json);
-                let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+                let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+                let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+                detail.push_str(&format!(" | {}", discount_source));
                 let resolved_model = channel.resolve_model(&model_name);
                 if model_name != resolved_model {
                     detail.push_str(&format!(" | 模型映射: {} ➞ {}", model_name, resolved_model));
@@ -443,7 +447,9 @@ pub async fn volcengine_images(
         let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
     }
 
-    let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+    let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+    let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+    detail.push_str(&format!(" | {}", discount_source));
     let resolved_model = channel.resolve_model(model);
     if model != resolved_model {
         detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
