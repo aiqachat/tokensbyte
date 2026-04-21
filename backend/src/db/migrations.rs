@@ -704,6 +704,10 @@ macro_rules! pg_migration_blocks {
          ON CONFLICT(name) DO UPDATE SET is_system = 1"
     ).execute(pool).await?;
 
+    // 为 models 表增加 mid 列（系统识别码，6位数字）
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS mid TEXT NOT NULL DEFAULT ''")
+        .execute(pool).await.ok();
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};

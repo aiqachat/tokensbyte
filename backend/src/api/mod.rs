@@ -97,6 +97,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/task_logs", get(task_logs::list_task_logs))
         .route("/finance/pay/create", post(pay::create_order))
         .route("/finance/pay/status/{out_trade_no}", get(pay::check_status))
+        .route("/system/about", get(settings::system_about))
 
         .merge(admin_routes)
         .nest("/plugins", plugins::router())

@@ -258,18 +258,12 @@ const Playground: React.FC = () => {
             }}
         >
             <div style={{ height: '100%', display: 'flex', flexDirection: 'column', width: 340 }}>
-                <div style={{ padding: '24px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                   <Title level={5} style={{ margin: 0, color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>
-                       Run settings
-                   </Title>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                       <Button type="text" style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>&lt;&gt; Get code</Button>
-                       <Button 
-                           type="text" shape="circle" icon={<CloseOutlined />} 
-                           onClick={() => setIsSettingsOpen(false)}
-                           style={{ color: 'rgba(255,255,255,0.5)', background: 'transparent' }} 
-                       />
-                   </div>
+                <div style={{ padding: '24px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                   <Button 
+                       type="text" shape="circle" icon={<CloseOutlined />} 
+                       onClick={() => setIsSettingsOpen(false)}
+                       style={{ color: 'rgba(255,255,255,0.5)', background: 'transparent' }} 
+                   />
                 </div>
                 
                 <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24 }}>

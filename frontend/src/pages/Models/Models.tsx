@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Radio, Switch, Grid } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch, Grid } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
@@ -36,14 +36,18 @@ const Models: React.FC = () => {
   const [selectedType, setSelectedType] = useState<number | null>(null);
   const [isProviderManagerVisible, setIsProviderManagerVisible] = useState(false);
   const [isTypeManagerVisible, setIsTypeManagerVisible] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState('');
 
   const fetchModels = async () => {
     setLoading(true);
     try {
-      const params = {
+      const params: any = {
         provider_id: selectedProvider,
         type_id: selectedType,
       };
+      if (searchKeyword.trim()) {
+        params.search = searchKeyword.trim();
+      }
       const resp = await (request.get('/models', { params }) as unknown as Promise<{ data: ModelModel[] }>);
       setModels(resp.data);
     } catch (e) {
@@ -76,7 +80,7 @@ const Models: React.FC = () => {
 
   useEffect(() => {
     fetchModels();
-  }, [selectedProvider, selectedType]);
+  }, [selectedProvider, selectedType, searchKeyword]);
 
   useEffect(() => {
     fetchClassifications();
@@ -165,11 +169,19 @@ const Models: React.FC = () => {
             {record.type_id && <Tag color="blue" style={{ fontSize: '10px' }}>{getTypeName(record.type_id)}</Tag>}
             {(() => {
               const br = allBillingRules.find(b => b.id === record.billing_rule_id);
-              if (br && br.billing_rule === 'tiered') return <Tag color="gold" style={{ fontSize: '10px' }}>{t('models.rule_tiered')}</Tag>;
+              if (br) return <Tag color="gold" style={{ fontSize: '10px' }}>{br.name}</Tag>;
               return null;
             })()}
           </Space>
         </Space>
+      ),
+    },
+    {
+      title: 'MID',
+      dataIndex: 'mid',
+      key: 'mid',
+      render: (text: string) => (
+        <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: 12 }}>{text || '-'}</Tag>
       ),
     },
     {
@@ -230,13 +242,21 @@ const Models: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
-        <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('models.title')}</Title>
-        <Space>
-          <Button icon={<SyncOutlined />} onClick={() => { fetchModels(); fetchClassifications(); }}>{t('common.refresh')}</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('models.add_model')}</Button>
-        </Space>
-      </div>
+        <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 16, gap: 12 }}>
+          <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('models.title')}</Title>
+          <Space wrap>
+            <Input
+              prefix={<SearchOutlined />}
+              placeholder="搜索模型名 / Model ID / MID"
+              allowClear
+              value={searchKeyword}
+              onChange={e => setSearchKeyword(e.target.value)}
+              style={{ width: 240 }}
+            />
+            <Button icon={<SyncOutlined />} onClick={() => { fetchModels(); fetchClassifications(); }}>{t('common.refresh')}</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('models.add_model')}</Button>
+          </Space>
+        </div>
 
       <ClassificationFilter
         providers={classStats.providers}
@@ -273,6 +293,9 @@ const Models: React.FC = () => {
                 }
                 extra={<Tag color={record.is_active ? 'success' : 'error'}>{record.is_active ? t('common.active') : t('common.disabled')}</Tag>}
               >
+                <CardRow label="MID">
+                  <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: 11 }}>{record.mid || '-'}</Tag>
+                </CardRow>
                 <CardRow label="模型ID"><Tag color="blue" style={{ fontSize: 11 }}>{record.model_id}</Tag></CardRow>
                 <CardRow label="计费类型"><Tag color={colors[billingTypeVal]}>{t(`models.type_${billingTypeVal}`)}</Tag></CardRow>
                 <CardRow label="费率">

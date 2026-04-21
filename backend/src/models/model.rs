@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Model {
     pub id: i32,
+    pub mid: String,        // 6位系统识别码，永久不变
     pub name: String,
     pub model_id: String,
     pub provider_id: Option<i32>,

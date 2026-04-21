@@ -39,6 +39,7 @@ import EmailNotification from './pages/admin/EmailNotification';
 import SmsNotification from './pages/admin/SmsNotification';
 import OAuthSettings from './pages/admin/OAuthSettings';
 import RegistrationGifts from './pages/admin/Marketing/RegistrationGifts';
+import SystemAbout from './pages/admin/SystemAbout';
 import useAuthStore from './store/auth';
 import useSettingsStore from './store/settings';
 import { useEffect } from 'react';
@@ -137,6 +138,7 @@ const App: React.FC = () => {
           <Route path="sms-notification" element={<SmsNotification />} />
           <Route path="oauth-settings" element={<OAuthSettings />} />
           <Route path="marketing/registration-gifts" element={<RegistrationGifts />} />
+          <Route path="about" element={<SystemAbout />} />
         </Route>
 
         {/* Fallback */}

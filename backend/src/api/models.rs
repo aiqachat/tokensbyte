@@ -4,6 +4,7 @@ use axum::{
 };
 use sqlx::Row;
 use std::sync::Arc;
+use rand::Rng;
 
 use crate::AppState;
 use crate::error::AppResult;
@@ -13,6 +14,8 @@ use crate::models::{Model, CreateModelRequest, UpdateModelRequest, ModelListResp
 pub struct ModelQuery {
     pub provider_id: Option<i32>,
     pub type_id: Option<i32>,
+    pub page_size: Option<i64>,
+    pub search: Option<String>,   // 支持按 name / model_id / mid 搜索
 }
 
 pub async fn list_models(
@@ -26,7 +29,13 @@ pub async fn list_models(
     if query.type_id.is_some() {
         sql.push_str(" AND type_id = ?");
     }
+    if query.search.is_some() {
+        sql.push_str(" AND (name ILIKE ? OR model_id ILIKE ? OR mid = ?)");
+    }
     sql.push_str(" ORDER BY id DESC");
+    if let Some(ps) = query.page_size {
+        sql.push_str(&format!(" LIMIT {}", ps));
+    }
 
     let formatted_sql = state.db.format_query(&sql);
     let mut q = sqlx::query_as::<_, Model>(&formatted_sql);
@@ -35,6 +44,10 @@ pub async fn list_models(
     }
     if let Some(tid) = query.type_id {
         q = q.bind(tid);
+    }
+    if let Some(ref kw) = query.search {
+        let like = format!("%{}%", kw);
+        q = q.bind(like.clone()).bind(like).bind(kw);
     }
 
     let models = q.fetch_all(&state.db.pool).await?;
@@ -47,6 +60,9 @@ pub async fn list_models(
     if query.type_id.is_some() {
         count_sql.push_str(" AND type_id = ?");
     }
+    if query.search.is_some() {
+        count_sql.push_str(" AND (name ILIKE ? OR model_id ILIKE ? OR mid = ?)");
+    }
     
     let formatted_count_sql = state.db.format_query(&count_sql);
     let mut cq = sqlx::query_scalar::<_, i64>(&formatted_count_sql);
@@ -55,6 +71,10 @@ pub async fn list_models(
     }
     if let Some(tid) = query.type_id {
         cq = cq.bind(tid);
+    }
+    if let Some(ref kw) = query.search {
+        let like = format!("%{}%", kw);
+        cq = cq.bind(like.clone()).bind(like).bind(kw);
     }
     
     let total = cq.fetch_one(&state.db.pool).await?;
@@ -84,20 +104,34 @@ pub async fn create_model(
         return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
     }
 
+    // 自动生成唯一 6 位 mid，固定以 "30" 开头
+    let mid = loop {
+        let candidate: String = {
+            let n: u32 = rand::thread_rng().gen_range(300000..=309999);
+            n.to_string()
+        };
+        let taken: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE mid = ?"))
+            .bind(&candidate)
+            .fetch_optional(&state.db.pool)
+            .await?;
+        if taken.is_none() {
+            break candidate;
+        }
+    };
+
     let group_ratios = serde_json::to_string(&req.group_ratios.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     let forward_rule_ids = req.forward_rule_ids.map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "[]".to_string()));
     
     let pre_deduction = req.pre_deduction.unwrap_or(0.0);
-    // 可选：如果此处有关联的 billing_rule 检查也可以做，目前统一允许设置
-    
     let is_active = req.is_active.unwrap_or(1);
     let enable_log_content = req.enable_log_content.unwrap_or(0);
 
     let id_i32 = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO models (name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, is_active, enable_log_content)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        &state.db.format_query(r#"INSERT INTO models (mid, name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, is_active, enable_log_content)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#)
     )
+    .bind(&mid)
     .bind(&req.name)
     .bind(&req.model_id)
     .bind(req.provider_id)
@@ -168,6 +202,33 @@ pub async fn update_model(
         if exists.is_some() {
             return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
         }
+    }
+
+    // 若当前模型 mid 为空，自动生成一个 30 开头的唯一 6 位 mid
+    let current_mid: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT mid FROM models WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(&state.db.pool)
+        .await?;
+    if current_mid.as_deref().unwrap_or("").is_empty() {
+        let new_mid = loop {
+            let candidate: String = {
+                let n: u32 = rand::thread_rng().gen_range(300000..=309999);
+                n.to_string()
+            };
+            let taken: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE mid = ? AND id != ?"))
+                .bind(&candidate)
+                .bind(id)
+                .fetch_optional(&state.db.pool)
+                .await?;
+            if taken.is_none() {
+                break candidate;
+            }
+        };
+        sqlx::query(&state.db.format_query("UPDATE models SET mid = ? WHERE id = ?"))
+            .bind(&new_mid)
+            .bind(id)
+            .execute(&state.db.pool)
+            .await?;
     }
 
     if let Some(name) = &req.name {
