@@ -1,0 +1,121 @@
+# TokensByte 前端页面模块化规范
+
+## 适用范围
+本规范适用于 `frontend/src/pages/` 下的所有复杂页面模块。当一个页面文件超过 **300 行** 或包含 **3 个以上独立功能区域** 时，必须按本规范进行模块化拆分。
+
+---
+
+## 目录结构规范
+
+```
+PageName/
+├── PageName.tsx          # 入口组件，仅做编排（挂载 Provider + 组合子组件），控制在 80 行以内
+├── PageName.css          # 页面级全局样式覆盖
+├── types.ts              # 所有 TypeScript 类型/接口定义，零 React 依赖
+├── constants.ts          # 常量、映射表、纯函数工具，零状态依赖
+├── context/
+│   └── PageNameContext.tsx  # 状态管理 Context（遵循性能分离原则）
+├── hooks/
+│   ├── useXxxInteraction.ts # 交互逻辑 hook（鼠标事件、键盘事件等）
+│   └── useXxxLogic.ts       # 业务逻辑 hook（API 调用、数据处理等）
+├── components/
+│   ├── ComponentA.tsx       # 独立 UI 组件
+│   ├── ComponentB.tsx       # 独立 UI 组件
+│   └── sub-feature/         # 可扩展子系统（如节点系统）
+│       ├── BaseComponent.tsx # 外壳组件
+│       ├── VariantA.tsx      # 变体 A
+│       └── VariantB.tsx      # 变体 B
+```
+
+---
+
+## 核心原则
+
+### 1. 类型集中 (`types.ts`)
+- 所有页面内共享的 interface/type 定义在 `types.ts`
+- 所有模块从 `types.ts` import，**禁止跨组件文件 import 类型**
+- 避免循环依赖
+
+### 2. 状态管理 (`context/`)
+- 使用 React Context 管理共享状态
+- **性能关键**：当页面同时存在高频交互区域（如画布拖拽）和低频 UI 区域（如表单面板）时，**必须拆分为两个独立 Context**
+  - 高频 Context：画布变换、拖拽状态等（仅画布组件订阅）
+  - 低频 Context：模型数据、表单值、UI 开关等（面板组件订阅）
+- 派生数据使用 `useMemo`
+- 回调函数使用 `useCallback`
+
+### 3. Hooks 封装 (`hooks/`)
+- 将复杂的事件处理逻辑封装为 custom hook
+- 将 API 调用、轮询等异步逻辑封装为 custom hook
+- hook 内部通过 Context 读写状态，**不通过 props 透传**
+
+### 4. 组件职责 (`components/`)
+- 每个组件文件只负责**一个独立的 UI 区域**
+- 所有组件使用 `React.memo()` 包裹，设置 `displayName`
+- 组件通过 `usePlayground()` / `useCanvas()` 等 hook 消费状态
+- **禁止** props drilling 超过 2 层
+
+### 5. 可扩展子系统
+- 当某一类组件可能持续扩展（如节点类型、插件类型）时，使用子目录组织
+- 外壳组件负责通用逻辑（拖拽、选中、删除）
+- 内容组件按类型拆分，新增类型只需新增文件 + 在外壳中注册
+
+---
+
+## 性能优化 Checklist
+
+- [ ] 双 Context 分离（高频 vs 低频）
+- [ ] 所有子组件 `React.memo()`
+- [ ] 事件处理函数 `useCallback()`
+- [ ] 派生数据 `useMemo()`
+- [ ] 懒加载内容（如：仅 status === 'completed' 时挂载媒体元素）
+- [ ] 避免在 render 中创建新对象/数组（提取为常量或 useMemo）
+
+---
+
+## 命名规范
+
+| 类型 | 命名格式 | 示例 |
+|------|----------|------|
+| 页面目录 | PascalCase | `Playground/` |
+| 类型文件 | 固定 | `types.ts` |
+| 常量文件 | 固定 | `constants.ts` |
+| Context | `PageNameContext.tsx` | `PlaygroundContext.tsx` |
+| Hook | `useXxxYyy.ts` | `useCanvasInteraction.ts` |
+| 组件 | PascalCase | `FloatingToolbar.tsx` |
+| 节点内容 | `XxxNodeContent.tsx` | `VideoNodeContent.tsx` |
+
+---
+
+## 入口组件模板
+
+```tsx
+import React from 'react';
+import { ConfigProvider, theme } from 'antd';
+import { PageProvider } from './context/PageContext';
+import ComponentA from './components/ComponentA';
+import ComponentB from './components/ComponentB';
+import './Page.css';
+
+const PageLayout: React.FC = () => (
+  <div style={{ height: '100vh', width: '100vw' }}>
+    <ComponentA />
+    <ComponentB />
+  </div>
+);
+
+const PageName: React.FC = () => (
+  <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
+    <PageProvider>
+      <PageLayout />
+    </PageProvider>
+  </ConfigProvider>
+);
+
+export default PageName;
+```
+
+---
+
+## 参考实现
+- 标杆页面：`src/pages/Playground/` — 完整的无限画布工作区实现
