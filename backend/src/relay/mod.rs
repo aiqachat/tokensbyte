@@ -391,23 +391,32 @@ pub fn compute_cost(
                 let mut tiers: Vec<crate::models::PricingTier> = serde_json::from_str(&rule.pricing_tiers).unwrap_or_default();
                 // 确保按照 prompt 升序
                 tiers.sort_by_key(|t| t.max_prompt_tokens);
-                for tier in tiers {
-                    if prompt_tokens <= tier.max_prompt_tokens {
-                        // 如果存在 completion 限制，则优先遵循
-                        if let Some(mc) = tier.max_completion_tokens {
-                            if completion_tokens <= mc {
-                                p_rate = tier.prompt_rate;
-                                c_rate = tier.completion_rate;
-                                detail_desc = format!("阶梯计费(命中规则<={}P|<={}C)", tier.max_prompt_tokens, mc);
-                                break;
-                            }
-                        } else {
-                            // 没有 completion 限制，直接采纳
-                            p_rate = tier.prompt_rate;
-                            c_rate = tier.completion_rate;
-                            detail_desc = format!("阶梯计费(命中规则<={}P)", tier.max_prompt_tokens);
-                            break;
-                        }
+                let mut matched = false;
+                for tier in &tiers {
+                    // prompt 和 completion 同时满足才命中该阶梯
+                    let prompt_ok = prompt_tokens <= tier.max_prompt_tokens;
+                    let completion_ok = match tier.max_completion_tokens {
+                        Some(mc) => completion_tokens <= mc,
+                        None => true,
+                    };
+                    if prompt_ok && completion_ok {
+                        p_rate = tier.prompt_rate;
+                        c_rate = tier.completion_rate;
+                        detail_desc = match tier.max_completion_tokens {
+                            Some(mc) => format!("阶梯计费(命中<={}P|<={}C)", tier.max_prompt_tokens, mc),
+                            None => format!("阶梯计费(命中<={}P)", tier.max_prompt_tokens),
+                        };
+                        matched = true;
+                        break;
+                    }
+                }
+                // 所有阶梯均不匹配（请求超出最大阶梯），兜底取最高阶梯费率
+                if !matched {
+                    if let Some(last) = tiers.last() {
+                        p_rate = last.prompt_rate;
+                        c_rate = last.completion_rate;
+                        detail_desc = format!("阶梯计费(超出阶梯上限,按最高档{}P/{}C费率)",
+                            last.max_prompt_tokens, last.max_completion_tokens.map(|c| c.to_string()).unwrap_or("-".to_string()));
                     }
                 }
             }
