@@ -105,10 +105,15 @@ const PluginConfig: React.FC = () => {
   });
   const [savingPlayground, setSavingPlayground] = useState(false);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [modelTypes, setModelTypes] = useState<any[]>([]);
 
   const fetchPlaygroundConfigBase = async () => {
     try {
-      const res = await request.get(`/plugins/${name}/playground-config`) as any;
+      const [res, modelsRes, typesRes] = await Promise.all([
+        request.get(`/plugins/${name}/playground-config`) as Promise<any>,
+        request.get('/models?page_size=1000') as Promise<any>,
+        request.get('/model-types') as Promise<any>
+      ]);
       setPlaygroundConfig({
         video_models: res.video_models || [],
         image_models: res.image_models || [],
@@ -119,9 +124,11 @@ const PluginConfig: React.FC = () => {
         enable_chat: res.enable_chat ?? true,
         enable_audio: res.enable_audio ?? true,
       });
-      const modelsRes = await request.get('/models?page_size=1000') as any;
       if (modelsRes.models) setAvailableModels(modelsRes.models);
+      else if (modelsRes.data && Array.isArray(modelsRes.data)) setAvailableModels(modelsRes.data);
       else if (Array.isArray(modelsRes)) setAvailableModels(modelsRes);
+
+      if (Array.isArray(typesRes)) setModelTypes(typesRes);
     } catch (e) {
       console.error(e);
     }
@@ -896,6 +903,17 @@ const PluginConfig: React.FC = () => {
       );
     }
 
+    const typeNameMapping: Record<string, string> = {
+      'video_models': '视频',
+      'image_models': '图片',
+      'chat_models': '聊天',
+      'audio_models': '音频',
+    };
+    const targetTypeObj = modelTypes.find(t => t.name.includes(typeNameMapping[type]));
+    const filteredModels = targetTypeObj 
+      ? availableModels.filter(m => m.type_id === targetTypeObj.id) 
+      : availableModels;
+
     return (
       <div style={{ background: '#141414', borderRadius: 8, padding: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -918,7 +936,7 @@ const PluginConfig: React.FC = () => {
           style={{ width: '100%', marginBottom: 16 }}
           value={playgroundConfig[type]}
           onChange={(val) => setPlaygroundConfig({ ...playgroundConfig, [type]: val })}
-          options={availableModels.map(m => ({ label: m.name, value: m.name }))}
+          options={filteredModels.map(m => ({ label: m.name, value: m.name }))}
           popupClassName="dark-select-dropdown"
           optionFilterProp="label"
         />

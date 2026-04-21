@@ -115,6 +115,8 @@ pub struct ModelProvider {
     pub name: String,
     pub sort_order: i32,
     pub is_active: i32,
+    #[serde(default)]
+    pub is_system: i32,
     pub remark: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -126,6 +128,8 @@ pub struct ModelType {
     pub name: String,
     pub sort_order: i32,
     pub is_active: i32,
+    #[serde(default)]
+    pub is_system: i32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -134,6 +138,8 @@ pub struct ModelType {
 pub struct ClassificationCount {
     pub id: Option<i32>,
     pub name: String,
+    #[serde(default)]
+    pub is_system: i32,
     pub count: i64,
 }
 

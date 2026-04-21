@@ -1,0 +1,67 @@
+/* Playground 极致黑暗控制台高级覆盖样式 */
+.dark-select-dropdown {
+    background-color: #1A1C20 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
+}
+
+.dark-select-dropdown .ant-select-item {
+    color: rgba(255, 255, 255, 0.7);
+    transition: all 0.2s ease;
+}
+
+.dark-select-dropdown .ant-select-item-option-active,
+.dark-select-dropdown .ant-select-item-option-selected {
+    background-color: #2D313A !important;
+    color: #fff !important;
+}
+
+/* TextArea focus */
+.ant-input:focus,
+.ant-input-focused {
+    border-color: transparent !important;
+    box-shadow: none !important;
+}
+
+/* AI Studio Modal 弹窗深度订制 */
+.studio-model-modal-wrap .ant-modal-content {
+    background-color: #17181C !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 16px !important;
+    padding: 24px !important;
+}
+
+.studio-model-modal-wrap .ant-modal-header {
+    background: transparent !important;
+    border-bottom: none !important;
+}
+
+/* 按钮点击反馈 */
+.studio-model-list-item:hover, .studio-model-card:hover {
+    background-color: rgba(255,255,255,0.08) !important;
+    border-color: rgba(255,255,255,0.12) !important;
+}
+
+/* Modal Title */
+.studio-model-modal .ant-modal-title {
+    background: transparent !important;
+}
+
+.studio-model-modal .ant-input-affix-wrapper:focus, 
+.studio-model-modal .ant-input-affix-wrapper-focused {
+    box-shadow: none !important;
+    border-color: rgba(255,255,255,0.3) !important;
+}
+
+/* 隐藏自带的边框颜色，接管自定义的高级光效设计 */
+.ant-radio-button-wrapper {
+    color: rgba(255,255,255,0.4) !important;
+    transition: all 0.2s !important;
+}
+.ant-radio-button-wrapper-checked {
+    color: #fff !important;
+}
+
+.ant-radio-button-wrapper::before {
+    display: none !important; /* 隐藏单选按钮间的默认竖线 */
+}

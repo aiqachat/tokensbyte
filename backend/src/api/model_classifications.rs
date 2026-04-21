@@ -89,6 +89,15 @@ pub async fn delete_provider(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i32>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let is_sys: i32 = sqlx::query_scalar(&state.db.format_query("SELECT is_system FROM model_providers WHERE id = ?"))
+        .bind(id)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or(0);
+    if is_sys == 1 {
+        return Err(crate::error::AppError::BadRequest("系统内置预设，禁止删除".to_string()));
+    }
+
     // NULL out references in models table
     sqlx::query(&state.db.format_query("UPDATE models SET provider_id = NULL WHERE provider_id = ?"))
         .bind(id)
@@ -180,6 +189,15 @@ pub async fn delete_type(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i32>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let is_sys: i32 = sqlx::query_scalar(&state.db.format_query("SELECT is_system FROM model_types WHERE id = ?"))
+        .bind(id)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or(0);
+    if is_sys == 1 {
+        return Err(crate::error::AppError::BadRequest("系统内置预设，禁止删除".to_string()));
+    }
+
     // NULL out references in models table
     sqlx::query(&state.db.format_query("UPDATE models SET type_id = NULL WHERE type_id = ?"))
         .bind(id)
@@ -200,7 +218,7 @@ pub async fn get_classifications_stats(
 ) -> AppResult<Json<ClassificationsResponse>> {
     // Get providers with model counts
     let providers = sqlx::query_as(
-        &state.db.format_query(r#"SELECT p.id, p.name, COUNT(m.id) as count 
+        &state.db.format_query(r#"SELECT p.id, p.name, p.is_system, COUNT(m.id) as count 
            FROM model_providers p 
            LEFT JOIN models m ON p.id = m.provider_id 
            WHERE p.is_active = 1
@@ -212,7 +230,7 @@ pub async fn get_classifications_stats(
 
     // Get types with model counts
     let types = sqlx::query_as(
-        &state.db.format_query(r#"SELECT t.id, t.name, COUNT(m.id) as count 
+        &state.db.format_query(r#"SELECT t.id, t.name, t.is_system, COUNT(m.id) as count 
            FROM model_types t 
            LEFT JOIN models m ON t.id = m.type_id 
            WHERE t.is_active = 1
