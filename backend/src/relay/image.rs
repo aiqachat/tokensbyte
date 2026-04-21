@@ -102,7 +102,11 @@ pub async fn image_generations(
 
         tracing::info!("[Image] model={}, path=SYNC, prompt={}, completion={}, total={}", model, p_tokens, c_tokens, usage_tokens.total);
 
-        let features = crate::relay::usage_extractor::extract_request_features(&body);
+        let mut features = crate::relay::usage_extractor::extract_request_features(&body);
+        // 用响应中的实际图片数量覆盖请求体的 n 值（按张计费的最终依据）
+        if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
+            features.image_count = Some(resp_count);
+        }
         let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, ctx.discount, &features);
         if model != resolved_model {
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));

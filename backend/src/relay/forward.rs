@@ -191,10 +191,23 @@ pub fn transform_request_body(
     category: &str,
 ) -> serde_json::Value {
     let mut result = match resolved.target_type.as_str() {
-        // 火山方舟图片（/api/v3/images/generations）: 保持 OpenAI 兼容格式，仅替换 model
+        // 火山方舟图片（/api/v3/images/generations）: 保持 OpenAI 兼容格式
+        // 参考 Seedream 5.0 API: https://www.volcengine.com/docs/82379/1541523
         "volcengine_image" => {
             let mut fwd = body.clone();
             fwd["model"] = serde_json::json!(model);
+
+            // n > 1 → 启用组图: sequential_image_generation = "auto"
+            let n = body.get("n").and_then(|v| v.as_i64()).unwrap_or(1);
+            if n > 1 {
+                fwd["sequential_image_generation"] = serde_json::json!("auto");
+                fwd["sequential_image_generation_options"] = serde_json::json!({
+                    "max_images": n
+                });
+            }
+            // n 已转换为官方参数，删除避免冗余传到上游
+            if let Some(obj) = fwd.as_object_mut() { obj.remove("n"); }
+            // watermark 直接透传（火山方舟原生支持，默认 true）
             fwd
         }
 
@@ -230,13 +243,40 @@ pub fn transform_request_body(
         }
 
         // Gemini 图片：prompt → contents 格式
+        // 参考 Google Gemini API: generationConfig.candidateCount / imageConfig
         "gemini_image" => {
             let prompt = body["prompt"]
                 .as_str()
                 .unwrap_or("Generate an image");
+
+            let mut gen_config = serde_json::json!({
+                "responseModalities": ["IMAGE"]
+            });
+
+            // n → candidateCount（生成数量）
+            if let Some(n) = body.get("n").and_then(|v| v.as_i64()) {
+                if n > 1 {
+                    gen_config["candidateCount"] = serde_json::json!(n);
+                }
+            }
+
+            // size / ratio → imageConfig
+            let has_size = body.get("size").and_then(|v| v.as_str());
+            let has_ratio = body.get("ratio").and_then(|v| v.as_str());
+            if has_size.is_some() || has_ratio.is_some() {
+                let mut img_cfg = serde_json::Map::new();
+                if let Some(s) = has_size {
+                    img_cfg.insert("imageSize".to_string(), serde_json::json!(s));
+                }
+                if let Some(r) = has_ratio {
+                    img_cfg.insert("aspectRatio".to_string(), serde_json::json!(r));
+                }
+                gen_config["imageConfig"] = serde_json::Value::Object(img_cfg);
+            }
+
             serde_json::json!({
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"responseModalities": ["IMAGE"]}
+                "generationConfig": gen_config
             })
         }
 
@@ -350,6 +390,10 @@ fn convert_web_search(result: &mut serde_json::Value, original: &serde_json::Val
     match target_type {
         "volcengine" | "volcengine_chat" | "volcengine_image" => {
             result["tools"] = serde_json::json!([{"type": "web_search"}]);
+            if let Some(obj) = result.as_object_mut() { obj.remove("web_search"); }
+        }
+        "gemini" | "gemini_image" => {
+            result["tools"] = serde_json::json!([{"google_search": {}}]);
             if let Some(obj) = result.as_object_mut() { obj.remove("web_search"); }
         }
         _ => {}
@@ -508,8 +552,6 @@ const VOLCENGINE_CONTENT_PASSTHROUGH_KEYS: &[&str] = &[
     // 画面控制
     "ratio",             // 宽高比，如 "16:9", "4:3"
     "resolution",        // 分辨率，如 "480p", "720p", "1080p"
-    "n",                 // 生成数量
-    "size",              // 尺寸
     // 视频控制
     "duration",          // 视频时长（秒），如 5, 10
     "fps",               // 帧率

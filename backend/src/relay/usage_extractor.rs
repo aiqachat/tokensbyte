@@ -6,6 +6,8 @@ pub struct ExtractedFeatures {
     pub has_audio: bool,
     pub duration_seconds: Option<f64>,
     pub resolution: Option<String>,
+    /// 图片数量（用于按张计费）：请求阶段取 n，响应阶段取实际返回数量
+    pub image_count: Option<i32>,
 }
 
 pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
@@ -77,12 +79,83 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         }
     }
 
+    // 图片生成数量: 从请求体的 n 参数提取（用于预扣费阶段）
+    let image_count = body.get("n")
+        .and_then(|v| v.as_i64())
+        .map(|v| v.max(1) as i32);
+
     ExtractedFeatures {
         has_video,
         has_audio,
         duration_seconds,
         resolution,
+        image_count,
     }
+}
+
+/// 从接口响应中提取实际返回的图片数量。
+/// 支持 OpenAI/火山方舟 `data` 数组、Google Gemini `candidates.content.parts` 中的图片，
+/// 以及 SSE 流式缓冲后的文本（逐行解析 `data: {...}` 提取图片数组）。
+/// 返回 None 表示响应中无法识别图片数组（非图片类接口）。
+pub fn count_response_images(response: &str) -> Option<i32> {
+    // 尝试整体 JSON 解析（非流式响应）
+    if let Ok(v) = serde_json::from_str::<Value>(response) {
+        if let Some(count) = count_images_from_value(&v) {
+            return Some(count);
+        }
+    }
+
+    // SSE 流式缓冲回落：逐行解析 data: {...} 中的图片数量
+    let mut total = 0i32;
+    for line in response.lines() {
+        let line = line.trim();
+        let json_str = if line.starts_with("data: ") {
+            let s = &line[6..];
+            if s == "[DONE]" { continue; }
+            s
+        } else {
+            line
+        };
+        if let Ok(v) = serde_json::from_str::<Value>(json_str) {
+            if let Some(count) = count_images_from_value(&v) {
+                total += count;
+            }
+        }
+    }
+    if total > 0 { Some(total) } else { None }
+}
+
+/// 从单个 JSON Value 中提取图片数量（内部辅助函数）
+fn count_images_from_value(v: &Value) -> Option<i32> {
+    // OpenAI / 火山方舟: { "data": [{"url": "..."}, ...] }
+    if let Some(data) = v.get("data").and_then(|d| d.as_array()) {
+        if !data.is_empty() {
+            return Some(data.len() as i32);
+        }
+    }
+
+    // Google Gemini: candidates[].content.parts[] 中含 inline_data 的图片
+    if let Some(candidates) = v.get("candidates").and_then(|c| c.as_array()) {
+        let mut count = 0i32;
+        for candidate in candidates {
+            if let Some(parts) = candidate
+                .get("content")
+                .and_then(|c| c.get("parts"))
+                .and_then(|p| p.as_array())
+            {
+                for part in parts {
+                    if part.get("inline_data").is_some() || part.get("inlineData").is_some() {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        if count > 0 {
+            return Some(count);
+        }
+    }
+
+    None
 }
 
 pub struct UsageTokens {

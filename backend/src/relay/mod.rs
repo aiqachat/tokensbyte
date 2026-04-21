@@ -299,10 +299,17 @@ pub fn compute_cost(
             let mut detail_desc = "固定按次计费".to_string();
 
             if rule.billing_rule == "per_image" {
-                count = if completion_tokens > 0 { completion_tokens as f64 } else { 1.0 };
+                // 按张计费：严格使用从响应提取的实际图片数量，不回落到 completion_tokens
+                count = match features.image_count {
+                    Some(c) if c > 0 => c as f64,
+                    _ => {
+                        tracing::warn!("[Billing] per_image 规则未获取到图片数量，默认按 1 张计费");
+                        1.0
+                    }
+                };
                 detail_desc = "按张返回计费".to_string();
             } else if rule.billing_rule == "image_resolution" {
-                count = if completion_tokens > 0 { completion_tokens as f64 } else { 1.0 };
+                count = features.image_count.map(|c| c.max(1) as f64).unwrap_or(1.0);
                 detail_desc = format!("分辨率匹配计费(默认单价: {})", rate);
                 if let Some(res) = &features.resolution {
                     if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
