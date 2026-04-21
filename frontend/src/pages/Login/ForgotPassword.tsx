@@ -23,10 +23,10 @@ const ForgotPassword: React.FC = () => {
   
   const recoveryTabs: { key: string; label: string; icon: React.ReactNode; placeholder: string }[] = [];
   if (login?.enable_email_login || (!login?.enable_email_login && !login?.enable_mobile_login)) { // Default to email
-    recoveryTabs.push({ key: 'email', label: '邮箱找回', icon: <MailOutlined />, placeholder: t('auth.email_placeholder') });
+    recoveryTabs.push({ key: 'email', label: t('auth.email_recovery'), icon: <MailOutlined />, placeholder: t('auth.email_placeholder') });
   }
   if (login?.enable_mobile_login) {
-    recoveryTabs.push({ key: 'mobile', label: '手机号找回', icon: <MobileOutlined />, placeholder: '手机号' });
+    recoveryTabs.push({ key: 'mobile', label: t('auth.mobile_recovery'), icon: <MobileOutlined />, placeholder: t('auth.mobile_placeholder') });
   }
 
   const [activeTab, setActiveTab] = useState('');
@@ -54,22 +54,12 @@ const ForgotPassword: React.FC = () => {
     return () => clearInterval(timer);
   }, [countdown]);
 
-  if (!settings) {
-    return (
-      <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#000' }}>
-          <Text type="secondary">{t('common.loading')}</Text>
-        </div>
-      </ConfigProvider>
-    );
-  }
-
   const currentTab = recoveryTabs.find(t => t.key === activeTab) || recoveryTabs[0];
 
   const onSendCode = async () => {
     const target = form.getFieldValue('target');
     if (!target) {
-      message.error(currentTab.key === 'email' ? t('auth.email_required') : '请输入手机号');
+      message.error(currentTab.key === 'email' ? t('auth.email_required') : t('auth.mobile_required'));
       return;
     }
 
@@ -123,7 +113,8 @@ const ForgotPassword: React.FC = () => {
     <AuthLayout
       title={t('auth.reset_password_title')}
       subtitle={t('auth.reset_password_subtitle')}
-      methodsLabel="找回方式"
+      loading={!settings}
+      methodsLabel={t('auth.recovery_method')}
       methods={recoveryTabs.length > 1 ? layoutMethods : undefined}
       activeMethod={activeTab}
       onMethodChange={setActiveTab}
@@ -138,7 +129,7 @@ const ForgotPassword: React.FC = () => {
           <Form.Item
             name="target"
             rules={[
-              { required: true, message: currentTab.key === 'email' ? t('auth.email_required') : '请输入手机号' },
+              { required: true, message: currentTab.key === 'email' ? t('auth.email_required') : t('auth.mobile_required') },
               currentTab.key === 'email' ? { type: 'email', message: t('auth.email_invalid') } : {}
             ]}
           >

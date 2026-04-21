@@ -41,6 +41,7 @@ pub struct User {
 #[derive(Debug, Deserialize)]
 pub struct CreateUserRequest {
     pub username: String,
+    #[serde(default)]
     pub email: String,
     pub password: String,
     pub group: Option<String>, // Keep for compatibility

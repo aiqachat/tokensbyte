@@ -51,7 +51,7 @@ const EmailNotification: React.FC = () => {
   };
 
   return (
-    <Card bordered={false} title={t('menu.email_notification')} style={{ borderRadius: 12 }}>
+    <div style={{ paddingTop: 12 }}>
       <Form form={form} layout="vertical" autoComplete="off" style={{ maxWidth: 600 }}>
         <Form.Item label={t('settings.smtp_host')} name="host" rules={[{ required: true }]}><Input placeholder="smtp.gmail.com" /></Form.Item>
         <Form.Item label={t('settings.smtp_port')} name="port" rules={[{ required: true }]}><InputNumber style={{ width: '100%' }} placeholder="465" /></Form.Item>
@@ -70,7 +70,7 @@ const EmailNotification: React.FC = () => {
           <Button onClick={handleTest} loading={testLoading}>{t('settings.test_email')}</Button>
         </Space>
       </Form>
-    </Card>
+    </div>
   );
 };
 

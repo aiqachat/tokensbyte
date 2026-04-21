@@ -127,16 +127,18 @@ pub async fn bind_email(
     Ok(Json(serde_json::json!({"success": true, "message": "邮箱绑定成功"})))
 }
 
+
 /// 绑定/换绑微信 — 发起授权跳转
 pub async fn bind_wechat(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Extension(claims): Extension<auth::Claims>,
 ) -> Response {
     let result = (async {
         let settings = crate::api::settings::load_all_settings(&state).await?;
         let wechat = settings.wechat_oauth.ok_or_else(|| AppError::BadRequest("微信授权未配置".to_string()))?;
-        let redirect_uri = format!("{}/api/v1/user/bind/wechat/callback",
-            state.config.base_url.trim_end_matches('/'));
+        let req_base_url = crate::api::auth::get_base_url_from_req(&headers, &state.config.base_url);
+        let redirect_uri = format!("{}/api/v1/user/bind/wechat/callback", req_base_url);
         let state_val = format!("bind_wechat_{}", claims.sub);
         let url = crate::services::oauth::OAuthService::wechat_auth_url(&wechat.app_id, &redirect_uri, &state_val);
         Ok::<_, AppError>(url)
@@ -185,13 +187,14 @@ pub async fn bind_wechat_callback(
 /// 绑定/换绑谷歌 — 发起授权跳转
 pub async fn bind_google(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Extension(claims): Extension<auth::Claims>,
 ) -> Response {
     let result = (async {
         let settings = crate::api::settings::load_all_settings(&state).await?;
         let google = settings.google_oauth.ok_or_else(|| AppError::BadRequest("谷歌授权未配置".to_string()))?;
-        let redirect_uri = format!("{}/api/v1/user/bind/google/callback",
-            state.config.base_url.trim_end_matches('/'));
+        let req_base_url = crate::api::auth::get_base_url_from_req(&headers, &state.config.base_url);
+        let redirect_uri = format!("{}/api/v1/user/bind/google/callback", req_base_url);
         let state_val = format!("bind_google_{}", claims.sub);
         let url = crate::services::oauth::OAuthService::google_auth_url(&google.client_id, &redirect_uri, &state_val);
         Ok::<_, AppError>(url)
@@ -205,6 +208,7 @@ pub async fn bind_google(
 /// 谷歌绑定回调
 pub async fn bind_google_callback(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Query(query): Query<crate::api::auth::OAuthCallbackQuery>,
 ) -> Response {
     let result = (async {
@@ -217,8 +221,8 @@ pub async fn bind_google_callback(
 
         let settings = crate::api::settings::load_all_settings(&state).await?;
         let google = settings.google_oauth.ok_or_else(|| AppError::BadRequest("谷歌授权未配置".to_string()))?;
-        let redirect_uri = format!("{}/api/v1/user/bind/google/callback",
-            state.config.base_url.trim_end_matches('/'));
+        let req_base_url = crate::api::auth::get_base_url_from_req(&headers, &state.config.base_url);
+        let redirect_uri = format!("{}/api/v1/user/bind/google/callback", req_base_url);
         let info = crate::services::oauth::OAuthService::google_exchange(&google.client_id, &google.client_secret, &code, &redirect_uri).await?;
 
         let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE google_id = ? AND id != ?)"))

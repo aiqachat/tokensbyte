@@ -1,7 +1,7 @@
 FROM rust:1.94-slim-bullseye as builder
 
 WORKDIR /usr/src/app
-RUN apt-get update && apt-get install -y pkg-config libssl-dev libsqlite3-dev
+RUN apt-get update && apt-get install -y pkg-config libssl-dev libsqlite3-dev git
 COPY . .
 RUN cargo build --release
 

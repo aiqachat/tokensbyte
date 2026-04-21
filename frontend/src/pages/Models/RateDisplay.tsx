@@ -10,6 +10,7 @@ const RULE_LABELS: Record<string, string> = {
   volcengine: '火山多模态(旧)',
   'seedance2.0': 'Seedance 2.0',
   'seedance1.5pro': 'Seedance 1.5 Pro',
+  'seedance1.0': 'Seedance 1.0',
   fixed: '固定按次',
   per_image: '按张收费',
   image_resolution: '按分辨率收费',
@@ -68,10 +69,19 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol }) => {
         );
       }
       if (rule.billing_rule === 'seedance1.5pro') {
+        const discountStr = ext.offline_discount !== undefined ? `(离线折扣: ${ext.offline_discount})` : '';
         return (
           <Space direction="vertical" size={0}>
-            <Text type="secondary" style={s}>带语音: {currencySymbol}{ext.audio_rate}/1M</Text>
-            <Text type="secondary" style={s}>无语音: {currencySymbol}{ext.base_rate}/1M</Text>
+            <Text type="secondary" style={s}>带语音: {currencySymbol}{ext.audio_rate}/1M {discountStr}</Text>
+            <Text type="secondary" style={s}>无语音: {currencySymbol}{ext.base_rate}/1M {discountStr}</Text>
+          </Space>
+        );
+      }
+      if (rule.billing_rule === 'seedance1.0') {
+        return (
+          <Space direction="vertical" size={0}>
+            <Text type="secondary" style={s}>在线: {currencySymbol}{ext.online_rate}/1M</Text>
+            <Text type="secondary" style={s}>离线: {currencySymbol}{ext.offline_rate}/1M</Text>
           </Space>
         );
       }
@@ -105,7 +115,7 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol }) => {
 
   const ruleColors: Record<string, string> = {
     standard: 'default', tiered: 'gold', volcengine: 'volcano',
-    'seedance2.0': 'volcano', 'seedance1.5pro': 'volcano',
+    'seedance2.0': 'volcano', 'seedance1.5pro': 'volcano', 'seedance1.0': 'volcano',
     fixed: 'default', per_image: 'lime', image_resolution: 'gold',
     video_resolution: 'gold',
   };

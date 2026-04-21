@@ -59,6 +59,8 @@ export interface ModelModel {
   forward_rule_ids?: string;
   is_active: number;
   enable_log_content?: number;
+  site_discount?: number;
+  site_discount_enabled?: number;
   created_at: string;
   updated_at?: string;
 }

@@ -1,5 +1,5 @@
 use lettre::transport::smtp::authentication::Credentials;
-use lettre::message::SinglePart;
+use lettre::message::{SinglePart, Mailbox};
 use lettre::{Message, SmtpTransport, Transport};
 use crate::models::SMTPSettings;
 use crate::error::AppResult;
@@ -55,8 +55,13 @@ impl EmailService {
             self.from_name, action_text, code
         );
 
+        let from_mailbox = Mailbox::new(
+            if self.from_name.trim().is_empty() { None } else { Some(self.from_name.clone()) },
+            self.from_address.parse().map_err(|e| crate::error::AppError::Internal(format!("Invalid From address: {}", e)))?
+        );
+
         let email = Message::builder()
-            .from(format!("{} <{}>", self.from_name, self.from_address).parse().unwrap())
+            .from(from_mailbox)
             .to(to_email.parse().unwrap())
             .subject(subject)
             .singlepart(SinglePart::html(html_body))
@@ -87,8 +92,13 @@ impl EmailService {
             self.from_name, self.from_name
         );
 
+        let from_mailbox = Mailbox::new(
+            if self.from_name.trim().is_empty() { None } else { Some(self.from_name.clone()) },
+            self.from_address.parse().map_err(|e| crate::error::AppError::Internal(format!("Invalid From address: {}", e)))?
+        );
+
         let email = Message::builder()
-            .from(format!("{} <{}>", self.from_name, self.from_address).parse().unwrap())
+            .from(from_mailbox)
             .to(to_email.parse().unwrap())
             .subject(subject)
             .singlepart(SinglePart::html(html_body))

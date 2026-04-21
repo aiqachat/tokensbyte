@@ -91,7 +91,6 @@ async fn toggle_plugin(
 pub struct ConfigRequest {
     pub allowed_levels: String,
     pub level_quotas: Option<HashMap<String, i64>>, // 每个等级的存储配额(MB)
-    pub default_quota: Option<i64>, // 默认存储配额(MB)
 }
 
 /// 管理员：配置插件的开放等级

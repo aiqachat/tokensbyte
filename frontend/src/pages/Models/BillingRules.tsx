@@ -74,6 +74,8 @@ const BillingRules: React.FC = () => {
       sd2_720p_enabled: false,
       sd2_1080p_enabled: false,
       volc_audio_rate: 0, volc_base_rate: 0,
+      volc_offline_discount: 0.5,
+      s1_online_rate: 0, s1_offline_rate: 0,
     });
     setIsModalVisible(true);
   };
@@ -106,6 +108,9 @@ const BillingRules: React.FC = () => {
       sd2_1080p_enabled: !!ext.resolution_rates?.['1080p'],
       volc_audio_rate: ext.audio_rate || 0,
       volc_base_rate: ext.base_rate || 0,
+      volc_offline_discount: ext.offline_discount ?? 0.5,
+      s1_online_rate: ext.online_rate || 0,
+      s1_offline_rate: ext.offline_rate || 0,
       is_active: item.is_active === 1,
     });
     setIsModalVisible(true);
@@ -146,6 +151,12 @@ const BillingRules: React.FC = () => {
         extConfig = {
           audio_rate: values.volc_audio_rate || 0,
           base_rate: values.volc_base_rate || 0,
+          offline_discount: values.volc_offline_discount ?? 0.5,
+        };
+      } else if (values.billing_rule === 'seedance1.0') {
+        extConfig = {
+          online_rate: values.s1_online_rate || 0,
+          offline_rate: values.s1_offline_rate || 0,
         };
       }
 
@@ -153,8 +164,8 @@ const BillingRules: React.FC = () => {
       delete values.sd2_480p_video; delete values.sd2_480p_base; delete values.sd2_480p_enabled;
       delete values.sd2_720p_video; delete values.sd2_720p_base; delete values.sd2_720p_enabled;
       delete values.sd2_1080p_video; delete values.sd2_1080p_base; delete values.sd2_1080p_enabled;
-      delete values.volc_audio_rate;
-      delete values.volc_base_rate;
+      delete values.volc_audio_rate; delete values.volc_base_rate; delete values.volc_offline_discount;
+      delete values.s1_online_rate; delete values.s1_offline_rate;
 
       const payload = {
         prompt_rate: 0,
@@ -312,6 +323,7 @@ const BillingRules: React.FC = () => {
                   <Radio value="tiered">{t('models.rule_tiered')}</Radio>
                   <Radio value="seedance2.0">Seedance 2.0</Radio>
                   <Radio value="seedance1.5pro">Seedance 1.5 Pro</Radio>
+                  <Radio value="seedance1.0">Seedance 1.0</Radio>
                 </Radio.Group>
               </Form.Item>
 
@@ -374,12 +386,28 @@ const BillingRules: React.FC = () => {
                     );
                   } else if (rule === 'seedance1.5pro') {
                     return (
-                      <>
-                        <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
-                          <Col span={12}><Form.Item name="volc_audio_rate" label="包含语音" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
-                          <Col span={12}><Form.Item name="volc_base_rate" label="不包含语音" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                      <div style={{ background: '#141414', padding: '16px', borderRadius: '12px', marginBottom: 24, border: '1px solid #303030' }}>
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 16 }}>
+                          如需支持离线推理(flex)降价，请在此配置乘以的折扣倍率
+                        </Text>
+                        <Row gutter={16} align="middle">
+                          <Col span={8}><Form.Item name="volc_audio_rate" label="包含语音" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                          <Col span={8}><Form.Item name="volc_base_rate" label="不包含语音" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                          <Col span={8}><Form.Item name="volc_offline_discount" label="离线推理(flex)折扣倍率" tooltip="例如 0.5 即等于最终价格减半" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={2} step={0.1} /></Form.Item></Col>
                         </Row>
-                      </>
+                      </div>
+                    );
+                  } else if (rule === 'seedance1.0') {
+                    return (
+                      <div style={{ background: '#141414', padding: '16px', borderRadius: '12px', marginBottom: 24, border: '1px solid #303030' }}>
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 16 }}>
+                          Seedance 1.0 — 支持在线与离线的双轨计费
+                        </Text>
+                        <Row gutter={16} align="middle">
+                          <Col span={12}><Form.Item name="s1_online_rate" label="在线推理定价" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                          <Col span={12}><Form.Item name="s1_offline_rate" label="离线推理(flex)定价" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" /></Form.Item></Col>
+                        </Row>
+                      </div>
                     );
                   } else {
                     return (
@@ -390,7 +418,12 @@ const BillingRules: React.FC = () => {
                         marginBottom: '24px',
                         border: '1px solid #303030'
                       }}>
-                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>{t('models.pricing_tiers')}</Title>
+                        <div style={{ marginBottom: 16 }}>
+                          <Title level={5} style={{ marginBottom: 6, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>{t('models.pricing_tiers')}</Title>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            界定说明：输入界限与输出上限填写的数值单位是以“千(K)”为步长判定的（例如输入 128 即为 128K Token）。命中落区后，最终费用将结合后面配置的费率采用 1M (一百万) 定标结算。
+                          </Text>
+                        </div>
                         <Form.List name="pricing_tiers" initialValue={[]}>
                           {(fields, { add, remove }) => (
                             <>
@@ -399,10 +432,10 @@ const BillingRules: React.FC = () => {
                                   <Col span={9}>
                                     <Space.Compact style={{ width: '100%' }}>
                                       <Form.Item {...restField} name={[name, 'max_prompt_tokens']} rules={[{ required: true, message: '' }]} noStyle>
-                                        <InputNumber placeholder="输入界限(Token)" style={{ width: '50%' }} />
+                                        <InputNumber placeholder="输入界限(千Token)" style={{ width: '50%' }} />
                                       </Form.Item>
                                       <Form.Item {...restField} name={[name, 'max_completion_tokens']} noStyle>
-                                        <InputNumber placeholder="输出上限(选填)" style={{ width: '50%' }} />
+                                        <InputNumber placeholder="输出上限(千Token/选填)" style={{ width: '50%' }} />
                                       </Form.Item>
                                     </Space.Compact>
                                   </Col>

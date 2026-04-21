@@ -108,7 +108,9 @@ const Models: React.FC = () => {
       ...record,
       forward_rule_ids: ruleIds,
       is_active: record.is_active === 1,
-      enable_log_content: record.enable_log_content === 1
+      enable_log_content: record.enable_log_content === 1,
+      site_discount_enabled: record.site_discount_enabled === 1,
+      site_discount: record.site_discount ?? 1.0,
     });
     setIsModalVisible(true);
   };
@@ -129,6 +131,7 @@ const Models: React.FC = () => {
       // Cleanup arrays internally managed
       values.is_active = values.is_active ? 1 : 0;
       values.enable_log_content = values.enable_log_content ? 1 : 0;
+      values.site_discount_enabled = values.site_discount_enabled ? 1 : 0;
 
       const br = allBillingRules.find(b => b.id === values.billing_rule_id);
 
@@ -389,22 +392,35 @@ const Models: React.FC = () => {
           </Form.Item>
 
           <Row gutter={16}>
-             <Col span={8}>
+             <Col span={6}>
                  <Form.Item name="is_active" label={t('common.status')} valuePropName="checked" initialValue={true}>
                     <Switch checkedChildren={t('common.active')} unCheckedChildren={t('common.disabled')} />
                  </Form.Item>
              </Col>
-             <Col span={8}>
+             <Col span={6}>
                  <Form.Item name="enable_log_content" label="记录上下文" valuePropName="checked" initialValue={false}>
                     <Switch checkedChildren="开启" unCheckedChildren="关闭" />
                  </Form.Item>
              </Col>
-             <Col span={8}>
-                 <Form.Item name="pre_deduction" label={`初始预扣费 (${settings?.currency?.default_currency || 'USD'})`} initialValue={0.0}>
+             <Col span={6}>
+                 <Form.Item name="site_discount_enabled" label="全站折扣" valuePropName="checked" initialValue={false}>
+                    <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                 </Form.Item>
+             </Col>
+             <Col span={6}>
+                 <Form.Item name="pre_deduction" label={`预扣费 (${settings?.currency?.default_currency || 'USD'})`} initialValue={0.0}>
                     <InputNumber style={{ width: '100%' }} precision={6} min={0} />
                  </Form.Item>
              </Col>
           </Row>
+
+          <Form.Item noStyle shouldUpdate={(prev: any, cur: any) => prev.site_discount_enabled !== cur.site_discount_enabled}>
+            {({ getFieldValue }: any) => getFieldValue('site_discount_enabled') ? (
+              <Form.Item name="site_discount" label="全站折扣倍率（0.8=八折，1.2=加价20%，优先级高于用户等级折扣）" initialValue={1.0}>
+                <InputNumber style={{ width: '100%' }} precision={2} step={0.1} min={0.01} />
+              </Form.Item>
+            ) : null}
+          </Form.Item>
         </Form>
       </Modal>
 

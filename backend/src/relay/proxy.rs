@@ -31,6 +31,16 @@ pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult
     Ok(UserContext { user_group: g, balance: b, discount: d })
 }
 
+/// 统一折扣优先级：模型全站折扣（启用时）> 用户等级折扣
+pub fn resolve_discount(db_model: Option<&crate::models::Model>, level_discount: f64) -> (f64, &'static str) {
+    if let Some(m) = db_model {
+        if m.site_discount_enabled == 1 {
+            return (m.site_discount, "模型全站折扣");
+        }
+    }
+    (level_discount, "等级折扣")
+}
+
 // ── Access Check ────────────────────────────────────────────────
 
 pub async fn check_access(state: &Arc<AppState>, token: &ApiToken, model: &str, balance: f64) -> AppResult<f64> {

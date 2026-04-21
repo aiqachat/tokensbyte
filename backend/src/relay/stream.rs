@@ -102,7 +102,9 @@ pub async fn handle_chat_stream(
 
         let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
         let features = crate::relay::usage_extractor::extract_request_features(&req_json);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, discount, &features);
+        let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), discount);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, final_discount, &features);
+        detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(&model);
         if model != resolved_model {
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
@@ -211,8 +213,14 @@ pub async fn handle_image_stream(
         } else { None };
 
         let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
-        let features = crate::relay::usage_extractor::extract_request_features(&req_json);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, discount, &features);
+        let mut features = crate::relay::usage_extractor::extract_request_features(&req_json);
+        // 流式完成后，从完整响应中提取实际图片数量（按张计费的最终依据）
+        if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&full_response_text) {
+            features.image_count = Some(resp_count);
+        }
+        let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), discount);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, final_discount, &features);
+        detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(&model);
         if model != resolved_model {
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
@@ -323,8 +331,14 @@ pub async fn handle_native_stream(
         } else { None };
 
         let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
-        let features = crate::relay::usage_extractor::extract_request_features(&req_json);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, discount, &features);
+        let mut features = crate::relay::usage_extractor::extract_request_features(&req_json);
+        // 流式完成后，从完整响应中提取实际图片数量（Gemini 生图场景）
+        if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&full_response_text) {
+            features.image_count = Some(resp_count);
+        }
+        let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), discount);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, final_discount, &features);
+        detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(&model);
         if model != resolved_model {
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));

@@ -305,45 +305,11 @@ pub fn default_database_settings() -> DatabaseSettings {
 }
 
 pub async fn system_about() -> AppResult<Json<serde_json::Value>> {
-    // 使用 git log 获取最近 10 次提交，用 RS 作为记录分隔符，US 作为字段分隔符
-    let output = std::process::Command::new("git")
-        .args([
-            "log",
-            "-10",
-            "--format=%H\x1F%h\x1F%an\x1F%cd\x1F%s",
-            "--date=format:%Y-%m-%d %H:%M:%S",
-        ])
-        .output();
-
-    let commits: Vec<serde_json::Value> = match output {
-        Ok(out) if out.status.success() => {
-            let raw = String::from_utf8_lossy(&out.stdout).to_string();
-            raw.lines()
-                .enumerate()
-                .filter(|(_, line)| !line.trim().is_empty())
-                .map(|(i, line)| {
-                    let parts: Vec<&str> = line.splitn(5, '\x1F').collect();
-                    let hash = parts.get(0).unwrap_or(&"").to_string();
-                    let short_hash = parts.get(1).unwrap_or(&"").to_string();
-                    let author = parts.get(2).unwrap_or(&"").to_string();
-                    let date = parts.get(3).unwrap_or(&"").to_string();
-                    let message = parts.get(4).unwrap_or(&"").to_string();
-                    // 版本号：最新为 v1.0.0，依次递减（演示版本号逻辑）
-                    let version = format!("v1.0.{}", 10usize.saturating_sub(i));
-                    serde_json::json!({
-                        "index": i,
-                        "is_current": i == 0,
-                        "version": version,
-                        "hash": hash,
-                        "short_hash": short_hash,
-                        "author": author,
-                        "date": date,
-                        "message": message,
-                    })
-                })
-                .collect()
-        }
-        _ => vec![serde_json::json!({
+    // 采用静态构建劫持保护：在 build.rs 时生成 JSON，运行时变为 O(1) 的纯内存读取，防范 DoS 攻击。
+    let static_commits_json = include_str!(concat!(env!("OUT_DIR"), "/git_commits.json"));
+    
+    let commits: Vec<serde_json::Value> = serde_json::from_str(static_commits_json).unwrap_or_else(|_| {
+        vec![serde_json::json!({
             "index": 0,
             "is_current": true,
             "version": "unknown",
@@ -351,9 +317,9 @@ pub async fn system_about() -> AppResult<Json<serde_json::Value>> {
             "short_hash": "------",
             "author": "N/A",
             "date": "N/A",
-            "message": "无法获取版本信息 (Git 暂不可用)",
-        })],
-    };
+            "message": "解析预构建版本失败",
+        })]
+    });
 
     let current = commits.first().cloned().unwrap_or(serde_json::json!({}));
 

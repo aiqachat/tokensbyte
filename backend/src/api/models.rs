@@ -63,7 +63,7 @@ pub async fn list_models(
     if query.search.is_some() {
         count_sql.push_str(" AND (name ILIKE ? OR model_id ILIKE ? OR mid = ?)");
     }
-    
+
     let formatted_count_sql = state.db.format_query(&count_sql);
     let mut cq = sqlx::query_scalar::<_, i64>(&formatted_count_sql);
     if let Some(pid) = query.provider_id {
@@ -76,7 +76,7 @@ pub async fn list_models(
         let like = format!("%{}%", kw);
         cq = cq.bind(like.clone()).bind(like).bind(kw);
     }
-    
+
     let total = cq.fetch_one(&state.db.pool).await?;
 
     Ok(Json(ModelListResponse { data: models, total }))
@@ -123,12 +123,15 @@ pub async fn create_model(
     let forward_rule_ids = req.forward_rule_ids.map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "[]".to_string()));
     
     let pre_deduction = req.pre_deduction.unwrap_or(0.0);
+    let site_discount = req.site_discount.unwrap_or(1.0);
+    let site_discount_enabled = req.site_discount_enabled.unwrap_or(0);
+    
     let is_active = req.is_active.unwrap_or(1);
     let enable_log_content = req.enable_log_content.unwrap_or(0);
 
     let id_i32 = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO models (mid, name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, is_active, enable_log_content)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        &state.db.format_query(r#"INSERT INTO models (mid, name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, site_discount, site_discount_enabled, is_active, enable_log_content)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#)
     )
     .bind(&mid)
@@ -140,6 +143,8 @@ pub async fn create_model(
     .bind(forward_rule_ids)
     .bind(req.billing_rule_id)
     .bind(pre_deduction)
+    .bind(site_discount)
+    .bind(site_discount_enabled)
     .bind(is_active)
     .bind(enable_log_content)
     .fetch_one(&state.db.pool)
@@ -261,6 +266,12 @@ pub async fn update_model(
     }
     if let Some(elc) = req.enable_log_content {
         sqlx::query(&state.db.format_query("UPDATE models SET enable_log_content = ? WHERE id = ?")).bind(elc).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(sd) = req.site_discount {
+        sqlx::query(&state.db.format_query("UPDATE models SET site_discount = ? WHERE id = ?")).bind(sd).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(sde) = req.site_discount_enabled {
+        sqlx::query(&state.db.format_query("UPDATE models SET site_discount_enabled = ? WHERE id = ?")).bind(sde).bind(id).execute(&state.db.pool).await?;
     }
 
     sqlx::query(&state.db.format_query("UPDATE models SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;

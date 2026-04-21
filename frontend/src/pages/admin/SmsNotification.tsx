@@ -49,7 +49,7 @@ const SmsNotification: React.FC = () => {
   };
 
   return (
-    <Card bordered={false} title={t('menu.sms_notification')} style={{ borderRadius: 12 }}>
+    <div style={{ paddingTop: 12 }}>
       <Form form={form} layout="vertical" autoComplete="off" style={{ maxWidth: 600 }}>
         <Form.Item label={t('settings.sms_secret_id')} name="secret_id" rules={[{ required: true }]}><Input placeholder="AKIDxxxxxxxx" /></Form.Item>
         <Form.Item label={t('settings.sms_secret_key')} name="secret_key" rules={[{ required: true }]}><Input.Password placeholder="请输入 SecretKey" /></Form.Item>
@@ -67,7 +67,7 @@ const SmsNotification: React.FC = () => {
           <Button onClick={handleTest} loading={testLoading}>{t('settings.test_sms')}</Button>
         </Space>
       </Form>
-    </Card>
+    </div>
   );
 };
 

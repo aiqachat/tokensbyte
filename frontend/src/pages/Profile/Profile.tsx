@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Card, Typography, Avatar, Space, List, Button, Modal, Form, Input, message, Popconfirm } from 'antd';
 import { UserOutlined, CameraOutlined, LockOutlined, MailOutlined, MobileOutlined, WechatOutlined, GoogleOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import axios from 'axios';
 import request from '../../utils/request';
 import type { User, AllSettings } from '../../types';
 import useAuthStore from '../../store/auth';
 import useSettingsStore from '../../store/settings';
+import WechatQR from '../../components/WechatQR';
 
 const { Title, Text } = Typography;
 
@@ -19,7 +19,11 @@ const Profile: React.FC = () => {
   const [form] = Form.useForm();
   const { setUser } = useAuthStore();
   const { settings } = useSettingsStore();
-  const [countdown, setCountdown] = useState(0);
+  const [countdowns, setCountdowns] = useState<Record<string, number>>({});
+
+  const startCountdown = (key: string) => {
+    setCountdowns(prev => ({ ...prev, [key]: 60 }));
+  };
 
   const login = settings?.login;
 
@@ -34,9 +38,27 @@ const Profile: React.FC = () => {
   };
 
   useEffect(() => { fetchProfile(); }, []);
+
   useEffect(() => {
-    if (countdown > 0) { const t = setTimeout(() => setCountdown(c => c - 1), 1000); return () => clearTimeout(t); }
-  }, [countdown]);
+    const activeKeys = Object.keys(countdowns).filter(k => countdowns[k] > 0);
+    if (activeKeys.length === 0) return;
+
+    const timer = setInterval(() => {
+      setCountdowns(prev => {
+        const next = { ...prev };
+        let changed = false;
+        Object.keys(next).forEach(k => {
+          if (next[k] > 0) {
+            next[k] -= 1;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [countdowns]);
 
   const handleAction = (type: string) => {
     setModalType(type);
@@ -58,11 +80,11 @@ const Profile: React.FC = () => {
   const handleBindMobile = async (values: any) => {
     try {
       await (request.post('/user/bind/mobile', values) as any);
-      message.success('手机号绑定成功');
+      message.success(t('profile.edit_success'));
       setIsModalVisible(false);
       fetchProfile();
     } catch (e: any) {
-      message.error(e?.message || '绑定失败');
+      console.error(e);
     }
   };
 
@@ -70,11 +92,11 @@ const Profile: React.FC = () => {
   const handleBindEmail = async (values: any) => {
     try {
       await (request.post('/user/bind/email', values) as any);
-      message.success('邮箱绑定成功');
+      message.success(t('profile.edit_success'));
       setIsModalVisible(false);
       fetchProfile();
     } catch (e: any) {
-      message.error(e?.message || '绑定失败');
+      console.error(e);
     }
   };
 
@@ -82,26 +104,27 @@ const Profile: React.FC = () => {
   const handleUnbind = async (type: string, password: string) => {
     try {
       await (request.post(`/user/unbind/${type}`, { password }) as any);
-      message.success('解绑成功');
+      message.success(t('profile.unbind_success'));
       fetchProfile();
     } catch (e: any) {
-      message.error(e?.message || '解绑失败');
+      console.error(e);
     }
   };
 
   // 发送验证码
-  const sendCode = async (target: string, type: 'email' | 'sms', purpose: string) => {
-    if (countdown > 0) return;
+  const sendCode = async (target: string, type: 'email' | 'sms', purpose: string, timerKey: string) => {
+    if (countdowns[timerKey] > 0) return;
     try {
       if (type === 'email') {
-        await axios.post('/api/v1/auth/send-code', { email: target, purpose });
+        await request.post('/auth/send-code', { email: target, purpose });
+        message.success(t('auth.code_sent'));
       } else {
-        await axios.post('/api/v1/auth/send-sms-code', { mobile: target, purpose });
+        await request.post('/auth/send-sms-code', { mobile: target, purpose });
+        message.success(t('auth.sms_code_sent'));
       }
-      message.success('验证码已发送');
-      setCountdown(60);
+      startCountdown(timerKey);
     } catch (e: any) {
-      message.error(e?.response?.data?.error?.message || '发送失败');
+      console.error(e);
     }
   };
 
@@ -153,7 +176,7 @@ const Profile: React.FC = () => {
         value: profile?.wechat_id ? t('profile.bound') : t('profile.not_bound'),
         action: profile?.wechat_id ? t('profile.rebind') : t('profile.bind'),
         icon: <WechatOutlined />,
-        handler: () => { window.location.href = '/api/v1/user/bind/wechat'; },
+        handler: () => handleAction('bind_wechat'),
       });
     }
 
@@ -187,13 +210,13 @@ const Profile: React.FC = () => {
         return (
           <>
             <Form.Item name="password" label={t('profile.password')} rules={[{ required: true, min: 6 }]}>
-              <Input.Password placeholder={t('profile.password')} />
+              <Input.Password placeholder={t('auth.password_placeholder')} />
             </Form.Item>
             <Form.Item name="confirm" label={t('login.confirm_password')} dependencies={['password']}
-              rules={[{ required: true }, ({ getFieldValue }) => ({
-                validator(_, value) { return !value || getFieldValue('password') === value ? Promise.resolve() : Promise.reject(new Error(t('login.password_mismatch'))); },
+              rules={[{ required: true, message: t('auth.confirm_password_required') }, ({ getFieldValue }) => ({
+                validator(_, value) { return !value || getFieldValue('password') === value ? Promise.resolve() : Promise.reject(new Error(t('auth.passwords_not_match'))); },
               })]}>
-              <Input.Password />
+              <Input.Password placeholder={t('auth.confirm_password_placeholder')} />
             </Form.Item>
           </>
         );
@@ -202,24 +225,24 @@ const Profile: React.FC = () => {
           <Form form={form} layout="vertical" onFinish={handleBindMobile}>
             {profile?.mobile && (
               <>
-                <Text type="secondary">当前手机号：{profile.mobile}</Text>
-                <Form.Item name="old_code" label="原手机验证码" rules={[{ required: true }]} style={{ marginTop: 12 }}>
-                  <Input prefix={<SafetyOutlined />} placeholder="输入原手机验证码"
-                    suffix={<Button type="link" size="small" disabled={countdown > 0}
-                      onClick={() => sendCode(profile.mobile!, 'sms', 'bind_mobile')}>
-                      {countdown > 0 ? `${countdown}s` : '发送验证码'}
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>{t('profile.current_mobile')}: {profile.mobile}</Text>
+                <Form.Item name="old_code" label={t('profile.old_mobile_code')} rules={[{ required: true, message: t('auth.code_required') }]}>
+                  <Input prefix={<SafetyOutlined />} placeholder={t('profile.enter_old_code')}
+                    suffix={<Button type="link" size="small" disabled={countdowns['old_mobile'] > 0}
+                      onClick={() => sendCode(profile.mobile!, 'sms', 'bind_mobile', 'old_mobile')}>
+                      {countdowns['old_mobile'] > 0 ? `${countdowns['old_mobile']}s` : t('auth.send_code')}
                     </Button>} />
                 </Form.Item>
               </>
             )}
-            <Form.Item name="mobile" label={t('profile.bind_mobile_title')} rules={[{ required: true }]}>
+            <Form.Item name="mobile" label={t('profile.bind_mobile_title')} rules={[{ required: true, message: t('auth.mobile_required') }]}>
               <Input prefix={<MobileOutlined />} placeholder={t('profile.new_mobile_placeholder')} />
             </Form.Item>
-            <Form.Item name="code" label="新手机验证码" rules={[{ required: true }]}>
-              <Input prefix={<SafetyOutlined />} placeholder="输入验证码"
-                suffix={<Button type="link" size="small" disabled={countdown > 0}
-                  onClick={() => { const v = form.getFieldValue('mobile'); if (v) sendCode(v, 'sms', 'bind_mobile'); else message.warning('请输入手机号'); }}>
-                  {countdown > 0 ? `${countdown}s` : '发送验证码'}
+            <Form.Item name="code" label={t('profile.new_mobile_code')} rules={[{ required: true, message: t('auth.code_required') }]}>
+              <Input prefix={<SafetyOutlined />} placeholder={t('profile.enter_new_code')}
+                suffix={<Button type="link" size="small" disabled={countdowns['new_mobile'] > 0}
+                  onClick={() => { const v = form.getFieldValue('mobile'); if (v) sendCode(v, 'sms', 'bind_mobile', 'new_mobile'); else message.warning(t('auth.mobile_required')); }}>
+                  {countdowns['new_mobile'] > 0 ? `${countdowns['new_mobile']}s` : t('auth.send_code')}
                 </Button>} />
             </Form.Item>
           </Form>
@@ -229,27 +252,41 @@ const Profile: React.FC = () => {
           <Form form={form} layout="vertical" onFinish={handleBindEmail}>
             {profile?.email && !profile.email.endsWith('@tokensbyte.local') && (
               <>
-                <Text type="secondary">当前邮箱：{profile.email}</Text>
-                <Form.Item name="old_code" label="原邮箱验证码" rules={[{ required: true }]} style={{ marginTop: 12 }}>
-                  <Input prefix={<SafetyOutlined />} placeholder="输入原邮箱验证码"
-                    suffix={<Button type="link" size="small" disabled={countdown > 0}
-                      onClick={() => sendCode(profile.email, 'email', 'bind_email')}>
-                      {countdown > 0 ? `${countdown}s` : '发送验证码'}
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>{t('profile.current_email')}: {profile.email}</Text>
+                <Form.Item name="old_code" label={t('profile.old_email_code')} rules={[{ required: true, message: t('auth.code_required') }]}>
+                  <Input prefix={<SafetyOutlined />} placeholder={t('profile.enter_old_code')}
+                    suffix={<Button type="link" size="small" disabled={countdowns['old_email'] > 0}
+                      onClick={() => sendCode(profile.email, 'email', 'bind_email', 'old_email')}>
+                      {countdowns['old_email'] > 0 ? `${countdowns['old_email']}s` : t('auth.send_code')}
                     </Button>} />
                 </Form.Item>
               </>
             )}
-            <Form.Item name="email" label={t('profile.bind_email_title')} rules={[{ required: true, type: 'email' }]}>
+            <Form.Item name="email" label={t('profile.bind_email_title')} rules={[{ required: true, type: 'email', message: t('auth.email_required') }]}>
               <Input prefix={<MailOutlined />} placeholder={t('profile.new_email_placeholder')} />
             </Form.Item>
-            <Form.Item name="code" label="新邮箱验证码" rules={[{ required: true }]}>
-              <Input prefix={<SafetyOutlined />} placeholder="输入验证码"
-                suffix={<Button type="link" size="small" disabled={countdown > 0}
-                  onClick={() => { const v = form.getFieldValue('email'); if (v) sendCode(v, 'email', 'bind_email'); else message.warning('请输入邮箱'); }}>
-                  {countdown > 0 ? `${countdown}s` : '发送验证码'}
+            <Form.Item name="code" label={t('profile.new_email_code')} rules={[{ required: true, message: t('auth.code_required') }]}>
+              <Input prefix={<SafetyOutlined />} placeholder={t('profile.enter_new_code')}
+                suffix={<Button type="link" size="small" disabled={countdowns['new_email'] > 0}
+                  onClick={() => { const v = form.getFieldValue('email'); if (v) sendCode(v, 'email', 'bind_email', 'new_email'); else message.warning(t('auth.email_required')); }}>
+                  {countdowns['new_email'] > 0 ? `${countdowns['new_email']}s` : t('auth.send_code')}
                 </Button>} />
             </Form.Item>
           </Form>
+        );
+      case 'bind_wechat':
+        return (
+          <div style={{ textAlign: 'center', padding: '12px 0' }}>
+            <WechatQR
+              appId={settings?.wechat_oauth?.app_id || ''}
+              redirectUri={`${window.location.origin}/api/v1/user/bind/wechat/callback`}
+              state={`bind_wechat_${profile?.id || ''}`}
+              selfRedirect={true}
+              style={1}
+            />
+            <div style={{ marginTop: 8, color: '#e5e5e5', fontSize: 14 }}>{t('profile.bind_wechat')}</div>
+            <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>"{settings?.site?.name}"</div>
+          </div>
         );
       default:
         return null;
@@ -291,7 +328,7 @@ const Profile: React.FC = () => {
                   fontSize: '12px', fontWeight: 600,
                   boxShadow: '0 2px 4px rgba(253, 185, 49, 0.3)',
                 }}>
-                  {profile?.level_name || (profile?.user_group === 'default' ? '普通会员' : profile?.user_group)}
+                  {profile?.level_name || (profile?.user_group === 'default' ? t('profile.membership_default') : profile?.user_group)}
                 </div>
               )}
             </div>
@@ -333,11 +370,11 @@ const Profile: React.FC = () => {
                       description={<Input.Password placeholder={t('profile.unbind_password')} id={`unbind_pwd_${item.key}`} />}
                       onConfirm={() => {
                         const pwd = (document.getElementById(`unbind_pwd_${item.key}`) as HTMLInputElement)?.value;
-                        if (!pwd) { message.warning('请输入密码'); return; }
+                        if (!pwd) { message.warning(t('auth.password_required')); return; }
                         handleUnbind(item.key, pwd);
                       }}
-                      okText="确定解绑" cancelText="取消">
-                      <Button type="link" danger>解绑</Button>
+                      okText={t('profile.unbind_ok')} cancelText={t('common.cancel')}>
+                      <Button type="link" danger>{t('profile.unbind')}</Button>
                     </Popconfirm>
                   ) : null}
                 </Space>
@@ -353,14 +390,15 @@ const Profile: React.FC = () => {
       </Card>
 
       <Modal
-        title={isBindModal ? (modalType === 'bind_mobile' ? t('profile.bind_mobile_title') : t('profile.bind_email_title')) : t(`profile.${modalType}`)}
+        title={isBindModal ? (modalType === 'bind_mobile' ? t('profile.bind_mobile_title') : t('profile.bind_email_title')) : (modalType === 'nickname' ? t('profile.modify_nickname') : (modalType === 'password' ? t('profile.modify_password') : t(`profile.${modalType}`)))}
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         onOk={handleModalOk}
         okText={t('common.save')}
         cancelText={t('common.cancel')}
+        footer={modalType === 'bind_wechat' ? null : undefined}
       >
-        {!isBindModal ? (
+        {!isBindModal && modalType !== 'bind_wechat' ? (
           <Form form={form} layout="vertical" onFinish={handleUpdate}>
             {renderModalContent()}
           </Form>

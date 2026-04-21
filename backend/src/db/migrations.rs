@@ -692,20 +692,28 @@ macro_rules! pg_migration_blocks {
 
     // 内置服务商: 火山引擎、谷歌、阿里云
     sqlx::query(
-        "INSERT INTO model_providers (name, sort_order, is_system) 
-         VALUES ('火山引擎', 1, 1), ('谷歌', 2, 1), ('阿里云', 3, 1) 
+        "INSERT INTO model_providers (name, sort_order, is_system)
+         VALUES ('火山引擎', 1, 1), ('谷歌', 2, 1), ('阿里云', 3, 1)
          ON CONFLICT(name) DO UPDATE SET is_system = 1"
     ).execute(pool).await?;
 
     // 内置类型: 视频、图片、音频、聊天
     sqlx::query(
-        "INSERT INTO model_types (name, sort_order, is_system) 
-         VALUES ('视频', 1, 1), ('图片', 2, 1), ('音频', 3, 1), ('聊天', 4, 1) 
+        "INSERT INTO model_types (name, sort_order, is_system)
+         VALUES ('视频', 1, 1), ('图片', 2, 1), ('音频', 3, 1), ('聊天', 4, 1)
          ON CONFLICT(name) DO UPDATE SET is_system = 1"
     ).execute(pool).await?;
 
     // 为 models 表增加 mid 列（系统识别码，6位数字）
     sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS mid TEXT NOT NULL DEFAULT ''")
+        .execute(pool).await.ok();
+
+    // models 表新增全站折扣字段
+    // site_discount: 全站折扣倍率（1.0=原价，0.8=八折，>1可加价）
+    // site_discount_enabled: 全站折扣启用开关（0=关闭，1=开启，开启后优先级高于用户等级折扣）
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS site_discount DOUBLE PRECISION NOT NULL DEFAULT 1.0")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS site_discount_enabled INTEGER NOT NULL DEFAULT 0")
         .execute(pool).await.ok();
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");

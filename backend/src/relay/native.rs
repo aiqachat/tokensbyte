@@ -141,10 +141,16 @@ pub async fn gemini_proxy(
             } else { None }
         } else { None };
 
-        let features = crate::relay::usage_extractor::extract_request_features(
+        let mut features = crate::relay::usage_extractor::extract_request_features(
             &serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}))
         );
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+        // 用响应中的实际图片数量覆盖（Gemini 生图场景）
+        if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
+            features.image_count = Some(resp_count);
+        }
+        let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+        detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(model);
         if model != resolved_model {
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
@@ -314,7 +320,9 @@ pub async fn volcengine_status(
                 } else { None };
 
                 let features = crate::relay::usage_extractor::extract_request_features(&resp_json);
-                let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+                let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+                let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+                detail.push_str(&format!(" | {}", discount_source));
                 let resolved_model = channel.resolve_model(&model_name);
                 if model_name != resolved_model {
                     detail.push_str(&format!(" | 模型映射: {} ➞ {}", model_name, resolved_model));
@@ -376,6 +384,17 @@ pub async fn volcengine_images(
     let mut fwd = body.clone();
     fwd["model"] = serde_json::json!(resolved_model);
 
+    // n > 1 → 启用组图（与 forward.rs volcengine_image 分支逻辑一致）
+    let n = body.get("n").and_then(|v| v.as_i64()).unwrap_or(1);
+    if n > 1 {
+        fwd["sequential_image_generation"] = serde_json::json!("auto");
+        fwd["sequential_image_generation_options"] = serde_json::json!({
+            "max_images": n
+        });
+    }
+    // n 已转换为官方参数，删除避免冗余传到上游
+    if let Some(obj) = fwd.as_object_mut() { obj.remove("n"); }
+
     let resp = state.http_client
         .post(&url)
         .header("Authorization", format!("Bearer {}", channel.api_key))
@@ -407,7 +426,11 @@ pub async fn volcengine_images(
 
     // 提取 token 用量
     let usage = crate::relay::usage_extractor::parse_usage(&response_content_str);
-    let features = crate::relay::usage_extractor::extract_request_features(&body);
+    let mut features = crate::relay::usage_extractor::extract_request_features(&body);
+    // 用响应中的实际图片数量覆盖请求体的 n 值（按张计费的最终依据）
+    if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
+        features.image_count = Some(resp_count);
+    }
 
     // 查询模型与计费规则
     let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
@@ -424,7 +447,9 @@ pub async fn volcengine_images(
         let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
     }
 
-    let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, ctx.discount, &features);
+    let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+    let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+    detail.push_str(&format!(" | {}", discount_source));
     let resolved_model = channel.resolve_model(model);
     if model != resolved_model {
         detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));

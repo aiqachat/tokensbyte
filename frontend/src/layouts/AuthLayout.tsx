@@ -1,6 +1,6 @@
-import React from 'react';
-import { Card, Typography, Space, ConfigProvider, theme, Divider, Tooltip, Button } from 'antd';
-import { RocketOutlined } from '@ant-design/icons';
+import { Card, Typography, Space, ConfigProvider, theme, Divider, Tooltip, Button, Dropdown } from 'antd';
+import { RocketOutlined, GlobalOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 
 const { Title, Text } = Typography;
 
@@ -16,6 +16,7 @@ interface AuthLayoutProps {
   title: string;
   subtitle?: string;
   logo?: string | null;
+  loading?: boolean;
   children: React.ReactNode;
   bottomLinks?: React.ReactNode;
   
@@ -29,6 +30,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
   title,
   subtitle,
   logo,
+  loading,
   children,
   bottomLinks,
   methodsLabel,
@@ -36,6 +38,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
   activeMethod,
   onMethodChange,
 }) => {
+  const { i18n, t } = useTranslation();
   const renderIconBtn = (method: AuthMethodOption) => {
     const isActive = activeMethod === method.key;
     const { brandColor } = method;
@@ -88,7 +91,24 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
       <div style={{
         minHeight: '100vh', padding: '40px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: '#000', backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
+        position: 'relative',
       }}>
+        <div style={{ position: 'absolute', top: 24, right: 24 }}>
+          <Dropdown
+            menu={{
+              items: [
+                { key: 'zh', label: '简体中文', onClick: () => { i18n.changeLanguage('zh'); localStorage.setItem('i18nextLng', 'zh'); } },
+                { key: 'en', label: 'English', onClick: () => { i18n.changeLanguage('en'); localStorage.setItem('i18nextLng', 'en'); } },
+              ]
+            }}
+            placement="bottomRight"
+          >
+            <Button type="text" icon={<GlobalOutlined />} style={{ color: 'rgba(255,255,255,0.65)' }}>
+              {i18n.language === 'zh' ? '中文' : 'EN'}
+            </Button>
+          </Dropdown>
+        </div>
+
         <Card style={{
           width: 'min(420px, 92vw)', borderRadius: 16, background: '#141414',
           border: '1px solid #303030', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
@@ -105,24 +125,32 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
             </Space>
           </div>
 
-          {children}
-
-          {bottomLinks && (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 16 }}>
-              {bottomLinks}
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+              <Text type="secondary">{t('common.loading')}</Text>
             </div>
-          )}
-
-          {methods && methods.length > 0 && (
+          ) : (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', margin: '24px 0 16px' }}>
-                <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15))' }} />
-                <span style={{ padding: '0 12px', color: '#777', fontSize: 13, letterSpacing: 1 }}>{methodsLabel || '切换方式'}</span>
-                <div style={{ flex: 1, height: 1, background: 'linear-gradient(270deg, transparent, rgba(255,255,255,0.15))' }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap' }}>
-                {methods.map(renderIconBtn)}
-              </div>
+              {children}
+
+              {bottomLinks && (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 16 }}>
+                  {bottomLinks}
+                </div>
+              )}
+
+              {methods && methods.length > 0 && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', margin: '24px 0 16px' }}>
+                    <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15))' }} />
+                    <span style={{ padding: '0 12px', color: '#777', fontSize: 13, letterSpacing: 1 }}>{methodsLabel || t('auth.switch_method')}</span>
+                    <div style={{ flex: 1, height: 1, background: 'linear-gradient(270deg, transparent, rgba(255,255,255,0.15))' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap' }}>
+                    {methods.map(renderIconBtn)}
+                  </div>
+                </>
+              )}
             </>
           )}
         </Card>

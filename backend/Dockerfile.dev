@@ -3,7 +3,7 @@ FROM rust:1.94-slim-bullseye
 WORKDIR /usr/src/app
 
 # 安装必要的依赖库
-RUN apt-get update && apt-get install -y pkg-config libssl-dev libsqlite3-dev
+RUN apt-get update && apt-get install -y pkg-config libssl-dev libsqlite3-dev git
 
 # 安装 cargo-watch 工具用于热重载
 RUN cargo install cargo-watch
