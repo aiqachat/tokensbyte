@@ -936,7 +936,19 @@ const PluginConfig: React.FC = () => {
           style={{ width: '100%', marginBottom: 16 }}
           value={playgroundConfig[type]}
           onChange={(val) => setPlaygroundConfig({ ...playgroundConfig, [type]: val })}
-          options={filteredModels.map(m => ({ label: m.name, value: m.name }))}
+          options={filteredModels.map(m => ({
+            label: (
+              <span>
+                {m.name}
+                {m.mid && (
+                  <span style={{ marginLeft: 8, fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>
+                    MID:{m.mid}
+                  </span>
+                )}
+              </span>
+            ),
+            value: m.mid || m.name,  // 优先使用 mid，没有 mid 的旧数据降级用 name
+          }))}
           popupClassName="dark-select-dropdown"
           optionFilterProp="label"
         />
