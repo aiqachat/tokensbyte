@@ -629,28 +629,34 @@ pub async fn oauth_wechat_callback(
             &wechat.app_id, &wechat.app_secret, &code
         ).await?;
 
-        // 查找已绑定用户
+        let wechat_identifier = info.unionid.as_deref().unwrap_or(&info.openid);
+        let fallback_identifier = &info.openid;
+
+        // 查找已绑定用户（双重校验 unionid 或 openid）
         let existing: Option<User> = sqlx::query_as(
-            &state.db.format_query("SELECT * FROM users WHERE wechat_id = ?")
-        ).bind(&info.openid).fetch_optional(&state.db.pool).await?;
+            &state.db.format_query("SELECT * FROM users WHERE wechat_id = ? OR wechat_id = ?")
+        ).bind(wechat_identifier).bind(fallback_identifier).fetch_optional(&state.db.pool).await?;
 
         let user = if let Some(u) = existing {
+            // 更新三方昵称和最新标识
+            sqlx::query(&state.db.format_query("UPDATE users SET wechat_id = ?, wechat_name = ? WHERE id = ?"))
+                .bind(wechat_identifier).bind(&info.nickname).bind(&u.id).execute(&state.db.pool).await?;
             u
         } else {
             // 自动注册
             let user_id = uuid::Uuid::new_v4().to_string();
             let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
-            let nickname = info.nickname.unwrap_or_else(|| format!("wx_{}", &info.openid[..8]));
-            let username = ensure_unique_username(&state, &nickname).await?;
+            let nickname = info.nickname.as_deref().unwrap_or_else(|| &info.openid[..8]);
+            let username = ensure_unique_username(&state, nickname).await?;
             let placeholder_email = format!("wx_{}@tokensbyte.local", &uid);
             let password_hash = auth::hash_password(&uuid::Uuid::new_v4().to_string())?;
 
             sqlx::query(
-                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, wechat_id, role, balance, is_active)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'user', ?, 1)"#)
+                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, wechat_id, wechat_name, role, balance, is_active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user', ?, 1)"#)
             )
             .bind(&user_id).bind(&uid).bind(&username).bind(&placeholder_email)
-            .bind(&password_hash).bind(&nickname).bind(&info.openid)
+            .bind(&password_hash).bind(nickname).bind(wechat_identifier).bind(&info.nickname)
             .bind(state.config.default_user_quota)
             .execute(&state.db.pool).await?;
 
@@ -721,14 +727,18 @@ pub async fn oauth_google_callback(
             &state.db.format_query("SELECT * FROM users WHERE google_id = ?")
         ).bind(&info.id).fetch_optional(&state.db.pool).await?;
 
+        let google_display_name = info.name.clone().or_else(|| info.email.clone());
+
         let user = if let Some(u) = existing {
+            sqlx::query(&state.db.format_query("UPDATE users SET google_name = ? WHERE id = ?"))
+                .bind(&google_display_name).bind(&u.id).execute(&state.db.pool).await?;
             u
         } else {
             // 自动注册
             let user_id = uuid::Uuid::new_v4().to_string();
             let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
-            let name = info.name.unwrap_or_else(|| format!("g_{}", &info.id[..8]));
-            let username = ensure_unique_username(&state, &name).await?;
+            let name_val = info.name.as_deref().unwrap_or_else(|| &info.id[..8]);
+            let username = ensure_unique_username(&state, name_val).await?;
             let email = info.email.unwrap_or_else(|| format!("g_{}@tokensbyte.local", &uid));
             let password_hash = auth::hash_password(&uuid::Uuid::new_v4().to_string())?;
 
@@ -738,11 +748,11 @@ pub async fn oauth_google_callback(
             let actual_email = if email_exists { format!("g_{}@tokensbyte.local", &uid) } else { email };
 
             sqlx::query(
-                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, google_id, role, balance, is_active)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'user', ?, 1)"#)
+                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, google_id, google_name, role, balance, is_active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user', ?, 1)"#)
             )
             .bind(&user_id).bind(&uid).bind(&username).bind(&actual_email)
-            .bind(&password_hash).bind(&name).bind(&info.id)
+            .bind(&password_hash).bind(name_val).bind(&info.id).bind(&google_display_name)
             .bind(state.config.default_user_quota)
             .execute(&state.db.pool).await?;
 

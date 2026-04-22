@@ -665,6 +665,12 @@ macro_rules! pg_migration_blocks {
     // users 表新增 google_id（谷歌 OAuth 唯一标识）
     sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT")
         .execute(pool).await.ok();
+    
+    // 新增第三方绑定的昵称
+    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS wechat_name TEXT")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_name TEXT")
+        .execute(pool).await.ok();
 
     // verification_codes 表新增 phone 字段（短信验证码使用）
     sqlx::query("ALTER TABLE verification_codes ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''")

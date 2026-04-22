@@ -8,7 +8,9 @@ export interface User {
   nickname?: string;
   mobile?: string;
   wechat_id?: string;
+  wechat_name?: string;
   google_id?: string;
+  google_name?: string;
   role: 'admin' | 'user';
   balance: number;
   used_quota: number;

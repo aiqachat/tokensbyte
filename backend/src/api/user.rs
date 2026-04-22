@@ -172,6 +172,9 @@ pub async fn bind_wechat_callback(
         let wechat = settings.wechat_oauth.ok_or_else(|| AppError::BadRequest("微信授权未配置".to_string()))?;
         let info = crate::services::oauth::OAuthService::wechat_exchange(&wechat.app_id, &wechat.app_secret, &code).await?;
 
+        let wechat_identifier = info.unionid.as_deref().unwrap_or(&info.openid);
+        let fallback_identifier = &info.openid;
+
         // ── 验证旧微信身份（换绑第一步） ───────────────────────
         if let Some(user_id) = state_str.strip_prefix("verify_wechat_") {
             if user_id.is_empty() {
@@ -181,7 +184,7 @@ pub async fn bind_wechat_callback(
                 &state.db.format_query("SELECT wechat_id FROM users WHERE id = ?")
             ).bind(user_id).fetch_optional(&state.db.pool).await?.flatten();
 
-            if current_wechat.as_deref() != Some(&info.openid) {
+            if current_wechat.as_deref() != Some(wechat_identifier) && current_wechat.as_deref() != Some(fallback_identifier) {
                 return Ok("/profile?wechat_action=verify_failed".to_string());
             }
             return Ok("/profile?wechat_action=verified".to_string());
@@ -192,14 +195,14 @@ pub async fn bind_wechat_callback(
             if user_id.is_empty() {
                 return Err(AppError::BadRequest("无效的 state 参数".to_string()));
             }
-            // 检查此微信是否已被其他用户绑定
-            let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE wechat_id = ? AND id != ?)"))
-                .bind(&info.openid).bind(user_id).fetch_one(&state.db.pool).await?;
+            // 检查此微信是否已被其他用户绑定（校验 unionid 和 openid）
+            let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE (wechat_id = ? OR wechat_id = ?) AND id != ?)"))
+                .bind(wechat_identifier).bind(fallback_identifier).bind(user_id).fetch_one(&state.db.pool).await?;
             if exists {
                 return Ok("/profile?wechat_action=bindconflict".to_string());
             }
-            sqlx::query(&state.db.format_query("UPDATE users SET wechat_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
-                .bind(&info.openid).bind(user_id).execute(&state.db.pool).await?;
+            sqlx::query(&state.db.format_query("UPDATE users SET wechat_id = ?, wechat_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                .bind(wechat_identifier).bind(&info.nickname).bind(user_id).execute(&state.db.pool).await?;
             return Ok("/profile?wechat_action=bindok".to_string());
         }
 
@@ -216,13 +219,19 @@ pub async fn bind_google(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
     Extension(claims): Extension<auth::Claims>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     let result = (async {
         let settings = crate::api::settings::load_all_settings(&state).await?;
         let google = settings.google_oauth.ok_or_else(|| AppError::BadRequest("谷歌授权未配置".to_string()))?;
         let req_base_url = crate::api::auth::get_base_url_from_req(&headers, &state.config.base_url);
         let redirect_uri = format!("{}/api/v1/user/bind/google/callback", req_base_url);
-        let state_val = format!("bind_google_{}", claims.sub);
+        
+        // 解析 action 以确定验证流程 (verify / bind)
+        let action = query.get("action").map(|s| s.as_str()).unwrap_or("bind");
+        let prefix = if action == "verify" { "verify_google_" } else { "bind_google_" };
+        let state_val = format!("{}{}", prefix, claims.sub);
+        
         let url = crate::services::oauth::OAuthService::google_auth_url(&google.client_id, &redirect_uri, &state_val);
         Ok::<_, AppError>(url)
     }).await;
@@ -232,7 +241,7 @@ pub async fn bind_google(
     }
 }
 
-/// 谷歌绑定回调
+/// 谷歌绑定回调 — 统一处理验证旧谷歌 / 绑定新谷歌两种场景
 pub async fn bind_google_callback(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -241,10 +250,6 @@ pub async fn bind_google_callback(
     let result = (async {
         let code = query.code.ok_or_else(|| AppError::BadRequest("缺少 code".to_string()))?;
         let state_str = query.state.unwrap_or_default();
-        let user_id = state_str.strip_prefix("bind_google_").unwrap_or("").to_string();
-        if user_id.is_empty() {
-            return Err(AppError::BadRequest("无效的 state 参数".to_string()));
-        }
 
         let settings = crate::api::settings::load_all_settings(&state).await?;
         let google = settings.google_oauth.ok_or_else(|| AppError::BadRequest("谷歌授权未配置".to_string()))?;
@@ -252,16 +257,41 @@ pub async fn bind_google_callback(
         let redirect_uri = format!("{}/api/v1/user/bind/google/callback", req_base_url);
         let info = crate::services::oauth::OAuthService::google_exchange(&google.client_id, &google.client_secret, &code, &redirect_uri).await?;
 
-        let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE google_id = ? AND id != ?)"))
-            .bind(&info.id).bind(&user_id).fetch_one(&state.db.pool).await?;
-        if exists {
-            return Err(AppError::Conflict("此谷歌账号已绑定其他用户".to_string()));
+        let google_display_name = info.name.clone().or_else(|| info.email.clone());
+
+        // ── 验证旧谷歌身份（换绑第一步） ───────────────────────
+        if let Some(user_id) = state_str.strip_prefix("verify_google_") {
+            if user_id.is_empty() {
+                return Err(AppError::BadRequest("无效的 state 参数".to_string()));
+            }
+            let current_google: Option<String> = sqlx::query_scalar(
+                &state.db.format_query("SELECT google_id FROM users WHERE id = ?")
+            ).bind(user_id).fetch_optional(&state.db.pool).await?.flatten();
+
+            if current_google.as_deref() != Some(&info.id) {
+                return Ok("/profile?google_action=verify_failed".to_string());
+            }
+            return Ok("/profile?google_action=verified".to_string());
         }
 
-        sqlx::query(&state.db.format_query("UPDATE users SET google_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
-            .bind(&info.id).bind(&user_id).execute(&state.db.pool).await?;
+        // ── 绑定新谷歌（首次绑定 / 换绑第二步） ─────────────────
+        if let Some(user_id) = state_str.strip_prefix("bind_google_") {
+            if user_id.is_empty() {
+                return Err(AppError::BadRequest("无效的 state 参数".to_string()));
+            }
+            let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE google_id = ? AND id != ?)"))
+                .bind(&info.id).bind(user_id).fetch_one(&state.db.pool).await?;
+            if exists {
+                return Ok("/profile?google_action=bindconflict".to_string());
+            }
 
-        Ok::<_, AppError>("/profile?bind=google&result=success".to_string())
+            sqlx::query(&state.db.format_query("UPDATE users SET google_id = ?, google_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                .bind(&info.id).bind(&google_display_name).bind(user_id).execute(&state.db.pool).await?;
+
+            return Ok("/profile?google_action=bindok".to_string());
+        }
+
+        Err(AppError::BadRequest("无效的 state 参数".to_string()))
     }).await;
     match result {
         Ok(url) => Redirect::temporary(&url).into_response(),

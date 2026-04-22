@@ -74,7 +74,36 @@ const Profile: React.FC = () => {
         message.error('此微信已绑定其他账号');
         break;
     }
-  }, [searchParams, setSearchParams, fetchProfile]);
+
+    const googleAction = searchParams.get('google_action');
+    if (googleAction) {
+      searchParams.delete('google_action');
+      setSearchParams(searchParams, { replace: true });
+      switch (googleAction) {
+        case 'verified':
+          Modal.confirm({
+            title: t('auth.identity_verified') || '身份验证通过',
+            content: t('auth.google_bind_confirm_text') || '原谷歌账号身份验证通过，是否立即前往绑定新谷歌账号？',
+            okText: t('auth.go_to_bind') || '前往绑定',
+            cancelText: t('common.cancel') || '取消',
+            onOk: () => {
+              window.location.href = '/api/v1/user/bind/google?action=bind';
+            }
+          });
+          break;
+        case 'verify_failed':
+          message.error(t('auth.google_verify_failed') || '验证失败：授权的谷歌账号与当前绑定的谷歌账号不一致');
+          break;
+        case 'bindok':
+          message.success(t('auth.google_bind_success') || '谷歌账号绑定成功');
+          fetchProfile();
+          break;
+        case 'bindconflict':
+          message.error(t('auth.google_bind_conflict') || '此谷歌账号已绑定其他账号');
+          break;
+      }
+    }
+  }, [searchParams, setSearchParams, fetchProfile, t]);
 
   useEffect(() => {
     const activeKeys = Object.keys(countdowns).filter(k => countdowns[k] > 0);
@@ -164,10 +193,30 @@ const Profile: React.FC = () => {
       items.push({ key: 'email', label: t('profile.email'), value: hasEmail ? profile!.email : t('profile.not_bound'), action: hasEmail ? t('profile.rebind') : t('profile.bind'), icon: <MailOutlined />, handler: () => handleAction('bind_email') });
     }
     if (login?.enable_wechat_login) {
-      items.push({ key: 'wechat', label: t('profile.wechat'), value: profile?.wechat_id ? t('profile.bound') : t('profile.not_bound'), action: profile?.wechat_id ? t('profile.rebind') : t('profile.bind'), icon: <WechatOutlined />, handler: () => handleAction('bind_wechat') });
+      items.push({ 
+        key: 'wechat', 
+        label: t('profile.wechat'), 
+        value: profile?.wechat_id ? `${t('profile.bound')} ${profile.wechat_name ? `(${profile.wechat_name})` : ''}` : t('profile.not_bound'), 
+        action: profile?.wechat_id ? t('profile.rebind') : t('profile.bind'), 
+        icon: <WechatOutlined />, 
+        handler: () => handleAction('bind_wechat') 
+      });
     }
     if (login?.enable_google_login) {
-      items.push({ key: 'google', label: t('profile.google'), value: profile?.google_id ? t('profile.bound') : t('profile.not_bound'), action: profile?.google_id ? t('profile.rebind') : t('profile.bind'), icon: <GoogleOutlined />, handler: () => { window.location.href = '/api/v1/user/bind/google'; } });
+      items.push({ 
+        key: 'google', 
+        label: t('profile.google'), 
+        value: profile?.google_id ? `${t('profile.bound')} ${profile.google_name ? `(${profile.google_name})` : ''}` : t('profile.not_bound'), 
+        action: profile?.google_id ? t('profile.rebind') : t('profile.bind'), 
+        icon: <GoogleOutlined />, 
+        handler: () => { 
+          if (profile?.google_id) {
+            window.location.href = '/api/v1/user/bind/google?action=verify';
+          } else {
+            window.location.href = '/api/v1/user/bind/google?action=bind';
+          }
+        } 
+      });
     }
     return items;
   };

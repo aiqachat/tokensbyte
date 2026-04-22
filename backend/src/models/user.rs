@@ -12,8 +12,10 @@ pub struct User {
     pub nickname: Option<String>,
     pub mobile: Option<String>,
     pub wechat_id: Option<String>,
+    pub wechat_name: Option<String>,
     /// 谷歌 OAuth 唯一标识
     pub google_id: Option<String>,
+    pub google_name: Option<String>,
     pub role: String,
     pub balance: f64,
     #[sqlx(default)]
