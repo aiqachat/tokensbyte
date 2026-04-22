@@ -41,6 +41,32 @@ pub async fn create_token(
     Extension(claims): Extension<auth::Claims>,
     Json(request): Json<CreateTokenRequest>,
 ) -> AppResult<Json<ApiToken>> {
+    // 检查用户等级允许的最大密钥数量
+    let current_count: i64 = sqlx::query_scalar(
+        &state.db.format_query("SELECT COUNT(*) FROM api_tokens WHERE user_id = ?")
+    )
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    // 获取用户等级的密钥上限（默认10）
+    let max_token_count: i64 = sqlx::query_scalar(
+        &state.db.format_query(
+            "SELECT COALESCE(ul.max_token_count, 10) FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+        )
+    )
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .unwrap_or(10);
+
+    if current_count >= max_token_count {
+        return Err(AppError::BadRequest(format!(
+            "已达到当前等级允许的最大密钥数量限制 ({})",
+            max_token_count
+        )));
+    }
+
     let token_key = auth::generate_api_key();
     let models_json = serde_json::to_string(&request.allowed_models.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
 
@@ -142,4 +168,46 @@ pub async fn delete_token(
     sqlx::query(&state.db.format_query("DELETE FROM api_tokens WHERE id = ?")).bind(id).execute(&state.db.pool).await?;
 
     Ok(Json(serde_json::json!({ "success": true })))
+}
+
+#[derive(serde::Deserialize)]
+pub struct RevealTokenRequest {
+    pub password: String,
+}
+
+/// 验证用户密码后返回完整的 token_key
+pub async fn reveal_token(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+    Path(id): Path<i64>,
+    Json(request): Json<RevealTokenRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 查找 token 并验证所有权
+    let token: ApiToken = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM api_tokens WHERE id = ?")
+    )
+    .bind(id)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Token not found".to_string()))?;
+
+    if token.user_id != claims.sub && claims.role != "admin" {
+        return Err(AppError::Forbidden("Unauthorized access to token".to_string()));
+    }
+
+    // 验证用户密码
+    let password_hash: String = sqlx::query_scalar(
+        &state.db.format_query("SELECT password_hash FROM users WHERE id = ?")
+    )
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    if !auth::verify_password(&request.password, &password_hash)? {
+        return Err(AppError::AuthFailed("密码错误".to_string()));
+    }
+
+    Ok(Json(serde_json::json!({
+        "token_key": token.token_key
+    })))
 }

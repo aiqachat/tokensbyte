@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Form, Input, InputNumber, Button, message, Space, Tabs, Spin, Switch } from 'antd';
-import { SaveOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { SaveOutlined, ArrowLeftOutlined, KeyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
@@ -28,6 +28,7 @@ const UserLevelEdit: React.FC = () => {
         daily_invite_limit: 10,
         marketing_enabled: false,
         is_default: false,
+        max_token_count: 10,
       });
       return;
     }
@@ -185,6 +186,17 @@ const UserLevelEdit: React.FC = () => {
               extra="限制每天最多有多少个有效下线名额可以获得固定额度奖励，防止机器批量注册撸羊毛（超出的邀请可能依然绑定但不支持送额度）"
             >
               <InputNumber style={{ width: '100%' }} min={0} step={1} precision={0} />
+            </Form.Item>
+          </TabPane>
+
+          <TabPane tab={<span><KeyOutlined /> 密钥配置</span>} key="3">
+            <Form.Item 
+              name="max_token_count" 
+              label="最大密钥创建数量" 
+              rules={[{ required: true }]}
+              extra="限制该等级用户可以创建的 API 密钥数量上限。设为 0 表示禁止创建密钥。"
+            >
+              <InputNumber style={{ width: '100%' }} min={0} max={1000} step={1} precision={0} />
             </Form.Item>
           </TabPane>
         </Tabs>
