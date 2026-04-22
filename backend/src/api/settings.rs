@@ -48,7 +48,7 @@ pub async fn test_email(
     let to = body["to"].as_str()
         .ok_or_else(|| AppError::BadRequest("缺少收件邮箱 to".to_string()))?;
     let smtp = get_setting::<SMTPSettings>(&state, "smtp_settings", default_smtp_settings()).await?;
-    let svc = crate::services::email::EmailService::new(&smtp);
+    let svc = crate::services::email::EmailService::new(&smtp)?;
     svc.send_test_email(to).await?;
     Ok(Json(serde_json::json!({"success": true, "message": "测试邮件发送成功"})))
 }

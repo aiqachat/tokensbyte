@@ -66,9 +66,9 @@ const ForgotPassword: React.FC = () => {
     setSendingCode(true);
     try {
       if (currentTab.key === 'email') {
-        await request.post('/auth/send-code', { email: target, purpose: 'reset_password' });
+        await request.post('/auth/send-code', { email: target, purpose: 'reset_password' }, { skipErrorHandler: true } as any);
       } else {
-        await request.post('/auth/send-sms-code', { mobile: target, purpose: 'reset_password' });
+        await request.post('/auth/send-sms-code', { mobile: target, purpose: 'reset_password' }, { skipErrorHandler: true } as any);
       }
       message.success(t('auth.code_sent'));
       setCountdown(60);
@@ -91,7 +91,7 @@ const ForgotPassword: React.FC = () => {
       } else {
         payload.mobile = values.target;
       }
-      await request.post('/auth/reset-password', payload);
+      await request.post('/auth/reset-password', payload, { skipErrorHandler: true } as any);
       message.success(t('auth.reset_password_success'));
       navigate('/login');
     } catch (error: any) {

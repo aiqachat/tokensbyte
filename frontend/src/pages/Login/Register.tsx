@@ -43,22 +43,22 @@ const Register: React.FC = () => {
   const sendEmailCode = async (email: string) => {
     if (countdown > 0) return;
     try {
-      await request.post('/auth/send-code', { email, purpose: 'register' });
+      await request.post('/auth/send-code', { email, purpose: 'register' }, { skipErrorHandler: true } as any);
       message.success(t('auth.code_sent'));
       setCountdown(60);
     } catch (e: any) {
-      console.error(e);
+      message.error(e?.response?.data?.error?.message || t('common.error'));
     }
   };
 
   const sendSmsCode = async (mobile: string) => {
     if (countdown > 0) return;
     try {
-      await request.post('/auth/send-sms-code', { mobile, purpose: 'register' });
+      await request.post('/auth/send-sms-code', { mobile, purpose: 'register' }, { skipErrorHandler: true } as any);
       message.success(t('auth.sms_code_sent'));
       setCountdown(60);
     } catch (e: any) {
-      console.error(e);
+      message.error(e?.response?.data?.error?.message || t('common.error'));
     }
   };
 
@@ -66,7 +66,7 @@ const Register: React.FC = () => {
     if (loading) return;
     setLoading(true);
     try {
-      const res = await (request.post('/auth/register', { ...values, aff }) as any);
+      const res = await (request.post('/auth/register', { ...values, aff }, { skipErrorHandler: true } as any) as any);
       setToken(res.token); setUser(res.user);
       message.success(t('auth.register_success')); navigate('/');
     } catch (e: any) {
@@ -79,7 +79,7 @@ const Register: React.FC = () => {
     if (values.password !== values.confirm_password) { message.error(t('auth.passwords_not_match')); return; }
     setLoading(true);
     try {
-      const res = await (request.post('/auth/register-email', { email: values.email, code: values.code, password: values.password, aff }) as any);
+      const res = await (request.post('/auth/register-email', { email: values.email, code: values.code, password: values.password, aff }, { skipErrorHandler: true } as any) as any);
       setToken(res.token); setUser(res.user);
       message.success(t('auth.register_success')); navigate('/');
     } catch (e: any) {
@@ -92,7 +92,7 @@ const Register: React.FC = () => {
     if (values.password !== values.confirm_password) { message.error(t('auth.passwords_not_match')); return; }
     setLoading(true);
     try {
-      const res = await (request.post('/auth/register-mobile', { mobile: values.mobile, code: values.code, password: values.password, aff }) as any);
+      const res = await (request.post('/auth/register-mobile', { mobile: values.mobile, code: values.code, password: values.password, aff }, { skipErrorHandler: true } as any) as any);
       setToken(res.token); setUser(res.user);
       message.success(t('auth.register_success')); navigate('/');
     } catch (e: any) {

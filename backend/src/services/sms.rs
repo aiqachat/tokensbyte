@@ -33,7 +33,7 @@ impl SmsService {
             "TemplateParamSet": [code]
         });
         let payload_str = serde_json::to_string(&payload)
-            .map_err(|e| AppError::Internal(format!("序列化短信请求失败: {}", e)))?;
+            .map_err(|e| AppError::BadRequest(format!("序列化短信请求失败: {}", e)))?;
 
         let now = Utc::now();
         let timestamp = now.timestamp();
@@ -86,16 +86,16 @@ impl SmsService {
             .body(payload_str)
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("短信发送请求失败: {}", e)))?;
+            .map_err(|e| AppError::BadRequest(format!("短信发送请求失败: {}", e)))?;
 
         let status = resp.status();
         let body: serde_json::Value = resp
             .json()
             .await
-            .map_err(|e| AppError::Internal(format!("短信响应解析失败: {}", e)))?;
+            .map_err(|e| AppError::BadRequest(format!("短信响应解析失败: {}", e)))?;
 
         if !status.is_success() {
-            return Err(AppError::Internal(format!(
+            return Err(AppError::BadRequest(format!(
                 "短信 API 返回错误: {}",
                 body
             )));
@@ -103,7 +103,7 @@ impl SmsService {
 
         // 检查业务错误
         if let Some(err) = body.pointer("/Response/Error") {
-            return Err(AppError::Internal(format!(
+            return Err(AppError::BadRequest(format!(
                 "短信发送失败: {}",
                 err
             )));

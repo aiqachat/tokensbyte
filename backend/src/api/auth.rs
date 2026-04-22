@@ -328,7 +328,7 @@ pub async fn send_code(
         let code = generate_code();
         save_verification_code(&state, &request.email, "", &code, &request.purpose).await?;
 
-        let email_service = EmailService::new(&settings.smtp);
+        let email_service = EmailService::new(&settings.smtp)?;
         email_service.send_verification_code(&request.email, &code, &request.purpose).await?;
 
         Ok(Json(serde_json::json!({ "success": true })))

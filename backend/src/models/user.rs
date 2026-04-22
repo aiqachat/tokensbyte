@@ -74,6 +74,7 @@ pub struct UpdateUserRequest {
 #[derive(Debug, Deserialize)]
 pub struct ProfileUpdateRequest {
     pub nickname: Option<String>,
+    pub old_password: Option<String>,
     pub password: Option<String>,
     pub email: Option<String>,
     pub mobile: Option<String>,

@@ -40,6 +40,13 @@ pub async fn update_profile(
     
     if let Some(password) = request.password {
         if !password.is_empty() {
+            if let Some(old_password) = request.old_password {
+                if !auth::verify_password(&old_password, &user.password_hash).unwrap_or(false) {
+                    return Err(AppError::BadRequest("原密码不正确".to_string()));
+                }
+            } else {
+                return Err(AppError::BadRequest("修改密码需要验证原密码".to_string()));
+            }
             user.password_hash = auth::hash_password(&password)?;
         }
     }

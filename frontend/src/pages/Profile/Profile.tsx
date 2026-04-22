@@ -209,8 +209,11 @@ const Profile: React.FC = () => {
       case 'password':
         return (
           <>
+            <Form.Item name="old_password" label="原密码" rules={[{ required: true, min: 6, message: '请验证目前的登录密码' }]}>
+              <Input.Password placeholder="请输入原密码以验证身份" />
+            </Form.Item>
             <Form.Item name="password" label={t('profile.password')} rules={[{ required: true, min: 6 }]}>
-              <Input.Password placeholder={t('auth.password_placeholder')} />
+              <Input.Password placeholder="请输入新密码" />
             </Form.Item>
             <Form.Item name="confirm" label={t('login.confirm_password')} dependencies={['password']}
               rules={[{ required: true, message: t('auth.confirm_password_required') }, ({ getFieldValue }) => ({

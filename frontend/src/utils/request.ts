@@ -34,14 +34,23 @@ request.interceptors.response.use(
     }
     if (response) {
       const { status, data } = response;
+      const serverMsg = data?.error?.message;
       if (status === 401) {
-        localStorage.removeItem('token');
-        message.error('登录状态已过期，请重新登录');
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login';
+        // 区分"业务认证失败"与"登录态过期"：
+        // 当前无 token（登录/注册等未登录页面）→ 直接展示后端消息
+        // 当前有 token（登录态页面） → 清除 token 并跳转登录
+        const hasToken = !!localStorage.getItem('token');
+        if (hasToken) {
+          localStorage.removeItem('token');
+          message.error('登录状态已过期，请重新登录');
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
+        } else {
+          message.error(serverMsg || '认证失败');
         }
       } else {
-        message.error(data?.error?.message || 'Request failed');
+        message.error(serverMsg || 'Request failed');
       }
     } else {
       message.error('Network error');
