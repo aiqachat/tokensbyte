@@ -1,6 +1,6 @@
 /**
  * 无限画布容器
- * 负责网格背景、变换层、鼠标事件代理
+ * 负责粒子背景、变换层、鼠标事件代理
  * 
  * 性能关键：使用原生 addEventListener({ passive: false }) 挂载 wheel 事件
  * React 的 onWheel 是 passive 的，preventDefault() 不生效，
@@ -13,6 +13,7 @@ import { useCanvas } from '../context/PlaygroundContext';
 import { usePlayground } from '../context/PlaygroundContext';
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction';
 import CanvasNode from './nodes/CanvasNode';
+import CanvasParticles from './CanvasParticles';
 
 const { Title, Text } = Typography;
 
@@ -35,7 +36,6 @@ const InfiniteCanvas: React.FC = React.memo(() => {
 
     const nativeWheelHandler = (e: WheelEvent) => {
       e.preventDefault();
-      // 调用 React handler 的逻辑（通过自定义事件桥接）
       handleWheel(e as any);
     };
 
@@ -59,16 +59,20 @@ const InfiniteCanvas: React.FC = React.memo(() => {
         inset: 0,
         overflow: 'hidden',
         cursor: activeTool === 'hand' || isSpaceDown ? (isDraggingCanvas ? 'grabbing' : 'grab') : 'default',
-        backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px)',
-        backgroundSize: `${20 * canvasTransform.scale}px ${20 * canvasTransform.scale}px`,
-        backgroundPosition: `${canvasTransform.x}px ${canvasTransform.y}px`
+        background: '#090A0B',
       }}
-      // 不再使用 React onWheel（passive 的，preventDefault 无效）
       onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
       onMouseLeave={handleCanvasMouseUp}
     >
+      {/* 动态粒子背景层 */}
+      <CanvasParticles
+        offsetX={canvasTransform.x}
+        offsetY={canvasTransform.y}
+        scale={canvasTransform.scale}
+      />
+
       {/* 变换层 */}
       <div style={{
         position: 'absolute',
