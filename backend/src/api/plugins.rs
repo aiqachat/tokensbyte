@@ -90,7 +90,12 @@ async fn toggle_plugin(
 #[derive(Deserialize)]
 pub struct ConfigRequest {
     pub allowed_levels: String,
-    pub level_quotas: Option<HashMap<String, i64>>, // 每个等级的存储配额(MB)
+    pub level_quotas: Option<HashMap<String, i64>>,            // 每个等级的存储配额(MB)
+    pub default_quota: Option<i64>,                            // 默认存储配额(MB)
+    pub level_max_folders: Option<HashMap<String, i64>>,       // 每个等级的文件夹数量上限
+    pub default_max_folders: Option<i64>,                      // 默认文件夹数量上限
+    pub level_max_files_per_folder: Option<HashMap<String, i64>>, // 每个等级的每文件夹文件上限
+    pub default_max_files_per_folder: Option<i64>,              // 默认每文件夹文件上限
 }
 
 /// 管理员：配置插件的开放等级
@@ -120,6 +125,37 @@ async fn update_plugin_config(
             let config_key = format!("quota_{}", level_key);
             upsert_config(&state, &name, &config_key, &quota_mb.to_string()).await?;
         }
+    }
+
+    // 保存默认存储配额
+    if let Some(dq) = payload.default_quota {
+        upsert_config(&state, &name, "default_quota", &dq.to_string()).await?;
+    }
+
+    // 保存每个等级的文件夹数量上限
+    if let Some(ref level_mf) = payload.level_max_folders {
+        for (level_key, val) in level_mf {
+            let config_key = format!("max_folders_{}", level_key);
+            upsert_config(&state, &name, &config_key, &val.to_string()).await?;
+        }
+    }
+
+    // 保存默认文件夹数量上限
+    if let Some(dmf) = payload.default_max_folders {
+        upsert_config(&state, &name, "max_folders", &dmf.to_string()).await?;
+    }
+
+    // 保存每个等级的每文件夹文件上限
+    if let Some(ref level_mfpf) = payload.level_max_files_per_folder {
+        for (level_key, val) in level_mfpf {
+            let config_key = format!("max_files_{}", level_key);
+            upsert_config(&state, &name, &config_key, &val.to_string()).await?;
+        }
+    }
+
+    // 保存默认每文件夹文件上限
+    if let Some(dmfpf) = payload.default_max_files_per_folder {
+        upsert_config(&state, &name, "max_files_per_folder", &dmfpf.to_string()).await?;
     }
 
     Ok(Json(json!({ "message": "ok" })))
@@ -190,14 +226,27 @@ async fn get_storage_config(
         String::new()
     };
 
-    // 提取等级配额 (quota_xxx -> { xxx: value })
+    // 提取等级配额和限制
     let mut level_quotas = serde_json::Map::new();
+    let mut level_max_folders = serde_json::Map::new();
+    let mut level_max_files = serde_json::Map::new();
     for (k, v) in &configs {
         if let Some(level_key) = k.strip_prefix("quota_") {
             let mb: i64 = v.parse().unwrap_or(100);
             level_quotas.insert(level_key.to_string(), serde_json::Value::Number(mb.into()));
+        } else if let Some(level_key) = k.strip_prefix("max_folders_") {
+            let val: i64 = v.parse().unwrap_or(20);
+            level_max_folders.insert(level_key.to_string(), serde_json::Value::Number(val.into()));
+        } else if let Some(level_key) = k.strip_prefix("max_files_") {
+            let val: i64 = v.parse().unwrap_or(100);
+            level_max_files.insert(level_key.to_string(), serde_json::Value::Number(val.into()));
         }
     }
+
+    // 提取全局默认配置
+    let default_quota: i64 = configs.get("default_quota").and_then(|v| v.parse().ok()).unwrap_or(100);
+    let default_max_folders: i64 = configs.get("max_folders").and_then(|v| v.parse().ok()).unwrap_or(20);
+    let default_max_files_per_folder: i64 = configs.get("max_files_per_folder").and_then(|v| v.parse().ok()).unwrap_or(100);
 
     Ok(Json(json!({
         "tos_access_key": configs.get("tos_access_key").cloned().unwrap_or_default(),
@@ -209,6 +258,11 @@ async fn get_storage_config(
         "tos_custom_domain": configs.get("tos_custom_domain").cloned().unwrap_or_default(),
         "is_configured": !configs.get("tos_access_key").cloned().unwrap_or_default().is_empty(),
         "level_quotas": level_quotas,
+        "default_quota": default_quota,
+        "level_max_folders": level_max_folders,
+        "default_max_folders": default_max_folders,
+        "level_max_files_per_folder": level_max_files,
+        "default_max_files_per_folder": default_max_files_per_folder,
     })))
 }
 

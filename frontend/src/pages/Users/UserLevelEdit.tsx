@@ -27,6 +27,7 @@ const UserLevelEdit: React.FC = () => {
         invite_reward_invitee: 0.0,
         daily_invite_limit: 10,
         marketing_enabled: false,
+        is_default: false,
       });
       return;
     }
@@ -39,7 +40,8 @@ const UserLevelEdit: React.FC = () => {
         if (level) {
           form.setFieldsValue({
             ...level,
-            marketing_enabled: level.marketing_enabled === 1
+            marketing_enabled: level.marketing_enabled === 1,
+            is_default: level.is_default === 1,
           });
         } else {
           message.error('未找到对应等级记录');
@@ -61,7 +63,8 @@ const UserLevelEdit: React.FC = () => {
     // Convert boolean switch back to number
     const payload = {
       ...values,
-      marketing_enabled: values.marketing_enabled ? 1 : 0
+      marketing_enabled: values.marketing_enabled ? 1 : 0,
+      is_default: values.is_default ? 1 : 0,
     };
     try {
       if (isAdd) {
@@ -119,6 +122,14 @@ const UserLevelEdit: React.FC = () => {
             </Form.Item>
             <Form.Item name="description" label={t('user_levels.description')}>
               <Input.TextArea rows={4} placeholder="描述该组特权或补充信息..." />
+            </Form.Item>
+            <Form.Item 
+              name="is_default" 
+              label="设为默认注册等级" 
+              valuePropName="checked"
+              extra="开启后，新用户注册时将自动成为该等级。同一时间只能有一个默认注册等级，设置后会覆盖之前的默认等级。"
+            >
+              <Switch checkedChildren="默认等级" unCheckedChildren="非默认" />
             </Form.Item>
           </TabPane>
 

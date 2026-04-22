@@ -65,6 +65,10 @@ const PluginConfig: React.FC = () => {
   const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
   const [levelQuotas, setLevelQuotas] = useState<Record<string, number>>({});
   const [defaultQuota, setDefaultQuota] = useState<number>(100);
+  const [levelMaxFolders, setLevelMaxFolders] = useState<Record<string, number>>({});
+  const [defaultMaxFolders, setDefaultMaxFolders] = useState<number>(20);
+  const [levelMaxFilesPerFolder, setLevelMaxFilesPerFolder] = useState<Record<string, number>>({});
+  const [defaultMaxFilesPerFolder, setDefaultMaxFilesPerFolder] = useState<number>(100);
 
   // 存储配置
   const [storageConfig, setStorageConfig] = useState<StorageConfig | null>(null);
@@ -326,6 +330,18 @@ const PluginConfig: React.FC = () => {
         if (storageRes.default_quota != null) {
           setDefaultQuota(storageRes.default_quota);
         }
+        if (storageRes.level_max_folders) {
+          setLevelMaxFolders(storageRes.level_max_folders);
+        }
+        if (storageRes.default_max_folders != null) {
+          setDefaultMaxFolders(storageRes.default_max_folders);
+        }
+        if (storageRes.level_max_files_per_folder) {
+          setLevelMaxFilesPerFolder(storageRes.level_max_files_per_folder);
+        }
+        if (storageRes.default_max_files_per_folder != null) {
+          setDefaultMaxFilesPerFolder(storageRes.default_max_files_per_folder);
+        }
         // 延迟设置表单值，等待 Tabs 内的 Form 组件渲染完毕
         setTimeout(() => {
           storageForm.setFieldsValue({
@@ -378,7 +394,15 @@ const PluginConfig: React.FC = () => {
     }
     try {
       setSaving(true);
-      await request.post(`/plugins/${plugin.name}/config`, { allowed_levels: allowed, level_quotas: levelQuotas, default_quota: defaultQuota });
+      await request.post(`/plugins/${plugin.name}/config`, {
+        allowed_levels: allowed,
+        level_quotas: levelQuotas,
+        default_quota: defaultQuota,
+        level_max_folders: levelMaxFolders,
+        default_max_folders: defaultMaxFolders,
+        level_max_files_per_folder: levelMaxFilesPerFolder,
+        default_max_files_per_folder: defaultMaxFilesPerFolder,
+      });
       message.success('配置已保存');
     } catch (error) {
       message.error('保存失败');
@@ -488,30 +512,52 @@ const PluginConfig: React.FC = () => {
             <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedLevels.length} 个等级</Text>
             {levels.map(lv => {
               const isSelected = selectedLevels.includes(lv.group_key);
+              const showLimits = name !== 'team_marketing' && name !== 'playground';
               return (
                 <div key={lv.group_key}
-                  style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all 0.15s' }}
+                  style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, transition: 'all 0.15s' }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: 1 }}
-                    onClick={() => setSelectedLevels(prev => prev.includes(lv.group_key) ? prev.filter(k => k !== lv.group_key) : [...prev, lv.group_key])}
-                  >
-                    <Checkbox checked={isSelected} />
-                    <Text style={{ color: '#fff', fontSize: 13 }}>{lv.name}</Text>
-                    <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>{lv.group_key}</Tag>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: 1 }}
+                      onClick={() => setSelectedLevels(prev => prev.includes(lv.group_key) ? prev.filter(k => k !== lv.group_key) : [...prev, lv.group_key])}
+                    >
+                      <Checkbox checked={isSelected} />
+                      <Text style={{ color: '#fff', fontSize: 13 }}>{lv.name}</Text>
+                      <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>{lv.group_key}</Tag>
+                    </div>
                   </div>
-                  {(name !== 'team_marketing' && name !== 'playground') && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                    <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, whiteSpace: 'nowrap' }}>空间</Text>
-                    <InputNumber
-                      size="small"
-                      min={1}
-                      max={10240}
-                      value={levelQuotas[lv.group_key] ?? 100}
-                      onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.group_key]: val ?? 100 }))}
-                      style={{ width: 80, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
-                      addonAfter="MB"
-                    />
-                  </div>
+                  {showLimits && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, marginLeft: 24, flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>存储空间</Text>
+                        <InputNumber size="small" min={1} max={10240}
+                          value={levelQuotas[lv.group_key] ?? 100}
+                          onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.group_key]: val ?? 100 }))}
+                          style={{ width: 72, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                          addonAfter="MB"
+                        />
+                      </div>
+                      <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.08)' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>文件夹</Text>
+                        <InputNumber size="small" min={1} max={1000}
+                          value={levelMaxFolders[lv.group_key] ?? 20}
+                          onChange={(val) => setLevelMaxFolders(prev => ({ ...prev, [lv.group_key]: val ?? 20 }))}
+                          style={{ width: 68, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                          addonAfter="个"
+                        />
+                      </div>
+                      <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.08)' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>每夹文件</Text>
+                        <InputNumber size="small" min={1} max={10000}
+                          value={levelMaxFilesPerFolder[lv.group_key] ?? 100}
+                          onChange={(val) => setLevelMaxFilesPerFolder(prev => ({ ...prev, [lv.group_key]: val ?? 100 }))}
+                          style={{ width: 72, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                          addonAfter="个"
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
               );
@@ -526,50 +572,71 @@ const PluginConfig: React.FC = () => {
           background: '#141414', borderRadius: 8,
           border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
         }}>
-          <Text strong style={{ color: '#fff', fontSize: 14 }}>存储空间限制</Text><br />
-          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置每位用户的素材存储空间上限，也可以按等级单独设置</Text>
+          <Text strong style={{ color: '#fff', fontSize: 14 }}>资源配额管理</Text><br />
+          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置每位用户的存储空间、文件夹数量、每文件夹文件数上限，可按等级单独覆盖</Text>
           <Divider style={{ borderColor: 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
 
-          <div style={{ padding: '10px 14px', borderRadius: 6, border: '1px solid rgba(22,119,255,0.3)', background: 'rgba(22,119,255,0.04)', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Text style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>默认存储空间</Text>
-              <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>全局</Tag>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <InputNumber
-                size="small"
-                min={1}
-                max={10240}
-                value={defaultQuota}
-                onChange={(val) => setDefaultQuota(val ?? 100)}
-                style={{ width: 80, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
-                addonAfter="MB"
-              />
-            </div>
+          {/* 表头 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '0 14px 8px', alignItems: 'center' }}>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>等级</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>存储空间</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>文件夹上限</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>每夹文件上限</Text>
           </div>
 
+          {/* 全局默认行 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '10px 14px', borderRadius: 6, border: '1px solid rgba(22,119,255,0.3)', background: 'rgba(22,119,255,0.04)', marginBottom: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>全局默认</Text>
+              <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>默认值</Tag>
+            </div>
+            <InputNumber size="small" min={1} max={10240}
+              value={defaultQuota} onChange={(val) => setDefaultQuota(val ?? 100)}
+              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              addonAfter="MB"
+            />
+            <InputNumber size="small" min={1} max={1000}
+              value={defaultMaxFolders} onChange={(val) => setDefaultMaxFolders(val ?? 20)}
+              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              addonAfter="个"
+            />
+            <InputNumber size="small" min={1} max={10000}
+              value={defaultMaxFilesPerFolder} onChange={(val) => setDefaultMaxFilesPerFolder(val ?? 100)}
+              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              addonAfter="个"
+            />
+          </div>
+
+          {/* 按等级覆盖 */}
           {levels.length > 0 && (
             <>
-              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginBottom: 8 }}>按等级单独设置（覆盖默认值）</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', margin: '12px 0 8px' }}>按等级单独设置（覆盖全局默认值）</Text>
               {levels.map(lv => (
                 <div key={lv.group_key}
-                  style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '8px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, alignItems: 'center' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Text style={{ color: '#fff', fontSize: 13 }}>{lv.name}</Text>
                     <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>{lv.group_key}</Tag>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <InputNumber
-                      size="small"
-                      min={1}
-                      max={10240}
-                      value={levelQuotas[lv.group_key] ?? defaultQuota}
-                      onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.group_key]: val ?? defaultQuota }))}
-                      style={{ width: 80, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
-                      addonAfter="MB"
-                    />
-                  </div>
+                  <InputNumber size="small" min={1} max={10240}
+                    value={levelQuotas[lv.group_key] ?? defaultQuota}
+                    onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.group_key]: val ?? defaultQuota }))}
+                    style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                    addonAfter="MB"
+                  />
+                  <InputNumber size="small" min={1} max={1000}
+                    value={levelMaxFolders[lv.group_key] ?? defaultMaxFolders}
+                    onChange={(val) => setLevelMaxFolders(prev => ({ ...prev, [lv.group_key]: val ?? defaultMaxFolders }))}
+                    style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                    addonAfter="个"
+                  />
+                  <InputNumber size="small" min={1} max={10000}
+                    value={levelMaxFilesPerFolder[lv.group_key] ?? defaultMaxFilesPerFolder}
+                    onChange={(val) => setLevelMaxFilesPerFolder(prev => ({ ...prev, [lv.group_key]: val ?? defaultMaxFilesPerFolder }))}
+                    style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                    addonAfter="个"
+                  />
                 </div>
               ))}
             </>

@@ -104,6 +104,10 @@ pub struct WalletStats {
     pub success_calls: i64,
     pub commission_balance: f64,
     pub total_referred: i64,
+    pub marketing_enabled: bool,
+    pub commission_ratio: f64,
+    pub invite_reward_inviter: f64,
+    pub invite_reward_invitee: f64,
 }
 
 /// 用户名+密码登录（保持原有接口兼容）

@@ -249,9 +249,17 @@ pub async fn register(
             initial_balance += gift_amount;
         }
 
+        // 查询默认注册等级
+        let default_group: String = sqlx::query_scalar(&state.db.format_query(
+            "SELECT group_key FROM user_levels WHERE is_default = 1 LIMIT 1"
+        ))
+        .fetch_optional(&mut *tx)
+        .await?
+        .unwrap_or_else(|| "default".to_string());
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?)"#)
         )
         .bind(&user_id)
         .bind(&uid)
@@ -261,6 +269,7 @@ pub async fn register(
         .bind(initial_balance)
         .bind(&referred_by)
         .bind(&raw_ip)
+        .bind(&default_group)
         .execute(&mut *tx)
         .await?;
 
@@ -432,12 +441,21 @@ pub async fn register_email(
             }
         }
 
+        // 查询默认注册等级
+        let default_group: String = sqlx::query_scalar(&state.db.format_query(
+            "SELECT group_key FROM user_levels WHERE is_default = 1 LIMIT 1"
+        ))
+        .fetch_optional(&mut *tx)
+        .await?
+        .unwrap_or_else(|| "default".to_string());
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?)"#)
         )
         .bind(&user_id).bind(&uid).bind(&username).bind(&request.email)
         .bind(&password_hash).bind(initial_balance).bind(&referred_by).bind(&raw_ip)
+        .bind(&default_group)
         .execute(&mut *tx)
         .await?;
 
@@ -517,13 +535,22 @@ pub async fn register_mobile(
             }
         }
 
+        // 查询默认注册等级
+        let default_group: String = sqlx::query_scalar(&state.db.format_query(
+            "SELECT group_key FROM user_levels WHERE is_default = 1 LIMIT 1"
+        ))
+        .fetch_optional(&mut *tx)
+        .await?
+        .unwrap_or_else(|| "default".to_string());
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, mobile, password_hash, role, balance, is_active, referred_by, register_ip)
-               VALUES (?, ?, ?, ?, ?, ?, 'user', ?, 1, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, mobile, password_hash, role, balance, is_active, referred_by, register_ip, user_group)
+               VALUES (?, ?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?)"#)
         )
         .bind(&user_id).bind(&uid).bind(&username).bind(&placeholder_email)
         .bind(&request.mobile).bind(&password_hash).bind(initial_balance)
         .bind(&referred_by).bind(&raw_ip)
+        .bind(&default_group)
         .execute(&mut *tx).await?;
 
         tx.commit().await?;
@@ -645,13 +672,22 @@ pub async fn oauth_wechat_callback(
             let placeholder_email = format!("wx_{}@tokensbyte.local", &uid);
             let password_hash = auth::hash_password(&uuid::Uuid::new_v4().to_string())?;
 
+            // 查询默认注册等级
+            let default_group: String = sqlx::query_scalar(&state.db.format_query(
+                "SELECT group_key FROM user_levels WHERE is_default = 1 LIMIT 1"
+            ))
+            .fetch_optional(&state.db.pool)
+            .await?
+            .unwrap_or_else(|| "default".to_string());
+
             sqlx::query(
-                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, wechat_id, role, balance, is_active)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'user', ?, 1)"#)
+                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, wechat_id, role, balance, is_active, user_group)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'user', ?, 1, ?)"#)
             )
             .bind(&user_id).bind(&uid).bind(&username).bind(&placeholder_email)
             .bind(&password_hash).bind(&nickname).bind(&info.openid)
             .bind(state.config.default_user_quota)
+            .bind(&default_group)
             .execute(&state.db.pool).await?;
 
             sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
@@ -737,13 +773,22 @@ pub async fn oauth_google_callback(
                 .bind(&email).fetch_one(&state.db.pool).await?;
             let actual_email = if email_exists { format!("g_{}@tokensbyte.local", &uid) } else { email };
 
+            // 查询默认注册等级
+            let default_group: String = sqlx::query_scalar(&state.db.format_query(
+                "SELECT group_key FROM user_levels WHERE is_default = 1 LIMIT 1"
+            ))
+            .fetch_optional(&state.db.pool)
+            .await?
+            .unwrap_or_else(|| "default".to_string());
+
             sqlx::query(
-                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, google_id, role, balance, is_active)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'user', ?, 1)"#)
+                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, google_id, role, balance, is_active, user_group)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'user', ?, 1, ?)"#)
             )
             .bind(&user_id).bind(&uid).bind(&username).bind(&actual_email)
             .bind(&password_hash).bind(&name).bind(&info.id)
             .bind(state.config.default_user_quota)
+            .bind(&default_group)
             .execute(&state.db.pool).await?;
 
             sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))

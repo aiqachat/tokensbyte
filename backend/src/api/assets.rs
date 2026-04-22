@@ -752,6 +752,32 @@ async fn user_storage_info(
     .await
     .unwrap_or(0);
 
+    // 查询该用户等级的文件夹配额
+    let folder_quota: i64 = if user.role == "admin" {
+        0 // 管理员无限制
+    } else {
+        let level_key = format!("max_folders_{}", user.user_group);
+        let per_level = sqlx::query_scalar::<sqlx::Any, Option<String>>(
+            &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
+        )
+        .bind(&level_key)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .flatten()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0);
+        if per_level > 0 { per_level } else {
+            sqlx::query_scalar::<sqlx::Any, Option<String>>(
+                &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = 'max_folders'")
+            )
+            .fetch_optional(&state.db.pool)
+            .await?
+            .flatten()
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(20)
+        }
+    };
+
     Ok(Json(json!({
         "folder": folder_name,
         "files": files,
@@ -762,7 +788,7 @@ async fn user_storage_info(
         "remain_mb": if quota_mb > 0 { format!("{:.1}", quota_mb as f64 - used_mb) } else { "无限制".to_string() },
         "is_admin": user.role == "admin",
         "virtual_portrait_count": vp_count,
-        "virtual_portrait_quota": 20, // 默认 20 个分组
+        "virtual_portrait_quota": folder_quota,
     })))
 }
 
@@ -1041,6 +1067,38 @@ async fn upload_virtual_portrait(
     let data = file_data.ok_or_else(|| AppError::BadRequest("未检测到文件".to_string()))?;
     let size = data.len() as i64;
 
+    // 存储空间配额检查（管理员跳过）
+    if user.role != "admin" {
+        let used_bytes: Option<i64> = sqlx::query_scalar(
+            &state.db.format_query("SELECT COALESCE(SUM(size), 0) FROM plugin_assets WHERE user_id = ? AND source = 'user'")
+        )
+        .bind(&user.id)
+        .fetch_one(&state.db.pool)
+        .await?;
+
+        // 优先查用户等级配额，fallback 到全局默认
+        let quota_key = format!("quota_{}", user.user_group);
+        let quota_mb: i64 = sqlx::query_scalar::<sqlx::Any, Option<String>>(
+            &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
+        )
+        .bind(&quota_key)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .flatten()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(100);
+
+        let quota_bytes = quota_mb * 1024 * 1024;
+        let current_used = used_bytes.unwrap_or(0);
+        if current_used + size > quota_bytes {
+            let used_mb = current_used as f64 / 1024.0 / 1024.0;
+            return Err(AppError::BadRequest(format!(
+                "存储空间已超出上限，当前已使用 {:.1}MB / {}MB 配额",
+                used_mb, quota_mb
+            )));
+        }
+    }
+
     let max_size: i64 = match asset_type.as_str() {
         "video" => 300 * 1024 * 1024,
         "audio" => 100 * 1024 * 1024,
@@ -1068,7 +1126,31 @@ async fn upload_virtual_portrait(
     .fetch_optional(&state.db.pool)
     .await?;
 
-    // 检查该文件夹下的素材数量是否已达上限（每个文件夹最多100个）
+    // 检查该文件夹下的素材数量是否已达上限（按用户等级查询，fallback 到全局默认）
+    let level_files_key = format!("max_files_{}", user.user_group);
+    let max_files_per_folder: i64 = sqlx::query_scalar::<sqlx::Any, Option<String>>(
+        &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
+    )
+    .bind(&level_files_key)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .flatten()
+    .and_then(|v| v.parse::<i64>().ok())
+    .unwrap_or_else(|| {
+        // fallback 到全局默认值（同步不可用，用 0 标记需要再查）
+        0
+    });
+    let max_files_per_folder = if max_files_per_folder > 0 { max_files_per_folder } else {
+        sqlx::query_scalar::<sqlx::Any, Option<String>>(
+            &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = 'max_files_per_folder'")
+        )
+        .fetch_optional(&state.db.pool)
+        .await?
+        .flatten()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(100)
+    };
+
     let group_asset_count: i64 = sqlx::query_scalar(&state.db.format_query(
         "SELECT COUNT(*) FROM plugin_assets WHERE group_id = ? AND user_id = ?"
     ))
@@ -1077,8 +1159,8 @@ async fn upload_virtual_portrait(
     .fetch_one(&state.db.pool)
     .await?;
 
-    if group_asset_count >= 100 {
-        return Err(AppError::BadRequest("该素材组合已达上限（最多100个素材文件），请清理后再上传".to_string()));
+    if group_asset_count >= max_files_per_folder {
+        return Err(AppError::BadRequest(format!("该素材组合已达上限（最多{}个素材文件），请清理后再上传", max_files_per_folder)));
     }
 
     let object_key = if let Some(ref gf) = group_folder {
@@ -1209,9 +1291,41 @@ async fn user_create_group(
     .await
     .unwrap_or(0);
 
-    let quota = 20; // 默认 20
-    if count >= quota {
-        return Err(AppError::BadRequest(format!("最多只能创建 {} 个素材组合", quota)));
+    // 查询用户等级以确定文件夹数量上限
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query(
+        "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+    ))
+    .bind(&claims.sub)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| crate::error::AppError::Unauthorized)?;
+
+    // 按用户等级查询文件夹上限，fallback 到全局默认
+    let level_folders_key = format!("max_folders_{}", user.user_group);
+    let max_folders: i64 = sqlx::query_scalar::<sqlx::Any, Option<String>>(
+        &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
+    )
+    .bind(&level_folders_key)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .flatten()
+    .and_then(|v| v.parse::<i64>().ok())
+    .unwrap_or_else(|| 0);
+    let max_folders = if max_folders > 0 { max_folders } else {
+        sqlx::query_scalar::<sqlx::Any, Option<String>>(
+            &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = 'max_folders'")
+        )
+        .fetch_optional(&state.db.pool)
+        .await
+        .ok()
+        .flatten()
+        .flatten()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(20)
+    };
+
+    if count >= max_folders {
+        return Err(AppError::BadRequest(format!("最多只能创建 {} 个素材组合", max_folders)));
     }
 
     let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await

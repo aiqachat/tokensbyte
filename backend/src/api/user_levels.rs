@@ -26,9 +26,14 @@ pub async fn create_user_level(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateUserLevelRequest>,
 ) -> AppResult<Json<UserLevel>> {
+    // 如果设为默认，先清除其他默认
+    if req.is_default.unwrap_or(0) == 1 {
+        sqlx::query(&state.db.format_query("UPDATE user_levels SET is_default = 0 WHERE is_default = 1")).execute(&state.db.pool).await?;
+    }
+
     let id = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO user_levels (name, group_key, discount, commission_ratio, invite_reward_inviter, invite_reward_invitee, daily_invite_limit, marketing_enabled, description)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        &state.db.format_query(r#"INSERT INTO user_levels (name, group_key, discount, commission_ratio, invite_reward_inviter, invite_reward_invitee, daily_invite_limit, marketing_enabled, is_default, description)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#)
     )
     .bind(&req.name)
@@ -39,6 +44,7 @@ pub async fn create_user_level(
     .bind(req.invite_reward_invitee.unwrap_or(0.0))
     .bind(req.daily_invite_limit.unwrap_or(10))
     .bind(req.marketing_enabled.unwrap_or(0))
+    .bind(req.is_default.unwrap_or(0))
     .bind(req.description.unwrap_or_default())
     .fetch_one(&state.db.pool)
     .await?
@@ -83,6 +89,13 @@ pub async fn update_user_level(
     }
     if let Some(marketing_enabled) = req.marketing_enabled {
         sqlx::query(&state.db.format_query("UPDATE user_levels SET marketing_enabled = ? WHERE id = ?")).bind(marketing_enabled).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(is_default) = req.is_default {
+        if is_default == 1 {
+            // 先清除所有默认
+            sqlx::query(&state.db.format_query("UPDATE user_levels SET is_default = 0 WHERE is_default = 1")).execute(&state.db.pool).await?;
+        }
+        sqlx::query(&state.db.format_query("UPDATE user_levels SET is_default = ? WHERE id = ?")).bind(is_default).bind(id).execute(&state.db.pool).await?;
     }
 
     sqlx::query(&state.db.format_query("UPDATE user_levels SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;

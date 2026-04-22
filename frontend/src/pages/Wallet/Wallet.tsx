@@ -150,6 +150,7 @@ const Wallet: React.FC = () => {
         </Row>
       </Card>
 
+      {stats?.marketing_enabled && (
       <Row gutter={24}>
         <Col xs={24} md={12}>
           {/* Reward Balance Card */}
@@ -215,6 +216,38 @@ const Wallet: React.FC = () => {
                 分享您的专属链接，被邀请用户充值后，您将获得对应比例的奖励金余额。
               </Text>
             </div>
+
+            {/* 推广详情 */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 12,
+              marginBottom: 16,
+              padding: '14px 16px',
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: 10,
+              border: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, marginBottom: 4 }}>返利比例</div>
+                <div style={{ color: '#faad14', fontSize: 20, fontWeight: 700 }}>
+                  {Math.round((stats?.commission_ratio || 0) * 100)}%
+                </div>
+              </div>
+              <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, marginBottom: 4 }}>邀请人奖励</div>
+                <div style={{ color: '#52c41a', fontSize: 20, fontWeight: 700 }}>
+                  {currencySymbol}{stats?.invite_reward_inviter || 0}
+                </div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, marginBottom: 4 }}>新用户奖励</div>
+                <div style={{ color: '#1677ff', fontSize: 20, fontWeight: 700 }}>
+                  {currencySymbol}{stats?.invite_reward_invitee || 0}
+                </div>
+              </div>
+            </div>
+
             <div style={{ 
               background: '#000', 
               padding: '12px 16px', 
@@ -238,6 +271,7 @@ const Wallet: React.FC = () => {
           </Card>
         </Col>
       </Row>
+      )}
 
       {/* Recharge Records */}
       <Card 

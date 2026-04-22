@@ -397,7 +397,16 @@ const UserAssets: React.FC = () => {
       // 逐个上传文件，实时更新进度
       let doneCount = 0;
       let failCount = 0;
+      const errorMessages = new Set<string>();
+      let quotaExceeded = false;
+
       for (const fileItem of filesToUpload) {
+        // 如果已经触发了配额上限，跳过剩余文件
+        if (quotaExceeded) {
+          failCount++;
+          setBatchProgress({ action: 'upload', total: filesToUpload.length, done: doneCount, failed: failCount, active: true });
+          continue;
+        }
         try {
           const formData = new FormData();
           formData.append('file', fileItem.originFileObj as any);
@@ -408,20 +417,28 @@ const UserAssets: React.FC = () => {
           const detectedType = videoExts.includes(ext) ? 'video' : audioExts.includes(ext) ? 'audio' : 'image';
           formData.append('asset_type', detectedType);
           if (category === '虚拟人像' && groupId) { formData.append('group_id', groupId); }
-          await request.post(api, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+          await request.post(api, formData, { headers: { 'Content-Type': 'multipart/form-data' }, skipErrorHandler: true } as any);
           doneCount++;
-        } catch (e) {
+        } catch (e: any) {
           console.error(`上传 ${fileItem.name} 失败`, e);
           failCount++;
+          const errMsg = e?.response?.data?.error?.message || '上传失败';
+          errorMessages.add(errMsg);
+          // 如果是配额/上限错误，标记后跳过剩余文件
+          if (errMsg.includes('上限') || errMsg.includes('已达') || errMsg.includes('超出') || errMsg.includes('配额')) {
+            quotaExceeded = true;
+          }
         }
         setBatchProgress({ action: 'upload', total: filesToUpload.length, done: doneCount, failed: failCount, active: true });
       }
 
-      // 上传完毕
+      // 上传完毕 — 统一提示
       if (failCount === 0) {
         message.success(`全部 ${doneCount} 个文件上传成功，请提交审核`);
+      } else if (doneCount === 0) {
+        message.error(Array.from(errorMessages).join('；'));
       } else {
-        message.warning(`上传完成：${doneCount} 成功，${failCount} 失败`);
+        message.warning(`上传完成：${doneCount} 成功，${failCount} 失败` + (errorMessages.size > 0 ? `（${Array.from(errorMessages).join('；')}）` : ''));
       }
       setSelectedKey('my_virtual_portrait');
       fetchAssets();
