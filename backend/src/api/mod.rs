@@ -89,9 +89,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/user/bind/mobile", post(user::bind_mobile))
         .route("/user/bind/email", post(user::bind_email))
         .route("/user/bind/wechat", get(user::bind_wechat))
-        .route("/user/bind/wechat/callback", get(user::bind_wechat_callback))
         .route("/user/bind/google", get(user::bind_google))
-        .route("/user/bind/google/callback", get(user::bind_google_callback))
         .route("/user/unbind/{bind_type}", post(user::unbind_third_party))
         .route("/task_logs", get(task_logs::list_task_logs))
         .route("/finance/pay/create", post(pay::create_order))
@@ -128,6 +126,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let public_v1_routes: Router<Arc<AppState>> = Router::new()
         .route("/settings", get(settings::get_settings))
         .route("/plugins/active", get(plugins::get_active_plugins_public))
+        // OAuth 绑定回调（浏览器重定向，无 JWT，通过 state 参数识别用户）
+        .route("/user/bind/wechat/callback", get(user::bind_wechat_callback))
+        .route("/user/bind/google/callback", get(user::bind_google_callback))
         .merge(payment_public_routes)
         .with_state(state.clone());
 
