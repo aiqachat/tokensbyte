@@ -527,6 +527,7 @@ async fn load_schemes_from_db(state: &AppState, plugin_name: &str) -> Vec<serde_
 /// 每个模型的体验配置（启用状态 + 绑定方案）
 #[derive(Deserialize)]
 pub struct PlaygroundModelConfig {
+    pub id: i32,
     pub mid: String,
     pub enabled: bool,
     pub scheme_id: Option<String>,
@@ -565,8 +566,10 @@ async fn get_playground_config(
     // 为每个模型附加启用和方案配置
     let mut model_list = Vec::new();
     for m in &models {
-        let config_key = format!("pg_model_{}", m.mid);
-        let model_conf: serde_json::Value = configs.get(&config_key)
+        let new_key = format!("pg_model_id_{}", m.id);
+        let old_key = format!("pg_model_{}", m.mid);
+        let model_conf: serde_json::Value = configs.get(&new_key)
+            .or_else(|| configs.get(&old_key))
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or(json!({"enabled": false, "scheme_id": null}));
 
@@ -610,7 +613,7 @@ async fn save_playground_config(
     }
 
     for mc in &payload.models {
-        let config_key = format!("pg_model_{}", mc.mid);
+        let config_key = format!("pg_model_id_{}", mc.id);
         let val = json!({
             "enabled": mc.enabled,
             "scheme_id": mc.scheme_id,
@@ -677,8 +680,10 @@ async fn get_playground_public_config(
 
     let mut enabled_models = Vec::new();
     for m in &models {
-        let config_key = format!("pg_model_{}", m.mid);
-        let model_conf: serde_json::Value = configs.get(&config_key)
+        let new_key = format!("pg_model_id_{}", m.id);
+        let old_key = format!("pg_model_{}", m.mid);
+        let model_conf: serde_json::Value = configs.get(&new_key)
+            .or_else(|| configs.get(&old_key))
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or(json!({"enabled": false, "scheme_id": null}));
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Switch, Button, message, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio } from 'antd';
+import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
@@ -54,7 +54,8 @@ const pluginIcons: Record<string, React.ReactNode> = {
   playground: <ExperimentOutlined style={{ fontSize: 20 }} />,
 };
 
-const PluginConfig: React.FC = () => {
+const PluginConfigInner: React.FC = () => {
+  const { message } = App.useApp();
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
   const [plugin, setPlugin] = useState<Plugin | null>(null);
@@ -104,7 +105,7 @@ const PluginConfig: React.FC = () => {
   const [savingPlayground, setSavingPlayground] = useState(false);
   const [pgSearchKeyword, setPgSearchKeyword] = useState('');
   const [pgSchemeDrawerVisible, setPgSchemeDrawerVisible] = useState(false);
-  const [pgCurrentMid, setPgCurrentMid] = useState('');
+  const [pgCurrentId, setPgCurrentId] = useState<number | null>(null);
   const [pgSelectedSchemeId, setPgSelectedSchemeId] = useState<string>('');
 
   const fetchPlaygroundConfigBase = async () => {
@@ -128,7 +129,8 @@ const PluginConfig: React.FC = () => {
       setSavingPlayground(true);
       const payload = {
         models: pgModels.map(m => ({
-          mid: m.mid,
+          id: m.id,
+          mid: m.mid || '',
           enabled: m.pg_enabled,
           scheme_id: m.pg_scheme_id || null,
         }))
@@ -142,18 +144,18 @@ const PluginConfig: React.FC = () => {
     }
   };
 
-  const handlePgToggle = (mid: string, enabled: boolean) => {
-    setPgModels(prev => prev.map(m => m.mid === mid ? { ...m, pg_enabled: enabled } : m));
+  const handlePgToggle = (id: number, enabled: boolean) => {
+    setPgModels(prev => prev.map(m => m.id === id ? { ...m, pg_enabled: enabled } : m));
   };
 
-  const handleOpenSchemeDrawer = (mid: string, currentSchemeId: string) => {
-    setPgCurrentMid(mid);
+  const handleOpenSchemeDrawer = (id: number, currentSchemeId: string) => {
+    setPgCurrentId(id);
     setPgSelectedSchemeId(currentSchemeId || '');
     setPgSchemeDrawerVisible(true);
   };
 
   const handleConfirmScheme = () => {
-    setPgModels(prev => prev.map(m => m.mid === pgCurrentMid ? { ...m, pg_scheme_id: pgSelectedSchemeId } : m));
+    setPgModels(prev => prev.map(m => m.id === pgCurrentId ? { ...m, pg_scheme_id: pgSelectedSchemeId } : m));
     setPgSchemeDrawerVisible(false);
   };
 
@@ -982,7 +984,7 @@ const PluginConfig: React.FC = () => {
   const filteredPgModels = pgModels.filter(m => {
     if (!pgSearchKeyword) return true;
     const kw = pgSearchKeyword.toLowerCase();
-    return m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid.includes(kw);
+    return m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid?.toLowerCase()?.includes(kw);
   });
 
   const pgModelColumns = [
@@ -1016,7 +1018,7 @@ const PluginConfig: React.FC = () => {
       render: (_: any, record: any) => (
         <Switch
           checked={record.pg_enabled}
-          onChange={(val) => handlePgToggle(record.mid, val)}
+          onChange={(val) => handlePgToggle(record.id, val)}
           checkedChildren="开启"
           unCheckedChildren="关闭"
         />
@@ -1043,7 +1045,7 @@ const PluginConfig: React.FC = () => {
         <Button
           type="text"
           icon={<SettingOutlined />}
-          onClick={() => handleOpenSchemeDrawer(record.mid, record.pg_scheme_id)}
+          onClick={() => handleOpenSchemeDrawer(record.id, record.pg_scheme_id)}
           style={{ color: '#1677ff' }}
         >
           配置
@@ -1074,7 +1076,7 @@ const PluginConfig: React.FC = () => {
         <Table
           dataSource={filteredPgModels}
           columns={pgModelColumns}
-          rowKey="mid"
+          rowKey="id"
           size="small"
           pagination={{ pageSize: 20 }}
           style={{ marginBottom: 16 }}
@@ -1092,7 +1094,7 @@ const PluginConfig: React.FC = () => {
         title="选择体验方案"
         open={pgSchemeDrawerVisible}
         onClose={() => setPgSchemeDrawerVisible(false)}
-        width={420}
+        size="default"
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Button onClick={() => { setPgSelectedSchemeId(''); handleConfirmScheme(); }}>取消绑定</Button>
@@ -1102,7 +1104,7 @@ const PluginConfig: React.FC = () => {
       >
         <div style={{ marginBottom: 16 }}>
           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
-            为模型 <Text strong style={{ color: '#1677ff' }}>{pgModels.find(m => m.mid === pgCurrentMid)?.name}</Text> 选择一个体验方案
+            为模型 <Text strong style={{ color: '#1677ff' }}>{pgModels.find(m => m.id === pgCurrentId)?.name}</Text> 选择一个体验方案
           </Text>
         </div>
         <Radio.Group
@@ -1203,7 +1205,7 @@ const PluginConfig: React.FC = () => {
         title={editingSchemeIndex >= 0 ? '编辑体验方案' : '新建体验方案'}
         open={schemeEditVisible}
         onClose={() => setSchemeEditVisible(false)}
-        width={600}
+        size="large"
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Button onClick={() => setSchemeEditVisible(false)}>取消</Button>
@@ -1348,8 +1350,22 @@ const PluginConfig: React.FC = () => {
               ]
         }
       />
+      
+      {/* 针对部分插件可能不挂载而导致 useForm() 失去关联的警告处理 */}
+      {name === 'playground' && (
+        <div style={{ display: 'none' }}>
+          <Form form={storageForm} />
+          <Form form={moderationForm} />
+        </div>
+      )}
     </div>
   );
 };
+
+const PluginConfig: React.FC = () => (
+  <App style={{ height: '100%', width: '100%' }}>
+    <PluginConfigInner />
+  </App>
+);
 
 export default PluginConfig;
