@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card, Typography, Avatar, Space, List, Button, Modal, Form, Input, message, Popconfirm } from 'antd';
 import { UserOutlined, CameraOutlined, LockOutlined, MailOutlined, MobileOutlined, WechatOutlined, GoogleOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import request from '../../utils/request';
-import type { User, AllSettings } from '../../types';
+import type { User } from '../../types';
 import useAuthStore from '../../store/auth';
 import useSettingsStore from '../../store/settings';
 import WechatQR from '../../components/WechatQR';
@@ -20,6 +21,12 @@ const Profile: React.FC = () => {
   const { setUser } = useAuthStore();
   const { settings } = useSettingsStore();
   const [countdowns, setCountdowns] = useState<Record<string, number>>({});
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // 微信换绑步骤：'verify'=验证旧微信, 'bind'=绑定新微信
+  const [wechatBindStep, setWechatBindStep] = useState<'verify' | 'bind'>('verify');
+  // 每次切换步骤时重新生成 key，确保二维码刷新
+  const [wechatQRKey, setWechatQRKey] = useState(() => Date.now());
 
   const startCountdown = (key: string) => {
     setCountdowns(prev => ({ ...prev, [key]: 60 }));
@@ -27,7 +34,7 @@ const Profile: React.FC = () => {
 
   const login = settings?.login;
 
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     setLoading(true);
     try {
       const resp = await (request.get('/user/profile') as unknown as Promise<User>);
@@ -35,34 +42,62 @@ const Profile: React.FC = () => {
       setUser(resp);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  };
+  }, [setUser]);
 
-  useEffect(() => { fetchProfile(); }, []);
+  useEffect(() => { fetchProfile(); }, [fetchProfile]);
+
+  // ── 监听微信回调 URL 参数 ──────────────────────────────────
+  useEffect(() => {
+    const action = searchParams.get('wechat_action');
+    if (!action) return;
+    // 消费掉参数，避免刷新重复触发
+    searchParams.delete('wechat_action');
+    setSearchParams(searchParams, { replace: true });
+
+    switch (action) {
+      case 'verified':
+        message.success('身份验证通过，请用新微信扫码绑定');
+        setWechatBindStep('bind');
+        setWechatQRKey(Date.now());
+        setModalType('bind_wechat');
+        setIsModalVisible(true);
+        break;
+      case 'verify_failed':
+        message.error('验证失败：扫码微信与当前绑定的微信不一致');
+        break;
+      case 'bindok':
+        message.success('微信绑定成功');
+        setIsModalVisible(false);
+        fetchProfile();
+        break;
+      case 'bindconflict':
+        message.error('此微信已绑定其他账号');
+        break;
+    }
+  }, [searchParams, setSearchParams, fetchProfile]);
 
   useEffect(() => {
     const activeKeys = Object.keys(countdowns).filter(k => countdowns[k] > 0);
     if (activeKeys.length === 0) return;
-
     const timer = setInterval(() => {
       setCountdowns(prev => {
         const next = { ...prev };
         let changed = false;
-        Object.keys(next).forEach(k => {
-          if (next[k] > 0) {
-            next[k] -= 1;
-            changed = true;
-          }
-        });
+        Object.keys(next).forEach(k => { if (next[k] > 0) { next[k] -= 1; changed = true; } });
         return changed ? next : prev;
       });
     }, 1000);
-
     return () => clearInterval(timer);
   }, [countdowns]);
 
   const handleAction = (type: string) => {
     setModalType(type);
     form.resetFields();
+    if (type === 'bind_wechat') {
+      // 已绑定微信 → 换绑模式（先验证）；未绑定 → 直接绑定
+      setWechatBindStep(profile?.wechat_id ? 'verify' : 'bind');
+      setWechatQRKey(Date.now());
+    }
     setIsModalVisible(true);
   };
 
@@ -76,42 +111,32 @@ const Profile: React.FC = () => {
     } catch (e) { console.error(e); }
   };
 
-  // 绑定手机号
   const handleBindMobile = async (values: any) => {
     try {
       await (request.post('/user/bind/mobile', values) as any);
       message.success(t('profile.edit_success'));
       setIsModalVisible(false);
       fetchProfile();
-    } catch (e: any) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
 
-  // 绑定邮箱
   const handleBindEmail = async (values: any) => {
     try {
       await (request.post('/user/bind/email', values) as any);
       message.success(t('profile.edit_success'));
       setIsModalVisible(false);
       fetchProfile();
-    } catch (e: any) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
 
-  // 解绑第三方
   const handleUnbind = async (type: string, password: string) => {
     try {
       await (request.post(`/user/unbind/${type}`, { password }) as any);
       message.success(t('profile.unbind_success'));
       fetchProfile();
-    } catch (e: any) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
 
-  // 发送验证码
   const sendCode = async (target: string, type: 'email' | 'sms', purpose: string, timerKey: string) => {
     if (countdowns[timerKey] > 0) return;
     try {
@@ -123,75 +148,27 @@ const Profile: React.FC = () => {
         message.success(t('auth.sms_code_sent'));
       }
       startCountdown(timerKey);
-    } catch (e: any) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
 
-  // 构建安全设置项（动态根据登录开关显示）
+  // 构建安全设置项
   const buildSecurityItems = () => {
     const items: { key: string; label: string; value: string; action: string; icon: React.ReactNode; handler: () => void }[] = [];
-
-    // 密码始终显示
-    items.push({
-      key: 'password',
-      label: t('profile.password'),
-      value: '********',
-      action: t('profile.edit'),
-      icon: <LockOutlined />,
-      handler: () => handleAction('password'),
-    });
-
-    // 手机号（仅当手机号登录开启时显示）
+    items.push({ key: 'password', label: t('profile.password'), value: '********', action: t('profile.edit'), icon: <LockOutlined />, handler: () => handleAction('password') });
     if (login?.enable_mobile_login) {
       const hasMobile = !!profile?.mobile;
-      items.push({
-        key: 'mobile',
-        label: t('profile.mobile'),
-        value: profile?.mobile || t('profile.not_bound'),
-        action: hasMobile ? t('profile.rebind') : t('profile.bind'),
-        icon: <MobileOutlined />,
-        handler: () => handleAction('bind_mobile'),
-      });
+      items.push({ key: 'mobile', label: t('profile.mobile'), value: profile?.mobile || t('profile.not_bound'), action: hasMobile ? t('profile.rebind') : t('profile.bind'), icon: <MobileOutlined />, handler: () => handleAction('bind_mobile') });
     }
-
-    // 邮箱（仅当邮箱登录开启时显示）
     if (login?.enable_email_login) {
       const hasEmail = !!profile?.email && !profile.email.endsWith('@tokensbyte.local');
-      items.push({
-        key: 'email',
-        label: t('profile.email'),
-        value: hasEmail ? profile!.email : t('profile.not_bound'),
-        action: hasEmail ? t('profile.rebind') : t('profile.bind'),
-        icon: <MailOutlined />,
-        handler: () => handleAction('bind_email'),
-      });
+      items.push({ key: 'email', label: t('profile.email'), value: hasEmail ? profile!.email : t('profile.not_bound'), action: hasEmail ? t('profile.rebind') : t('profile.bind'), icon: <MailOutlined />, handler: () => handleAction('bind_email') });
     }
-
-    // 微信（仅当微信登录开启时显示）
     if (login?.enable_wechat_login) {
-      items.push({
-        key: 'wechat',
-        label: t('profile.wechat'),
-        value: profile?.wechat_id ? t('profile.bound') : t('profile.not_bound'),
-        action: profile?.wechat_id ? t('profile.rebind') : t('profile.bind'),
-        icon: <WechatOutlined />,
-        handler: () => handleAction('bind_wechat'),
-      });
+      items.push({ key: 'wechat', label: t('profile.wechat'), value: profile?.wechat_id ? t('profile.bound') : t('profile.not_bound'), action: profile?.wechat_id ? t('profile.rebind') : t('profile.bind'), icon: <WechatOutlined />, handler: () => handleAction('bind_wechat') });
     }
-
-    // 谷歌（仅当谷歌登录开启时显示）
     if (login?.enable_google_login) {
-      items.push({
-        key: 'google',
-        label: t('profile.google'),
-        value: profile?.google_id ? t('profile.bound') : t('profile.not_bound'),
-        action: profile?.google_id ? t('profile.rebind') : t('profile.bind'),
-        icon: <GoogleOutlined />,
-        handler: () => { window.location.href = '/api/v1/user/bind/google'; },
-      });
+      items.push({ key: 'google', label: t('profile.google'), value: profile?.google_id ? t('profile.bound') : t('profile.not_bound'), action: profile?.google_id ? t('profile.rebind') : t('profile.bind'), icon: <GoogleOutlined />, handler: () => { window.location.href = '/api/v1/user/bind/google'; } });
     }
-
     return items;
   };
 
@@ -277,34 +254,43 @@ const Profile: React.FC = () => {
             </Form.Item>
           </Form>
         );
-      case 'bind_wechat':
+      case 'bind_wechat': {
+        const appId = settings?.wechat_oauth?.app_id || '';
+        const redirectUri = `${window.location.origin}/api/v1/user/bind/wechat/callback`;
+        const isVerifyStep = wechatBindStep === 'verify';
+        const statePrefix = isVerifyStep ? 'verify_wechat_' : 'bind_wechat_';
         return (
           <div style={{ textAlign: 'center', padding: '12px 0' }}>
             <WechatQR
-              appId={settings?.wechat_oauth?.app_id || ''}
-              redirectUri={`${window.location.origin}/api/v1/user/bind/wechat/callback`}
-              state={`bind_wechat_${profile?.id || ''}`}
-              selfRedirect={true}
-              style={1}
+              key={wechatQRKey}
+              appId={appId}
+              redirectUri={redirectUri}
+              state={`${statePrefix}${profile?.id || ''}`}
             />
-            <div style={{ marginTop: 8, color: '#e5e5e5', fontSize: 14 }}>{t('profile.bind_wechat')}</div>
+            <div style={{ marginTop: 8, color: '#e5e5e5', fontSize: 14 }}>
+              {isVerifyStep ? '请用当前绑定的微信扫码验证身份' : '请用新微信扫码绑定'}
+            </div>
             <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>"{settings?.site?.name}"</div>
           </div>
         );
+      }
       default:
         return null;
     }
   };
 
-  const handleModalOk = () => {
-    if (modalType === 'bind_mobile' || modalType === 'bind_email') {
-      form.submit();
-    } else {
-      form.submit();
-    }
-  };
+  const handleModalOk = () => { form.submit(); };
 
   const isBindModal = modalType === 'bind_mobile' || modalType === 'bind_email';
+
+  // Modal 标题
+  const getModalTitle = () => {
+    if (modalType === 'bind_wechat') return wechatBindStep === 'verify' ? '验证微信身份' : t('profile.bind_wechat');
+    if (isBindModal) return modalType === 'bind_mobile' ? t('profile.bind_mobile_title') : t('profile.bind_email_title');
+    if (modalType === 'nickname') return t('profile.modify_nickname');
+    if (modalType === 'password') return t('profile.modify_password');
+    return '';
+  };
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
@@ -367,7 +353,6 @@ const Profile: React.FC = () => {
               extra={
                 <Space>
                   <Button type="link" onClick={item.handler}>{item.action}</Button>
-                  {/* 已绑定的第三方显示解绑按钮 */}
                   {(item.key === 'wechat' && profile?.wechat_id) || (item.key === 'google' && profile?.google_id) ? (
                     <Popconfirm title={t('profile.unbind_confirm')}
                       description={<Input.Password placeholder={t('profile.unbind_password')} id={`unbind_pwd_${item.key}`} />}
@@ -393,7 +378,7 @@ const Profile: React.FC = () => {
       </Card>
 
       <Modal
-        title={isBindModal ? (modalType === 'bind_mobile' ? t('profile.bind_mobile_title') : t('profile.bind_email_title')) : (modalType === 'nickname' ? t('profile.modify_nickname') : (modalType === 'password' ? t('profile.modify_password') : t(`profile.${modalType}`)))}
+        title={getModalTitle()}
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         onOk={handleModalOk}

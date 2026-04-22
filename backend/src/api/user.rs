@@ -156,7 +156,10 @@ pub async fn bind_wechat(
     }
 }
 
-/// 微信绑定回调
+/// 微信绑定回调 — 统一处理验证旧微信 / 绑定新微信两种场景
+/// state 前缀决定行为：
+///   verify_wechat_{user_id} → 验证扫码微信是否为当前绑定的微信
+///   bind_wechat_{user_id}   → 将扫码微信绑定到当前账户
 pub async fn bind_wechat_callback(
     State(state): State<Arc<AppState>>,
     Query(query): Query<crate::api::auth::OAuthCallbackQuery>,
@@ -164,26 +167,43 @@ pub async fn bind_wechat_callback(
     let result = (async {
         let code = query.code.ok_or_else(|| AppError::BadRequest("缺少 code".to_string()))?;
         let state_str = query.state.unwrap_or_default();
-        let user_id = state_str.strip_prefix("bind_wechat_").unwrap_or("").to_string();
-        if user_id.is_empty() {
-            return Err(AppError::BadRequest("无效的 state 参数".to_string()));
-        }
 
         let settings = crate::api::settings::load_all_settings(&state).await?;
         let wechat = settings.wechat_oauth.ok_or_else(|| AppError::BadRequest("微信授权未配置".to_string()))?;
         let info = crate::services::oauth::OAuthService::wechat_exchange(&wechat.app_id, &wechat.app_secret, &code).await?;
 
-        // 检查此微信是否已被其他用户绑定
-        let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE wechat_id = ? AND id != ?)"))
-            .bind(&info.openid).bind(&user_id).fetch_one(&state.db.pool).await?;
-        if exists {
-            return Err(AppError::Conflict("此微信已绑定其他账号".to_string()));
+        // ── 验证旧微信身份（换绑第一步） ───────────────────────
+        if let Some(user_id) = state_str.strip_prefix("verify_wechat_") {
+            if user_id.is_empty() {
+                return Err(AppError::BadRequest("无效的 state 参数".to_string()));
+            }
+            let current_wechat: Option<String> = sqlx::query_scalar(
+                &state.db.format_query("SELECT wechat_id FROM users WHERE id = ?")
+            ).bind(user_id).fetch_optional(&state.db.pool).await?.flatten();
+
+            if current_wechat.as_deref() != Some(&info.openid) {
+                return Ok("/profile?wechat_action=verify_failed".to_string());
+            }
+            return Ok("/profile?wechat_action=verified".to_string());
         }
 
-        sqlx::query(&state.db.format_query("UPDATE users SET wechat_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
-            .bind(&info.openid).bind(&user_id).execute(&state.db.pool).await?;
+        // ── 绑定新微信（首次绑定 / 换绑第二步） ─────────────────
+        if let Some(user_id) = state_str.strip_prefix("bind_wechat_") {
+            if user_id.is_empty() {
+                return Err(AppError::BadRequest("无效的 state 参数".to_string()));
+            }
+            // 检查此微信是否已被其他用户绑定
+            let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE wechat_id = ? AND id != ?)"))
+                .bind(&info.openid).bind(user_id).fetch_one(&state.db.pool).await?;
+            if exists {
+                return Ok("/profile?wechat_action=bindconflict".to_string());
+            }
+            sqlx::query(&state.db.format_query("UPDATE users SET wechat_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                .bind(&info.openid).bind(user_id).execute(&state.db.pool).await?;
+            return Ok("/profile?wechat_action=bindok".to_string());
+        }
 
-        Ok::<_, AppError>("/profile?bind=wechat&result=success".to_string())
+        Err(AppError::BadRequest("无效的 state 参数".to_string()))
     }).await;
     match result {
         Ok(url) => Redirect::temporary(&url).into_response(),
