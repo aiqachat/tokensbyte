@@ -27,7 +27,7 @@ import {
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Dropdown, Modal, message } from 'antd';
+import { Dropdown, Modal, message, Popover, Avatar, Divider } from 'antd';
 import type { MenuProps } from 'antd';
 import useAuthStore from '../store/auth';
 
@@ -422,6 +422,82 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   }
 
 
+  const userInitial = user?.nickname?.charAt(0)?.toUpperCase() || user?.username?.charAt(0)?.toUpperCase() || '?';
+  const displayName = user?.nickname || user?.username || 'User';
+
+  const profileContent = (
+    <div style={{ width: 300, padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ marginTop: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, width: '100%', padding: '0 8px' }}>
+        <Avatar 
+          size={56} 
+          style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 24, flexShrink: 0 }}
+        >
+          {userInitial}
+        </Avatar>
+        <div style={{ overflow: 'hidden', flex: 1 }}>
+          <div style={{ fontWeight: 500, fontSize: 16, color: '#e5e5e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {displayName}
+          </div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
+            {user?.email || `UID: ${user?.uid || '-'}`}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {isUserEnd && (
+          <Button 
+            type="default"
+            style={{ 
+              height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
+              transition: 'all 0.2s'
+            }}
+            className="hover-bright-btn"
+            icon={<WalletOutlined style={{ fontSize: 18 }} />}
+            onClick={() => { navigate('/wallet'); }}
+          >
+            {t('menu.wallet', '我的钱包')}
+          </Button>
+        )}
+        
+        <Button 
+          type="default"
+          style={{ 
+            height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
+            transition: 'all 0.2s'
+          }}
+          className="hover-bright-btn"
+          icon={<UserOutlined style={{ fontSize: 18 }} />}
+          onClick={() => { navigate('/profile'); }}
+        >
+          {t('menu.profile', '个人中心')}
+        </Button>
+
+        <Button 
+          type="default"
+          style={{ 
+            height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
+            transition: 'all 0.2s'
+          }}
+          className="hover-bright-btn"
+          icon={<LogoutOutlined style={{ fontSize: 18 }} />}
+          onClick={handleLogout}
+        >
+          {t('common.logout', '退出账号')}
+        </Button>
+      </div>
+
+      <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center', gap: 24, width: '100%' }}>
+        <Button type="link" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, padding: 0 }}>隐私政策</Button>
+        <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
+        <Button type="link" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, padding: 0 }}>服务条款</Button>
+      </div>
+    </div>
+  );
+
   return (
     <ConfigProvider
       theme={{
@@ -442,6 +518,18 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         }
       }}
     >
+      <style>
+        {`
+          .hover-bright-btn:hover {
+            background: rgba(255,255,255,0.1) !important;
+            border-color: rgba(255,255,255,0.2) !important;
+            color: #fff !important;
+          }
+          .header-avatar-btn:hover {
+            background: rgba(255,255,255,0.08);
+          }
+        `}
+      </style>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Sider 
           trigger={null} 
@@ -554,7 +642,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
               )}
             </div>
             
-            <Space size={screens.xs ? "small" : "large"}>
+            <Space size={screens.xs ? "small" : "middle"}>
               {enableMultilingual && (
                 <Dropdown menu={{ items: langItems }} placement="bottomRight">
                   <Button type="text" icon={<GlobalOutlined />} style={{ color: '#fff' }}>
@@ -562,20 +650,27 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                   </Button>
                 </Dropdown>
               )}
-              {!screens.xs && (
-                <span style={{ color: '#fff' }}>
-                  <Title level={5} style={{ margin: 0, color: '#fff' }}>{user?.username}</Title>
-                </span>
-              )}
-              <Button 
-                type="primary" 
-                danger 
-                icon={<LogoutOutlined />} 
-                onClick={handleLogout}
-                size={screens.xs ? "middle" : "middle"}
+              
+              <Popover 
+                content={profileContent} 
+                trigger="click" 
+                placement="bottomRight"
+                overlayInnerStyle={{ padding: 0, borderRadius: 16, background: '#1f1f1f', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}
+                arrow={false}
               >
-                {!screens.xs && t('common.logout')}
-              </Button>
+                <div 
+                  className="header-avatar-btn"
+                  style={{ 
+                    display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '4px', 
+                    borderRadius: 20, transition: 'background 0.2s',
+                    border: '2px solid transparent'
+                  }} 
+                >
+                  <Avatar size={34} style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 16 }}>
+                    {userInitial}
+                  </Avatar>
+                </div>
+              </Popover>
             </Space>
 
           </Header>
