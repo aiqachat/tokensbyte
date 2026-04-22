@@ -5,6 +5,7 @@
  * - 鼠标附近的网格点会变亮并放大
  * - 拖尾效果：光点亮度平滑衰减回暗色
  * - 完全不触发 React 渲染，独立动画循环
+ * - 任意缩放级别下始终布满整个浏览器视口
  */
 import React, { useRef, useEffect, useCallback } from 'react';
 
@@ -24,12 +25,16 @@ const INFLUENCE_RADIUS = 160;
 const BASE_ALPHA = 0.08;
 /** 粒子高亮亮度 */
 const HIGHLIGHT_ALPHA = 0.55;
-/** 高亮衰减速度（每帧乘以此系数） */
+/** 高亮衰减速度 */
 const DECAY_RATE = 0.93;
 /** 粒子基础半径 */
 const BASE_RADIUS = 0.8;
 /** 粒子高亮半径 */
 const HIGHLIGHT_RADIUS = 2.2;
+/** 最小绘制间距（像素），低于此值则跳步绘制 */
+const MIN_DRAW_GAP = 6;
+/** 最大绘制间距（像素），高于此值仍正常绘制 */
+const MAX_DRAW_GAP = 200;
 
 const CanvasParticles: React.FC<Props> = React.memo(({ offsetX, offsetY, scale }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -52,11 +57,9 @@ const CanvasParticles: React.FC<Props> = React.memo(({ offsetX, offsetY, scale }
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // 监听鼠标
     window.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mouseleave', handleMouseLeave);
 
-    // 适配 DPI
     const updateSize = () => {
       const dpr = window.devicePixelRatio || 1;
       const w = window.innerWidth;
@@ -71,80 +74,75 @@ const CanvasParticles: React.FC<Props> = React.memo(({ offsetX, offsetY, scale }
     updateSize();
     window.addEventListener('resize', updateSize);
 
-    // 动画循环
     const brightnessMap = particleBrightnessRef.current;
 
     const draw = () => {
       const { w, h } = sizeRef.current;
       const mouse = mouseRef.current;
-
       ctx.clearRect(0, 0, w, h);
 
-      const gap = GRID_GAP * scale;
-      if (gap < 3) {
-        // 缩放太小时不绘制粒子，避免性能浪费
-        rafRef.current = requestAnimationFrame(draw);
-        return;
+      // 计算屏幕上的网格间距
+      let gap = GRID_GAP * scale;
+
+      // 缩放很小时：跳步绘制（每 N 个点画一个）保证覆盖且不卡
+      let step = 1;
+      if (gap < MIN_DRAW_GAP) {
+        step = Math.ceil(MIN_DRAW_GAP / gap);
+        gap = gap * step;
       }
 
-      // 计算可见网格范围（基于画布偏移和缩放）
-      const startCol = Math.floor(-offsetX / gap) - 1;
-      const endCol = Math.ceil((w - offsetX) / gap) + 1;
-      const startRow = Math.floor(-offsetY / gap) - 1;
-      const endRow = Math.ceil((h - offsetY) / gap) + 1;
+      // 使用模运算确保网格始终无缝铺满整个视口
+      // offsetMod 是第一个可见点的屏幕坐标（始终在 [0, gap) 范围内）
+      const ox = ((offsetX % gap) + gap) % gap;
+      const oy = ((offsetY % gap) + gap) % gap;
 
-      // 清理离屏粒子的亮度缓存
-      if (brightnessMap.size > 5000) {
-        brightnessMap.clear();
-      }
-
-      for (let col = startCol; col <= endCol; col++) {
-        for (let row = startRow; row <= endRow; row++) {
-          // 屏幕坐标
-          const screenX = col * gap + (offsetX % gap);
-          const screenY = row * gap + (offsetY % gap);
-
+      // 从视口左上角之外一个 gap 开始，到右下角之外一个 gap 结束
+      for (let screenX = ox - gap; screenX <= w + gap; screenX += gap) {
+        for (let screenY = oy - gap; screenY <= h + gap; screenY += gap) {
           // 与鼠标的距离
           const dx = screenX - mouse.x;
           const dy = screenY - mouse.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
 
+          // 用屏幕坐标的整数网格作为 key
+          const col = Math.round((screenX - ox) / gap);
+          const row = Math.round((screenY - oy) / gap);
           const key = `${col},${row}`;
+
           const prevBrightness = brightnessMap.get(key) || 0;
 
           let targetBrightness = 0;
           if (dist < INFLUENCE_RADIUS) {
-            // 距离越近亮度越高（二次衰减，中心更集中）
             const proximity = 1 - (dist / INFLUENCE_RADIUS);
             targetBrightness = proximity * proximity;
           }
 
-          // 拖尾效果：当前亮度取 max(目标亮度, 上次亮度 * 衰减)
           let brightness = Math.max(targetBrightness, prevBrightness * DECAY_RATE);
-
-          // 清理极暗粒子
           if (brightness < 0.005) brightness = 0;
-
           brightnessMap.set(key, brightness);
 
-          // 计算最终渲染参数
           const alpha = BASE_ALPHA + brightness * (HIGHLIGHT_ALPHA - BASE_ALPHA);
           const radius = BASE_RADIUS + brightness * (HIGHLIGHT_RADIUS - BASE_RADIUS);
 
-          // 绘制圆点
           ctx.beginPath();
           ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
-          
+
           if (brightness > 0.01) {
-            // 高亮粒子带淡蓝色光晕
             const r = Math.round(162 + brightness * 40);
             const g = Math.round(193 + brightness * 30);
-            const b = 255;
-            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            ctx.fillStyle = `rgba(${r}, ${g}, 255, ${alpha})`;
           } else {
             ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
           }
           ctx.fill();
+        }
+      }
+
+      // 定期清理过期的亮度缓存（避免内存泄漏）
+      if (brightnessMap.size > 8000) {
+        const entries = Array.from(brightnessMap.entries());
+        for (const [k, v] of entries) {
+          if (v < 0.005) brightnessMap.delete(k);
         }
       }
 
