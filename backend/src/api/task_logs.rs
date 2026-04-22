@@ -8,103 +8,85 @@ use crate::auth;
 use crate::models::{TaskLog, TaskLogQuery, TaskLogListResponse};
 use crate::error::AppResult;
 
+/// 任务日志列表 — 基于 logs 表构建任务视图
+/// 管理员看全部，普通用户只看自己的
+/// 仅返回成功(200)的记录，失败记录在使用日志中查看
 pub async fn list_task_logs(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
     Query(query): Query<TaskLogQuery>,
 ) -> AppResult<Json<TaskLogListResponse>> {
     let page = query.page.unwrap_or(1);
-    let per_page = query.per_page.unwrap_or(20);
+    let per_page = query.per_page.unwrap_or(20).min(100);
     let offset = (page - 1) * per_page;
 
-    let mut sql = "SELECT * FROM task_logs WHERE 1=1".to_string();
+    let mut where_clause = " WHERE l.status_code = 200".to_string();
     let mut binds: Vec<String> = Vec::new();
 
+    // 权限控制
     if claims.role != "admin" {
-        sql.push_str(" AND user_id = ?");
+        where_clause.push_str(" AND l.user_id = ?");
         binds.push(claims.sub.clone());
-    } else if let Some(ref user_id) = query.user_id {
-        sql.push_str(" AND user_id = ?");
-        binds.push(user_id.clone());
+    } else if let Some(ref uid) = query.user_id {
+        where_clause.push_str(" AND l.user_id = ?");
+        binds.push(uid.clone());
     }
 
-    if let Some(channel_id) = query.channel_id {
-        sql.push_str(" AND channel_id = ?");
-        binds.push(channel_id.to_string());
+    // 按类型筛选（映射到 endpoint 模式）
+    if let Some(ref at) = query.action_type {
+        match at.as_str() {
+            "chat" => where_clause.push_str(
+                " AND (l.endpoint LIKE '%chat/completions%' OR l.endpoint LIKE '%generateContent%')"
+            ),
+            "image" => where_clause.push_str(
+                " AND l.endpoint LIKE '%images/generations%'"
+            ),
+            "video" => where_clause.push_str(
+                " AND (l.endpoint LIKE '%video/generations%' OR l.endpoint LIKE '%contents/generations%')"
+            ),
+            _ => {}
+        }
     }
 
-    if let Some(ref task_id) = query.task_id {
-        sql.push_str(" AND task_id LIKE ?");
-        binds.push(format!("%{}%", task_id));
+    if let Some(ref m) = query.model {
+        where_clause.push_str(" AND l.model LIKE ?");
+        binds.push(format!("%{}%", m));
     }
 
-    let count_sql = sql.replace("SELECT *", "SELECT COUNT(*)");
-    let count_query_str = state.db.format_query(&count_sql);
-    let mut count_q = sqlx::query_scalar::<_, i64>(&count_query_str);
-    for val in &binds {
-        count_q = count_q.bind(val);
+    if let Some(ref s) = query.start_date {
+        where_clause.push_str(" AND l.created_at >= ?");
+        binds.push(s.clone());
     }
-    let total = count_q.fetch_one(&state.db.pool).await?;
-
-    sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {} OFFSET {}", per_page, offset));
-    let logs_query_str = state.db.format_query(&sql);
-    let mut logs_q = sqlx::query_as::<_, TaskLog>(&logs_query_str);
-    for val in &binds {
-        logs_q = logs_q.bind(val);
+    if let Some(ref e) = query.end_date {
+        where_clause.push_str(" AND l.created_at <= ?");
+        binds.push(format!("{} 23:59:59", e));
     }
-    let logs = logs_q.fetch_all(&state.db.pool).await?;
 
-    Ok(Json(TaskLogListResponse { data: logs, total }))
-}
+    // 总数查询（无需 JOIN，仅依赖 logs 表条件）
+    let count_sql = state.db.format_query(&format!(
+        "SELECT COUNT(*) FROM logs l{}", where_clause
+    ));
+    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
+    for v in &binds { cq = cq.bind(v); }
+    let total = cq.fetch_one(&state.db.pool).await?;
 
-#[axum::debug_handler]
-pub async fn generate_mock_task_log(
-    State(state): State<Arc<AppState>>,
-    Extension(claims): Extension<auth::Claims>,
-) -> AppResult<Json<serde_json::Value>> {
-    let (channel_id, status, progress, time_spent, task_id) = {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        
-        let channel_id: i64 = rng.gen_range(1..=20);
-        let statuses = ["成功", "进行中", "失败"];
-        let status = statuses[rng.gen_range(0..statuses.len())].to_string();
-        let progress: i32 = if status == "成功" { 100 } else if status == "失败" { rng.gen_range(10..90) } else { rng.gen_range(10..99) };
-        let time_spent: i32 = rng.gen_range(50..300);
-        let task_id = format!("cgt-20260411{:06}-{:x}", rng.gen_range(0..999999), rng.gen_range(0..99999));
-        
-        (channel_id, status, progress, time_spent, task_id)
-    };
+    // 数据查询
+    let data_sql = state.db.format_query(&format!(
+        "SELECT l.id, l.user_id, l.channel_id, l.model, l.endpoint, \
+         l.prompt_tokens, l.completion_tokens, l.cost, l.latency_ms, l.status_code, \
+         l.error_message, l.request_content, l.response_content, l.billing_detail, \
+         c.name AS channel_name, c.group_aid AS channel_group_aid, \
+         COALESCE(u.nickname, u.username) AS user_nickname, \
+         l.created_at \
+         FROM logs l \
+         LEFT JOIN channels c ON l.channel_id = c.id \
+         LEFT JOIN users u ON l.user_id = u.id \
+         {} ORDER BY l.created_at DESC LIMIT {} OFFSET {}",
+        where_clause, per_page, offset
+    ));
+    let mut dq = sqlx::query_as::<_, TaskLog>(&data_sql);
+    for v in &binds { dq = dq.bind(v); }
+    let data = dq.fetch_all(&state.db.pool).await?;
 
-    let user_id = &claims.sub;
-    let platform = "豆包视频";
-    let action_type = "图生视频";
-    
-    let now = chrono::Local::now();
-    let end_time = now.format("%Y-%m-%d %H:%M:%S").to_string();
-    let submit_time = (now - chrono::Duration::seconds(time_spent as i64)).format("%Y-%m-%d %H:%M:%S").to_string();
-    
-    let details = r#"{"preview": "https://example.com/preview.mp4", "download": "https://example.com/download.mp4"}"#;
-
-    sqlx::query(
-        &state.db.format_query(
-            "INSERT INTO task_logs (user_id, channel_id, platform, action_type, task_id, status, progress, submit_time, end_time, time_spent, details) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        )
-    )
-    .bind(user_id)
-    .bind(channel_id)
-    .bind(platform)
-    .bind(action_type)
-    .bind(task_id)
-    .bind(status)
-    .bind(progress)
-    .bind(submit_time)
-    .bind(end_time)
-    .bind(time_spent)
-    .bind(details)
-    .execute(&state.db.pool)
-    .await?;
-
-    Ok(Json(serde_json::json!({ "success": true, "message": "Mock task generated" })))
+    Ok(Json(TaskLogListResponse { data, total }))
 }

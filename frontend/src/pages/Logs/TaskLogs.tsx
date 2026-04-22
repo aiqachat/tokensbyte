@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Tag, Progress, Button, Space, Typography, DatePicker, Input, Row, Col, Form, message, Grid } from 'antd';
-import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { SyncOutlined, ExperimentOutlined } from '@ant-design/icons';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Table, Tag, Button, Space, Typography, DatePicker, Input, Select, Row, Col, Form, message, Grid, Descriptions } from 'antd';
+import MobileCardList, { MobileCard, CardRow } from '../../components/MobileCardList';
+import { SyncOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
+import useAuthStore from '../../store/auth';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
@@ -13,21 +14,67 @@ const { useBreakpoint } = Grid;
 interface TaskLog {
   id: number;
   user_id: string;
-  channel_id: number;
-  platform: string;
-  action_type: string;
-  task_id: string;
-  status: string;
-  progress: number;
-  submit_time: string;
-  end_time: string;
-  time_spent: number;
-  details: string;
+  channel_id: number | null;
+  model: string;
+  endpoint: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost: number;
+  latency_ms: number;
+  status_code: number;
+  error_message: string | null;
+  request_content: string | null;
+  response_content: string | null;
+  billing_detail: string | null;
+  channel_name: string | null;
+  channel_group_aid: string | null;
+  user_nickname: string | null;
   created_at: string;
 }
 
+// ── 工具函数：从 endpoint 推断任务类型 ──────────────────────────
+const getTaskType = (ep: string) => {
+  if (ep.includes('chat/completions') || ep.includes('generateContent'))
+    return { label: '聊天', color: 'blue', icon: '💬' };
+  if (ep.includes('images/generations'))
+    return { label: '图片', color: 'purple', icon: '🖼️' };
+  if (ep.includes('video/generations') || ep.includes('contents/generations'))
+    return { label: '视频', color: 'orange', icon: '🎬' };
+  return { label: '其它', color: 'default', icon: '🔧' };
+};
+
+// ── 工具函数：判断是否异步提交（视频 POST） ─────────────────────
+const isAsyncPost = (ep: string) =>
+  ep.endsWith('/video/generations') || ep.endsWith('/generations/tasks');
+
+// ── 工具函数：从 endpoint/response 提取任务 ID ──────────────────
+const getTaskId = (record: TaskLog): string => {
+  const ep = record.endpoint;
+  // 视频 GET：末尾是 task_id
+  if ((ep.includes('video/generations/') || ep.includes('generations/tasks/'))
+    && !ep.endsWith('/generations') && !ep.endsWith('/tasks')) {
+    return ep.split('/').pop() || '-';
+  }
+  // 视频 POST：从 response_content 提取
+  if (isAsyncPost(ep) && record.response_content) {
+    try {
+      const r = JSON.parse(record.response_content);
+      return r.task_id || r.id || '-';
+    } catch { /* ignore */ }
+  }
+  return '-';
+};
+
+// ── 工具函数：格式化 JSON 用于展示 ─────────────────────────────
+const fmtJson = (raw: string | null): string => {
+  if (!raw) return '-';
+  try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+};
+
 const TaskLogs: React.FC = () => {
   const { t } = useTranslation();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
   const [data, setData] = useState<TaskLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -36,238 +83,231 @@ const TaskLogs: React.FC = () => {
   const [form] = Form.useForm();
   const screens = useBreakpoint();
 
-  const fetchLogs = async (current = 1, size = 20) => {
+  const fetchLogs = useCallback(async (current = 1, size = 20) => {
     setLoading(true);
     try {
-      const values = form.getFieldsValue();
-      const params: any = {
-        page: current,
-        per_page: size,
-        task_id: values.task_id,
-        channel_id: values.channel_id,
-      };
-
-      if (values.dateRange) {
-        params.start_date = values.dateRange[0].format('YYYY-MM-DD');
-        params.end_date = values.dateRange[1].format('YYYY-MM-DD');
-      }
+      const v = form.getFieldsValue();
+      const params: any = { page: current, per_page: size };
+      if (v.action_type) params.action_type = v.action_type;
+      if (v.model) params.model = v.model;
+      if (v.dateRange?.[0]) params.start_date = v.dateRange[0].format('YYYY-MM-DD');
+      if (v.dateRange?.[1]) params.end_date = v.dateRange[1].format('YYYY-MM-DD');
 
       const res = await (request.get('/task_logs', { params }) as any);
       setData(res.data);
       setTotal(res.total);
       setPage(current);
       setPageSize(size);
-    } catch (error) {
-      console.error(error);
+    } catch (e) {
+      console.error(e);
       message.error('获取任务日志失败');
     } finally {
       setLoading(false);
     }
-  };
+  }, [form]);
 
-  useEffect(() => {
-    fetchLogs();
-  }, []);
+  useEffect(() => { fetchLogs(); }, []);
 
-  const handleMockGenerate = async () => {
-    try {
-      setLoading(true);
-      await request.post('/task_logs/mock');
-      message.success('已模拟生成一条任务记录');
-      fetchLogs(1, pageSize);
-    } catch (error) {
-      message.error('生成模拟记录失败');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ── 展开行：详细信息 ─────────────────────────────────────────
+  const expandedRowRender = (record: TaskLog) => (
+    <div style={{ padding: '8px 0' }}>
+      <Descriptions size="small" column={1} bordered
+        labelStyle={{ width: 120, color: '#8c8c8c', background: '#1a1a1a' }}
+        contentStyle={{ background: '#141414', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12, maxHeight: 300, overflow: 'auto' }}
+      >
+        <Descriptions.Item label="Token 用量">
+          输入 {record.prompt_tokens} / 输出 {record.completion_tokens}
+        </Descriptions.Item>
+        <Descriptions.Item label="费用">
+          {record.cost > 0 ? record.cost.toFixed(6) : '0'}
+        </Descriptions.Item>
+        {record.billing_detail && (
+          <Descriptions.Item label="计费明细">{fmtJson(record.billing_detail)}</Descriptions.Item>
+        )}
+        {record.request_content && (
+          <Descriptions.Item label="请求参数">{fmtJson(record.request_content)}</Descriptions.Item>
+        )}
+        {record.response_content && (
+          <Descriptions.Item label="响应内容">{fmtJson(record.response_content)}</Descriptions.Item>
+        )}
+      </Descriptions>
+    </div>
+  );
 
-  const columns = [
+  // ── 表格列定义 ───────────────────────────────────────────────
+  const columns: any[] = [
     {
       title: '提交时间',
-      dataIndex: 'submit_time',
+      dataIndex: 'created_at',
       key: 'submit_time',
-      render: (text: string) => text ? dayjs(text).format('YYYY-MM-DD HH:mm:ss') : '-',
+      width: 170,
+      render: (v: string, r: TaskLog) => {
+        const end = dayjs(v);
+        const submit = end.subtract(r.latency_ms, 'ms');
+        return <Text style={{ fontSize: 13 }}>{submit.format('YYYY-MM-DD HH:mm:ss')}</Text>;
+      },
     },
     {
       title: '结束时间',
-      dataIndex: 'end_time',
+      dataIndex: 'created_at',
       key: 'end_time',
-      render: (text: string) => text ? dayjs(text).format('YYYY-MM-DD HH:mm:ss') : '-',
+      width: 170,
+      render: (v: string, r: TaskLog) => {
+        if (isAsyncPost(r.endpoint)) return <Tag color="processing">进行中</Tag>;
+        return <Text style={{ fontSize: 13 }}>{dayjs(v).format('YYYY-MM-DD HH:mm:ss')}</Text>;
+      },
     },
     {
       title: '花费时间',
-      dataIndex: 'time_spent',
+      dataIndex: 'latency_ms',
       key: 'time_spent',
-      render: (val: number) => val ? <Text type="secondary" style={{ backgroundColor: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: 4 }}>🕗 {val} 秒</Text> : '-',
-    },
-    {
-      title: '渠道',
-      dataIndex: 'channel_id',
-      key: 'channel_id',
-      render: (val: number) => val ? <Tag color="gold" style={{ borderRadius: '12px', padding: '0 8px' }}># {val}</Tag> : '-',
-    },
-    {
-      title: '平台',
-      dataIndex: 'platform',
-      key: 'platform',
-      render: (text: string) => <Tag color="blue">{text}</Tag>,
-    },
-    {
-      title: '类型',
-      dataIndex: 'action_type',
-      key: 'action_type',
-      render: (text: string) => <Tag color="cyan">{text}</Tag>,
-    },
-    {
-      title: '任务ID',
-      dataIndex: 'task_id',
-      key: 'task_id',
-    },
-    {
-      title: '任务状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => {
-        let color = 'default';
-        if (status === '成功') color = 'success';
-        if (status === '失败') color = 'error';
-        if (status === '进行中') color = 'processing';
-        return <Tag color={color}>{status}</Tag>;
-      },
-    },
-    {
-      title: '进度',
-      dataIndex: 'progress',
-      key: 'progress',
-      render: (val: number, record: TaskLog) => (
-        <Progress 
-          percent={val} 
-          size="small" 
-          status={record.status === '失败' ? 'exception' : (val === 100 ? 'success' : 'active')}
-        />
+      width: 100,
+      render: (ms: number) => (
+        <Text type="secondary" style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: 4 }}>
+          🕗 {(ms / 1000).toFixed(1)}s
+        </Text>
       ),
     },
     {
-      title: '详情',
-      dataIndex: 'details',
-      key: 'details',
-      render: (text: string) => {
-        if (!text) return '-';
-        try {
-          const parsed = JSON.parse(text);
-          return (
-            <Space>
-              {parsed.preview && <a href={parsed.preview} target="_blank" rel="noreferrer">点击预览视频</a>}
-              {parsed.download && <a href={parsed.download} target="_blank" rel="noreferrer">点击下载视频</a>}
-            </Space>
-          );
-        } catch {
-          return text;
-        }
+      title: '渠道',
+      key: 'channel',
+      width: 160,
+      render: (_: any, r: TaskLog) => {
+        if (!r.channel_name) return '-';
+        return (
+          <Space size={4}>
+            <Text>{r.channel_name}</Text>
+            {r.channel_group_aid && <Tag style={{ borderRadius: 10 }}>{r.channel_group_aid}</Tag>}
+          </Space>
+        );
+      },
+    },
+    {
+      title: '类型',
+      key: 'type',
+      width: 80,
+      render: (_: any, r: TaskLog) => {
+        const t = getTaskType(r.endpoint);
+        return <Tag color={t.color}>{t.icon} {t.label}</Tag>;
+      },
+    },
+    {
+      title: '模型',
+      dataIndex: 'model',
+      key: 'model',
+      width: 180,
+      ellipsis: true,
+      render: (v: string) => <Text style={{ fontSize: 12, fontFamily: 'monospace' }}>{v || '-'}</Text>,
+    },
+    {
+      title: '任务 ID',
+      key: 'task_id',
+      width: 200,
+      ellipsis: true,
+      render: (_: any, r: TaskLog) => {
+        const tid = getTaskId(r);
+        return <Text style={{ fontSize: 11, fontFamily: 'monospace' }} copyable={tid !== '-' ? { text: tid } : undefined}>{tid}</Text>;
+      },
+    },
+    {
+      title: '状态',
+      key: 'status',
+      width: 80,
+      render: (_: any, r: TaskLog) => {
+        if (isAsyncPost(r.endpoint)) return <Tag color="processing">进行中</Tag>;
+        return <Tag color="success">成功</Tag>;
       },
     },
   ];
+
+  // 管理员额外显示用户列
+  if (isAdmin) {
+    columns.splice(4, 0, {
+      title: '用户',
+      key: 'user',
+      width: 120,
+      render: (_: any, r: TaskLog) => (
+        <Text style={{ fontSize: 12 }}>{r.user_nickname || r.user_id}</Text>
+      ),
+    });
+  }
+
+  // ── 筛选栏 ───────────────────────────────────────────────────
+  const filterBar = (
+    <div style={{ padding: 16, background: '#141414', borderRadius: 8, marginBottom: 16 }}>
+      <Form form={form} layout="inline" onFinish={() => fetchLogs(1, pageSize)}>
+        <Form.Item name="action_type" style={{ marginBottom: 8 }}>
+          <Select placeholder="全部类型" allowClear style={{ width: 120 }}
+            options={[
+              { label: '💬 聊天', value: 'chat' },
+              { label: '🖼️ 图片', value: 'image' },
+              { label: '🎬 视频', value: 'video' },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item name="model" style={{ marginBottom: 8 }}>
+          <Input placeholder="模型名称" allowClear style={{ width: 160 }} />
+        </Form.Item>
+        <Form.Item name="dateRange" style={{ marginBottom: 8 }}>
+          <RangePicker />
+        </Form.Item>
+        <Form.Item style={{ marginBottom: 8 }}>
+          <Space>
+            <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>查询</Button>
+            <Button onClick={() => { form.resetFields(); fetchLogs(1, pageSize); }}>重置</Button>
+          </Space>
+        </Form.Item>
+      </Form>
+    </div>
+  );
+
+  // ── 移动端卡片 ───────────────────────────────────────────────
+  const renderMobileCard = (record: TaskLog) => {
+    const tp = getTaskType(record.endpoint);
+    const tid = getTaskId(record);
+    const isPost = isAsyncPost(record.endpoint);
+    return (
+      <MobileCard
+        title={<Space><Tag color={tp.color}>{tp.icon} {tp.label}</Tag><Text style={{ fontSize: 12, fontFamily: 'monospace' }}>{record.model}</Text></Space>}
+        extra={isPost ? <Tag color="processing">进行中</Tag> : <Tag color="success">成功</Tag>}
+      >
+        {record.channel_name && (
+          <CardRow label="渠道">
+            {record.channel_name} {record.channel_group_aid && <Tag style={{ borderRadius: 10, marginLeft: 4 }}>{record.channel_group_aid}</Tag>}
+          </CardRow>
+        )}
+        {isAdmin && <CardRow label="用户"><Text style={{ fontSize: 12 }}>{record.user_nickname || record.user_id}</Text></CardRow>}
+        <CardRow label="提交"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).subtract(record.latency_ms, 'ms').format('MM-DD HH:mm:ss')}</Text></CardRow>
+        <CardRow label="耗时"><Text type="secondary" style={{ fontSize: 12 }}>🕗 {(record.latency_ms / 1000).toFixed(1)}s</Text></CardRow>
+        {tid !== '-' && <CardRow label="任务ID"><Text style={{ fontSize: 11, fontFamily: 'monospace' }}>{tid}</Text></CardRow>}
+        {record.cost > 0 && <CardRow label="费用"><Text style={{ fontSize: 12 }}>{record.cost.toFixed(6)}</Text></CardRow>}
+      </MobileCard>
+    );
+  };
 
   return (
     <div>
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
         <Col>
-          <Space>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              <SyncOutlined style={{ marginRight: 8 }} />
-              任务记录
-            </Typography.Title>
-          </Space>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            <SyncOutlined style={{ marginRight: 8 }} />
+            {t('menu.task_logs', '任务日志')}
+          </Typography.Title>
         </Col>
         <Col>
-          <Space>
-            <Button icon={<ExperimentOutlined />} onClick={handleMockGenerate}>
-              生成测试数据
-            </Button>
-            <Button onClick={() => fetchLogs()} disabled={loading}>
-              刷新
-            </Button>
-          </Space>
+          <Button icon={<ReloadOutlined />} onClick={() => fetchLogs(page, pageSize)} loading={loading}>刷新</Button>
         </Col>
       </Row>
 
-      <div style={{ padding: 16, background: '#141414', borderRadius: 8, marginBottom: 16 }}>
-        <Form form={form} layout="inline" onFinish={() => fetchLogs(1, pageSize)}>
-          <Form.Item name="dateRange" style={{ marginBottom: 16 }}>
-            <RangePicker showTime />
-          </Form.Item>
-          <Form.Item name="task_id" style={{ marginBottom: 16 }}>
-            <Input placeholder="任务 ID" allowClear />
-          </Form.Item>
-          <Form.Item name="channel_id" style={{ marginBottom: 16 }}>
-            <Input placeholder="渠道 ID" allowClear />
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 16 }}>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                {t('common.query', '查询')}
-              </Button>
-              <Button onClick={() => form.resetFields()}>
-                {t('common.reset', '重置')}
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </div>
+      {filterBar}
 
       {screens.xs ? (
         <MobileCardList
           dataSource={data}
           loading={loading}
           rowKey="id"
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            onChange: (p: number, s: number) => fetchLogs(p, s),
-          }}
-          renderCard={(record: any) => {
-            let statusColor = 'default';
-            if (record.status === '成功') statusColor = 'success';
-            if (record.status === '失败') statusColor = 'error';
-            if (record.status === '进行中') statusColor = 'processing';
-            let detailNode = null;
-            if (record.details) {
-              try {
-                const parsed = JSON.parse(record.details);
-                detailNode = (
-                  <Space>
-                    {parsed.preview && <a href={parsed.preview} target="_blank" rel="noreferrer">预览</a>}
-                    {parsed.download && <a href={parsed.download} target="_blank" rel="noreferrer">下载</a>}
-                  </Space>
-                );
-              } catch {
-                detailNode = <Text type="secondary" style={{ fontSize: 12 }}>{record.details}</Text>;
-              }
-            }
-            return (
-              <MobileCard
-                title={<Space><Tag color="blue">{record.platform}</Tag><Tag color="cyan">{record.action_type}</Tag></Space>}
-                extra={<Tag color={statusColor}>{record.status}</Tag>}
-              >
-                <CardRow label="任务ID"><Text style={{ fontSize: 11, fontFamily: 'monospace' }}>{record.task_id}</Text></CardRow>
-                <CardRow label="渠道">{record.channel_id ? <Tag color="gold" style={{ borderRadius: 12 }}># {record.channel_id}</Tag> : '-'}</CardRow>
-                <CardRow label="进度">
-                  <Progress 
-                    percent={record.progress} 
-                    size="small" 
-                    style={{ width: 120, margin: 0 }}
-                    status={record.status === '失败' ? 'exception' : (record.progress === 100 ? 'success' : 'active')}
-                  />
-                </CardRow>
-                <CardRow label="提交"><Text type="secondary" style={{ fontSize: 12 }}>{record.submit_time ? dayjs(record.submit_time).format('MM-DD HH:mm:ss') : '-'}</Text></CardRow>
-                {record.time_spent > 0 && <CardRow label="耗时"><Text type="secondary" style={{ fontSize: 12 }}>🕗 {record.time_spent} 秒</Text></CardRow>}
-                {detailNode && <CardRow label="详情">{detailNode}</CardRow>}
-              </MobileCard>
-            );
-          }}
+          pagination={{ current: page, pageSize, total, onChange: (p: number, s: number) => fetchLogs(p, s) }}
+          renderCard={renderMobileCard}
         />
       ) : (
         <Table
@@ -275,12 +315,14 @@ const TaskLogs: React.FC = () => {
           dataSource={data}
           rowKey="id"
           loading={loading}
+          expandable={{ expandedRowRender, expandRowByClick: true }}
           pagination={{
             current: page,
             pageSize,
             total,
             showSizeChanger: true,
-            onChange: (page, size) => fetchLogs(page, size),
+            showTotal: (t) => `共 ${t} 条`,
+            onChange: (p, s) => fetchLogs(p, s),
           }}
           scroll={{ x: 'max-content' }}
           size="middle"
