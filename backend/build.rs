@@ -27,7 +27,16 @@ fn main() {
                 let version = format!("v1.0.{}", 10usize.saturating_sub(i));
                 let hash = parts.get(0).unwrap_or(&"").replace("\"", "\\\"");
                 let short_hash = parts.get(1).unwrap_or(&"").replace("\"", "\\\"");
-                let author = parts.get(2).unwrap_or(&"").replace("\"", "\\\"");
+                let raw_author = parts.get(2).unwrap_or(&"").replace("\"", "\\\"");
+                let author = if raw_author.chars().count() > 2 {
+                    let chars: Vec<char> = raw_author.chars().collect();
+                    format!("{}***{}", chars.first().unwrap_or(&'a'), chars.last().unwrap_or(&'z'))
+                } else if raw_author.chars().count() == 2 {
+                    let chars: Vec<char> = raw_author.chars().collect();
+                    format!("{}*", chars.first().unwrap_or(&'a'))
+                } else {
+                    raw_author
+                };
                 let date = parts.get(3).unwrap_or(&"").replace("\"", "\\\"");
                 let message = parts.get(4).unwrap_or(&"").replace("\"", "\\\"").replace("\n", " ");
                 

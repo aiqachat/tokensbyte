@@ -528,7 +528,6 @@ async fn load_schemes_from_db(state: &AppState, plugin_name: &str) -> Vec<serde_
 #[derive(Deserialize)]
 pub struct PlaygroundModelConfig {
     pub id: i32,
-    pub mid: String,
     pub enabled: bool,
     pub scheme_id: Option<String>,
 }
