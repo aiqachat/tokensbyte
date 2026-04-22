@@ -83,43 +83,43 @@ const Dashboard: React.FC = () => {
       
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} loading={loading}>
+          <Card variant="borderless" loading={loading}>
             <Statistic
               title={t('dashboard.total_requests')}
               value={stats?.total_requests || 0}
               prefix={<ThunderboltOutlined />}
-              valueStyle={{ color: '#1677ff' }}
+              styles={{ content: { color: '#1677ff' } }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} loading={loading}>
+          <Card variant="borderless" loading={loading}>
             <Statistic
               title={t('dashboard.total_tokens')}
               value={stats?.total_tokens || 0}
               prefix={<RocketOutlined />}
-              valueStyle={{ color: '#52c41a' }}
+              styles={{ content: { color: '#52c41a' } }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} loading={loading}>
+          <Card variant="borderless" loading={loading}>
             <Statistic
               title={t('dashboard.estimated_cost')}
               value={stats?.total_cost || 0}
               prefix={currencySymbol}
               precision={4}
-              valueStyle={{ color: '#faad14' }}
+              styles={{ content: { color: '#faad14' } }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} loading={loading}>
+          <Card variant="borderless" loading={loading}>
             <Statistic
               title={t('dashboard.active_tokens')}
               value={stats?.active_tokens || 0}
               prefix={<KeyOutlined />}
-              valueStyle={{ color: '#13c2c2' }}
+              styles={{ content: { color: '#13c2c2' } }}
             />
           </Card>
         </Col>
@@ -127,7 +127,7 @@ const Dashboard: React.FC = () => {
 
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         <Col lg={16} xs={24}>
-          <Card title={t('dashboard.recent_activity')} bordered={false} extra={<Text type="secondary">{t('dashboard.auto_refresh')}</Text>}>
+          <Card title={t('dashboard.recent_activity')} variant="borderless" extra={<Text type="secondary">{t('dashboard.auto_refresh')}</Text>}>
             <Table
               dataSource={stats?.recent_logs || []}
               columns={columns}
@@ -141,7 +141,7 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
         <Col lg={8} xs={24}>
-          <Card title={t('dashboard.model_distribution')} bordered={false} style={{ height: '100%' }}>
+          <Card title={t('dashboard.model_distribution')} variant="borderless" style={{ height: '100%' }}>
             <List
               dataSource={stats?.model_stats || []}
               loading={loading}

@@ -212,7 +212,7 @@ const AdvancedMarketing: React.FC = () => {
             <Statistic
               title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>推荐用户数</span>}
               value={totalReferrals}
-              valueStyle={{ color: '#1677ff', fontSize: 28, fontWeight: 'bold' }}
+              styles={{ content: { color: '#1677ff', fontSize: 28, fontWeight: 'bold' } }}
               prefix={<TeamOutlined />}
             />
           </Card>
@@ -228,7 +228,7 @@ const AdvancedMarketing: React.FC = () => {
               value={totalRecharge}
               precision={2}
               prefix={currencySymbol}
-              valueStyle={{ color: '#52c41a', fontSize: 28, fontWeight: 'bold' }}
+              styles={{ content: { color: '#52c41a', fontSize: 28, fontWeight: 'bold' } }}
             />
           </Card>
         </Col>
@@ -241,7 +241,7 @@ const AdvancedMarketing: React.FC = () => {
             <Statistic
               title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>活跃用户</span>}
               value={activeReferrals}
-              valueStyle={{ color: '#722ed1', fontSize: 28, fontWeight: 'bold' }}
+              styles={{ content: { color: '#722ed1', fontSize: 28, fontWeight: 'bold' } }}
               prefix={<UserOutlined />}
               suffix={<span style={{ fontSize: 14, color: 'rgba(255,255,255,0.35)' }}>/ {totalReferrals}</span>}
             />

@@ -116,7 +116,7 @@ const AdminLogin: React.FC = () => {
             transition: 'all 0.1s ease-in-out',
             transform: glitch ? 'translate(2px, -1px) scale(1.005)' : 'none'
           }}
-          bodyStyle={{ padding: '40px' }}
+          styles={{ body: { padding: '40px' } }}
         >
           <div style={{ textAlign: 'center', marginBottom: 40 }}>
             <Space direction="vertical" align="center">

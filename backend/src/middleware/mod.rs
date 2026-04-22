@@ -87,7 +87,10 @@ pub async fn api_key_middleware(
         .and_then(|v| v.to_str().ok()) {
             Some(h) => h,
             None => {
-                crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Missing Authorization Header").await;
+                // Ignore noise for common public paths
+                if !path.ends_with("/health") && !path.ends_with("favicon.ico") {
+                    crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Missing Authorization Header").await;
+                }
                 return AppError::Unauthorized.into_response();
             }
         };

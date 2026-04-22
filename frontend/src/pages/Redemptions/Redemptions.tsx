@@ -141,7 +141,7 @@ const Redemptions: React.FC = () => {
   ];
 
   return (
-    <Card bordered={false}>
+    <Card variant="borderless">
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
         <Title level={2} style={{ margin: 0 }}>{t('redemptions.title')}</Title>
         <Space>

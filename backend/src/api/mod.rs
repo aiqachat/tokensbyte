@@ -155,7 +155,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());
 
+    let public_router = Router::new()
+        .route("/api/health", get(|| async { "OK" }))
+        .route("/favicon.ico", get(|| async { "" }));
+
     Router::new()
+        .merge(public_router)
         .nest("/api/v1/auth", auth_routes)
         .nest("/api/v1", public_v1_routes)
         .nest("/api/v1", management_routes)

@@ -311,7 +311,7 @@ const Users: React.FC = () => {
   const columns = isAdminPage ? baseColumns.filter(c => c.key !== 'balance') : baseColumns;
 
   return (
-    <Card bordered={false}>
+    <Card variant="borderless">
       <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
         <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>
           {isAdminPage ? t('menu.admin_list') : t('menu.user_list')}

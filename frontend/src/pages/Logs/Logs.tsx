@@ -264,7 +264,7 @@ const Logs: React.FC = () => {
   };
 
   return (
-    <Card bordered={false}>
+    <Card variant="borderless">
       <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, alignItems: 'flex-start', gap: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           <SyncOutlined style={{ marginRight: 8 }} />

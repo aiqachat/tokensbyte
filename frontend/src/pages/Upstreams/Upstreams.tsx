@@ -205,7 +205,7 @@ const Upstreams: React.FC = () => {
   ];
 
   return (
-    <Card bordered={false}>
+    <Card variant="borderless">
       <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
         <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>上游管理</Title>
         <Space>

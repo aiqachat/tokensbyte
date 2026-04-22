@@ -310,7 +310,7 @@ const Profile: React.FC = () => {
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
       {/* Profile Header */}
       <Card style={{ marginBottom: 24, borderRadius: 16, background: '#141414', border: '1px solid #303030' }}
-        bodyStyle={{ padding: '32px' }}>
+        styles={{ body: { padding: '32px' } }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ position: 'relative' }}>
             <Avatar size={80} icon={<UserOutlined />} style={{ background: '#303030', border: '2px solid #505050' }} />

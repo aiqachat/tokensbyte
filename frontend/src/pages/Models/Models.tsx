@@ -244,7 +244,7 @@ const Models: React.FC = () => {
   const totalModelsCount = classStats.providers.reduce((acc, curr) => acc + curr.count, 0);
 
   return (
-    <Card bordered={false}>
+    <Card variant="borderless">
         <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 16, gap: 12 }}>
           <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('models.title')}</Title>
           <Space wrap>

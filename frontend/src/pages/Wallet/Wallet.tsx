@@ -101,7 +101,7 @@ const Wallet: React.FC = () => {
           border: 'none',
           boxShadow: '0 8px 24px rgba(22, 119, 255, 0.25)'
         }}
-        bodyStyle={{ padding: '32px' }}
+        styles={{ body: { padding: '32px' } }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
@@ -130,21 +130,21 @@ const Wallet: React.FC = () => {
               title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>{t('wallet.total_consumption')}</span>} 
               value={stats?.total_consumption || 0} 
               precision={6}
-              valueStyle={{ color: '#fff', fontSize: '20px' }}
+              styles={{ content: { color: '#fff', fontSize: '20px' } }}
             />
           </Col>
           <Col xs={8}>
             <Statistic 
               title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>{t('wallet.total_calls')}</span>} 
               value={stats?.total_calls || 0} 
-              valueStyle={{ color: '#fff', fontSize: '20px' }}
+              styles={{ content: { color: '#fff', fontSize: '20px' } }}
             />
           </Col>
           <Col xs={8}>
             <Statistic 
               title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>{t('wallet.success_calls')}</span>} 
               value={stats?.success_calls || 0} 
-              valueStyle={{ color: '#fff', fontSize: '20px' }}
+              styles={{ content: { color: '#fff', fontSize: '20px' } }}
             />
           </Col>
         </Row>
@@ -161,7 +161,7 @@ const Wallet: React.FC = () => {
               border: 'none',
               boxShadow: '0 8px 24px rgba(114, 46, 209, 0.25)'
             }}
-            bodyStyle={{ padding: '24px' }}
+            styles={{ body: { padding: '24px' } }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
@@ -169,7 +169,7 @@ const Wallet: React.FC = () => {
                   title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>奖励余额 (不可直接消费)</span>} 
                   value={stats?.commission_balance || 0} 
                   precision={2}
-                  valueStyle={{ color: '#fff', fontSize: '32px', fontWeight: 'bold' }}
+                  styles={{ content: { color: '#fff', fontSize: '32px', fontWeight: 'bold' } }}
                   prefix={currencySymbol}
                 />
               </div>
@@ -189,7 +189,7 @@ const Wallet: React.FC = () => {
                 <Statistic 
                   title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>累计邀请人数</span>} 
                   value={stats?.total_referred || 0} 
-                  valueStyle={{ color: '#fff', fontSize: '18px' }}
+                  styles={{ content: { color: '#fff', fontSize: '18px' } }}
                   prefix={<TeamOutlined />}
                 />
               </Col>

@@ -50,7 +50,7 @@ const RelayAPI: React.FC = () => {
         style={{ marginBottom: 24, borderRadius: 8 }}
       />
 
-      <Card bordered={false} style={{ marginBottom: 24, borderRadius: 8 }} title={<><InfoCircleOutlined /> 基础地址与鉴权方式</>}>
+      <Card variant="borderless" style={{ marginBottom: 24, borderRadius: 8 }} title={<><InfoCircleOutlined /> 基础地址与鉴权方式</>}>
         <Paragraph>
           <Text strong>Base URL: </Text>
           <Text code copyable>{baseUrl}</Text>
@@ -65,7 +65,7 @@ const RelayAPI: React.FC = () => {
         </Paragraph>
       </Card>
 
-      <Card bordered={false} style={{ marginBottom: 24, borderRadius: 8 }} title={<><CodeOutlined /> 开放端点一览</>}>
+      <Card variant="borderless" style={{ marginBottom: 24, borderRadius: 8 }} title={<><CodeOutlined /> 开放端点一览</>}>
         {endpoints.map((item) => (
           <div key={item.path + item.method} style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 12 }}>
             <Tag color={item.method === 'POST' ? 'green' : 'blue'} style={{ width: 60, textAlign: 'center', margin: 0 }}>{item.method}</Tag>
@@ -84,7 +84,7 @@ const RelayAPI: React.FC = () => {
             key: '1',
             label: 'OpenAI 协议指南',
             children: (
-              <Card bordered={false} style={{ background: '#1f1f1f' }}>
+              <Card variant="borderless" style={{ background: '#1f1f1f' }}>
                 {/* ── 聊天 ── */}
                 <Title level={5}>聊天接口 (Chat Completions)</Title>
                 <div style={codeStyle}><Text code>POST /v1/chat/completions</Text></div>
@@ -199,7 +199,7 @@ const RelayAPI: React.FC = () => {
             key: '2',
             label: 'Google / 火山方舟 原生协议',
             children: (
-              <Card bordered={false} style={{ background: '#1f1f1f' }}>
+              <Card variant="borderless" style={{ background: '#1f1f1f' }}>
                 <Title level={5}>Google Gemini 原生接口</Title>
                 <Paragraph type="secondary">发送原生 Gemini Payload，网关自动完成鉴权替换、计费审计并路由到最优渠道节点。</Paragraph>
                 <div style={codeStyle}>
@@ -247,7 +247,7 @@ const RelayAPI: React.FC = () => {
             key: '3',
             label: '错误码说明',
             children: (
-              <Card bordered={false} style={{ background: '#1f1f1f' }}>
+              <Card variant="borderless" style={{ background: '#1f1f1f' }}>
                 <Table
                   dataSource={errorCodes}
                   rowKey="code"
