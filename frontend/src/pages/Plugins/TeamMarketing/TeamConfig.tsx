@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Input, Select, Space, Tag, message, Popconfirm, Spin } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, TeamOutlined, CrownOutlined } from '@ant-design/icons';
+import { Typography, Button, Table, Modal, Input, InputNumber, Select, Space, Tag, message, Popconfirm, Spin, Tooltip } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, TeamOutlined, CrownOutlined, CopyOutlined, LinkOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import type { MarketingTeam, TeamMember } from '../../../types';
 
@@ -22,6 +22,7 @@ const TeamConfig: React.FC = () => {
   // Form fields
   const [teamName, setTeamName] = useState('');
   const [teamDesc, setTeamDesc] = useState('');
+  const [maxMembers, setMaxMembers] = useState(10);
   const [selectedLeaders, setSelectedLeaders] = useState<string[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
@@ -60,6 +61,7 @@ const TeamConfig: React.FC = () => {
     setEditingTeam(null);
     setTeamName('');
     setTeamDesc('');
+    setMaxMembers(10);
     setSelectedLeaders([]);
     setSelectedMembers([]);
     setUserOptions([]);
@@ -70,6 +72,7 @@ const TeamConfig: React.FC = () => {
     setEditingTeam(team);
     setTeamName(team.name);
     setTeamDesc(team.description || '');
+    setMaxMembers(team.max_members || 10);
     setSelectedLeaders(team.leaders.map(l => l.user_id));
     setSelectedMembers(team.members.map(m => m.user_id));
     // Pre-populate user options with existing leaders and members
@@ -105,6 +108,7 @@ const TeamConfig: React.FC = () => {
         description: teamDesc.trim() || null,
         leader_ids: selectedLeaders,
         member_ids: selectedMembers,
+        max_members: maxMembers,
       };
 
       if (editingTeam) {
@@ -131,6 +135,12 @@ const TeamConfig: React.FC = () => {
     } catch (e) {
       message.error('删除失败');
     }
+  };
+
+  const copyInviteLink = (inviteCode: string) => {
+    const link = `${window.location.origin}/register?team=${inviteCode}`;
+    navigator.clipboard.writeText(link);
+    message.success('邀请链接已复制到剪贴板');
   };
 
   const selectOptions = userOptions.map(u => ({
@@ -161,18 +171,53 @@ const TeamConfig: React.FC = () => {
       ),
     },
     {
-      title: '团队成员',
+      title: '成员',
       dataIndex: 'members',
       key: 'members',
-      render: (members: TeamMember[]) => (
+      render: (members: TeamMember[], record: MarketingTeam) => (
         <Space wrap size={4}>
-          {members.slice(0, 5).map(m => (
+          {members.slice(0, 3).map(m => (
             <Tag key={m.user_id} icon={<TeamOutlined />} style={{ margin: 0, borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
               {m.username}
             </Tag>
           ))}
-          {members.length > 5 && <Tag style={{ margin: 0, borderRadius: 4 }}>+{members.length - 5}</Tag>}
-          {members.length === 0 && <Text type="secondary">暂无成员</Text>}
+          {members.length > 3 && <Tag style={{ margin: 0, borderRadius: 4 }}>+{members.length - 3}</Tag>}
+          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>
+            {members.length}/{record.max_members || 10}
+          </Text>
+        </Space>
+      ),
+    },
+    {
+      title: '邀请链接',
+      dataIndex: 'invite_code',
+      key: 'invite_code',
+      width: 160,
+      render: (code: string) => (
+        <Space size={4}>
+          <Tag
+            icon={<LinkOutlined />}
+            style={{
+              margin: 0,
+              borderRadius: 4,
+              background: 'rgba(82,196,26,0.1)',
+              border: '1px solid rgba(82,196,26,0.2)',
+              color: '#52c41a',
+              fontFamily: 'monospace',
+              fontSize: 12,
+            }}
+          >
+            {code}
+          </Tag>
+          <Tooltip title="复制邀请链接">
+            <Button
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => copyInviteLink(code)}
+              style={{ color: '#1677ff' }}
+            />
+          </Tooltip>
         </Space>
       ),
     },
@@ -180,13 +225,13 @@ const TeamConfig: React.FC = () => {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 180,
+      width: 160,
       render: (t: string) => <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text>,
     },
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 100,
       render: (_: any, record: MarketingTeam) => (
         <Space size={4}>
           <Button
@@ -261,6 +306,22 @@ const TeamConfig: React.FC = () => {
               placeholder="简要描述团队用途（可选）"
               rows={2}
               style={{ background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+            />
+          </div>
+
+          <div>
+            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+              <TeamOutlined style={{ color: '#52c41a', marginRight: 4 }} />
+              团队人数上限
+              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>通过邀请链接加入的成员总数限制</Text>
+            </Text>
+            <InputNumber
+              value={maxMembers}
+              onChange={(v) => setMaxMembers(v || 10)}
+              min={1}
+              max={10000}
+              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              placeholder="默认 10"
             />
           </div>
 

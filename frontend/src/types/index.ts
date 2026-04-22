@@ -367,6 +367,8 @@ export interface MarketingTeam {
   id: number;
   name: string;
   description?: string;
+  invite_code: string;
+  max_members: number;
   leaders: TeamMember[];
   members: TeamMember[];
   created_at: string;

@@ -50,6 +50,8 @@ pub struct CreateUserRequest {
     pub aff: Option<String>,
     pub referred_by: Option<String>,
     pub role: Option<String>,
+    /// 团队邀请码，注册后自动加入对应团队
+    pub team: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -151,6 +153,8 @@ pub struct EmailRegisterRequest {
     pub code: String,
     pub password: String,
     pub aff: Option<String>,
+    /// 团队邀请码，注册后自动加入对应团队
+    pub team: Option<String>,
 }
 
 /// 手机号注册请求
@@ -160,6 +164,8 @@ pub struct MobileRegisterRequest {
     pub code: String,
     pub password: String,
     pub aff: Option<String>,
+    /// 团队邀请码，注册后自动加入对应团队
+    pub team: Option<String>,
 }
 
 /// 重置密码请求

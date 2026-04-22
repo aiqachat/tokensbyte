@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State, Extension},
-    routing::{get, put},
+    routing::{get, put, post},
     Json, Router,
 };
 use std::sync::Arc;
@@ -19,6 +19,10 @@ pub struct MarketingTeam {
     pub id: i64,
     pub name: String,
     pub description: Option<String>,
+    #[sqlx(default)]
+    pub invite_code: Option<String>,
+    #[sqlx(default)]
+    pub max_members: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -35,6 +39,8 @@ pub struct TeamWithMembers {
     pub id: i64,
     pub name: String,
     pub description: Option<String>,
+    pub invite_code: String,
+    pub max_members: i64,
     pub leaders: Vec<TeamMember>,
     pub members: Vec<TeamMember>,
     pub created_at: String,
@@ -47,6 +53,7 @@ pub struct CreateTeamRequest {
     pub description: Option<String>,
     pub leader_ids: Vec<String>,
     pub member_ids: Vec<String>,
+    pub max_members: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,6 +62,7 @@ pub struct UpdateTeamRequest {
     pub description: Option<String>,
     pub leader_ids: Vec<String>,
     pub member_ids: Vec<String>,
+    pub max_members: Option<i64>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -81,6 +89,11 @@ pub struct ReferralRecharge {
     pub created_at: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct JoinTeamRequest {
+    pub invite_code: String,
+}
+
 // ========== Router ==========
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -93,6 +106,8 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/my-referrals", get(my_referrals))
         .route("/referral/{user_id}/recharges", get(referral_recharges))
         .route("/team-overview", get(team_overview))
+        .route("/join", post(join_team))
+        .route("/my-team", get(my_team))
 }
 
 // ========== Helper ==========
@@ -121,6 +136,82 @@ async fn load_team_members(state: &AppState, team_id: i64, table: &str) -> Resul
     Ok(rows.into_iter().map(|(user_id, username, uid)| TeamMember { user_id, username, uid }).collect())
 }
 
+fn generate_invite_code() -> String {
+    (0..8).map(|_| {
+        let idx = rand::random::<u8>() % 36;
+        if idx < 10 { (b'0' + idx) as char } else { (b'a' + idx - 10) as char }
+    }).collect()
+}
+
+/// 通用逻辑：根据邀请码将用户加入团队（注册和主动加入都使用此函数）
+pub async fn add_user_to_team_by_invite_code(
+    state: &AppState,
+    user_id: &str,
+    invite_code: &str,
+) -> Result<Option<String>, AppError> {
+    // 查找团队
+    let team: Option<(i64, i64)> = sqlx::query_as(
+        &state.db.format_query("SELECT id, max_members FROM marketing_teams WHERE invite_code = ?")
+    )
+    .bind(invite_code)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    let (team_id, max_members) = match team {
+        Some(t) => t,
+        None => return Ok(None), // 邀请码无效，静默跳过
+    };
+
+    // 检查用户是否已在团队中
+    let already_member: i64 = sqlx::query_scalar(
+        &state.db.format_query("SELECT COUNT(*) FROM marketing_team_members WHERE team_id = ? AND user_id = ?")
+    )
+    .bind(team_id)
+    .bind(user_id)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    if already_member > 0 {
+        return Ok(Some("already_member".to_string()));
+    }
+
+    // 也检查是否已是负责人
+    let already_leader: i64 = sqlx::query_scalar(
+        &state.db.format_query("SELECT COUNT(*) FROM marketing_team_leaders WHERE team_id = ? AND user_id = ?")
+    )
+    .bind(team_id)
+    .bind(user_id)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    if already_leader > 0 {
+        return Ok(Some("already_leader".to_string()));
+    }
+
+    // 检查团队人数上限
+    let current_count: i64 = sqlx::query_scalar(
+        &state.db.format_query("SELECT COUNT(*) FROM marketing_team_members WHERE team_id = ?")
+    )
+    .bind(team_id)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    if max_members > 0 && current_count >= max_members {
+        return Err(AppError::BadRequest("团队成员已达上限".to_string()));
+    }
+
+    // 加入团队
+    sqlx::query(
+        &state.db.format_query("INSERT INTO marketing_team_members (team_id, user_id) VALUES (?, ?)")
+    )
+    .bind(team_id)
+    .bind(user_id)
+    .execute(&state.db.pool)
+    .await?;
+
+    Ok(Some("joined".to_string()))
+}
+
 // ========== Admin: Team CRUD ==========
 
 /// 管理员：获取所有推广团队
@@ -144,6 +235,8 @@ async fn list_teams(
             id: team.id,
             name: team.name,
             description: team.description,
+            invite_code: team.invite_code.unwrap_or_default(),
+            max_members: team.max_members,
             leaders,
             members,
             created_at: team.created_at,
@@ -166,12 +259,17 @@ async fn create_team(
         return Err(AppError::BadRequest("团队名称不能为空".to_string()));
     }
 
+    let invite_code = generate_invite_code();
+    let max_members = payload.max_members.unwrap_or(10);
+
     // Insert team
     sqlx::query(
-        &state.db.format_query("INSERT INTO marketing_teams (name, description) VALUES (?, ?)")
+        &state.db.format_query("INSERT INTO marketing_teams (name, description, invite_code, max_members) VALUES (?, ?, ?, ?)")
     )
     .bind(&payload.name)
     .bind(&payload.description)
+    .bind(&invite_code)
+    .bind(max_members)
     .execute(&state.db.pool)
     .await?;
 
@@ -205,7 +303,7 @@ async fn create_team(
         .await?;
     }
 
-    Ok(Json(json!({ "message": "团队创建成功", "id": team_id })))
+    Ok(Json(json!({ "message": "团队创建成功", "id": team_id, "invite_code": invite_code })))
 }
 
 /// 管理员：编辑推广团队
@@ -221,12 +319,15 @@ async fn update_team(
         return Err(AppError::BadRequest("团队名称不能为空".to_string()));
     }
 
+    let max_members = payload.max_members.unwrap_or(10);
+
     // Update team
     sqlx::query(
-        &state.db.format_query("UPDATE marketing_teams SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        &state.db.format_query("UPDATE marketing_teams SET name = ?, description = ?, max_members = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
     )
     .bind(&payload.name)
     .bind(&payload.description)
+    .bind(max_members)
     .bind(id)
     .execute(&state.db.pool)
     .await?;
@@ -311,6 +412,91 @@ async fn search_users(
     }).collect();
 
     Ok(Json(json!({ "users": result })))
+}
+
+// ========== User: Team Join ==========
+
+/// 已登录用户：通过邀请码加入团队
+async fn join_team(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+    Json(payload): Json<JoinTeamRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let user_id = &claims.sub;
+    let code = payload.invite_code.trim();
+
+    if code.is_empty() {
+        return Err(AppError::BadRequest("邀请码不能为空".to_string()));
+    }
+
+    let result = add_user_to_team_by_invite_code(&state, user_id, code).await?;
+
+    match result.as_deref() {
+        Some("joined") => Ok(Json(json!({ "message": "成功加入团队", "status": "joined" }))),
+        Some("already_member") => Ok(Json(json!({ "message": "您已是该团队成员", "status": "already_member" }))),
+        Some("already_leader") => Ok(Json(json!({ "message": "您已是该团队负责人", "status": "already_leader" }))),
+        _ => Err(AppError::BadRequest("无效的邀请码".to_string())),
+    }
+}
+
+/// 用户端：查看我加入的团队
+async fn my_team(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let my_id = &claims.sub;
+
+    // 查询作为成员加入的团队
+    let member_teams: Vec<i64> = sqlx::query_scalar(
+        &state.db.format_query("SELECT team_id FROM marketing_team_members WHERE user_id = ?")
+    )
+    .bind(my_id)
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    // 查询作为负责人的团队
+    let leader_teams: Vec<i64> = sqlx::query_scalar(
+        &state.db.format_query("SELECT team_id FROM marketing_team_leaders WHERE user_id = ?")
+    )
+    .bind(my_id)
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    let mut teams: Vec<serde_json::Value> = Vec::new();
+
+    // 合并所有团队 ID，去重
+    let mut all_ids: Vec<i64> = Vec::new();
+    for id in &member_teams { if !all_ids.contains(id) { all_ids.push(*id); } }
+    for id in &leader_teams { if !all_ids.contains(id) { all_ids.push(*id); } }
+
+    for team_id in &all_ids {
+        let team: Option<MarketingTeam> = sqlx::query_as(
+            &state.db.format_query("SELECT * FROM marketing_teams WHERE id = ?")
+        )
+        .bind(team_id)
+        .fetch_optional(&state.db.pool)
+        .await?;
+
+        let team = match team {
+            Some(t) => t,
+            None => continue,
+        };
+
+        let leaders = load_team_members(&state, *team_id, "marketing_team_leaders").await?;
+        let role = if leader_teams.contains(team_id) { "leader" } else { "member" };
+
+        teams.push(json!({
+            "id": team.id,
+            "name": team.name,
+            "description": team.description,
+            "invite_code": team.invite_code.unwrap_or_default(),
+            "max_members": team.max_members,
+            "leaders": leaders,
+            "role": role,
+        }));
+    }
+
+    Ok(Json(json!({ "teams": teams })))
 }
 
 // ========== User: Referrals ==========
@@ -511,6 +697,9 @@ async fn team_overview(
             "id": team.id,
             "name": team.name,
             "description": team.description,
+            "invite_code": team.invite_code.unwrap_or_default(),
+            "max_members": team.max_members,
+            "member_count": member_ids.len(),
             "members": member_stats,
         }));
     }

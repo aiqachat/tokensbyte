@@ -300,6 +300,13 @@ pub async fn register(
 
         tx.commit().await?;
 
+        // 团队邀请码：注册后自动加入团队
+        if let Some(ref team_code) = request.team {
+            if !team_code.trim().is_empty() {
+                let _ = crate::api::team_marketing::add_user_to_team_by_invite_code(&state, &user_id, team_code.trim()).await;
+            }
+        }
+
         let user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
             .bind(&user_id)
             .fetch_one(&state.db.pool)
@@ -461,6 +468,13 @@ pub async fn register_email(
 
         tx.commit().await?;
 
+        // 团队邀请码：注册后自动加入团队
+        if let Some(ref team_code) = request.team {
+            if !team_code.trim().is_empty() {
+                let _ = crate::api::team_marketing::add_user_to_team_by_invite_code(&state, &user_id, team_code.trim()).await;
+            }
+        }
+
         let user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
             .bind(&user_id)
             .fetch_one(&state.db.pool)
@@ -554,6 +568,13 @@ pub async fn register_mobile(
         .execute(&mut *tx).await?;
 
         tx.commit().await?;
+
+        // 团队邀请码：注册后自动加入团队
+        if let Some(ref team_code) = request.team {
+            if !team_code.trim().is_empty() {
+                let _ = crate::api::team_marketing::add_user_to_team_by_invite_code(&state, &user_id, team_code.trim()).await;
+            }
+        }
 
         let user: User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
             .bind(&user_id).fetch_one(&state.db.pool).await?;

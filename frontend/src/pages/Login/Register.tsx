@@ -20,11 +20,35 @@ const Register: React.FC = () => {
   const { settings, fetchSettings } = useSettingsStore();
   const [searchParams] = useSearchParams();
   const aff = searchParams.get('aff') || '';
+  const team = searchParams.get('team') || '';
 
   useEffect(() => { if (!settings) fetchSettings(); }, []);
   useEffect(() => {
     if (countdown > 0) { const t = setTimeout(() => setCountdown(c => c - 1), 1000); return () => clearTimeout(t); }
   }, [countdown]);
+
+  // 已登录用户点击团队邀请链接时自动加入团队
+  const { token } = useAuthStore();
+  useEffect(() => {
+    if (token && team) {
+      (async () => {
+        try {
+          const res = await (request.post('/team-marketing/join', { invite_code: team }) as any);
+          if (res.status === 'joined') {
+            message.success('成功加入团队！');
+          } else if (res.status === 'already_member') {
+            message.info('您已是该团队成员');
+          } else if (res.status === 'already_leader') {
+            message.info('您已是该团队负责人');
+          }
+          navigate('/');
+        } catch (e: any) {
+          message.error(e?.response?.data?.error?.message || '加入团队失败');
+          navigate('/');
+        }
+      })();
+    }
+  }, [token, team]);
 
   const reg = settings?.registration;
   const login = settings?.login;
@@ -66,7 +90,7 @@ const Register: React.FC = () => {
     if (loading) return;
     setLoading(true);
     try {
-      const res = await (request.post('/auth/register', { ...values, aff }) as any);
+      const res = await (request.post('/auth/register', { ...values, aff, team: team || undefined }) as any);
       setToken(res.token); setUser(res.user);
       message.success(t('auth.register_success')); navigate('/');
     } catch (e: any) {
@@ -79,7 +103,7 @@ const Register: React.FC = () => {
     if (values.password !== values.confirm_password) { message.error(t('auth.passwords_not_match')); return; }
     setLoading(true);
     try {
-      const res = await (request.post('/auth/register-email', { email: values.email, code: values.code, password: values.password, aff }) as any);
+      const res = await (request.post('/auth/register-email', { email: values.email, code: values.code, password: values.password, aff, team: team || undefined }) as any);
       setToken(res.token); setUser(res.user);
       message.success(t('auth.register_success')); navigate('/');
     } catch (e: any) {
@@ -92,7 +116,7 @@ const Register: React.FC = () => {
     if (values.password !== values.confirm_password) { message.error(t('auth.passwords_not_match')); return; }
     setLoading(true);
     try {
-      const res = await (request.post('/auth/register-mobile', { mobile: values.mobile, code: values.code, password: values.password, aff }) as any);
+      const res = await (request.post('/auth/register-mobile', { mobile: values.mobile, code: values.code, password: values.password, aff, team: team || undefined }) as any);
       setToken(res.token); setUser(res.user);
       message.success(t('auth.register_success')); navigate('/');
     } catch (e: any) {
