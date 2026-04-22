@@ -45,7 +45,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const screens = useBreakpoint();
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { user, logout, setUser, isLoggedIn } = useAuthStore();
   const [siteName, setSiteName] = useState(isUserEnd ? 'TokensByte' : t('common.admin_title'));
   const [siteLogo, setSiteLogo] = useState<string>('');
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
@@ -55,8 +55,21 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   useEffect(() => {
     fetchActivePlugins();
     fetchGlobalSettings();
-  }, []);
+    if (isLoggedIn) {
+      fetchCurrentUser();
+    }
+  }, [isLoggedIn]);
 
+  const fetchCurrentUser = async () => {
+    try {
+      const resp: any = await request.get('/user/profile');
+      if (resp && resp.id) {
+        setUser(resp);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user info', error);
+    }
+  };
   
   const fetchActivePlugins = async () => {
     try {
@@ -435,11 +448,21 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           {userInitial}
         </Avatar>
         <div style={{ overflow: 'hidden', flex: 1 }}>
-          <div style={{ fontWeight: 500, fontSize: 16, color: '#e5e5e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {displayName}
+          <div style={{ fontWeight: 500, fontSize: 16, color: '#e5e5e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</span>
+            {user?.level_name && (
+              <span style={{ 
+                fontSize: 11, padding: '0 6px', background: 'rgba(22, 119, 255, 0.15)', 
+                color: '#1677ff', borderRadius: 4, fontWeight: 'normal', flexShrink: 0,
+                border: '1px solid rgba(22, 119, 255, 0.3)', lineHeight: '18px',
+                userSelect: 'none'
+              }}>
+                {user.level_name}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
-            {user?.email || `UID: ${user?.uid || '-'}`}
+            用户 UID:{user?.uid || '-'}
           </div>
         </div>
       </div>
@@ -527,6 +550,35 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           }
           .header-avatar-btn:hover {
             background: rgba(255,255,255,0.08);
+          }
+          
+          /* 弹窗居中放大动画 */
+          .popover-center-scale-enter,
+          .popover-center-scale-appear {
+            opacity: 0;
+            transform: scale(0.82);
+            transform-origin: 50% 50% !important;
+          }
+          .popover-center-scale-enter-active,
+          .popover-center-scale-appear-active {
+            opacity: 1;
+            transform: scale(1);
+            transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transform-origin: 50% 50% !important;
+          }
+          .popover-center-scale-leave {
+            opacity: 1;
+            transform: scale(1);
+            transform-origin: 50% 50% !important;
+          }
+          .popover-center-scale-leave-active {
+            opacity: 0;
+            transform: scale(0.88);
+            transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
+            transform-origin: 50% 50% !important;
+          }
+          .custom-premium-popover {
+            transform-origin: 50% 50% !important;
           }
         `}
       </style>
@@ -655,7 +707,20 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 content={profileContent} 
                 trigger="click" 
                 placement="bottomRight"
-                overlayInnerStyle={{ padding: 0, borderRadius: 16, background: '#1f1f1f', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}
+                transitionName="popover-center-scale"
+                overlayClassName="custom-premium-popover"
+                forceRender
+                destroyTooltipOnHide={false}
+                overlayInnerStyle={{ 
+                  padding: 0, 
+                  borderRadius: 20, 
+                  background: 'rgba(30, 30, 30, 0.45)',
+                  backdropFilter: 'blur(30px) saturate(200%)',
+                  WebkitBackdropFilter: 'blur(30px) saturate(200%)',
+                  border: '1px solid rgba(255,255,255,0.15)', 
+                  boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
+                  transform: 'translateZ(0)',
+                }}
                 arrow={false}
               >
                 <div 
