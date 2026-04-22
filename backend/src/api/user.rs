@@ -351,6 +351,21 @@ pub async fn get_wallet_stats(
            FROM users WHERE id = ?"#)
     ).bind(user_id).bind(user_id).fetch_one(&state.db.pool).await?;
 
+    // 查询该用户等级的推广配置
+    let level_marketing: Option<(i64, f64, f64, f64)> = sqlx::query_as(
+        &state.db.format_query(
+            "SELECT COALESCE(ul.marketing_enabled, 0), COALESCE(ul.commission_ratio, 0), COALESCE(ul.invite_reward_inviter, 0), COALESCE(ul.invite_reward_invitee, 0) FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+        )
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    let (marketing_enabled, commission_ratio, invite_reward_inviter, invite_reward_invitee) = match level_marketing {
+        Some((m, c, ri, re)) => (m == 1, c, ri, re),
+        None => (false, 0.0, 0.0, 0.0),
+    };
+
     Ok(Json(WalletStats {
         balance,
         total_consumption: stats.0,
@@ -358,6 +373,10 @@ pub async fn get_wallet_stats(
         success_calls: stats.2,
         commission_balance: affiliate_stats.0,
         total_referred: affiliate_stats.1,
+        marketing_enabled,
+        commission_ratio,
+        invite_reward_inviter,
+        invite_reward_invitee,
     }))
 }
 

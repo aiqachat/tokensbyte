@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Table, Tag, Spin, Space, Button, Card, Statistic, Row, Col, message } from 'antd';
-import { TeamOutlined, UserOutlined, DollarOutlined, ReloadOutlined, CrownOutlined, RiseOutlined } from '@ant-design/icons';
+import { Typography, Table, Tag, Spin, Space, Button, Card, Statistic, Row, Col, message, Tooltip } from 'antd';
+import { TeamOutlined, UserOutlined, DollarOutlined, ReloadOutlined, CrownOutlined, RiseOutlined, CopyOutlined, LinkOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
+import useAuthStore from '../../store/auth';
 import type { ReferralUser, ReferralRecharge } from '../../types';
 import dayjs from 'dayjs';
 
@@ -10,6 +11,7 @@ const { Title, Text } = Typography;
 
 const AdvancedMarketing: React.FC = () => {
   const { settings } = useSettingsStore();
+  const { user } = useAuthStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
 
   const [referrals, setReferrals] = useState<ReferralUser[]>([]);
@@ -19,6 +21,10 @@ const AdvancedMarketing: React.FC = () => {
   const [teamData, setTeamData] = useState<any>(null);
   const [teamLoading, setTeamLoading] = useState(false);
 
+  // My team (for members)
+  const [myTeamData, setMyTeamData] = useState<any>(null);
+  const [myTeamLoading, setMyTeamLoading] = useState(false);
+
   // Expanded recharge records
   const [expandedRecharges, setExpandedRecharges] = useState<Record<string, ReferralRecharge[]>>({});
   const [loadingRecharges, setLoadingRecharges] = useState<Record<string, boolean>>({});
@@ -26,6 +32,7 @@ const AdvancedMarketing: React.FC = () => {
   useEffect(() => {
     fetchReferrals();
     fetchTeamOverview();
+    fetchMyTeam();
   }, []);
 
   const fetchReferrals = async () => {
@@ -52,6 +59,18 @@ const AdvancedMarketing: React.FC = () => {
     }
   };
 
+  const fetchMyTeam = async () => {
+    try {
+      setMyTeamLoading(true);
+      const res = await (request.get('/team-marketing/my-team') as any);
+      setMyTeamData(res);
+    } catch (e) {
+      console.error('获取我的团队失败', e);
+    } finally {
+      setMyTeamLoading(false);
+    }
+  };
+
   const fetchRecharges = async (userId: string) => {
     if (expandedRecharges[userId]) return;
     try {
@@ -63,6 +82,18 @@ const AdvancedMarketing: React.FC = () => {
     } finally {
       setLoadingRecharges(prev => ({ ...prev, [userId]: false }));
     }
+  };
+
+  const copyTeamInviteLink = (inviteCode: string) => {
+    const link = `${window.location.origin}/register?aff=${user?.uid}&team=${inviteCode}`;
+    navigator.clipboard.writeText(link);
+    message.success('团队邀请链接已复制');
+  };
+
+  const copyMyInviteLink = () => {
+    const link = `${window.location.origin}/register?aff=${user?.uid}`;
+    navigator.clipboard.writeText(link);
+    message.success('推广邀请链接已复制到剪贴板');
   };
 
   // Stats
@@ -176,6 +207,9 @@ const AdvancedMarketing: React.FC = () => {
     },
   ];
 
+  // 判断用户是否只是成员（不是负责人）
+  const memberOnlyTeams = (myTeamData?.teams || []).filter((t: any) => t.role === 'member');
+
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* Header */}
@@ -196,7 +230,7 @@ const AdvancedMarketing: React.FC = () => {
             <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>查看我的推荐用户和推广数据</Text>
           </div>
         </div>
-        <Button icon={<ReloadOutlined />} onClick={() => { fetchReferrals(); fetchTeamOverview(); }} loading={loading}>
+        <Button icon={<ReloadOutlined />} onClick={() => { fetchReferrals(); fetchTeamOverview(); fetchMyTeam(); }} loading={loading}>
           刷新
         </Button>
       </div>
@@ -249,6 +283,50 @@ const AdvancedMarketing: React.FC = () => {
         </Col>
       </Row>
 
+      {/* My Personal Invite Link */}
+      <Card
+        style={{
+          marginBottom: 24,
+          borderRadius: 12,
+          background: '#141414',
+          border: '1px solid rgba(82,196,26,0.2)',
+        }}
+        title={
+          <Space>
+            <LinkOutlined style={{ color: '#52c41a' }} />
+            <span style={{ color: '#fff' }}>我的推广邀请链接</span>
+          </Space>
+        }
+        headStyle={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+      >
+        <Text style={{ color: 'rgba(255,255,255,0.55)', display: 'block', marginBottom: 12, fontSize: 13 }}>
+          分享您的专属推广链接，通过此链接注册的用户将成为您的推荐下级。
+        </Text>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '12px 16px',
+          background: '#000',
+          border: '1px dashed rgba(82,196,26,0.3)',
+          borderRadius: 8,
+        }}>
+          <LinkOutlined style={{ color: '#52c41a', fontSize: 14, flexShrink: 0 }} />
+          <Text ellipsis style={{ color: '#fff', fontSize: 13, flex: 1, fontFamily: 'monospace' }}>
+            {window.location.origin}/register?aff={user?.uid}
+          </Text>
+          <Tooltip title="复制链接">
+            <Button
+              type="primary"
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={copyMyInviteLink}
+              style={{ background: '#52c41a', borderColor: '#52c41a', borderRadius: 6 }}
+            >
+              复制
+            </Button>
+          </Tooltip>
+        </div>
+      </Card>
+
       {/* Team Leader Section */}
       {teamData?.is_leader && teamData.teams?.length > 0 && (
         <Card
@@ -267,13 +345,45 @@ const AdvancedMarketing: React.FC = () => {
           headStyle={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
         >
           {teamData.teams.map((team: any) => (
-            <div key={team.id} style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <div key={team.id} style={{ marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <Text strong style={{ color: '#fff', fontSize: 15 }}>{team.name}</Text>
                 {team.description && (
                   <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>— {team.description}</Text>
                 )}
+                <Tag style={{
+                  margin: 0, borderRadius: 10, marginLeft: 'auto',
+                  background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff', fontSize: 11,
+                }}>
+                  {team.member_count || team.members?.length || 0}/{team.max_members || 10} 人
+                </Tag>
               </div>
+
+              {/* Invite Link for Leader */}
+              {team.invite_code && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 14px', marginBottom: 12,
+                  background: 'rgba(82,196,26,0.06)',
+                  border: '1px dashed rgba(82,196,26,0.25)',
+                  borderRadius: 8,
+                }}>
+                  <LinkOutlined style={{ color: '#52c41a', fontSize: 14 }} />
+                  <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>邀请链接：</Text>
+                  <Text ellipsis style={{ color: '#fff', fontSize: 12, flex: 1, fontFamily: 'monospace' }}>
+                    {window.location.origin}/register?aff={user?.uid}&team={team.invite_code}
+                  </Text>
+                  <Tooltip title="复制邀请链接">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<CopyOutlined style={{ color: '#52c41a' }} />}
+                      onClick={() => copyTeamInviteLink(team.invite_code)}
+                    />
+                  </Tooltip>
+                </div>
+              )}
+
               <Table
                 dataSource={team.members}
                 rowKey="user_id"
@@ -319,6 +429,65 @@ const AdvancedMarketing: React.FC = () => {
                   },
                 ]}
               />
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* Member Section: 我加入的团队 */}
+      {memberOnlyTeams.length > 0 && (
+        <Card
+          style={{
+            marginBottom: 24,
+            borderRadius: 12,
+            background: '#141414',
+            border: '1px solid rgba(22,119,255,0.2)',
+          }}
+          title={
+            <Space>
+              <TeamOutlined style={{ color: '#1677ff' }} />
+              <span style={{ color: '#fff' }}>我加入的团队</span>
+            </Space>
+          }
+          headStyle={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+          loading={myTeamLoading}
+        >
+          {memberOnlyTeams.map((team: any) => (
+            <div key={team.id} style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '14px 16px', marginBottom: 8,
+              background: 'rgba(255,255,255,0.02)',
+              borderRadius: 8,
+              border: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 8,
+                background: 'rgba(22,119,255,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <TeamOutlined style={{ color: '#1677ff', fontSize: 18 }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <Text strong style={{ color: '#fff', display: 'block', lineHeight: 1.3 }}>{team.name}</Text>
+                {team.description && (
+                  <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>{team.description}</Text>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {team.leaders?.map((l: any) => (
+                  <Tag key={l.user_id} icon={<CrownOutlined />} color="gold" style={{ margin: 0, borderRadius: 4 }}>
+                    {l.username}
+                  </Tag>
+                ))}
+                <Tag style={{
+                  margin: 0, borderRadius: 4,
+                  background: 'rgba(22,119,255,0.1)',
+                  border: '1px solid rgba(22,119,255,0.2)',
+                  color: '#1677ff',
+                }}>
+                  成员
+                </Tag>
+              </div>
             </div>
           ))}
         </Card>

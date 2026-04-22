@@ -35,6 +35,7 @@ export interface UserLevel {
   invite_reward_invitee: number;
   daily_invite_limit: number;
   marketing_enabled: number;
+  is_default: number;
   description: string;
   created_at: string;
 }
@@ -124,6 +125,10 @@ export interface WalletStats {
   success_calls: number;
   commission_balance: number;
   total_referred: number;
+  marketing_enabled: boolean;
+  commission_ratio: number;
+  invite_reward_inviter: number;
+  invite_reward_invitee: number;
 }
 
 export interface Channel {
@@ -364,6 +369,8 @@ export interface MarketingTeam {
   id: number;
   name: string;
   description?: string;
+  invite_code: string;
+  max_members: number;
   leaders: TeamMember[];
   members: TeamMember[];
   created_at: string;

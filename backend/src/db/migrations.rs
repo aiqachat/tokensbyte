@@ -319,6 +319,9 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS invite_reward_invitee DOUBLE PRECISION NOT NULL DEFAULT 0.0").execute(pool).await.ok();
     sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS daily_invite_limit INTEGER NOT NULL DEFAULT 10").execute(pool).await.ok();
     sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS marketing_enabled INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS is_default INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    // 确保 default 等级为默认注册等级（仅当没有任何默认等级时）
+    sqlx::query("UPDATE user_levels SET is_default = 1 WHERE group_key = 'default' AND NOT EXISTS (SELECT 1 FROM user_levels WHERE is_default = 1)").execute(pool).await.ok();
 
     // Commissions table
     sqlx::query(
@@ -613,12 +616,36 @@ macro_rules! pg_migration_blocks {
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT,
+            invite_code TEXT UNIQUE,
+            max_members INTEGER NOT NULL DEFAULT 10,
             created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
             updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
         )"#
     )
     .execute(pool)
     .await?;
+
+    // Migration: add invite_code and max_members columns for existing deployments
+    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS invite_code TEXT UNIQUE")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS max_members INTEGER NOT NULL DEFAULT 10")
+        .execute(pool).await.ok();
+
+    // Backfill: generate invite_code for existing teams that don't have one
+    {
+        let teams_without_code: Vec<i64> = sqlx::query_scalar(
+            "SELECT id FROM marketing_teams WHERE invite_code IS NULL OR invite_code = ''"
+        ).fetch_all(&*pool).await.unwrap_or_default();
+        for tid in teams_without_code {
+            let code: String = (0..8).map(|_| {
+                let idx = rand::random::<u8>() % 36;
+                if idx < 10 { (b'0' + idx) as char } else { (b'a' + idx - 10) as char }
+            }).collect();
+            sqlx::query("UPDATE marketing_teams SET invite_code = $1 WHERE id = $2")
+                .bind(&code).bind(tid)
+                .execute(&*pool).await.ok();
+        }
+    }
 
     // Marketing Team Leaders table (many-to-many)
     sqlx::query(

@@ -52,6 +52,8 @@ pub struct CreateUserRequest {
     pub aff: Option<String>,
     pub referred_by: Option<String>,
     pub role: Option<String>,
+    /// 团队邀请码，注册后自动加入对应团队
+    pub team: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,6 +109,10 @@ pub struct WalletStats {
     pub success_calls: i64,
     pub commission_balance: f64,
     pub total_referred: i64,
+    pub marketing_enabled: bool,
+    pub commission_ratio: f64,
+    pub invite_reward_inviter: f64,
+    pub invite_reward_invitee: f64,
 }
 
 /// 用户名+密码登录（保持原有接口兼容）
@@ -150,6 +156,8 @@ pub struct EmailRegisterRequest {
     pub code: String,
     pub password: String,
     pub aff: Option<String>,
+    /// 团队邀请码，注册后自动加入对应团队
+    pub team: Option<String>,
 }
 
 /// 手机号注册请求
@@ -159,6 +167,8 @@ pub struct MobileRegisterRequest {
     pub code: String,
     pub password: String,
     pub aff: Option<String>,
+    /// 团队邀请码，注册后自动加入对应团队
+    pub team: Option<String>,
 }
 
 /// 重置密码请求
