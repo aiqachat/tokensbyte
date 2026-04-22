@@ -58,7 +58,7 @@ const Login: React.FC = () => {
 
   const loginTabs: { key: string; label: string; icon: React.ReactNode; placeholder: string }[] = [];
   if (!login || reg?.enable_username_registration || login.enable_username_login)
-    loginTabs.push({ key: 'username', label: t('login.username_login'), icon: <UserOutlined />, placeholder: t('login.username_or_email') });
+    loginTabs.push({ key: 'username', label: t('login.username_login'), icon: <UserOutlined />, placeholder: t('login.username') });
   if (login?.enable_mobile_login)
     loginTabs.push({ key: 'mobile', label: t('login.mobile_login'), icon: <MobileOutlined />, placeholder: t('auth.mobile_placeholder') });
   if (login?.enable_email_login)
@@ -104,7 +104,7 @@ const Login: React.FC = () => {
       ) : (
         <Form name="login" size="large" onFinish={onFinish} autoComplete="off">
           <Form.Item name="username" rules={[{ required: true, message: currentTab?.placeholder }]}>
-            <Input prefix={currentTab?.icon || <UserOutlined />} placeholder={currentTab?.placeholder || t('login.username_or_email')} />
+            <Input prefix={currentTab?.icon || <UserOutlined />} placeholder={currentTab?.placeholder || t('login.username')} />
           </Form.Item>
           <Form.Item name="password" rules={[{ required: true, message: t('login.password') }]}>
             <Input.Password prefix={<LockOutlined />} placeholder={t('login.password')} />
