@@ -2,7 +2,7 @@
  * API 密钥选择弹窗
  */
 import React from 'react';
-import { Modal, message } from 'antd';
+import { Modal } from 'antd';
 import { CloseOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { usePlayground } from '../context/PlaygroundContext';
 
@@ -39,7 +39,6 @@ const TokenModal: React.FC = React.memo(() => {
                   setSelectedTokenKey(t.token_key);
                   localStorage.setItem('playground_saved_token', t.token_key);
                   setIsTokenModalVisible(false);
-                  message.success('已切换当前调用的令牌密钥');
                 }}
                 style={{
                   padding: '16px', borderRadius: 8,

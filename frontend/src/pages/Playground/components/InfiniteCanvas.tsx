@@ -29,18 +29,27 @@ const InfiniteCanvas: React.FC = React.memo(() => {
     handleCanvasMouseMove, handleCanvasMouseUp,
   } = useCanvasInteraction();
 
-  // 原生 wheel 事件监听器（非 passive），确保 Mac 触控板缩放时 preventDefault 生效
+  // 全局 document 级 wheel 拦截（非 passive）
+  // Mac 触控板双指缩放 = ctrlKey + wheel，必须在 document 级别 preventDefault 才能阻止浏览器原生缩放
   useEffect(() => {
     const el = canvasRef.current;
-    if (!el) return;
 
     const nativeWheelHandler = (e: WheelEvent) => {
-      e.preventDefault();
-      handleWheel(e as any);
+      // 在 Playground 页面内，拦截所有 ctrlKey+wheel（Mac 触控板缩放手势）
+      if (e.ctrlKey) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      // 判断事件目标是否在画布容器内
+      if (el && el.contains(e.target as Node)) {
+        e.preventDefault();
+        handleWheel(e as any);
+      }
     };
 
-    el.addEventListener('wheel', nativeWheelHandler, { passive: false });
-    return () => el.removeEventListener('wheel', nativeWheelHandler);
+    document.addEventListener('wheel', nativeWheelHandler, { passive: false });
+    return () => document.removeEventListener('wheel', nativeWheelHandler);
   }, [canvasRef, handleWheel]);
 
   if (loading) {

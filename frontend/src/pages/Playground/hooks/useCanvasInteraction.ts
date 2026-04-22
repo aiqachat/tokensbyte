@@ -40,7 +40,7 @@ export const useCanvasInteraction = () => {
   const handleWheel = useCallback((e: WheelEvent | React.WheelEvent) => {
     const ct = transformRef.current;
     const zoomFactor = -e.deltaY * 0.001;
-    const newScale = Math.min(Math.max(0.1, ct.scale + zoomFactor), 5);
+    const newScale = Math.min(Math.max(0.1, ct.scale + zoomFactor), 3);
     const rect = canvasRef.current?.getBoundingClientRect();
     if (rect) {
       const pointerX = e.clientX - rect.left;
