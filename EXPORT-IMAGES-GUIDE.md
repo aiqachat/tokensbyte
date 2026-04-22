@@ -15,10 +15,6 @@
 .\export-images.ps1
 ```
 
-脚本会提示选择构建模式：
-- 选项 1：开发环境（SQLite）
-- 选项 2：生产环境（PostgreSQL）- **推荐**
-
 #### 步骤 2：上传文件到服务器
 
 使用 WinSCP 或 scp 上传以下文件：
@@ -26,19 +22,18 @@
 docker-images/
 ├── tokensbyte-backend-*.tar
 ├── tokensbyte-frontend-*.tar
-├── postgres-16-alpine-*..tar (仅生产环境)
 └── import-images.sh
 ```
 
 同时上传：
-- `docker-compose.prod.yml`
+- `docker-compose.yml`
 - `.env.example`
 
 **使用 scp 示例：**
 ```powershell
 scp .\docker-images\*.tar root@your-server:/opt/tokensbyte/
 scp .\docker-images\import-images.sh root@your-server:/opt/tokensbyte/
-scp docker-compose.prod.yml root@your-server:/opt/tokensbyte/
+scp docker-compose.yml root@your-server:/opt/tokensbyte/
 scp .env.example root@your-server:/opt/tokensbyte/
 ```
 
@@ -60,13 +55,13 @@ cp .env.example .env
 nano .env  # 编辑配置，修改密码等
 
 # 启动服务
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 
 # 查看状态
-docker compose -f docker-compose.prod.yml ps
+docker compose ps
 
 # 查看日志
-docker compose -f docker-compose.prod.yml logs -f
+docker compose logs -f
 ```
 
 ### 场景二：Linux/Mac 本地开发 → Linux 云服务器
@@ -85,12 +80,12 @@ chmod +x export-images.sh
 # 使用 scp
 scp docker-images/*.tar root@your-server:/opt/tokensbyte/
 scp docker-images/import-images.sh root@your-server:/opt/tokensbyte/
-scp docker-compose.prod.yml root@your-server:/opt/tokensbyte/
+scp docker-compose.yml root@your-server:/opt/tokensbyte/
 scp .env.example root@your-server:/opt/tokensbyte/
 
 # 或使用 rsync（更快）
 rsync -avz docker-images/ root@your-server:/opt/tokensbyte/
-rsync docker-compose.prod.yml root@your-server:/opt/tokensbyte/
+rsync docker-compose.yml root@your-server:/opt/tokensbyte/
 rsync .env.example root@your-server:/opt/tokensbyte/
 ```
 
@@ -117,7 +112,7 @@ rsync .env.example root@your-server:/opt/tokensbyte/
 |------|------|------|
 | 所有 `.tar` 文件 | ✅ | Docker 镜像 |
 | `import-images.sh` | ✅ | 导入脚本 |
-| `docker-compose.prod.yml` | ✅ | 服务编排配置 |
+| `docker-compose.yml` | ✅ | 服务编排配置 |
 | `.env` 或 `.env.example` | ✅ | 环境变量配置 |
 
 ## 💡 优化建议
@@ -172,7 +167,7 @@ docker save -o docker-images/tokensbyte-backend-new.tar tokensbyte-backend:lates
 docker load -i tokensbyte-backend-new.tar
 
 # 重启服务
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 ```
 
 ## 🔧 常见问题
@@ -227,7 +222,6 @@ git pull
 
 # 2. 导出镜像
 ./export-images.sh
-# 选择 2) 生产环境
 
 # 3. 压缩文件（可选）
 cd docker-images
@@ -235,7 +229,7 @@ tar -czf tokensbyte-images-$(date +%Y%m%d).tar.gz *.tar
 
 # 4. 上传到服务器
 scp tokensbyte-images-*.tar.gz root@192.168.1.100:/opt/tokensbyte/
-scp ../docker-compose.prod.yml root@192.168.1.100:/opt/tokensbyte/
+scp docker-compose.yml root@192.168.1.100:/opt/tokensbyte/
 
 # === 云服务器 ===
 
@@ -253,11 +247,11 @@ cp .env.example .env
 nano .env
 
 # 8. 启动服务
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 
 # 9. 验证
-docker compose -f docker-compose.prod.yml ps
-curl http://localhost:5173
+docker compose ps
+curl http://localhost:80
 ```
 
 ## 🎯 最佳实践

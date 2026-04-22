@@ -44,7 +44,6 @@ if [ ! -f .env ]; then
         POSTGRES_PASSWORD=$(openssl rand -base64 12 | tr -d '/+=' | head -c 16)
         echo "   ✅ 已自动生成强密码 (16位)"
     else
-        # 如果没有 openssl，使用 /dev/urandom
         POSTGRES_PASSWORD=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 16)
         echo "   ✅ 已自动生成强密码 (16位)"
     fi
@@ -52,12 +51,10 @@ if [ ! -f .env ]; then
     
     echo "2️⃣  JWT 密钥"
     echo "   (用于用户认证，生产环境必须修改)"
-    # 自动生成随机密钥
     if command -v openssl &> /dev/null; then
         JWT_SECRET=$(openssl rand -hex 32)
         echo "   ✅ 已自动生成随机密钥"
     else
-        # 如果没有 openssl，使用 /dev/urandom
         JWT_SECRET=$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
         echo "   ✅ 已自动生成随机密钥"
     fi
@@ -87,9 +84,11 @@ if [ ! -f .env ]; then
 # TokensByte 环境变量配置
 # 生成时间: $(date '+%Y-%m-%d %H:%M:%S')
 
-# 数据库配置
-DATABASE_URL=postgres://tokensbyte:${POSTGRES_PASSWORD}@postgres:5432/tokensbyte
+# 数据库配置 (内置 PostgreSQL)
+DATABASE_URL=postgres://tokensapi:${POSTGRES_PASSWORD}@postgres:5432/tokensapi
+POSTGRES_USER=tokensapi
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_DB=tokensapi
 
 # JWT 密钥
 JWT_SECRET=${JWT_SECRET}
@@ -100,14 +99,12 @@ ADMIN_PASSWORD=${ADMIN_PASSWORD}
 
 # 端口配置
 BACKEND_PORT=3000
-FRONTEND_PORT=5173
+FRONTEND_PORT=80
 
 # 功能开关
 REGISTER_ENABLED=${REGISTER_ENABLED}
 
-# 其他配置
-HOST=0.0.0.0
-PORT=3000
+# 日志级别
 RUST_LOG=info
 EOF
     
@@ -168,40 +165,36 @@ fi
 # 询问部署模式
 echo ""
 echo "请选择部署模式:"
-echo "  1) 开发环境 (内置PostgreSQL，快速测试)"
-echo "  2) 生产环境 (外部PostgreSQL，推荐)"
+echo "  1) 开发环境 (热重载，适合日常开发)"
+echo "  2) 生产环境 (内置 PostgreSQL，开箱即用)"
 echo ""
 read -p "请输入选项 (1/2): " mode
 
 case $mode in
     1)
         echo ""
-        echo "🚀 启动开发环境..."
-        docker compose up -d
+        echo "🚀 启动开发环境 (热重载)..."
+        docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
         echo ""
-        echo "✅ 开发环境部署完成！"
+        echo "✅ 开发环境已启动！"
         echo ""
         echo "📍 访问地址:"
         echo "   - 用户端: http://localhost:5173"
         echo "   - 管理后台: http://localhost:5173/admin0755"
         echo "   - API: http://localhost:3000/v1"
         echo ""
-        echo "👤 默认管理员账号:"
-        echo "   - 用户名: admin"
-        echo "   - 密码: admin"
-        echo ""
         echo "📝 查看日志: docker compose logs -f"
         ;;
     2)
         echo ""
         echo "🚀 启动生产环境..."
-        docker compose -f docker-compose.prod.yml up -d
+        docker compose up -d
         echo ""
         echo "✅ 生产环境部署完成！"
         echo ""
         echo "📍 访问地址:"
-        echo "   - 用户端: http://localhost:5173"
-        echo "   - 管理后台: http://localhost:5173/admin0755"
+        echo "   - 用户端: http://localhost:80"
+        echo "   - 管理后台: http://localhost:80/admin0755"
         echo "   - API: http://localhost:3000/v1"
         echo ""
         echo "👤 默认管理员账号:"
@@ -209,11 +202,12 @@ case $mode in
         echo "   - 密码: admin (请通过管理后台修改)"
         echo ""
         echo "📊 服务状态:"
-        docker compose -f docker-compose.prod.yml ps
+        docker compose ps
         echo ""
-        echo "📝 查看日志: docker compose -f docker-compose.prod.yml logs -f"
+        echo "📝 查看日志: docker compose logs -f"
         echo ""
         echo "💡 提示: 生产环境建议配置 HTTPS 反向代理"
+        echo "💡 如需使用外部数据库，修改 .env 中的 DATABASE_URL 并注释掉 docker-compose.yml 中的 postgres 服务"
         ;;
     *)
         echo "❌ 无效选项"

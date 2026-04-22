@@ -25,32 +25,10 @@ echo ""
 # 创建输出目录
 mkdir -p "$OUTPUT_DIR"
 
-# 询问构建模式
-echo "请选择构建模式:"
-echo "  1) 开发环境 (使用 docker-compose.yml)"
-echo "  2) 生产环境 (构建后导出，用于配合 docker-compose.prod.yml 部署)"
-echo ""
-read -p "请输入选项 (1/2): " mode
-
-case $mode in
-    1)
-        ENV_NAME="development"
-        ;;
-    2)
-        # 生产模式也用 docker-compose.yml 构建（因为 prod.yml 是 image 模式，不含 build 指令）
-        ENV_NAME="production"
-        ;;
-    *)
-        echo "❌ 无效选项"
-        exit 1
-        ;;
-esac
-
-echo ""
-echo "📦 开始构建 Docker 镜像 ($ENV_NAME)..."
+echo "📦 开始构建 Docker 镜像..."
 echo ""
 
-# 构建镜像（统一使用 docker-compose.yml 构建）
+# 构建镜像
 docker compose build
 
 if [ $? -ne 0 ]; then
@@ -170,10 +148,10 @@ echo "========================================="
 echo "  后续步骤"
 echo "========================================="
 echo ""
-echo "1. 上传 docker-compose.prod.yml 到服务器"
+echo "1. 上传 docker-compose.yml 到服务器"
 echo "2. 创建 .env 配置文件 (运行 deploy.sh 会自动引导配置)"
 echo "3. 启动服务:"
-echo "   docker compose -f docker-compose.prod.yml up -d"
+echo "   docker compose up -d"
 echo ""
 echo "或者直接使用部署脚本:"
 echo "   chmod +x deploy.sh"
@@ -192,12 +170,12 @@ cat > "$OUTPUT_DIR/UPLOAD-GUIDE.txt" << EOF
 ========================================
 
 📦 导出时间: $(date '+%Y-%m-%d %H:%M:%S')
-🔧 构建模式: $ENV_NAME
 
 📁 需要上传的文件:
 $(ls -lh "$OUTPUT_DIR"/*${TIMESTAMP}.tar | xargs -I {} basename {})
 - import-images.sh (导入脚本)
-- docker-compose.prod.yml (如果使用生产模式)
+- docker-compose.yml (部署配置)
+- .env.example (环境变量模板)
 
 📊 总大小: $TOTAL_SIZE
 
@@ -210,12 +188,14 @@ $(ls -lh "$OUTPUT_DIR"/*${TIMESTAMP}.tar | xargs -I {} basename {})
 # 在本地终端执行 (不是在此目录)
 scp $OUTPUT_DIR/*.tar your-user@your-server:/path/to/deploy/
 scp $OUTPUT_DIR/import-images.sh your-user@your-server:/path/to/deploy/
-scp docker-compose.prod.yml your-user@your-server:/path/to/deploy/
+scp docker-compose.yml your-user@your-server:/path/to/deploy/
+scp .env.example your-user@your-server:/path/to/deploy/
 
 示例:
 scp docker-images/*.tar root@192.168.1.100:/opt/tokensbyte/
 scp docker-images/import-images.sh root@192.168.1.100:/opt/tokensbyte/
-scp docker-compose.prod.yml root@192.168.1.100:/opt/tokensbyte/
+scp docker-compose.yml root@192.168.1.100:/opt/tokensbyte/
+scp .env.example root@192.168.1.100:/opt/tokensbyte/
 
 
 方法二: 使用 rsync
@@ -232,7 +212,8 @@ sftp your-user@your-server
 cd /path/to/deploy
 put docker-images/*.tar
 put docker-images/import-images.sh
-put docker-compose.prod.yml
+put docker-compose.yml
+put .env.example
 
 
 方法四: 使用云存储 (大文件推荐)
@@ -266,11 +247,22 @@ put docker-compose.prod.yml
    nano .env  # 编辑配置
 
 5. 启动服务:
-   docker compose -f docker-compose.prod.yml up -d
+   docker compose up -d
 
 6. 查看状态:
-   docker compose -f docker-compose.prod.yml ps
-   docker compose -f docker-compose.prod.yml logs -f
+   docker compose ps
+   docker compose logs -f
+
+========================================
+  使用外部数据库
+========================================
+
+如需使用外部 PostgreSQL (RDS/云数据库):
+1. 修改 .env 中的 DATABASE_URL 指向外部数据库
+   例: DATABASE_URL=postgres://user:pass@db.example.com:5432/tokensbyte
+2. 注释掉 docker-compose.yml 中的 postgres 服务
+3. 删除 backend 的 depends_on: postgres
+4. 启动: docker compose up -d
 
 ========================================
   注意事项
@@ -301,7 +293,7 @@ echo "📤 下一步:"
 echo "   1. 查看上传指南: cat $OUTPUT_DIR/UPLOAD-GUIDE.txt"
 echo "   2. 上传文件到服务器 (参考 UPLOAD-GUIDE.txt)"
 echo "   3. 在服务器运行: ./import-images.sh"
-echo "   4. 启动服务: docker compose -f docker-compose.prod.yml up -d"
+echo "   4. 启动服务: docker compose up -d"
 echo ""
 echo "💡 提示: 可以使用压缩减小传输体积"
 echo "   cd $OUTPUT_DIR"

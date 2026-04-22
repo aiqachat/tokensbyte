@@ -1,11 +1,20 @@
 # 更新日志
 
+## 2026-04-22
+
+### 优化改进
+- ⚡ docker-compose.yml 支持真正的 `docker compose up -d` 一键启动
+  - 所有环境变量均提供 `${VAR:-default}` 默认值，无需 .env 文件即可启动
+  - DATABASE_URL 从 `:?`（缺失报错）改为 `:-`（缺失用默认值）
+  - 镜像策略：有现成镜像用现成镜像，没有则自动用 Dockerfile 构建
+  - 配置优先级：.env 文件 > compose 内默认值
+
 ## 2026-04-15
 
 ### 新增功能
 - ✅ Docker 镜像打包测试通过
 - ✅ 完整的 Docker 部署文档（README.md）
-- ✅ 生产环境 Docker Compose 配置（docker-compose.prod.yml）
+- ✅ 生产环境 Docker Compose 配置（docker-compose.yml，内置 PostgreSQL，可切换外部数据库）
 - ✅ 环境变量配置模板（.env.example）
 - ✅ 一键部署脚本（deploy.sh / deploy.ps1）
   - **交互式配置引导**

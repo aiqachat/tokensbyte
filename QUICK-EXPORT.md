@@ -6,7 +6,6 @@
 ```powershell
 # 1. 运行导出脚本
 .\export-images.ps1
-# 选择: 2 (生产环境)
 
 # 2. 等待构建和导出完成
 # 文件会保存到: .\docker-images\
@@ -14,7 +13,7 @@
 # 3. 上传到服务器
 scp .\docker-images\*.tar root@your-server:/opt/tokensbyte/
 scp .\docker-images\import-images.sh root@your-server:/opt/tokensbyte/
-scp docker-compose.prod.yml root@your-server:/opt/tokensbyte/
+scp docker-compose.yml root@your-server:/opt/tokensbyte/
 ```
 
 ### Linux/Mac
@@ -22,7 +21,6 @@ scp docker-compose.prod.yml root@your-server:/opt/tokensbyte/
 # 1. 运行导出脚本
 chmod +x export-images.sh
 ./export-images.sh
-# 选择: 2 (生产环境)
 
 # 2. 等待构建和导出完成
 # 文件会保存到: ./docker-images/
@@ -30,7 +28,7 @@ chmod +x export-images.sh
 # 3. 上传到服务器
 scp docker-images/*.tar root@your-server:/opt/tokensbyte/
 scp docker-images/import-images.sh root@your-server:/opt/tokensbyte/
-scp docker-compose.prod.yml root@your-server:/opt/tokensbyte/
+scp docker-compose.yml root@your-server:/opt/tokensbyte/
 ```
 
 ## 📋 服务器部署
@@ -51,11 +49,11 @@ cp .env.example .env
 nano .env  # 修改密码等配置
 
 # 启动服务
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 
 # 查看状态
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f
+docker compose ps
+docker compose logs -f
 ```
 
 ## 💡 优化技巧

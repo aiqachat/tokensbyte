@@ -1,21 +1,39 @@
-# TokensByte 环境 Docker Compose 配置
-# 包含 Backend、Frontend 和内生 PostgreSQL 数据库服务
+# TokensByte Docker Compose 配置
+# ──────────────────────────────────────────────────
+# 一键启动: docker compose up -d
+#
+# 优先级: .env 文件 > compose 内默认值
+# 镜像策略: 有现成镜像用现成镜像，没有则自动构建
+# ──────────────────────────────────────────────────
+#
+# ── 切换为外部数据库 ──────────────────────────────
+# 1. 修改 .env 中的 DATABASE_URL 指向外部数据库
+#    例: DATABASE_URL=postgres://user:pass@db.example.com:5432/tokensbyte
+# 2. 注释掉下方 postgres 服务
+# 3. 删除 backend 的 depends_on: postgres
+# ──────────────────────────────────────────────────
 
 services:
   postgres:
     image: postgres:15-alpine
     container_name: tokensbyte-postgres
     environment:
-      - POSTGRES_USER=tokensapi
-      - POSTGRES_PASSWORD=tokensapi
-      - POSTGRES_DB=tokensapi
+      - POSTGRES_USER=${POSTGRES_USER:-tokensapi}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-tokensapi}
+      - POSTGRES_DB=${POSTGRES_DB:-tokensapi}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    networks:
+      - tokensbyte-network
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tokensapi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
+    image: tokensbyte-backend:latest
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -23,29 +41,68 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=3000
-      - DATABASE_URL=${DATABASE_URL:?请在 .env 中配置 DATABASE_URL}
-      - JWT_SECRET=${JWT_SECRET:-tokensbyte-change-me}
+      - DATABASE_URL=${DATABASE_URL:-postgres://tokensapi:tokensapi@postgres:5432/tokensapi}
+      - JWT_SECRET=${JWT_SECRET:-tokensbyte-change-me-in-production}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-123456}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - REGISTER_ENABLED=${REGISTER_ENABLED:-true}
+      - RUST_LOG=${RUST_LOG:-info}
     volumes:
-      - ./backend/data:/data
+      - ./data:/data
     ports:
-      - "3000:3000"
+      - "${BACKEND_PORT:-3000}:3000"
+    networks:
+      - tokensbyte-network
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
 
   frontend:
+    image: tokensbyte-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: tokensbyte-frontend
     ports:
-      - "5173:5173"
+      - "${FRONTEND_PORT:-80}:80"
+    networks:
+      - tokensbyte-network
     depends_on:
       - backend
     restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+
+networks:
+  tokensbyte-network:
+    driver: bridge
+    name: tokensbyte-network
 
 volumes:
   postgres-data:
