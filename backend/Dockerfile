@@ -3,7 +3,6 @@ FROM rust:1.94-slim-bullseye as builder
 WORKDIR /usr/src/app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev libsqlite3-dev git
 COPY backend/ ./backend/
-COPY .git/ ./.git/
 WORKDIR /usr/src/app/backend
 RUN cargo build --release
 

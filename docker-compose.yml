@@ -37,6 +37,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    pull_policy: build
     container_name: tokensbyte-backend
     environment:
       - HOST=0.0.0.0
@@ -77,6 +78,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    pull_policy: build
     container_name: tokensbyte-frontend
     ports:
       - "${FRONTEND_PORT:-80}:80"
