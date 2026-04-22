@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import type { ApiToken } from '../../types';
@@ -17,7 +17,15 @@ const Tokens: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingToken, setEditingToken] = useState<ApiToken | null>(null);
   const [form] = Form.useForm();
+  const [passwordForm] = Form.useForm();
   const screens = useBreakpoint();
+  const [saving, setSaving] = useState(false);
+
+  // 密钥明文展示状态
+  const [revealModalVisible, setRevealModalVisible] = useState(false);
+  const [revealingTokenId, setRevealingTokenId] = useState<number | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Record<number, string>>({});
+  const [revealLoading, setRevealLoading] = useState(false);
 
   const fetchTokens = async () => {
     setLoading(true);
@@ -67,11 +75,13 @@ const Tokens: React.FC = () => {
   };
 
   const handleSave = async (values: { allowed_models?: string; [key: string]: unknown }) => {
+    if (saving) return;
     const data = {
       ...values,
       allowed_models: values.allowed_models?.split('\n').filter((m: string) => m.trim()) || [],
     };
 
+    setSaving(true);
     try {
       if (editingToken) {
         await request.put(`/tokens/${editingToken.id}`, data);
@@ -84,7 +94,91 @@ const Tokens: React.FC = () => {
       fetchTokens();
     } catch (e) {
       console.error(e);
+    } finally {
+      setSaving(false);
     }
+  };
+
+  // 打开密码验证弹窗
+  const handleRevealClick = (tokenId: number) => {
+    if (revealedKeys[tokenId]) {
+      // 已经展示了，点击则隐藏
+      setRevealedKeys(prev => {
+        const next = { ...prev };
+        delete next[tokenId];
+        return next;
+      });
+      return;
+    }
+    setRevealingTokenId(tokenId);
+    passwordForm.resetFields();
+    setRevealModalVisible(true);
+  };
+
+  // 提交密码验证并展示密钥
+  const handleRevealSubmit = async () => {
+    try {
+      const values = await passwordForm.validateFields();
+      setRevealLoading(true);
+      const resp = await (request.post(`/tokens/${revealingTokenId}/reveal`, {
+        password: values.password,
+      }) as unknown as Promise<{ token_key: string }>);
+      setRevealedKeys(prev => ({ ...prev, [revealingTokenId!]: resp.token_key }));
+      setRevealModalVisible(false);
+      message.success('密钥已展示');
+    } catch (e: any) {
+      // error is handled by request interceptor
+      console.error(e);
+    } finally {
+      setRevealLoading(false);
+    }
+  };
+
+  // 渲染密钥列内容（桌面端）
+  const renderTokenKey = (key: string, record: ApiToken) => {
+    const isRevealed = !!revealedKeys[record.id];
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        background: 'rgba(255, 255, 255, 0.04)',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        borderRadius: '8px',
+        padding: '4px 8px 4px 12px',
+        width: 'max-content',
+      }}>
+        {isRevealed ? (
+          <Text
+            style={{ fontFamily: 'monospace', fontSize: 13, color: '#52c41a', letterSpacing: '0.5px', userSelect: 'all' }}
+            copyable={{ text: revealedKeys[record.id] }}
+          >
+            {revealedKeys[record.id]}
+          </Text>
+        ) : (
+          <Text style={{ fontFamily: 'monospace', fontSize: 13, color: '#1677ff', letterSpacing: '0.5px' }}>
+            {key.substring(0, 10)}<span style={{color: '#666', margin: '0 4px'}}>••••••••</span>{key.substring(key.length - 6)}
+          </Text>
+        )}
+        <Tooltip title={t('tokens.copy_hint')}>
+          <Button 
+            type="text" 
+            icon={<CopyOutlined />} 
+            size="small" 
+            onClick={() => handleCopy(isRevealed ? revealedKeys[record.id] : key)} 
+            style={{ color: '#888', marginLeft: 8 }} 
+          />
+        </Tooltip>
+        <Tooltip title={isRevealed ? '隐藏密钥' : '查看完整密钥'}>
+          <Button 
+            type="text" 
+            icon={isRevealed ? <EyeInvisibleOutlined /> : <EyeOutlined />} 
+            size="small" 
+            onClick={() => handleRevealClick(record.id)} 
+            style={{ color: isRevealed ? '#52c41a' : '#888' }} 
+          />
+        </Tooltip>
+      </div>
+    );
   };
 
   const columns = [
@@ -98,30 +192,7 @@ const Tokens: React.FC = () => {
       title: t('tokens.key'),
       dataIndex: 'token_key',
       key: 'token_key',
-      render: (key: string) => (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          background: 'rgba(255, 255, 255, 0.04)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: '8px',
-          padding: '4px 8px 4px 12px',
-          width: 'max-content',
-        }}>
-          <Text style={{ fontFamily: 'monospace', fontSize: 13, color: '#1677ff', letterSpacing: '0.5px' }}>
-            {key.substring(0, 10)}<span style={{color: '#666', margin: '0 4px'}}>••••••••</span>{key.substring(key.length - 6)}
-          </Text>
-          <Tooltip title={t('tokens.copy_hint')}>
-            <Button 
-              type="text" 
-              icon={<CopyOutlined />} 
-              size="small" 
-              onClick={() => handleCopy(key)} 
-              style={{ color: '#888', marginLeft: 12 }} 
-            />
-          </Tooltip>
-        </div>
-      ),
+      render: (key: string, record: ApiToken) => renderTokenKey(key, record),
     },
     {
       title: t('tokens.usage_quota'),
@@ -200,10 +271,23 @@ const Tokens: React.FC = () => {
             >
               <CardRow label={t('tokens.key')}>
                 <Space size={4}>
-                  <Text style={{ fontFamily: 'monospace', fontSize: 11, color: '#1677ff' }}>
-                    {record.token_key.substring(0, 8)}••••{record.token_key.substring(record.token_key.length - 4)}
-                  </Text>
-                  <Button type="text" icon={<CopyOutlined />} size="small" onClick={() => handleCopy(record.token_key)} style={{ color: '#888' }} />
+                  {revealedKeys[record.id] ? (
+                    <Text style={{ fontFamily: 'monospace', fontSize: 11, color: '#52c41a', wordBreak: 'break-all', userSelect: 'all' }}>
+                      {revealedKeys[record.id]}
+                    </Text>
+                  ) : (
+                    <Text style={{ fontFamily: 'monospace', fontSize: 11, color: '#1677ff' }}>
+                      {record.token_key.substring(0, 8)}••••{record.token_key.substring(record.token_key.length - 4)}
+                    </Text>
+                  )}
+                  <Button type="text" icon={<CopyOutlined />} size="small" onClick={() => handleCopy(revealedKeys[record.id] || record.token_key)} style={{ color: '#888' }} />
+                  <Button 
+                    type="text" 
+                    icon={revealedKeys[record.id] ? <EyeInvisibleOutlined /> : <EyeOutlined />} 
+                    size="small" 
+                    onClick={() => handleRevealClick(record.id)} 
+                    style={{ color: revealedKeys[record.id] ? '#52c41a' : '#888' }} 
+                  />
                 </Space>
               </CardRow>
               <CardRow label={t('tokens.used')}>
@@ -243,6 +327,7 @@ const Tokens: React.FC = () => {
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         onOk={() => form.submit()}
+        confirmLoading={saving}
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="name" label={t('tokens.name')} rules={[{ required: true }]} initialValue="default">
@@ -280,9 +365,37 @@ const Tokens: React.FC = () => {
           </Row>
         </Form>
       </Modal>
+
+      {/* 密码验证弹窗 */}
+      <Modal
+        title="🔐 验证身份"
+        open={revealModalVisible}
+        onCancel={() => setRevealModalVisible(false)}
+        onOk={handleRevealSubmit}
+        confirmLoading={revealLoading}
+        okText="确认查看"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <div style={{ marginBottom: 16, color: '#888', fontSize: 13 }}>
+          为了保护您的密钥安全，查看完整密钥需要验证您的登录密码。
+        </div>
+        <Form form={passwordForm} layout="vertical">
+          <Form.Item 
+            name="password" 
+            label="登录密码" 
+            rules={[{ required: true, message: '请输入您的登录密码' }]}
+          >
+            <Input.Password 
+              placeholder="请输入您的登录密码" 
+              autoFocus 
+              onPressEnter={handleRevealSubmit}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Card>
   );
 };
 
 export default Tokens;
-

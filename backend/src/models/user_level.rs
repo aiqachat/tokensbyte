@@ -18,6 +18,8 @@ pub struct UserLevel {
     pub marketing_enabled: i64,
     #[sqlx(default)]
     pub is_default: i64,
+    #[sqlx(default)]
+    pub max_token_count: i64,
     pub description: String,
     pub created_at: String,
     pub updated_at: String,
@@ -34,6 +36,7 @@ pub struct CreateUserLevelRequest {
     pub daily_invite_limit: Option<i64>,
     pub marketing_enabled: Option<i64>,
     pub is_default: Option<i64>,
+    pub max_token_count: Option<i64>,
     pub description: Option<String>,
 }
 
@@ -48,6 +51,7 @@ pub struct UpdateUserLevelRequest {
     pub daily_invite_limit: Option<i64>,
     pub marketing_enabled: Option<i64>,
     pub is_default: Option<i64>,
+    pub max_token_count: Option<i64>,
     pub description: Option<String>,
 }
 

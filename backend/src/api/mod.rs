@@ -78,6 +78,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/models", get(models::list_models))
         .route("/tokens", get(tokens::list_tokens).post(tokens::create_token))
         .route("/tokens/{id}", put(tokens::update_token).delete(tokens::delete_token))
+        .route("/tokens/{id}/reveal", post(tokens::reveal_token))
         .route("/channel-configs", get(channel_configs::list_channel_configs))
         .route("/logs", get(logs::list_logs))
         .route("/redemptions/redeem", post(redemptions::redeem_code))

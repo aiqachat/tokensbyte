@@ -36,6 +36,7 @@ export interface UserLevel {
   daily_invite_limit: number;
   marketing_enabled: number;
   is_default: number;
+  max_token_count: number;
   description: string;
   created_at: string;
 }
