@@ -221,7 +221,7 @@ pub async fn test_channel(
                     .unwrap_or("/v1/chat/completions")
                     .to_string();
                 let auth_type = config.get("auth_type").and_then(|v| v.as_str()).unwrap_or("bearer").to_string();
-                resolved = Some(crate::relay::forward::ResolvedForward { target_type, upstream_path, auth_type });
+                resolved = Some(crate::relay::forward::ResolvedForward { target_type, upstream_path, auth_type, asset_convert: false });
             }
         }
     }

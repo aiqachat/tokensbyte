@@ -5,6 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
 import AdminPresetAssets from './AssetManager/AdminPresetAssets';
+import RelayConvertAssets from './AssetManager/RelayConvertAssets';
 import TeamConfig from './TeamMarketing/TeamConfig';
 import JsonView from '@uiw/react-json-view';
 import { darkTheme } from '@uiw/react-json-view/dark';
@@ -35,6 +36,7 @@ interface ModerationConfig {
   volc_secret_key_masked: string;
   volc_app_id: string;
   volc_project_name: string;
+  volc_group_id: string;
   is_configured: boolean;
 }
 
@@ -366,6 +368,7 @@ const PluginConfigInner: React.FC = () => {
             volc_secret_key: '',
             volc_app_id: moderationRes.volc_app_id || '',
             volc_project_name: moderationRes.volc_project_name || 'default',
+            volc_group_id: moderationRes.volc_group_id || '',
           });
         }, 0);
       }
@@ -826,6 +829,15 @@ const PluginConfigInner: React.FC = () => {
           >
             <Input placeholder="default" style={inputStyle} />
           </Form.Item>
+          {name === 'asset_manager' && (
+            <Form.Item
+              label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Ark 转换素材组 ID (GroupID)</Text>}
+              name="volc_group_id"
+              extra={<Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>若留空，系统将在首次转换素材时自动向方舟申请并绑定专属群组 ID。您也可以手动填入在方舟控制台申请的已有组标识如: g-xxx</Text>}
+            >
+              <Input placeholder="留空交由系统自动为您生成管理，或输入火山引擎资产库 Group ID" style={inputStyle} />
+            </Form.Item>
+          )}
         </Form>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
@@ -1413,6 +1425,7 @@ const PluginConfigInner: React.FC = () => {
                 { key: 'storage', label: '存储配置', children: storageTab },
                 { key: 'moderation', label: '审核配置', children: moderationTab },
                 { key: 'preset', label: '预设素材', children: <AdminPresetAssets /> },
+                { key: 'relay_convert', label: '转换素材', children: <RelayConvertAssets /> },
                 { key: 'api_log', label: '接口日志', children: apiLogTab },
               ]
         }

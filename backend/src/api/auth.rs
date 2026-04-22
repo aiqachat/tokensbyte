@@ -436,15 +436,11 @@ pub async fn register_email(
         }
 
         let mut initial_balance = state.config.default_user_quota;
+        let mut gift_amount = 0.0;
         if settings.marketing.enable_registration_gift {
-            let gift = calc_gift_amount(&settings.marketing);
-            if gift > 0.0 {
-                initial_balance += gift;
-                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
-                    .bind(&user_id)
-                    .bind(gift)
-                    .execute(&mut *tx)
-                    .await?;
+            gift_amount = calc_gift_amount(&settings.marketing);
+            if gift_amount > 0.0 {
+                initial_balance += gift_amount;
             }
         }
 
@@ -465,6 +461,14 @@ pub async fn register_email(
         .bind(&default_group)
         .execute(&mut *tx)
         .await?;
+
+        if gift_amount > 0.0 {
+            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
+                .bind(&user_id)
+                .bind(gift_amount)
+                .execute(&mut *tx)
+                .await?;
+        }
 
         tx.commit().await?;
 
@@ -539,13 +543,11 @@ pub async fn register_mobile(
         }
 
         let mut initial_balance = state.config.default_user_quota;
+        let mut gift_amount = 0.0;
         if settings.marketing.enable_registration_gift {
-            let gift = calc_gift_amount(&settings.marketing);
-            if gift > 0.0 {
-                initial_balance += gift;
-                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
-                    .bind(&user_id).bind(gift)
-                    .execute(&mut *tx).await?;
+            gift_amount = calc_gift_amount(&settings.marketing);
+            if gift_amount > 0.0 {
+                initial_balance += gift_amount;
             }
         }
 
@@ -566,6 +568,12 @@ pub async fn register_mobile(
         .bind(&referred_by).bind(&raw_ip)
         .bind(&default_group)
         .execute(&mut *tx).await?;
+
+        if gift_amount > 0.0 {
+            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
+                .bind(&user_id).bind(gift_amount)
+                .execute(&mut *tx).await?;
+        }
 
         tx.commit().await?;
 

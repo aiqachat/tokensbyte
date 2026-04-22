@@ -239,6 +239,7 @@ const ForwardRules: React.FC = () => {
             </ul>
           </li>
           <li><CText>auth_type</CText>: <span style={{ color: '#888' }}>(可选)</span> 强行覆盖认证鉴权机制传递方式，例如 <CText>"query_key"</CText> 将 API-Key 拼装至 URL Query 参数中发放，或 <CText>"bearer"</CText> 强制走 Authorization 头。</li>
+          <li><CText>asset_convert</CText>: <span style={{ color: '#888' }}>(可选)</span> 设为 <CText>true</CText> 时启用火山方舟视频素材自动转换，系统会将请求体 content 中的网络 URL（图片/视频/音频）通过 CreateAsset API 注册为方舟素材 ID（<CText>asset://</CText> 前缀格式），同一 URL 仅转换一次。<span style={{ color: '#faad14' }}>需先在素材资产管理插件中配置审核凭证。</span></li>
         </ul>
       </div>
       <p style={{ marginTop: 8, color: '#1890ff', marginBottom: 0 }}>配置结束后，您可在「模型列表」页将其绑定至对应的具体模型，真实网关或系统拨测都将自动走您定义的这条重写链路。</p>

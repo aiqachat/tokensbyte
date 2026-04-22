@@ -7,6 +7,7 @@ pub mod native;
 pub mod url_utils;
 pub mod forward;
 pub mod usage_extractor;
+pub mod asset_convert;
 
 use axum::{
     extract::{State, Extension},
@@ -367,7 +368,7 @@ pub fn compute_cost(
                         let (rate_field, video_label) = if features.has_video { ("with_video", "含视频") } else { ("without_video", "无视频") };
                         if let Some(rate) = tier.and_then(|t| t.get(rate_field)).and_then(|v| v.as_f64()) {
                             p_rate = rate; c_rate = rate; is_overridden = true;
-                            detail_desc = format!("Seedance2.0({}|{}|单价:{})", res_key, video_label, rate);
+                            detail_desc = format!("Seedance2.0({}|{}|基本单价:{})", res_key, video_label, rate);
                         }
                     }
                 }
@@ -412,6 +413,8 @@ pub fn compute_cost(
                 }
             }
 
+            // 移除此处提前处理的 Flex 兜底逻辑，移到判定阶梯之后
+
             if !is_overridden && rule.billing_rule == "tiered" {
                 let mut tiers: Vec<crate::models::PricingTier> = serde_json::from_str(&rule.pricing_tiers).unwrap_or_default();
                 // 确保按照 prompt 升序
@@ -450,6 +453,21 @@ pub fn compute_cost(
                     }
                 }
             }
+            
+            // 补充兜底的 flex 离线折扣检查（当使用 standard / tiered 或者其他策略不匹配导致回退时）
+            // 确保不与其他已经自带离线的策略(如已被拦截处理过的描述中包含了"离线")产生重复折扣
+            // 注意：火山的 Seedance 2.0/2.0 fast 已不支持 flex 离线降级
+            if features.service_tier.as_deref() == Some("flex") && !detail_desc.contains("离线") && rule.billing_rule != "seedance2.0" {
+                let off_discount = if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    ext.get("offline_discount").and_then(|v| v.as_f64()).unwrap_or(0.5)
+                } else {
+                    0.5
+                };
+                p_rate *= off_discount;
+                c_rate *= off_discount;
+                detail_desc = format!("{} [叠加Flex离线折扣: {}倍]", detail_desc, off_discount);
+            }
+
             let cost = ((prompt_tokens as f64 * p_rate + completion_tokens as f64 * c_rate) / 1_000_000.0) * discount;
             (cost, format!("{} -> ({:.6}P*{} + {:.6}C*{})/1M * {:.2}倍率", detail_desc, prompt_tokens, p_rate, completion_tokens, c_rate, discount))
         }
