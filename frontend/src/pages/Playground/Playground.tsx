@@ -13,6 +13,7 @@ import SettingsWidget from './components/SettingsWidget';
 import ModelDrawer from './components/ModelDrawer';
 import TokenModal from './components/TokenModal';
 import ZoomIndicator from './components/ZoomIndicator';
+import HistoryPanel from './components/HistoryPanel';
 import './Playground.css';
 
 /** 内部布局层，在 Provider 内部消费 Context */
@@ -30,6 +31,7 @@ const PlaygroundLayout: React.FC = () => {
       <FloatingHeader />
       <ZoomIndicator />
       <SettingsWidget />
+      <HistoryPanel />
 
       {/* 弹出层 */}
       <ModelDrawer />

@@ -179,6 +179,82 @@ export const useCanvasInteraction = () => {
     setCanvasTransform({ x: 0, y: 0, scale: 1 });
   }, [setCanvasTransform]);
 
+  /** 放大 — 以视口中心为锚点 */
+  const zoomIn = useCallback(() => {
+    const ct = transformRef.current;
+    const newScale = Math.min(ct.scale * 1.25, 3);
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (rect) {
+      const cx = rect.width / 2;
+      const cy = rect.height / 2;
+      const ratio = newScale / ct.scale;
+      setCanvasTransform({ x: cx - (cx - ct.x) * ratio, y: cy - (cy - ct.y) * ratio, scale: newScale });
+    } else {
+      setCanvasTransform({ ...ct, scale: newScale });
+    }
+  }, [canvasRef, setCanvasTransform]);
+
+  /** 缩小 — 以视口中心为锚点 */
+  const zoomOut = useCallback(() => {
+    const ct = transformRef.current;
+    const newScale = Math.max(ct.scale / 1.25, 0.1);
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (rect) {
+      const cx = rect.width / 2;
+      const cy = rect.height / 2;
+      const ratio = newScale / ct.scale;
+      setCanvasTransform({ x: cx - (cx - ct.x) * ratio, y: cy - (cy - ct.y) * ratio, scale: newScale });
+    } else {
+      setCanvasTransform({ ...ct, scale: newScale });
+    }
+  }, [canvasRef, setCanvasTransform]);
+
+  /** 缩放到 100% — 以视口中心为锚点 */
+  const zoomTo100 = useCallback(() => {
+    const ct = transformRef.current;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (rect) {
+      const cx = rect.width / 2;
+      const cy = rect.height / 2;
+      const ratio = 1 / ct.scale;
+      setCanvasTransform({ x: cx - (cx - ct.x) * ratio, y: cy - (cy - ct.y) * ratio, scale: 1 });
+    } else {
+      setCanvasTransform({ x: 0, y: 0, scale: 1 });
+    }
+  }, [canvasRef, setCanvasTransform]);
+
+  /** 缩放到适合所有节点 */
+  const zoomToFit = useCallback(() => {
+    const currentNodes = nodes;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect || currentNodes.length === 0) {
+      // 无节点时重置视图
+      setCanvasTransform({ x: 0, y: 0, scale: 1 });
+      return;
+    }
+    const padding = 80;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of currentNodes) {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + n.width);
+      maxY = Math.max(maxY, n.y + n.height);
+    }
+    const contentW = maxX - minX;
+    const contentH = maxY - minY;
+    const viewW = rect.width - padding * 2;
+    const viewH = rect.height - padding * 2;
+    const newScale = Math.min(Math.max(Math.min(viewW / contentW, viewH / contentH), 0.1), 3);
+    const newX = (rect.width - contentW * newScale) / 2 - minX * newScale;
+    const newY = (rect.height - contentH * newScale) / 2 - minY * newScale;
+    setCanvasTransform({ x: newX, y: newY, scale: newScale });
+  }, [nodes, canvasRef, setCanvasTransform]);
+
+  /** 缩放到选中节点（当前等同 zoomToFit，未来可扩展选中逻辑） */
+  const zoomToSelection = useCallback(() => {
+    zoomToFit();
+  }, [zoomToFit]);
+
   return {
     handleWheel,
     handleCanvasMouseDown,
@@ -187,5 +263,10 @@ export const useCanvasInteraction = () => {
     handleNodeMouseDown,
     removeNode,
     resetView,
+    zoomIn,
+    zoomOut,
+    zoomTo100,
+    zoomToFit,
+    zoomToSelection,
   };
 };
