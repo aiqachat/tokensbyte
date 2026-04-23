@@ -138,6 +138,9 @@
   },
   "tokens": {
     "title": "令牌管理",
+    "subtitle": "创建和管理您的 API 密钥。",
+    "empty_title": "暂无 API 密钥",
+    "empty_desc": "创建您的第一个 API 密钥以开始使用 API",
     "create": "创建令牌",
     "edit": "编辑令牌",
     "name": "名称",

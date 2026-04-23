@@ -34,6 +34,8 @@ pub struct RequestLog {
     #[sqlx(default)]
     pub user_group: Option<String>,
     #[sqlx(default)]
+    pub user_uid: Option<String>,
+    #[sqlx(default)]
     pub channel_name: Option<String>,
     #[sqlx(default)]
     pub billing_detail: Option<String>,

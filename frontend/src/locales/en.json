@@ -137,6 +137,9 @@
   },
   "tokens": {
     "title": "API Tokens",
+    "subtitle": "Create and manage your API keys.",
+    "empty_title": "No API keys yet",
+    "empty_desc": "Create your first API key to start using the API",
     "create": "Create Token",
     "edit": "Edit Token",
     "name": "Name",

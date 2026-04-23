@@ -120,7 +120,7 @@ const SettingsWidget: React.FC = React.memo(() => {
               onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
             />
           </Tooltip>
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500, userSelect: 'none' }}>创作中心层</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500, userSelect: 'none' }}>模型选择器</Text>
         </div>
         <Tooltip title="我的素材">
           <Button

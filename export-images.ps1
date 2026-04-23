@@ -1,4 +1,4 @@
-﻿﻿# TokensByte Docker 镜像导出脚本 (Windows PowerShell)
+﻿# TokensByte Docker 镜像导出脚本 (Windows PowerShell)
 # 在本地构建并导出镜像，用于上传到云服务器
 
 $ErrorActionPreference = "Stop"
