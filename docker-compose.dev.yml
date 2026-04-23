@@ -25,6 +25,11 @@ services:
           memory: 512M
           cpus: '1.0'
 
+  postgres:
+    # 开发模式暴露数据库端口，方便 Navicat 等工具连接
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
   frontend:
     build:
       context: ./frontend
