@@ -75,8 +75,9 @@ const getAsyncCompletedTs = (r: TaskLog): number | null => {
   if (!r.response_content) return null;
   try {
     const v = JSON.parse(r.response_content);
-    // 火山视频响应中 created_at 是任务完成的 Unix 时间戳（秒）
-    const ts = v.created_at ?? v.final_result?.created_at ?? v.output?.created_at ?? null;
+    // 异步任务响应中 updated_at 是任务完成的 Unix 时间戳（秒）
+    // 修复 Bug：此前错误地读取了 v.created_at（创建时间），导致 (结束时间 - 创建时间) 永远接近于 0秒
+    const ts = v.updated_at ?? v.final_result?.updated_at ?? v.output?.updated_at ?? null;
     return typeof ts === 'number' ? ts : null;
   } catch { return null; }
 };
