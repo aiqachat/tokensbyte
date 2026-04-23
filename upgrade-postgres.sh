@@ -6,31 +6,25 @@
 set -euo pipefail
 
 BACKUP_FILE="tokensapi_pg15.dump"
-OLD_VOLUME="tokensbyte_postgres-data"
 BACKUP_VOLUME="tokensbyte_postgres-data-backup"
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 COMPOSE_DEV_FILE="$PROJECT_DIR/docker-compose.dev.yml"
-TEMP_CONTAINER="pg15-temp-export"
+
+# 自动推导真实的 Volume 名字
+COMPOSE_PROJ=$(basename "$PROJECT_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]//g')
+OLD_VOLUME="${COMPOSE_PROJ}_postgres-data"
 
 # 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-step() {
-    echo -e "${CYAN}\n>>> $1${NC}"
-}
-
-success() {
-    echo -e "${GREEN}   $1${NC}"
-}
-
-error() {
-    echo -e "${RED}   $1${NC}"
-}
+step() { echo -e "${CYAN}\n>>> $1${NC}"; }
+success() { echo -e "${GREEN}   $1${NC}"; }
+error() { echo -e "${RED}   $1${NC}"; }
 
 check_docker() {
     if ! docker info > /dev/null 2>&1; then
@@ -41,12 +35,9 @@ check_docker() {
 }
 
 get_postgres_version() {
-    if grep -q 'image:.*postgres:15' "$COMPOSE_FILE"; then
-        echo 15
-    elif grep -q 'image:.*postgres:16' "$COMPOSE_FILE"; then
-        echo 16
-    else
-        echo 0
+    if grep -q 'image:.*postgres:15' "$COMPOSE_FILE"; then echo 15
+    elif grep -q 'image:.*postgres:16' "$COMPOSE_FILE"; then echo 16
+    else echo 0
     fi
 }
 
@@ -62,9 +53,13 @@ if [ "${1:-}" = "--rollback" ]; then
     docker compose -f "$COMPOSE_FILE" -f "$COMPOSE_DEV_FILE" down 2>/dev/null || true
     docker volume rm "$OLD_VOLUME" 2>/dev/null || true
     docker volume create "$OLD_VOLUME" > /dev/null
-    docker run --rm -v "${OLD_VOLUME}:/source" -v "${BACKUP_VOLUME}:/backup" alpine cp -a /source/. /backup/ > /dev/null
+    docker run --rm -v "${OLD_VOLUME}:/source" -v "${BACKUP_VOLUME}:/backup" alpine cp -a /backup/. /source/ > /dev/null
 
-    sed -i 's/postgres:16-alpine/postgres:15-alpine/g' "$COMPOSE_FILE"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' 's/postgres:16-alpine/postgres:15-alpine/g' "$COMPOSE_FILE"
+    else
+        sed -i 's/postgres:16-alpine/postgres:15-alpine/g' "$COMPOSE_FILE"
+    fi
 
     docker compose -f "$COMPOSE_FILE" up -d postgres > /dev/null
     sleep 5
@@ -83,10 +78,8 @@ echo -e "${CYAN}=========================================${NC}"
 echo -e "${CYAN}  PostgreSQL 15 -> 16 自动升级脚本${NC}"
 echo -e "${CYAN}=========================================${NC}"
 
-# 检查 Docker
 check_docker
 
-# 检查当前版本
 CURRENT_VER=$(get_postgres_version)
 if [ "$CURRENT_VER" -eq 16 ]; then
     success "当前已是 PostgreSQL 16，无需升级"
@@ -98,28 +91,17 @@ if [ "$CURRENT_VER" -ne 15 ]; then
 fi
 success "当前 PostgreSQL 版本: 15"
 
-# 检查容器运行状态
-if ! docker compose -f "$COMPOSE_FILE" -f "$COMPOSE_DEV_FILE" ps > /dev/null 2>&1; then
-    error "容器未运行，请先启动项目"
-    exit 1
-fi
-
-step "步骤 1/7: 停止 backend/frontend（保留 postgres 运行）"
+step "步骤 1/7: 确保 Postgres 运行并停止其他服务"
+# 确保数据库处于运行状态，才能安全 dump
+docker compose -f "$COMPOSE_FILE" up -d postgres > /dev/null
+# 停止后端和前端，防止在 dump 期间有新数据写入
 docker compose -f "$COMPOSE_FILE" -f "$COMPOSE_DEV_FILE" stop backend frontend > /dev/null
-success "backend 和 frontend 已停止"
+success "backend 和 frontend 已停止，postgres 保持运行"
 
 step "步骤 2/7: 导出 PG15 数据"
-docker run -d --name "$TEMP_CONTAINER" \
-    -v "${OLD_VOLUME}:/var/lib/postgresql/data" \
-    -e POSTGRES_USER=tokensapi \
-    -e POSTGRES_PASSWORD=tokensapi \
-    -e POSTGRES_DB=tokensapi \
-    postgres:15-alpine > /dev/null
-
-# 等待数据库就绪
 retries=0
 while [ $retries -lt 30 ]; do
-    if docker exec "$TEMP_CONTAINER" pg_isready -U tokensapi > /dev/null 2>&1; then
+    if docker compose -f "$COMPOSE_FILE" exec -T postgres pg_isready -U tokensapi > /dev/null 2>&1; then
         break
     fi
     sleep 0.5
@@ -127,18 +109,13 @@ while [ $retries -lt 30 ]; do
 done
 
 if [ $retries -ge 30 ]; then
-    error "临时 PG15 容器启动超时"
-    docker rm -f "$TEMP_CONTAINER" 2>/dev/null || true
+    error "PG15 容器响应超时，无法导出"
     exit 1
 fi
 
-# 执行 pg_dump
-docker exec "$TEMP_CONTAINER" pg_dump -U tokensapi -d tokensapi -Fc -f /tmp/tokensapi.dump
-
-# 复制到宿主机
-docker cp "${TEMP_CONTAINER}:/tmp/tokensapi.dump" "$PROJECT_DIR/$BACKUP_FILE"
-docker stop "$TEMP_CONTAINER" > /dev/null
-docker rm "$TEMP_CONTAINER" > /dev/null
+# 直接在现有的 postgres 容器中执行备份，避免文件挂载冲突
+docker compose -f "$COMPOSE_FILE" exec -T postgres pg_dump -U tokensapi -d tokensapi -Fc -f /tmp/tokensapi.dump
+docker cp tokensbyte-postgres:/tmp/tokensapi.dump "$PROJECT_DIR/$BACKUP_FILE"
 
 SIZE=$(du -k "$PROJECT_DIR/$BACKUP_FILE" | cut -f1)
 success "数据导出完成: $BACKUP_FILE (${SIZE} KB)"
@@ -154,7 +131,11 @@ docker volume rm "$OLD_VOLUME" > /dev/null
 success "旧 volume 已删除"
 
 step "步骤 4/7: 升级 docker-compose.yml 到 PG16"
-sed -i 's/postgres:15-alpine/postgres:16-alpine/g' "$COMPOSE_FILE"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' 's/postgres:15-alpine/postgres:16-alpine/g' "$COMPOSE_FILE"
+else
+    sed -i 's/postgres:15-alpine/postgres:16-alpine/g' "$COMPOSE_FILE"
+fi
 success "docker-compose.yml 已更新为 postgres:16-alpine"
 
 step "步骤 5/7: 启动 PostgreSQL 16"
@@ -178,21 +159,21 @@ success "PostgreSQL 16 已就绪"
 step "步骤 6/7: 恢复数据到 PG16"
 docker cp "$PROJECT_DIR/$BACKUP_FILE" tokensbyte-postgres:/tmp/tokensapi.dump
 docker compose -f "$COMPOSE_FILE" exec -T postgres pg_restore \
-    -U tokensapi -d tokensapi --no-owner --no-privileges /tmp/tokensapi.dump > /dev/null
+    -U tokensapi -d tokensapi --clean --if-exists --no-owner --no-privileges /tmp/tokensapi.dump > /dev/null || true
 
 # 验证数据
 USERS=$(docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U tokensapi -d tokensapi \
-    -c "SELECT COUNT(*) FROM users;" 2>/dev/null | grep -o '[0-9]\+' | head -1)
+    -c "SELECT COUNT(*) FROM users;" 2>/dev/null | grep -o '[0-9]\+' | head -1 || echo "0")
 success "数据恢复完成 (users: $USERS 行)"
 
 step "步骤 7/7: 启动全部服务并验证"
-FRONTEND_PORT=5173 docker compose -f "$COMPOSE_FILE" -f "$COMPOSE_DEV_FILE" up -d > /dev/null
+docker compose -f "$COMPOSE_FILE" -f "$COMPOSE_DEV_FILE" up -d > /dev/null
 
 sleep 10
 
 # 检查健康状态
-BACKEND_HEALTH=$(docker compose -f "$COMPOSE_FILE" -f "$COMPOSE_DEV_FILE" ps backend --format "{{.Status}}")
-POSTGRES_HEALTH=$(docker compose -f "$COMPOSE_FILE" -f "$COMPOSE_DEV_FILE" ps postgres --format "{{.Status}}")
+BACKEND_HEALTH=$(docker compose -f "$COMPOSE_FILE" -f "$COMPOSE_DEV_FILE" ps backend --format "{{.Status}}" | head -1)
+POSTGRES_HEALTH=$(docker compose -f "$COMPOSE_FILE" -f "$COMPOSE_DEV_FILE" ps postgres --format "{{.Status}}" | head -1)
 
 if echo "$BACKEND_HEALTH" | grep -q "healthy" && echo "$POSTGRES_HEALTH" | grep -q "healthy"; then
     success "backend: $BACKEND_HEALTH"
@@ -210,7 +191,7 @@ echo -e "${GREEN}=========================================${NC}"
 echo -e "${NC}  前端: http://localhost:5173${NC}"
 echo -e "${NC}  后端: http://localhost:3000${NC}"
 echo -e "${YELLOW}\n  如需回滚，请运行:${NC}"
-echo -e "${YELLOW}    ./scripts/upgrade-postgres.sh --rollback${NC}"
+echo -e "${YELLOW}    ./upgrade-postgres.sh --rollback${NC}"
 echo -e "${GREEN}=========================================${NC}"
 
 # 清理临时文件
