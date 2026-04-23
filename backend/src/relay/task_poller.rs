@@ -181,14 +181,19 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
                     )).bind(pre_deduction).bind(pre_deduction).bind(&uid)
                     .execute(&state.db.pool).await;
 
-                    tracing::info!("[TaskPoller] task={} 失败,退回预扣费 {:.6}", task_id, pre_deduction);
                 }
             }
+
+            let detail_text = if pre_deduction > 0.0 {
+                "任务失败，预扣费已退回 | [后台自动轮询]"
+            } else {
+                "任务失败，该模型无预扣费 | [后台自动轮询]"
+            };
 
             // 标记为已处理（解除冻结避免重复轮询）
             let _ = sqlx::query(&state.db.format_query(
                 "UPDATE logs SET billing_detail = ? WHERE id = ?"
-            )).bind("任务失败，预扣费已退回 | [后台自动轮询]").bind(log_id)
+            )).bind(detail_text).bind(log_id)
             .execute(&state.db.pool).await;
         }
     }

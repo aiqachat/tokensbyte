@@ -229,10 +229,18 @@ pub async fn volcengine_submit(
     let response_content_str = String::from_utf8_lossy(&data).to_string();
     let latency_ms = start_time.elapsed().as_millis() as u32;
     // 异步任务 POST 只记录，真正计费在 GET 轮询成功后执行
-    let billing_detail = if let Some(ref acl) = asset_convert_log {
-        format!("异步任务预扣费冻结 | {}", acl)
+    let billing_detail = if pre_deduction > 0.0 {
+        if let Some(ref acl) = asset_convert_log {
+            format!("异步任务预扣费冻结 | {}", acl)
+        } else {
+            "异步任务预扣费冻结".to_string()
+        }
     } else {
-        "异步任务预扣费冻结".to_string()
+        if let Some(ref acl) = asset_convert_log {
+            format!("异步任务处理中(冻结) | {}", acl)
+        } else {
+            "异步任务处理中(冻结)".to_string()
+        }
     };
     proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200, "/api/v3/contents/generations/tasks", None, latency_ms, is_stream, Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some(billing_detail)).await;
 

@@ -94,10 +94,18 @@ pub async fn video_generations(
     // 真正的 token 和差值结算在 GET 轮询成功后执行
     let latency_ms = start_time.elapsed().as_millis() as u32;
     let ep = format!("/v1/video/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
-    let billing_detail = if let Some(ref acl) = asset_convert_log {
-        format!("异步任务预扣费冻结 | {}", acl)
+    let billing_detail = if pre_deduction > 0.0 {
+        if let Some(ref acl) = asset_convert_log {
+            format!("异步任务预扣费冻结 | {}", acl)
+        } else {
+            "异步任务预扣费冻结".to_string()
+        }
     } else {
-        "异步任务预扣费冻结".to_string()
+        if let Some(ref acl) = asset_convert_log {
+            format!("异步任务处理中(冻结) | {}", acl)
+        } else {
+            "异步任务处理中(冻结)".to_string()
+        }
     };
     proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200,
         &ep, None, latency_ms, 0,
@@ -120,18 +128,24 @@ pub async fn video_generations_status(
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
 
     // 从日志中查找原始渠道信息
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, '') FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
+    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, ''), billing_detail FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
     let mut db_log_id: Option<i64> = None;
     let mut original_request: Option<String> = None;
-    let log_row: Option<(i64, i64, String, String, String)> = sqlx::query_as(&log_query)
+    let mut already_billed = false;
+    let log_row: Option<(i64, i64, String, String, String, Option<String>)> = sqlx::query_as(&log_query)
         .bind(format!("%{}%", task_id))
         .fetch_optional(&state.db.pool)
         .await
         .unwrap_or(None);
 
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _, req_content)) = log_row {
+    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _, req_content, b_detail)) = log_row {
         db_log_id = Some(l_id);
         model_name = m_name;
+        if let Some(detail) = b_detail {
+            if !detail.contains("冻结") {
+                already_billed = true;
+            }
+        }
         if !req_content.is_empty() { original_request = Some(req_content); }
         if let Ok(Some(mut ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
             .bind(cid)
@@ -206,7 +220,7 @@ pub async fn video_generations_status(
             .execute(&state.db.pool).await;
 
         // 任务完成时提取 token 用量并执行计费
-        if task_status == "succeeded" {
+        if task_status == "succeeded" && !already_billed {
             let usage = crate::relay::usage_extractor::parse_usage(&get_resp_str);
             if usage.total > 0 {
                 let db_model: Option<crate::models::Model> = sqlx::query_as(
@@ -266,6 +280,12 @@ pub async fn video_generations_status(
                     tracing::info!("[Video Billing] task={}, model={}, tokens={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}", 
                         task_id, model_name, usage.total, cost, pre_deduction, apply_balance);
                 }
+            } else {
+                // 模型返回成功但未提供 token 消耗：直接解除冻结并标记结算
+                let _ = sqlx::query(&state.db.format_query(
+                    "UPDATE logs SET billing_detail = ? WHERE id = ?"
+                )).bind("任务成功，该模型无token用量").bind(log_id)
+                .execute(&state.db.pool).await;
             }
         }
     }
