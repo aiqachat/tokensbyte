@@ -26,10 +26,10 @@
 ```bash
 git clone <repository-url>
 cd tokensbyte
-docker compose up -d
+docker compose up -d --build
 ```
 > [!NOTE]
-> 默认配置仅供快速体验，生产环境请通过 `.env` 修改密码等安全项。成功启动后，浏览器访问 `http://localhost:8080/admin0755`。默认超管账号：`admin` / `admin`。
+> 首次部署需要 `--build` 参数构建镜像，后续启动直接 `docker compose up -d` 即可（使用本地已有镜像）。默认配置仅供快速体验，生产环境请通过 `.env` 修改密码等安全项。成功启动后，浏览器访问 `http://localhost:8080/admin0755`。默认超管账号：`admin` / `admin`。
 
 ### 方式二：一键交互式部署（推荐新手）
 使用内置的部署脚本，自动引导配置环境变量并部署：
@@ -81,7 +81,7 @@ chmod +x deploy.sh
 
 | 配置文件 | 数据库 | 适用场景 | 特点 |
 |---------|--------|---------|------|
-| `docker-compose.yml` | 内置 PostgreSQL（可切换外部） | 生产/测试 | 一键启动、默认配置、有镜像用镜像无镜像自动构建 |
+| `docker-compose.yml` | 内置 PostgreSQL（可切换外部） | 生产/测试 | 一键启动、首次需 --build 构建镜像，后续使用本地镜像 |
 | `docker-compose.yml` + `docker-compose.dev.yml` | 内置 PostgreSQL | 日常开发 | 源码挂载、热重载、增量编译 |
 
 ### 💡 数据库部署选择建议

@@ -3,7 +3,8 @@
 # 一键启动: docker compose up -d
 #
 # 优先级: .env 文件 > compose 内默认值
-# 镜像策略: 有现成镜像用现成镜像，没有则自动构建
+# 镜像策略: pull_policy=never 使用本地镜像，不自动构建
+# 如需重新构建: docker compose build 或改 pull_policy: missing
 # ──────────────────────────────────────────────────
 #
 # ── 切换为外部数据库 ──────────────────────────────
@@ -37,7 +38,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    pull_policy: build
+    pull_policy: never
     container_name: tokensbyte-backend
     environment:
       - HOST=0.0.0.0
@@ -78,7 +79,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    pull_policy: build
+    pull_policy: never
     container_name: tokensbyte-frontend
     ports:
       - "${FRONTEND_PORT:-8080}:80"
