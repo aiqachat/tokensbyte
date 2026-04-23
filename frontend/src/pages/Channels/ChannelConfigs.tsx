@@ -51,8 +51,10 @@ const ChannelConfigs: React.FC = () => {
 
   const handleEdit = (record: ChannelConfig) => {
     setEditingConfig(record);
-    setEditingConfig(record);
-    form.setFieldsValue(record);
+    // 编辑时不预填 api_key —— 避免旧密钥被原样回传导致以为更新了实际没变
+    const { api_key: _removed, ...rest } = record as any;
+    form.resetFields();
+    form.setFieldsValue(rest);
     setIsModalVisible(true);
   };
 
@@ -173,9 +175,10 @@ const ChannelConfigs: React.FC = () => {
           <Form.Item 
             name="api_key" 
             label="请求鉴权密钥 (API Key)" 
-            rules={[{ required: true }]}
+            rules={[{ required: !editingConfig, message: '请输入 API Key' }]}
+            extra={editingConfig ? '留空则保持原密钥不变，输入新值将覆盖旧密钥' : undefined}
           >
-            <Input.Password placeholder="sk-..." />
+            <Input.Password placeholder={editingConfig ? '留空保持不变，输入新值覆盖' : 'sk-...'} />
           </Form.Item>
           <Form.Item name="remark" label="备注说明" extra="在这里记录您的渠道归属、适用场景等信息，方便自己查阅">
             <Input.TextArea rows={2} placeholder="例如：这是供图片生成的官方主通道..." />

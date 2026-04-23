@@ -87,13 +87,16 @@ const Tokens: React.FC = () => {
         await request.put(`/tokens/${editingToken.id}`, data);
         message.success(t('common.success'));
       } else {
-        await request.post('/tokens', data);
+        await (request as any).post('/tokens', data, { skipErrorHandler: true });
         message.success(t('common.success'));
       }
       setIsModalVisible(false);
       fetchTokens();
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      // 提取后端错误信息，关闭弹窗并只显示一次
+      const serverMsg = e?.response?.data?.error?.message || e?.message || '创建失败';
+      setIsModalVisible(false);
+      message.error(serverMsg);
     } finally {
       setSaving(false);
     }
@@ -344,7 +347,7 @@ const Tokens: React.FC = () => {
           </Form.Item>
 
           <Form.Item name="allowed_models" label={t('channels.models')}>
-            <Input.TextArea rows={4} placeholder="gpt-4o\ngpt-3.5-turbo" />
+            <Input.TextArea rows={4} placeholder="留空则可请求站内全部模型，无需填写" />
           </Form.Item>
 
           <Form.Item name="allowed_ips" label={t('tokens.allowed_ips')}>
