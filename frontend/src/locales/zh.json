@@ -81,7 +81,7 @@
   "dashboard": {
     "title": "系统概览",
     "total_requests": "总请求数",
-    "total_tokens": "总令牌数",
+    "total_tokens": "总消耗 Token",
     "estimated_cost": "预估成本",
     "active_tokens": "活跃令牌",
     "recent_activity": "最近活动",
