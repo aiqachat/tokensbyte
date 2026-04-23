@@ -140,7 +140,7 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
 
                 // 更新日志计费
                 let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ?, billing_detail = ? WHERE id = ?"
+                    "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
                 )).bind(usage.prompt).bind(usage.completion).bind(cost).bind(&detail).bind(log_id)
                 .execute(&state.db.pool).await;
 
@@ -159,7 +159,7 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
             } else {
                 // 模型返回成功但未提供 token 消耗：直接解除冻结并标记结算
                 let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE logs SET billing_detail = ? WHERE id = ?"
+                    "UPDATE logs SET billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
                 )).bind("任务成功，该模型无token用量 | [后台自动轮询]").bind(log_id)
                 .execute(&state.db.pool).await;
             }
@@ -192,7 +192,7 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
 
             // 标记为已处理（解除冻结避免重复轮询）
             let _ = sqlx::query(&state.db.format_query(
-                "UPDATE logs SET billing_detail = ? WHERE id = ?"
+                "UPDATE logs SET billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
             )).bind(detail_text).bind(log_id)
             .execute(&state.db.pool).await;
         }
