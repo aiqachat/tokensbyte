@@ -41,24 +41,28 @@ const BASE64_MIME_EXT: &[(&str, &str)] = &[
 /// - data:base64：解码 → SHA-256 哈希去重 → TOS 临时上传 → CreateAsset → 删除临时文件
 /// - 已是 asset:// 前缀的跳过
 /// - 转换失败时静默跳过，保持原始值不变
+/// 返回值为转换过程日志，记录每个素材的转换结果（成功/失败及原因）
 pub async fn convert_content_urls(
     state: &AppState,
     user_id: &str,
     body: &mut serde_json::Value,
-) {
+) -> Vec<String> {
+    let mut logs: Vec<String> = Vec::new();
+
     // 加载 volcengine 审核配置（素材资产管理插件）
     let mut volc_config = match crate::api::plugins::get_volc_config(state, "asset_manager").await {
         Some(vc) => vc,
         None => {
             tracing::debug!("[AssetConvert] 素材资产管理插件未配置审核凭证，跳过素材转换");
-            return;
+            logs.push("素材转换跳过: 未配置审核凭证".to_string());
+            return logs;
         }
     };
 
     // 获取 content 数组（可变引用）
     let content_arr = match body.get_mut("content").and_then(|c| c.as_array_mut()) {
         Some(arr) => arr,
-        None => return,
+        None => return logs,
     };
 
     let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
@@ -66,7 +70,8 @@ pub async fn convert_content_urls(
 
     // 确保有可用的 Group ID，如果没有则尝试自动创建并保存
     if !ensure_group_id(state, &client, &mut volc_config).await {
-        return;
+        logs.push("素材转换失败: 无法获取或创建素材组ID".to_string());
+        return logs;
     }
 
     // 预加载 TOS 配置（base64 场景需要）
@@ -95,24 +100,40 @@ pub async fn convert_content_urls(
             continue;
         }
 
+        // 截取 URL 简短标识用于日志（避免过长）
+        let url_short = if url_val.starts_with("data:") {
+            "base64数据".to_string()
+        } else if url_val.len() > 80 {
+            format!("{}...", &url_val[..80])
+        } else {
+            url_val.clone()
+        };
+
         // 根据 URL 类型分发处理
         let asset_id = if url_val.starts_with("http://") || url_val.starts_with("https://") {
             convert_url_resource(state, &client, &volc_config, user_id, &url_val, asset_type).await
         } else if url_val.starts_with("data:") {
             convert_base64_resource(state, &client, &volc_config, &tos_config, user_id, &url_val, asset_type).await
         } else {
-            // 其他未知格式，跳过
+            logs.push(format!("[{}] 跳过: 不支持的格式", url_short));
             continue;
         };
 
         // 替换 URL 为 asset://<ASSET_ID> 格式
-        if let Some(aid) = asset_id {
-            let asset_ref = format!("asset://{}", aid);
-            if let Some(url_obj) = item.get_mut(url_key).and_then(|u| u.as_object_mut()) {
-                url_obj.insert("url".to_string(), serde_json::json!(asset_ref));
+        match asset_id {
+            Some(aid) => {
+                let asset_ref = format!("asset://{}", aid);
+                if let Some(url_obj) = item.get_mut(url_key).and_then(|u| u.as_object_mut()) {
+                    url_obj.insert("url".to_string(), serde_json::json!(asset_ref));
+                }
+                logs.push(format!("[{}] {} ✓ {}", asset_type, url_short, asset_ref));
+            }
+            None => {
+                logs.push(format!("[{}] {} ✗ 转换失败，保持原始URL", asset_type, url_short));
             }
         }
     }
+    logs
 }
 
 /// 处理网络 URL 资源：下载 → SHA-256 哈希 → 去重查询 → CreateAsset
