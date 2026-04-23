@@ -10,6 +10,18 @@ import { useCallback, useRef } from 'react';
 import { useCanvas } from '../context/PlaygroundContext';
 import type { CanvasTransform } from '../types';
 
+/**
+ * 模块级共享拖拽状态
+ * ⚠️ 必须在模块级定义，因为 useCanvasInteraction 被 InfiniteCanvas 和 CanvasNode
+ * 分别调用（两个独立的 hook 实例）。useRef 会为每个实例创建独立 ref，
+ * 导致 CanvasNode 设置的 nodeId 在 InfiniteCanvas 的 mousemove 中读不到。
+ */
+const sharedNodeDrag = {
+  nodeId: null as string | null,
+  offsetX: 0,
+  offsetY: 0,
+};
+
 export const useCanvasInteraction = () => {
   const {
     canvasTransform, setCanvasTransform,
@@ -26,10 +38,6 @@ export const useCanvasInteraction = () => {
     isDragging: false,
     startX: 0, startY: 0,
     startTransformX: 0, startTransformY: 0,
-  });
-  const nodeDragRef = useRef({
-    nodeId: null as string | null,
-    offsetX: 0, offsetY: 0,
   });
   const rafRef = useRef<number>(0);
   // 缓存最新的 canvasTransform，在闭包中使用
@@ -69,7 +77,7 @@ export const useCanvasInteraction = () => {
   /** 画布鼠标移动 — 全部通过 RAF + 直接 DOM 更新 */
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     const cd = canvasDragRef.current;
-    const nd = nodeDragRef.current;
+    const nd = sharedNodeDrag;
 
     if (cd.isDragging) {
       // 画布平移：直接计算新位置，通过 RAF 更新 transform 层 DOM
@@ -118,7 +126,7 @@ export const useCanvasInteraction = () => {
   /** 鼠标松开 — 将最终位置一次性提交到 React state */
   const handleCanvasMouseUp = useCallback(() => {
     const cd = canvasDragRef.current;
-    const nd = nodeDragRef.current;
+    const nd = sharedNodeDrag;
 
     if (cd.isDragging) {
       // 提交最终画布位置到 React state
@@ -161,11 +169,9 @@ export const useCanvasInteraction = () => {
       const ct = transformRef.current;
       const startX = (e.clientX - ct.x) / ct.scale;
       const startY = (e.clientY - ct.y) / ct.scale;
-      nodeDragRef.current = {
-        nodeId,
-        offsetX: startX - nodeX,
-        offsetY: startY - nodeY,
-      };
+      sharedNodeDrag.nodeId = nodeId;
+      sharedNodeDrag.offsetX = startX - nodeX;
+      sharedNodeDrag.offsetY = startY - nodeY;
     }
   }, [activeTool, maxZIndex, setDraggingNodeId, setMaxZIndex, setNodes]);
 

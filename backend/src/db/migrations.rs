@@ -806,6 +806,27 @@ macro_rules! pg_migration_blocks {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_assets_type ON playground_assets(asset_type)")
         .execute(pool).await.ok();
 
+    // api_tokens 增加 kid 列（令牌短标识：用户 UID 后3位 + 随机3位数字）
+    sqlx::query("ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS kid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+
+    // 回填已有令牌的 kid（只处理 kid 为空的记录）
+    {
+        #[derive(sqlx::FromRow)]
+        struct TokenUid { token_id: i64, uid: String }
+        let rows: Vec<TokenUid> = sqlx::query_as(
+            "SELECT t.id as token_id, u.uid FROM api_tokens t JOIN users u ON t.user_id = u.id WHERE t.kid IS NULL OR t.kid = ''"
+        ).fetch_all(&*pool).await.unwrap_or_default();
+        for row in rows {
+            let uid_suffix: String = row.uid.chars().rev().take(3).collect::<String>().chars().rev().collect();
+            let random_part: String = (0..3).map(|_| (b'0' + rand::random::<u8>() % 10) as char).collect();
+            let kid = format!("{}{}", uid_suffix, random_part);
+            sqlx::query("UPDATE api_tokens SET kid = $1 WHERE id = $2")
+                .bind(&kid).bind(row.token_id)
+                .execute(&*pool).await.ok();
+        }
+    }
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};

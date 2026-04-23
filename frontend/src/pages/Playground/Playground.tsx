@@ -16,25 +16,34 @@ import TokenModal from './components/TokenModal';
 import ZoomIndicator from './components/ZoomIndicator';
 import './Playground.css';
 
-/** 内部布局层，在 Provider 内部消费 Context */
+/**
+ * 内部布局层 — 在 Provider 内部消费 Context
+ *
+ * 层级架构（参见 .gemini/skills/playground_architecture.skill）：
+ *   Layer 1: 无限画布层 (Canvas Layer)   — 跟随画布变换缩放
+ *   Layer 2: 页面控制层 (UI Control Layer) — 固定位置，不跟随缩放
+ *   Layer 3: 弹出层 (Overlay Layer)       — Modal / Drawer
+ */
 const PlaygroundLayout: React.FC = () => {
   return (
     <div style={{ height: '100vh', width: '100vw', overflow: 'hidden', background: '#090A0B', position: 'relative' }}>
-      {/* 全屏画布视口 */}
+
+      {/* ═══════════ Layer 1: 无限画布层 (Canvas Layer) ═══════════ */}
+      {/* 画布视口容器 — 包含画布 + 固定位置面板，保证鼠标事件冒泡链完整 */}
       <div style={{ width: '100vw', height: '100vh', position: 'absolute', inset: 0, overflow: 'hidden' }}>
-        <InfiniteCanvas />
-        <PromptInput />
-        <FloatingToolbar />
+        <InfiniteCanvas />        {/* 画布容器 + 变换层（内部节点跟随缩放） */}
+        <PromptInput />           {/* 底部居中 — 提示词输入框 */}
+        <FloatingToolbar />       {/* 左侧居中 — 编辑工具栏 */}
       </div>
 
-      {/* 悬浮 UI 层 */}
-      <FloatingHeader />
-      <ZoomIndicator />
-      <SettingsWidget />
+      {/* ═══════════ Layer 2: 页面控制层 (UI Control Layer) ═══════════ */}
+      <FloatingHeader />          {/* 左上角 — 返回按钮 (固定) */}
+      <ZoomIndicator />           {/* 右下角 — 缩放控制 (固定) */}
+      <SettingsWidget />          {/* 右上角 — 模型选择器 (可拖拽) */}
 
-      {/* 弹出层 */}
-      <ModelDrawer />
-      <TokenModal />
+      {/* ═══════════ Layer 3: 弹出层 (Overlay Layer) ═══════════ */}
+      <ModelDrawer />             {/* 模型全景选择器抽屉 */}
+      <TokenModal />              {/* API 密钥选择弹窗 */}
     </div>
   );
 };

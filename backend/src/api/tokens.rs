@@ -70,13 +70,26 @@ pub async fn create_token(
     let token_key = auth::generate_api_key();
     let models_json = serde_json::to_string(&request.allowed_models.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
 
-    let sql = r#"INSERT INTO api_tokens (user_id, token_key, name, quota_limit, allowed_models, allowed_ips, expires_at, is_active)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1)"#;
+    // 生成 kid: 用户 UID 后3位 + 3位随机数字
+    let user_uid: String = sqlx::query_scalar(
+        &state.db.format_query("SELECT uid FROM users WHERE id = ?")
+    )
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or_else(|_| "000".to_string());
+    let uid_suffix: String = user_uid.chars().rev().take(3).collect::<String>().chars().rev().collect();
+    let random_part: String = (0..3).map(|_| (b'0' + rand::random::<u8>() % 10) as char).collect();
+    let kid = format!("{}{}", uid_suffix, random_part);
+
+    let sql = r#"INSERT INTO api_tokens (user_id, token_key, kid, name, quota_limit, allowed_models, allowed_ips, expires_at, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)"#;
 
     let last_id: i64 = if state.db.is_sqlite {
         let res = sqlx::query(&state.db.format_query(sql))
             .bind(&claims.sub)
             .bind(&token_key)
+            .bind(&kid)
             .bind(request.name.unwrap_or_else(|| "default".to_string()))
             .bind(request.quota_limit.unwrap_or(-1.0))
             .bind(&models_json)
@@ -90,6 +103,7 @@ pub async fn create_token(
         sqlx::query_scalar::<_, i64>(&state.db.format_query(&sql_pg))
             .bind(&claims.sub)
             .bind(&token_key)
+            .bind(&kid)
             .bind(request.name.unwrap_or_else(|| "default".to_string()))
             .bind(request.quota_limit.unwrap_or(-1.0))
             .bind(&models_json)
@@ -131,9 +145,23 @@ pub async fn update_token(
     if let Some(expires) = request.expires_at { token.expires_at = Some(expires); }
     if let Some(active) = request.is_active { token.is_active = active; }
 
+    // 如果历史令牌没有 kid，编辑保存时自动生成
+    if token.kid.as_deref().unwrap_or("").is_empty() {
+        let user_uid: String = sqlx::query_scalar(
+            &state.db.format_query("SELECT uid FROM users WHERE id = ?")
+        )
+        .bind(&token.user_id)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or_else(|_| "000".to_string());
+        let uid_suffix: String = user_uid.chars().rev().take(3).collect::<String>().chars().rev().collect();
+        let random_part: String = (0..3).map(|_| (b'0' + rand::random::<u8>() % 10) as char).collect();
+        token.kid = Some(format!("{}{}", uid_suffix, random_part));
+    }
+
     sqlx::query(
         &state.db.format_query(r#"UPDATE api_tokens SET name = ?, quota_limit = ?, allowed_models = ?, allowed_ips = ?, 
-           expires_at = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+           expires_at = ?, is_active = ?, kid = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&token.name)
@@ -142,6 +170,7 @@ pub async fn update_token(
     .bind(&token.allowed_ips)
     .bind(&token.expires_at)
     .bind(token.is_active)
+    .bind(&token.kid)
     .bind(id)
     .execute(&state.db.pool)
     .await?;

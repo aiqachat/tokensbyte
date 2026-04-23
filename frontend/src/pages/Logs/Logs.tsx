@@ -97,7 +97,10 @@ const Logs: React.FC = () => {
         return (
           <Space size={6}>
             <Avatar size="small" style={{ backgroundColor: themeToken.colorPrimary, fontSize: 12 }}>{initial}</Avatar>
-            <Text style={{ fontSize: 12 }}>{name}</Text>
+            <Space direction="vertical" size={0}>
+              <Text style={{ fontSize: 12 }}>{name}</Text>
+              {record.user_uid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>UID: {record.user_uid}</Text>}
+            </Space>
           </Space>
         );
       },
@@ -350,7 +353,10 @@ const Logs: React.FC = () => {
                 <CardRow label="用户">
                   <Space size={4}>
                     <Avatar size={18} style={{ backgroundColor: themeToken.colorPrimary, fontSize: 10 }}>{userName[0]?.toUpperCase()}</Avatar>
-                    <Text style={{ fontSize: 12 }}>{userName}</Text>
+                    <Space direction="vertical" size={0}>
+                      <Text style={{ fontSize: 12 }}>{userName}</Text>
+                      {record.user_uid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>UID: {record.user_uid}</Text>}
+                    </Space>
                   </Space>
                 </CardRow>
                 <CardRow label="令牌"><Tag color="cyan" style={{ fontSize: 11 }}>{record.token_name || '-'}</Tag></CardRow>
