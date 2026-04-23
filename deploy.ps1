@@ -118,7 +118,7 @@ ADMIN_PASSWORD=${admin_password}
 
 # 端口配置
 BACKEND_PORT=3000
-FRONTEND_PORT=80
+FRONTEND_PORT=8080
 
 # 功能开关
 REGISTER_ENABLED=${register_enabled}
@@ -219,8 +219,8 @@ switch ($mode) {
         Write-Host "✅ 生产环境部署完成！" -ForegroundColor Green
         Write-Host ""
         Write-Host "📍 访问地址:" -ForegroundColor Cyan
-        Write-Host "   - 用户端: http://localhost:${FRONTEND_PORT:-80}"
-        Write-Host "   - 管理后台: http://localhost:${FRONTEND_PORT:-80}/admin0755"
+        Write-Host "   - 用户端: http://localhost:8080"
+        Write-Host "   - 管理后台: http://localhost:8080/admin0755"
         Write-Host "   - API: http://localhost:${BACKEND_PORT:-3000}/v1"
         Write-Host ""
         Write-Host "👤 默认管理员账号:" -ForegroundColor Cyan

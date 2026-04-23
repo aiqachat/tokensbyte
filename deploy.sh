@@ -99,7 +99,7 @@ ADMIN_PASSWORD=${ADMIN_PASSWORD}
 
 # 端口配置
 BACKEND_PORT=3000
-FRONTEND_PORT=80
+FRONTEND_PORT=8080
 
 # 功能开关
 REGISTER_ENABLED=${REGISTER_ENABLED}
@@ -193,8 +193,8 @@ case $mode in
         echo "✅ 生产环境部署完成！"
         echo ""
         echo "📍 访问地址:"
-        echo "   - 用户端: http://localhost:80"
-        echo "   - 管理后台: http://localhost:80/admin0755"
+        echo "   - 用户端: http://localhost:8080"
+        echo "   - 管理后台: http://localhost:8080/admin0755"
         echo "   - API: http://localhost:3000/v1"
         echo ""
         echo "👤 默认管理员账号:"

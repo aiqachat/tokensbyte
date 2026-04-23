@@ -29,7 +29,7 @@ cd tokensbyte
 docker compose up -d
 ```
 > [!NOTE]
-> 默认配置仅供快速体验，生产环境请通过 `.env` 修改密码等安全项。成功启动后，浏览器访问 `http://localhost:80/admin0755`。默认超管账号：`admin` / `admin`。
+> 默认配置仅供快速体验，生产环境请通过 `.env` 修改密码等安全项。成功启动后，浏览器访问 `http://localhost:8080/admin0755`。默认超管账号：`admin` / `admin`。
 
 ### 方式二：一键交互式部署（推荐新手）
 使用内置的部署脚本，自动引导配置环境变量并部署：

@@ -81,7 +81,7 @@ services:
     pull_policy: build
     container_name: tokensbyte-frontend
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_PORT:-8080}:80"
     networks:
       - tokensbyte-network
     depends_on:
