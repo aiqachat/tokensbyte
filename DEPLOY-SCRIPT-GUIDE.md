@@ -71,8 +71,8 @@ chmod +x deploy.sh
 
 ```
 请选择部署模式:
-  1) 开发环境 (内置PostgreSQL，快速测试)
-  2) 生产环境 (外部PostgreSQL，推荐)
+  1) 开发环境 (热重载，适合日常开发)
+  2) 生产环境 (内置 PostgreSQL，开箱即用)
 
 请输入选项 (1/2): 2
 ```
@@ -87,8 +87,8 @@ chmod +x deploy.sh
 ✅ 生产环境部署完成！
 
 📍 访问地址:
-   - 用户端: http://localhost:5173
-   - 管理后台: http://localhost:5173/admin0755
+   - 用户端: http://localhost:80
+   - 管理后台: http://localhost:80/admin0755
    - API: http://localhost:3000/v1
 
 👤 默认管理员账号:
@@ -98,9 +98,10 @@ chmod +x deploy.sh
 📊 服务状态:
 [显示容器状态]
 
-📝 查看日志: docker compose -f docker-compose.prod.yml logs -f
+📝 查看日志: docker compose logs -f
 
 💡 提示: 生产环境建议配置 HTTPS 反向代理
+💡 如需使用外部数据库，修改 .env 中的 DATABASE_URL 并注释掉 docker-compose.yml 中的 postgres 服务
 ```
 
 ## 🔄 重新配置
@@ -160,9 +161,11 @@ chmod +x deploy.sh
 # TokensByte 环境变量配置
 # 生成时间: 2026-04-15 12:00:00
 
-# 数据库配置
-DATABASE_URL=postgres://tokensbyte:aB3#xY9@mK2$pL5!@postgres:5432/tokensbyte
+# 数据库配置 (内置 PostgreSQL)
+DATABASE_URL=postgres://tokensapi:aB3#xY9@mK2$pL5!@postgres:5432/tokensapi
+POSTGRES_USER=tokensapi
 POSTGRES_PASSWORD=aB3#xY9@mK2$pL5!
+POSTGRES_DB=tokensapi
 
 # JWT 密钥
 JWT_SECRET=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2
@@ -173,14 +176,12 @@ ADMIN_PASSWORD=Adm1n@2024!Secure
 
 # 端口配置
 BACKEND_PORT=3000
-FRONTEND_PORT=5173
+FRONTEND_PORT=80
 
 # 功能开关
 REGISTER_ENABLED=false
 
-# 其他配置
-HOST=0.0.0.0
-PORT=3000
+# 日志级别
 RUST_LOG=info
 ```
 
@@ -204,11 +205,11 @@ notepad .env
 
 | 特性 | 开发环境 | 生产环境 |
 |------|---------|---------|
-| 数据库 | 内置 PostgreSQL | 外部 PostgreSQL |
+| 数据库 | 内置 PostgreSQL | 内置 PostgreSQL（可切换外部） |
 | 数据持久化 | Docker 卷 | Docker 卷 |
 | 适用场景 | 测试、开发 | 正式运营 |
-| 性能 | 标准 | 高（可独立调优） |
-| 推荐 | ❌ | ✅ |
+| 热重载 | ✅ cargo-watch + Vite HMR | ❌ |
+| 推荐 | 开发调试 | ✅ 生产部署 |
 
 ## ❓ 常见问题
 
@@ -245,8 +246,8 @@ A: 有三种方式：
 ```bash
 # 方式 2: 编辑后重启
 nano .env
-docker compose -f docker-compose.prod.yml down
-docker compose -f docker-compose.prod.yml up -d
+docker compose down
+docker compose up -d
 ```
 
 ### Q4: 忘记了管理员密码怎么办？
@@ -258,7 +259,7 @@ A: 修改 `.env` 文件中的 `ADMIN_PASSWORD`，然后重启服务：
 nano .env  # 修改 ADMIN_PASSWORD
 
 # 重启服务
-docker compose -f docker-compose.prod.yml restart backend
+docker compose restart backend
 ```
 
 ### Q5: 可以使用已有的 .env 文件吗？
@@ -269,6 +270,17 @@ A: 可以！如果有 `.env` 文件，脚本会直接使用它。你也可以从
 cp .env.example .env
 nano .env  # 编辑配置
 ./deploy.sh  # 使用已有配置部署
+```
+
+### Q6: 如何切换到外部数据库？
+
+A: 修改 `.env` 中的 `DATABASE_URL` 指向外部数据库，然后注释掉 `docker-compose.yml` 中的 `postgres` 服务，删除 `backend` 的 `depends_on: postgres`，最后重启：
+
+```bash
+nano .env  # 修改 DATABASE_URL
+nano docker-compose.yml  # 注释掉 postgres 服务
+docker compose down
+docker compose up -d
 ```
 
 ## 🎯 最佳实践

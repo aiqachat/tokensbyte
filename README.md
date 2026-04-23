@@ -21,15 +21,15 @@
 
 本项目支持多种部署方式，满足从本地测试到企业生产的各类需求。所有容器化配置文件均已内置。
 
-### 方式一：快速起步（本地/测试环境）
-使用内置 PostgreSQL 和基础配置，最快体验全功能：
+### 方式一：一键启动（最快体验）
+无需任何配置，直接运行即可启动全部服务（内置 PostgreSQL + 默认配置）：
 ```bash
 git clone <repository-url>
 cd tokensbyte
-docker compose up -d
+docker compose up -d --build
 ```
 > [!NOTE]
-> 成功启动后，浏览器访问 `http://localhost:5173/admin0755`。默认超管账号：`admin` / `123456`（请在控制台及时修改）。
+> 首次部署需要 `--build` 参数构建镜像，后续启动直接 `docker compose up -d` 即可（使用本地已有镜像）。默认配置仅供快速体验，生产环境请通过 `.env` 修改密码等安全项。成功启动后，浏览器访问 `http://localhost:8080/admin0755`。默认超管账号：`admin` / `admin`。
 
 ### 方式二：一键交互式部署（推荐新手）
 使用内置的部署脚本，自动引导配置环境变量并部署：
@@ -50,18 +50,21 @@ chmod +x deploy.sh
 2. 设置管理员账号和注册开关
 3. 选择部署模式（开发/生产）
 
-### 方式三：标准生产环境部署（推荐）
-针对生产环境，推荐使用预构建镜像并连接外部 PostgreSQL：
+### 方式三：自定义配置部署（推荐生产环境）
+通过 `.env` 文件自定义配置，compose 内已提供全部默认值，`.env` 中只需覆盖需要修改的项：
 
-1. **初始化配置**：
+1. **创建配置文件**：
    ```bash
    cp .env.example .env
-   # 根据注释修改 .env 中的 DATABASE_URL、JWT 密钥等安全项
+   # 根据注释修改 .env 中的安全项（密码、JWT 密钥等）
    ```
-2. **使用专用的生产 Compose 文件启动**（详情参阅内置的 [`docker-compose.prod.yml`](docker-compose.prod.yml)）：
+2. **启动服务**：
    ```bash
-   docker compose -f docker-compose.prod.yml up -d
+   docker compose up -d
    ```
+
+> [!TIP]
+> 如需使用外部 PostgreSQL（RDS/云数据库），只需修改 `.env` 中的 `DATABASE_URL` 指向外部数据库，并注释掉 `docker-compose.yml` 中的 `postgres` 服务即可。
 
 ### 方式四：离线/云端加速部署（针对国内慢速网络）
 如果您在云服务器上的构建速度过慢，我们在工程中自带了一键导出/导入脚本：
@@ -78,9 +81,8 @@ chmod +x deploy.sh
 
 | 配置文件 | 数据库 | 适用场景 | 特点 |
 |---------|--------|---------|------|
-| `docker-compose.yml` | 内置 PostgreSQL | 快速测试/开发 | 一键启动，包含数据库服务 |
-| `docker-compose.prod.yml` | 外部 PostgreSQL | 生产环境 | 预构建镜像、健康检查、资源限制 |
-| `docker-compose.dev.yml` | 继承基础配置 | 日常开发 | 源码挂载、热重载、增量编译 |
+| `docker-compose.yml` | 内置 PostgreSQL（可切换外部） | 生产/测试 | 一键启动、首次需 --build 构建镜像，后续使用本地镜像 |
+| `docker-compose.yml` + `docker-compose.dev.yml` | 内置 PostgreSQL | 日常开发 | 源码挂载、热重载、增量编译 |
 
 ### 💡 数据库部署选择建议
 
@@ -233,8 +235,7 @@ tokensbyte/
 │   ├── vite.config.ts      # Vite 配置
 │   └── Dockerfile          # 前端 Docker 配置
 │
-├── docker-compose.yml      # Docker Compose 配置（基础版，含内置PostgreSQL）
-├── docker-compose.prod.yml # Docker Compose 配置（生产环境，外部数据库）
+├── docker-compose.yml      # Docker Compose 配置（内置 PostgreSQL，可切换外部数据库）
 ├── docker-compose.dev.yml  # Docker Compose 配置（开发热重载叠加层）
 ├── deploy.sh               # Linux/Mac 一键部署脚本
 ├── deploy.ps1              # Windows 一键部署脚本
@@ -283,7 +284,7 @@ A: 系统底部驱动 `sqlx` 会严格根据环境变量 `DATABASE_URL` 的**协
 - **使用 SQLite（推荐本地开发测试）**：
   在 `.env` 或系统中配置 `DATABASE_URL=sqlite://data/tokensbyte.db`
 
-*注：项目当前默认使用 PostgreSQL。`docker-compose.yml` 内置了 PostgreSQL 服务，`docker-compose.prod.yml` 则配置为连接外部数据库。*
+*注：项目当前默认使用 PostgreSQL。`docker-compose.yml` 内置了 PostgreSQL 服务并提供完整默认配置，支持 `docker compose up -d` 一键启动。如需使用外部数据库，修改 `.env` 中的 `DATABASE_URL` 并注释掉 compose 文件中的 `postgres` 服务即可。*
 
 ### Q: Docker 内置 PostgreSQL 和独立安装有什么区别？
 

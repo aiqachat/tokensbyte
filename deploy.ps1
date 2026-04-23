@@ -103,27 +103,27 @@ if (-Not (Test-Path ".env")) {
 # TokensByte 环境变量配置
 # 生成时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
 
-# 数据库配置
-DATABASE_URL=postgres://tokensbyte:$postgres_password@postgres:5432/tokensbyte
-POSTGRES_PASSWORD=$postgres_password
+# 数据库配置 (内置 PostgreSQL)
+DATABASE_URL=postgres://tokensapi:${postgres_password}@postgres:5432/tokensapi
+POSTGRES_USER=tokensapi
+POSTGRES_PASSWORD=${postgres_password}
+POSTGRES_DB=tokensapi
 
 # JWT 密钥
-JWT_SECRET=$jwt_secret
+JWT_SECRET=${jwt_secret}
 
 # 管理员账号
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=$admin_password
+ADMIN_PASSWORD=${admin_password}
 
 # 端口配置
 BACKEND_PORT=3000
-FRONTEND_PORT=5173
+FRONTEND_PORT=8080
 
 # 功能开关
-REGISTER_ENABLED=$register_enabled
+REGISTER_ENABLED=${register_enabled}
 
-# 其他配置
-HOST=0.0.0.0
-PORT=3000
+# 日志级别
 RUST_LOG=info
 "@
     $envContent | Out-File -FilePath ".env" -Encoding UTF8
@@ -189,54 +189,51 @@ RUST_LOG=info
 # 询问部署模式
 Write-Host ""
 Write-Host "请选择部署模式:" -ForegroundColor Cyan
-Write-Host "  1) 开发环境 (SQLite，快速测试)" -ForegroundColor White
-Write-Host "  2) 生产环境 (PostgreSQL，推荐)" -ForegroundColor White
+Write-Host "  1) 开发环境 (热重载，适合日常开发)" -ForegroundColor White
+Write-Host "  2) 生产环境 (内置 PostgreSQL，开箱即用)" -ForegroundColor White
 Write-Host ""
 $mode = Read-Host "请输入选项 (1/2)"
 
 switch ($mode) {
     "1" {
         Write-Host ""
-        Write-Host "🚀 启动开发环境..." -ForegroundColor Cyan
-        docker compose up -d
+        Write-Host "🚀 启动开发环境 (热重载)..." -ForegroundColor Cyan
+        docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
         
         Write-Host ""
-        Write-Host "✅ 开发环境部署完成！" -ForegroundColor Green
+        Write-Host "✅ 开发环境已启动！" -ForegroundColor Green
         Write-Host ""
         Write-Host "📍 访问地址:" -ForegroundColor Cyan
         Write-Host "   - 用户端: http://localhost:5173"
         Write-Host "   - 管理后台: http://localhost:5173/admin0755"
         Write-Host "   - API: http://localhost:3000/v1"
         Write-Host ""
-        Write-Host "👤 默认管理员账号:" -ForegroundColor Cyan
-        Write-Host "   - 用户名: admin"
-        Write-Host "   - 密码: admin"
-        Write-Host ""
-        Write-Host "📝 查看日志: docker compose logs -f" -ForegroundColor Yellow
+        Write-Host " 查看日志: docker compose logs -f" -ForegroundColor Yellow
     }
     "2" {
         Write-Host ""
         Write-Host "🚀 启动生产环境..." -ForegroundColor Cyan
-        docker compose -f docker-compose.prod.yml up -d
+        docker compose up -d
         
         Write-Host ""
         Write-Host "✅ 生产环境部署完成！" -ForegroundColor Green
         Write-Host ""
         Write-Host "📍 访问地址:" -ForegroundColor Cyan
-        Write-Host "   - 用户端: http://localhost:5173"
-        Write-Host "   - 管理后台: http://localhost:5173/admin0755"
-        Write-Host "   - API: http://localhost:3000/v1"
+        Write-Host "   - 用户端: http://localhost:8080"
+        Write-Host "   - 管理后台: http://localhost:8080/admin0755"
+        Write-Host "   - API: http://localhost:${BACKEND_PORT:-3000}/v1"
         Write-Host ""
         Write-Host "👤 默认管理员账号:" -ForegroundColor Cyan
         Write-Host "   - 用户名: admin"
-        Write-Host "   - 密码: admin (请通过管理后台修改)"
+        Write-Host "   - 密码: admin (请通过管理后台修改)" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "📊 服务状态:" -ForegroundColor Cyan
-        docker compose -f docker-compose.prod.yml ps
+        docker compose ps
         Write-Host ""
-        Write-Host "📝 查看日志: docker compose -f docker-compose.prod.yml logs -f" -ForegroundColor Yellow
+        Write-Host "📝 查看日志: docker compose logs -f" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "💡 提示: 生产环境建议配置 HTTPS 反向代理" -ForegroundColor Yellow
+        Write-Host "💡 如需使用外部数据库，修改 .env 中的 DATABASE_URL 并注释掉 docker-compose.yml 中的 postgres 服务" -ForegroundColor Yellow
     }
     default {
         Write-Host "❌ 无效选项" -ForegroundColor Red
