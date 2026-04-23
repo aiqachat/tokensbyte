@@ -465,6 +465,7 @@ pub struct PluginApiLog {
     pub request_payload: Option<String>,
     pub response_payload: Option<String>,
     pub status_code: Option<i32>,
+    pub source: String,
     pub created_at: String,
 }
 
@@ -472,6 +473,8 @@ pub struct PluginApiLog {
 pub struct LogQuery {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
+    pub source: Option<String>,
+    pub keyword: Option<String>,
 }
 
 /// 管理员：获取插件 API 日志
@@ -494,21 +497,38 @@ async fn get_plugin_api_logs(
     let page_size = query.page_size.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let total: i64 = sqlx::query_scalar(&state.db.format_query(
-        "SELECT COUNT(*) FROM plugin_api_logs WHERE plugin_name = ?"
-    ))
-    .bind(&name)
-    .fetch_one(&state.db.pool)
-    .await?;
+    // 动态拼接过滤条件
+    let mut where_clause = "WHERE plugin_name = $1".to_string();
+    let mut param_idx = 2u32;
 
-    let logs: Vec<PluginApiLog> = sqlx::query_as(&state.db.format_query(
-        "SELECT * FROM plugin_api_logs WHERE plugin_name = ? ORDER BY id DESC LIMIT ? OFFSET ?"
-    ))
-    .bind(&name)
-    .bind(page_size)
-    .bind(offset)
-    .fetch_all(&state.db.pool)
-    .await?;
+    let source_filter = query.source.as_deref().unwrap_or("").to_string();
+    if !source_filter.is_empty() {
+        where_clause.push_str(&format!(" AND source = ${}", param_idx));
+        param_idx += 1;
+    }
+
+    let keyword = query.keyword.as_deref().unwrap_or("").to_string();
+    if !keyword.is_empty() {
+        where_clause.push_str(&format!(" AND (api_endpoint ILIKE ${p} OR user_id ILIKE ${p})", p = param_idx));
+        param_idx += 1;
+    }
+
+    // 构造 count 查询
+    let count_sql = format!("SELECT COUNT(*) FROM plugin_api_logs {}", where_clause);
+    let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(&name);
+    if !source_filter.is_empty() { count_q = count_q.bind(&source_filter); }
+    if !keyword.is_empty() { count_q = count_q.bind(format!("%{}%", keyword)); }
+    let total: i64 = count_q.fetch_one(&state.db.pool).await?;
+
+    // 构造数据查询
+    let data_sql = format!(
+        "SELECT * FROM plugin_api_logs {} ORDER BY id DESC LIMIT ${} OFFSET ${}",
+        where_clause, param_idx, param_idx + 1
+    );
+    let mut data_q = sqlx::query_as::<_, PluginApiLog>(&data_sql).bind(&name);
+    if !source_filter.is_empty() { data_q = data_q.bind(&source_filter); }
+    if !keyword.is_empty() { data_q = data_q.bind(format!("%{}%", keyword)); }
+    let logs: Vec<PluginApiLog> = data_q.bind(page_size).bind(offset).fetch_all(&state.db.pool).await?;
 
     Ok(Json(json!({
         "logs": logs,

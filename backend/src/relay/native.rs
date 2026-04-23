@@ -555,7 +555,8 @@ pub async fn ark_asset_proxy(
         .ok_or_else(|| AppError::BadRequest("系统未配置火山引擎素材管理凭证".to_string()))?;
 
     let client = crate::services::volcengine::VolcClient::new(volc_config)
-        .with_logger(state.db.clone(), token.user_id.clone());
+        .with_logger(state.db.clone(), token.user_id.clone())
+        .with_source("api_proxy");
 
     // 5. 转发请求，复用 call_api 解析为 serde_json::Value 直接获得完整原始响应 JSON
     match client.call_api::<_, serde_json::Value>(

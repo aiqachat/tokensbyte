@@ -66,7 +66,8 @@ pub async fn convert_content_urls(
     };
 
     let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
-        .with_logger(state.db.clone(), user_id.to_string());
+        .with_logger(state.db.clone(), user_id.to_string())
+        .with_source("relay_convert");
 
     // 确保有可用的 Group ID，如果没有则尝试自动创建并保存
     if !ensure_group_id(state, &client, &mut volc_config).await {

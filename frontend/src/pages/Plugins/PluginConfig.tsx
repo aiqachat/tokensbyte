@@ -106,6 +106,8 @@ const PluginConfigInner: React.FC = () => {
   const [apiLogsTotal, setApiLogsTotal] = useState(0);
   const [apiLogsPage, setApiLogsPage] = useState(1);
   const [apiLogsLoading, setApiLogsLoading] = useState(false);
+  const [logSourceFilter, setLogSourceFilter] = useState<string>('');
+  const [logKeyword, setLogKeyword] = useState<string>('');
 
   // ====== 体验中心 (Playground) 配置 Tab ======
   const [pgModels, setPgModels] = useState<any[]>([]);
@@ -261,9 +263,12 @@ const PluginConfigInner: React.FC = () => {
   const fetchApiLogs = async (page = 1) => {
     try {
       setApiLogsLoading(true);
-      const res = await (request.get(`/plugins/${name}/api-logs`, { params: { page, page_size: 15 } }) as any);
+      const params: any = { page, page_size: 15 };
+      if (logSourceFilter) params.source = logSourceFilter;
+      if (logKeyword) params.keyword = logKeyword;
+      const res = await (request.get(`/plugins/${name}/api-logs`, { params }) as any);
       if (res.logs) setApiLogs(res.logs);
-      if (res.total) setApiLogsTotal(res.total);
+      if (res.total != null) setApiLogsTotal(res.total);
       setApiLogsPage(res.page || page);
     } catch (e) {
       console.error('获取接口日志失败', e);
@@ -323,9 +328,8 @@ const PluginConfigInner: React.FC = () => {
         }
       }
 
-      if (Array.isArray(levelRes)) setLevels(levelRes);
-      else if (levelRes.data) setLevels(levelRes.data);
-      else if (levelRes.levels) setLevels(levelRes.levels);
+      const allLevels = Array.isArray(levelRes) ? levelRes : (levelRes.data || levelRes.levels || []);
+      setLevels(allLevels);
 
       if (storageRes) {
         setStorageConfig(storageRes);
@@ -348,12 +352,17 @@ const PluginConfigInner: React.FC = () => {
         if (storageRes.default_max_files_per_folder != null) {
           setDefaultMaxFilesPerFolder(storageRes.default_max_files_per_folder);
         }
-        if (storageRes.level_api_enabled) {
-          setLevelApiEnabled(storageRes.level_api_enabled);
-        }
         if (storageRes.default_api_enabled != null) {
           setDefaultApiEnabled(storageRes.default_api_enabled);
         }
+        // 为所有等级显式初始化 API 开关，每个等级独立互不影响
+        const savedApiEnabled = storageRes.level_api_enabled || {};
+        const apiDefault = storageRes.default_api_enabled ?? true;
+        const initialApiEnabled: Record<string, boolean> = {};
+        allLevels.forEach((lv: any) => {
+          initialApiEnabled[lv.group_key] = savedApiEnabled[lv.group_key] ?? apiDefault;
+        });
+        setLevelApiEnabled(initialApiEnabled);
         // 延迟设置表单值，等待 Tabs 内的 Form 组件渲染完毕
         setTimeout(() => {
           storageForm.setFieldsValue({
@@ -666,7 +675,7 @@ const PluginConfigInner: React.FC = () => {
                   />
                   <div style={{ textAlign: 'center' }}>
                     <Switch size="small"
-                      checked={levelApiEnabled[lv.group_key] ?? defaultApiEnabled}
+                      checked={levelApiEnabled[lv.group_key] ?? true}
                       onChange={(checked) => setLevelApiEnabled(prev => ({ ...prev, [lv.group_key]: checked }))}
                     />
                   </div>
@@ -1025,10 +1034,26 @@ const PluginConfigInner: React.FC = () => {
   );
 
 
+  const SOURCE_MAP: Record<string, { label: string; color: string }> = {
+    api_proxy: { label: 'API 接口调用', color: 'blue' },
+    page: { label: '页面操作', color: 'green' },
+    relay_convert: { label: '转发规则替换', color: 'orange' },
+  };
+
   const apiLogColumns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
     { title: 'User ID', dataIndex: 'user_id', key: 'user_id', width: 140, render: (u: string) => <Text copyable>{u ? (u.substring(0,8) + '...') : ''}</Text> },
-    { title: '接口名称', dataIndex: 'api_endpoint', key: 'api_endpoint', width: 200, render: (r: string) => <Tag color="cyan">{r}</Tag> },
+    { title: '接口名称', dataIndex: 'api_endpoint', key: 'api_endpoint', width: 180, render: (r: string) => <Tag color="cyan">{r}</Tag> },
+    {
+      title: '来源',
+      dataIndex: 'source',
+      key: 'source',
+      width: 120,
+      render: (s: string) => {
+        const info = SOURCE_MAP[s] || { label: s, color: 'default' };
+        return <Tag color={info.color}>{info.label}</Tag>;
+      },
+    },
     { 
       title: '状态', 
       dataIndex: 'status_code', 
@@ -1044,9 +1069,32 @@ const PluginConfigInner: React.FC = () => {
 
   const apiLogTab = (
     <div>
-      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>共 {apiLogsTotal} 条接口请求记录</Text>
-        <Button size="small" onClick={() => fetchApiLogs(apiLogsPage)} loading={apiLogsLoading}>刷新</Button>
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Select
+            placeholder="来源筛选" allowClear
+            value={logSourceFilter || undefined}
+            onChange={(val) => { setLogSourceFilter(val || ''); setTimeout(() => fetchApiLogs(1), 0); }}
+            style={{ width: 150 }}
+            options={[
+              { value: 'api_proxy', label: 'API 接口调用' },
+              { value: 'page', label: '页面操作' },
+              { value: 'relay_convert', label: '转发规则替换' },
+            ]}
+          />
+          <Input.Search
+            placeholder="搜索接口名 / 用户ID"
+            allowClear
+            value={logKeyword}
+            onChange={(e) => setLogKeyword(e.target.value)}
+            onSearch={() => fetchApiLogs(1)}
+            style={{ width: 220 }}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>共 {apiLogsTotal} 条记录</Text>
+          <Button size="small" onClick={() => fetchApiLogs(apiLogsPage)} loading={apiLogsLoading}>刷新</Button>
+        </div>
       </div>
       <Table
         dataSource={apiLogs}
