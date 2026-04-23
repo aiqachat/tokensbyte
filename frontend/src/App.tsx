@@ -27,6 +27,7 @@ import PluginConfig from './pages/Plugins/PluginConfig';
 import UserAssets from './pages/UserAssets/UserAssets';
 import AdvancedMarketing from './pages/AdvancedMarketing/AdvancedMarketing';
 import Playground from './pages/Playground/Playground';
+import PlaygroundHome from './pages/Playground/PlaygroundHome';
 
 import Redemptions from './pages/Redemptions/Redemptions';
 import Profile from './pages/Profile/Profile';
@@ -67,9 +68,17 @@ const App: React.FC = () => {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/admin0755" element={<AdminLogin />} />
 
-        {/* Playground Route (Full Screen, Independent) */}
+        {/* Playground Routes (Full Screen, Independent) */}
         <Route
           path="/playground"
+          element={
+            <PrivateRoute userOnly={true}>
+              <PlaygroundHome />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/playground/:projectId"
           element={
             <PrivateRoute userOnly={true}>
               <Playground />

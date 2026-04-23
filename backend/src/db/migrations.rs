@@ -748,6 +748,64 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS site_discount_enabled INTEGER NOT NULL DEFAULT 0")
         .execute(pool).await.ok();
 
+    // Playground Projects table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS playground_projects (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            uid TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT '未命名项目',
+            description TEXT DEFAULT '',
+            cover_url TEXT DEFAULT '',
+            canvas_data TEXT DEFAULT '{}',
+            is_deleted INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_projects_user ON playground_projects(user_id)")
+        .execute(pool).await.ok();
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_projects_uid ON playground_projects(uid)")
+        .execute(pool).await.ok();
+
+    // Playground Assets table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS playground_assets (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES playground_projects(id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            uid TEXT NOT NULL,
+            asset_type TEXT NOT NULL,
+            file_name TEXT DEFAULT '',
+            file_size BIGINT DEFAULT 0,
+            file_url TEXT NOT NULL,
+            tos_object_key TEXT DEFAULT '',
+            thumbnail_url TEXT DEFAULT '',
+            prompt TEXT DEFAULT '',
+            model_id TEXT DEFAULT '',
+            model_name TEXT DEFAULT '',
+            generation_params TEXT DEFAULT '{}',
+            canvas_node_data TEXT DEFAULT '{}',
+            duration_seconds DOUBLE PRECISION DEFAULT 0,
+            width INTEGER DEFAULT 0,
+            height INTEGER DEFAULT 0,
+            is_deleted INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_assets_project ON playground_assets(project_id)")
+        .execute(pool).await.ok();
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_assets_user ON playground_assets(user_id)")
+        .execute(pool).await.ok();
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_assets_type ON playground_assets(asset_type)")
+        .execute(pool).await.ok();
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};

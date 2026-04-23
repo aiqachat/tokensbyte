@@ -1,9 +1,10 @@
 /**
- * Playground 主组件
- * 精简的编排层：挂载 Provider + 组合子组件
+ * Playground 主组件 — 项目画布工作台
+ * 通过 URL 参数 projectId 确定当前项目
  */
 import React from 'react';
 import { ConfigProvider, theme } from 'antd';
+import { useParams, Navigate } from 'react-router-dom';
 import { PlaygroundProvider } from './context/PlaygroundContext';
 import InfiniteCanvas from './components/InfiniteCanvas';
 import FloatingHeader from './components/FloatingHeader';
@@ -13,7 +14,6 @@ import SettingsWidget from './components/SettingsWidget';
 import ModelDrawer from './components/ModelDrawer';
 import TokenModal from './components/TokenModal';
 import ZoomIndicator from './components/ZoomIndicator';
-import HistoryPanel from './components/HistoryPanel';
 import './Playground.css';
 
 /** 内部布局层，在 Provider 内部消费 Context */
@@ -31,7 +31,6 @@ const PlaygroundLayout: React.FC = () => {
       <FloatingHeader />
       <ZoomIndicator />
       <SettingsWidget />
-      <HistoryPanel />
 
       {/* 弹出层 */}
       <ModelDrawer />
@@ -40,8 +39,16 @@ const PlaygroundLayout: React.FC = () => {
   );
 };
 
-/** 根组件：提供主题 + 状态 */
+/** 根组件：从 URL 获取 projectId → 提供主题 + 状态 */
 const Playground: React.FC = () => {
+  const { projectId } = useParams<{ projectId: string }>();
+
+  // 无 projectId 时回退到项目列表
+  if (!projectId) return <Navigate to="/playground" replace />;
+
+  const numericProjectId = parseInt(projectId, 10);
+  if (isNaN(numericProjectId)) return <Navigate to="/playground" replace />;
+
   return (
     <ConfigProvider theme={{
       algorithm: theme.darkAlgorithm,
@@ -52,7 +59,7 @@ const Playground: React.FC = () => {
         colorBorder: 'rgba(255,255,255,0.08)'
       }
     }}>
-      <PlaygroundProvider>
+      <PlaygroundProvider projectId={numericProjectId}>
         <PlaygroundLayout />
       </PlaygroundProvider>
     </ConfigProvider>
