@@ -26,6 +26,7 @@ const Channels: React.FC = () => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const [showMapping, setShowMapping] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const screens = useBreakpoint();
 
   const fetchChannels = async () => {
@@ -113,6 +114,8 @@ const Channels: React.FC = () => {
   };
 
   const handleSave = async (values: any) => {
+    if (submitting) return;
+    setSubmitting(true);
     const finalMapping: Record<string, string> = {};
     if (values.model_mapping) {
       for (const [k, v] of Object.entries(values.model_mapping)) {
@@ -140,6 +143,8 @@ const Channels: React.FC = () => {
       fetchChannels();
     } catch (e) {
       console.error(e);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -294,6 +299,7 @@ const Channels: React.FC = () => {
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         onOk={() => form.submit()}
+        confirmLoading={submitting}
         width={800}
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
