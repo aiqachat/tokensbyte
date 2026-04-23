@@ -13,6 +13,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Custom Nginx configuration for React router support
 RUN echo 'server { \
     listen 80; \
+    client_max_body_size 512m; \
     location / { \
         root /usr/share/nginx/html; \
         index index.html index.htm; \

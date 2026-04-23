@@ -1220,7 +1220,14 @@ async fn submit_virtual_portrait_review(
     .await?
     .ok_or_else(|| AppError::BadRequest("素材不存在或已提交".to_string()))?;
 
-    let public_url = asset.file_url.clone();
+    let public_url = {
+        let url = asset.file_url.clone();
+        if url.starts_with("http://") || url.starts_with("https://") {
+            url
+        } else {
+            format!("https://{}", url)
+        }
+    };
 
     let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
         .with_logger(state.db.clone(), claims.sub.clone());
