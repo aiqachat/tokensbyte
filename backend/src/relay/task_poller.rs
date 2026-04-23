@@ -155,6 +155,12 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
                             task_id, model_name, usage.total, cost, pre_deduction);
                     }
                 }
+            } else {
+                // 任务成功但无 usage 数据：标记已处理避免无限轮询
+                let _ = sqlx::query(&state.db.format_query(
+                    "UPDATE logs SET completion_tokens = 1, billing_detail = ? WHERE id = ?"
+                )).bind("任务成功但无token用量 | [后台自动轮询]").bind(log_id)
+                .execute(&state.db.pool).await;
             }
         } else {
             // 任务失败：退回预扣费
