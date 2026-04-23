@@ -6,6 +6,8 @@ pub struct ApiToken {
     pub id: i64,
     pub user_id: String,
     pub token_key: String,
+    #[sqlx(default)]
+    pub kid: Option<String>,
     pub name: String,
     pub quota_limit: f64,   // -1 = unlimited
     pub quota_used: f64,
