@@ -398,7 +398,7 @@ async fn insert_asset_record_raw(
     .await;
 }
 
-/// 调用 CreateAsset API 注册素材
+/// 调用 CreateAsset API 注册素材，并轮询等待素材处理完成（Active 状态）
 async fn create_asset(
     client: &crate::services::volcengine::VolcClient,
     volc_config: &crate::services::volcengine::VolcConfig,
@@ -415,15 +415,55 @@ async fn create_asset(
         project_name: Some(volc_config.project_name.clone()),
     };
 
-    match client.call_api::<_, crate::services::volcengine::CreateAssetResponse>(
+    let asset_id = match client.call_api::<_, crate::services::volcengine::CreateAssetResponse>(
         "ark", "cn-beijing", "CreateAsset", "2024-01-01", req
     ).await {
-        Ok(res) => Some(res.id),
+        Ok(res) => res.id,
         Err(e) => {
             tracing::error!("[AssetConvert] CreateAsset 调用失败: {}", e);
-            None
+            return None;
+        }
+    };
+
+    // 轮询等待素材处理完成（最多 30 秒，每 2 秒查一次）
+    const MAX_WAIT_SECS: u64 = 30;
+    const POLL_INTERVAL_SECS: u64 = 2;
+    let max_attempts = MAX_WAIT_SECS / POLL_INTERVAL_SECS;
+
+    for attempt in 0..max_attempts {
+        tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
+
+        let get_req = crate::services::volcengine::GetAssetRequest {
+            id: asset_id.clone(),
+            project_name: Some(volc_config.project_name.clone()),
+        };
+
+        match client.call_api::<_, crate::services::volcengine::GetAssetResponse>(
+            "ark", "cn-beijing", "GetAsset", "2024-01-01", get_req
+        ).await {
+            Ok(res) => {
+                match res.status.as_str() {
+                    "Active" => {
+                        tracing::info!("[AssetConvert] 素材就绪: {} (等待 {}s)", asset_id, (attempt + 1) * POLL_INTERVAL_SECS);
+                        return Some(asset_id);
+                    }
+                    "Failed" => {
+                        tracing::error!("[AssetConvert] 素材处理失败: {}", asset_id);
+                        return None;
+                    }
+                    status => {
+                        tracing::debug!("[AssetConvert] 素材处理中: {} status={} (第{}/{}次)", asset_id, status, attempt + 1, max_attempts);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("[AssetConvert] GetAsset 查询失败: {} - {}", asset_id, e);
+            }
         }
     }
+
+    tracing::warn!("[AssetConvert] 素材处理超时({}s)，跳过使用: {}", MAX_WAIT_SECS, asset_id);
+    None
 }
 
 /// 自动保证 Group ID 存在，未设置时调用 API 自动生成并持久化
