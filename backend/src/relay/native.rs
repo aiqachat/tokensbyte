@@ -229,10 +229,18 @@ pub async fn volcengine_submit(
     let response_content_str = String::from_utf8_lossy(&data).to_string();
     let latency_ms = start_time.elapsed().as_millis() as u32;
     // 异步任务 POST 只记录，真正计费在 GET 轮询成功后执行
-    let billing_detail = if let Some(ref acl) = asset_convert_log {
-        format!("异步任务预扣费冻结 | {}", acl)
+    let billing_detail = if pre_deduction > 0.0 {
+        if let Some(ref acl) = asset_convert_log {
+            format!("异步任务预扣费冻结 | {}", acl)
+        } else {
+            "异步任务预扣费冻结".to_string()
+        }
     } else {
-        "异步任务预扣费冻结".to_string()
+        if let Some(ref acl) = asset_convert_log {
+            format!("异步任务处理中(冻结) | {}", acl)
+        } else {
+            "异步任务处理中(冻结)".to_string()
+        }
     };
     proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200, "/api/v3/contents/generations/tasks", None, latency_ms, is_stream, Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some(billing_detail)).await;
 
@@ -252,17 +260,24 @@ pub async fn volcengine_status(
     let mut model_name = params.get("model").map(|s| s.as_str()).unwrap_or("video-gen").to_string();
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
+    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, billing_detail FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
     let mut db_log_id: Option<i64> = None;
-    let log_row: Option<(i64, i64, String, String)> = sqlx::query_as(&log_query)
+    let mut already_billed = false;
+    let log_row: Option<(i64, i64, String, String, Option<String>)> = sqlx::query_as(&log_query)
         .bind(format!("%{}%", task_id))
         .fetch_optional(&state.db.pool)
         .await
         .unwrap_or(None);
 
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _orig_content)) = log_row {
+    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _orig_content, b_detail)) = log_row {
         db_log_id = Some(l_id);
         model_name = m_name;
+        // 如果计费明细中没有"冻结"字样，说明已经结算过了，阻断重复扣费
+        if let Some(detail) = b_detail {
+            if !detail.contains("冻结") {
+                already_billed = true;
+            }
+        }
         if let Ok(Some(mut ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
             .bind(cid)
             .fetch_optional(&state.db.pool)
@@ -320,7 +335,7 @@ pub async fn volcengine_status(
             .execute(&state.db.pool).await;
 
         // 任务完成时提取 token 用量并执行计费
-        if task_status == "succeeded" {
+        if task_status == "succeeded" && !already_billed {
             let usage = crate::relay::usage_extractor::parse_usage(&get_resp_str);
             if usage.total > 0 {
                 let db_model: Option<crate::models::Model> = sqlx::query_as(
@@ -367,6 +382,12 @@ pub async fn volcengine_status(
                     tracing::info!("[Volcengine Video Billing] task={}, model={}, tokens={}, cost={:.6}, pre_deducted={:.6}", 
                         task_id, model_name, usage.total, cost, pre_deduction);
                 }
+            } else {
+                // 模型返回成功但未提供 token 消耗：直接解除冻结并标记结算
+                let _ = sqlx::query(&state.db.format_query(
+                    "UPDATE logs SET billing_detail = ? WHERE id = ?"
+                )).bind("任务成功，该模型无token用量").bind(log_id)
+                .execute(&state.db.pool).await;
             }
         }
     }

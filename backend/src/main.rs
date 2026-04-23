@@ -42,6 +42,9 @@ async fn main() -> anyhow::Result<()> {
         rate_limiter: middleware::rate_limit::GlobalRateLimiter::new(),
     });
 
+    // 启动后台异步任务轮询器（每 2 分钟自动检查未结算的视频/图片生成任务）
+    relay::task_poller::start(state.clone());
+
     let app = api::build_router(state.clone())
         .nest_service("/assets", tower_http::services::ServeDir::new("data/assets"));
 
