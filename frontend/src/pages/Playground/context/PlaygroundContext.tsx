@@ -8,7 +8,7 @@
  * 拖拽操作（画布/节点/面板）已改为 ref+DOM 驱动，不再于拖拽期间更新 Context
  */
 import React, { createContext, useContext, useState, useMemo, useCallback, useRef } from 'react';
-import type { CanvasNode, CanvasTransform, ActiveTool, Point, PlaygroundModel, SchemeParam } from '../types';
+import type { CanvasNode, CanvasTransform, ActiveTool, Point, PlaygroundModel, SchemeParam, PlaygroundProject } from '../types';
 import request from '../../../utils/request';
 
 // ============================================================
@@ -91,6 +91,13 @@ interface PlaygroundContextValue {
   // 操作
   handleCategoryChange: (cat: string) => void;
   handleSelectModel: (mid: string) => void;
+  // 项目管理
+  projects: PlaygroundProject[];
+  currentProjectId: number | null;
+  setCurrentProjectId: React.Dispatch<React.SetStateAction<number | null>>;
+  loadProjects: () => Promise<void>;
+  createProject: (name?: string) => Promise<number | null>;
+  saveCanvasState: () => Promise<void>;
 }
 
 const PlaygroundContext = createContext<PlaygroundContextValue | null>(null);
@@ -104,7 +111,7 @@ export const usePlayground = () => {
 // ============================================================
 // Combined Provider
 // ============================================================
-export const PlaygroundProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId: number }> = ({ children, projectId }) => {
   // --- 低频业务状态 ---
   const [loading, setLoading] = useState(true);
   const [models, setModels] = useState<PlaygroundModel[]>([]);
@@ -120,6 +127,10 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [isModelDrawerVisible, setIsModelDrawerVisible] = useState(false);
   const [isTokenModalVisible, setIsTokenModalVisible] = useState(false);
   const [isSettingsCollapsed, setIsSettingsCollapsed] = useState(false);
+
+  // --- 项目管理 ---
+  const [projects, setProjects] = useState<PlaygroundProject[]>([]);
+  const [currentProjectId, setCurrentProjectId] = useState<number | null>(null);
 
   // --- 高频画布状态 ---
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
@@ -168,6 +179,68 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setIsModelDrawerVisible(false);
   }, [models, initParamDefaults]);
 
+  // --- 项目管理函数 ---
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await request.get('/playground/projects') as any;
+      if (res?.projects) {
+        setProjects(res.projects);
+      }
+    } catch (e) {
+      console.error('加载项目列表失败', e);
+    }
+  }, []);
+
+  const createProject = useCallback(async (name?: string): Promise<number | null> => {
+    try {
+      const res = await request.post('/playground/projects', { name: name || '未命名项目' }) as any;
+      if (res?.id) {
+        setCurrentProjectId(res.id);
+        await loadProjects();
+        return res.id;
+      }
+    } catch (e) {
+      console.error('创建项目失败', e);
+    }
+    return null;
+  }, [loadProjects]);
+
+  const saveCanvasState = useCallback(async () => {
+    if (!currentProjectId) return;
+    try {
+      const canvasData = JSON.stringify({
+        nodes: nodes.map(n => {
+          // 提取已完成节点的关键渲染数据（URL），丢弃大体积的原始 API 响应
+          let savedResultData = n.resultData;
+          if (n.status === 'completed' && n.resultData) {
+            if (n.type === 'image') {
+              const imgData = n.resultData?.data?.[0] || n.resultData?.content?.image_url;
+              const url = typeof imgData === 'string' ? imgData : imgData?.url;
+              savedResultData = url ? { data: [{ url }] } : null;
+            } else if (n.type === 'video') {
+              const videoUrl = n.resultData?.content?.video_url
+                || n.resultData?.final_result?.video_url
+                || n.resultData?.video_url;
+              savedResultData = videoUrl ? { content: { video_url: videoUrl } } : null;
+            } else {
+              // 文本类型保留原始数据
+              savedResultData = n.resultData;
+            }
+          }
+          return {
+            id: n.id, type: n.type, status: n.status,
+            x: n.x, y: n.y, width: n.width, height: n.height, zIndex: n.zIndex,
+            taskData: n.taskData, resultData: savedResultData,
+          };
+        }),
+        transform: canvasTransform,
+      });
+      await request.post(`/playground/projects/${currentProjectId}/save-canvas`, { canvas_data: canvasData });
+    } catch (e) {
+      console.warn('画布状态保存失败', e);
+    }
+  }, [currentProjectId, nodes, canvasTransform]);
+
   // --- 初始化数据加载 ---
   React.useEffect(() => {
     document.title = 'TokensByte AI Studio';
@@ -211,6 +284,134 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setLoading(false);
       }
     })();
+  }, []);
+
+  // --- 加载当前项目的画布数据 ---
+  React.useEffect(() => {
+    const projectIdNum = projectId;
+    setCurrentProjectId(projectIdNum);
+    (async () => {
+      try {
+        const res = await request.get(`/playground/projects/${projectIdNum}`) as any;
+        const assets = res?.assets || [];
+        // 尝试从 canvas_data 恢复
+        if (res?.project?.canvas_data) {
+          try {
+            const canvasData = JSON.parse(res.project.canvas_data);
+            if (canvasData?.nodes?.length > 0) {
+              // 回填缺失的 resultData
+              const assetMap = new Map<string, any>();
+              for (const a of assets) {
+                if (a.prompt) assetMap.set(a.prompt, a);
+              }
+              const fixedNodes = canvasData.nodes.map((n: any) => {
+                if (n.status === 'completed' && !n.resultData) {
+                  const match = assetMap.get(n.taskData?.prompt || '');
+                  if (match) {
+                    return {
+                      ...n,
+                      resultData: match.asset_type === 'image'
+                        ? { data: [{ url: match.file_url }] }
+                        : { content: { video_url: match.file_url } },
+                    };
+                  }
+                }
+                return n;
+              });
+              setNodes(fixedNodes);
+              if (canvasData.transform) {
+                setCanvasTransform(canvasData.transform);
+              }
+              return; // 恢复成功，直接返回
+            }
+          } catch {}
+        }
+
+        // canvas_data 为空但有 assets，从 assets 重建节点
+        if (assets.length > 0) {
+          const rebuiltNodes = assets
+            .filter((a: any) => a.asset_type === 'image' || a.asset_type === 'video')
+            .map((asset: any, idx: number) => {
+              let pos = { x: 100 + (idx % 3) * 520, y: 100 + Math.floor(idx / 3) * 380 };
+              try {
+                const nd = JSON.parse(asset.canvas_node_data);
+                if (nd?.x !== undefined) pos = { x: nd.x, y: nd.y };
+              } catch {}
+              return {
+                id: `asset-${asset.id}`,
+                type: asset.asset_type,
+                status: 'completed' as const,
+                taskData: { prompt: asset.prompt },
+                resultData: asset.asset_type === 'image'
+                  ? { data: [{ url: asset.file_url }] }
+                  : { content: { video_url: asset.file_url } },
+                x: pos.x, y: pos.y,
+                width: asset.width || 480, height: asset.height || 320,
+                zIndex: idx + 1,
+              };
+            });
+          if (rebuiltNodes.length > 0) setNodes(rebuiltNodes);
+        }
+      } catch (e) {
+        console.warn('加载项目画布数据失败', e);
+      }
+    })();
+  }, [projectId]);
+
+  // --- 离开页面时自动保存画布 ---
+  const nodesRef = React.useRef(nodes);
+  nodesRef.current = nodes;
+  const transformRef2 = React.useRef(canvasTransform);
+  transformRef2.current = canvasTransform;
+  const projectIdRef = React.useRef(currentProjectId);
+  projectIdRef.current = currentProjectId;
+
+  React.useEffect(() => {
+    const doSave = () => {
+      const pid = projectIdRef.current;
+      const currentNodes = nodesRef.current;
+      if (!pid || currentNodes.length === 0) return;
+      const canvasData = JSON.stringify({
+        nodes: currentNodes.map(n => {
+          let savedResultData = n.resultData;
+          if (n.status === 'completed' && n.resultData) {
+            if (n.type === 'image') {
+              const imgData = n.resultData?.data?.[0] || n.resultData?.content?.image_url;
+              const url = typeof imgData === 'string' ? imgData : imgData?.url;
+              savedResultData = url ? { data: [{ url }] } : null;
+            } else if (n.type === 'video') {
+              const videoUrl = n.resultData?.content?.video_url || n.resultData?.final_result?.video_url || n.resultData?.video_url;
+              savedResultData = videoUrl ? { content: { video_url: videoUrl } } : null;
+            }
+          }
+          return {
+            id: n.id, type: n.type, status: n.status,
+            x: n.x, y: n.y, width: n.width, height: n.height, zIndex: n.zIndex,
+            taskData: n.taskData, resultData: savedResultData,
+          };
+        }),
+        transform: transformRef2.current,
+      });
+      // 使用 fetch+keepalive 保证页面关闭时也能发送（含 Auth header）
+      const token = localStorage.getItem('token');
+      const baseURL = (request.defaults?.baseURL || '/api/v1') as string;
+      fetch(`${baseURL}/playground/projects/${pid}/save-canvas`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ canvas_data: canvasData }),
+        keepalive: true,
+      }).catch(() => {}); // 静默失败
+    };
+
+    window.addEventListener('beforeunload', doSave);
+    return () => {
+      window.removeEventListener('beforeunload', doSave);
+      // 组件卸载时保存（如返回项目列表）
+      doSave();
+    };
   }, []);
 
   // --- 空格键全局监听 ---
@@ -261,13 +462,16 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     isTokenModalVisible, setIsTokenModalVisible,
     isSettingsCollapsed, setIsSettingsCollapsed,
     handleCategoryChange, handleSelectModel,
+    projects, currentProjectId, setCurrentProjectId,
+    loadProjects, createProject, saveCanvasState,
   }), [
     loading, models, selectedMid, currentModel, categories,
     activeCategory, modelsInCategory, searchModelKeyword,
     paramValues, prompt, generating, taskPollingNodes,
     apiTokens, selectedTokenKey,
     isModelDrawerVisible, isTokenModalVisible, isSettingsCollapsed,
-    handleCategoryChange, handleSelectModel, initParamDefaults
+    handleCategoryChange, handleSelectModel, initParamDefaults,
+    projects, currentProjectId, loadProjects, createProject, saveCanvasState,
   ]);
 
   return (

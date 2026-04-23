@@ -60,3 +60,34 @@ export interface Point {
   x: number;
   y: number;
 }
+
+/** 体验中心项目 */
+export interface PlaygroundProject {
+  id: number;
+  uid: string;
+  name: string;
+  description: string;
+  cover_url: string;
+  canvas_data: string;
+  created_at: string;
+  updated_at: string;
+  asset_count?: number;
+}
+
+/** 体验中心资源 */
+export interface PlaygroundAsset {
+  id: number;
+  asset_type: 'image' | 'video' | 'text' | 'audio';
+  file_name: string;
+  file_size: number;
+  file_url: string;
+  thumbnail_url: string;
+  prompt: string;
+  model_id: string;
+  model_name: string;
+  canvas_node_data: string;
+  duration_seconds: number;
+  width: number;
+  height: number;
+  created_at: string;
+}

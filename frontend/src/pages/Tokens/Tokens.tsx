@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid, Switch } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid, Switch, theme } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined, KeyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import type { ApiToken } from '../../types';
@@ -12,6 +12,7 @@ const { useBreakpoint } = Grid;
 
 const Tokens: React.FC = () => {
   const { t } = useTranslation();
+  const { token: themeToken } = theme.useToken();
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -198,6 +199,13 @@ const Tokens: React.FC = () => {
       render: (text: string) => <Text strong>{text}</Text>,
     },
     {
+      title: 'KID',
+      dataIndex: 'kid',
+      key: 'kid',
+      width: 100,
+      render: (kid: string) => kid ? <Tag color="geekblue" style={{ fontFamily: 'monospace', fontSize: 12 }}>{kid}</Tag> : <Text type="secondary">-</Text>,
+    },
+    {
       title: t('tokens.key'),
       dataIndex: 'token_key',
       key: 'token_key',
@@ -258,77 +266,115 @@ const Tokens: React.FC = () => {
   ];
 
   return (
-    <Card variant="borderless">
-      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
-        <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('tokens.title')}</Title>
-        <Space>
-          <Button icon={<SyncOutlined />} onClick={fetchTokens}>{t('common.refresh')}</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('tokens.create')}</Button>
-        </Space>
-      </div>
-
-      {screens.xs ? (
-        <MobileCardList
-          dataSource={tokens}
-          loading={loading}
-          rowKey="id"
-          pagination={{ pageSize: 10 }}
-          renderCard={(record: any) => (
-            <MobileCard
-              title={<Text strong>{record.name}</Text>}
-              extra={<Tag color={record.is_active ? 'success' : 'error'}>{record.is_active ? t('common.active') : t('common.disabled')}</Tag>}
-            >
-              <CardRow label={t('tokens.key')}>
-                <Space size={4}>
-                  {revealedKeys[record.id] ? (
-                    <Text style={{ fontFamily: 'monospace', fontSize: 11, color: '#52c41a', wordBreak: 'break-all', userSelect: 'all' }}>
-                      {revealedKeys[record.id]}
-                    </Text>
-                  ) : (
-                    <Text style={{ fontFamily: 'monospace', fontSize: 11, color: '#1677ff' }}>
-                      {record.token_key.substring(0, 8)}••••{record.token_key.substring(record.token_key.length - 4)}
-                    </Text>
-                  )}
-                  <Button type="text" icon={<CopyOutlined />} size="small" onClick={() => handleCopy(revealedKeys[record.id] || record.token_key)} style={{ color: '#888' }} />
-                  <Button 
-                    type="text" 
-                    icon={revealedKeys[record.id] ? <EyeInvisibleOutlined /> : <EyeOutlined />} 
-                    size="small" 
-                    onClick={() => handleRevealClick(record.id)} 
-                    style={{ color: revealedKeys[record.id] ? '#52c41a' : '#888' }} 
-                  />
-                </Space>
-              </CardRow>
-              <CardRow label={t('tokens.used')}>
-                <Text type="secondary" style={{ fontSize: 12 }}>{record.quota_used.toFixed(4)}</Text>
-              </CardRow>
-              <CardRow label={t('tokens.limit')}>
-                <Text style={{ fontSize: 12 }}>{record.quota_limit < 0 ? t('tokens.unlimited') : record.quota_limit}</Text>
-              </CardRow>
-              <CardRow label={t('tokens.limits')}>
-                <Text type="secondary" style={{ fontSize: 12 }}>RPS: {record.rps_limit || '∞'} / RPM: {record.rpm_limit || '∞'}</Text>
-              </CardRow>
-              <CardRow label={t('users.joined')}>
-                <Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm')}</Text>
-              </CardRow>
-              <CardActions>
-                <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-                <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-                  <Button size="small" icon={<DeleteOutlined />} danger />
-                </Popconfirm>
-              </CardActions>
-            </MobileCard>
-          )}
-        />
+    <Card variant="borderless" style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column' }} styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}>
+      {!loading && tokens.length === 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+          <div style={{ marginBottom: 48 }}>
+             <Title level={screens.xs ? 4 : 2} style={{ margin: 0, marginBottom: 8 }}>{t('tokens.title')}</Title>
+             <Text type="secondary" style={{ fontSize: 14 }}>{t('tokens.subtitle')}</Text>
+          </div>
+          
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingBottom: '10vh' }}>
+             <div style={{
+                width: 48, 
+                height: 48, 
+                background: 'rgba(255, 255, 255, 0.08)',
+                borderRadius: 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 24,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+             }}>
+               <KeyOutlined style={{ fontSize: 24, color: themeToken.colorText }} />
+             </div>
+             <Title level={4} style={{ margin: 0, marginBottom: 12 }}>{t('tokens.empty_title')}</Title>
+             <Text type="secondary" style={{ marginBottom: 24 }}>{t('tokens.empty_desc')}</Text>
+             <Button type="primary" size="large" onClick={handleAdd} style={{ padding: '0 32px' }}>
+                {t('tokens.create')}
+             </Button>
+          </div>
+        </div>
       ) : (
-        <Table
-          dataSource={tokens}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 'max-content' }}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+          <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('tokens.title')}</Title>
+              <Text type="secondary" style={{ fontSize: 13, marginTop: 4 }}>{t('tokens.subtitle')}</Text>
+            </div>
+            <Space style={{ alignItems: 'flex-start' }}>
+              <Button icon={<SyncOutlined />} onClick={fetchTokens}>{t('common.refresh')}</Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('tokens.create')}</Button>
+            </Space>
+          </div>
+
+          {screens.xs ? (
+            <MobileCardList
+              dataSource={tokens}
+              loading={loading}
+              rowKey="id"
+              pagination={{ pageSize: 10 }}
+              renderCard={(record: any) => (
+                <MobileCard
+                  title={<Text strong>{record.name}</Text>}
+                  extra={<Tag color={record.is_active ? 'success' : 'error'}>{record.is_active ? t('common.active') : t('common.disabled')}</Tag>}
+                >
+                  <CardRow label="KID">
+                    {record.kid ? <Tag color="geekblue" style={{ fontFamily: 'monospace', fontSize: 11 }}>{record.kid}</Tag> : <Text type="secondary">-</Text>}
+                  </CardRow>
+                  <CardRow label={t('tokens.key')}>
+                    <Space size={4}>
+                      {revealedKeys[record.id] ? (
+                        <Text style={{ fontFamily: 'monospace', fontSize: 11, color: '#52c41a', wordBreak: 'break-all', userSelect: 'all' }}>
+                          {revealedKeys[record.id]}
+                        </Text>
+                      ) : (
+                        <Text style={{ fontFamily: 'monospace', fontSize: 11, color: '#1677ff' }}>
+                          {record.token_key.substring(0, 8)}••••{record.token_key.substring(record.token_key.length - 4)}
+                        </Text>
+                      )}
+                      <Button type="text" icon={<CopyOutlined />} size="small" onClick={() => handleCopy(revealedKeys[record.id] || record.token_key)} style={{ color: '#888' }} />
+                      <Button 
+                        type="text" 
+                        icon={revealedKeys[record.id] ? <EyeInvisibleOutlined /> : <EyeOutlined />} 
+                        size="small" 
+                        onClick={() => handleRevealClick(record.id)} 
+                        style={{ color: revealedKeys[record.id] ? '#52c41a' : '#888' }} 
+                      />
+                    </Space>
+                  </CardRow>
+                  <CardRow label={t('tokens.used')}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{record.quota_used.toFixed(4)}</Text>
+                  </CardRow>
+                  <CardRow label={t('tokens.limit')}>
+                    <Text style={{ fontSize: 12 }}>{record.quota_limit < 0 ? t('tokens.unlimited') : record.quota_limit}</Text>
+                  </CardRow>
+                  <CardRow label={t('tokens.limits')}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>RPS: {record.rps_limit || '∞'} / RPM: {record.rpm_limit || '∞'}</Text>
+                  </CardRow>
+                  <CardRow label={t('users.joined')}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm')}</Text>
+                  </CardRow>
+                  <CardActions>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                    <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                      <Button size="small" icon={<DeleteOutlined />} danger />
+                    </Popconfirm>
+                  </CardActions>
+                </MobileCard>
+              )}
+            />
+          ) : (
+            <Table
+              dataSource={tokens}
+              columns={columns}
+              rowKey="id"
+              loading={loading}
+              pagination={{ pageSize: 10 }}
+              scroll={{ x: 'max-content' }}
+            />
+          )}
+        </div>
       )}
 
       <Modal

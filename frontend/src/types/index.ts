@@ -155,6 +155,7 @@ export interface ApiToken {
   id: number;
   user_id: string;
   token_key: string;
+  kid?: string;
   name: string;
   quota_limit: number;
   quota_used: number;
@@ -197,8 +198,10 @@ export interface RequestLog {
   channel_group_aid?: string;
   channel_name?: string;
   user_nickname?: string;
+  user_uid?: string;
   user_group?: string;
   token_name?: string;
+  token_kid?: string;
   request_content?: string;
   response_content?: string;
   upstream_req_content?: string;

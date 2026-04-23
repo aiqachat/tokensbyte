@@ -748,6 +748,85 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS site_discount_enabled INTEGER NOT NULL DEFAULT 0")
         .execute(pool).await.ok();
 
+    // Playground Projects table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS playground_projects (
+            id SERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            uid TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT '未命名项目',
+            description TEXT DEFAULT '',
+            cover_url TEXT DEFAULT '',
+            canvas_data TEXT DEFAULT '{}',
+            is_deleted INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_projects_user ON playground_projects(user_id)")
+        .execute(pool).await.ok();
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_projects_uid ON playground_projects(uid)")
+        .execute(pool).await.ok();
+
+    // Playground Assets table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS playground_assets (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES playground_projects(id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            uid TEXT NOT NULL,
+            asset_type TEXT NOT NULL,
+            file_name TEXT DEFAULT '',
+            file_size BIGINT DEFAULT 0,
+            file_url TEXT NOT NULL,
+            tos_object_key TEXT DEFAULT '',
+            thumbnail_url TEXT DEFAULT '',
+            prompt TEXT DEFAULT '',
+            model_id TEXT DEFAULT '',
+            model_name TEXT DEFAULT '',
+            generation_params TEXT DEFAULT '{}',
+            canvas_node_data TEXT DEFAULT '{}',
+            duration_seconds DOUBLE PRECISION DEFAULT 0,
+            width INTEGER DEFAULT 0,
+            height INTEGER DEFAULT 0,
+            is_deleted INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_assets_project ON playground_assets(project_id)")
+        .execute(pool).await.ok();
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_assets_user ON playground_assets(user_id)")
+        .execute(pool).await.ok();
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_assets_type ON playground_assets(asset_type)")
+        .execute(pool).await.ok();
+
+    // api_tokens 增加 kid 列（令牌短标识：用户 UID 后3位 + 随机3位数字）
+    sqlx::query("ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS kid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+
+    // 回填已有令牌的 kid（只处理 kid 为空的记录）
+    {
+        #[derive(sqlx::FromRow)]
+        struct TokenUid { token_id: i64, uid: String }
+        let rows: Vec<TokenUid> = sqlx::query_as(
+            "SELECT t.id as token_id, u.uid FROM api_tokens t JOIN users u ON t.user_id = u.id WHERE t.kid IS NULL OR t.kid = ''"
+        ).fetch_all(&*pool).await.unwrap_or_default();
+        for row in rows {
+            let uid_suffix: String = row.uid.chars().rev().take(3).collect::<String>().chars().rev().collect();
+            let random_part: String = (0..3).map(|_| (b'0' + rand::random::<u8>() % 10) as char).collect();
+            let kid = format!("{}{}", uid_suffix, random_part);
+            sqlx::query("UPDATE api_tokens SET kid = $1 WHERE id = $2")
+                .bind(&kid).bind(row.token_id)
+                .execute(&*pool).await.ok();
+        }
+    }
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};

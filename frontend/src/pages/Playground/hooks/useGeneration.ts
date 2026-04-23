@@ -2,7 +2,7 @@
  * 生成与轮询 Hook
  * 封装 API 调用、节点创建、异步轮询逻辑
  */
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { message } from 'antd';
 import axios from 'axios';
 import type { CanvasNode } from '../types';
@@ -14,8 +14,55 @@ export const useGeneration = () => {
   const {
     currentModel, prompt, paramValues,
     selectedTokenKey, generating, setGenerating,
-    setTaskPollingNodes,
+    setTaskPollingNodes, currentProjectId,
   } = usePlayground();
+
+  // 保持 currentProjectId 的最新引用（避免闭包过期问题）
+  const projectIdRef = useRef(currentProjectId);
+  projectIdRef.current = currentProjectId;
+
+  /** 自动持久化生成结果到 TOS */
+  const persistAsset = useCallback(async (node: CanvasNode, resultData: any, modelInfo: any) => {
+    const pid = projectIdRef.current;
+    if (!pid) return;
+    try {
+      let sourceUrl = '';
+      let base64Data = '';
+      const assetType = node.type;
+
+      if (assetType === 'image') {
+        const imageData = resultData?.data?.[0] || resultData?.content?.image_url;
+        const rawUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
+        const isUrl = rawUrl && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('/'));
+        if (isUrl) {
+          sourceUrl = rawUrl;
+        } else if (rawUrl && rawUrl.length > 100) {
+          base64Data = rawUrl;
+        } else if (rawUrl) {
+          sourceUrl = rawUrl;
+        }
+      } else if (assetType === 'video') {
+        sourceUrl = resultData?.content?.video_url || resultData?.final_result?.video_url || resultData?.video_url || '';
+      }
+
+      if (!sourceUrl && !base64Data) return;
+
+      const { default: requestUtil } = await import('../../../utils/request');
+      await requestUtil.post('/playground/assets/persist', {
+        project_id: pid,
+        asset_type: assetType,
+        source_url: sourceUrl || undefined,
+        base64_data: base64Data || undefined,
+        prompt: node.taskData?.prompt || '',
+        model_id: modelInfo?.model_id || '',
+        model_name: modelInfo?.name || '',
+        generation_params: node.taskData || {},
+        canvas_node_data: { x: node.x, y: node.y, width: node.width, height: node.height },
+      });
+    } catch (e) {
+      console.warn('资源持久化失败，不影响本次生成', e);
+    }
+  }, []);
 
   /** 发送生成请求 */
   const handleGenerate = useCallback(async () => {
@@ -106,7 +153,12 @@ export const useGeneration = () => {
         setTaskPollingNodes(prev => [...prev, newNodeId]);
         pollTaskStatus(newNodeId, taskId, currentModel.model_id, currentModel.poll_endpoint);
       } else {
-        setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, status: 'completed', resultData: res } : n));
+        setNodes(prev => {
+          const updated = prev.map(n => n.id === newNodeId ? { ...n, status: 'completed' as const, resultData: res } : n);
+          const completedNode = updated.find(n => n.id === newNodeId);
+          if (completedNode) persistAsset(completedNode, res, currentModel);
+          return updated;
+        });
         setGenerating(false);
       }
     } catch (e: any) {
@@ -144,7 +196,12 @@ export const useGeneration = () => {
         const status = res?.status || res?.final_result?.status || '';
 
         if (status === 'succeeded') {
-          setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, status: 'completed', resultData: res } : n));
+          setNodes(prev => {
+            const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: res } : n);
+            const completedNode = updated.find(n => n.id === nodeId);
+            if (completedNode) persistAsset(completedNode, res, currentModel);
+            return updated;
+          });
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
           setGenerating(false);
           return;

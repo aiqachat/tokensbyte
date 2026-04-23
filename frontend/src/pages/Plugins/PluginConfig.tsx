@@ -83,7 +83,7 @@ const PluginConfigInner: React.FC = () => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [activeTabKey, setActiveTabKey] = useState(() => {
     const hash = window.location.hash.replace('#', '');
-    if (['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log', 'team_config'].includes(hash)) return hash;
+    if (['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log', 'team_config', 'pg_storage'].includes(hash)) return hash;
     return 'basic'; // default to basic, will be adjusted when plugin loads
   });
   const handleTabChange = (key: string) => {
@@ -1492,6 +1492,7 @@ const PluginConfigInner: React.FC = () => {
             : plugin.name === 'playground'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'pg_storage', label: '存储配置', children: storageTab },
                 { key: 'playground_models', label: '体验模型管理', children: playgroundModelTab },
                 { key: 'playground_schemes', label: '体验方案配置', children: playgroundSchemeTab },
               ]
@@ -1510,7 +1511,6 @@ const PluginConfigInner: React.FC = () => {
       {/* 针对部分插件可能不挂载而导致 useForm() 失去关联的警告处理 */}
       {name === 'playground' && (
         <div style={{ display: 'none' }}>
-          <Form form={storageForm} />
           <Form form={moderationForm} />
         </div>
       )}

@@ -81,7 +81,7 @@
   "dashboard": {
     "title": "系统概览",
     "total_requests": "总请求数",
-    "total_tokens": "总令牌数",
+    "total_tokens": "总消耗 Token",
     "estimated_cost": "预估成本",
     "active_tokens": "活跃令牌",
     "recent_activity": "最近活动",
@@ -138,6 +138,9 @@
   },
   "tokens": {
     "title": "令牌管理",
+    "subtitle": "创建和管理您的 API 密钥。",
+    "empty_title": "暂无 API 密钥",
+    "empty_desc": "创建您的第一个 API 密钥以开始使用 API",
     "create": "创建令牌",
     "edit": "编辑令牌",
     "name": "名称",
