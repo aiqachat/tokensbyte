@@ -461,7 +461,7 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
     isModelDrawerVisible, setIsModelDrawerVisible,
     isTokenModalVisible, setIsTokenModalVisible,
     isSettingsCollapsed, setIsSettingsCollapsed,
-    handleCategoryChange, handleSelectModel, initParamDefaults,
+    handleCategoryChange, handleSelectModel,
     projects, currentProjectId, setCurrentProjectId,
     loadProjects, createProject, saveCanvasState,
   }), [
