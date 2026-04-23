@@ -154,7 +154,6 @@ const ZoomIndicator: React.FC = React.memo(() => {
                   transition: 'background 0.12s ease',
                   borderRadius: 0,
                   margin: '0 4px',
-                  borderRadiusStart: 6,
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'rgba(255,255,255,0.07)';

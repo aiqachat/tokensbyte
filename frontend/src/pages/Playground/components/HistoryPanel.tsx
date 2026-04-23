@@ -23,7 +23,7 @@ const getFullUrl = (url: string) => {
 };
 
 // 模拟数据
-const HISTORY_DATA = [
+const HISTORY_DATA: { group: string; items: { id: number | string; title: string; date: string; icon: string; type?: 'image' | 'video' | 'text' }[] }[] = [
   {
     group: '昨天',
     items: [

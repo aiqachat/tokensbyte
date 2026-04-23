@@ -186,9 +186,13 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
       destroyOnHidden
       styles={{
         body: { padding: 0, background: '#131416', borderRadius: 16, overflow: 'hidden' },
-        content: { background: '#131416', borderRadius: 16, border: '1px solid rgba(255,255,255,0.08)', padding: 0 },
         header: { display: 'none' },
       }}
+      modalRender={(node) => (
+        <div style={{ background: '#131416', borderRadius: 16, border: '1px solid rgba(255,255,255,0.08)', padding: 0 }}>
+          {node}
+        </div>
+      )}
       closable={false}
       mask={{ closable: true }}
     >

@@ -703,7 +703,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 content={profileContent} 
                 trigger="click" 
                 placement="bottomRight"
-                transitionName="popover-center-scale"
                 overlayClassName="custom-premium-popover"
                 forceRender
                 destroyTooltipOnHide={false}
