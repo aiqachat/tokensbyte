@@ -1,5 +1,6 @@
 /**
  * 视频类型节点内容
+ * 包含原生的视频播放控件
  */
 import React from 'react';
 import { Typography } from 'antd';
@@ -22,12 +23,20 @@ const getFullUrl = (url: string) => {
 const VideoNodeContent: React.FC<Props> = React.memo(({ resultData }) => {
   const rawUrl = resultData?.content?.video_url || resultData?.final_result?.video_url || resultData?.video_url;
   const videoUrl = getFullUrl(rawUrl);
+
   return videoUrl
     ? (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-          <video src={videoUrl} controls loop style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-          {/* 透明拖拽层，覆盖除了底部 controls (约 50px) 外的区域 */}
-          <div style={{ position: 'absolute', inset: '0 0 50px 0', cursor: 'inherit' }} />
+          <video
+            src={videoUrl}
+            controls
+            loop
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            onMouseDown={(e) => {
+              // 允许用户拖拽视频文件本身或点击进度条，不冒泡到画布
+              e.stopPropagation();
+            }}
+          />
         </div>
       )
     : <Text style={{ color: '#ff4d4f' }}>无效的视频 URL</Text>;

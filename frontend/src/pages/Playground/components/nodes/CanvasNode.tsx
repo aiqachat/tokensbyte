@@ -54,19 +54,18 @@ const CanvasNode: React.FC<Props> = React.memo(({ node }) => {
         flexDirection: 'column',
         overflow: 'hidden',
         transition: isDragging ? 'none' : 'box-shadow 0.2s',
-        cursor: activeTool === 'pointer' ? 'grab' : 'default'
       }}
-      onMouseDown={(e) => handleNodeMouseDown(e, node.id, node.x, node.y)}
     >
-      {/* 标题栏 */}
+      {/* 标题栏 (拖拽手柄) */}
       <div
         style={{
           padding: '8px 12px', background: 'rgba(0,0,0,0.25)',
           borderBottom: '1px solid rgba(255,255,255,0.05)',
           fontSize: 12, color: 'rgba(255,255,255,0.6)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          cursor: 'inherit', backdropFilter: 'blur(4px)'
+          cursor: activeTool === 'pointer' ? 'grab' : 'default', backdropFilter: 'blur(4px)'
         }}
+        onMouseDown={(e) => handleNodeMouseDown(e, node.id, node.x, node.y)}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {typeIcon}
