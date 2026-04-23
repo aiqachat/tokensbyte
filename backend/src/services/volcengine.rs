@@ -47,7 +47,7 @@ impl VolcConfig {
 pub struct VolcClient {
     config: VolcConfig,
     client: Client,
-    logger: Option<(crate::db::Database, String)>,
+    logger: Option<(crate::db::Database, String, String)>, // (db, user_id, source)
 }
 
 impl VolcClient {
@@ -60,7 +60,15 @@ impl VolcClient {
     }
 
     pub fn with_logger(mut self, db: crate::db::Database, user_id: String) -> Self {
-        self.logger = Some((db, user_id));
+        self.logger = Some((db, user_id, "page".to_string()));
+        self
+    }
+
+    /// 设置日志来源标识：api_proxy / page / relay_convert
+    pub fn with_source(mut self, source: &str) -> Self {
+        if let Some(ref mut l) = self.logger {
+            l.2 = source.to_string();
+        }
         self
     }
 
@@ -164,23 +172,25 @@ impl VolcClient {
         let status_code = status.as_u16();
 
         // 异步记录日志：不阻塞主流程，直接丢进数据库
-        if let Some((db, user_id)) = &self.logger {
+        if let Some((db, user_id, source)) = &self.logger {
             let req_payload = String::from_utf8_lossy(&payload).into_owned();
             let res_payload = text.clone();
             let db_clone = db.clone();
             let uid_clone = user_id.clone();
             let action_clone = action.to_string();
+            let source_clone = source.clone();
             
             tokio::spawn(async move {
                 let _ = sqlx::query(&db_clone.format_query(
-                    "INSERT INTO plugin_api_logs (user_id, plugin_name, api_endpoint, request_payload, response_payload, status_code) 
-                     VALUES (?, 'asset_manager', ?, ?, ?, ?)"
+                    "INSERT INTO plugin_api_logs (user_id, plugin_name, api_endpoint, request_payload, response_payload, status_code, source) 
+                     VALUES (?, 'asset_manager', ?, ?, ?, ?, ?)"
                 ))
                 .bind(&uid_clone)
                 .bind(&action_clone)
                 .bind(&req_payload)
                 .bind(&res_payload)
                 .bind(status_code as i32)
+                .bind(&source_clone)
                 .execute(&db_clone.pool)
                 .await;
             });

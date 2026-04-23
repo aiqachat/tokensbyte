@@ -590,6 +590,13 @@ macro_rules! pg_migration_blocks {
     sqlx::query("COMMENT ON COLUMN plugin_assets.remark IS '管理员内部备注'").execute(pool).await.ok();
     sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS group_id TEXT").execute(pool).await.ok();
     sqlx::query("COMMENT ON COLUMN plugin_assets.group_id IS '素材绑定的组合ID'").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS content_hash TEXT").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN plugin_assets.content_hash IS '资源内容 SHA-256 哈希值，用于精确去重'").execute(pool).await.ok();
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_plugin_assets_content_hash ON plugin_assets(content_hash)").execute(pool).await.ok();
+
+    // Upgrade: 为 plugin_api_logs 添加 source 字段，区分日志来源（api_proxy=对外接口调用 / page=页面操作 / relay_convert=转发规则替换素材）
+    sqlx::query("ALTER TABLE plugin_api_logs ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'page'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN plugin_api_logs.source IS '日志来源: api_proxy=对外接口 / page=页面操作 / relay_convert=转发规则替换素材'").execute(pool).await.ok();
 
     // Seed Asset Manager plugin
     sqlx::query(

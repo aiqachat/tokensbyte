@@ -96,6 +96,8 @@ pub struct ConfigRequest {
     pub default_max_folders: Option<i64>,                      // 默认文件夹数量上限
     pub level_max_files_per_folder: Option<HashMap<String, i64>>, // 每个等级的每文件夹文件上限
     pub default_max_files_per_folder: Option<i64>,              // 默认每文件夹文件上限
+    pub level_api_enabled: Option<HashMap<String, bool>>,      // 每个等级的 API 接口开放状态
+    pub default_api_enabled: Option<bool>,                     // 默认 API 接口开放状态
 }
 
 /// 管理员：配置插件的开放等级
@@ -156,6 +158,19 @@ async fn update_plugin_config(
     // 保存默认每文件夹文件上限
     if let Some(dmfpf) = payload.default_max_files_per_folder {
         upsert_config(&state, &name, "max_files_per_folder", &dmfpf.to_string()).await?;
+    }
+
+    // 保存每个等级的 API 访问开关
+    if let Some(ref level_api) = payload.level_api_enabled {
+        for (level_key, val) in level_api {
+            let config_key = format!("api_enabled_{}", level_key);
+            upsert_config(&state, &name, &config_key, if *val { "true" } else { "false" }).await?;
+        }
+    }
+
+    // 保存默认 API 访问开关
+    if let Some(dae) = payload.default_api_enabled {
+        upsert_config(&state, &name, "api_enabled", if dae { "true" } else { "false" }).await?;
     }
 
     Ok(Json(json!({ "message": "ok" })))
@@ -226,10 +241,11 @@ async fn get_storage_config(
         String::new()
     };
 
-    // 提取等级配额和限制
+    // 提取等级配额、限制和 API 开关
     let mut level_quotas = serde_json::Map::new();
     let mut level_max_folders = serde_json::Map::new();
     let mut level_max_files = serde_json::Map::new();
+    let mut level_api_enabled = serde_json::Map::new();
     for (k, v) in &configs {
         if let Some(level_key) = k.strip_prefix("quota_") {
             let mb: i64 = v.parse().unwrap_or(100);
@@ -240,6 +256,9 @@ async fn get_storage_config(
         } else if let Some(level_key) = k.strip_prefix("max_files_") {
             let val: i64 = v.parse().unwrap_or(100);
             level_max_files.insert(level_key.to_string(), serde_json::Value::Number(val.into()));
+        } else if let Some(level_key) = k.strip_prefix("api_enabled_") {
+            let val = v == "true";
+            level_api_enabled.insert(level_key.to_string(), serde_json::Value::Bool(val));
         }
     }
 
@@ -247,6 +266,7 @@ async fn get_storage_config(
     let default_quota: i64 = configs.get("default_quota").and_then(|v| v.parse().ok()).unwrap_or(100);
     let default_max_folders: i64 = configs.get("max_folders").and_then(|v| v.parse().ok()).unwrap_or(20);
     let default_max_files_per_folder: i64 = configs.get("max_files_per_folder").and_then(|v| v.parse().ok()).unwrap_or(100);
+    let default_api_enabled: bool = configs.get("api_enabled").map(|v| v == "true").unwrap_or(true);
 
     Ok(Json(json!({
         "tos_access_key": configs.get("tos_access_key").cloned().unwrap_or_default(),
@@ -263,6 +283,8 @@ async fn get_storage_config(
         "default_max_folders": default_max_folders,
         "level_max_files_per_folder": level_max_files,
         "default_max_files_per_folder": default_max_files_per_folder,
+        "level_api_enabled": level_api_enabled,
+        "default_api_enabled": default_api_enabled,
     })))
 }
 
@@ -443,6 +465,7 @@ pub struct PluginApiLog {
     pub request_payload: Option<String>,
     pub response_payload: Option<String>,
     pub status_code: Option<i32>,
+    pub source: String,
     pub created_at: String,
 }
 
@@ -450,6 +473,8 @@ pub struct PluginApiLog {
 pub struct LogQuery {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
+    pub source: Option<String>,
+    pub keyword: Option<String>,
 }
 
 /// 管理员：获取插件 API 日志
@@ -472,21 +497,38 @@ async fn get_plugin_api_logs(
     let page_size = query.page_size.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    let total: i64 = sqlx::query_scalar(&state.db.format_query(
-        "SELECT COUNT(*) FROM plugin_api_logs WHERE plugin_name = ?"
-    ))
-    .bind(&name)
-    .fetch_one(&state.db.pool)
-    .await?;
+    // 动态拼接过滤条件
+    let mut where_clause = "WHERE plugin_name = $1".to_string();
+    let mut param_idx = 2u32;
 
-    let logs: Vec<PluginApiLog> = sqlx::query_as(&state.db.format_query(
-        "SELECT * FROM plugin_api_logs WHERE plugin_name = ? ORDER BY id DESC LIMIT ? OFFSET ?"
-    ))
-    .bind(&name)
-    .bind(page_size)
-    .bind(offset)
-    .fetch_all(&state.db.pool)
-    .await?;
+    let source_filter = query.source.as_deref().unwrap_or("").to_string();
+    if !source_filter.is_empty() {
+        where_clause.push_str(&format!(" AND source = ${}", param_idx));
+        param_idx += 1;
+    }
+
+    let keyword = query.keyword.as_deref().unwrap_or("").to_string();
+    if !keyword.is_empty() {
+        where_clause.push_str(&format!(" AND (api_endpoint ILIKE ${p} OR user_id ILIKE ${p})", p = param_idx));
+        param_idx += 1;
+    }
+
+    // 构造 count 查询
+    let count_sql = format!("SELECT COUNT(*) FROM plugin_api_logs {}", where_clause);
+    let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(&name);
+    if !source_filter.is_empty() { count_q = count_q.bind(&source_filter); }
+    if !keyword.is_empty() { count_q = count_q.bind(format!("%{}%", keyword)); }
+    let total: i64 = count_q.fetch_one(&state.db.pool).await?;
+
+    // 构造数据查询
+    let data_sql = format!(
+        "SELECT * FROM plugin_api_logs {} ORDER BY id DESC LIMIT ${} OFFSET ${}",
+        where_clause, param_idx, param_idx + 1
+    );
+    let mut data_q = sqlx::query_as::<_, PluginApiLog>(&data_sql).bind(&name);
+    if !source_filter.is_empty() { data_q = data_q.bind(&source_filter); }
+    if !keyword.is_empty() { data_q = data_q.bind(format!("%{}%", keyword)); }
+    let logs: Vec<PluginApiLog> = data_q.bind(page_size).bind(offset).fetch_all(&state.db.pool).await?;
 
     Ok(Json(json!({
         "logs": logs,

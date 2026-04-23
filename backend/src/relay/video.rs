@@ -32,8 +32,12 @@ pub async fn video_generations(
     let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
 
     // 素材转换：当规则启用 asset_convert 时，将 content 中的网络 URL 转换为素材 ID
+    let mut asset_convert_log: Option<String> = None;
     if resolved.asset_convert {
-        super::asset_convert::convert_content_urls(&state, &token.user_id, &mut upstream_body).await;
+        let convert_logs = super::asset_convert::convert_content_urls(&state, &token.user_id, &mut upstream_body).await;
+        if !convert_logs.is_empty() {
+            asset_convert_log = Some(format!("素材转换: {}", convert_logs.join(" | ")));
+        }
     }
 
     tracing::info!("[Video] model={}, target_type={}, url={}", model, resolved.target_type, url);
@@ -54,7 +58,7 @@ pub async fn video_generations(
         let ep = format!("/v1/video/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
         proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status,
             &ep, Some(&display_err), latency_ms, 0,
-            Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()), None).await;
+            Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()), asset_convert_log.clone()).await;
         return Err(AppError::UpstreamError(display_err));
     }
 
@@ -90,9 +94,14 @@ pub async fn video_generations(
     // 真正的 token 和差值结算在 GET 轮询成功后执行
     let latency_ms = start_time.elapsed().as_millis() as u32;
     let ep = format!("/v1/video/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+    let billing_detail = if let Some(ref acl) = asset_convert_log {
+        format!("异步任务预扣费冻结 | {}", acl)
+    } else {
+        "异步任务预扣费冻结".to_string()
+    };
     proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200,
         &ep, None, latency_ms, 0,
-        Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some("异步任务预扣费冻结".to_string())).await;
+        Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail)).await;
 
     Ok(Response::builder()
         .header("Content-Type", "application/json")

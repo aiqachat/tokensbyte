@@ -193,6 +193,16 @@ pub async fn volcengine_submit(
         fwd["resolution"] = serde_json::json!("720p");
     }
 
+    // 素材转换：查询模型转发规则是否启用 asset_convert
+    let mut asset_convert_log: Option<String> = None;
+    let resolved = super::forward::resolve_forward_rule(&state, model, "视频", "/api/v3/contents/generations/tasks").await;
+    if resolved.as_ref().map(|r| r.asset_convert).unwrap_or(false) {
+        let convert_logs = super::asset_convert::convert_content_urls(&state, &token.user_id, &mut fwd).await;
+        if !convert_logs.is_empty() {
+            asset_convert_log = Some(format!("素材转换: {}", convert_logs.join(" | ")));
+        }
+    }
+
     let resp = state.http_client
         .post(&url)
         .header("Authorization", format!("Bearer {}", channel.api_key))
@@ -206,7 +216,7 @@ pub async fn volcengine_submit(
     if !resp.status().is_success() {
         let err = resp.text().await?;
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, "/api/v3/contents/generations/tasks", Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string()), None).await;
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, "/api/v3/contents/generations/tasks", Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string()), asset_convert_log.clone()).await;
         return Err(AppError::UpstreamError(err));
     }
 
@@ -219,7 +229,12 @@ pub async fn volcengine_submit(
     let response_content_str = String::from_utf8_lossy(&data).to_string();
     let latency_ms = start_time.elapsed().as_millis() as u32;
     // 异步任务 POST 只记录，真正计费在 GET 轮询成功后执行
-    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200, "/api/v3/contents/generations/tasks", None, latency_ms, is_stream, Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some("异步任务预扣费冻结".to_string())).await;
+    let billing_detail = if let Some(ref acl) = asset_convert_log {
+        format!("异步任务预扣费冻结 | {}", acl)
+    } else {
+        "异步任务预扣费冻结".to_string()
+    };
+    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200, "/api/v3/contents/generations/tasks", None, latency_ms, is_stream, Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some(billing_detail)).await;
 
     Ok(Response::builder()
         .header("Content-Type", "application/json")
@@ -465,4 +480,99 @@ pub async fn volcengine_images(
         .header("Content-Type", "application/json")
         .body(axum::body::Body::from(data))
         .unwrap())
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Volcengine Ark Asset Management API Proxy
+// ═══════════════════════════════════════════════════════════════
+
+const ARK_ASSET_ACTIONS: &[&str] = &[
+    "CreateAsset", "GetAsset", "UpdateAsset", "DeleteAsset", "ListAssets",
+    "CreateAssetGroup", "GetAssetGroup", "UpdateAssetGroup", "DeleteAssetGroup", "ListAssetGroups",
+];
+
+pub async fn ark_asset_proxy(
+    State(state): State<Arc<AppState>>,
+    Extension(token): Extension<ApiToken>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(body): Json<serde_json::Value>,
+) -> AppResult<Response> {
+    // 1. 获取 Action (兼容 Action/action 和 Version/version)
+    let action = params.get("Action").or_else(|| params.get("action")).cloned().unwrap_or_default();
+    let version = params.get("Version").or_else(|| params.get("version")).cloned().unwrap_or_else(|| "2024-01-01".to_string());
+
+    // 2. 白名单检查
+    if !ARK_ASSET_ACTIONS.contains(&action.as_str()) {
+        return Err(AppError::BadRequest(format!("Unsupported Ark Asset Action: {}", action)));
+    }
+
+    // 3. 用户及插件等级权限检查
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+        .bind(&token.user_id)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized)?;
+
+    if user.role != "admin" {
+        // 检查插件状态和允许的等级
+        let plugin_info: Option<(i64, String)> = sqlx::query_as(
+            &state.db.format_query("SELECT is_enabled, allowed_levels FROM plugins WHERE name = 'asset_manager'")
+        )
+        .fetch_optional(&state.db.pool)
+        .await?;
+
+        if let Some((is_enabled, allowed_levels)) = plugin_info {
+            if is_enabled == 0 {
+                return Err(AppError::Forbidden("素材资产管理功能未开启".to_string()));
+            }
+            if allowed_levels != "all" {
+                let allowed: Vec<&str> = allowed_levels.split(',').collect();
+                if !allowed.contains(&user.user_group.as_str()) {
+                    return Err(AppError::Forbidden("您当前的用户等级无权使用素材资产管理功能".to_string()));
+                }
+            }
+            
+            // 进一步检查该等级的 API 接口开放状态（默认开启）
+            let api_enabled_key = format!("api_enabled_{}", user.user_group);
+            let is_api_enabled = sqlx::query_scalar::<_, String>(
+                &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
+            )
+            .bind(&api_enabled_key)
+            .fetch_optional(&state.db.pool)
+            .await?
+            .unwrap_or_else(|| "true".to_string()); // 默认是开启可调用的
+
+            if is_api_enabled != "true" {
+                return Err(AppError::Forbidden("您当前的用户等级未开启 API 接口访问权限".to_string()));
+            }
+        } else {
+            return Err(AppError::Forbidden("素材资产管理插件未安装".to_string()));
+        }
+    }
+
+    // 4. 获取火山引擎配置
+    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("系统未配置火山引擎素材管理凭证".to_string()))?;
+
+    let client = crate::services::volcengine::VolcClient::new(volc_config)
+        .with_logger(state.db.clone(), token.user_id.clone())
+        .with_source("api_proxy");
+
+    // 5. 转发请求，复用 call_api 解析为 serde_json::Value 直接获得完整原始响应 JSON
+    match client.call_api::<_, serde_json::Value>(
+        "ark", "cn-beijing", &action, &version, body
+    ).await {
+        Ok(res) => {
+            let res_bytes = serde_json::to_vec(&res).unwrap_or_default();
+            Ok(Response::builder()
+                .header("Content-Type", "application/json")
+                .body(axum::body::Body::from(res_bytes))
+                .unwrap())
+        }
+        Err(e) => {
+            // 返回上游错误信息
+            tracing::error!("[Ark Asset Proxy] {} Failed: {}", action, e);
+            Err(AppError::UpstreamError(e.to_string()))
+        }
+    }
 }
