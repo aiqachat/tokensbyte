@@ -481,3 +481,83 @@ pub async fn volcengine_images(
         .body(axum::body::Body::from(data))
         .unwrap())
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  Volcengine Ark Asset Management API Proxy
+// ═══════════════════════════════════════════════════════════════
+
+const ARK_ASSET_ACTIONS: &[&str] = &[
+    "CreateAsset", "GetAsset", "UpdateAsset", "DeleteAsset", "ListAssets",
+    "CreateAssetGroup", "GetAssetGroup", "UpdateAssetGroup", "DeleteAssetGroup", "ListAssetGroups",
+];
+
+pub async fn ark_asset_proxy(
+    State(state): State<Arc<AppState>>,
+    Extension(token): Extension<ApiToken>,
+    Query(params): Query<HashMap<String, String>>,
+    Json(body): Json<serde_json::Value>,
+) -> AppResult<Response> {
+    // 1. 获取 Action (兼容 Action/action 和 Version/version)
+    let action = params.get("Action").or_else(|| params.get("action")).cloned().unwrap_or_default();
+    let version = params.get("Version").or_else(|| params.get("version")).cloned().unwrap_or_else(|| "2024-01-01".to_string());
+
+    // 2. 白名单检查
+    if !ARK_ASSET_ACTIONS.contains(&action.as_str()) {
+        return Err(AppError::BadRequest(format!("Unsupported Ark Asset Action: {}", action)));
+    }
+
+    // 3. 用户及插件等级权限检查
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+        .bind(&token.user_id)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized)?;
+
+    if user.role != "admin" {
+        // 检查插件状态和允许的等级
+        let plugin_info: Option<(i64, String)> = sqlx::query_as(
+            &state.db.format_query("SELECT is_enabled, allowed_levels FROM plugins WHERE name = 'asset_manager'")
+        )
+        .fetch_optional(&state.db.pool)
+        .await?;
+
+        if let Some((is_enabled, allowed_levels)) = plugin_info {
+            if is_enabled == 0 {
+                return Err(AppError::Forbidden("素材资产管理功能未开启".to_string()));
+            }
+            if allowed_levels != "all" {
+                let allowed: Vec<&str> = allowed_levels.split(',').collect();
+                if !allowed.contains(&user.user_group.as_str()) {
+                    return Err(AppError::Forbidden("您当前的用户等级无权使用素材资产管理功能".to_string()));
+                }
+            }
+        } else {
+            return Err(AppError::Forbidden("素材资产管理插件未安装".to_string()));
+        }
+    }
+
+    // 4. 获取火山引擎配置
+    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+        .ok_or_else(|| AppError::BadRequest("系统未配置火山引擎素材管理凭证".to_string()))?;
+
+    let client = crate::services::volcengine::VolcClient::new(volc_config)
+        .with_logger(state.db.clone(), token.user_id.clone());
+
+    // 5. 转发请求，复用 call_api 解析为 serde_json::Value 直接获得完整原始响应 JSON
+    match client.call_api::<_, serde_json::Value>(
+        "ark", "cn-beijing", &action, &version, body
+    ).await {
+        Ok(res) => {
+            let res_bytes = serde_json::to_vec(&res).unwrap_or_default();
+            Ok(Response::builder()
+                .header("Content-Type", "application/json")
+                .body(axum::body::Body::from(res_bytes))
+                .unwrap())
+        }
+        Err(e) => {
+            // 返回上游错误信息
+            tracing::error!("[Ark Asset Proxy] {} Failed: {}", action, e);
+            Err(AppError::UpstreamError(e.to_string()))
+        }
+    }
+}
