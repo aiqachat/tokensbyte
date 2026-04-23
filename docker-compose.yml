@@ -16,6 +16,7 @@ services:
     restart: always
 
   backend:
+    image: tokensbyte-backend:latest
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -37,6 +38,7 @@ services:
     restart: always
 
   frontend:
+    image: tokensbyte-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile

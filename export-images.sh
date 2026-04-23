@@ -64,7 +64,7 @@ echo ""
 
 # 获取镜像信息
 echo "📋 镜像信息:"
-docker compose images
+docker compose images || docker images | grep tokensbyte || true
 
 # 使用固定镜像名
 BACKEND_IMAGE="tokensbyte-backend:latest"
