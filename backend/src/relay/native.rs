@@ -531,6 +531,20 @@ pub async fn ark_asset_proxy(
                     return Err(AppError::Forbidden("您当前的用户等级无权使用素材资产管理功能".to_string()));
                 }
             }
+            
+            // 进一步检查该等级的 API 接口开放状态（默认开启）
+            let api_enabled_key = format!("api_enabled_{}", user.user_group);
+            let is_api_enabled = sqlx::query_scalar::<_, String>(
+                &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
+            )
+            .bind(&api_enabled_key)
+            .fetch_optional(&state.db.pool)
+            .await?
+            .unwrap_or_else(|| "true".to_string()); // 默认是开启可调用的
+
+            if is_api_enabled != "true" {
+                return Err(AppError::Forbidden("您当前的用户等级未开启 API 接口访问权限".to_string()));
+            }
         } else {
             return Err(AppError::Forbidden("素材资产管理插件未安装".to_string()));
         }

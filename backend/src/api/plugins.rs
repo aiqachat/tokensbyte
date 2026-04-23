@@ -96,6 +96,8 @@ pub struct ConfigRequest {
     pub default_max_folders: Option<i64>,                      // 默认文件夹数量上限
     pub level_max_files_per_folder: Option<HashMap<String, i64>>, // 每个等级的每文件夹文件上限
     pub default_max_files_per_folder: Option<i64>,              // 默认每文件夹文件上限
+    pub level_api_enabled: Option<HashMap<String, bool>>,      // 每个等级的 API 接口开放状态
+    pub default_api_enabled: Option<bool>,                     // 默认 API 接口开放状态
 }
 
 /// 管理员：配置插件的开放等级
@@ -156,6 +158,19 @@ async fn update_plugin_config(
     // 保存默认每文件夹文件上限
     if let Some(dmfpf) = payload.default_max_files_per_folder {
         upsert_config(&state, &name, "max_files_per_folder", &dmfpf.to_string()).await?;
+    }
+
+    // 保存每个等级的 API 访问开关
+    if let Some(ref level_api) = payload.level_api_enabled {
+        for (level_key, val) in level_api {
+            let config_key = format!("api_enabled_{}", level_key);
+            upsert_config(&state, &name, &config_key, if *val { "true" } else { "false" }).await?;
+        }
+    }
+
+    // 保存默认 API 访问开关
+    if let Some(dae) = payload.default_api_enabled {
+        upsert_config(&state, &name, "api_enabled", if dae { "true" } else { "false" }).await?;
     }
 
     Ok(Json(json!({ "message": "ok" })))
@@ -226,10 +241,11 @@ async fn get_storage_config(
         String::new()
     };
 
-    // 提取等级配额和限制
+    // 提取等级配额、限制和 API 开关
     let mut level_quotas = serde_json::Map::new();
     let mut level_max_folders = serde_json::Map::new();
     let mut level_max_files = serde_json::Map::new();
+    let mut level_api_enabled = serde_json::Map::new();
     for (k, v) in &configs {
         if let Some(level_key) = k.strip_prefix("quota_") {
             let mb: i64 = v.parse().unwrap_or(100);
@@ -240,6 +256,9 @@ async fn get_storage_config(
         } else if let Some(level_key) = k.strip_prefix("max_files_") {
             let val: i64 = v.parse().unwrap_or(100);
             level_max_files.insert(level_key.to_string(), serde_json::Value::Number(val.into()));
+        } else if let Some(level_key) = k.strip_prefix("api_enabled_") {
+            let val = v == "true";
+            level_api_enabled.insert(level_key.to_string(), serde_json::Value::Bool(val));
         }
     }
 
@@ -247,6 +266,7 @@ async fn get_storage_config(
     let default_quota: i64 = configs.get("default_quota").and_then(|v| v.parse().ok()).unwrap_or(100);
     let default_max_folders: i64 = configs.get("max_folders").and_then(|v| v.parse().ok()).unwrap_or(20);
     let default_max_files_per_folder: i64 = configs.get("max_files_per_folder").and_then(|v| v.parse().ok()).unwrap_or(100);
+    let default_api_enabled: bool = configs.get("api_enabled").map(|v| v == "true").unwrap_or(true);
 
     Ok(Json(json!({
         "tos_access_key": configs.get("tos_access_key").cloned().unwrap_or_default(),
@@ -263,6 +283,8 @@ async fn get_storage_config(
         "default_max_folders": default_max_folders,
         "level_max_files_per_folder": level_max_files,
         "default_max_files_per_folder": default_max_files_per_folder,
+        "level_api_enabled": level_api_enabled,
+        "default_api_enabled": default_api_enabled,
     })))
 }
 

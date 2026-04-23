@@ -72,6 +72,8 @@ const PluginConfigInner: React.FC = () => {
   const [defaultMaxFolders, setDefaultMaxFolders] = useState<number>(20);
   const [levelMaxFilesPerFolder, setLevelMaxFilesPerFolder] = useState<Record<string, number>>({});
   const [defaultMaxFilesPerFolder, setDefaultMaxFilesPerFolder] = useState<number>(100);
+  const [levelApiEnabled, setLevelApiEnabled] = useState<Record<string, boolean>>({});
+  const [defaultApiEnabled, setDefaultApiEnabled] = useState<boolean>(true);
 
   // 存储配置
   const [storageConfig, setStorageConfig] = useState<StorageConfig | null>(null);
@@ -346,6 +348,12 @@ const PluginConfigInner: React.FC = () => {
         if (storageRes.default_max_files_per_folder != null) {
           setDefaultMaxFilesPerFolder(storageRes.default_max_files_per_folder);
         }
+        if (storageRes.level_api_enabled) {
+          setLevelApiEnabled(storageRes.level_api_enabled);
+        }
+        if (storageRes.default_api_enabled != null) {
+          setDefaultApiEnabled(storageRes.default_api_enabled);
+        }
         // 延迟设置表单值，等待 Tabs 内的 Form 组件渲染完毕
         setTimeout(() => {
           storageForm.setFieldsValue({
@@ -407,6 +415,8 @@ const PluginConfigInner: React.FC = () => {
         default_max_folders: defaultMaxFolders,
         level_max_files_per_folder: levelMaxFilesPerFolder,
         default_max_files_per_folder: defaultMaxFilesPerFolder,
+        level_api_enabled: levelApiEnabled,
+        default_api_enabled: defaultApiEnabled,
       });
       message.success('配置已保存');
     } catch (error) {
@@ -562,6 +572,14 @@ const PluginConfigInner: React.FC = () => {
                           addonAfter="个"
                         />
                       </div>
+                      <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.08)' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>API 接口调用</Text>
+                        <Switch size="small"
+                          checked={levelApiEnabled[lv.group_key] ?? true}
+                          onChange={(checked) => setLevelApiEnabled(prev => ({ ...prev, [lv.group_key]: checked }))}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -582,15 +600,16 @@ const PluginConfigInner: React.FC = () => {
           <Divider style={{ borderColor: 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
 
           {/* 表头 */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '0 14px 8px', alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px) 100px', gap: 8, padding: '0 14px 8px', alignItems: 'center' }}>
             <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>等级</Text>
             <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>存储空间</Text>
             <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>文件夹上限</Text>
             <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>每夹文件上限</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>API 接口</Text>
           </div>
 
           {/* 全局默认行 */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '10px 14px', borderRadius: 6, border: '1px solid rgba(22,119,255,0.3)', background: 'rgba(22,119,255,0.04)', marginBottom: 8, alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px) 100px', gap: 8, padding: '10px 14px', borderRadius: 6, border: '1px solid rgba(22,119,255,0.3)', background: 'rgba(22,119,255,0.04)', marginBottom: 8, alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Text style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>全局默认</Text>
               <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>默认值</Tag>
@@ -610,6 +629,9 @@ const PluginConfigInner: React.FC = () => {
               style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
               addonAfter="个"
             />
+            <div style={{ textAlign: 'center' }}>
+              <Switch size="small" checked={defaultApiEnabled} onChange={setDefaultApiEnabled} />
+            </div>
           </div>
 
           {/* 按等级覆盖 */}
@@ -618,7 +640,7 @@ const PluginConfigInner: React.FC = () => {
               <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', margin: '12px 0 8px' }}>按等级单独设置（覆盖全局默认值）</Text>
               {levels.map(lv => (
                 <div key={lv.group_key}
-                  style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '8px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, alignItems: 'center' }}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px) 100px', gap: 8, padding: '8px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, alignItems: 'center' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Text style={{ color: '#fff', fontSize: 13 }}>{lv.name}</Text>
@@ -642,6 +664,12 @@ const PluginConfigInner: React.FC = () => {
                     style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
                     addonAfter="个"
                   />
+                  <div style={{ textAlign: 'center' }}>
+                    <Switch size="small"
+                      checked={levelApiEnabled[lv.group_key] ?? defaultApiEnabled}
+                      onChange={(checked) => setLevelApiEnabled(prev => ({ ...prev, [lv.group_key]: checked }))}
+                    />
+                  </div>
                 </div>
               ))}
             </>
