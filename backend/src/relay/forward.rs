@@ -16,6 +16,8 @@ pub struct ResolvedForward {
     pub upstream_path: String,
     /// 鉴权方式: "bearer", "query_key", "x-api-key"
     pub auth_type: String,
+    /// 是否启用素材 URL→素材ID 自动转换（火山方舟视频素材专用）
+    pub asset_convert: bool,
 }
 
 // ── 转发规则解析 ──────────────────────────────────────────────
@@ -146,12 +148,18 @@ pub async fn resolve_forward_rule(
         .unwrap_or("bearer")
         .to_string();
 
-    tracing::info!("[Forward] 命中规则 '{}': target_type={}, upstream_path={}, auth_type={}", rule.name, target_type, upstream_path, auth_type);
+    let asset_convert = config
+        .get("asset_convert")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    tracing::info!("[Forward] 命中规则 '{}': target_type={}, upstream_path={}, auth_type={}, asset_convert={}", rule.name, target_type, upstream_path, auth_type, asset_convert);
 
     Some(ResolvedForward {
         target_type,
         upstream_path,
         auth_type,
+        asset_convert,
     })
 }
 
@@ -425,6 +433,7 @@ pub fn default_openai_forward(entry_path: &str) -> ResolvedForward {
         target_type: "openai".to_string(),
         upstream_path: entry_path.to_string(),
         auth_type: "bearer".to_string(),
+        asset_convert: false,
     }
 }
 
@@ -442,16 +451,19 @@ pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedFo
                 target_type: "volcengine_image".to_string(),
                 upstream_path: "/api/v3/images/generations".to_string(),
                 auth_type: "bearer".to_string(),
+                asset_convert: false,
             },
             "视频" => ResolvedForward {
                 target_type: "volcengine".to_string(),
                 upstream_path: "/api/v3/contents/generations/tasks".to_string(),
                 auth_type: "bearer".to_string(),
+                asset_convert: false,
             },
             _ => ResolvedForward {
                 target_type: "volcengine_chat".to_string(),
                 upstream_path: "/api/v3/chat/completions".to_string(),
                 auth_type: "bearer".to_string(),
+                asset_convert: false,
             },
         }
     } else if url_lower.contains("googleapis.com") || url_lower.contains("generativelanguage") {
@@ -460,11 +472,13 @@ pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedFo
                 target_type: "gemini_image".to_string(),
                 upstream_path: "/v1beta/models/${model}:generateContent".to_string(),
                 auth_type: "query_key".to_string(),
+                asset_convert: false,
             },
             _ => ResolvedForward {
                 target_type: "gemini".to_string(),
                 upstream_path: "/v1beta/models/${model}:generateContent".to_string(),
                 auth_type: "query_key".to_string(),
+                asset_convert: false,
             },
         }
     } else if url_lower.contains("anthropic.com") {
@@ -472,6 +486,7 @@ pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedFo
             target_type: "anthropic".to_string(),
             upstream_path: "/v1/messages".to_string(),
             auth_type: "x-api-key".to_string(),
+            asset_convert: false,
         }
     } else {
         default_openai_forward(match category {

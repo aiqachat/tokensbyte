@@ -1087,6 +1087,41 @@ const UserAssets: React.FC = () => {
 
         <style>
           {`
+            .asset-btn-secondary {
+              background: linear-gradient(145deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%) !important;
+              border: 1px solid rgba(255,255,255,0.15) !important;
+              color: #fff !important;
+              border-radius: 8px !important;
+              backdrop-filter: blur(10px) !important;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            }
+            .asset-btn-secondary:hover {
+              background: linear-gradient(145deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 100%) !important;
+              border-color: rgba(255,255,255,0.3) !important;
+              box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 10px rgba(255,255,255,0.05) !important;
+              transform: translateY(-1px) !important;
+            }
+            .asset-btn-secondary:active {
+              transform: translateY(1px) !important;
+            }
+            
+            .asset-btn-primary {
+              background: linear-gradient(135deg, #1677ff 0%, #36cfc9 100%) !important;
+              border: none !important;
+              color: #fff !important;
+              border-radius: 8px !important;
+              box-shadow: 0 4px 15px rgba(22, 119, 255, 0.3) !important;
+              transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            }
+            .asset-btn-primary:hover {
+              background: linear-gradient(135deg, #4096ff 0%, #5cdbd3 100%) !important;
+              box-shadow: 0 6px 20px rgba(22, 119, 255, 0.4), 0 0 12px rgba(54, 207, 201, 0.4) !important;
+              transform: translateY(-1px) !important;
+            }
+            .asset-btn-primary:active {
+              transform: translateY(1px) !important;
+            }
+
             .assets-layout-container {
               display: flex;
               gap: 24px;
@@ -1187,13 +1222,15 @@ const UserAssets: React.FC = () => {
                             onClick: (e) => setAssetFilter(e.key),
                           }}
                         >
-                          <Button style={{ background: '#1a1a1a', border: '1px solid #333', color: '#fff' }}>
+                          <Button className="asset-btn-secondary">
                             <FilterOutlined /> 筛选
                           </Button>
                         </Dropdown>
                         
+                        {selectedKey !== 'my_real_portrait' && (
                         <Button 
-                          style={{ background: '#1a1a1a', border: '1px solid #333', color: '#fff' }} 
+                          type="primary"
+                          className="asset-btn-primary" 
                           icon={<UploadOutlined />}
                           onClick={() => {
                             if (selectedKey === 'my_virtual_portrait' && !currentGroup) {
@@ -1208,9 +1245,10 @@ const UserAssets: React.FC = () => {
                         >
                           上传素材
                         </Button>
+                        )}
 
                         {selectedKey === 'my_virtual_portrait' && (
-                          <Button type="primary" icon={<FolderOutlined />} onClick={() => setIsGroupModalOpen(true)}>
+                          <Button className="asset-btn-secondary" icon={<FolderOutlined />} onClick={() => setIsGroupModalOpen(true)}>
                             创建素材组合
                           </Button>
                         )}

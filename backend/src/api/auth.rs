@@ -46,9 +46,9 @@ pub async fn login(
 ) -> Response {
     let result = (async {
         let (query_str, err_msg) = match request.login_type.as_deref() {
-            Some("email") => ("SELECT * FROM users WHERE email = ?", "未找到该邮箱对应的账号"),
-            Some("mobile") => ("SELECT * FROM users WHERE mobile = ?", "未找到该手机号对应的账号"),
-            _ => ("SELECT * FROM users WHERE username = ?", "未找到此账号，请检查用户名"),
+            Some("email") => ("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.email = ?", "未找到该邮箱对应的账号"),
+            Some("mobile") => ("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.mobile = ?", "未找到该手机号对应的账号"),
+            _ => ("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.username = ?", "未找到此账号，请检查用户名"),
         };
 
         let user: User = sqlx::query_as(&state.db.format_query(query_str))
@@ -86,7 +86,7 @@ pub async fn admin_login(
 ) -> Response {
     let result = (async {
         let mut user: User = sqlx::query_as(
-            &state.db.format_query("SELECT * FROM users WHERE username = ? OR email = ?")
+            &state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.username = ? OR u.email = ?")
         )
         .bind(&request.username)
         .bind(&request.username)
@@ -147,6 +147,9 @@ pub async fn register(
         // IP 防刷检查
         let raw_ip = extract_client_ip(&headers, &addr);
         check_ip_rate_limit(&state, &settings.registration, &raw_ip).await?;
+
+        // 用户名合规校验
+        validate_username(&request.username)?;
 
         let mut actual_email = request.email.clone();
         if actual_email.is_empty() {
@@ -422,6 +425,8 @@ pub async fn register_email(
         let user_id = uuid::Uuid::new_v4().to_string();
         let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
         let username = generate_unique_username(&state, &request.email).await?;
+        // 自动生成的用户名也做保留词校验
+        validate_username(&username)?;
         let password_hash = auth::hash_password(&request.password)?;
 
         let mut tx = state.db.pool.begin().await?;
@@ -436,15 +441,11 @@ pub async fn register_email(
         }
 
         let mut initial_balance = state.config.default_user_quota;
+        let mut gift_amount = 0.0;
         if settings.marketing.enable_registration_gift {
-            let gift = calc_gift_amount(&settings.marketing);
-            if gift > 0.0 {
-                initial_balance += gift;
-                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
-                    .bind(&user_id)
-                    .bind(gift)
-                    .execute(&mut *tx)
-                    .await?;
+            gift_amount = calc_gift_amount(&settings.marketing);
+            if gift_amount > 0.0 {
+                initial_balance += gift_amount;
             }
         }
 
@@ -465,6 +466,14 @@ pub async fn register_email(
         .bind(&default_group)
         .execute(&mut *tx)
         .await?;
+
+        if gift_amount > 0.0 {
+            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
+                .bind(&user_id)
+                .bind(gift_amount)
+                .execute(&mut *tx)
+                .await?;
+        }
 
         tx.commit().await?;
 
@@ -524,6 +533,8 @@ pub async fn register_mobile(
         let username = format!("m_{}", &request.mobile[request.mobile.len().saturating_sub(4)..]);
         // 确保用户名唯一
         let username = ensure_unique_username(&state, &username).await?;
+        // 自动生成的用户名也做保留词校验
+        validate_username(&username)?;
         let password_hash = auth::hash_password(&request.password)?;
         let placeholder_email = format!("m_{}@tokensbyte.local", &uid);
 
@@ -539,13 +550,11 @@ pub async fn register_mobile(
         }
 
         let mut initial_balance = state.config.default_user_quota;
+        let mut gift_amount = 0.0;
         if settings.marketing.enable_registration_gift {
-            let gift = calc_gift_amount(&settings.marketing);
-            if gift > 0.0 {
-                initial_balance += gift;
-                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
-                    .bind(&user_id).bind(gift)
-                    .execute(&mut *tx).await?;
+            gift_amount = calc_gift_amount(&settings.marketing);
+            if gift_amount > 0.0 {
+                initial_balance += gift_amount;
             }
         }
 
@@ -566,6 +575,12 @@ pub async fn register_mobile(
         .bind(&referred_by).bind(&raw_ip)
         .bind(&default_group)
         .execute(&mut *tx).await?;
+
+        if gift_amount > 0.0 {
+            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
+                .bind(&user_id).bind(gift_amount)
+                .execute(&mut *tx).await?;
+        }
 
         tx.commit().await?;
 
@@ -841,6 +856,43 @@ pub async fn oauth_google_callback(
 
 async fn get_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> {
     crate::api::settings::load_all_settings(state).await
+}
+
+/// 用户名合规校验：禁止系统保留词 + 最少4字符
+fn validate_username(username: &str) -> AppResult<()> {
+    let name = username.trim();
+
+    if name.len() < 4 {
+        return Err(AppError::BadRequest("用户名长度不能少于4个字符".to_string()));
+    }
+
+    // 常见系统保留用户名（全部小写比对）
+    const RESERVED: &[&str] = &[
+        "admin", "administrator", "root", "system", "sys",
+        "superadmin", "super", "master", "operator",
+        "moderator", "mod", "staff", "support", "help",
+        "service", "official", "test", "tester", "testing",
+        "demo", "guest", "anonymous", "nobody", "null",
+        "undefined", "api", "www", "mail", "ftp",
+        "smtp", "pop", "imap", "dns", "ns",
+        "server", "database", "db", "mysql", "postgres",
+        "redis", "mongo", "nginx", "apache", "proxy",
+        "bot", "robot", "crawler", "spider",
+        "postmaster", "webmaster", "hostmaster", "abuse",
+        "security", "info", "noreply", "no-reply",
+        "ceo", "cto", "cfo", "coo",
+        "token", "tokens", "tokensbyte", "tokenbyte",
+        "管理员", "系统", "官方", "客服", "运营",
+    ];
+
+    let lower = name.to_lowercase();
+    for &word in RESERVED {
+        if lower == word {
+            return Err(AppError::BadRequest(format!("用户名 '{}' 为系统保留名称，请换一个", name)));
+        }
+    }
+
+    Ok(())
 }
 
 /// 生成 6 位数字验证码

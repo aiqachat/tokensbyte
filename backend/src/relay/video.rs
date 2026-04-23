@@ -27,9 +27,14 @@ pub async fn video_generations(
         .await
         .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, "视频"));
 
-    let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "视频");
+    let mut upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "视频");
     let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
     let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
+
+    // 素材转换：当规则启用 asset_convert 时，将 content 中的网络 URL 转换为素材 ID
+    if resolved.asset_convert {
+        super::asset_convert::convert_content_urls(&state, &token.user_id, &mut upstream_body).await;
+    }
 
     tracing::info!("[Video] model={}, target_type={}, url={}", model, resolved.target_type, url);
 

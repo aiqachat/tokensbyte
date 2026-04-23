@@ -36,6 +36,8 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/user/groups/{group_id}", put(user_update_group).delete(user_delete_group))
         .route("/user/{id}", delete(user_delete_asset))
         .route("/admin/get-asset-info/{asset_id}", get(admin_get_asset_info))
+        .route("/admin/relay-converts", get(admin_list_relay_converts))
+        .route("/admin/relay-converts/delete", post(admin_batch_delete_relay_converts))
         .layer(DefaultBodyLimit::disable())
 }
 
@@ -1648,4 +1650,162 @@ async fn admin_get_asset_info(
         "CreateTime": res.create_time,
         "ProjectName": res.project_name,
     })))
+}
+
+// ========== 转换素材管理（relay_convert）==========
+
+#[derive(Deserialize)]
+pub struct RelayConvertQuery {
+    /// 素材类型筛选: image / video / audio
+    pub asset_type: Option<String>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+}
+
+/// 管理员：分页查询所有 source='relay_convert' 的转换素材
+async fn admin_list_relay_converts(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    Query(query): Query<RelayConvertQuery>,
+) -> AppResult<Json<serde_json::Value>> {
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized)?;
+    if user.role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let page = query.page.unwrap_or(1).max(1);
+    let page_size = query.page_size.unwrap_or(20).clamp(1, 100);
+    let offset = (page - 1) * page_size;
+
+    // 使用参数化查询，安全且兼容 Any 驱动
+    let (total, items) = if let Some(ref at) = query.asset_type {
+        let total: i64 = sqlx::query_scalar(
+            &state.db.format_query("SELECT COUNT(*) FROM plugin_assets WHERE source = 'relay_convert' AND asset_type = ?")
+        )
+        .bind(at)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or(0);
+
+        let items: Vec<PluginAsset> = sqlx::query_as(
+            &state.db.format_query("SELECT * FROM plugin_assets WHERE source = 'relay_convert' AND asset_type = ? ORDER BY id DESC LIMIT ? OFFSET ?")
+        )
+        .bind(at)
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all(&state.db.pool)
+        .await?;
+
+        (total, items)
+    } else {
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM plugin_assets WHERE source = 'relay_convert'"
+        )
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or(0);
+
+        let items: Vec<PluginAsset> = sqlx::query_as(
+            &state.db.format_query("SELECT * FROM plugin_assets WHERE source = 'relay_convert' ORDER BY id DESC LIMIT ? OFFSET ?")
+        )
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all(&state.db.pool)
+        .await?;
+
+        (total, items)
+    };
+
+    Ok(Json(json!({
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct BatchDeleteRequest {
+    /// 要删除的素材记录 ID 列表
+    pub ids: Vec<i64>,
+}
+
+/// 管理员：批量删除转换素材（本地记录 + 方舟远端 DeleteAsset）
+async fn admin_batch_delete_relay_converts(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
+    Json(payload): Json<BatchDeleteRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized)?;
+    if user.role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    if payload.ids.is_empty() {
+        return Ok(Json(json!({ "message": "无操作", "deleted": 0 })));
+    }
+
+    // 查出这些记录的 asset_id，用于调用方舟 DeleteAsset
+    let placeholders: Vec<String> = payload.ids.iter().map(|_| "?".to_string()).collect();
+    let in_clause = placeholders.join(",");
+    let q = format!(
+        "SELECT * FROM plugin_assets WHERE id IN ({}) AND source = 'relay_convert'",
+        in_clause
+    );
+    let q = state.db.format_query(&q);
+    let mut query_builder = sqlx::query_as::<_, PluginAsset>(&q);
+    for id in &payload.ids {
+        query_builder = query_builder.bind(id);
+    }
+    let assets: Vec<PluginAsset> = query_builder.fetch_all(&state.db.pool).await?;
+
+    // 异步调用方舟 DeleteAsset（非阻塞，失败仅记录日志）
+    if let Some(volc_config) = crate::api::plugins::get_volc_config(&state, "asset_manager").await {
+        let db_clone = state.db.clone();
+        let uid = claims.sub.clone();
+        let asset_ids: Vec<String> = assets.iter()
+            .filter_map(|a| a.asset_id.clone())
+            .filter(|aid| !aid.is_empty())
+            .collect();
+        let vc = volc_config.clone();
+        
+        tokio::spawn(async move {
+            let client = crate::services::volcengine::VolcClient::new(vc.clone())
+                .with_logger(db_clone.clone(), uid);
+            for aid in asset_ids {
+                let req = crate::services::volcengine::DeleteAssetRequest {
+                    id: aid.clone(),
+                    project_name: Some(vc.project_name.clone()),
+                };
+                match client.call_api::<_, crate::services::volcengine::DeleteAssetResponse>(
+                    "ark", "cn-beijing", "DeleteAsset", "2024-01-01", req
+                ).await {
+                    Ok(_) => tracing::info!("[RelayConvert] 方舟素材已删除: {}", aid),
+                    Err(e) => tracing::warn!("[RelayConvert] 方舟删除失败: {} - {}", aid, e),
+                }
+            }
+        });
+    }
+
+    // 删除本地数据库记录
+    let del_q = format!(
+        "DELETE FROM plugin_assets WHERE id IN ({}) AND source = 'relay_convert'",
+        in_clause
+    );
+    let del_q = state.db.format_query(&del_q);
+    let mut del_builder = sqlx::query(&del_q);
+    for id in &payload.ids {
+        del_builder = del_builder.bind(id);
+    }
+    del_builder.execute(&state.db.pool).await?;
+
+    Ok(Json(json!({ "message": "删除成功", "deleted": assets.len() })))
 }

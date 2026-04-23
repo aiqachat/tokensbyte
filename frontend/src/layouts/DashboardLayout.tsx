@@ -27,7 +27,7 @@ import {
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Dropdown, Modal, message } from 'antd';
+import { Dropdown, Modal, message, Popover, Avatar, Divider } from 'antd';
 import type { MenuProps } from 'antd';
 import useAuthStore from '../store/auth';
 
@@ -45,7 +45,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const screens = useBreakpoint();
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { user, logout, setUser, isLoggedIn } = useAuthStore();
   const [siteName, setSiteName] = useState(isUserEnd ? 'TokensByte' : t('common.admin_title'));
   const [siteLogo, setSiteLogo] = useState<string>('');
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
@@ -55,8 +55,21 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   useEffect(() => {
     fetchActivePlugins();
     fetchGlobalSettings();
-  }, []);
+    if (isLoggedIn) {
+      fetchCurrentUser();
+    }
+  }, [isLoggedIn]);
 
+  const fetchCurrentUser = async () => {
+    try {
+      const resp: any = await request.get('/user/profile');
+      if (resp && resp.id) {
+        setUser(resp);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user info', error);
+    }
+  };
   
   const fetchActivePlugins = async () => {
     try {
@@ -389,10 +402,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/settings?tab=basic">{t('menu.basic_settings')}</Link>,
           },
           {
-            key: '/admin0755/settings?tab=currency',
-            label: <Link to="/admin0755/settings?tab=currency">{t('menu.currency_settings')}</Link>,
-          },
-          {
             key: '/admin0755/payment-settings',
             label: <Link to="/admin0755/payment-settings">{t('menu.payment_settings')}</Link>,
           },
@@ -422,6 +431,92 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   }
 
 
+  const userInitial = user?.nickname?.charAt(0)?.toUpperCase() || user?.username?.charAt(0)?.toUpperCase() || '?';
+  const displayName = user?.nickname || user?.username || 'User';
+
+  const profileContent = (
+    <div style={{ width: 300, padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ marginTop: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, width: '100%', padding: '0 8px' }}>
+        <Avatar 
+          size={56} 
+          style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 24, flexShrink: 0 }}
+        >
+          {userInitial}
+        </Avatar>
+        <div style={{ overflow: 'hidden', flex: 1 }}>
+          <div style={{ fontWeight: 500, fontSize: 16, color: '#e5e5e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</span>
+            {user?.level_name && (
+              <span style={{ 
+                fontSize: 11, padding: '0 6px', background: 'rgba(22, 119, 255, 0.15)', 
+                color: '#1677ff', borderRadius: 4, fontWeight: 'normal', flexShrink: 0,
+                border: '1px solid rgba(22, 119, 255, 0.3)', lineHeight: '18px',
+                userSelect: 'none'
+              }}>
+                {user.level_name}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
+            用户 UID:{user?.uid || '-'}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {isUserEnd && (
+          <Button 
+            type="default"
+            style={{ 
+              height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
+              transition: 'all 0.2s'
+            }}
+            className="hover-bright-btn"
+            icon={<WalletOutlined style={{ fontSize: 18 }} />}
+            onClick={() => { navigate('/wallet'); }}
+          >
+            {t('menu.wallet', '我的钱包')}
+          </Button>
+        )}
+        
+        <Button 
+          type="default"
+          style={{ 
+            height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
+            transition: 'all 0.2s'
+          }}
+          className="hover-bright-btn"
+          icon={<UserOutlined style={{ fontSize: 18 }} />}
+          onClick={() => { navigate('/profile'); }}
+        >
+          {t('menu.profile', '个人中心')}
+        </Button>
+
+        <Button 
+          type="default"
+          style={{ 
+            height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
+            transition: 'all 0.2s'
+          }}
+          className="hover-bright-btn"
+          icon={<LogoutOutlined style={{ fontSize: 18 }} />}
+          onClick={handleLogout}
+        >
+          {t('common.logout', '退出账号')}
+        </Button>
+      </div>
+
+      <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center', gap: 24, width: '100%' }}>
+        <Button type="link" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, padding: 0 }}>隐私政策</Button>
+        <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
+        <Button type="link" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, padding: 0 }}>服务条款</Button>
+      </div>
+    </div>
+  );
+
   return (
     <ConfigProvider
       theme={{
@@ -442,6 +537,47 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         }
       }}
     >
+      <style>
+        {`
+          .hover-bright-btn:hover {
+            background: rgba(255,255,255,0.1) !important;
+            border-color: rgba(255,255,255,0.2) !important;
+            color: #fff !important;
+          }
+          .header-avatar-btn:hover {
+            background: rgba(255,255,255,0.08);
+          }
+          
+          /* 弹窗居中放大动画 */
+          .popover-center-scale-enter,
+          .popover-center-scale-appear {
+            opacity: 0;
+            transform: scale(0.82);
+            transform-origin: 50% 50% !important;
+          }
+          .popover-center-scale-enter-active,
+          .popover-center-scale-appear-active {
+            opacity: 1;
+            transform: scale(1);
+            transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transform-origin: 50% 50% !important;
+          }
+          .popover-center-scale-leave {
+            opacity: 1;
+            transform: scale(1);
+            transform-origin: 50% 50% !important;
+          }
+          .popover-center-scale-leave-active {
+            opacity: 0;
+            transform: scale(0.88);
+            transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
+            transform-origin: 50% 50% !important;
+          }
+          .custom-premium-popover {
+            transform-origin: 50% 50% !important;
+          }
+        `}
+      </style>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Sider 
           trigger={null} 
@@ -554,7 +690,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
               )}
             </div>
             
-            <Space size={screens.xs ? "small" : "large"}>
+            <Space size={screens.xs ? "small" : "middle"}>
               {enableMultilingual && (
                 <Dropdown menu={{ items: langItems }} placement="bottomRight">
                   <Button type="text" icon={<GlobalOutlined />} style={{ color: '#fff' }}>
@@ -562,20 +698,39 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                   </Button>
                 </Dropdown>
               )}
-              {!screens.xs && (
-                <span style={{ color: '#fff' }}>
-                  <Title level={5} style={{ margin: 0, color: '#fff' }}>{user?.username}</Title>
-                </span>
-              )}
-              <Button 
-                type="primary" 
-                danger 
-                icon={<LogoutOutlined />} 
-                onClick={handleLogout}
-                size={screens.xs ? "middle" : "middle"}
+              
+              <Popover 
+                content={profileContent} 
+                trigger="click" 
+                placement="bottomRight"
+                overlayClassName="custom-premium-popover"
+                forceRender
+                destroyTooltipOnHide={false}
+                overlayInnerStyle={{ 
+                  padding: 0, 
+                  borderRadius: 20, 
+                  background: 'rgba(30, 30, 30, 0.45)',
+                  backdropFilter: 'blur(30px) saturate(200%)',
+                  WebkitBackdropFilter: 'blur(30px) saturate(200%)',
+                  border: '1px solid rgba(255,255,255,0.15)', 
+                  boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
+                  transform: 'translateZ(0)',
+                }}
+                arrow={false}
               >
-                {!screens.xs && t('common.logout')}
-              </Button>
+                <div 
+                  className="header-avatar-btn"
+                  style={{ 
+                    display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '4px', 
+                    borderRadius: 20, transition: 'background 0.2s',
+                    border: '2px solid transparent'
+                  }} 
+                >
+                  <Avatar size={34} style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 16 }}>
+                    {userInitial}
+                  </Avatar>
+                </div>
+              </Popover>
             </Space>
 
           </Header>

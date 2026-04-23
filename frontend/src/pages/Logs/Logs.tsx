@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid, Select } from 'antd';
+import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid, Select, Tooltip } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { SyncOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -76,7 +76,7 @@ const Logs: React.FC = () => {
       render: (text: string, record: RequestLog) => (
         <Space direction="vertical" size={0}>
           <Tag color="blue">{text}</Tag>
-          {record.channel_name && <Text type="secondary" style={{ fontSize: 11 }}>渠道: {record.channel_name}</Text>}
+          {user?.role === 'admin' && record.channel_name && <Text type="secondary" style={{ fontSize: 11 }}>渠道: {record.channel_name}</Text>}
         </Space>
       ),
     },
@@ -354,7 +354,7 @@ const Logs: React.FC = () => {
                   </Space>
                 </CardRow>
                 <CardRow label="令牌"><Tag color="cyan" style={{ fontSize: 11 }}>{record.token_name || '-'}</Tag></CardRow>
-                {record.channel_name && <CardRow label="渠道"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_name}</Text></CardRow>}
+                {user?.role === 'admin' && record.channel_name && <CardRow label="渠道"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_name}</Text></CardRow>}
                 <CardRow label="用量"><Text type="secondary" style={{ fontSize: 12 }}>输入:{record.prompt_tokens} / 输出:{record.completion_tokens}</Text></CardRow>
                 <CardRow label="费用">
                   {record.cost === 0
@@ -374,7 +374,26 @@ const Logs: React.FC = () => {
           columns={columns}
           rowKey="id"
           loading={loading}
-          expandable={{ expandedRowRender, expandRowByClick: true }}
+          expandable={{ 
+            expandedRowRender, 
+            expandRowByClick: true,
+            expandIcon: ({ expanded, onExpand, record }) => (
+              <Tooltip title={expanded ? "收起详情" : "查看详细请求与响应"}>
+                <Button 
+                  type="link" 
+                  size="small" 
+                  onClick={e => {
+                    // 阻止事件冒泡，以免与 expandRowByClick 冲突导致触发两次
+                    e.stopPropagation();
+                    onExpand(record, e);
+                  }}
+                  style={{ padding: '0 4px', fontSize: 13 }}
+                >
+                  详细
+                </Button>
+              </Tooltip>
+            )
+          }}
           pagination={{
             total,
             current: page,

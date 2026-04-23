@@ -205,6 +205,7 @@ macro_rules! pg_migration_blocks {
             invite_reward_invitee DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             daily_invite_limit INTEGER NOT NULL DEFAULT 10,
             marketing_enabled INTEGER NOT NULL DEFAULT 0,
+            max_token_count INTEGER NOT NULL DEFAULT 10,
             description TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
@@ -320,6 +321,7 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS daily_invite_limit INTEGER NOT NULL DEFAULT 10").execute(pool).await.ok();
     sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS marketing_enabled INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
     sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS is_default INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS max_token_count INTEGER NOT NULL DEFAULT 10").execute(pool).await.ok();
     // 确保 default 等级为默认注册等级（仅当没有任何默认等级时）
     sqlx::query("UPDATE user_levels SET is_default = 1 WHERE group_key = 'default' AND NOT EXISTS (SELECT 1 FROM user_levels WHERE is_default = 1)").execute(pool).await.ok();
 
@@ -409,13 +411,14 @@ macro_rules! pg_migration_blocks {
             ('Google Gemini 流式转换 (聊天)', 'gemini', '将标准请求转换为支持流式输出的 Gemini contents', '{"mode":"transform","target_type":"gemini","path_rewrite":{"old":"/v1/chat/completions","new":"/v1beta/models/${model}:streamGenerateContent?alt=sse"},"auth_type":"query_key"}', '聊天', 1),
             ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频', 1),
             ('火山方舟 聊天', 'volcengine', '将标准的聊天请求转发到火山方舟官方 Chat 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_chat","path_rewrite":{"old":"/v1/chat/completions","new":"/api/v3/chat/completions"},"auth_type":"bearer"}', '聊天', 1),
-            ('火山方舟 图片生成', 'volcengine', '将标准的图片生成请求转发到火山方舟官方 images 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_image","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/images/generations"},"auth_type":"bearer"}', '图片', 1)
+            ('火山方舟 图片生成', 'volcengine', '将标准的图片生成请求转发到火山方舟官方 images 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_image","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/images/generations"},"auth_type":"bearer"}', '图片', 1),
+            ('火山方舟 视频素材转换', 'volcengine', '在火山方舟视频生成基础上，自动将 content 中的网络 URL 通过 CreateAsset API 转换为素材 ID（asset://前缀），需配置素材资产管理插件的审核凭证', '{"mode":"transform","target_type":"volcengine","asset_convert":true,"path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频', 1)
         ) AS t(name, rule_type, description, config_json, category, is_system)
         WHERE NOT EXISTS (SELECT 1 FROM forward_rules WHERE name = t.name)
     "#).execute(pool).await.ok();
 
     // 更新老数据
-    sqlx::query("UPDATE forward_rules SET is_system = 1 WHERE name IN ('OpenAI 兼容原生通道 (聊天)', 'OpenAI 兼容原生通道 (图片)', 'OpenAI 兼容原生通道 (视频)', 'Anthropic 原生转化', 'Google Gemini 原生生图', 'Google Gemini 格式转换 (聊天)', 'Google Gemini 流式转换 (聊天)', '火山方舟 视频生成', '火山方舟 聊天', '火山方舟 图片生成')")
+    sqlx::query("UPDATE forward_rules SET is_system = 1 WHERE name IN ('OpenAI 兼容原生通道 (聊天)', 'OpenAI 兼容原生通道 (图片)', 'OpenAI 兼容原生通道 (视频)', 'Anthropic 原生转化', 'Google Gemini 原生生图', 'Google Gemini 格式转换 (聊天)', 'Google Gemini 流式转换 (聊天)', '火山方舟 视频生成', '火山方舟 聊天', '火山方舟 图片生成', '火山方舟 视频素材转换')")
         .execute(pool).await.ok();
 
     // Billing Rules table
@@ -578,10 +581,15 @@ macro_rules! pg_migration_blocks {
 
     // Migrate existing plugin_assets
     sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS category TEXT DEFAULT '未分类'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN plugin_assets.category IS '素材分类'").execute(pool).await.ok();
     sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS asset_id TEXT").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN plugin_assets.asset_id IS '火山方舟素材ID（如 asset://...）'").execute(pool).await.ok();
     sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN plugin_assets.sort_order IS '排序权重，数字越大越靠前'").execute(pool).await.ok();
     sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN plugin_assets.remark IS '管理员内部备注'").execute(pool).await.ok();
     sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS group_id TEXT").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN plugin_assets.group_id IS '素材绑定的组合ID'").execute(pool).await.ok();
 
     // Seed Asset Manager plugin
     sqlx::query(

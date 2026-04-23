@@ -75,7 +75,18 @@ pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str
         }
     }
 
-    Ok(top_tier_channels[0].clone())
+    let mut ch = top_tier_channels[0].clone();
+    if let Some(pid) = ch.preset_id {
+        if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
+            .bind(pid)
+            .fetch_optional(&state.db.pool)
+            .await 
+        {
+            ch.base_url = preset.base_url;
+            ch.api_key = preset.api_key;
+        }
+    }
+    Ok(ch)
 }
 
 

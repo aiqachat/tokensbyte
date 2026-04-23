@@ -15,6 +15,7 @@ pub struct VolcConfig {
     pub secret_key: String,
     pub app_id: String,
     pub project_name: String,
+    pub group_id: Option<String>,
 }
 
 impl VolcConfig {
@@ -27,6 +28,8 @@ impl VolcConfig {
             .unwrap_or_else(|| "default".to_string());
         let project_name = if project_name.is_empty() { "default".to_string() } else { project_name };
 
+        let group_id = map.get("volc_group_id").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+
         if ak.is_empty() || sk.is_empty() {
             return None;
         }
@@ -36,6 +39,7 @@ impl VolcConfig {
             secret_key: sk.to_string(),
             app_id,
             project_name,
+            group_id,
         })
     }
 }
