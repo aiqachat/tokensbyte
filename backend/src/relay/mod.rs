@@ -8,6 +8,7 @@ pub mod url_utils;
 pub mod forward;
 pub mod usage_extractor;
 pub mod asset_convert;
+pub mod task_poller;
 
 use axum::{
     extract::{State, Extension},

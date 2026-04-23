@@ -235,12 +235,19 @@ pub fn parse_usage(response: &str) -> UsageTokens {
 
 pub fn extract_usage_json_string(response: &str) -> Option<String> {
     if let Ok(v) = serde_json::from_str::<Value>(response) {
-        if v.get("usage").is_some() || v.get("usageMetadata").is_some() || v.get("final_result").and_then(|fr| fr.get("usage")).is_some() {
-            return Some(response.to_string());
+        // 仅提取 usage 节点，不返回完整响应体（避免存入 choices 等大量聊天内容）
+        if let Some(usage) = v.get("usage") {
+            return Some(serde_json::json!({ "usage": usage }).to_string());
+        }
+        if let Some(usage) = v.get("usageMetadata") {
+            return Some(serde_json::json!({ "usageMetadata": usage }).to_string());
+        }
+        if let Some(usage) = v.get("final_result").and_then(|fr| fr.get("usage")) {
+            return Some(serde_json::json!({ "final_result": { "usage": usage } }).to_string());
         }
     } else {
-        // SSE 模式下，寻找最后一条包含 usage 字段的 chunk
-        let mut last_usage_chunk = None;
+        // SSE 模式下，寻找最后一条包含 usage 字段的 chunk，仅提取 usage 部分
+        let mut last_usage_json = None;
         for line in response.lines() {
             let line = line.trim();
             if line.is_empty() || line.ends_with("[DONE]") { continue; }
@@ -252,13 +259,15 @@ pub fn extract_usage_json_string(response: &str) -> Option<String> {
             };
             
             if let Ok(v) = serde_json::from_str::<Value>(json_str) {
-                if v.get("usage").is_some() || v.get("usageMetadata").is_some() {
-                    last_usage_chunk = Some(v.to_string());
+                if let Some(usage) = v.get("usage") {
+                    last_usage_json = Some(serde_json::json!({ "usage": usage }).to_string());
+                } else if let Some(usage) = v.get("usageMetadata") {
+                    last_usage_json = Some(serde_json::json!({ "usageMetadata": usage }).to_string());
                 }
             }
         }
-        if last_usage_chunk.is_some() {
-            return last_usage_chunk;
+        if last_usage_json.is_some() {
+            return last_usage_json;
         }
     }
     None
