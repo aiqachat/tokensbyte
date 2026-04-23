@@ -42,7 +42,7 @@ export const useGeneration = () => {
         : currentModel.type_name.includes('图片') || currentModel.scheme_type === 'image' ? 'image'
         : 'text',
       status: 'loading',
-      taskData: null,
+      taskData: { prompt: prompt.trim() },
       resultData: null,
       x: centerX + offsetX,
       y: centerY + offsetY,
@@ -102,7 +102,7 @@ export const useGeneration = () => {
       const isVideoEndpoint = endpoint.includes('video') || endpoint.includes('contents/generations');
       if (isVideoEndpoint && (res?.id || res?.data?.task_id)) {
         const taskId = res?.id || res?.data?.task_id;
-        setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, taskData: { task_id: taskId, ...res } } : n));
+        setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, taskData: { ...(n.taskData || {}), task_id: taskId, ...res } } : n));
         setTaskPollingNodes(prev => [...prev, newNodeId]);
         pollTaskStatus(newNodeId, taskId, currentModel.model_id, currentModel.poll_endpoint);
       } else {

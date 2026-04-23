@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid, Switch } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +20,7 @@ const Tokens: React.FC = () => {
   const [passwordForm] = Form.useForm();
   const screens = useBreakpoint();
   const [saving, setSaving] = useState(false);
+  const [enableModelFilter, setEnableModelFilter] = useState(false);
 
   // 密钥明文展示状态
   const [revealModalVisible, setRevealModalVisible] = useState(false);
@@ -51,12 +52,15 @@ const Tokens: React.FC = () => {
   const handleAdd = () => {
     setEditingToken(null);
     form.resetFields();
+    setEnableModelFilter(false);
     setIsModalVisible(true);
   };
 
   const handleEdit = (record: ApiToken) => {
     setEditingToken(record);
     const models = record.allowed_models ? (typeof record.allowed_models === 'string' ? JSON.parse(record.allowed_models) : record.allowed_models) : [];
+    const hasModels = Array.isArray(models) && models.length > 0;
+    setEnableModelFilter(hasModels);
     form.setFieldsValue({
       ...record,
       allowed_models: Array.isArray(models) ? models.join('\n') : '',
@@ -78,7 +82,9 @@ const Tokens: React.FC = () => {
     if (saving) return;
     const data = {
       ...values,
-      allowed_models: values.allowed_models?.split('\n').filter((m: string) => m.trim()) || [],
+      allowed_models: enableModelFilter
+        ? (values.allowed_models?.split('\n').filter((m: string) => m.trim()) || [])
+        : [],
     };
 
     setSaving(true);
@@ -346,9 +352,45 @@ const Tokens: React.FC = () => {
             />
           </Form.Item>
 
-          <Form.Item name="allowed_models" label={t('channels.models')}>
-            <Input.TextArea rows={4} placeholder="留空则可请求站内全部模型，无需填写" />
+          <Form.Item label="选择指定模型" style={{ marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Switch
+                checked={enableModelFilter}
+                onChange={(checked) => {
+                  setEnableModelFilter(checked);
+                  if (!checked) {
+                    form.setFieldsValue({ allowed_models: '' });
+                  }
+                }}
+                checkedChildren="已开启"
+                unCheckedChildren="未开启"
+              />
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                {enableModelFilter ? '仅允许请求下方指定的模型' : '不限制，可请求站内全部模型'}
+              </Text>
+            </div>
           </Form.Item>
+          {enableModelFilter && (
+            <Form.Item
+              name="allowed_models"
+              extra={
+                <div style={{ fontSize: 12, color: '#888', lineHeight: 1.8, marginTop: 4 }}>
+                  <div>📌 每行填写一个模型名称（model ID），例如：</div>
+                  <div style={{ fontFamily: 'monospace', color: '#aaa', padding: '4px 0 4px 12px' }}>
+                    gpt-4o<br />
+                    claude-sonnet-4-20250514<br />
+                    deepseek-chat
+                  </div>
+                  <div>模型名称需与站内已配置的模型 ID 完全一致，不区分大小写。</div>
+                </div>
+              }
+            >
+              <Input.TextArea
+                rows={4}
+                placeholder={'请输入允许使用的模型名称，每行一个\n例如：\ngpt-4o\nclaude-sonnet-4-20250514\ndeepseek-chat'}
+              />
+            </Form.Item>
+          )}
 
           <Form.Item name="allowed_ips" label={t('tokens.allowed_ips')}>
              <Input placeholder="192.168.1.1, 10.0.0.1" />

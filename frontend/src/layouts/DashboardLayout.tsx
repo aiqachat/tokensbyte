@@ -402,10 +402,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/settings?tab=basic">{t('menu.basic_settings')}</Link>,
           },
           {
-            key: '/admin0755/settings?tab=currency',
-            label: <Link to="/admin0755/settings?tab=currency">{t('menu.currency_settings')}</Link>,
-          },
-          {
             key: '/admin0755/payment-settings',
             label: <Link to="/admin0755/payment-settings">{t('menu.payment_settings')}</Link>,
           },

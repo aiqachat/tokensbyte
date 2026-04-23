@@ -7,11 +7,20 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Input, Typography } from 'antd';
 import {
   SearchOutlined, AppstoreOutlined, TeamOutlined,
-  DesktopOutlined, SettingOutlined,
+  DesktopOutlined, VideoCameraOutlined, PictureOutlined,
 } from '@ant-design/icons';
-import { usePlayground } from '../context/PlaygroundContext';
+import { usePlayground, useCanvas } from '../context/PlaygroundContext';
 
 const { Text } = Typography;
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+const getFullUrl = (url: string) => {
+  if (!url) return '';
+  if (!url.startsWith('http') && !url.startsWith('/')) return `https://${url}`;
+  if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
+  return url;
+};
 
 // 模拟数据
 const HISTORY_DATA = [
@@ -78,6 +87,36 @@ const HistoryPanel: React.FC = () => {
       panelRef.current.releasePointerCapture(e.pointerId);
     }
   };
+
+  const { nodes } = useCanvas();
+
+  // 从当前画布节点提取生成历史
+  const sessionHistory = nodes
+    .filter(n => n.status === 'completed' && (n.type === 'image' || n.type === 'video'))
+    .reverse() // 最新的在前面
+    .map(n => {
+      let url = '';
+      if (n.type === 'image') {
+        const raw = n.resultData?.data?.[0] || n.resultData?.content?.image_url;
+        url = typeof raw === 'string' ? raw : raw?.url || raw?.b64_json;
+      } else {
+        url = n.resultData?.content?.video_url || n.resultData?.final_result?.video_url || n.resultData?.video_url;
+      }
+      const isBase64 = url && url.length > 200;
+      const finalUrl = isBase64 ? (url.startsWith('data:') ? url : `data:image/png;base64,${url}`) : getFullUrl(url);
+
+      return {
+        id: n.id,
+        title: n.taskData?.prompt || (n.type === 'image' ? 'AI 图像生成' : 'AI 视频生成'),
+        date: '刚才',
+        icon: finalUrl,
+        type: n.type
+      };
+    });
+
+  const displayData = sessionHistory.length > 0 
+    ? [{ group: '今天 (当前会话)', items: sessionHistory }, ...HISTORY_DATA]
+    : HISTORY_DATA;
 
   return (
     <div
@@ -160,7 +199,7 @@ const HistoryPanel: React.FC = () => {
         onPointerDown={(e) => e.stopPropagation()} // 内部内容滑动时不触发面板整体拖拽，如果有需要的话
         style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px', cursor: 'default' }}
       >
-        {HISTORY_DATA.map((group, idx) => (
+        {displayData.map((group, idx) => (
           <div key={idx} style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 16, fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: 12 }}>
               {group.group}
@@ -180,17 +219,25 @@ const HistoryPanel: React.FC = () => {
                   <div style={{
                     width: 44, height: 44, borderRadius: 10,
                     background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                    position: 'relative'
                   }}>
-                    {/* 模拟占位图或图标 */}
-                    <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, rgba(22,119,255,0.1) 0%, rgba(22,119,255,0.02) 100%)' }} />
+                    {item.icon && item.icon !== '/vite.svg' ? (
+                      item.type === 'video' ? (
+                        <video src={item.icon} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <img src={item.icon} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                      )
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, rgba(22,119,255,0.1) 0%, rgba(22,119,255,0.02) 100%)' }} />
+                    )}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 500, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {item.title}
                     </div>
                     <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <DesktopOutlined />
+                      {item.type === 'video' ? <VideoCameraOutlined /> : item.type === 'image' ? <PictureOutlined /> : <DesktopOutlined />}
                       <span>{item.date}</span>
                     </div>
                   </div>

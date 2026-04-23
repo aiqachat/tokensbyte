@@ -10,13 +10,23 @@ interface Props {
   resultData: any;
 }
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+const getFullUrl = (url: string) => {
+  if (!url) return '';
+  if (!url.startsWith('http') && !url.startsWith('/')) return `https://${url}`;
+  if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
+  return url;
+};
+
 const ImageNodeContent: React.FC<Props> = React.memo(({ resultData }) => {
   const imageData = resultData?.data?.[0] || resultData?.content?.image_url;
-  const imageUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
-  const isBase64 = imageUrl && imageUrl.length > 200;
+  const rawUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
+  const isBase64 = rawUrl && rawUrl.length > 200;
+  const imageUrl = isBase64 ? rawUrl : getFullUrl(rawUrl);
 
   return imageUrl
-    ? <img src={isBase64 ? `data:image/png;base64,${imageUrl}` : imageUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} alt="gen" />
+    ? <img src={isBase64 ? `data:image/png;base64,${imageUrl}` : imageUrl} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} alt="gen" draggable={false} />
     : <Text style={{ color: '#ff4d4f' }}>无效的图像数据</Text>;
 });
 

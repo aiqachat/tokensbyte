@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress, Grid } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress, Grid, Radio } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined, DollarOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -127,6 +127,7 @@ const Users: React.FC = () => {
   const handleRechargeClick = (record: User) => {
     setRechargingUser(record);
     rechargeForm.setFieldsValue({
+      actionType: 'increase',
       amount: 0,
       remark: '',
     });
@@ -136,7 +137,15 @@ const Users: React.FC = () => {
   const handleRechargeSave = async (values: any) => {
     if (!rechargingUser) return;
     try {
-      await request.post(`/users/${rechargingUser.id}/recharge`, values);
+      let finalAmount = values.amount;
+      if (values.actionType === 'decrease') {
+        finalAmount = -finalAmount;
+      }
+      const payload = {
+        amount: finalAmount,
+        remark: values.remark,
+      };
+      await request.post(`/users/${rechargingUser.id}/recharge`, payload);
       message.success(t('users.recharge_success'));
       setIsRechargeModalVisible(false);
       fetchUsers();
@@ -449,7 +458,7 @@ const Users: React.FC = () => {
               </Select>
             </Form.Item>
           )}
-          {!isAdminPage && (
+          {!isAdminPage && !editingUser && (
             <Form.Item name="balance" label={`${t('users.balance')} (${currencySymbol})`} initialValue={0}>
               <InputNumber style={{ width: '100%' }} precision={2} />
             </Form.Item>
@@ -479,7 +488,7 @@ const Users: React.FC = () => {
         open={isRechargeModalVisible}
         onCancel={() => setIsRechargeModalVisible(false)}
         onOk={() => rechargeForm.submit()}
-        width={400}
+        width={420}
       >
         <div style={{ marginBottom: 16 }}>
           <Text type="secondary">{t('users.username')}: </Text>
@@ -488,19 +497,39 @@ const Users: React.FC = () => {
           <Text type="secondary">{t('users.balance')}: </Text>
           <Text strong style={{ color: '#1677ff' }}>{currencySymbol}{rechargingUser?.balance.toFixed(2)}</Text>
         </div>
-        <Form form={rechargeForm} layout="vertical" onFinish={handleRechargeSave}>
+        <Form form={rechargeForm} layout="vertical" onFinish={handleRechargeSave} initialValues={{ actionType: 'increase', amount: 0 }}>
+          <Form.Item name="actionType" label="操作类型">
+            <Radio.Group optionType="button" buttonStyle="solid">
+              <Radio value="increase">增加金额 (+)</Radio>
+              <Radio value="decrease">减少金额 (-)</Radio>
+            </Radio.Group>
+          </Form.Item>
           <Form.Item 
             name="amount" 
             label={t('users.adjustment_amount')} 
             rules={[{ required: true, message: 'Please enter amount' }]}
-            initialValue={0}
           >
             <InputNumber 
               style={{ width: '100%' }} 
               precision={2} 
+              min={0}
               placeholder={t('finance.amount')}
             />
           </Form.Item>
+          <div style={{ marginBottom: 16 }}>
+            <Text type="secondary" style={{ fontSize: 13, marginBottom: 8, display: 'block' }}>快捷输入：</Text>
+            <Space wrap size={[8, 8]}>
+              {[10, 20, 50, 100, 500, 1000].map(val => (
+                <Button 
+                  key={val} 
+                  size="small" 
+                  onClick={() => rechargeForm.setFieldsValue({ amount: val })}
+                >
+                  {val}
+                </Button>
+              ))}
+            </Space>
+          </div>
           <Form.Item name="remark" label={t('users.remark')}>
             <Input.TextArea rows={2} placeholder={t('users.remark')} />
           </Form.Item>

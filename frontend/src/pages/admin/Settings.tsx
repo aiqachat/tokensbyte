@@ -20,7 +20,6 @@ const Settings: React.FC = () => {
 
   const getTitle = () => {
     switch (tab) {
-      case 'currency': return t('menu.currency_settings');
       case 'database': return '数据库设置';
       default: return t('menu.basic_settings');
     }
@@ -35,7 +34,6 @@ const Settings: React.FC = () => {
       const defaultDatabase = { db_type: 'postgres', host: 'localhost', port: 5432, database: 'postgres', username: 'postgres', password: 'postgres', ssl_mode: false };
       form.setFieldsValue({
         ...site,
-        ...currency,
         login: login || {},
         registration: registration || {},
         smtp,
@@ -63,11 +61,6 @@ const Settings: React.FC = () => {
         };
         payload.login = values.login || {};
         payload.registration = values.registration || {};
-      } else if (tab === 'currency') {
-        payload.currency = {
-          default_currency: values.default_currency, currency_symbol: values.currency_symbol,
-          currency_unit: values.currency_unit, token_ratio: values.token_ratio,
-        };
       } else if (tab === 'database') {
         payload.database = values.database;
       }
@@ -196,23 +189,6 @@ const Settings: React.FC = () => {
           ]} />
         )}
 
-        {tab === 'currency' && (
-          <div style={{ maxWidth: 600 }}>
-            <Form.Item label={t('settings.default_currency')} name="default_currency" rules={[{ required: true }]}><Input placeholder="CNY" /></Form.Item>
-            <Form.Item label={t('settings.currency_symbol')} name="currency_symbol" rules={[{ required: true }]}><Input placeholder="¥" /></Form.Item>
-            <Form.Item label={t('settings.currency_unit')} name="currency_unit" rules={[{ required: true }]}><Input placeholder="元" /></Form.Item>
-            <Form.Item noStyle dependencies={['default_currency']}>
-              {({ getFieldValue }) => {
-                const c = getFieldValue('default_currency') || 'USD';
-                return (
-                  <Form.Item label={t('settings.token_ratio')} name="token_ratio" rules={[{ required: true }]} extra={<Text type="secondary">{`1 ${c} = N Tokens`}</Text>}>
-                    <InputNumber style={{ width: '100%' }} min={0} step={0.0001} />
-                  </Form.Item>
-                );
-              }}
-            </Form.Item>
-          </div>
-        )}
 
         {tab === 'database' && (
           <div style={{ maxWidth: 600 }}>
