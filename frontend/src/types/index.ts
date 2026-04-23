@@ -201,6 +201,7 @@ export interface RequestLog {
   user_uid?: string;
   user_group?: string;
   token_name?: string;
+  token_kid?: string;
   request_content?: string;
   response_content?: string;
   upstream_req_content?: string;

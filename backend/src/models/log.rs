@@ -30,6 +30,8 @@ pub struct RequestLog {
     #[sqlx(default)]
     pub token_name: Option<String>,
     #[sqlx(default)]
+    pub token_kid: Option<String>,
+    #[sqlx(default)]
     pub user_nickname: Option<String>,
     #[sqlx(default)]
     pub user_group: Option<String>,
