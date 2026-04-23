@@ -719,10 +719,15 @@ pub fn mask_key_in_string(text: &str, api_key: &str) -> String {
     if api_key.is_empty() || !text.contains(api_key) {
         return text.to_string();
     }
-    let masked = if api_key.len() > 8 {
-        format!("{}******{}", &api_key[..4], &api_key[api_key.len()-4..])
-    } else {
-        "******".to_string()
+    let masked = {
+        let cc = api_key.chars().count();
+        if cc > 8 {
+            let p: String = api_key.chars().take(4).collect();
+            let s: String = api_key.chars().skip(cc - 4).collect();
+            format!("{}******{}", p, s)
+        } else {
+            "******".to_string()
+        }
     };
     text.replace(api_key, &masked)
 }

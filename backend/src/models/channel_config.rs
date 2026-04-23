@@ -52,8 +52,11 @@ pub struct ChannelConfigSafe {
 
 impl From<ChannelConfig> for ChannelConfigSafe {
     fn from(c: ChannelConfig) -> Self {
-        let masked_key = if c.api_key.len() > 8 {
-            format!("{}******{}", &c.api_key[..4], &c.api_key[c.api_key.len()-4..])
+        let char_count = c.api_key.chars().count();
+        let masked_key = if char_count > 8 {
+            let prefix: String = c.api_key.chars().take(4).collect();
+            let suffix: String = c.api_key.chars().skip(char_count - 4).collect();
+            format!("{}******{}", prefix, suffix)
         } else if c.api_key.is_empty() {
             String::new()
         } else {

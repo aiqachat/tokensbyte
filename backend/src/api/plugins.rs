@@ -233,12 +233,17 @@ async fn get_storage_config(
 
     // secret_key 脱敏
     let sk = configs.get("tos_secret_key").cloned().unwrap_or_default();
-    let masked_sk = if sk.len() > 6 {
-        format!("{}****{}", &sk[..3], &sk[sk.len()-3..])
-    } else if !sk.is_empty() {
-        "******".to_string()
-    } else {
-        String::new()
+    let masked_sk = {
+        let cc = sk.chars().count();
+        if cc > 6 {
+            let p: String = sk.chars().take(3).collect();
+            let s: String = sk.chars().skip(cc - 3).collect();
+            format!("{}****{}", p, s)
+        } else if !sk.is_empty() {
+            "******".to_string()
+        } else {
+            String::new()
+        }
     };
 
     // 提取等级配额、限制和 API 开关
@@ -384,12 +389,17 @@ async fn get_moderation_config(
 
     // secret_key 脱敏
     let sk = configs.get("volc_secret_key").cloned().unwrap_or_default();
-    let masked_sk = if sk.len() > 6 {
-        format!("{}****{}", &sk[..3], &sk[sk.len()-3..])
-    } else if !sk.is_empty() {
-        "******".to_string()
-    } else {
-        String::new()
+    let masked_sk = {
+        let cc = sk.chars().count();
+        if cc > 6 {
+            let p: String = sk.chars().take(3).collect();
+            let s: String = sk.chars().skip(cc - 3).collect();
+            format!("{}****{}", p, s)
+        } else if !sk.is_empty() {
+            "******".to_string()
+        } else {
+            String::new()
+        }
     };
 
     Ok(Json(json!({
