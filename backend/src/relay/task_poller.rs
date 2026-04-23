@@ -21,13 +21,14 @@ pub fn start(state: Arc<AppState>) {
 
 /// 查询所有未结算的异步任务日志并逐条轮询上游
 async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
-    // 条件：endpoint 是异步任务提交接口，prompt_tokens=0 表示尚未完成计费，
+    // 条件：endpoint 是异步任务提交接口，且 billing_detail 包含"冻结"字样表示尚未完成计费结算
+    //       （摒弃使用 tokens 作为判断依据，因为有些模型即使成功也不返回 token 消耗）
     //       且是最近 24 小时内的任务（避免无限重试过老的记录）
     let rows: Vec<(i64, String, i64, String)> = sqlx::query_as(
         &state.db.format_query(
             "SELECT id, response_content, channel_id, model FROM logs \
              WHERE endpoint LIKE '%/api/v3/contents/generations/tasks%' \
-             AND prompt_tokens = 0 AND completion_tokens = 0 \
+             AND billing_detail LIKE '%冻结%' \
              AND status_code = 200 \
              AND created_at > (NOW() - INTERVAL '24 hours')::text \
              ORDER BY id DESC LIMIT 50"
@@ -156,10 +157,10 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
                     }
                 }
             } else {
-                // 任务成功但无 usage 数据：标记已处理避免无限轮询
+                // 模型返回成功但未提供 token 消耗：直接解除冻结并标记结算
                 let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE logs SET completion_tokens = 1, billing_detail = ? WHERE id = ?"
-                )).bind("任务成功但无token用量 | [后台自动轮询]").bind(log_id)
+                    "UPDATE logs SET billing_detail = ? WHERE id = ?"
+                )).bind("任务成功，该模型无token用量 | [后台自动轮询]").bind(log_id)
                 .execute(&state.db.pool).await;
             }
         } else {
@@ -184,9 +185,9 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
                 }
             }
 
-            // 标记为已处理（设置 prompt_tokens=-1 避免重复轮询）
+            // 标记为已处理（解除冻结避免重复轮询）
             let _ = sqlx::query(&state.db.format_query(
-                "UPDATE logs SET prompt_tokens = -1, billing_detail = ? WHERE id = ?"
+                "UPDATE logs SET billing_detail = ? WHERE id = ?"
             )).bind("任务失败，预扣费已退回 | [后台自动轮询]").bind(log_id)
             .execute(&state.db.pool).await;
         }

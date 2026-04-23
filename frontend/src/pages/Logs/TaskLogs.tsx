@@ -50,9 +50,23 @@ const isAsyncPost = (ep: string) =>
 // ── 工具函数：获取异步任务终态 ─────────────────────────
 const getAsyncFinalStatus = (r: TaskLog): 'pending' | 'succeeded' | 'failed' => {
   if (!isAsyncPost(r.endpoint)) return 'succeeded';
-  if (r.prompt_tokens === -1) return 'failed';  // 任务失败，预扣已退回
-  // 仅依赖 tokens 判断（不能用 cost，因为 POST 提交时 cost 已被设为预扣费金额）
-  if (r.prompt_tokens > 0 || r.completion_tokens > 0) return 'succeeded';
+  
+  // 1. 优先从最新的响应结果中解析状态
+  if (r.response_content) {
+    try {
+      const v = JSON.parse(r.response_content);
+      const status = v.status || v.final_result?.status || v.output?.status;
+      if (status === 'succeeded' || status === 'SUCCESS') return 'succeeded';
+      if (status === 'failed' || status === 'FAILED') return 'failed';
+    } catch { /* ignore */ }
+  }
+
+  // 2. 兜底逻辑：通过计费明细判断（结算后"冻结"字样会被替换）
+  if (r.billing_detail) {
+    if (r.billing_detail.includes('失败')) return 'failed';
+    if (!r.billing_detail.includes('冻结')) return 'succeeded'; // 计费完成
+  }
+
   return 'pending'; // 尚未结算
 };
 

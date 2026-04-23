@@ -252,20 +252,23 @@ pub async fn volcengine_status(
     let mut model_name = params.get("model").map(|s| s.as_str()).unwrap_or("video-gen").to_string();
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, prompt_tokens, completion_tokens FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
+    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, billing_detail FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
     let mut db_log_id: Option<i64> = None;
     let mut already_billed = false;
-    let log_row: Option<(i64, i64, String, String, i32, i32)> = sqlx::query_as(&log_query)
+    let log_row: Option<(i64, i64, String, String, Option<String>)> = sqlx::query_as(&log_query)
         .bind(format!("%{}%", task_id))
         .fetch_optional(&state.db.pool)
         .await
         .unwrap_or(None);
 
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _orig_content, p_tok, c_tok)) = log_row {
+    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _orig_content, b_detail)) = log_row {
         db_log_id = Some(l_id);
         model_name = m_name;
-        if p_tok > 0 || c_tok > 0 || p_tok == -1 {
-            already_billed = true;
+        // 如果计费明细中没有"冻结"字样，说明已经结算过了，阻断重复扣费
+        if let Some(detail) = b_detail {
+            if !detail.contains("冻结") {
+                already_billed = true;
+            }
         }
         if let Ok(Some(mut ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
             .bind(cid)
