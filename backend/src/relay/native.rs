@@ -252,17 +252,21 @@ pub async fn volcengine_status(
     let mut model_name = params.get("model").map(|s| s.as_str()).unwrap_or("video-gen").to_string();
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
+    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, prompt_tokens, completion_tokens FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
     let mut db_log_id: Option<i64> = None;
-    let log_row: Option<(i64, i64, String, String)> = sqlx::query_as(&log_query)
+    let mut already_billed = false;
+    let log_row: Option<(i64, i64, String, String, i32, i32)> = sqlx::query_as(&log_query)
         .bind(format!("%{}%", task_id))
         .fetch_optional(&state.db.pool)
         .await
         .unwrap_or(None);
 
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _orig_content)) = log_row {
+    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _orig_content, p_tok, c_tok)) = log_row {
         db_log_id = Some(l_id);
         model_name = m_name;
+        if p_tok > 0 || c_tok > 0 || p_tok == -1 {
+            already_billed = true;
+        }
         if let Ok(Some(mut ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
             .bind(cid)
             .fetch_optional(&state.db.pool)
@@ -320,7 +324,7 @@ pub async fn volcengine_status(
             .execute(&state.db.pool).await;
 
         // 任务完成时提取 token 用量并执行计费
-        if task_status == "succeeded" {
+        if task_status == "succeeded" && !already_billed {
             let usage = crate::relay::usage_extractor::parse_usage(&get_resp_str);
             if usage.total > 0 {
                 let db_model: Option<crate::models::Model> = sqlx::query_as(
