@@ -175,6 +175,11 @@ async fn load_plugin_configs(state: &AppState, plugin_name: &str) -> Result<Hash
     Ok(rows.into_iter().collect())
 }
 
+/// 公开版本：供其他模块调用
+pub async fn load_plugin_configs_pub(state: &AppState, plugin_name: &str) -> Result<HashMap<String, String>, sqlx::Error> {
+    load_plugin_configs(state, plugin_name).await
+}
+
 /// 辅助：保存 config（upsert）
 async fn upsert_config(state: &AppState, plugin_name: &str, key: &str, value: &str) -> Result<(), sqlx::Error> {
     // 先尝试 UPDATE

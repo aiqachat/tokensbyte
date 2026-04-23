@@ -22,7 +22,8 @@ const getFullUrl = (url: string) => {
 const ImageNodeContent: React.FC<Props> = React.memo(({ resultData }) => {
   const imageData = resultData?.data?.[0] || resultData?.content?.image_url;
   const rawUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
-  const isBase64 = rawUrl && rawUrl.length > 200;
+  const isUrl = rawUrl && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('/'));
+  const isBase64 = !isUrl && rawUrl && rawUrl.length > 100;
   const imageUrl = isBase64 ? rawUrl : getFullUrl(rawUrl);
 
   return imageUrl
