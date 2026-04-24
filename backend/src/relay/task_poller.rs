@@ -99,6 +99,9 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
 
     let poll_path = if resolved.target_type == "volcengine" {
         format!("/api/v3/contents/generations/tasks/{}", task_id)
+    } else if let Some(ref custom_path) = resolved.poll_path {
+        // 优先使用规则里配置的 poll_path
+        custom_path.replace("${task_id}", &task_id).replace("${model}", &model_name)
     } else {
         match category.as_str() {
             "视频" => format!("/v1/video/generations/{}", task_id),
@@ -196,6 +199,10 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
             }
         }
     }
+    // 异步任务终态如果是图片，需要从最终响应中提取图片数量进行计费
+    if let Some(resp_count) = super::usage_extractor::count_response_images(body) {
+        features.image_count = Some(resp_count);
+    }
 
     let (final_discount, discount_source) = super::proxy::resolve_discount(db_model.as_ref(), user_discount);
     let (cost, mut detail) = super::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
@@ -278,7 +285,25 @@ async fn fetch_channel(state: &AppState, channel_id: i64) -> Option<crate::model
 /// 从提交响应 JSON 中提取 task_id
 fn extract_task_id(response: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(response).ok()?;
-    v.get("id").or_else(|| v.get("task_id"))
-        .and_then(|id| id.as_str())
-        .map(|s| s.to_string())
+    
+    // 1. 尝试从根节点获取
+    if let Some(id) = v.get("task_id").or_else(|| v.get("id")).and_then(|id| id.as_str()) {
+        return Some(id.to_string());
+    }
+
+    // 2. 尝试从 data 节点获取 (支持对象或数组)
+    if let Some(data) = v.get("data") {
+        if let Some(id) = data.get("task_id").or_else(|| data.get("id")).and_then(|id| id.as_str()) {
+            return Some(id.to_string());
+        }
+        if let Some(arr) = data.as_array() {
+            if let Some(first) = arr.first() {
+                if let Some(id) = first.get("task_id").or_else(|| first.get("id")).and_then(|id| id.as_str()) {
+                    return Some(id.to_string());
+                }
+            }
+        }
+    }
+    
+    None
 }

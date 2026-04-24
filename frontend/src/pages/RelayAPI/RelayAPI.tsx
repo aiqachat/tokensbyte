@@ -13,6 +13,7 @@ const RelayAPI: React.FC = () => {
   const endpoints = [
     { label: 'OpenAI 聊天', path: '/v1/chat/completions', method: 'POST', type: 'openai' },
     { label: 'OpenAI 图片', path: '/v1/images/generations', method: 'POST', type: 'openai' },
+    { label: '图片/视频异步状态 (查询)', path: '/v1/tasks/{task_id}', method: 'GET', type: 'openai' },
     { label: 'OpenAI 视频 (提交)', path: '/v1/video/generations', method: 'POST', type: 'openai' },
     { label: 'OpenAI 视频 (查询)', path: '/v1/video/generations/{task_id}', method: 'GET', type: 'openai' },
     { label: 'Google 原生 (非流式)', path: '/v1beta/models/{model}:generateContent', method: 'POST', type: 'google' },
@@ -103,7 +104,12 @@ const RelayAPI: React.FC = () => {
 
                 {/* ── 图片 ── */}
                 <Title level={5}>图像接口 (Image Generations)</Title>
-                <div style={codeStyle}><Text code>POST /v1/images/generations</Text></div>
+                <div style={codeStyle}>
+                  <Text code>POST /v1/images/generations</Text>
+                  <br />
+                  <Text code>GET  /v1/tasks/{'{task_id}'}?model=xxx</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">轮询查询异步图片结果（针对 Midjourney 等带 task_id 响应的模型）</Text></span>
+                </div>
                 <Descriptions column={1} bordered size="small">
                   <Descriptions.Item label="model (必填)">模型名称，如 "dall-e-3"、"gemini-2.0-flash"、"seedream-5.0-lite"。未传时默认 "dall-e-3"</Descriptions.Item>
                   <Descriptions.Item label="prompt (必填)">图像生成的提示词描述文本</Descriptions.Item>
@@ -137,9 +143,9 @@ const RelayAPI: React.FC = () => {
                 <div style={codeStyle}>
                   <Text code>POST /v1/video/generations</Text>
                   <span style={{ marginLeft: 16 }}><Text type="secondary">提交异步任务</Text></span>
-                  <br/>
-                  <Text code>GET  /v1/video/generations/{'{task_id}'}?model=xxx</Text>
-                  <span style={{ marginLeft: 16 }}><Text type="secondary">轮询查询结果（model 参数选填，用于精确匹配渠道）</Text></span>
+                  <br />
+                  <Text code>GET  /v1/tasks/{'{task_id}'}?model=xxx</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">轮询查询结果（model 参数选填，兼容 /v1/video/generations/{'{task_id}'}）</Text></span>
                 </div>
 
                 <Descriptions column={1} bordered size="small" title={<Text strong style={{ fontSize: 13 }}>核心参数</Text>}>
@@ -157,12 +163,12 @@ const RelayAPI: React.FC = () => {
                   </Descriptions.Item>
                   <Descriptions.Item label="videos (选填)">
                     <Text>参考视频数组，格式同 images</Text>
-                    <br/>
+                    <br />
                     <Text type="secondary">role 可选值：<Text code>reference_video</Text>（默认值）</Text>
                   </Descriptions.Item>
                   <Descriptions.Item label="audios (选填)">
                     <Text>参考音频数组，格式同 images</Text>
-                    <br/>
+                    <br />
                     <Text type="secondary">role 可选值：<Text code>reference_audio</Text>（默认值）</Text>
                   </Descriptions.Item>
                   <Descriptions.Item label="content (选填)">
@@ -205,7 +211,7 @@ const RelayAPI: React.FC = () => {
                 <div style={codeStyle}>
                   <Text code>POST /v1beta/models/{'{model}'}:generateContent</Text>
                   <span style={{ marginLeft: 16 }}><Text type="secondary">非流式</Text></span>
-                  <br/>
+                  <br />
                   <Text code>POST /v1beta/models/{'{model}'}:streamGenerateContent</Text>
                   <span style={{ marginLeft: 16 }}><Text type="secondary">流式（SSE）</Text></span>
                 </div>
@@ -224,13 +230,13 @@ const RelayAPI: React.FC = () => {
                 <div style={codeStyle}>
                   <Text code>POST /api/v3/chat/completions</Text>
                   <span style={{ marginLeft: 16 }}><Text type="secondary">聊天（OpenAI 兼容格式）</Text></span>
-                  <br/>
+                  <br />
                   <Text code>POST /api/v3/images/generations</Text>
                   <span style={{ marginLeft: 16 }}><Text type="secondary">图片生成（OpenAI 兼容格式）</Text></span>
-                  <br/>
+                  <br />
                   <Text code>POST /api/v3/contents/generations/tasks</Text>
                   <span style={{ marginLeft: 16 }}><Text type="secondary">视频/多模态任务提交（火山原生格式）</Text></span>
-                  <br/>
+                  <br />
                   <Text code>GET  /api/v3/contents/generations/tasks/{'{task_id}'}</Text>
                   <span style={{ marginLeft: 16 }}><Text type="secondary">异步任务状态查询</Text></span>
                 </div>

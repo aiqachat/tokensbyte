@@ -140,8 +140,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let relay_routes: Router<Arc<AppState>> = Router::new()
         .route("/chat/completions", post(crate::relay::chat_completions))
         .route("/images/generations", post(crate::relay::image::image_generations))
+        .route("/videos/generations", post(crate::relay::video::video_generations))
         .route("/video/generations", post(crate::relay::video::video_generations))
         .route("/video/generations/{task_id}", get(crate::relay::video::video_generations_status))
+        .route("/tasks/{task_id}", get(crate::relay::task::task_status))
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());
 

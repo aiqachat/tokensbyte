@@ -43,13 +43,23 @@ const getTaskType = (ep: string) => {
   return { label: '其它', color: 'default', icon: '🔧' };
 };
 
-// ── 工具函数：判断是否异步提交（视频 POST） ─────────────────────
-const isAsyncPost = (ep: string) =>
-  ep.endsWith('/video/generations') || ep.endsWith('/generations/tasks');
+// ── 工具函数：判断是否异步提交（视频 POST 或带有 task_id 的图片 POST） ─────────────────────
+const isAsyncPost = (r: TaskLog) => {
+  const ep = r.endpoint || '';
+  if (ep.endsWith('/video/generations') || ep.endsWith('/generations/tasks')) return true;
+  if (ep.endsWith('/images/generations') && r.response_content) {
+    try {
+      const v = JSON.parse(r.response_content);
+      // 支持根节点、data 对象、data 数组第一项
+      return !!(v.task_id || v.data?.task_id || (Array.isArray(v.data) && v.data[0]?.task_id));
+    } catch { return false; }
+  }
+  return false;
+};
 
 // ── 工具函数：获取异步任务终态 ─────────────────────────
 const getAsyncFinalStatus = (r: TaskLog): 'pending' | 'succeeded' | 'failed' => {
-  if (!isAsyncPost(r.endpoint)) return 'succeeded';
+  if (!isAsyncPost(r)) return 'succeeded';
   
   // 1. 优先从最新的响应结果中解析状态
   if (r.response_content) {
@@ -90,11 +100,11 @@ const getTaskId = (record: TaskLog): string => {
     && !ep.endsWith('/generations') && !ep.endsWith('/tasks')) {
     return ep.split('/').pop() || '-';
   }
-  // 视频 POST：从 response_content 提取
-  if (isAsyncPost(ep) && record.response_content) {
+  // 视频 POST / 异步图片：从 response_content 提取
+  if (isAsyncPost(record) && record.response_content) {
     try {
       const r = JSON.parse(record.response_content);
-      return r.task_id || r.id || '-';
+      return r.task_id || r.id || r.data?.task_id || (Array.isArray(r.data) && r.data[0]?.task_id) || '-';
     } catch { /* ignore */ }
   }
   return '-';
@@ -188,7 +198,7 @@ const TaskLogs: React.FC = () => {
       width: 170,
       render: (v: string, r: TaskLog) => {
         // 异步任务 created_at 就是提交时间，同步任务需减去耗时
-        const submit = isAsyncPost(r.endpoint) ? dayjs(v) : dayjs(v).subtract(r.latency_ms, 'ms');
+        const submit = isAsyncPost(r) ? dayjs(v) : dayjs(v).subtract(r.latency_ms, 'ms');
         return <Text style={{ fontSize: 13 }}>{submit.format('YYYY-MM-DD HH:mm:ss')}</Text>;
       },
     },
@@ -212,7 +222,7 @@ const TaskLogs: React.FC = () => {
       width: 100,
       render: (_: any, r: TaskLog) => {
         const status = getAsyncFinalStatus(r);
-        if (isAsyncPost(r.endpoint)) {
+        if (isAsyncPost(r)) {
           if (status === 'pending') return <Tag color="processing">处理中...</Tag>;
           // 异步已完成：计算从提交到完成的总耗时
           const ts = getAsyncCompletedTs(r);

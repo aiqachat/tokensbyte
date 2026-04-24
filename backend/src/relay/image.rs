@@ -96,29 +96,49 @@ pub async fn image_generations(
     } else {
         let data = upstream_resp.bytes().await?;
         let response_content_str = String::from_utf8_lossy(&data).to_string();
-        let usage_tokens = crate::relay::usage_extractor::parse_usage(&response_content_str);
-        let p_tokens = usage_tokens.prompt;
-        let c_tokens = usage_tokens.completion;
-
-        tracing::info!("[Image] model={}, path=SYNC, prompt={}, completion={}, total={}", model, p_tokens, c_tokens, usage_tokens.total);
-
-        let mut features = crate::relay::usage_extractor::extract_request_features(&body);
-        // 用响应中的实际图片数量覆盖请求体的 n 值（按张计费的最终依据）
-        if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
-            features.image_count = Some(resp_count);
-        }
-        let (final_discount, discount_source) = proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, final_discount, &features);
-        detail.push_str(&format!(" | {}", discount_source));
-        if model != resolved_model {
-            detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
-        }
+        let resp_json: serde_json::Value = serde_json::from_str(&response_content_str).unwrap_or(serde_json::json!({}));
+        
+        // 健壮的异步任务判定：支持根节点、data 对象、以及 data 数组格式
+        let is_async = resp_json.get("task_id").is_some() 
+            || resp_json.get("data").and_then(|d| d.get("task_id")).is_some()
+            || resp_json.get("data").and_then(|d| d.as_array()).and_then(|a| a.first()).and_then(|f| f.get("task_id")).is_some();
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
-        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, p_tokens, c_tokens, cost, pre_deduction, 200,
-            &ep, None, latency_ms, 0,
-            Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(detail)).await;
+
+        if is_async {
+            tracing::info!("[Image] model={}, path=ASYNC_SUBMIT, pre_deduction={}", model, pre_deduction);
+            let billing_detail = if pre_deduction > 0.0 {
+                "异步任务预扣费冻结".to_string()
+            } else {
+                "异步任务处理中(冻结)".to_string()
+            };
+            proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200,
+                &ep, None, latency_ms, 0,
+                Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail)).await;
+        } else {
+            let usage_tokens = crate::relay::usage_extractor::parse_usage(&response_content_str);
+            let p_tokens = usage_tokens.prompt;
+            let c_tokens = usage_tokens.completion;
+
+            tracing::info!("[Image] model={}, path=SYNC, prompt={}, completion={}, total={}", model, p_tokens, c_tokens, usage_tokens.total);
+
+            let mut features = crate::relay::usage_extractor::extract_request_features(&body);
+            // 用响应中的实际图片数量覆盖请求体的 n 值（按张计费的最终依据）
+            if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
+                features.image_count = Some(resp_count);
+            }
+            let (final_discount, discount_source) = proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, final_discount, &features);
+            detail.push_str(&format!(" | {}", discount_source));
+            if model != resolved_model {
+                detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
+            }
+
+            proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, p_tokens, c_tokens, cost, pre_deduction, 200,
+                &ep, None, latency_ms, 0,
+                Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(detail)).await;
+        }
 
         Ok(Response::builder()
             .header("Content-Type", "application/json")
