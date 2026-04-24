@@ -32,23 +32,27 @@ docker compose up -d --build
 > 首次部署需要 `--build` 参数构建镜像，后续启动直接 `docker compose up -d` 即可（使用本地已有镜像）。默认配置仅供快速体验，生产环境请通过 `.env` 修改密码等安全项。成功启动后，浏览器访问 `http://localhost:8080/admin0755`。默认超管账号：`admin` / `admin`。
 
 ### 方式二：一键交互式部署（推荐新手）
+
 使用内置的部署脚本，自动引导配置环境变量并部署：
 
-**Linux/Mac:**
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-**Windows (PowerShell):**
-```powershell
-.\deploy.ps1
-```
+脚本交互流程：
 
-脚本会自动引导完成：
-1. 生成强密码（数据库密码、JWT密钥）
-2. 设置管理员账号和注册开关
-3. 选择部署模式（开发/生产）
+1. **数据库密码** — 自动生成 16 位强密码（含大小写字母、数字、特殊字符）
+2. **JWT 密钥** — 自动生成 64 位随机密钥
+3. **管理员密码** — 手动输入（默认: `admin`）
+4. **注册开关** — 选择是否允许用户注册
+
+配置完成后选择部署模式：
+- **开发环境** — 热重载（cargo-watch + Vite HMR），源码挂载，适合日常开发
+- **生产环境** — 内置 PostgreSQL，开箱即用
+
+> [!TIP]
+> 如已有 `.env` 文件，脚本会显示当前配置并询问是否重新配置。也可直接编辑 `.env` 后运行 `docker compose up -d`。
 
 ### 方式三：自定义配置部署（推荐生产环境）
 通过 `.env` 文件自定义配置，compose 内已提供全部默认值，`.env` 中只需覆盖需要修改的项：
@@ -67,12 +71,45 @@ chmod +x deploy.sh
 > 如需使用外部 PostgreSQL（RDS/云数据库），只需修改 `.env` 中的 `DATABASE_URL` 指向外部数据库，并注释掉 `docker-compose.yml` 中的 `postgres` 服务即可。
 
 ### 方式四：离线/云端加速部署（针对国内慢速网络）
-如果您在云服务器上的构建速度过慢，我们在工程中自带了一键导出/导入脚本：
-1. **本地打包**：Windows 运行 `.\export-images.ps1`（Mac/Linux 运行 `./export-images.sh`）。
-2. **上传并在服务器激活**：将生成的 `docker-images` 文件夹丢到服务器运行 `./import-images.sh`。
-📖 详细操作请参阅专业文档：[`EXPORT-IMAGES-GUIDE.md`](EXPORT-IMAGES-GUIDE.md)。
 
-### 4. 使用 API
+在本地构建镜像并导出，上传到云服务器后导入部署，避免服务器上缓慢的构建过程。
+
+**步骤 1：本地导出镜像**
+
+```bash
+# Linux/Mac
+chmod +x export-images.sh && ./export-images.sh
+
+# Windows (PowerShell)
+.\export-images.ps1
+```
+
+**步骤 2：上传到服务器**
+
+```bash
+scp docker-images/*.tar root@your-server:/opt/tokensbyte/
+scp docker-images/import-images.sh root@your-server:/opt/tokensbyte/
+scp docker-compose.yml root@your-server:/opt/tokensbyte/
+scp .env.example root@your-server:/opt/tokensbyte/
+
+# 压缩后上传可减小 30-40% 体积
+cd docker-images && tar -czf images.tar.gz *.tar
+scp images.tar.gz root@your-server:/opt/tokensbyte/
+```
+
+**步骤 3：服务器导入并部署**
+
+```bash
+ssh root@your-server && cd /opt/tokensbyte
+chmod +x import-images.sh && ./import-images.sh
+cp .env.example .env && nano .env   # 编辑配置，修改密码等安全项
+docker compose up -d
+```
+
+> [!NOTE]
+> PostgreSQL 是官方镜像，服务器启动时会自动从 Docker Hub 拉取，无需导出。如只需更新某个服务，可单独导出：`docker save -o backend-new.tar tokensbyte-backend:latest`，在服务器 `docker load -i backend-new.tar` 后 `docker compose up -d` 即可。
+
+### 使用 API
 配置您的 OpenAI SDK：
 - **Base URL**: `http://localhost:3000`
 - **API Key**: `sk-xxxx` (在 TokensByte 后台生成)
@@ -237,10 +274,10 @@ tokensbyte/
 │
 ├── docker-compose.yml      # Docker Compose 配置（内置 PostgreSQL，可切换外部数据库）
 ├── docker-compose.dev.yml  # Docker Compose 配置（开发热重载叠加层）
-├── deploy.sh               # Linux/Mac 一键部署脚本
-├── deploy.ps1              # Windows 一键部署脚本
+├── deploy.sh               # 一键交互式部署脚本
+├── export-images.sh        # Docker 镜像导出脚本 (Linux/Mac)
+├── export-images.ps1       # Docker 镜像导出脚本 (Windows)
 ├── README.md               # 项目文档
-├── DEPLOY-SCRIPT-GUIDE.md  # 部署脚本使用指南
 └── data/                   # 数据持久化目录
 ```
 

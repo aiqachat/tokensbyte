@@ -222,12 +222,13 @@ Write-Host "  后续步骤" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "1. 上传 docker-compose.yml 到服务器"
-Write-Host "2. 创建 .env 配置文件 (运行 deploy.ps1 会自动引导配置)"
+Write-Host "2. 创建 .env 配置文件 (参考 .env.example 或运行 deploy.sh 引导配置)"
 Write-Host "3. 启动服务:"
 Write-Host "   docker compose up -d"
 Write-Host ""
 Write-Host "或者直接使用部署脚本:"
-Write-Host "   .\deploy.ps1"
+Write-Host "   chmod +x deploy.sh"
+Write-Host "   ./deploy.sh"
 Write-Host ""
 "@
 
