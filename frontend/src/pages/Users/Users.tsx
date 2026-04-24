@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress, Grid, Radio } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined, DollarOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined, DollarOutlined, LoginOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
+import useAuthStore from '../../store/auth';
 import type { User } from '../../types';
 import dayjs from 'dayjs';
 
@@ -151,6 +152,27 @@ const Users: React.FC = () => {
       fetchUsers();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleImpersonate = async (record: User) => {
+    try {
+      const resp = await (request.post(`/users/${record.id}/impersonate`) as unknown as Promise<{ token: string; user: User }>);
+      const { token, user } = resp;
+      
+      let baseUrl = window.location.origin;
+      // 严谨判断：如果处于本地开发环境，并且不是在5173端口，强制向5173发起用户端请求
+      if (baseUrl.includes('localhost') && !baseUrl.includes('5173')) {
+        baseUrl = 'http://localhost:5173';
+      }
+      
+      message.success(`正在打开用户端: ${user.username}`);
+      
+      // 添加一个特定标记，便于 Login.tsx 处理特殊情况
+      window.open(`${baseUrl}/login?token=${token}&impersonate=1`, '_blank');
+    } catch (e) {
+      console.error(e);
+      message.error('切换用户失败');
     }
   };
 
@@ -302,11 +324,20 @@ const Users: React.FC = () => {
       render: (_: unknown, record: User) => (
         <Space>
           {!isAdminPage && (
-            <Button 
-              icon={<WalletOutlined />} 
-              style={{ color: '#52c41a', borderColor: '#52c41a' }}
-              onClick={() => handleRechargeClick(record)} 
-            />
+            <>
+              <Button 
+                icon={<WalletOutlined />} 
+                style={{ color: '#52c41a', borderColor: '#52c41a' }}
+                onClick={() => handleRechargeClick(record)} 
+                title="充值"
+              />
+              <Button 
+                icon={<LoginOutlined />} 
+                style={{ color: '#1677ff', borderColor: '#1677ff' }}
+                onClick={() => handleImpersonate(record)}
+                title="登录此用户"
+              />
+            </>
           )}
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
@@ -380,7 +411,10 @@ const Users: React.FC = () => {
                 <CardRow label="加入时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm')}</Text></CardRow>
                 <CardActions>
                   {!isAdminPage && (
-                    <Button size="small" icon={<WalletOutlined />} style={{ color: '#52c41a', borderColor: '#52c41a' }} onClick={() => handleRechargeClick(record)} />
+                    <>
+                      <Button size="small" icon={<WalletOutlined />} style={{ color: '#52c41a', borderColor: '#52c41a' }} onClick={() => handleRechargeClick(record)} title="充值" />
+                      <Button size="small" icon={<LoginOutlined />} style={{ color: '#1677ff', borderColor: '#1677ff' }} onClick={() => handleImpersonate(record)} title="登录此用户" />
+                    </>
                   )}
                   <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
                   <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>

@@ -34,6 +34,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/users", get(users::list_users).post(users::create_user))
         .route("/users/{id}", put(users::update_user).delete(users::delete_user))
         .route("/users/{id}/recharge", post(users::recharge_user))
+        .route("/users/{id}/impersonate", post(users::impersonate_user))
         .route("/channels", post(channels::create_channel))
         .route("/channels/{id}", put(channels::update_channel).delete(channels::delete_channel))
         .route("/channels/{id}/test", post(channels::test_channel))

@@ -4,7 +4,7 @@ use axum::{
 };
 use std::sync::Arc;
 use crate::AppState;
-use crate::models::{User, CreateUserRequest, UpdateUserRequest, UserListResponse, RechargeRequest};
+use crate::models::{User, CreateUserRequest, UpdateUserRequest, UserListResponse, RechargeRequest, LoginResponse};
 use crate::error::{AppError, AppResult};
 use crate::auth;
 use sqlx::Any;
@@ -206,4 +206,29 @@ pub async fn recharge_user(
     .await?;
 
     Ok(Json(updated_user))
+}
+
+pub async fn impersonate_user(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> AppResult<Json<LoginResponse>> {
+    let user: User = sqlx::query_as(&state.db.format_query(
+        "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+    ))
+    .bind(&id)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    if user.role != "user" {
+        return Err(AppError::Forbidden("Only normal users can be impersonated".to_string()));
+    }
+
+    if user.is_active == 0 {
+        return Err(AppError::Forbidden("Account disabled".to_string()));
+    }
+
+    let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
+
+    Ok(Json(LoginResponse { token, user }))
 }

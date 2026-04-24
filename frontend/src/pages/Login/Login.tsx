@@ -24,14 +24,31 @@ const Login: React.FC = () => {
 
   useEffect(() => { if (!settings) fetchSettings(); }, []);
 
-  // OAuth 回调：URL 中带 token 参数时自动登录
+  // OAuth 回调或管理员一键登录：URL 中带 token 参数时自动登录
   useEffect(() => {
     const token = searchParams.get('token');
+    const isImpersonate = searchParams.get('impersonate') === '1';
+    
     if (token) {
-      setToken(token);
+      setToken(token, isImpersonate);
       request.get('/user/profile')
-        .then((res: any) => { setUser(res); navigate('/'); })
-        .catch(() => navigate('/'));
+        .then((res: any) => { 
+          setUser(res, isImpersonate); 
+          if (isImpersonate) {
+            // 直接跳原生的 href，避免 React Router navigate 延迟导致拦截器误判
+            window.location.href = '/';
+          } else {
+            navigate('/'); 
+          }
+        })
+        .catch((e) => {
+          console.error("Auto login failed:", e);
+          if (isImpersonate) {
+            window.location.href = '/';
+          } else {
+            navigate('/');
+          }
+        });
     }
   }, [searchParams, setToken, setUser, navigate]);
 

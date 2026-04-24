@@ -11,7 +11,7 @@ const request = axios.create({
 
 request.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -39,9 +39,13 @@ request.interceptors.response.use(
         // 区分"业务认证失败"与"登录态过期"：
         // 当前无 token（登录/注册等未登录页面）→ 直接展示后端消息
         // 当前有 token（登录态页面） → 清除 token 并跳转登录
-        const hasToken = !!localStorage.getItem('token');
+        const hasToken = !!(sessionStorage.getItem('token') || localStorage.getItem('token'));
         if (hasToken) {
-          localStorage.removeItem('token');
+          if (sessionStorage.getItem('token')) {
+            sessionStorage.removeItem('token');
+          } else {
+            localStorage.removeItem('token');
+          }
           message.error('登录状态已过期，请重新登录');
           if (window.location.pathname !== '/login') {
             window.location.href = '/login';
