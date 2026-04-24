@@ -1,5 +1,28 @@
 # 更新日志
 
+## 2026-04-24
+
+### 文档整合与优化
+
+- 📝 合并三个独立部署文档至 README.md 主文档
+  - `QUICK-EXPORT.md` → 方式四章节（离线/云端加速部署）
+  - `EXPORT-IMAGES-GUIDE.md` → 方式四章节（完整三步流程、增量更新提示）
+  - `DEPLOY-SCRIPT-GUIDE.md` → 方式二章节（交互流程说明、已有 .env 处理提示）
+- 📝 删除 `deploy.ps1`，统一使用 `deploy.sh` 部署脚本
+- 📝 更新相关文件引用（export-images.ps1 生成内容、README.md 项目结构等）
+- 📝 新建 `agent.md`，包含文档管理规则和 Rust 代码质量标准（黄金三步 CI 检查）
+
+### 删除文件
+
+- `QUICK-EXPORT.md`
+- `EXPORT-IMAGES-GUIDE.md`
+- `DEPLOY-SCRIPT-GUIDE.md`
+- `deploy.ps1`
+
+### 新增文件
+
+- `agent.md`
+
 ## 2026-04-22
 
 ### 修复问题
