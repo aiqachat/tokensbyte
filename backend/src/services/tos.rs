@@ -54,14 +54,11 @@ impl TosConfig {
 
     /// 生成文件的公开访问 URL
     pub fn file_url(&self, object_key: &str) -> String {
-        if !self.custom_domain.is_empty() {
+        let raw = if !self.custom_domain.is_empty() {
             let domain = self.custom_domain.trim_end_matches('/');
-            let prefix = if domain.starts_with("http") { "" } else { "https://" };
-            format!("{}{}/{}", prefix, domain, object_key)
+            format!("{}/{}", domain, object_key)
         } else {
             let ep = self.endpoint.trim_end_matches('/');
-            let prefix = if ep.starts_with("http") { "" } else { "https://" };
-            
             let ep_domain = if ep.starts_with("https://") {
                 &ep[8..]
             } else if ep.starts_with("http://") {
@@ -73,10 +70,17 @@ impl TosConfig {
             // Bucket 名包含点号时不能用 Virtual-Hosted Style（SSL 证书不匹配），
             // 改用 Path-Style: https://endpoint/bucket/key
             if self.bucket.contains('.') {
-                format!("{}{}/{}/{}", prefix, ep_domain, self.bucket, object_key)
+                format!("{}/{}/{}", ep_domain, self.bucket, object_key)
             } else {
-                format!("{}{}.{}/{}", prefix, self.bucket, ep_domain, object_key)
+                format!("{}.{}/{}", self.bucket, ep_domain, object_key)
             }
+        };
+
+        // 确保始终有 https:// 前缀
+        if raw.starts_with("https://") || raw.starts_with("http://") {
+            raw
+        } else {
+            format!("https://{}", raw)
         }
     }
 
