@@ -234,6 +234,17 @@ pub fn parse_usage(response: &str) -> UsageTokens {
                  found = true;
             }
         }
+        // 4. 包裹格式: { code, data: { usage: {...} } }
+        if !found {
+            if let Some(usage) = v.get("data").and_then(|d| d.get("usage")) {
+                u.prompt = usage.get("prompt_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                u.completion = usage.get("completion_tokens")
+                    .or_else(|| usage.get("output_tokens"))
+                    .and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                u.total = usage.get("total_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                found = true;
+            }
+        }
         found
     };
 
@@ -275,6 +286,10 @@ pub fn extract_usage_json_string(response: &str) -> Option<String> {
         }
         if let Some(usage) = v.get("final_result").and_then(|fr| fr.get("usage")) {
             return Some(serde_json::json!({ "final_result": { "usage": usage } }).to_string());
+        }
+        // 包裹格式: { code, data: { usage: {...} } }
+        if let Some(usage) = v.get("data").and_then(|d| d.get("usage")) {
+            return Some(serde_json::json!({ "usage": usage }).to_string());
         }
     } else {
         // SSE 模式下，寻找最后一条包含 usage 字段的 chunk，仅提取 usage 部分

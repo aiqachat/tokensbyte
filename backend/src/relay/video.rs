@@ -1,7 +1,7 @@
 //! Relay: POST /v1/video/generations & GET /v1/video/generations/{task_id}
 //! OpenAI-compatible video generation task endpoints with forward-rule-driven protocol adaptation.
 
-use axum::{extract::{State, Extension, Path, Query}, response::Response, Json};
+use axum::{extract::{State, Extension, Path, Query, OriginalUri}, response::Response, Json};
 use std::sync::Arc;
 use std::collections::HashMap;
 use crate::{AppState, error::{AppError, AppResult}};
@@ -13,17 +13,25 @@ use super::url_utils::join_url;
 pub async fn video_generations(
     State(state): State<Arc<AppState>>,
     Extension(token): Extension<ApiToken>,
+    OriginalUri(uri): OriginalUri,
     Json(body): Json<serde_json::Value>,
 ) -> AppResult<Response> {
     let start_time = std::time::Instant::now();
+    let raw_path = uri.path();
+    // 归一化：/api/... 和 /v1/... 路由指向同一 handler，统一为 /v1/ 前缀
+    let entry_path = if raw_path.starts_with("/api/") {
+        format!("/v1/{}", &raw_path[5..])
+    } else {
+        raw_path.to_string()
+    };
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
     let model = body["model"].as_str().unwrap_or("video-gen");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/v1/videos/generations").await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &entry_path).await?;
 
     // 解析转发规则
-    let resolved = forward::resolve_forward_rule(&state, model, "视频", "/v1/video/generations")
+    let resolved = forward::resolve_forward_rule(&state, model, "视频", &entry_path)
         .await
         .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, "视频"));
 
@@ -55,7 +63,7 @@ pub async fn video_generations(
         let err = resp.text().await?;
         let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("/v1/video/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+        let ep = format!("{}|{}", entry_path, resolved.upstream_path.replace("${model}", &resolved_model));
         proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status,
             &ep, Some(&display_err), latency_ms, 0,
             Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()), asset_convert_log.clone()).await;
@@ -93,7 +101,7 @@ pub async fn video_generations(
     // 视频是异步任务：POST 只记录日志（cost=预扣费），不执行多余结算预扣费
     // 真正的 token 和差值结算在 GET 轮询成功后执行
     let latency_ms = start_time.elapsed().as_millis() as u32;
-    let ep = format!("/v1/video/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+    let ep = format!("{}|{}", entry_path, resolved.upstream_path.replace("${model}", &resolved_model));
     let billing_detail = if pre_deduction > 0.0 {
         if let Some(ref acl) = asset_convert_log {
             format!("异步任务预扣费冻结 | {}", acl)
@@ -183,8 +191,13 @@ pub async fn video_generations_status(
     let url = if let Some(ref r) = resolved {
         if r.target_type == "volcengine" {
             join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id))
+        } else if let Some(ref custom_path) = r.poll_path {
+            let path = custom_path.replace("${task_id}", &task_id).replace("${model}", &model_name);
+            join_url(&channel.base_url, &path)
         } else {
-            join_url(&channel.base_url, &format!("/v1/video/generations/{}", task_id))
+            // 从 upstream_path 派生轮询路径
+            let path = r.upstream_path.replace("${model}", &model_name);
+            join_url(&channel.base_url, &format!("{}/{}", path.trim_end_matches('/'), task_id))
         }
     } else {
         join_url(&channel.base_url, &format!("/v1/video/generations/{}", task_id))
@@ -242,13 +255,18 @@ pub async fn video_generations_status(
             } else { None };
 
             let mut features = crate::relay::usage_extractor::extract_request_features(&resp_json);
-            // 从原始请求补充分辨率和视频输入信息（GET 响应通常不含这些字段）
+            // 从原始请求补充分辨率、视频输入、时长信息（GET 响应通常不含这些字段）
             if let Some(ref req_str) = original_request {
                 if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(req_str) {
                     let req_feat = crate::relay::usage_extractor::extract_request_features(&req_json);
                     if features.resolution.is_none() { features.resolution = req_feat.resolution; }
+                    if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
                     if req_feat.has_video { features.has_video = true; }
                 }
+            }
+            // 视频 duration 兜底
+            if features.duration_seconds.is_none() {
+                features.duration_seconds = Some(5.0);
             }
             if let Some(resp_count) = image_count {
                 features.image_count = Some(resp_count);

@@ -46,7 +46,7 @@ const getTaskType = (ep: string) => {
 // ── 工具函数：判断是否异步提交（视频 POST 或带有 task_id 的图片 POST） ─────────────────────
 const isAsyncPost = (r: TaskLog) => {
   const ep = r.endpoint || '';
-  if (ep.endsWith('/video/generations') || ep.endsWith('/generations/tasks')) return true;
+  if (ep.endsWith('/video/generations') || ep.endsWith('/videos/generations') || ep.endsWith('/generations/tasks')) return true;
   if (ep.endsWith('/images/generations') && r.response_content) {
     try {
       const v = JSON.parse(r.response_content);
@@ -96,7 +96,7 @@ const getAsyncCompletedTs = (r: TaskLog): number | null => {
 const getTaskId = (record: TaskLog): string => {
   const ep = record.endpoint;
   // 视频 GET：末尾是 task_id
-  if ((ep.includes('video/generations/') || ep.includes('generations/tasks/'))
+  if ((ep.includes('video/generations/') || ep.includes('videos/generations/') || ep.includes('generations/tasks/'))
     && !ep.endsWith('/generations') && !ep.endsWith('/tasks')) {
     return ep.split('/').pop() || '-';
   }

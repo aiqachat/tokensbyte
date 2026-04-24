@@ -100,17 +100,15 @@ pub async fn task_status(
         if r.target_type == "volcengine" {
             join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id))
         } else if let Some(ref custom_path) = r.poll_path {
-            // 优先使用规则里配置的 poll_path
             let path = custom_path.replace("${task_id}", &task_id).replace("${model}", &model_name);
             join_url(&channel.base_url, &path)
         } else {
-            // 默认回落逻辑：视频默认为 /v1/video/generations，其他默认为 /v1/tasks
-            match category.as_str() {
-                "视频" => join_url(&channel.base_url, &format!("/v1/video/generations/{}", task_id)),
-                _ => join_url(&channel.base_url, &format!("/v1/tasks/{}", task_id)),
-            }
+            // 从 upstream_path 派生轮询路径
+            let path = r.upstream_path.replace("${model}", &model_name);
+            join_url(&channel.base_url, &format!("{}/{}", path.trim_end_matches('/'), task_id))
         }
     } else {
+        // 无转发规则时按类别回落
         match category.as_str() {
             "视频" => join_url(&channel.base_url, &format!("/v1/video/generations/{}", task_id)),
             _ => join_url(&channel.base_url, &format!("/v1/tasks/{}", task_id)),
@@ -175,9 +173,14 @@ pub async fn task_status(
                 if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(req_str) {
                     let req_feat = crate::relay::usage_extractor::extract_request_features(&req_json);
                     if features.resolution.is_none() { features.resolution = req_feat.resolution; }
+                    if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
                     if req_feat.has_video { features.has_video = true; }
                     if req_feat.has_audio { features.has_audio = true; }
                 }
+            }
+            // 视频 duration 兜底
+            if category == "视频" && features.duration_seconds.is_none() {
+                features.duration_seconds = Some(5.0);
             }
             if let Some(resp_count) = image_count {
                 features.image_count = Some(resp_count);

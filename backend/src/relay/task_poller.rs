@@ -103,10 +103,9 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
         // 优先使用规则里配置的 poll_path
         custom_path.replace("${task_id}", &task_id).replace("${model}", &model_name)
     } else {
-        match category.as_str() {
-            "视频" => format!("/v1/video/generations/{}", task_id),
-            _ => format!("/v1/tasks/{}", task_id),
-        }
+        // 从 upstream_path 派生轮询路径，避免硬编码与实际上游不一致
+        let path = resolved.upstream_path.replace("${model}", &model_name);
+        format!("{}/{}", path.trim_end_matches('/'), task_id)
     };
     let url = super::url_utils::join_url(&channel.base_url, &poll_path);
 
@@ -192,6 +191,18 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
 
     // 从原始请求补充计费特征（分辨率、视频输入等 GET 响应通常不含这些字段）
     let mut features = super::usage_extractor::extract_request_features(resp_json);
+    // 优先从转换后请求体（upstream_req_content）补充 duration（含兜底默认值）
+    if let Ok(Some(upstream_str)) = sqlx::query_scalar::<_, String>(
+        &state.db.format_query("SELECT COALESCE(upstream_req_content, '') FROM logs WHERE id = ?")
+    ).bind(log_id).fetch_optional(&state.db.pool).await {
+        if !upstream_str.is_empty() {
+            if let Ok(upstream_json) = serde_json::from_str::<serde_json::Value>(&upstream_str) {
+                let upstream_feat = super::usage_extractor::extract_request_features(&upstream_json);
+                if features.duration_seconds.is_none() { features.duration_seconds = upstream_feat.duration_seconds; }
+                if features.resolution.is_none() { features.resolution = upstream_feat.resolution; }
+            }
+        }
+    }
     if let Ok(Some(req_str)) = sqlx::query_scalar::<_, String>(
         &state.db.format_query("SELECT COALESCE(request_content, '') FROM logs WHERE id = ?")
     ).bind(log_id).fetch_optional(&state.db.pool).await {
@@ -199,10 +210,18 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
             if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(&req_str) {
                 let req_feat = super::usage_extractor::extract_request_features(&req_json);
                 if features.resolution.is_none() { features.resolution = req_feat.resolution; }
+                if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
                 if req_feat.has_video { features.has_video = true; }
                 if req_feat.has_audio { features.has_audio = true; }
             }
         }
+    }
+    // 视频模型 duration 兜底：确保按秒计费时不为 0
+    let category_name: String = sqlx::query_scalar(
+        &state.db.format_query("SELECT COALESCE(t.name, '') FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? LIMIT 1")
+    ).bind(model_name).fetch_optional(&state.db.pool).await.unwrap_or(None).unwrap_or_default();
+    if category_name == "视频" && features.duration_seconds.is_none() {
+        features.duration_seconds = Some(5.0);
     }
     // 异步任务终态如果是图片，使用前面已提取的图片数量进行计费
     if let Some(resp_count) = image_count {
