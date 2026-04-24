@@ -123,6 +123,8 @@ const ForwardRules: React.FC = () => {
         category: (Array.isArray(values.category) && values.category.length > 0) ? values.category[0] : (values.category || '聊天'),
         is_active: values.is_active ? 1 : 0,
       };
+      // poll_path 已合并到 config_json 内，不需要作为独立字段发送
+      delete payload.poll_path;
 
       if (editingItem) {
         await request.put(`/forward-rules/${editingItem.id}`, payload);

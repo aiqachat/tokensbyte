@@ -404,6 +404,7 @@ macro_rules! pg_migration_blocks {
         FROM (VALUES
             ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天', 1),
             ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片', 1),
+            ('OpenAI 兼容原生通道异步 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"},"poll_path":"/v1/tasks/${task_id}"}', '图片', 1),
             ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频', 1),
             ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}', '聊天', 1),
             ('Google Gemini 原生生图', 'gemini', '将标准的生图请求适配到 Gemini contents 接口', '{"mode":"transform","target_type":"gemini_image","path_rewrite":{"old":"/v1/images/generations","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '图片', 1),
@@ -418,8 +419,9 @@ macro_rules! pg_migration_blocks {
     "#).execute(pool).await.ok();
 
     // 更新老数据
-    sqlx::query("UPDATE forward_rules SET is_system = 1 WHERE name IN ('OpenAI 兼容原生通道 (聊天)', 'OpenAI 兼容原生通道 (图片)', 'OpenAI 兼容原生通道 (视频)', 'Anthropic 原生转化', 'Google Gemini 原生生图', 'Google Gemini 格式转换 (聊天)', 'Google Gemini 流式转换 (聊天)', '火山方舟 视频生成', '火山方舟 聊天', '火山方舟 图片生成', '火山方舟 视频素材转换')")
+    sqlx::query("UPDATE forward_rules SET is_system = 1 WHERE name IN ('OpenAI 兼容原生通道 (聊天)', 'OpenAI 兼容原生通道 (图片)', 'OpenAI 兼容原生通道异步 (图片)', 'OpenAI 兼容原生通道 (视频)', 'Anthropic 原生转化', 'Google Gemini 原生生图', 'Google Gemini 格式转换 (聊天)', 'Google Gemini 流式转换 (聊天)', '火山方舟 视频生成', '火山方舟 聊天', '火山方舟 图片生成', '火山方舟 视频素材转换')")
         .execute(pool).await.ok();
+
 
     // Billing Rules table
     sqlx::query(

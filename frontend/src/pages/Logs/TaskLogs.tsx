@@ -51,7 +51,7 @@ const isAsyncPost = (r: TaskLog) => {
     try {
       const v = JSON.parse(r.response_content);
       // 支持根节点、data 对象、data 数组第一项
-      return !!(v.task_id || v.data?.task_id || (Array.isArray(v.data) && v.data[0]?.task_id));
+      return !!(v.task_id || v.id || v.data?.task_id || v.data?.id || (Array.isArray(v.data) && v.data[0]?.task_id));
     } catch { return false; }
   }
   return false;
@@ -65,8 +65,8 @@ const getAsyncFinalStatus = (r: TaskLog): 'pending' | 'succeeded' | 'failed' => 
   if (r.response_content) {
     try {
       const v = JSON.parse(r.response_content);
-      const status = v.status || v.final_result?.status || v.output?.status;
-      if (status === 'succeeded' || status === 'SUCCESS') return 'succeeded';
+      const status = v.status || v.data?.status || v.final_result?.status || v.output?.status;
+      if (status === 'succeeded' || status === 'SUCCESS' || status === 'completed') return 'succeeded';
       if (status === 'failed' || status === 'FAILED') return 'failed';
     } catch { /* ignore */ }
   }
@@ -104,7 +104,7 @@ const getTaskId = (record: TaskLog): string => {
   if (isAsyncPost(record) && record.response_content) {
     try {
       const r = JSON.parse(record.response_content);
-      return r.task_id || r.id || r.data?.task_id || (Array.isArray(r.data) && r.data[0]?.task_id) || '-';
+      return r.task_id || r.id || r.data?.task_id || r.data?.id || (Array.isArray(r.data) && r.data[0]?.task_id) || '-';
     } catch { /* ignore */ }
   }
   return '-';
@@ -370,9 +370,9 @@ const TaskLogs: React.FC = () => {
           </CardRow>
         )}
         {isAdmin && <CardRow label="用户"><Text style={{ fontSize: 12 }}>{record.user_nickname || record.user_id}</Text></CardRow>}
-        <CardRow label="提交"><Text type="secondary" style={{ fontSize: 12 }}>{(isAsyncPost(record.endpoint) ? dayjs(record.created_at) : dayjs(record.created_at).subtract(record.latency_ms, 'ms')).format('MM-DD HH:mm:ss')}</Text></CardRow>
+        <CardRow label="提交"><Text type="secondary" style={{ fontSize: 12 }}>{(isAsyncPost(record) ? dayjs(record.created_at) : dayjs(record.created_at).subtract(record.latency_ms, 'ms')).format('MM-DD HH:mm:ss')}</Text></CardRow>
         <CardRow label="耗时"><Text type="secondary" style={{ fontSize: 12 }}>🕗 {(() => {
-          if (isAsyncPost(record.endpoint)) {
+          if (isAsyncPost(record)) {
             if (status === 'pending') return '处理中...';
             const ts = getAsyncCompletedTs(record);
             if (ts) { const sec = ts - dayjs(record.created_at).unix(); return sec >= 60 ? `${(sec / 60).toFixed(1)}m` : `${sec.toFixed(1)}s`; }
