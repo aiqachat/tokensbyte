@@ -1,4 +1,4 @@
-# TokensByte Docker Image Export Script (Windows PowerShell)
+﻿# TokensByte Docker Image Export Script (Windows PowerShell)
 # Build and export images locally for uploading to cloud server
 
 $ErrorActionPreference = "Stop"
