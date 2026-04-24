@@ -94,6 +94,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/user/bind/google", get(user::bind_google))
         .route("/user/unbind/{bind_type}", post(user::unbind_third_party))
         .route("/task_logs", get(task_logs::list_task_logs))
+        .route("/task_logs/{id}/sync", post(task_logs::sync_task_log))
         .route("/finance/pay/create", post(pay::create_order))
         .route("/finance/pay/status/{out_trade_no}", get(pay::check_status))
         .route("/system/about", get(settings::system_about))

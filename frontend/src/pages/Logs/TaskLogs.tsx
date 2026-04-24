@@ -141,6 +141,16 @@ const TaskLogs: React.FC = () => {
     }
   }, [form]);
 
+  const handleSyncTask = async (id: number) => {
+    try {
+      const res = await (request.post(`/task_logs/${id}/sync`) as any);
+      message.success(res.message || '任务状态已同步');
+      fetchLogs(page, pageSize);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => { fetchLogs(); }, []);
 
   // ── 展开行：详细信息 ─────────────────────────────────────────
@@ -263,10 +273,23 @@ const TaskLogs: React.FC = () => {
     {
       title: '状态',
       key: 'status',
-      width: 80,
+      width: 120,
       render: (_: any, r: TaskLog) => {
         const status = getAsyncFinalStatus(r);
-        if (status === 'pending') return <Tag color="processing">进行中</Tag>;
+        if (status === 'pending') {
+          return (
+            <Space>
+              <Tag color="processing">进行中</Tag>
+              <Button 
+                type="text" 
+                size="small" 
+                icon={<SyncOutlined />} 
+                onClick={(e) => { e.stopPropagation(); handleSyncTask(r.id); }} 
+                title="手动同步状态"
+              />
+            </Space>
+          );
+        }
         if (status === 'failed') return <Tag color="error">失败</Tag>;
         return <Tag color="success">成功</Tag>;
       },
@@ -322,7 +345,14 @@ const TaskLogs: React.FC = () => {
     return (
       <MobileCard
         title={<Space><Tag color={tp.color}>{tp.icon} {tp.label}</Tag><Text style={{ fontSize: 12, fontFamily: 'monospace' }}>{record.model}</Text></Space>}
-        extra={status === 'pending' ? <Tag color="processing">进行中</Tag> : status === 'failed' ? <Tag color="error">失败</Tag> : <Tag color="success">成功</Tag>}
+        extra={
+          status === 'pending' ? (
+            <Space>
+              <Tag color="processing">进行中</Tag>
+              <Button type="text" size="small" icon={<SyncOutlined />} onClick={(e) => { e.stopPropagation(); handleSyncTask(record.id); }} />
+            </Space>
+          ) : status === 'failed' ? <Tag color="error">失败</Tag> : <Tag color="success">成功</Tag>
+        }
       >
         {record.channel_name && (
           <CardRow label="渠道">

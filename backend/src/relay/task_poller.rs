@@ -41,85 +41,105 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
     if rows.is_empty() { return Ok(()); }
     tracing::info!("[TaskPoller] 发现 {} 条待轮询任务", rows.len());
 
-    for (log_id, resp_content, channel_id, model_name) in rows {
-        // 提取 task_id，无法提取则跳过（非异步任务或响应格式异常）
-        let task_id = match extract_task_id(&resp_content) {
+    for (log_id, resp_content, _, _) in rows {
+        // 提取 task_id，无法提取则跳过
+        let _ = match extract_task_id(&resp_content) {
             Some(id) => id,
             None => continue,
         };
 
-        // 获取对应渠道（含 preset 覆盖）
-        let channel = match fetch_channel(state, channel_id).await {
-            Some(ch) => ch,
-            None => continue,
-        };
-
-        // 查询模型类别（视频/图片）以确定轮询路径
-        let category: String = sqlx::query_scalar(
-            &state.db.format_query(
-                "SELECT COALESCE(t.name, '') FROM models m \
-                 LEFT JOIN model_types t ON m.type_id = t.id \
-                 WHERE m.model_id = ? LIMIT 1"
-            )
-        ).bind(&model_name).fetch_optional(&state.db.pool).await
-            .unwrap_or(None).unwrap_or_default();
-
-        // 根据转发规则 + 域名推断，动态构建上游轮询 URL
-        let entry_path = match category.as_str() {
-            "视频" => "/v1/video/generations",
-            "图片" => "/v1/images/generations",
-            _ => "/v1/tasks",
-        };
-        let resolved = super::forward::resolve_forward_rule(state, &model_name, &category, entry_path)
-            .await
-            .unwrap_or_else(|| super::forward::infer_forward_from_base_url(&channel.base_url, &category));
-
-        let poll_path = if resolved.target_type == "volcengine" {
-            format!("/api/v3/contents/generations/tasks/{}", task_id)
-        } else {
-            match category.as_str() {
-                "视频" => format!("/v1/video/generations/{}", task_id),
-                _ => format!("/v1/tasks/{}", task_id),
-            }
-        };
-        let url = super::url_utils::join_url(&channel.base_url, &poll_path);
-
-        let resp = match state.http_client.get(&url)
-            .header("Authorization", format!("Bearer {}", channel.api_key))
-            .send().await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!("[TaskPoller] task={} 请求失败: {}", task_id, e);
-                continue;
-            }
-        };
-
-        if !resp.status().is_success() { continue; }
-
-        let body = resp.text().await.unwrap_or_default();
-        let resp_json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
-        let task_status = resp_json.get("status")
-            .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
-            .and_then(|s| s.as_str()).unwrap_or("");
-
-        // 仅处理终态
-        if task_status != "succeeded" && task_status != "failed" {
-            continue;
-        }
-
-        // 更新日志响应内容为最终结果
-        let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ? WHERE id = ?"))
-            .bind(&body).bind(log_id).execute(&state.db.pool).await;
-
-        if task_status == "succeeded" {
-            settle_success(state, log_id, &model_name, &body, &resp_json).await;
-        } else {
-            settle_failure(state, log_id, &model_name, &task_id).await;
+        if let Err(e) = sync_single_task(state, log_id).await {
+            tracing::warn!("[TaskPoller] log_id={} 自动轮询失败: {}", log_id, e);
         }
     }
 
     Ok(())
+}
+
+/// 执行单条任务的同步轮询（支持手动或定时调用）
+pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Result<String> {
+    let row: Option<(String, i64, String)> = sqlx::query_as(
+        &state.db.format_query(
+            "SELECT response_content, channel_id, model FROM logs WHERE id = ?"
+        )
+    ).bind(log_id).fetch_optional(&state.db.pool).await?;
+
+    let (resp_content, channel_id, model_name) = match row {
+        Some(r) => r,
+        None => return Err(anyhow::anyhow!("任务记录不存在")),
+    };
+
+    let task_id = match extract_task_id(&resp_content) {
+        Some(id) => id,
+        None => return Err(anyhow::anyhow!("该记录无法提取 task_id，可能不是异步任务")),
+    };
+
+    let channel = match fetch_channel(state, channel_id).await {
+        Some(ch) => ch,
+        None => return Err(anyhow::anyhow!("渠道不存在或已被删除")),
+    };
+
+    let category: String = sqlx::query_scalar(
+        &state.db.format_query(
+            "SELECT COALESCE(t.name, '') FROM models m \
+             LEFT JOIN model_types t ON m.type_id = t.id \
+             WHERE m.model_id = ? LIMIT 1"
+        )
+    ).bind(&model_name).fetch_optional(&state.db.pool).await
+        .unwrap_or(None).unwrap_or_default();
+
+    let entry_path = match category.as_str() {
+        "视频" => "/v1/video/generations",
+        "图片" => "/v1/images/generations",
+        _ => "/v1/tasks",
+    };
+    let resolved = super::forward::resolve_forward_rule(state, &model_name, &category, entry_path)
+        .await
+        .unwrap_or_else(|| super::forward::infer_forward_from_base_url(&channel.base_url, &category));
+
+    let poll_path = if resolved.target_type == "volcengine" {
+        format!("/api/v3/contents/generations/tasks/{}", task_id)
+    } else {
+        match category.as_str() {
+            "视频" => format!("/v1/video/generations/{}", task_id),
+            _ => format!("/v1/tasks/{}", task_id),
+        }
+    };
+    let url = super::url_utils::join_url(&channel.base_url, &poll_path);
+
+    let resp = match state.http_client.get(&url)
+        .header("Authorization", format!("Bearer {}", channel.api_key))
+        .send().await
+    {
+        Ok(r) => r,
+        Err(e) => return Err(anyhow::anyhow!("请求渠道失败: {}", e)),
+    };
+
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!("渠道返回错误状态码: {}", resp.status()));
+    }
+
+    let body = resp.text().await.unwrap_or_default();
+    let resp_json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
+    let task_status = resp_json.get("status")
+        .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
+        .and_then(|s| s.as_str()).unwrap_or("");
+
+    if task_status != "succeeded" && task_status != "failed" {
+        return Ok(format!("当前状态: {}", if task_status.is_empty() { "pending" } else { task_status }));
+    }
+
+    // 更新日志响应内容为最终结果
+    let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ? WHERE id = ?"))
+        .bind(&body).bind(log_id).execute(&state.db.pool).await;
+
+    if task_status == "succeeded" {
+        settle_success(state, log_id, &model_name, &body, &resp_json).await;
+        Ok("任务已成功落地并计费".to_string())
+    } else {
+        settle_failure(state, log_id, &model_name, &task_id).await;
+        Ok("任务已失败，预扣费已退回".to_string())
+    }
 }
 
 /// 任务成功：提取 token、计费、余额结算
