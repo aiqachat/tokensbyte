@@ -184,6 +184,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(volcengine_native_routes)
         .with_state(state)
         .layer(tower_http::cors::CorsLayer::permissive())
+        .layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024))
 }
 
 pub mod plugins;

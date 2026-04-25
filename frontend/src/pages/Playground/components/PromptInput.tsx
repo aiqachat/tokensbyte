@@ -4,18 +4,21 @@
  * - 上层：干净的文本输入区域
  * - 下层：功能芯片栏（模型选择、API 密钥、附加功能按钮）+ 运行按钮
  */
-import React, { useState } from 'react';
-import { Input, Tooltip, message } from 'antd';
+import React, { useState, useRef } from 'react';
+import { Input, Tooltip, message, Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   KeyOutlined, PlayCircleOutlined, AppstoreOutlined,
   LinkOutlined, PlusOutlined, AudioOutlined,
   CloseOutlined, ThunderboltOutlined,
   PaperClipOutlined, PictureOutlined, VideoCameraOutlined,
+  CloudOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import { usePlayground } from '../context/PlaygroundContext';
 import { useGeneration } from '../hooks/useGeneration';
 import { getCategoryLabel } from '../constants';
 import AssetPickerModal from './AssetPickerModal';
+import ImageEditorModal from './ImageEditorModal';
 import type { PluginAsset } from '../../../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -43,6 +46,56 @@ const PromptInput: React.FC = React.memo(() => {
   const { handleGenerate } = useGeneration();
   const [isFocused, setIsFocused] = useState(false);
   const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false);
+  const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        message.error('文件大小不能超过 10MB');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      const isVideo = file.type.startsWith('video');
+      const isAudio = file.type.startsWith('audio');
+      const assetType = isVideo ? 'video' : isAudio ? 'audio' : 'image';
+      const mockAsset = {
+        id: Date.now(),
+        file_name: file.name,
+        asset_type: assetType,
+        size: file.size,
+        file_url: url
+      };
+      setAttachedAsset({ asset: mockAsset as any, fullUrl: url, file });
+      message.success(`已附加本地文件: ${file.name}`);
+    }
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
+
+  const handleMenuClick: MenuProps['onClick'] = (e) => {
+    if (e.key === 'asset-library') {
+      setIsAssetPickerOpen(true);
+    } else if (e.key === 'local-upload') {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const dropdownItems: MenuProps['items'] = [
+    {
+      key: 'asset-library',
+      label: '从资产库选择',
+      icon: <CloudOutlined />,
+    },
+    {
+      key: 'local-upload',
+      label: '本地上传文件',
+      icon: <UploadOutlined />,
+    },
+  ];
 
   const modSymbol = isMac() ? '⌘' : 'Ctrl';
   const tokenName = selectedTokenKey
@@ -93,14 +146,18 @@ const PromptInput: React.FC = React.memo(() => {
           gap: 10,
         }}>
           <div style={{
+            position: 'relative',
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            padding: '6px 10px 6px 6px',
-            background: 'rgba(22, 119, 255, 0.08)',
-            border: '1px solid rgba(22, 119, 255, 0.2)',
-            borderRadius: 10,
-            maxWidth: 360,
+            justifyContent: 'center',
+            width: 64,
+            height: 64,
+            borderRadius: 8,
+            overflow: 'hidden',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+            flexShrink: 0,
+            background: 'rgba(0,0,0,0.2)',
           }}>
             {/* 缩略图 */}
             {(() => {
@@ -109,53 +166,66 @@ const PromptInput: React.FC = React.memo(() => {
               const isAudio = attachedAsset.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
               if (isAudio) {
                 return (
-                  <div style={{ width: 36, height: 36, borderRadius: 6, background: 'rgba(22,119,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <AudioOutlined style={{ fontSize: 16, color: '#1677ff' }} />
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <AudioOutlined style={{ fontSize: 24, color: '#1677ff' }} />
                   </div>
                 );
               }
               if (isVideo) {
                 return (
-                  <div style={{ width: 36, height: 36, borderRadius: 6, overflow: 'hidden', flexShrink: 0, position: 'relative' }}>
+                  <div style={{ width: '100%', height: '100%', position: 'relative' }}>
                     <video src={attachedAsset.fullUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" />
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
-                      <VideoCameraOutlined style={{ fontSize: 14, color: '#fff' }} />
+                      <VideoCameraOutlined style={{ fontSize: 20, color: '#fff' }} />
                     </div>
                   </div>
                 );
               }
               return (
-                <img
-                  src={attachedAsset.fullUrl}
-                  alt=""
-                  style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
-                />
+                <div 
+                  onClick={() => setIsImageEditorOpen(true)}
+                  style={{ width: '100%', height: '100%', cursor: 'pointer', position: 'relative' }}
+                  title="点击放大并编辑图片"
+                >
+                  <img
+                    src={attachedAsset.fullUrl}
+                    alt=""
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                  <div className="hover-edit-overlay" style={{
+                    position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s'
+                  }}>
+                    <PictureOutlined style={{ fontSize: 16, color: '#fff' }} />
+                  </div>
+                  <style>{`
+                    .hover-edit-overlay:hover { opacity: 1 !important; }
+                  `}</style>
+                </div>
               );
             })()}
-            {/* 文件名 */}
-            <div style={{ minWidth: 0 }}>
-              <div style={{
-                fontSize: 13, fontWeight: 500, color: '#A2C1FF',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {attachedAsset.asset.file_name}
-              </div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
-                {attachedAsset.asset.asset_type === 'video' ? '视频' : attachedAsset.asset.asset_type === 'audio' ? '音频' : '图片'}
-                {attachedAsset.asset.size ? ` · ${(attachedAsset.asset.size / 1024 / 1024).toFixed(1)} MB` : ''}
-              </div>
-            </div>
             {/* 关闭按钮 */}
             <div
               onClick={() => setAttachedAsset(null)}
               style={{
-                width: 20, height: 20, borderRadius: '50%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', transition: 'all 0.2s',
-                color: 'rgba(255,255,255,0.35)', flexShrink: 0, marginLeft: 4,
+                position: 'absolute',
+                top: 4,
+                right: 4,
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                background: 'rgba(0,0,0,0.5)',
+                backdropFilter: 'blur(4px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                color: '#fff',
+                zIndex: 10,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.35)'; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,77,79,0.9)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.5)'; }}
             >
               <CloseOutlined style={{ fontSize: 10 }} />
             </div>
@@ -315,33 +385,34 @@ const PromptInput: React.FC = React.memo(() => {
             </div>
           </Tooltip>
 
-          <Tooltip title="从资产库添加附件">
-            <div
-              onClick={() => setIsAssetPickerOpen(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 30,
-                height: 30,
-                borderRadius: 8,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                color: attachedAsset ? '#1677ff' : 'rgba(255,255,255,0.3)',
-                background: attachedAsset ? 'rgba(22,119,255,0.1)' : 'transparent',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = attachedAsset ? 'rgba(22,119,255,0.18)' : 'rgba(255,255,255,0.06)';
-                e.currentTarget.style.color = attachedAsset ? '#1677ff' : 'rgba(255,255,255,0.6)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = attachedAsset ? 'rgba(22,119,255,0.1)' : 'transparent';
-                e.currentTarget.style.color = attachedAsset ? '#1677ff' : 'rgba(255,255,255,0.3)';
-              }}
-            >
-              <PlusOutlined style={{ fontSize: 14 }} />
-            </div>
-          </Tooltip>
+          <Dropdown menu={{ items: dropdownItems, onClick: handleMenuClick }} trigger={['click']} placement="topLeft">
+            <Tooltip title="添加附件">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  color: attachedAsset ? '#1677ff' : 'rgba(255,255,255,0.3)',
+                  background: attachedAsset ? 'rgba(22,119,255,0.1)' : 'transparent',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = attachedAsset ? 'rgba(22,119,255,0.18)' : 'rgba(255,255,255,0.06)';
+                  e.currentTarget.style.color = attachedAsset ? '#1677ff' : 'rgba(255,255,255,0.6)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = attachedAsset ? 'rgba(22,119,255,0.1)' : 'transparent';
+                  e.currentTarget.style.color = attachedAsset ? '#1677ff' : 'rgba(255,255,255,0.3)';
+                }}
+              >
+                <PlusOutlined style={{ fontSize: 14 }} />
+              </div>
+            </Tooltip>
+          </Dropdown>
         </div>
 
         {/* 右侧运行按钮 */}
@@ -426,6 +497,35 @@ const PromptInput: React.FC = React.memo(() => {
           setAttachedAsset({ asset, fullUrl });
           message.success(`已附加素材: ${asset.file_name}`);
         }}
+      />
+
+      {/* 图片放大预览与编辑弹窗 */}
+      {attachedAsset && attachedAsset.asset.asset_type === 'image' && (
+        <ImageEditorModal
+          open={isImageEditorOpen}
+          imageUrl={attachedAsset.fullUrl}
+          onCancel={() => setIsImageEditorOpen(false)}
+          onSave={(newUrl, file) => {
+            const mockAsset = {
+              ...attachedAsset.asset,
+              file_name: file.name,
+              size: file.size,
+              file_url: newUrl,
+            };
+            setAttachedAsset({ asset: mockAsset, fullUrl: newUrl, file });
+            setIsImageEditorOpen(false);
+            message.success('图片编辑已保存');
+          }}
+        />
+      )}
+
+      {/* 隐藏的本地文件上传 */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        onChange={handleFileChange}
+        accept="image/*,video/*,audio/*"
       />
     </div>
   );

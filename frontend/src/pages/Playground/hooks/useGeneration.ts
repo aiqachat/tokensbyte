@@ -91,7 +91,13 @@ export const useGeneration = () => {
         : currentModel.type_name.includes('图片') || currentModel.scheme_type === 'image' ? 'image'
         : 'text',
       status: 'loading',
-      taskData: { prompt: prompt.trim() },
+      taskData: {
+        prompt: prompt.trim(),
+        model_name: currentModel.name,
+        model_id: currentModel.model_id,
+        attached_url: attachedAsset?.fullUrl || '',
+        created_at: new Date().toISOString(),
+      },
       resultData: null,
       x: centerX + offsetX,
       y: centerY + offsetY,
@@ -103,6 +109,15 @@ export const useGeneration = () => {
     setNodes(prev => [...prev, initialNode]);
 
     try {
+      let base64Image = '';
+      if (attachedAsset?.file) {
+        base64Image = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(attachedAsset.file!);
+        });
+      }
+
       const schemeType = currentModel.scheme_type || '';
       const body: any = {
         model: currentModel.model_id,
@@ -113,21 +128,20 @@ export const useGeneration = () => {
       let endpoint = '';
       if (schemeType === 'video' || currentModel.type_name.includes('视频')) {
         endpoint = currentModel.endpoint || '/v1/video/generations';
+        const resolvedImageUrl = base64Image || attachedAsset?.fullUrl || paramValues.image_url;
 
         if (currentModel.endpoint) {
           const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
-          const imageUrl = attachedAsset?.fullUrl || paramValues.image_url;
-          if (imageUrl && String(imageUrl).trim()) {
-            contentArr.push({ type: 'image_url', image_url: { url: String(imageUrl).trim() } });
+          if (resolvedImageUrl && String(resolvedImageUrl).trim()) {
+            contentArr.push({ type: 'image_url', image_url: { url: String(resolvedImageUrl).trim() } });
           }
           body.content = contentArr;
           delete body.prompt;
         } else {
-          const imageUrl = attachedAsset?.fullUrl || paramValues.image_url;
-          if (imageUrl && String(imageUrl).trim()) {
+          if (resolvedImageUrl && String(resolvedImageUrl).trim()) {
             body.content = [
               { type: 'text', text: prompt.trim() },
-              { type: 'image_url', image_url: { url: String(imageUrl).trim() } }
+              { type: 'image_url', image_url: { url: String(resolvedImageUrl).trim() } }
             ];
             delete body.prompt;
           }
@@ -135,10 +149,10 @@ export const useGeneration = () => {
         delete body.image_url;
       } else if (schemeType === 'image' || currentModel.type_name.includes('图片')) {
         endpoint = '/v1/images/generations';
-        const imgUrl = attachedAsset?.fullUrl || paramValues.image_url;
-        if (imgUrl) {
-           body.image = imgUrl;
-           body.image_url = imgUrl;
+        const resolvedImageUrl = base64Image || attachedAsset?.fullUrl || paramValues.image_url;
+        if (resolvedImageUrl) {
+           body.image = resolvedImageUrl;
+           body.image_url = resolvedImageUrl;
         }
       } else {
         endpoint = '/v1/chat/completions';

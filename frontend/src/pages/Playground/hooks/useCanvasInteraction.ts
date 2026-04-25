@@ -40,23 +40,56 @@ export const useCanvasInteraction = () => {
     startTransformX: 0, startTransformY: 0,
   });
   const rafRef = useRef<number>(0);
+  const wheelTimeoutRef = useRef<number | null>(null);
   // 缓存最新的 canvasTransform，在闭包中使用
   const transformRef = useRef<CanvasTransform>(canvasTransform);
   transformRef.current = canvasTransform;
 
-  /** 滚轮缩放（以鼠标指针为中心），兼容原生 WheelEvent 和 React.WheelEvent */
+  /** 滚轮缩放与平移（兼容原生 WheelEvent 和 React.WheelEvent） */
   const handleWheel = useCallback((e: WheelEvent | React.WheelEvent) => {
     const ct = transformRef.current;
-    const zoomFactor = -e.deltaY * 0.001;
-    const newScale = Math.min(Math.max(0.1, ct.scale + zoomFactor), 3);
     const rect = canvasRef.current?.getBoundingClientRect();
-    if (rect) {
+    if (!rect) return;
+
+    // e.ctrlKey 表示触控板捏合 (Pinch) 或按住 Ctrl 滚轮
+    if (e.ctrlKey || e.metaKey) {
+      // 放大 / 缩小
+      const zoomSensitivity = 0.01; 
+      const zoomFactor = -e.deltaY * zoomSensitivity;
+      let newScale = ct.scale * (1 + zoomFactor);
+      newScale = Math.min(Math.max(0.05, newScale), 5); // 允许 0.05x 到 5x
+
       const pointerX = e.clientX - rect.left;
       const pointerY = e.clientY - rect.top;
       const ratio = newScale / ct.scale;
       const newX = pointerX - (pointerX - ct.x) * ratio;
       const newY = pointerY - (pointerY - ct.y) * ratio;
+      
       setCanvasTransform({ x: newX, y: newY, scale: newScale });
+    } else {
+      // 平移 (双指滑动 或 普通滚轮)
+      const newX = ct.x - e.deltaX;
+      const newY = ct.y - e.deltaY;
+      
+      // 使用 RAF 立即更新 DOM，避免 React 重渲染卡顿
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        const transformLayer = canvasRef.current?.firstElementChild as HTMLElement | null;
+        if (transformLayer) {
+          transformLayer.style.transform = `translate(${newX}px, ${newY}px) scale(${ct.scale})`;
+        }
+        if (canvasRef.current) {
+          canvasRef.current.style.backgroundPosition = `${newX}px ${newY}px`;
+        }
+      });
+      
+      transformRef.current = { ...ct, x: newX, y: newY };
+      
+      // 防抖同步到 React State
+      if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
+      wheelTimeoutRef.current = setTimeout(() => {
+        setCanvasTransform({ x: transformRef.current.x, y: transformRef.current.y, scale: transformRef.current.scale });
+      }, 100);
     }
   }, [canvasRef, setCanvasTransform]);
 
