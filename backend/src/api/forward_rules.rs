@@ -66,19 +66,7 @@ pub async fn update_rule(
         .fetch_optional(&state.db.pool)
         .await?;
     
-    if let Some(sys) = existing {
-        if sys == 1 {
-            let is_only_updating_active = req.name.is_none() 
-                && req.rule_type.is_none() 
-                && req.category.is_none() 
-                && req.config_json.is_none() 
-                && req.description.is_none();
-                
-            if !is_only_updating_active {
-                return Err(crate::error::AppError::Forbidden("系统内置规则仅允许启停，禁止修改常规配置".to_string()));
-            }
-        }
-    } else {
+    if existing.is_none() {
         return Err(crate::error::AppError::NotFound("规则不存在".to_string()));
     }
 

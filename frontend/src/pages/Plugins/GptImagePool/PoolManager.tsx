@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Typography, Button, Table, Tag, Tabs, Modal, Form, Input, InputNumber, Select, Space, Spin, message, Popconfirm, TimePicker, Tooltip, Card, Row, Col, Statistic, Drawer } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, ApiOutlined, CloudServerOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, ApiOutlined, PictureOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import dayjs from 'dayjs';
 
@@ -29,9 +29,7 @@ interface PoolLog {
 }
 
 const poolTypeLabels: Record<string, { label: string; color: string }> = {
-  chat: { label: '聊天', color: '#1677ff' },
   image: { label: '图片', color: '#52c41a' },
-  video: { label: '视频', color: '#fa8c16' },
   custom: { label: '自定义', color: '#722ed1' },
 };
 
@@ -41,7 +39,7 @@ const statusConfig: Record<string, { color: string; icon: React.ReactNode; label
   exhausted: { color: 'warning', icon: <ExclamationCircleOutlined />, label: '配额耗尽' },
 };
 
-const PoolManager: React.FC = () => {
+const GptImagePoolManager: React.FC = () => {
   const [pools, setPools] = useState<Pool[]>([]);
   const [selectedPool, setSelectedPool] = useState<Pool | null>(null);
   const [accounts, setAccounts] = useState<PoolAccount[]>([]);
@@ -67,7 +65,7 @@ const PoolManager: React.FC = () => {
   const fetchPools = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await (request.get('/plugins/volcengine_pool/pools') as any);
+      const res = await (request.get('/plugins/gptimage_pool/pools') as any);
       if (res.pools) setPools(res.pools);
     } catch { message.error('获取卡池列表失败'); }
     finally { setLoading(false); }
@@ -75,7 +73,7 @@ const PoolManager: React.FC = () => {
 
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await (request.get(`/plugins/volcengine_pool/accounts`) as any);
+      const res = await (request.get(`/plugins/gptimage_pool/accounts`) as any);
       if (res.accounts) setAccounts(res.accounts);
     } catch { message.error('获取账号列表失败'); }
   }, []);
@@ -84,7 +82,7 @@ const PoolManager: React.FC = () => {
     try {
       const params: any = { page, page_size: 15 };
       if (poolId) params.pool_id = poolId;
-      const res = await (request.get('/plugins/volcengine_pool/logs', { params }) as any);
+      const res = await (request.get('/plugins/gptimage_pool/logs', { params }) as any);
       if (res.logs) { setLogs(res.logs); setLogsTotal(res.total || 0); }
     } catch { /* silent */ }
   }, []);
@@ -104,7 +102,6 @@ const PoolManager: React.FC = () => {
     } catch { /* silent */ }
   };
 
-  // 根据筛选条件构建分组选项
   const groupedModelOptions = React.useMemo(() => {
     let filtered = siteModels;
     if (modelFilterProvider !== undefined) filtered = filtered.filter(m => m.provider_id === modelFilterProvider);
@@ -133,10 +130,10 @@ const PoolManager: React.FC = () => {
       };
       if (editingPool) {
         payload.is_active = values.is_active;
-        await request.put(`/plugins/volcengine_pool/pools/${editingPool.id}`, payload);
+        await request.put(`/plugins/gptimage_pool/pools/${editingPool.id}`, payload);
         message.success('卡池已更新');
       } else {
-        await request.post('/plugins/volcengine_pool/pools', payload);
+        await request.post('/plugins/gptimage_pool/pools', payload);
         message.success('卡池已创建');
       }
       setPoolModalVisible(false); fetchPools();
@@ -154,7 +151,7 @@ const PoolManager: React.FC = () => {
 
   const handleDeletePool = async (id: number) => {
     try {
-      await request.delete(`/plugins/volcengine_pool/pools/${id}`);
+      await request.delete(`/plugins/gptimage_pool/pools/${id}`);
       message.success('卡池已删除');
       if (selectedPool?.id === id) { setSelectedPool(null); setAccounts([]); }
       fetchPools();
@@ -184,10 +181,10 @@ const PoolManager: React.FC = () => {
       };
       if (editingAccount) {
         payload.status = values.status;
-        await request.put(`/plugins/volcengine_pool/accounts/${editingAccount.id}`, payload);
+        await request.put(`/plugins/gptimage_pool/accounts/${editingAccount.id}`, payload);
         message.success('账号已更新');
       } else {
-        await request.post(`/plugins/volcengine_pool/accounts`, payload);
+        await request.post(`/plugins/gptimage_pool/accounts`, payload);
         message.success('账号已添加');
       }
       setAccountModalVisible(false); fetchAccounts();
@@ -210,14 +207,14 @@ const PoolManager: React.FC = () => {
   };
 
   const handleDeleteAccount = async (id: number) => {
-    await request.delete(`/plugins/volcengine_pool/accounts/${id}`);
+    await request.delete(`/plugins/gptimage_pool/accounts/${id}`);
     message.success('账号已删除'); fetchAccounts();
   };
 
   const handleTestAccount = async (id: number) => {
     setTestingId(id);
     try {
-      const res = await (request.post(`/plugins/volcengine_pool/accounts/${id}/test`) as any);
+      const res = await (request.post(`/plugins/gptimage_pool/accounts/${id}/test`) as any);
       if (res.success) message.success(`连接成功 (${res.latency_ms}ms)`);
       else message.error(`连接失败: ${res.message}`);
     } catch { message.error('测试请求失败'); }
@@ -225,7 +222,7 @@ const PoolManager: React.FC = () => {
   };
 
   const handleResetAccount = async (id: number) => {
-    await request.post(`/plugins/volcengine_pool/accounts/${id}/reset`);
+    await request.post(`/plugins/gptimage_pool/accounts/${id}/reset`);
     message.success('配额已重置'); fetchAccounts();
   };
 
@@ -250,7 +247,7 @@ const PoolManager: React.FC = () => {
     { title: '名称', dataIndex: 'name', key: 'name', width: 120 },
     { title: 'URL & API Key', key: 'url_key', width: 200, render: (_: any, r: PoolAccount) => (
       <div>
-        <Text style={{ fontSize: 12, display: 'block' }} ellipsis title={r.base_url}>{r.base_url}</Text>
+        <Text style={{ fontSize: 12, display: 'block' }} ellipsis title={r.base_url}>{r.base_url || '未配置'}</Text>
         <Text type="secondary" style={{ fontSize: 12 }}>{r.api_key_masked}</Text>
       </div>
     )},
@@ -290,7 +287,7 @@ const PoolManager: React.FC = () => {
   const poolTab = (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>管理所有卡池，每个卡池可包含多个火山引擎账号</Text>
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>管理所有卡池，每个卡池可包含多个 GPT-Image 来源账号</Text>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchPools} loading={loading}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openPoolModal()}>新建卡池</Button>
@@ -309,15 +306,15 @@ const PoolManager: React.FC = () => {
                   setDetailVisible(true);
                 }}
                 style={{
-                  background: isSelected ? 'rgba(250,140,22,0.06)' : '#1a1a1a',
-                  border: isSelected ? '1px solid rgba(250,140,22,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                  background: isSelected ? 'rgba(82,196,26,0.06)' : '#1a1a1a',
+                  border: isSelected ? '1px solid rgba(82,196,26,0.4)' : '1px solid rgba(255,255,255,0.08)',
                   cursor: 'pointer',
                 }}
                 styles={{ body: { padding: '14px 16px' } }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <Space>
-                    <CloudServerOutlined style={{ color: typeInfo.color, fontSize: 18 }} />
+                    <PictureOutlined style={{ color: typeInfo.color, fontSize: 18 }} />
                     <Text strong style={{ color: '#fff', fontSize: 14 }}>{pool.name}</Text>
                     <Tag color={typeInfo.color} style={{ fontSize: 11 }}>{typeInfo.label}</Tag>
                   </Space>
@@ -349,7 +346,7 @@ const PoolManager: React.FC = () => {
   const accountTab = (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>独立账号池，配置账号请求地址、密钥及配额，用于分配给各个卡池</Text>
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>独立账号池，配置 GPT-Image 来源的请求地址、密钥及配额</Text>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => fetchAccounts()}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openAccountModal()}>添加账号</Button>
@@ -389,16 +386,16 @@ const PoolManager: React.FC = () => {
       {/* 卡池编辑弹窗 */}
       <Modal title={editingPool ? '编辑卡池' : '新建卡池'} open={poolModalVisible}
         onCancel={() => setPoolModalVisible(false)} onOk={handleSavePool} width={560} destroyOnClose>
-        <Form form={poolForm} layout="vertical" initialValues={{ pool_type: 'chat', strategy: 'random', is_active: 1, account_ids: [] }}>
+        <Form form={poolForm} layout="vertical" initialValues={{ pool_type: 'image', strategy: 'random', is_active: 1, account_ids: [] }}>
           <Form.Item name="name" label="卡池名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="如：视频模型卡池" />
+            <Input placeholder="如：GPT-Image 主卡池" />
           </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="pool_type" label="卡池类型">
                 <Select options={[
-                  { label: '聊天', value: 'chat' }, { label: '图片', value: 'image' },
-                  { label: '视频', value: 'video' }, { label: '自定义', value: 'custom' },
+                  { label: '图片', value: 'image' },
+                  { label: '自定义', value: 'custom' },
                 ]} />
               </Form.Item>
             </Col>
@@ -424,16 +421,16 @@ const PoolManager: React.FC = () => {
       {/* 账号编辑弹窗 */}
       <Modal title={editingAccount ? '编辑账号' : '添加账号'} open={accountModalVisible}
         onCancel={() => setAccountModalVisible(false)} onOk={handleSaveAccount} width={560} destroyOnClose>
-        <Form form={accountForm} layout="vertical" initialValues={{ daily_quota: 0, hourly_quota: 0, period_quota: 0, priority: 0, quota_unit: 'tokens', base_url: 'https://ark.cn-beijing.volces.com/api/v3' }}>
+        <Form form={accountForm} layout="vertical" initialValues={{ daily_quota: 0, hourly_quota: 0, period_quota: 0, priority: 0, quota_unit: 'images', base_url: '' }}>
           <Form.Item name="name" label="账号名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="备注名，如：账号A" />
+            <Input placeholder="备注名，如：OpenAI 官方账号" />
           </Form.Item>
           <Form.Item name="base_url" label="请求地址 (Base URL)" rules={[{ required: true, message: '请输入请求地址' }]}>
-            <Input placeholder="例如: https://ark.cn-beijing.volces.com/api/v3" />
+            <Input placeholder="例如: https://api.openai.com" />
           </Form.Item>
           {!editingAccount ? (
             <Form.Item name="api_key" label="API Key" rules={[{ required: true, message: '请输入API Key' }]}>
-              <Input.Password placeholder="火山引擎 API Key" />
+              <Input.Password placeholder="API Key" />
             </Form.Item>
           ) : (
             <Form.Item name="api_key" label="API Key（留空不修改）">
@@ -458,7 +455,7 @@ const PoolManager: React.FC = () => {
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="quota_unit" label="配额计量单位">
-                <Select options={[{ label: 'Token 数', value: 'tokens' }, { label: '请求次数', value: 'requests' }, { label: '图片张数', value: 'images' }]} />
+                <Select options={[{ label: '图片张数', value: 'images' }, { label: '请求次数', value: 'requests' }, { label: 'Token 数', value: 'tokens' }]} />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -476,7 +473,7 @@ const PoolManager: React.FC = () => {
           {/* 动态限额后缀 */}
           <Form.Item noStyle shouldUpdate={(prev, cur) => prev.quota_unit !== cur.quota_unit}>
             {({ getFieldValue }) => {
-              const unit = getFieldValue('quota_unit') || 'tokens';
+              const unit = getFieldValue('quota_unit') || 'images';
               const unitLabel = unit === 'tokens' ? 'Token' : unit === 'requests' ? '次' : '张';
               return (
                 <Row gutter={16}>
@@ -531,4 +528,4 @@ const PoolManager: React.FC = () => {
   );
 };
 
-export default PoolManager;
+export default GptImagePoolManager;
