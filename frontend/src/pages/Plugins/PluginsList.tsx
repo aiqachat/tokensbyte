@@ -12,6 +12,7 @@ const pluginIcons: Record<string, React.ReactNode> = {
   team_marketing: <TeamOutlined style={{ fontSize: 22 }} />,
   playground: <ExperimentOutlined style={{ fontSize: 22 }} />,
   volcengine_pool: <CloudServerOutlined style={{ fontSize: 22 }} />,
+  gptimage_pool: <PictureOutlined style={{ fontSize: 22 }} />,
 };
 
 // 系统增强插件使用不同的图标颜色
@@ -129,7 +130,7 @@ const PluginsList: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 12 }}>开放：</Text>
               {plugin.allowed_levels === 'all' ? (
-                <Tag style={{ margin: 0, fontSize: 11, background: `${colors.bg}`, border: `1px solid ${colors.color}33`, color: colors.color, borderRadius: 4 }}>全部用户</Tag>
+                <Tag style={{ margin: 0, fontSize: 11, background: `${colors.bg}`, border: `1px solid ${colors.color}33`, color: colors.color, borderRadius: 4 }}>{cat === 'system' ? '全部管理员分组' : '所有用户等级'}</Tag>
               ) : (
                 plugin.allowed_levels.split(',').slice(0, 2).map(lv => (
                   <Tag key={lv} style={{ margin: 0, fontSize: 11, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)', borderRadius: 4 }}>{lv}</Tag>

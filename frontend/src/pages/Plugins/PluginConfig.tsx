@@ -8,6 +8,7 @@ import AdminPresetAssets from './AssetManager/AdminPresetAssets';
 import RelayConvertAssets from './AssetManager/RelayConvertAssets';
 import TeamConfig from './TeamMarketing/TeamConfig';
 import PoolManager from './VolcenginePool/PoolManager';
+import GptImagePoolManager from './GptImagePool/PoolManager';
 import JsonView from '@uiw/react-json-view';
 import { darkTheme } from '@uiw/react-json-view/dark';
 
@@ -56,6 +57,7 @@ const pluginIcons: Record<string, React.ReactNode> = {
   team_marketing: <TeamOutlined style={{ fontSize: 20 }} />,
   playground: <ExperimentOutlined style={{ fontSize: 20 }} />,
   volcengine_pool: <CloudServerOutlined style={{ fontSize: 20 }} />,
+  gptimage_pool: <PictureOutlined style={{ fontSize: 20 }} />,
 };
 
 const PluginConfigInner: React.FC = () => {
@@ -1589,6 +1591,11 @@ const PluginConfigInner: React.FC = () => {
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
                 { key: 'pool_manager', label: '卡池管理', children: <PoolManager /> },
+              ]
+            : plugin.name === 'gptimage_pool'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'pool_manager', label: '卡池管理', children: <GptImagePoolManager /> },
               ]
             : [
                 { key: 'audit_log', label: '审核日志', children: auditLogTab },

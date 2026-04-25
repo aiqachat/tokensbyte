@@ -101,6 +101,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
         .merge(admin_routes)
         .nest("/plugins/volcengine_pool", volcengine_pool::router())
+        .nest("/plugins/gptimage_pool", gptimage_pool::router())
         .nest("/plugins", plugins::router())
         .nest("/assets", assets::router())
         .nest("/team-marketing", team_marketing::router())
@@ -186,3 +187,4 @@ pub mod assets;
 pub mod team_marketing;
 pub mod playground;
 pub mod volcengine_pool;
+pub mod gptimage_pool;

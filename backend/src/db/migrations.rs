@@ -964,7 +964,110 @@ macro_rules! pg_migration_blocks {
     // channels 表新增 pool_id 字段：关联卡池
     sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS pool_id INTEGER")
         .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN channels.pool_id IS '关联的卡池ID，为空表示不使用卡池'")
+    sqlx::query("COMMENT ON COLUMN channels.pool_id IS '关联的火山引擎卡池ID，为空表示不使用卡池'")
+        .execute(pool).await.ok();
+
+    // ══════════════════════════════════════════════════════════════
+    //  GPT-Image 卡池系统
+    // ══════════════════════════════════════════════════════════════
+
+    // 种子：GPT-Image 卡池系统插件
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category)
+           VALUES ('gptimage_pool', 'GPT-Image卡池系统', '管理多个GPT-Image来源账号，实现智能调度、配额限制与故障自动隔离', 0, 'system')
+           ON CONFLICT (name) DO NOTHING"#
+    ).execute(pool).await?;
+
+    // GPT-Image 卡池主表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS gptimage_pools (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            pool_type TEXT NOT NULL DEFAULT 'image',
+            strategy TEXT NOT NULL DEFAULT 'random',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE gptimage_pools IS 'GPT-Image卡池分组表'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pools.pool_type IS '卡池类型: image=图片, custom=自定义'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pools.strategy IS '调度策略: random=随机分布, sequential=顺序轮转'").execute(pool).await.ok();
+
+    // GPT-Image 卡池账号表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS gptimage_pool_accounts (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            base_url TEXT NOT NULL DEFAULT '',
+            api_key TEXT NOT NULL,
+            models TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            quota_unit TEXT NOT NULL DEFAULT 'images',
+            daily_reset_hour INTEGER NOT NULL DEFAULT 0,
+            daily_reset_minute INTEGER NOT NULL DEFAULT 0,
+            period_start TEXT NOT NULL DEFAULT '',
+            period_end TEXT NOT NULL DEFAULT '',
+            daily_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            hourly_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            period_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            daily_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            hourly_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            period_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            last_daily_reset TEXT NOT NULL DEFAULT '',
+            last_hourly_reset TEXT NOT NULL DEFAULT '',
+            last_period_reset TEXT NOT NULL DEFAULT '',
+            last_error TEXT,
+            last_error_at TEXT,
+            priority INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE gptimage_pool_accounts IS 'GPT-Image来源账号表'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.base_url IS '请求地址，如 https://api.openai.com'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.models IS '支持的模型列表，逗号分隔'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.quota_unit IS '配额计量单位: tokens=Token数, requests=请求次数, images=图片张数'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.status IS '账号状态: active=可用, disabled=故障禁用, exhausted=配额耗尽'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.daily_quota IS '每日配额上限(0=不限)'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.hourly_quota IS '每小时配额上限(0=不限)'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.period_quota IS '时段配额上限(0=不限)'").execute(pool).await.ok();
+
+    // GPT-Image 卡池-账号多对多映射表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS gptimage_pool_account_mapping (
+            pool_id INTEGER NOT NULL REFERENCES gptimage_pools(id) ON DELETE CASCADE,
+            account_id INTEGER NOT NULL REFERENCES gptimage_pool_accounts(id) ON DELETE CASCADE,
+            PRIMARY KEY (pool_id, account_id)
+        )"#
+    ).execute(pool).await?;
+    sqlx::query("COMMENT ON TABLE gptimage_pool_account_mapping IS 'GPT-Image卡池与账号的多对多映射表'").execute(pool).await.ok();
+
+    // GPT-Image 卡池调度日志表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS gptimage_pool_logs (
+            id SERIAL PRIMARY KEY,
+            pool_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            account_name TEXT NOT NULL DEFAULT '',
+            model_id TEXT NOT NULL DEFAULT '',
+            channel_id INTEGER NOT NULL DEFAULT 0,
+            usage_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+            quota_unit TEXT NOT NULL DEFAULT 'images',
+            status TEXT NOT NULL DEFAULT 'success',
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+    sqlx::query("COMMENT ON TABLE gptimage_pool_logs IS 'GPT-Image卡池调度使用日志'").execute(pool).await.ok();
+
+    // channels 表新增 gptimage_pool_id 字段
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS gptimage_pool_id INTEGER")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN channels.gptimage_pool_id IS '关联的GPT-Image卡池ID，为空表示不使用卡池'")
         .execute(pool).await.ok();
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");

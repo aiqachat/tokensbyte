@@ -35,3 +35,4 @@ pub mod plugin;
 pub use plugin::*;
 
 pub mod volcengine_pool;
+pub mod gptimage_pool;
