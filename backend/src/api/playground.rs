@@ -81,20 +81,54 @@ async fn create_project(
     let name = payload.name.unwrap_or_else(|| "未命名项目".to_string());
     let desc = payload.description.unwrap_or_default();
 
-    let id: i32 = sqlx::query_scalar(
+    // 生成 project_id = UID尾部3位 + 5位随机数
+    let uid_suffix = if uid.len() >= 3 {
+        uid[uid.len() - 3..].to_string()
+    } else {
+        format!("{:0>3}", uid)
+    };
+
+    let mut new_id: i32 = 0;
+    for i in 0..50 {
+        let ts = chrono::Utc::now().timestamp_micros() as u64;
+        // 增加些许伪随机扰动避免同一微秒重复
+        let random_part = ((ts + i * 137) % 90000) + 10000; 
+        let id_str = format!("{}{}", uid_suffix, random_part);
+        if let Ok(id_val) = id_str.parse::<i32>() {
+            // 查询是否已存在（涵盖了已被软删除的旧项目）
+            let exists: i64 = sqlx::query_scalar(&state.db.format_query(
+                "SELECT COUNT(*) FROM playground_projects WHERE id = ?"
+            ))
+            .bind(id_val)
+            .fetch_one(&state.db.pool)
+            .await?;
+
+            if exists == 0 {
+                new_id = id_val;
+                break;
+            }
+        }
+    }
+
+    if new_id == 0 {
+        return Err(AppError::Internal("生成唯一项目ID失败，请稍后重试".to_string()));
+    }
+
+    sqlx::query(
         &state.db.format_query(
-            "INSERT INTO playground_projects (user_id, uid, name, description) VALUES (?, ?, ?, ?) RETURNING id"
+            "INSERT INTO playground_projects (id, user_id, uid, name, description) VALUES (?, ?, ?, ?, ?)"
         )
     )
+    .bind(new_id)
     .bind(&claims.sub)
     .bind(&uid)
     .bind(&name)
     .bind(&desc)
-    .fetch_one(&state.db.pool)
+    .execute(&state.db.pool)
     .await?;
 
     Ok(Json(json!({
-        "id": id,
+        "id": new_id,
         "uid": uid,
         "name": name,
         "description": desc,
@@ -333,7 +367,8 @@ async fn persist_asset(
         _ => "text",
     };
     let file_name = format!("{}_{}.{}", timestamp, hash, file_ext);
-    let relative_path = format!("{}/{}/{}/{}", uid, project_id, type_folder, file_name);
+    // 强制把 project_id 补全为 8 位数（以还原丢失的 0 前缀）
+    let relative_path = format!("{}/{:08}/{}/{}", uid, project_id, type_folder, file_name);
     let object_key = tos_config.full_key(&relative_path);
 
     // 上传到 TOS

@@ -12,6 +12,7 @@ pub mod admin_group;
 pub mod task_log;
 pub mod upstream;
 pub mod order;
+pub mod announcement;
 
 pub use user::*;
 pub use channel::*;
@@ -25,6 +26,7 @@ pub use user_level::*;
 pub use admin_group::*;
 pub use task_log::*;
 pub use upstream::*;
+pub use announcement::*;
 
 pub use user::User;
 pub use channel::Channel;

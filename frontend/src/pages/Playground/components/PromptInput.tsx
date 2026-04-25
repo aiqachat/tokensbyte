@@ -38,11 +38,11 @@ const PromptInput: React.FC = React.memo(() => {
     generating,
     setIsTokenModalVisible,
     setIsModelDrawerVisible,
+    attachedAsset, setAttachedAsset,
   } = usePlayground();
   const { handleGenerate } = useGeneration();
   const [isFocused, setIsFocused] = useState(false);
   const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false);
-  const [attachedAsset, setAttachedAsset] = useState<{ asset: PluginAsset; fullUrl: string } | null>(null);
 
   const modSymbol = isMac() ? '⌘' : 'Ctrl';
   const tokenName = selectedTokenKey

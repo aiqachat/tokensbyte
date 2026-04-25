@@ -8,7 +8,7 @@ use crate::AppState;
 use crate::models::{
     SiteSettings, CurrencySettings, LoginSettings, RegistrationSettings,
     SMTPSettings, SmsSettings, MarketingSettings, DatabaseSettings,
-    AllSettings, UpdateSettingsRequest,
+    AllSettings, UpdateSettingsRequest, AgreementSettings,
 };
 use crate::error::{AppError, AppResult};
 
@@ -35,6 +35,7 @@ pub async fn update_settings(
     if let Some(v) = request.payment_alipay { save_setting(&state, "payment_alipay", &v).await?; }
     if let Some(v) = request.google_oauth { save_setting(&state, "google_oauth", &v).await?; }
     if let Some(v) = request.wechat_oauth { save_setting(&state, "wechat_oauth", &v).await?; }
+    if let Some(v) = request.agreement { save_setting(&state, "agreement_settings", &v).await?; }
 
     let all = load_all_settings(&state).await?;
     Ok(Json(all))
@@ -179,6 +180,7 @@ pub async fn load_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> 
         payment_alipay: get_setting(state, "payment_alipay", None).await?,
         google_oauth: get_setting(state, "google_oauth", None).await?,
         wechat_oauth: get_setting(state, "wechat_oauth", None).await?,
+        agreement: get_setting(state, "agreement_settings", default_agreement_settings()).await?,
     })
 }
 
@@ -301,6 +303,23 @@ pub fn default_database_settings() -> DatabaseSettings {
         username: "postgres".to_string(),
         password: "postgres".to_string(),
         ssl_mode: false,
+    }
+}
+
+pub fn default_agreement_settings() -> AgreementSettings {
+    AgreementSettings {
+        tos_mode: "link".to_string(),
+        tos_mode_en: "link".to_string(),
+        tos_content: "".to_string(),
+        tos_content_en: "".to_string(),
+        tos_link: "".to_string(),
+        tos_link_en: "".to_string(),
+        privacy_mode: "link".to_string(),
+        privacy_mode_en: "link".to_string(),
+        privacy_content: "".to_string(),
+        privacy_content_en: "".to_string(),
+        privacy_link: "".to_string(),
+        privacy_link_en: "".to_string(),
     }
 }
 

@@ -27,6 +27,7 @@ pub mod forward_rules;
 pub mod billing_rules;
 pub mod task_logs;
 pub mod upstreams;
+pub mod announcements;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
@@ -70,6 +71,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/forward-rules/{id}", put(forward_rules::update_rule).delete(forward_rules::delete_rule))
         .route("/billing-rules", get(billing_rules::list_rules).post(billing_rules::create_rule))
         .route("/billing-rules/{id}", put(billing_rules::update_rule).delete(billing_rules::delete_rule))
+        .route("/announcements", get(announcements::list_admin_announcements).post(announcements::create_announcement))
+        .route("/announcements/{id}", put(announcements::update_announcement).delete(announcements::delete_announcement))
         .layer(axum_middleware::from_fn(admin_middleware))
         .with_state(state.clone());
 
@@ -131,6 +134,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     let public_v1_routes: Router<Arc<AppState>> = Router::new()
         .route("/settings", get(settings::get_settings))
+        .route("/announcements/public", get(announcements::get_public_announcements))
         .route("/plugins/active", get(plugins::get_active_plugins_public))
         // OAuth 绑定回调（浏览器重定向，无 JWT，通过 state 参数识别用户）
         .route("/user/bind/wechat/callback", get(user::bind_wechat_callback))

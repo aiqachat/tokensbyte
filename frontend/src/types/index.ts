@@ -305,6 +305,21 @@ export interface MarketingSettings {
   max_amount: number;
 }
 
+export interface AgreementSettings {
+  tos_mode: 'text' | 'link';
+  tos_mode_en: 'text' | 'link';
+  tos_content: string;
+  tos_content_en: string;
+  tos_link: string;
+  tos_link_en: string;
+  privacy_mode: 'text' | 'link';
+  privacy_mode_en: 'text' | 'link';
+  privacy_content: string;
+  privacy_content_en: string;
+  privacy_link: string;
+  privacy_link_en: string;
+}
+
 export interface AllSettings {
   site: SiteSettings;
   currency: CurrencySettings;
@@ -315,6 +330,7 @@ export interface AllSettings {
   marketing: MarketingSettings;
   google_oauth?: GoogleOAuthSettings;
   wechat_oauth?: WechatOAuthSettings;
+  agreement?: AgreementSettings;
 }
 
 export interface ChannelConfig {
@@ -379,6 +395,8 @@ export interface MarketingTeam {
   description?: string;
   invite_code: string;
   max_members: number;
+  allowed_level_ids?: number[];
+  allowed_member_level_ids?: number[];
   leaders: TeamMember[];
   members: TeamMember[];
   created_at: string;
@@ -411,4 +429,14 @@ export interface ReferralRecharge {
   recharge_type: string;
   remark?: string;
   created_at: string;
+}
+
+export interface Announcement {
+  id: number;
+  title: string;
+  content: string;
+  is_pinned: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
 }

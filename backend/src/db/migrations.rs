@@ -780,6 +780,21 @@ macro_rules! pg_migration_blocks {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_projects_uid ON playground_projects(uid)")
         .execute(pool).await.ok();
 
+    // Announcements table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS announcements (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            is_pinned INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // Playground Assets table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS playground_assets (
@@ -1073,6 +1088,20 @@ macro_rules! pg_migration_blocks {
     // 移除 models 表的 name 和 model_id 的唯一性约束，改由 mid 保证唯一性
     sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_name_key").execute(pool).await.ok();
     sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_model_id_key").execute(pool).await.ok();
+
+    // Migration: marketing_teams 新增 allowed_level_ids 字段
+    // 存储团队负责人被授权可分配的用户等级 ID 列表（JSON 数组格式，如 [1,3,5]）
+    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_level_ids TEXT NOT NULL DEFAULT '[]'")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN marketing_teams.allowed_level_ids IS '团队负责人被授权可分配的用户等级ID列表(JSON数组)'")
+        .execute(pool).await.ok();
+
+    // Migration: marketing_teams 新增 allowed_member_level_ids 字段
+    // 存储团队负责人被授权可分配给团队成员的用户等级 ID 列表（JSON 数组格式）
+    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_member_level_ids TEXT NOT NULL DEFAULT '[]'")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN marketing_teams.allowed_member_level_ids IS '团队负责人被授权可分配给团队成员的用户等级ID列表(JSON数组)'")
+        .execute(pool).await.ok();
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())

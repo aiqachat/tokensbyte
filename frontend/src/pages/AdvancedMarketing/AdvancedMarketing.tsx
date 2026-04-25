@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Table, Tag, Spin, Space, Button, Card, Statistic, Row, Col, message, Tooltip } from 'antd';
-import { TeamOutlined, UserOutlined, DollarOutlined, ReloadOutlined, CrownOutlined, RiseOutlined, CopyOutlined, LinkOutlined } from '@ant-design/icons';
+import { Typography, Table, Tag, Spin, Space, Button, Card, Statistic, Row, Col, message, Tooltip, Modal, Select, Progress } from 'antd';
+import { TeamOutlined, UserOutlined, DollarOutlined, ReloadOutlined, CrownOutlined, RiseOutlined, CopyOutlined, LinkOutlined, TrophyOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import useAuthStore from '../../store/auth';
@@ -29,10 +29,27 @@ const AdvancedMarketing: React.FC = () => {
   const [expandedRecharges, setExpandedRecharges] = useState<Record<string, ReferralRecharge[]>>({});
   const [loadingRecharges, setLoadingRecharges] = useState<Record<string, boolean>>({});
 
+  // Team leader level assignment (for referrals)
+  const [allowedLevels, setAllowedLevels] = useState<any[]>([]);
+  const [isLeader, setIsLeader] = useState(false);
+  const [levelModalVisible, setLevelModalVisible] = useState(false);
+  const [levelTargetUser, setLevelTargetUser] = useState<ReferralUser | null>(null);
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string>('');
+  const [settingLevel, setSettingLevel] = useState(false);
+
+  // Team leader level assignment (for members)
+  const [allowedMemberLevels, setAllowedMemberLevels] = useState<any[]>([]);
+  const [memberLevelModalVisible, setMemberLevelModalVisible] = useState(false);
+  const [memberLevelTarget, setMemberLevelTarget] = useState<any>(null);
+  const [selectedMemberGroupKey, setSelectedMemberGroupKey] = useState<string>('');
+  const [settingMemberLevel, setSettingMemberLevel] = useState(false);
+
   useEffect(() => {
     fetchReferrals();
     fetchTeamOverview();
     fetchMyTeam();
+    fetchAllowedLevels();
+    fetchAllowedMemberLevels();
   }, []);
 
   const fetchReferrals = async () => {
@@ -96,6 +113,71 @@ const AdvancedMarketing: React.FC = () => {
     message.success('推广邀请链接已复制到剪贴板');
   };
 
+  const fetchAllowedLevels = async () => {
+    try {
+      const res = await (request.get('/team-marketing/allowed-levels') as any);
+      if (res.levels) setAllowedLevels(res.levels);
+      if (res.is_leader !== undefined) setIsLeader(res.is_leader);
+    } catch (e) {
+      console.error('获取授权等级失败', e);
+    }
+  };
+
+  const openLevelModal = (record: ReferralUser) => {
+    setLevelTargetUser(record);
+    setSelectedGroupKey(record.user_group);
+    setLevelModalVisible(true);
+  };
+
+  const handleSetLevel = async () => {
+    if (!levelTargetUser || !selectedGroupKey) return;
+    try {
+      setSettingLevel(true);
+      const res = await (request.put(`/team-marketing/referral/${levelTargetUser.id}/level`, {
+        group_key: selectedGroupKey,
+      }) as any);
+      message.success(res.message || '用户等级设置成功');
+      setLevelModalVisible(false);
+      fetchReferrals();
+    } catch (e: any) {
+      message.error(e?.response?.data?.error?.message || '设置失败');
+    } finally {
+      setSettingLevel(false);
+    }
+  };
+
+  const fetchAllowedMemberLevels = async () => {
+    try {
+      const res = await (request.get('/team-marketing/allowed-member-levels') as any);
+      if (res.levels) setAllowedMemberLevels(res.levels);
+    } catch (e) {
+      console.error('获取成员授权等级失败', e);
+    }
+  };
+
+  const openMemberLevelModal = (member: any) => {
+    setMemberLevelTarget(member);
+    setSelectedMemberGroupKey(member.user_group || '');
+    setMemberLevelModalVisible(true);
+  };
+
+  const handleSetMemberLevel = async () => {
+    if (!memberLevelTarget || !selectedMemberGroupKey) return;
+    try {
+      setSettingMemberLevel(true);
+      const res = await (request.put(`/team-marketing/member/${memberLevelTarget.user_id}/level`, {
+        group_key: selectedMemberGroupKey,
+      }) as any);
+      message.success(res.message || '成员等级设置成功');
+      setMemberLevelModalVisible(false);
+      fetchTeamOverview();
+    } catch (e: any) {
+      message.error(e?.response?.data?.error?.message || '设置失败');
+    } finally {
+      setSettingMemberLevel(false);
+    }
+  };
+
   // Stats
   const totalReferrals = referrals.length;
   const totalRecharge = referrals.reduce((sum, r) => sum + (r.total_recharge || 0), 0);
@@ -146,15 +228,43 @@ const AdvancedMarketing: React.FC = () => {
         : <Tag color="default">停用</Tag>,
     },
     {
-      title: '累计充值',
-      dataIndex: 'total_recharge',
-      key: 'total_recharge',
-      width: 120,
-      render: (v: number) => (
-        <Text style={{ color: v > 0 ? '#52c41a' : 'rgba(255,255,255,0.45)', fontWeight: 'bold' }}>
-          {currencySymbol}{(v || 0).toFixed(2)}
-        </Text>
-      ),
+      title: '剩余额度/总额度',
+      key: 'balance_quota',
+      width: 220,
+      render: (_: any, record: ReferralUser) => {
+        const balance = record.balance || 0;
+        const total = record.total_recharge || 0;
+        const percent = total > 0 ? Math.min((balance / total) * 100, 100) : 0;
+        return (
+          <div style={{ minWidth: 160 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '4px 10px',
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 20,
+              marginBottom: 4,
+            }}>
+              <DollarOutlined style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }} />
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>
+                {currencySymbol}{balance.toFixed(2)}
+              </Text>
+              <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>/</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>
+                {currencySymbol}{total.toFixed(2)}
+              </Text>
+            </div>
+            <Progress
+              percent={percent}
+              showInfo={false}
+              size="small"
+              strokeColor={percent > 50 ? '#52c41a' : percent > 20 ? '#faad14' : '#ff4d4f'}
+              trailColor="rgba(255,255,255,0.08)"
+              style={{ margin: 0, padding: '0 4px' }}
+            />
+          </div>
+        );
+      },
     },
     {
       title: '注册时间',
@@ -163,6 +273,25 @@ const AdvancedMarketing: React.FC = () => {
       width: 160,
       render: (t: string) => <Text style={{ fontSize: 12 }}>{dayjs(t).format('YYYY/MM/DD HH:mm')}</Text>,
     },
+    // 团队负责人专属：设置等级操作列
+    ...(isLeader && allowedLevels.length > 0 ? [{
+      title: '操作',
+      key: 'action',
+      width: 100,
+      render: (_: any, record: ReferralUser) => (
+        <Tooltip title="设置用户等级">
+          <Button
+            type="link"
+            size="small"
+            icon={<TrophyOutlined />}
+            onClick={() => openLevelModal(record)}
+            style={{ color: '#faad14', padding: 0 }}
+          >
+            设置等级
+          </Button>
+        </Tooltip>
+      ),
+    }] : []),
   ];
 
   const rechargeColumns = [
@@ -404,10 +533,21 @@ const AdvancedMarketing: React.FC = () => {
                     ),
                   },
                   {
+                    title: '用户等级',
+                    dataIndex: 'user_group',
+                    key: 'user_group',
+                    width: 100,
+                    render: (v: string) => (
+                      <Tag style={{ margin: 0, borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
+                        {v || 'default'}
+                      </Tag>
+                    ),
+                  },
+                  {
                     title: '推荐人数',
                     dataIndex: 'referred_count',
                     key: 'referred_count',
-                    width: 120,
+                    width: 100,
                     render: (v: number) => (
                       <Space>
                         <TeamOutlined style={{ color: '#1677ff' }} />
@@ -416,10 +556,49 @@ const AdvancedMarketing: React.FC = () => {
                     ),
                   },
                   {
-                    title: '推荐用户累计充值',
+                    title: '剩余额度/总额度',
+                    key: 'member_balance_quota',
+                    width: 220,
+                    render: (_: any, record: any) => {
+                      const balance = record.balance || 0;
+                      const total = record.total_recharge || 0;
+                      const percent = total > 0 ? Math.min((balance / total) * 100, 100) : 0;
+                      return (
+                        <div style={{ minWidth: 160 }}>
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '4px 10px',
+                            background: 'rgba(255,255,255,0.04)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: 20,
+                            marginBottom: 4,
+                          }}>
+                            <DollarOutlined style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }} />
+                            <Text style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>
+                              {currencySymbol}{balance.toFixed(2)}
+                            </Text>
+                            <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>/</Text>
+                            <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>
+                              {currencySymbol}{total.toFixed(2)}
+                            </Text>
+                          </div>
+                          <Progress
+                            percent={percent}
+                            showInfo={false}
+                            size="small"
+                            strokeColor={percent > 50 ? '#52c41a' : percent > 20 ? '#faad14' : '#ff4d4f'}
+                            trailColor="rgba(255,255,255,0.08)"
+                            style={{ margin: 0, padding: '0 4px' }}
+                          />
+                        </div>
+                      );
+                    },
+                  },
+                  {
+                    title: '推荐用户充值',
                     dataIndex: 'total_recharge_from_referrals',
                     key: 'total_recharge_from_referrals',
-                    width: 160,
+                    width: 130,
                     render: (v: number) => (
                       <Text style={{ color: v > 0 ? '#52c41a' : 'rgba(255,255,255,0.45)', fontWeight: 'bold' }}>
                         <RiseOutlined style={{ marginRight: 4 }} />
@@ -427,6 +606,24 @@ const AdvancedMarketing: React.FC = () => {
                       </Text>
                     ),
                   },
+                  ...(allowedMemberLevels.length > 0 ? [{
+                    title: '操作',
+                    key: 'action',
+                    width: 100,
+                    render: (_: any, record: any) => (
+                      <Tooltip title="设置成员等级">
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<TrophyOutlined />}
+                          onClick={() => openMemberLevelModal(record)}
+                          style={{ color: '#1677ff', padding: 0 }}
+                        >
+                          设置等级
+                        </Button>
+                      </Tooltip>
+                    ),
+                  }] : []),
                 ]}
               />
             </div>
@@ -561,6 +758,126 @@ const AdvancedMarketing: React.FC = () => {
           locale={{ emptyText: '暂无推荐用户' }}
         />
       </Card>
+
+      {/* Set Level Modal */}
+      <Modal
+        title={
+          <Space>
+            <TrophyOutlined style={{ color: '#faad14' }} />
+            <span>设置用户等级</span>
+          </Space>
+        }
+        open={levelModalVisible}
+        onCancel={() => setLevelModalVisible(false)}
+        onOk={handleSetLevel}
+        confirmLoading={settingLevel}
+        okText="确认设置"
+        width={480}
+        destroyOnClose
+      >
+        {levelTargetUser && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{
+              padding: '12px 16px', marginBottom: 16,
+              background: 'rgba(255,255,255,0.04)',
+              borderRadius: 8,
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}>
+              <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
+                目标用户：<Text strong style={{ color: '#fff' }}>{levelTargetUser.username}</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>UID: {levelTargetUser.uid}</Text>
+              </Text>
+              <br />
+              <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
+                当前等级：<Tag style={{ margin: '0 0 0 4px', borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
+                  {levelTargetUser.level_name || levelTargetUser.user_group}
+                </Tag>
+              </Text>
+            </div>
+            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 8 }}>
+              选择新等级：
+            </Text>
+            <Select
+              value={selectedGroupKey}
+              onChange={setSelectedGroupKey}
+              options={allowedLevels.map((l: any) => ({
+                value: l.group_key,
+                label: (
+                  <Space>
+                    <TrophyOutlined style={{ color: '#faad14' }} />
+                    <span>{l.name}</span>
+                    <Tag style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
+                      {l.group_key}
+                    </Tag>
+                  </Space>
+                ),
+              }))}
+              style={{ width: '100%' }}
+              placeholder="选择用户等级"
+            />
+          </div>
+        )}
+      </Modal>
+
+      {/* Set Member Level Modal */}
+      <Modal
+        title={
+          <Space>
+            <TrophyOutlined style={{ color: '#1677ff' }} />
+            <span>设置成员等级</span>
+          </Space>
+        }
+        open={memberLevelModalVisible}
+        onCancel={() => setMemberLevelModalVisible(false)}
+        onOk={handleSetMemberLevel}
+        confirmLoading={settingMemberLevel}
+        okText="确认设置"
+        width={480}
+        destroyOnClose
+      >
+        {memberLevelTarget && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{
+              padding: '12px 16px', marginBottom: 16,
+              background: 'rgba(255,255,255,0.04)',
+              borderRadius: 8,
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}>
+              <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
+                团队成员：<Text strong style={{ color: '#fff' }}>{memberLevelTarget.username}</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>UID: {memberLevelTarget.uid}</Text>
+              </Text>
+              <br />
+              <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
+                当前等级：<Tag style={{ margin: '0 0 0 4px', borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
+                  {memberLevelTarget.user_group || 'default'}
+                </Tag>
+              </Text>
+            </div>
+            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 8 }}>
+              选择新等级：
+            </Text>
+            <Select
+              value={selectedMemberGroupKey}
+              onChange={setSelectedMemberGroupKey}
+              options={allowedMemberLevels.map((l: any) => ({
+                value: l.group_key,
+                label: (
+                  <Space>
+                    <TrophyOutlined style={{ color: '#1677ff' }} />
+                    <span>{l.name}</span>
+                    <Tag style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
+                      {l.group_key}
+                    </Tag>
+                  </Space>
+                ),
+              }))}
+              style={{ width: '100%' }}
+              placeholder="选择用户等级"
+            />
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
