@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Card, Form, Input, Button, InputNumber, message, Typography, Space, Switch, Radio, Tabs, Select, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 
@@ -30,14 +32,19 @@ const Settings: React.FC = () => {
   const fetchSettings = async () => {
     try {
       const response = await (request.get('/settings') as any);
-      const { site, currency, login, registration, smtp, database: backendDatabase } = response;
+      const { site, currency, login, registration, smtp, database: backendDatabase, agreement } = response;
       const defaultDatabase = { db_type: 'postgres', host: 'localhost', port: 5432, database: 'postgres', username: 'postgres', password: 'postgres', ssl_mode: false };
+      const defaultAgreement = { 
+        tos_mode: 'link', tos_mode_en: 'link', tos_content: '', tos_content_en: '', tos_link: '', tos_link_en: '', 
+        privacy_mode: 'link', privacy_mode_en: 'link', privacy_content: '', privacy_content_en: '', privacy_link: '', privacy_link_en: '' 
+      };
       form.setFieldsValue({
         ...site,
         login: login || {},
         registration: registration || {},
         smtp,
         database: { ...defaultDatabase, ...backendDatabase },
+        agreement: agreement || defaultAgreement,
       });
     } catch (error) {
       console.error('Failed to fetch settings:', error);
@@ -61,6 +68,7 @@ const Settings: React.FC = () => {
         };
         payload.login = values.login || {};
         payload.registration = values.registration || {};
+        payload.agreement = values.agreement || {};
       } else if (tab === 'database') {
         payload.database = values.database;
       }
@@ -176,6 +184,92 @@ const Settings: React.FC = () => {
     </div>
   );
 
+  const agreementSettingsContent = (
+    <div style={{ maxWidth: 800 }}>
+      <Tabs defaultActiveKey="zh">
+        <Tabs.TabPane tab="简体中文 (默认)" key="zh">
+          <Typography.Title level={5}>服务条款 (Terms of Service)</Typography.Title>
+          <Form.Item label="显示方式" name={['agreement', 'tos_mode']}>
+            <Radio.Group>
+              <Radio.Button value="link">网页链接</Radio.Button>
+              <Radio.Button value="text">站内富文本</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item noStyle dependencies={[['agreement', 'tos_mode']]}>
+            {({ getFieldValue }) => getFieldValue(['agreement', 'tos_mode']) === 'link' ? (
+              <Form.Item label="链接地址" name={['agreement', 'tos_link']}>
+                <Input placeholder="https://example.com/terms" />
+              </Form.Item>
+            ) : (
+              <Form.Item label="内容" name={['agreement', 'tos_content']}>
+                <ReactQuill theme="snow" style={{ height: 300, marginBottom: 50, backgroundColor: 'var(--ant-color-bg-container)', color: 'var(--ant-color-text)' }} />
+              </Form.Item>
+            )}
+          </Form.Item>
+
+          <Typography.Title level={5} style={{ marginTop: 40 }}>隐私协议 (Privacy Policy)</Typography.Title>
+          <Form.Item label="显示方式" name={['agreement', 'privacy_mode']}>
+            <Radio.Group>
+              <Radio.Button value="link">网页链接</Radio.Button>
+              <Radio.Button value="text">站内富文本</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item noStyle dependencies={[['agreement', 'privacy_mode']]}>
+            {({ getFieldValue }) => getFieldValue(['agreement', 'privacy_mode']) === 'link' ? (
+              <Form.Item label="链接地址" name={['agreement', 'privacy_link']}>
+                <Input placeholder="https://example.com/privacy" />
+              </Form.Item>
+            ) : (
+              <Form.Item label="内容" name={['agreement', 'privacy_content']}>
+                <ReactQuill theme="snow" style={{ height: 300, marginBottom: 50, backgroundColor: 'var(--ant-color-bg-container)', color: 'var(--ant-color-text)' }} />
+              </Form.Item>
+            )}
+          </Form.Item>
+        </Tabs.TabPane>
+
+        <Tabs.TabPane tab="English" key="en">
+          <Typography.Title level={5}>Terms of Service</Typography.Title>
+          <Form.Item label="Display Mode" name={['agreement', 'tos_mode_en']}>
+            <Radio.Group>
+              <Radio.Button value="link">Link URL</Radio.Button>
+              <Radio.Button value="text">Rich Text</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item noStyle dependencies={[['agreement', 'tos_mode_en']]}>
+            {({ getFieldValue }) => getFieldValue(['agreement', 'tos_mode_en']) === 'link' ? (
+              <Form.Item label="Link URL (English)" name={['agreement', 'tos_link_en']}>
+                <Input placeholder="https://example.com/en/terms" />
+              </Form.Item>
+            ) : (
+              <Form.Item label="Content (English)" name={['agreement', 'tos_content_en']}>
+                <ReactQuill theme="snow" style={{ height: 300, marginBottom: 50, backgroundColor: 'var(--ant-color-bg-container)', color: 'var(--ant-color-text)' }} />
+              </Form.Item>
+            )}
+          </Form.Item>
+
+          <Typography.Title level={5} style={{ marginTop: 40 }}>Privacy Policy</Typography.Title>
+          <Form.Item label="Display Mode" name={['agreement', 'privacy_mode_en']}>
+            <Radio.Group>
+              <Radio.Button value="link">Link URL</Radio.Button>
+              <Radio.Button value="text">Rich Text</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item noStyle dependencies={[['agreement', 'privacy_mode_en']]}>
+            {({ getFieldValue }) => getFieldValue(['agreement', 'privacy_mode_en']) === 'link' ? (
+              <Form.Item label="Link URL (English)" name={['agreement', 'privacy_link_en']}>
+                <Input placeholder="https://example.com/en/privacy" />
+              </Form.Item>
+            ) : (
+              <Form.Item label="Content (English)" name={['agreement', 'privacy_content_en']}>
+                <ReactQuill theme="snow" style={{ height: 300, marginBottom: 50, backgroundColor: 'var(--ant-color-bg-container)', color: 'var(--ant-color-text)' }} />
+              </Form.Item>
+            )}
+          </Form.Item>
+        </Tabs.TabPane>
+      </Tabs>
+    </div>
+  );
+
   return (
     <Card bordered={false} title={getTitle()} style={{ borderRadius: 12 }}>
       <Form form={form} layout="vertical" autoComplete="off"
@@ -186,6 +280,7 @@ const Settings: React.FC = () => {
             { key: 'site', label: '站点信息', children: siteSettingsContent },
             { key: 'login', label: '登录设置', children: loginSettingsContent },
             { key: 'registration', label: '注册设置', children: registrationSettingsContent },
+            { key: 'agreement', label: '站点协议', children: agreementSettingsContent },
           ]} />
         )}
 

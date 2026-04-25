@@ -4,6 +4,7 @@ import Login from './pages/Login/Login';
 import Register from './pages/Login/Register';
 import ForgotPassword from './pages/Login/ForgotPassword';
 import AdminLogin from './pages/AdminLogin/AdminLogin';
+import LegalPage from './pages/Legal/LegalPage';
 import DashboardLayout from './layouts/DashboardLayout';
 import Dashboard from './pages/Dashboard/Dashboard';
 import RelayAPI from './pages/RelayAPI/RelayAPI';
@@ -39,6 +40,7 @@ import PaymentSettings from './pages/admin/PaymentSettings';
 import MessageNotification from './pages/admin/MessageNotification';
 import OAuthSettings from './pages/admin/OAuthSettings';
 import RegistrationGifts from './pages/admin/Marketing/RegistrationGifts';
+import Announcements from './pages/admin/Marketing/Announcements';
 import SystemAbout from './pages/admin/SystemAbout';
 import useAuthStore from './store/auth';
 import useSettingsStore from './store/settings';
@@ -67,6 +69,7 @@ const App: React.FC = () => {
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/admin0755" element={<AdminLogin />} />
+        <Route path="/legal/:type" element={<LegalPage />} />
 
         {/* Playground Routes (Full Screen, Independent) */}
         <Route
@@ -145,6 +148,7 @@ const App: React.FC = () => {
           <Route path="message-notification" element={<MessageNotification />} />
           <Route path="oauth-settings" element={<OAuthSettings />} />
           <Route path="marketing/registration-gifts" element={<RegistrationGifts />} />
+          <Route path="marketing/announcements" element={<Announcements />} />
           <Route path="about" element={<SystemAbout />} />
         </Route>
 

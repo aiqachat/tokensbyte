@@ -773,6 +773,21 @@ macro_rules! pg_migration_blocks {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_projects_uid ON playground_projects(uid)")
         .execute(pool).await.ok();
 
+    // Announcements table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS announcements (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            is_pinned INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // Playground Assets table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS playground_assets (

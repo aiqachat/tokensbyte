@@ -30,7 +30,9 @@
     "admin_title": "Arts Admin",
     "currency_unit": "Credits",
     "not_set": "Not Set",
-    "search_placeholder": "Search..."
+    "search_placeholder": "Search...",
+    "privacy_policy": "Privacy Policy",
+    "terms_of_service": "Terms of Service"
   },
   "menu": {
     "dashboard": "Dashboard",
