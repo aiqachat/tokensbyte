@@ -20,6 +20,7 @@ const Channels: React.FC = () => {
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [availableUserLevels, setAvailableUserLevels] = useState<any[]>([]);
   const [presets, setPresets] = useState<any[]>([]);
+  const [pools, setPools] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
@@ -68,11 +69,21 @@ const Channels: React.FC = () => {
     }
   };
 
+  const fetchPools = async () => {
+    try {
+      const resp = await (request.get('/plugins/volcengine_pool/pools') as unknown as Promise<any>);
+      setPools(resp.pools || []);
+    } catch (e) {
+      // 忽略错误，可能未启用插件
+    }
+  };
+
   useEffect(() => {
     fetchChannels();
     fetchModels();
     fetchUserLevels();
     fetchPresets();
+    fetchPools();
   }, []);
 
   const handleAdd = () => {
@@ -311,13 +322,26 @@ const Channels: React.FC = () => {
             </Col>
           </Row>
 
-          <Form.Item name="preset_id" label="预设渠道配置 (可选)" extra="选择预设后，基础 URL 和 API Key 会在实际请求时被预设接管">
-            <Select placeholder="选择预设配置（不选则使用独立配置）" allowClear>
-              {(presets || []).map(p => (
-                <Option key={p.id} value={p.id}>{p.name} [{p.provider_type}]</Option>
-              ))}
-            </Select>
-          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="preset_id" label="预设渠道配置 (可选)" extra="选择预设后，基础 URL 和 API Key 会在实际请求时被预设接管">
+                <Select placeholder="选择预设配置（不选则使用独立配置）" allowClear>
+                  {(presets || []).map(p => (
+                    <Option key={p.id} value={p.id}>{p.name} [{p.provider_type}]</Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="pool_id" label="火山引擎卡池 (可选)" extra="选择卡池后，将使用卡池内的账号进行请求分发和限额">
+                <Select placeholder="选择卡池（此项优先级高于预设）" allowClear>
+                  {(pools || []).map(p => (
+                    <Option key={p.id} value={p.id}>{p.name} [{p.strategy === 'random' ? '随机' : '顺序'}]</Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
 
 
           <Form.Item name="models" label={t('channels.models')} rules={[{ required: true }]}>

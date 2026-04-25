@@ -844,6 +844,137 @@ macro_rules! pg_migration_blocks {
         }
     }
 
+    // ── 火山引擎卡池系统 Migration ──────────────────────────────────
+
+    // plugins 表新增 category 列：区分用户增强插件和系统增强插件
+    sqlx::query("ALTER TABLE plugins ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'user'")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN plugins.category IS '插件分类: user=用户增强, system=系统增强'")
+        .execute(pool).await.ok();
+
+    // 更新现有插件为用户增强
+    sqlx::query("UPDATE plugins SET category = 'user' WHERE name IN ('asset_manager', 'team_marketing', 'playground') AND category = ''")
+        .execute(pool).await.ok();
+
+    // 种子：火山引擎卡池系统插件
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category)
+           VALUES ('volcengine_pool', '火山引擎卡池系统', '管理多个火山引擎账号，实现智能调度、配额限制与故障自动隔离', 0, 'system')
+           ON CONFLICT (name) DO NOTHING"#
+    ).execute(pool).await?;
+
+    // 卡池主表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS volcengine_pools (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            pool_type TEXT NOT NULL DEFAULT 'chat',
+            strategy TEXT NOT NULL DEFAULT 'random',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE volcengine_pools IS '火山引擎卡池分组表'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pools.pool_type IS '卡池类型: chat=聊天, image=图片, video=视频, custom=自定义'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pools.strategy IS '调度策略: random=随机分布, sequential=顺序轮转'").execute(pool).await.ok();
+
+    // 移除旧版本不需要的列（支持平滑升级）
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS quota_unit").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS daily_reset_hour").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS daily_reset_minute").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS period_start").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS period_end").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_daily_quota").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_hourly_quota").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_period_quota").execute(pool).await.ok();
+
+    // 卡池账号表（独立资源池）
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS volcengine_pool_accounts (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            base_url TEXT NOT NULL DEFAULT 'https://ark.cn-beijing.volces.com/api/v3',
+            api_key TEXT NOT NULL,
+            models TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            quota_unit TEXT NOT NULL DEFAULT 'tokens',
+            daily_reset_hour INTEGER NOT NULL DEFAULT 0,
+            daily_reset_minute INTEGER NOT NULL DEFAULT 0,
+            period_start TEXT NOT NULL DEFAULT '',
+            period_end TEXT NOT NULL DEFAULT '',
+            daily_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            hourly_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            period_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            daily_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            hourly_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            period_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            last_daily_reset TEXT NOT NULL DEFAULT '',
+            last_hourly_reset TEXT NOT NULL DEFAULT '',
+            last_period_reset TEXT NOT NULL DEFAULT '',
+            last_error TEXT,
+            last_error_at TEXT,
+            priority INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("ALTER TABLE volcengine_pool_accounts DROP COLUMN IF EXISTS pool_id").execute(pool).await.ok(); // 移除旧绑定
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS base_url TEXT NOT NULL DEFAULT 'https://ark.cn-beijing.volces.com/api/v3'").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS models TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS quota_unit TEXT NOT NULL DEFAULT 'tokens'").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS daily_reset_hour INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS daily_reset_minute INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS period_start TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS period_end TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+
+    sqlx::query("COMMENT ON TABLE volcengine_pool_accounts IS '火山引擎独立账号表'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.base_url IS '请求地址'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.models IS '支持的模型列表，逗号分隔'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.quota_unit IS '配额计量单位: tokens=Token数, requests=请求次数, images=图片张数'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.status IS '账号状态: active=可用, disabled=故障禁用, exhausted=配额耗尽'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.daily_quota IS '每日配额上限(0=不限)'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.hourly_quota IS '每小时配额上限(0=不限)'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.period_quota IS '时段配额上限(0=不限)'").execute(pool).await.ok();
+
+    // 卡池-账号多对多映射表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS volcengine_pool_account_mapping (
+            pool_id INTEGER NOT NULL REFERENCES volcengine_pools(id) ON DELETE CASCADE,
+            account_id INTEGER NOT NULL REFERENCES volcengine_pool_accounts(id) ON DELETE CASCADE,
+            PRIMARY KEY (pool_id, account_id)
+        )"#
+    ).execute(pool).await?;
+    sqlx::query("COMMENT ON TABLE volcengine_pool_account_mapping IS '卡池与账号的多对多映射表'").execute(pool).await.ok();
+
+    // 卡池调度日志表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS volcengine_pool_logs (
+            id SERIAL PRIMARY KEY,
+            pool_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            account_name TEXT NOT NULL DEFAULT '',
+            model_id TEXT NOT NULL DEFAULT '',
+            channel_id INTEGER NOT NULL DEFAULT 0,
+            usage_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+            quota_unit TEXT NOT NULL DEFAULT 'tokens',
+            status TEXT NOT NULL DEFAULT 'success',
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE volcengine_pool_logs IS '卡池调度使用日志'").execute(pool).await.ok();
+
+    // channels 表新增 pool_id 字段：关联卡池
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS pool_id INTEGER")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN channels.pool_id IS '关联的卡池ID，为空表示不使用卡池'")
+        .execute(pool).await.ok();
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};

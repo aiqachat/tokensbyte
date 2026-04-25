@@ -142,6 +142,7 @@ export interface Channel {
   user_groups: string[];
   group_aid?: string;
   preset_id?: number | null;
+  pool_id?: number | null;   // 关联的卡池ID
   priority: number;
   weight: number;
   status: number; // 1=active, 0=disabled
@@ -362,6 +363,7 @@ export interface Plugin {
   description: string;
   is_enabled: number;
   allowed_levels: string;
+  category: string;   // user=用户增强插件, system=系统增强插件
   created_at: string;
   updated_at: string;
 }

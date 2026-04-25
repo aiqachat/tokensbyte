@@ -35,3 +35,5 @@ pub use log::RequestLog;
 
 pub mod plugin;
 pub use plugin::*;
+
+pub mod volcengine_pool;

@@ -7,6 +7,7 @@ import type { Plugin } from '../../types';
 import AdminPresetAssets from './AssetManager/AdminPresetAssets';
 import RelayConvertAssets from './AssetManager/RelayConvertAssets';
 import TeamConfig from './TeamMarketing/TeamConfig';
+import PoolManager from './VolcenginePool/PoolManager';
 import JsonView from '@uiw/react-json-view';
 import { darkTheme } from '@uiw/react-json-view/dark';
 
@@ -54,6 +55,7 @@ const pluginIcons: Record<string, React.ReactNode> = {
   asset_manager: <PictureOutlined style={{ fontSize: 20 }} />,
   team_marketing: <TeamOutlined style={{ fontSize: 20 }} />,
   playground: <ExperimentOutlined style={{ fontSize: 20 }} />,
+  volcengine_pool: <CloudServerOutlined style={{ fontSize: 20 }} />,
 };
 
 const PluginConfigInner: React.FC = () => {
@@ -74,6 +76,11 @@ const PluginConfigInner: React.FC = () => {
   const [defaultMaxFilesPerFolder, setDefaultMaxFilesPerFolder] = useState<number>(100);
   const [levelApiEnabled, setLevelApiEnabled] = useState<Record<string, boolean>>({});
   const [defaultApiEnabled, setDefaultApiEnabled] = useState<boolean>(true);
+
+  // 管理员分组（系统增强插件使用）
+  const [adminGroups, setAdminGroups] = useState<{id: number; name: string; description?: string}[]>([]);
+  const [selectedAdminGroups, setSelectedAdminGroups] = useState<number[]>([]);
+  const [isAllAdminGroups, setIsAllAdminGroups] = useState(true);
 
   // 存储配置
   const [storageConfig, setStorageConfig] = useState<StorageConfig | null>(null);
@@ -319,17 +326,35 @@ const PluginConfigInner: React.FC = () => {
       const found = pluginRes.plugins?.find((p: Plugin) => p.name === name);
       if (found) {
         setPlugin(found);
-        if (found.allowed_levels === 'all') {
-          setIsAllLevels(true);
-          setSelectedLevels([]);
+        if (found.category === 'system') {
+          // 系统增强插件：解析管理员分组权限
+          if (found.allowed_levels === 'all') {
+            setIsAllAdminGroups(true);
+            setSelectedAdminGroups([]);
+          } else {
+            setIsAllAdminGroups(false);
+            setSelectedAdminGroups(found.allowed_levels.split(',').filter(Boolean).map(Number).filter((n: number) => !isNaN(n)));
+          }
         } else {
-          setIsAllLevels(false);
-          setSelectedLevels(found.allowed_levels.split(',').filter(Boolean));
+          if (found.allowed_levels === 'all') {
+            setIsAllLevels(true);
+            setSelectedLevels([]);
+          } else {
+            setIsAllLevels(false);
+            setSelectedLevels(found.allowed_levels.split(',').filter(Boolean));
+          }
         }
       }
 
       const allLevels = Array.isArray(levelRes) ? levelRes : (levelRes.data || levelRes.levels || []);
       setLevels(allLevels);
+
+      // 系统增强插件：加载管理员分组
+      try {
+        const agRes = await (request.get('/admin_groups') as any);
+        const groups = agRes?.data || agRes || [];
+        if (Array.isArray(groups)) setAdminGroups(groups);
+      } catch { /* 忽略 */ }
 
       if (storageRes) {
         setStorageConfig(storageRes);
@@ -409,10 +434,20 @@ const PluginConfigInner: React.FC = () => {
 
   const handleSaveBasic = async () => {
     if (!plugin) return;
-    const allowed = isAllLevels ? 'all' : selectedLevels.join(',');
-    if (!isAllLevels && selectedLevels.length === 0) {
-      message.warning('请至少选择一个用户等级');
-      return;
+    let allowed: string;
+    if (plugin.category === 'system') {
+      // 系统增强插件：保存管理员分组 ID
+      allowed = isAllAdminGroups ? 'all' : selectedAdminGroups.join(',');
+      if (!isAllAdminGroups && selectedAdminGroups.length === 0) {
+        message.warning('请至少选择一个管理员分组');
+        return;
+      }
+    } else {
+      allowed = isAllLevels ? 'all' : selectedLevels.join(',');
+      if (!isAllLevels && selectedLevels.length === 0) {
+        message.warning('请至少选择一个用户等级');
+        return;
+      }
     }
     try {
       setSaving(true);
@@ -486,6 +521,7 @@ const PluginConfigInner: React.FC = () => {
     return <div style={{ textAlign: 'center', padding: 80 }}><Text type="secondary">插件不存在</Text></div>;
   }
 
+  const isSystemPlugin = plugin.category === 'system';
   const isEnabled = plugin.is_enabled === 1;
 
   // ====== 基本配置 Tab ======
@@ -500,7 +536,9 @@ const PluginConfigInner: React.FC = () => {
       }}>
         <div>
           <Text strong style={{ color: '#fff', fontSize: 14 }}>启用状态</Text><br />
-          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>开启后，符合等级要求的用户将在菜单中看到此功能</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>
+            {isSystemPlugin ? '开启后，有权限的管理员将在管理后台看到此插件' : '开启后，符合等级要求的用户将在菜单中看到此功能'}
+          </Text>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Tag color={isEnabled ? 'success' : 'default'} style={{ margin: 0 }}>{isEnabled ? '运行中' : '已停用'}</Tag>
@@ -508,7 +546,56 @@ const PluginConfigInner: React.FC = () => {
         </div>
       </div>
 
-      {/* 用户等级 */}
+      {/* 系统增强插件：管理员分组权限 */}
+      {isSystemPlugin ? (
+        <div style={{
+          background: '#141414', borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
+        }}>
+          <Text strong style={{ color: '#fff', fontSize: 14 }}>管理员分组权限</Text><br />
+          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置哪些管理员分组可以在管理后台看到并管理此插件</Text>
+          <Divider style={{ borderColor: 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
+
+          <div
+            style={{ padding: '12px 16px', borderRadius: 6, border: isAllAdminGroups ? '1px solid rgba(250,140,22,0.4)' : '1px solid rgba(255,255,255,0.08)', background: isAllAdminGroups ? 'rgba(250,140,22,0.06)' : 'transparent', cursor: 'pointer', marginBottom: 8, transition: 'all 0.15s' }}
+            onClick={() => { setIsAllAdminGroups(true); setSelectedAdminGroups([]); }}
+          >
+            <Checkbox checked={isAllAdminGroups}><Text style={{ color: '#fff', fontSize: 13 }}>所有管理员分组可见</Text></Checkbox>
+            <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, display: 'block', marginLeft: 24, marginTop: 2 }}>所有管理员分组均可管理此插件</Text>
+          </div>
+          <div
+            style={{ padding: '12px 16px', borderRadius: 6, border: !isAllAdminGroups ? '1px solid rgba(250,140,22,0.4)' : '1px solid rgba(255,255,255,0.08)', background: !isAllAdminGroups ? 'rgba(250,140,22,0.06)' : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}
+            onClick={() => setIsAllAdminGroups(false)}
+          >
+            <Checkbox checked={!isAllAdminGroups}><Text style={{ color: '#fff', fontSize: 13 }}>仅指定管理员分组可见</Text></Checkbox>
+          </div>
+
+          {!isAllAdminGroups && (
+            <div style={{ marginTop: 14 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedAdminGroups.length} 个分组</Text>
+              {adminGroups.map(ag => {
+                const isSelected = selectedAdminGroups.includes(ag.id);
+                return (
+                  <div key={ag.id}
+                    style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(250,140,22,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(250,140,22,0.04)' : 'transparent', marginBottom: 6, cursor: 'pointer', transition: 'all 0.15s' }}
+                    onClick={() => setSelectedAdminGroups(prev => prev.includes(ag.id) ? prev.filter(id => id !== ag.id) : [...prev, ag.id])}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Checkbox checked={isSelected} />
+                      <Text style={{ color: '#fff', fontSize: 13 }}>{ag.name}</Text>
+                      {ag.description && <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>({ag.description})</Text>}
+                    </div>
+                  </div>
+                );
+              })}
+              {adminGroups.length === 0 && <Text style={{ color: 'rgba(255,255,255,0.25)', display: 'block', textAlign: 'center', padding: 16, fontSize: 13 }}>暂无管理员分组，请先在「站点设置 → 管理员分组」中创建</Text>}
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
+
+      {/* 用户增强插件：用户等级 */}
       <div style={{
         background: '#141414', borderRadius: 8,
         border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
@@ -684,6 +771,8 @@ const PluginConfigInner: React.FC = () => {
             </>
           )}
         </div>
+      )}
+      </>
       )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -1495,6 +1584,11 @@ const PluginConfigInner: React.FC = () => {
                 { key: 'pg_storage', label: '存储配置', children: storageTab },
                 { key: 'playground_models', label: '体验模型管理', children: playgroundModelTab },
                 { key: 'playground_schemes', label: '体验方案配置', children: playgroundSchemeTab },
+              ]
+            : plugin.name === 'volcengine_pool'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'pool_manager', label: '卡池管理', children: <PoolManager /> },
               ]
             : [
                 { key: 'audit_log', label: '审核日志', children: auditLogTab },
