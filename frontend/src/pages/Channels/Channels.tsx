@@ -20,7 +20,9 @@ const Channels: React.FC = () => {
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [availableUserLevels, setAvailableUserLevels] = useState<any[]>([]);
   const [presets, setPresets] = useState<any[]>([]);
-  const [pools, setPools] = useState<any[]>([]);
+  const [volcenginePools, setVolcenginePools] = useState<any[]>([]);
+  const [gptImagePools, setGptImagePools] = useState<any[]>([]);
+  const [activePlugins, setActivePlugins] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
@@ -69,12 +71,32 @@ const Channels: React.FC = () => {
     }
   };
 
-  const fetchPools = async () => {
+  const fetchPluginsAndPools = async () => {
     try {
-      const resp = await (request.get('/plugins/volcengine_pool/pools') as unknown as Promise<any>);
-      setPools(resp.pools || []);
+      const resp = await (request.get('/plugins') as unknown as Promise<{ plugins: any[] }>);
+      const plugins = resp.plugins || [];
+      const activeMap: Record<string, boolean> = {};
+      
+      let hasVolcengine = false;
+      let hasGptImage = false;
+
+      plugins.forEach(p => {
+        if (p.is_enabled === 1) {
+          activeMap[p.name] = true;
+          if (p.name === 'volcengine_pool') hasVolcengine = true;
+          if (p.name === 'gptimage_pool') hasGptImage = true;
+        }
+      });
+      setActivePlugins(activeMap);
+
+      if (hasVolcengine) {
+        request.get('/plugins/volcengine_pool/pools').then((r: any) => setVolcenginePools(r.pools || [])).catch(() => {});
+      }
+      if (hasGptImage) {
+        request.get('/plugins/gptimage_pool/pools').then((r: any) => setGptImagePools(r.pools || [])).catch(() => {});
+      }
     } catch (e) {
-      // 忽略错误，可能未启用插件
+      console.error(e);
     }
   };
 
@@ -83,7 +105,7 @@ const Channels: React.FC = () => {
     fetchModels();
     fetchUserLevels();
     fetchPresets();
-    fetchPools();
+    fetchPluginsAndPools();
   }, []);
 
   const handleAdd = () => {
@@ -100,9 +122,19 @@ const Channels: React.FC = () => {
       mapping = typeof record.model_mapping === 'string' ? JSON.parse(record.model_mapping) : record.model_mapping;
     } catch (e) {}
 
+    // 将渠道模型列表中的 model_id 转为前端用于唯一选择的 mid（如果能匹配到）
+    let modelsAsMids = [];
+    if (record.models && Array.isArray(record.models)) {
+        modelsAsMids = record.models.map((modelId: string) => {
+            const match = availableModels.find(m => m.model_id === modelId);
+            return match ? match.mid : modelId;
+        });
+    }
+
     form.setFieldsValue({
       ...record,
       model_mapping: mapping,
+      models: modelsAsMids,
     });
     // 如果有任何映射值则自动开启开关
     const hasMapping = Object.values(mapping as Record<string, string>).some(v => v && String(v).trim());
@@ -136,8 +168,15 @@ const Channels: React.FC = () => {
       }
     }
 
+    // 保存时，把前端表单中的 mid 转换回原本用于路由和计费的 model_id
+    const modelsAsIds = (values.models || []).map((midOrId: string) => {
+      const match = availableModels.find((m: any) => m.mid === midOrId);
+      return match ? match.model_id : midOrId;
+    });
+
     const data = {
       ...values,
+      models: modelsAsIds,
       provider_type: values.provider_type || 'custom',
       model_mapping: finalMapping,
     };
@@ -322,34 +361,81 @@ const Channels: React.FC = () => {
             </Col>
           </Row>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="preset_id" label="预设渠道配置 (可选)" extra="选择预设后，基础 URL 和 API Key 会在实际请求时被预设接管">
-                <Select placeholder="选择预设配置（不选则使用独立配置）" allowClear>
-                  {(presets || []).map(p => (
-                    <Option key={p.id} value={p.id}>{p.name} [{p.provider_type}]</Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="pool_id" label="火山引擎卡池 (可选)" extra="选择卡池后，将使用卡池内的账号进行请求分发和限额">
-                <Select placeholder="选择卡池（此项优先级高于预设）" allowClear>
-                  {(pools || []).map(p => (
-                    <Option key={p.id} value={p.id}>{p.name} [{p.strategy === 'random' ? '随机' : '顺序'}]</Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item shouldUpdate={(prev, curr) => prev.preset_id !== curr.preset_id || prev.pool_id !== curr.pool_id || prev.gptimage_pool_id !== curr.gptimage_pool_id} noStyle>
+            {() => {
+              const currentPreset = form.getFieldValue('preset_id');
+              const currentVolcPool = form.getFieldValue('pool_id');
+              const currentGptImagePool = form.getFieldValue('gptimage_pool_id');
+
+              return (
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item name="preset_id" label="预设渠道配置 (可选)" extra="选择预设后，基础 URL 和 API Key 会在实际请求时被预设接管（预设和各类卡池互斥，只能选其一）">
+                      <Select placeholder="选择预设配置" allowClear disabled={!!currentVolcPool || !!currentGptImagePool}>
+                        {(presets || []).map(p => (
+                          <Option key={p.id} value={p.id}>{p.name} [{p.provider_type}]</Option>
+                        ))}
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                  {activePlugins['volcengine_pool'] && (
+                    <Col span={12}>
+                      <Form.Item name="pool_id" label="火山引擎卡池 (可选)" extra="使用卡池内的账号进行请求分发和限额（预设和各类卡池互斥，只能选其一）">
+                        <Select placeholder="选择卡池" allowClear disabled={!!currentPreset || !!currentGptImagePool}>
+                          {(volcenginePools || []).map(p => (
+                            <Option key={p.id} value={p.id}>{p.name} [{p.strategy === 'random' ? '随机' : '顺序'}]</Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                  )}
+                  {activePlugins['gptimage_pool'] && (
+                    <Col span={12}>
+                      <Form.Item name="gptimage_pool_id" label="GPT Image卡池 (可选)" extra="使用卡池内的账号进行请求分发和限额（预设和各类卡池互斥，只能选其一）">
+                        <Select placeholder="选择卡池" allowClear disabled={!!currentPreset || !!currentVolcPool}>
+                          {(gptImagePools || []).map(p => (
+                            <Option key={p.id} value={p.id}>{p.name} [{p.strategy === 'random' ? '随机' : '顺序'}]</Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                  )}
+                </Row>
+              );
+            }}
+          </Form.Item>
 
 
-          <Form.Item name="models" label={t('channels.models')} rules={[{ required: true }]}>
-            <Select mode="multiple" placeholder="Select Models">
-                {availableModels.map((m) => (
-                    <Option key={m.model_id} value={m.model_id}>{m.name} ({m.model_id})</Option>
-                ))}
-            </Select>
+          <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
+            {() => {
+              const selectedMids: string[] = form.getFieldValue('models') || [];
+              const selectedModelIds = selectedMids.map(mid => {
+                const m = availableModels.find(m => m.mid === mid);
+                return m ? m.model_id : mid;
+              });
+
+              return (
+                <Form.Item name="models" label={t('channels.models')} rules={[{ required: true }]}>
+                  <Select mode="multiple" placeholder="选择模型" showSearch
+                    filterOption={(input, option) => {
+                      const label = String((option as any)?.children ?? '');
+                      return label.toLowerCase().includes(input.toLowerCase());
+                    }}>
+                    {availableModels.map((m) => {
+                      // 如果这个模型的 model_id 已经被选了，但是当前 mid 还没被选，则禁用
+                      const isModelIdSelected = selectedModelIds.includes(m.model_id);
+                      const isCurrentMidSelected = selectedMids.includes(m.mid);
+                      const isDisabled = isModelIdSelected && !isCurrentMidSelected;
+                      return (
+                        <Option key={m.mid} value={m.mid} disabled={isDisabled}>
+                          {m.name} ({m.model_id}) [MID:{m.mid}]
+                        </Option>
+                      );
+                    })}
+                  </Select>
+                </Form.Item>
+              );
+            }}
           </Form.Item>
 
           <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
@@ -365,18 +451,22 @@ const Channels: React.FC = () => {
                     </div>
                     <Switch checked={showMapping} onChange={setShowMapping} size="small" />
                   </div>
-                  {showMapping && selectedModels.map((modelId: string) => (
-                    <Form.Item
-                      key={modelId}
-                      label={modelId}
-                      name={['model_mapping', modelId]}
-                      style={{ marginBottom: 12 }}
-                      labelCol={{ span: 8 }}
-                      wrapperCol={{ span: 16 }}
-                    >
-                      <Input placeholder={`默认为原名：${modelId}`} />
-                    </Form.Item>
-                  ))}
+                  {showMapping && selectedModels.map((midOrId: string) => {
+                    const match = availableModels.find(m => m.mid === midOrId);
+                    const actualModelId = match ? match.model_id : midOrId;
+                    return (
+                      <Form.Item
+                        key={actualModelId}
+                        label={actualModelId}
+                        name={['model_mapping', actualModelId]}
+                        style={{ marginBottom: 12 }}
+                        labelCol={{ span: 8 }}
+                        wrapperCol={{ span: 16 }}
+                      >
+                        <Input placeholder={`默认为原名：${actualModelId}`} />
+                      </Form.Item>
+                    );
+                  })}
                 </div>
               );
             }}

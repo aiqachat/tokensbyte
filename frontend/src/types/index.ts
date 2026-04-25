@@ -53,6 +53,7 @@ export interface AdminGroup {
 
 export interface ModelModel {
   id: number;
+  mid: string;
   name: string;
   model_id: string;
   provider_id?: number;
@@ -142,7 +143,8 @@ export interface Channel {
   user_groups: string[];
   group_aid?: string;
   preset_id?: number | null;
-  pool_id?: number | null;   // 关联的卡池ID
+  pool_id?: number | null;   // 关联的火山引擎卡池ID
+  gptimage_pool_id?: number | null; // 关联的GPT-Image卡池ID
   priority: number;
   weight: number;
   status: number; // 1=active, 0=disabled

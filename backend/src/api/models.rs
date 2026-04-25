@@ -93,16 +93,7 @@ pub async fn create_model(
         return Err(crate::error::AppError::BadRequest("名称和模型 ID 不能为空".to_string()));
     }
 
-    // Check for duplicate name or model_id
-    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE name = ? OR model_id = ?"))
-        .bind(&req.name)
-        .bind(&req.model_id)
-        .fetch_optional(&state.db.pool)
-        .await?;
-    
-    if exists.is_some() {
-        return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
-    }
+    // mid 是唯一标识，允许 name 和 model_id 重复（不同 mid 可对应相同 model_id，用于差异化计费）
 
     // 自动生成唯一 6 位 mid，固定以 "30" 开头
     let mid = loop {
@@ -178,36 +169,7 @@ pub async fn update_model(
         }
     }
 
-    // Check for duplicate name or model_id (collision with OTHER models)
-    if let (Some(name), Some(mid)) = (&req.name, &req.model_id) {
-        let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE (name = ? OR model_id = ?) AND id != ?"))
-            .bind(name)
-            .bind(mid)
-            .bind(id)
-            .fetch_optional(&state.db.pool)
-            .await?;
-        if exists.is_some() {
-            return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
-        }
-    } else if let Some(name) = &req.name {
-        let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE name = ? AND id != ?"))
-            .bind(name)
-            .bind(id)
-            .fetch_optional(&state.db.pool)
-            .await?;
-        if exists.is_some() {
-            return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
-        }
-    } else if let Some(mid) = &req.model_id {
-        let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE model_id = ? AND id != ?"))
-            .bind(mid)
-            .bind(id)
-            .fetch_optional(&state.db.pool)
-            .await?;
-        if exists.is_some() {
-            return Err(crate::error::AppError::Conflict("已有相同模型或者 id".to_string()));
-        }
-    }
+    // mid 是唯一标识，允许 name 和 model_id 重复（不同 mid 可对应相同 model_id，用于差异化计费）
 
     // 若当前模型 mid 为空，自动生成一个 30 开头的唯一 6 位 mid
     let current_mid: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT mid FROM models WHERE id = ?"))

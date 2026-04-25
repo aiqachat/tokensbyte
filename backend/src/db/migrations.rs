@@ -266,8 +266,8 @@ macro_rules! pg_migration_blocks {
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS models (
             id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            model_id TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            model_id TEXT NOT NULL,
             provider_id INTEGER REFERENCES model_providers(id),
             type_id INTEGER REFERENCES model_types(id),
             group_ratios TEXT NOT NULL DEFAULT '{}',
@@ -1069,6 +1069,10 @@ macro_rules! pg_migration_blocks {
         .execute(pool).await.ok();
     sqlx::query("COMMENT ON COLUMN channels.gptimage_pool_id IS '关联的GPT-Image卡池ID，为空表示不使用卡池'")
         .execute(pool).await.ok();
+
+    // 移除 models 表的 name 和 model_id 的唯一性约束，改由 mid 保证唯一性
+    sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_name_key").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_model_id_key").execute(pool).await.ok();
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
