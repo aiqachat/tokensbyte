@@ -393,6 +393,8 @@ export interface MarketingTeam {
   description?: string;
   invite_code: string;
   max_members: number;
+  allowed_level_ids?: number[];
+  allowed_member_level_ids?: number[];
   leaders: TeamMember[];
   members: TeamMember[];
   created_at: string;
