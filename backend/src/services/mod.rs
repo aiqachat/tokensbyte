@@ -5,3 +5,4 @@ pub mod oauth;
 pub mod tos;
 pub mod volcengine;
 pub mod payment;
+pub mod volcengine_pool;
