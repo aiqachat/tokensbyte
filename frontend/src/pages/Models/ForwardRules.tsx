@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Select, Alert, Popover, Grid, Typography } from 'antd';
+import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Select, Alert, Popover, Grid, Typography, Tooltip } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CodeOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -222,8 +222,12 @@ const ForwardRules: React.FC = () => {
       key: 'actions',
       render: (_: any, record: ForwardRule) => (
         <Space>
-          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" disabled={record.is_system === 1} />
-          {record.is_system === 1 ? null : (
+          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />
+          {record.is_system === 1 ? (
+            <Tooltip title="系统内置规则，不可删除">
+              <Button icon={<DeleteOutlined />} disabled size="small" />
+            </Tooltip>
+          ) : (
             <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
               <Button icon={<DeleteOutlined />} danger size="small" />
             </Popconfirm>
@@ -300,8 +304,12 @@ const ForwardRules: React.FC = () => {
                   {record.description && <CardRow label="描述"><Text type="secondary" style={{ fontSize: 12 }}>{record.description}</Text></CardRow>}
                   <CardActions>
                     <Button size="small" type="dashed" icon={<CodeOutlined />} onClick={() => viewConfigJson(record.config_json)}>JSON</Button>
-                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} disabled={record.is_system === 1} />
-                    {record.is_system !== 1 && (
+                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                    {record.is_system === 1 ? (
+                      <Tooltip title="系统内置规则，不可删除">
+                        <Button size="small" icon={<DeleteOutlined />} disabled />
+                      </Tooltip>
+                    ) : (
                       <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
                         <Button size="small" icon={<DeleteOutlined />} danger />
                       </Popconfirm>

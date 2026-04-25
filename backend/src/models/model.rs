@@ -34,8 +34,9 @@ pub struct BillingRule {
     pub duration_rate: f64,
     pub billing_rule: String,
     pub pricing_tiers: String,
-    pub extended_config: String, // 新增
+    pub extended_config: String,
     pub is_active: i32,
+    pub is_system: i32,
     pub created_at: String,
     pub updated_at: String,
 }

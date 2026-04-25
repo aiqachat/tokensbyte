@@ -132,6 +132,17 @@ pub async fn delete_rule(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i32>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let rule: Option<BillingRule> = sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(&state.db.pool)
+        .await?;
+
+    if let Some(r) = rule {
+        if r.is_system == 1 {
+            return Err(crate::error::AppError::Forbidden("系统内置计费规则不允许删除".to_string()));
+        }
+    }
+
     sqlx::query(&state.db.format_query("DELETE FROM billing_rules WHERE id = ?"))
         .bind(id)
         .execute(&state.db.pool)
