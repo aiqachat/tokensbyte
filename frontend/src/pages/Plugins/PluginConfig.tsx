@@ -333,7 +333,7 @@ const PluginConfigInner: React.FC = () => {
             setSelectedAdminGroups([]);
           } else {
             setIsAllAdminGroups(false);
-            setSelectedAdminGroups(found.allowed_levels.split(',').filter(Boolean).map(Number).filter(n => !isNaN(n)));
+            setSelectedAdminGroups(found.allowed_levels.split(',').filter(Boolean).map(Number).filter((n: number) => !isNaN(n)));
           }
         } else {
           if (found.allowed_levels === 'all') {

@@ -22,6 +22,7 @@ use std::sync::Arc;
 pub async fn select_account(
     state: &Arc<AppState>,
     pool_id: i64,
+    model_id: &str,
 ) -> Option<VolcenginePoolAccount> {
     // 1. 查卡池配置
     let pool: VolcenginePool = sqlx::query_as(
@@ -34,7 +35,7 @@ pub async fn select_account(
 
     // 2. 获取所有账号
     let mut accounts: Vec<VolcenginePoolAccount> = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM volcengine_pool_accounts WHERE pool_id = ? ORDER BY priority DESC"),
+        &state.db.format_query("SELECT a.* FROM volcengine_pool_accounts a JOIN volcengine_pool_account_mapping m ON a.id = m.account_id WHERE m.pool_id = ? ORDER BY a.priority DESC"),
     )
     .bind(pool_id)
     .fetch_all(&state.db.pool)
@@ -46,13 +47,13 @@ pub async fn select_account(
         return None;
     }
 
-    // 3. 检查并重置配额
-    check_and_reset_quotas(state, &pool, &mut accounts).await;
+    // 3. 检查并重置配额 (现在重置规则在账号自己身上)
+    check_and_reset_quotas(state, &mut accounts).await;
 
-    // 4. 过滤可用账号
+    // 4. 过滤可用账号（状态正常、配额充足、且支持请求的模型）
     let available: Vec<&VolcenginePoolAccount> = accounts
         .iter()
-        .filter(|a| is_account_available(a, &pool))
+        .filter(|a| is_account_available(a, model_id))
         .collect();
 
     if available.is_empty() {
@@ -88,10 +89,18 @@ pub async fn select_account(
 }
 
 /// 判断账号是否可用
-fn is_account_available(account: &VolcenginePoolAccount, pool: &VolcenginePool) -> bool {
+fn is_account_available(account: &VolcenginePoolAccount, model_id: &str) -> bool {
     // 状态非 active 一律不可用
     if account.status != "active" {
         return false;
+    }
+
+    // 模型过滤：如果账号配置了 models，必须包含请求的 model_id
+    if !account.models.is_empty() {
+        let supported: Vec<&str> = account.models.split(',').map(|s| s.trim()).collect();
+        if !supported.contains(&model_id) {
+            return false;
+        }
     }
 
     // 每日配额检查
@@ -106,10 +115,10 @@ fn is_account_available(account: &VolcenginePoolAccount, pool: &VolcenginePool) 
 
     // 时段配额检查
     if account.period_quota > 0.0
-        && !pool.period_start.is_empty()
-        && !pool.period_end.is_empty()
+        && !account.period_start.is_empty()
+        && !account.period_end.is_empty()
     {
-        if is_in_period(&pool.period_start, &pool.period_end) {
+        if is_in_period(&account.period_start, &account.period_end) {
             if account.period_used >= account.period_quota {
                 return false;
             }
@@ -141,34 +150,32 @@ fn is_in_period(start: &str, end: &str) -> bool {
 
 /// 检查并重置过期配额
 ///
-/// - 每日配额：到达管理员设置的刷新时间后重置 daily_used，disabled 账号恢复为 active
+/// - 每日配额：到达账号设置的刷新时间后重置 daily_used，disabled 账号恢复为 active
 /// - 每小时配额：自然整点重置 hourly_used
 /// - 时段配额：时段开始时间重置 period_used
 async fn check_and_reset_quotas(
     state: &Arc<AppState>,
-    pool: &VolcenginePool,
     accounts: &mut Vec<VolcenginePoolAccount>,
 ) {
     let now = Local::now();
     let today = now.format("%Y-%m-%d").to_string();
     let current_hour = now.format("%Y-%m-%d-%H").to_string();
-    let reset_hour = pool.daily_reset_hour;
-    let reset_minute = pool.daily_reset_minute;
-
-    // 计算当日的重置时间点标识符 (YYYY-MM-DD)
-    // 如果当前时间 >= 今日重置时间，则 reset_date = today
-    // 如果当前时间 < 今日重置时间，则 reset_date = yesterday（还没到今天的重置点）
-    let reset_date = if now.hour() as i32 > reset_hour
-        || (now.hour() as i32 == reset_hour && now.minute() as i32 >= reset_minute)
-    {
-        today.clone()
-    } else {
-        (now - chrono::Duration::days(1))
-            .format("%Y-%m-%d")
-            .to_string()
-    };
 
     for account in accounts.iter_mut() {
+        let reset_hour = account.daily_reset_hour;
+        let reset_minute = account.daily_reset_minute;
+
+        // 计算当日的重置时间点标识符 (YYYY-MM-DD)
+        let reset_date = if now.hour() as i32 > reset_hour
+            || (now.hour() as i32 == reset_hour && now.minute() as i32 >= reset_minute)
+        {
+            today.clone()
+        } else {
+            (now - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        };
+
         let mut need_update = false;
         let mut status_restored = false;
 
@@ -197,10 +204,10 @@ async fn check_and_reset_quotas(
         }
 
         // 时段配额重置
-        if !pool.period_start.is_empty() && !pool.period_end.is_empty() {
+        if !account.period_start.is_empty() && !account.period_end.is_empty() {
             // 时段开始时间的标识符
-            let period_reset_key = format!("{}-{}", today, pool.period_start);
-            if account.last_period_reset != period_reset_key && is_in_period(&pool.period_start, &pool.period_end) {
+            let period_reset_key = format!("{}-{}", today, account.period_start);
+            if account.last_period_reset != period_reset_key && is_in_period(&account.period_start, &account.period_end) {
                 account.period_used = 0.0;
                 account.last_period_reset = period_reset_key;
                 need_update = true;

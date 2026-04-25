@@ -11,14 +11,6 @@ pub struct VolcenginePool {
     pub name: String,            // 卡池名称
     pub pool_type: String,       // chat / image / video / custom
     pub strategy: String,        // random / sequential（调度策略）
-    pub quota_unit: String,      // tokens / requests / images（配额计量单位）
-    pub daily_reset_hour: i32,   // 每日配额刷新时间(时) 0~23
-    pub daily_reset_minute: i32, // 每日配额刷新时间(分) 0~59
-    pub period_start: String,    // 时段配额开始时间 HH:MM
-    pub period_end: String,      // 时段配额结束时间 HH:MM
-    pub default_daily_quota: f64,  // 账号默认每日配额限额
-    pub default_hourly_quota: f64, // 账号默认每小时配额限额
-    pub default_period_quota: f64, // 账号默认时段配额限额
     pub is_active: i32,          // 1=启用, 0=禁用
     pub remark: Option<String>,
     pub created_at: String,
@@ -31,10 +23,16 @@ pub struct VolcenginePool {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct VolcenginePoolAccount {
     pub id: i64,
-    pub pool_id: i64,            // 所属卡池
     pub name: String,            // 账号备注名
+    pub base_url: String,        // 请求地址
     pub api_key: String,         // 火山引擎 API Key
+    pub models: String,          // 支持的模型列表
     pub status: String,          // active / disabled / exhausted
+    pub quota_unit: String,      // tokens / requests / images
+    pub daily_reset_hour: i32,
+    pub daily_reset_minute: i32,
+    pub period_start: String,
+    pub period_end: String,
     pub daily_quota: f64,        // 每日配额(0=不限)
     pub hourly_quota: f64,       // 每小时配额(0=不限)
     pub period_quota: f64,       // 时段配额(0=不限)
@@ -76,15 +74,8 @@ pub struct CreatePoolRequest {
     pub name: String,
     pub pool_type: Option<String>,
     pub strategy: Option<String>,
-    pub quota_unit: Option<String>,
-    pub daily_reset_hour: Option<i32>,
-    pub daily_reset_minute: Option<i32>,
-    pub period_start: Option<String>,
-    pub period_end: Option<String>,
-    pub default_daily_quota: Option<f64>,
-    pub default_hourly_quota: Option<f64>,
-    pub default_period_quota: Option<f64>,
     pub remark: Option<String>,
+    pub account_ids: Option<Vec<i64>>, // 绑定的账号ID列表
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,22 +83,22 @@ pub struct UpdatePoolRequest {
     pub name: Option<String>,
     pub pool_type: Option<String>,
     pub strategy: Option<String>,
-    pub quota_unit: Option<String>,
-    pub daily_reset_hour: Option<i32>,
-    pub daily_reset_minute: Option<i32>,
-    pub period_start: Option<String>,
-    pub period_end: Option<String>,
-    pub default_daily_quota: Option<f64>,
-    pub default_hourly_quota: Option<f64>,
-    pub default_period_quota: Option<f64>,
     pub is_active: Option<i32>,
     pub remark: Option<String>,
+    pub account_ids: Option<Vec<i64>>, // 更新绑定的账号ID列表
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreatePoolAccountRequest {
     pub name: String,
+    pub base_url: Option<String>,
     pub api_key: String,
+    pub models: Option<String>,
+    pub quota_unit: Option<String>,
+    pub daily_reset_hour: Option<i32>,
+    pub daily_reset_minute: Option<i32>,
+    pub period_start: Option<String>,
+    pub period_end: Option<String>,
     pub daily_quota: Option<f64>,
     pub hourly_quota: Option<f64>,
     pub period_quota: Option<f64>,
@@ -117,8 +108,15 @@ pub struct CreatePoolAccountRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdatePoolAccountRequest {
     pub name: Option<String>,
+    pub base_url: Option<String>,
     pub api_key: Option<String>,
+    pub models: Option<String>,
     pub status: Option<String>,
+    pub quota_unit: Option<String>,
+    pub daily_reset_hour: Option<i32>,
+    pub daily_reset_minute: Option<i32>,
+    pub period_start: Option<String>,
+    pub period_end: Option<String>,
     pub daily_quota: Option<f64>,
     pub hourly_quota: Option<f64>,
     pub period_quota: Option<f64>,
@@ -129,10 +127,16 @@ pub struct UpdatePoolAccountRequest {
 #[derive(Debug, Serialize)]
 pub struct PoolAccountSafe {
     pub id: i64,
-    pub pool_id: i64,
     pub name: String,
+    pub base_url: String,
     pub api_key_masked: String,
+    pub models: String,
     pub status: String,
+    pub quota_unit: String,
+    pub daily_reset_hour: i32,
+    pub daily_reset_minute: i32,
+    pub period_start: String,
+    pub period_end: String,
     pub daily_quota: f64,
     pub hourly_quota: f64,
     pub period_quota: f64,
@@ -161,10 +165,16 @@ impl VolcenginePoolAccount {
         };
         PoolAccountSafe {
             id: self.id,
-            pool_id: self.pool_id,
             name: self.name.clone(),
+            base_url: self.base_url.clone(),
             api_key_masked: masked,
+            models: self.models.clone(),
             status: self.status.clone(),
+            quota_unit: self.quota_unit.clone(),
+            daily_reset_hour: self.daily_reset_hour,
+            daily_reset_minute: self.daily_reset_minute,
+            period_start: self.period_start.clone(),
+            period_end: self.period_end.clone(),
             daily_quota: self.daily_quota,
             hourly_quota: self.hourly_quota,
             period_quota: self.period_quota,

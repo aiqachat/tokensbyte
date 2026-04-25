@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Typography, Button, Table, Tag, Tabs, Modal, Form, Input, InputNumber, Select, Space, Spin, message, Popconfirm, TimePicker, Tooltip, Card, Row, Col, Statistic } from 'antd';
+import { Typography, Button, Table, Tag, Tabs, Modal, Form, Input, InputNumber, Select, Space, Spin, message, Popconfirm, TimePicker, Tooltip, Card, Row, Col, Statistic, Drawer } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, ApiOutlined, CloudServerOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import dayjs from 'dayjs';
@@ -7,15 +7,15 @@ import dayjs from 'dayjs';
 const { Text } = Typography;
 
 interface Pool {
-  id: number; name: string; pool_type: string; strategy: string; quota_unit: string;
-  daily_reset_hour: number; daily_reset_minute: number; period_start: string; period_end: string;
-  default_daily_quota: number; default_hourly_quota: number; default_period_quota: number;
+  id: number; name: string; pool_type: string; strategy: string;
   is_active: number; remark?: string; total_accounts: number; active_accounts: number;
+  account_ids: number[];
   created_at: string; updated_at: string;
 }
 
 interface PoolAccount {
-  id: number; pool_id: number; name: string; api_key_masked: string; status: string;
+  id: number; name: string; base_url: string; api_key_masked: string; models: string; status: string;
+  quota_unit: string; daily_reset_hour: number; daily_reset_minute: number; period_start: string; period_end: string;
   daily_quota: number; hourly_quota: number; period_quota: number;
   daily_used: number; hourly_used: number; period_used: number;
   last_error?: string; last_error_at?: string; priority: number;
@@ -53,6 +53,8 @@ const PoolManager: React.FC = () => {
   const [editingPool, setEditingPool] = useState<Pool | null>(null);
   const [accountModalVisible, setAccountModalVisible] = useState(false);
   const [editingAccount, setEditingAccount] = useState<PoolAccount | null>(null);
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [detailPool, setDetailPool] = useState<Pool | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [poolForm] = Form.useForm();
   const [accountForm] = Form.useForm();
@@ -66,9 +68,9 @@ const PoolManager: React.FC = () => {
     finally { setLoading(false); }
   }, []);
 
-  const fetchAccounts = useCallback(async (poolId: number) => {
+  const fetchAccounts = useCallback(async () => {
     try {
-      const res = await (request.get(`/plugins/volcengine_pool/pools/${poolId}/accounts`) as any);
+      const res = await (request.get(`/plugins/volcengine_pool/accounts`) as any);
       if (res.accounts) setAccounts(res.accounts);
     } catch { message.error('获取账号列表失败'); }
   }, []);
@@ -82,28 +84,19 @@ const PoolManager: React.FC = () => {
     } catch { /* silent */ }
   }, []);
 
-  useEffect(() => { fetchPools(); }, [fetchPools]);
+  useEffect(() => { fetchPools(); fetchAccounts(); }, [fetchPools, fetchAccounts]);
 
   useEffect(() => {
-    if (selectedPool) { fetchAccounts(selectedPool.id); fetchLogs(1, selectedPool.id); }
-  }, [selectedPool, fetchAccounts, fetchLogs]);
+    if (selectedPool) { fetchLogs(1, selectedPool.id); }
+  }, [selectedPool, fetchLogs]);
 
   // ── 卡池 CRUD ─────────────────────────────────────────────
   const handleSavePool = async () => {
     try {
       const values = await poolForm.validateFields();
-      const resetTime = values._resetTime;
-      const periodRange = values._periodRange;
       const payload: any = {
         name: values.name, pool_type: values.pool_type, strategy: values.strategy,
-        quota_unit: values.quota_unit, remark: values.remark || '',
-        daily_reset_hour: resetTime ? resetTime.hour() : 0,
-        daily_reset_minute: resetTime ? resetTime.minute() : 0,
-        period_start: periodRange?.[0] ? periodRange[0].format('HH:mm') : '',
-        period_end: periodRange?.[1] ? periodRange[1].format('HH:mm') : '',
-        default_daily_quota: values.default_daily_quota || 0,
-        default_hourly_quota: values.default_hourly_quota || 0,
-        default_period_quota: values.default_period_quota || 0,
+        remark: values.remark || '', account_ids: values.account_ids || [],
       };
       if (editingPool) {
         payload.is_active = values.is_active;
@@ -121,15 +114,7 @@ const PoolManager: React.FC = () => {
     setEditingPool(pool || null);
     poolForm.resetFields();
     if (pool) {
-      poolForm.setFieldsValue({
-        ...pool,
-        default_daily_quota: pool.default_daily_quota || 0,
-        default_hourly_quota: pool.default_hourly_quota || 0,
-        default_period_quota: pool.default_period_quota || 0,
-        _resetTime: dayjs().hour(pool.daily_reset_hour).minute(pool.daily_reset_minute),
-        _periodRange: pool.period_start && pool.period_end
-          ? [dayjs(pool.period_start, 'HH:mm'), dayjs(pool.period_end, 'HH:mm')] : undefined,
-      });
+      poolForm.setFieldsValue({ ...pool });
     }
     setPoolModalVisible(true);
   };
@@ -145,17 +130,34 @@ const PoolManager: React.FC = () => {
 
   // ── 账号 CRUD ─────────────────────────────────────────────
   const handleSaveAccount = async () => {
-    if (!selectedPool) return;
     try {
       const values = await accountForm.validateFields();
+      const resetTime = values._resetTime;
+      const periodRange = values._periodRange;
+      const payload: any = {
+        name: values.name,
+        base_url: values.base_url,
+        api_key: values.api_key,
+        models: values.models,
+        quota_unit: values.quota_unit,
+        daily_reset_hour: resetTime ? resetTime.hour() : 0,
+        daily_reset_minute: resetTime ? resetTime.minute() : 0,
+        period_start: periodRange?.[0] ? periodRange[0].format('HH:mm') : '',
+        period_end: periodRange?.[1] ? periodRange[1].format('HH:mm') : '',
+        daily_quota: values.daily_quota || 0,
+        hourly_quota: values.hourly_quota || 0,
+        period_quota: values.period_quota || 0,
+        priority: values.priority || 0,
+      };
       if (editingAccount) {
-        await request.put(`/plugins/volcengine_pool/accounts/${editingAccount.id}`, values);
+        payload.status = values.status;
+        await request.put(`/plugins/volcengine_pool/accounts/${editingAccount.id}`, payload);
         message.success('账号已更新');
       } else {
-        await request.post(`/plugins/volcengine_pool/pools/${selectedPool.id}/accounts`, values);
+        await request.post(`/plugins/volcengine_pool/accounts`, payload);
         message.success('账号已添加');
       }
-      setAccountModalVisible(false); fetchAccounts(selectedPool.id); fetchPools();
+      setAccountModalVisible(false); fetchAccounts();
     } catch { /* validation */ }
   };
 
@@ -163,23 +165,19 @@ const PoolManager: React.FC = () => {
     setEditingAccount(account || null);
     accountForm.resetFields();
     if (account) {
-      accountForm.setFieldsValue(account);
-    } else if (selectedPool) {
-      // 新建时用卡池默认配额预填
-      const defaults = (selectedPool as any);
       accountForm.setFieldsValue({
-        daily_quota: defaults.default_daily_quota || 0,
-        hourly_quota: defaults.default_hourly_quota || 0,
-        period_quota: defaults.default_period_quota || 0,
+        ...account,
+        _resetTime: dayjs().hour(account.daily_reset_hour).minute(account.daily_reset_minute),
+        _periodRange: account.period_start && account.period_end
+          ? [dayjs(account.period_start, 'HH:mm'), dayjs(account.period_end, 'HH:mm')] : undefined,
       });
     }
     setAccountModalVisible(true);
   };
 
   const handleDeleteAccount = async (id: number) => {
-    if (!selectedPool) return;
     await request.delete(`/plugins/volcengine_pool/accounts/${id}`);
-    message.success('账号已删除'); fetchAccounts(selectedPool.id); fetchPools();
+    message.success('账号已删除'); fetchAccounts();
   };
 
   const handleTestAccount = async (id: number) => {
@@ -193,9 +191,8 @@ const PoolManager: React.FC = () => {
   };
 
   const handleResetAccount = async (id: number) => {
-    if (!selectedPool) return;
     await request.post(`/plugins/volcengine_pool/accounts/${id}/reset`);
-    message.success('配额已重置'); fetchAccounts(selectedPool.id);
+    message.success('配额已重置'); fetchAccounts();
   };
 
   // ── 渲染 ─────────────────────────────────────────────────
@@ -217,8 +214,13 @@ const PoolManager: React.FC = () => {
 
   const accountColumns = [
     { title: '名称', dataIndex: 'name', key: 'name', width: 120 },
-    { title: 'API Key', dataIndex: 'api_key_masked', key: 'api_key_masked', width: 160,
-      render: (v: string) => <Text copyable={false} style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>{v}</Text> },
+    { title: 'URL & API Key', key: 'url_key', width: 200, render: (_: any, r: PoolAccount) => (
+      <div>
+        <Text style={{ fontSize: 12, display: 'block' }} ellipsis title={r.base_url}>{r.base_url}</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>{r.api_key_masked}</Text>
+      </div>
+    )},
+    { title: '支持模型', dataIndex: 'models', key: 'models', width: 160, render: (v: string) => v ? <Tooltip title={v}><Text ellipsis style={{ maxWidth: 140 }}>{v}</Text></Tooltip> : <Text type="secondary">全部</Text> },
     { title: '状态', dataIndex: 'status', key: 'status', width: 100,
       render: (v: string) => { const c = statusConfig[v] || statusConfig.active; return <Tag icon={c.icon} color={c.color}>{c.label}</Tag>; } },
     { title: '每日用量', key: 'daily', width: 120, render: (_: any, r: PoolAccount) => quotaBar(r.daily_used, r.daily_quota) },
@@ -267,7 +269,11 @@ const PoolManager: React.FC = () => {
           return (
             <Col xs={24} sm={12} lg={8} key={pool.id}>
               <Card size="small" hoverable
-                onClick={() => setSelectedPool(pool)}
+                onClick={() => {
+                  setSelectedPool(pool);
+                  setDetailPool(pool);
+                  setDetailVisible(true);
+                }}
                 style={{
                   background: isSelected ? 'rgba(250,140,22,0.06)' : '#1a1a1a',
                   border: isSelected ? '1px solid rgba(250,140,22,0.4)' : '1px solid rgba(255,255,255,0.08)',
@@ -308,28 +314,15 @@ const PoolManager: React.FC = () => {
   // ── Tab2: 账号管理 ─────────────────────────────────────────
   const accountTab = (
     <div>
-      {selectedPool ? (
-        <>
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Space>
-              <ThunderboltOutlined style={{ color: '#fa8c16' }} />
-              <Text strong style={{ color: '#fff' }}>{selectedPool.name}</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>
-                配额单位: {selectedPool.quota_unit} | 刷新时间: {String(selectedPool.daily_reset_hour).padStart(2, '0')}:{String(selectedPool.daily_reset_minute).padStart(2, '0')}
-                {selectedPool.period_start && ` | 时段: ${selectedPool.period_start}~${selectedPool.period_end}`}
-              </Text>
-            </Space>
-            <Space>
-              <Button icon={<ReloadOutlined />} onClick={() => fetchAccounts(selectedPool.id)}>刷新</Button>
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => openAccountModal()}>添加账号</Button>
-            </Space>
-          </div>
-          <Table dataSource={accounts} columns={accountColumns} rowKey="id" size="small" pagination={false}
-            scroll={{ x: 1100 }} style={{ background: '#141414' }} />
-        </>
-      ) : (
-        <div style={{ textAlign: 'center', padding: 60, color: 'rgba(255,255,255,0.3)' }}>请先在「卡池管理」中选择一个卡池</div>
-      )}
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>独立账号池，配置账号请求地址、密钥及配额，用于分配给各个卡池</Text>
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={() => fetchAccounts()}>刷新</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openAccountModal()}>添加账号</Button>
+        </Space>
+      </div>
+      <Table dataSource={accounts} columns={accountColumns} rowKey="id" size="small" pagination={{ pageSize: 20 }}
+        scroll={{ x: 1300 }} style={{ background: '#141414' }} />
     </div>
   );
 
@@ -362,12 +355,12 @@ const PoolManager: React.FC = () => {
       {/* 卡池编辑弹窗 */}
       <Modal title={editingPool ? '编辑卡池' : '新建卡池'} open={poolModalVisible}
         onCancel={() => setPoolModalVisible(false)} onOk={handleSavePool} width={560} destroyOnClose>
-        <Form form={poolForm} layout="vertical" initialValues={{ pool_type: 'chat', strategy: 'random', quota_unit: 'tokens', is_active: 1, default_daily_quota: 0, default_hourly_quota: 0, default_period_quota: 0 }}>
+        <Form form={poolForm} layout="vertical" initialValues={{ pool_type: 'chat', strategy: 'random', is_active: 1, account_ids: [] }}>
           <Form.Item name="name" label="卡池名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input placeholder="如：视频模型卡池" />
           </Form.Item>
           <Row gutter={16}>
-            <Col span={8}>
+            <Col span={12}>
               <Form.Item name="pool_type" label="卡池类型">
                 <Select options={[
                   { label: '聊天', value: 'chat' }, { label: '图片', value: 'image' },
@@ -375,65 +368,16 @@ const PoolManager: React.FC = () => {
                 ]} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={12}>
               <Form.Item name="strategy" label="调度策略">
                 <Select options={[{ label: '随机分布', value: 'random' }, { label: '顺序轮转', value: 'sequential' }]} />
               </Form.Item>
             </Col>
-            <Col span={8}>
-              <Form.Item name="quota_unit" label="配额计量单位">
-                <Select options={[{ label: 'Token 数', value: 'tokens' }, { label: '请求次数', value: 'requests' }, { label: '图片张数', value: 'images' }]} />
-              </Form.Item>
-            </Col>
           </Row>
-
-          {/* 配额限额 */}
-          <div style={{ background: 'rgba(250,140,22,0.04)', border: '1px solid rgba(250,140,22,0.15)', borderRadius: 6, padding: '12px 16px', marginBottom: 16 }}>
-            <Text style={{ color: '#fa8c16', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 8 }}>
-              账号默认配额限额
-            </Text>
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginBottom: 12 }}>
-              添加账号时的默认配额上限，0 = 不限制。达到限额后该账号将暂停使用，直到配额重置。
-            </Text>
-            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.quota_unit !== cur.quota_unit}>
-              {({ getFieldValue }) => {
-                const unit = getFieldValue('quota_unit') || 'tokens';
-                const unitLabel = unit === 'tokens' ? 'Token' : unit === 'requests' ? '次' : '张';
-                return (
-                  <Row gutter={16}>
-                    <Col span={8}>
-                      <Form.Item name="default_daily_quota" label="每日限额">
-                        <InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} placeholder="0=不限" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item name="default_hourly_quota" label="每小时限额">
-                        <InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} placeholder="0=不限" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item name="default_period_quota" label="时段限额">
-                        <InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} placeholder="0=不限" />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                );
-              }}
-            </Form.Item>
-          </div>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="_resetTime" label="每日配额刷新时间">
-                <TimePicker format="HH:mm" style={{ width: '100%' }} placeholder="选择时间" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="_periodRange" label="时段配额时间范围（可选）">
-                <TimePicker.RangePicker format="HH:mm" style={{ width: '100%' }} placeholder={['开始', '结束']} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item name="account_ids" label="分配账号" tooltip="选择要分配到此卡池的账号">
+            <Select mode="multiple" placeholder="请选择账号" allowClear
+              options={accounts.map(a => ({ label: a.name, value: a.id }))} />
+          </Form.Item>
           {editingPool && (
             <Form.Item name="is_active" label="启用状态">
               <Select options={[{ label: '启用', value: 1 }, { label: '禁用', value: 0 }]} />
@@ -445,26 +389,58 @@ const PoolManager: React.FC = () => {
 
       {/* 账号编辑弹窗 */}
       <Modal title={editingAccount ? '编辑账号' : '添加账号'} open={accountModalVisible}
-        onCancel={() => setAccountModalVisible(false)} onOk={handleSaveAccount} width={480} destroyOnClose>
-        <Form form={accountForm} layout="vertical" initialValues={{ daily_quota: 0, hourly_quota: 0, period_quota: 0, priority: 0 }}>
+        onCancel={() => setAccountModalVisible(false)} onOk={handleSaveAccount} width={560} destroyOnClose>
+        <Form form={accountForm} layout="vertical" initialValues={{ daily_quota: 0, hourly_quota: 0, period_quota: 0, priority: 0, quota_unit: 'tokens', base_url: 'https://ark.cn-beijing.volces.com/api/v3' }}>
           <Form.Item name="name" label="账号名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input placeholder="备注名，如：账号A" />
           </Form.Item>
-          {!editingAccount && (
+          <Form.Item name="base_url" label="请求地址 (Base URL)" rules={[{ required: true, message: '请输入请求地址' }]}>
+            <Input placeholder="例如: https://ark.cn-beijing.volces.com/api/v3" />
+          </Form.Item>
+          {!editingAccount ? (
             <Form.Item name="api_key" label="API Key" rules={[{ required: true, message: '请输入API Key' }]}>
               <Input.Password placeholder="火山引擎 API Key" />
             </Form.Item>
-          )}
-          {editingAccount && (
+          ) : (
             <Form.Item name="api_key" label="API Key（留空不修改）">
               <Input.Password placeholder="留空保持原值" />
             </Form.Item>
           )}
+          <Form.Item name="models" label="支持的模型（逗号分隔）" tooltip="调度引擎会根据模型过滤可用账号，留空表示支持所有模型。">
+            <Input placeholder="如: doubao-lite-32k, doubao-pro-32k" />
+          </Form.Item>
           <Row gutter={16}>
-            <Col span={8}><Form.Item name="daily_quota" label={`每日限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={selectedPool?.quota_unit === 'tokens' ? 'Token' : selectedPool?.quota_unit === 'requests' ? '次' : '张'} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="hourly_quota" label={`每小时限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={selectedPool?.quota_unit === 'tokens' ? 'Token' : selectedPool?.quota_unit === 'requests' ? '次' : '张'} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="period_quota" label={`时段限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={selectedPool?.quota_unit === 'tokens' ? 'Token' : selectedPool?.quota_unit === 'requests' ? '次' : '张'} /></Form.Item></Col>
+            <Col span={8}>
+              <Form.Item name="quota_unit" label="配额计量单位">
+                <Select options={[{ label: 'Token 数', value: 'tokens' }, { label: '请求次数', value: 'requests' }, { label: '图片张数', value: 'images' }]} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="_resetTime" label="每日配额刷新时间">
+                <TimePicker format="HH:mm" style={{ width: '100%' }} placeholder="选择时间" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="_periodRange" label="时段范围（可选）">
+                <TimePicker.RangePicker format="HH:mm" style={{ width: '100%' }} placeholder={['开始', '结束']} />
+              </Form.Item>
+            </Col>
           </Row>
+
+          {/* 动态限额后缀 */}
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.quota_unit !== cur.quota_unit}>
+            {({ getFieldValue }) => {
+              const unit = getFieldValue('quota_unit') || 'tokens';
+              const unitLabel = unit === 'tokens' ? 'Token' : unit === 'requests' ? '次' : '张';
+              return (
+                <Row gutter={16}>
+                  <Col span={8}><Form.Item name="daily_quota" label={`每日限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} /></Form.Item></Col>
+                  <Col span={8}><Form.Item name="hourly_quota" label={`每小时限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} /></Form.Item></Col>
+                  <Col span={8}><Form.Item name="period_quota" label={`时段限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} /></Form.Item></Col>
+                </Row>
+              );
+            }}
+          </Form.Item>
           <Form.Item name="priority" label="优先级（越大越优先，顺序模式下有效）">
             <InputNumber min={0} max={999} style={{ width: '100%' }} />
           </Form.Item>
@@ -475,6 +451,36 @@ const PoolManager: React.FC = () => {
           )}
         </Form>
       </Modal>
+
+      {/* 卡池详情全屏抽屉 */}
+      <Drawer
+        title={detailPool ? `卡池详细信息 - ${detailPool.name}` : '卡池详情'}
+        placement="right"
+        width="100%"
+        onClose={() => setDetailVisible(false)}
+        open={detailVisible}
+        styles={{ body: { padding: '24px' } }}
+      >
+        {detailPool && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 16, fontWeight: 'bold' }}>该卡池绑定的账号使用情况</Text>
+              <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+                总计账号数: {detailPool.total_accounts} | 当前可用数: {detailPool.active_accounts}
+              </Text>
+            </div>
+            <Table
+              dataSource={accounts.filter(a => detailPool.account_ids?.includes(a.id))}
+              columns={accountColumns}
+              rowKey="id"
+              size="small"
+              pagination={false}
+              scroll={{ x: 1300 }}
+              style={{ background: '#141414' }}
+            />
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 };

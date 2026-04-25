@@ -23,7 +23,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/pools", get(list_pools).post(create_pool))
         .route("/pools/{id}", put(update_pool).delete(delete_pool))
         // 账号管理
-        .route("/pools/{pool_id}/accounts", get(list_accounts).post(create_account))
+        .route("/accounts", get(list_accounts).post(create_account))
         .route("/accounts/{id}", put(update_account).delete(delete_account))
         .route("/accounts/{id}/test", post(test_account))
         .route("/accounts/{id}/reset", post(reset_account_quota))
@@ -65,7 +65,7 @@ async fn list_pools(
     let mut pool_data = Vec::new();
     for pool in &pools {
         let total_accounts: i64 = sqlx::query_scalar(
-            &state.db.format_query("SELECT COUNT(*) FROM volcengine_pool_accounts WHERE pool_id = ?"),
+            &state.db.format_query("SELECT COUNT(*) FROM volcengine_pool_account_mapping WHERE pool_id = ?"),
         )
         .bind(pool.id)
         .fetch_one(&state.db.pool)
@@ -73,30 +73,31 @@ async fn list_pools(
         .unwrap_or(0);
 
         let active_accounts: i64 = sqlx::query_scalar(
-            &state.db.format_query("SELECT COUNT(*) FROM volcengine_pool_accounts WHERE pool_id = ? AND status = 'active'"),
+            &state.db.format_query("SELECT COUNT(*) FROM volcengine_pool_account_mapping m JOIN volcengine_pool_accounts a ON m.account_id = a.id WHERE m.pool_id = ? AND a.status = 'active'"),
         )
         .bind(pool.id)
         .fetch_one(&state.db.pool)
         .await
         .unwrap_or(0);
 
+        let account_ids: Vec<i64> = sqlx::query_scalar(
+            &state.db.format_query("SELECT account_id FROM volcengine_pool_account_mapping WHERE pool_id = ?"),
+        )
+        .bind(pool.id)
+        .fetch_all(&state.db.pool)
+        .await
+        .unwrap_or_default();
+
         pool_data.push(json!({
             "id": pool.id,
             "name": pool.name,
             "pool_type": pool.pool_type,
             "strategy": pool.strategy,
-            "quota_unit": pool.quota_unit,
-            "daily_reset_hour": pool.daily_reset_hour,
-            "daily_reset_minute": pool.daily_reset_minute,
-            "period_start": pool.period_start,
-            "period_end": pool.period_end,
             "is_active": pool.is_active,
             "remark": pool.remark,
             "total_accounts": total_accounts,
             "active_accounts": active_accounts,
-            "default_daily_quota": pool.default_daily_quota,
-            "default_hourly_quota": pool.default_hourly_quota,
-            "default_period_quota": pool.default_period_quota,
+            "account_ids": account_ids,
             "created_at": pool.created_at,
             "updated_at": pool.updated_at,
         }));
@@ -113,24 +114,32 @@ async fn create_pool(
 ) -> AppResult<Json<VolcenginePool>> {
     require_admin(&state, &claims).await?;
 
+    let mut tx = state.db.pool.begin().await?;
+
     let pool: VolcenginePool = sqlx::query_as(&state.db.format_query(
-        "INSERT INTO volcengine_pools (name, pool_type, strategy, quota_unit, daily_reset_hour, daily_reset_minute, period_start, period_end, default_daily_quota, default_hourly_quota, default_period_quota, remark) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+        "INSERT INTO volcengine_pools (name, pool_type, strategy, remark) \
+         VALUES (?, ?, ?, ?) RETURNING *",
     ))
     .bind(&req.name)
     .bind(req.pool_type.as_deref().unwrap_or("chat"))
     .bind(req.strategy.as_deref().unwrap_or("random"))
-    .bind(req.quota_unit.as_deref().unwrap_or("tokens"))
-    .bind(req.daily_reset_hour.unwrap_or(0))
-    .bind(req.daily_reset_minute.unwrap_or(0))
-    .bind(req.period_start.as_deref().unwrap_or(""))
-    .bind(req.period_end.as_deref().unwrap_or(""))
-    .bind(req.default_daily_quota.unwrap_or(0.0))
-    .bind(req.default_hourly_quota.unwrap_or(0.0))
-    .bind(req.default_period_quota.unwrap_or(0.0))
     .bind(&req.remark)
-    .fetch_one(&state.db.pool)
+    .fetch_one(&mut *tx)
     .await?;
+
+    if let Some(account_ids) = req.account_ids {
+        for account_id in account_ids {
+            sqlx::query(&state.db.format_query(
+                "INSERT INTO volcengine_pool_account_mapping (pool_id, account_id) VALUES (?, ?)",
+            ))
+            .bind(pool.id)
+            .bind(account_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
+    tx.commit().await?;
 
     Ok(Json(pool))
 }
@@ -144,49 +153,54 @@ async fn update_pool(
 ) -> AppResult<Json<VolcenginePool>> {
     require_admin(&state, &claims).await?;
 
+    let mut tx = state.db.pool.begin().await?;
+
     let mut pool: VolcenginePool = sqlx::query_as(
         &state.db.format_query("SELECT * FROM volcengine_pools WHERE id = ?"),
     )
     .bind(id)
-    .fetch_one(&state.db.pool)
+    .fetch_one(&mut *tx)
     .await?;
 
     if let Some(name) = req.name { pool.name = name; }
     if let Some(pool_type) = req.pool_type { pool.pool_type = pool_type; }
     if let Some(strategy) = req.strategy { pool.strategy = strategy; }
-    if let Some(quota_unit) = req.quota_unit { pool.quota_unit = quota_unit; }
-    if let Some(h) = req.daily_reset_hour { pool.daily_reset_hour = h; }
-    if let Some(m) = req.daily_reset_minute { pool.daily_reset_minute = m; }
-    if let Some(s) = req.period_start { pool.period_start = s; }
-    if let Some(e) = req.period_end { pool.period_end = e; }
-    if let Some(dq) = req.default_daily_quota { pool.default_daily_quota = dq; }
-    if let Some(hq) = req.default_hourly_quota { pool.default_hourly_quota = hq; }
-    if let Some(pq) = req.default_period_quota { pool.default_period_quota = pq; }
     if let Some(a) = req.is_active { pool.is_active = a; }
     if let Some(r) = req.remark { pool.remark = Some(r); }
 
     sqlx::query(&state.db.format_query(
-        "UPDATE volcengine_pools SET name = ?, pool_type = ?, strategy = ?, quota_unit = ?, \
-         daily_reset_hour = ?, daily_reset_minute = ?, period_start = ?, period_end = ?, \
-         default_daily_quota = ?, default_hourly_quota = ?, default_period_quota = ?, \
+        "UPDATE volcengine_pools SET name = ?, pool_type = ?, strategy = ?, \
          is_active = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     ))
     .bind(&pool.name)
     .bind(&pool.pool_type)
     .bind(&pool.strategy)
-    .bind(&pool.quota_unit)
-    .bind(pool.daily_reset_hour)
-    .bind(pool.daily_reset_minute)
-    .bind(&pool.period_start)
-    .bind(&pool.period_end)
-    .bind(pool.default_daily_quota)
-    .bind(pool.default_hourly_quota)
-    .bind(pool.default_period_quota)
     .bind(pool.is_active)
     .bind(&pool.remark)
     .bind(id)
-    .execute(&state.db.pool)
+    .execute(&mut *tx)
     .await?;
+
+    if let Some(account_ids) = req.account_ids {
+        // 先删除旧映射
+        sqlx::query(&state.db.format_query("DELETE FROM volcengine_pool_account_mapping WHERE pool_id = ?"))
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        
+        // 插入新映射
+        for account_id in account_ids {
+            sqlx::query(&state.db.format_query(
+                "INSERT INTO volcengine_pool_account_mapping (pool_id, account_id) VALUES (?, ?)",
+            ))
+            .bind(id)
+            .bind(account_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
+    tx.commit().await?;
 
     Ok(Json(pool))
 }
@@ -227,18 +241,16 @@ async fn delete_pool(
 //  账号管理
 // ══════════════════════════════════════════════════════════════
 
-/// 列出卡池下的所有账号（API Key 脱敏）
+/// 列出所有账号（API Key 脱敏）
 async fn list_accounts(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
-    Path(pool_id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     require_admin(&state, &claims).await?;
 
     let accounts: Vec<VolcenginePoolAccount> = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM volcengine_pool_accounts WHERE pool_id = ? ORDER BY priority DESC, id ASC"),
+        &state.db.format_query("SELECT * FROM volcengine_pool_accounts ORDER BY priority DESC, id ASC"),
     )
-    .bind(pool_id)
     .fetch_all(&state.db.pool)
     .await?;
 
@@ -251,27 +263,23 @@ async fn list_accounts(
 async fn create_account(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
-    Path(pool_id): Path<i64>,
     Json(req): Json<CreatePoolAccountRequest>,
 ) -> AppResult<Json<PoolAccountSafe>> {
     require_admin(&state, &claims).await?;
 
-    // 验证卡池存在
-    let _pool: VolcenginePool = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM volcengine_pools WHERE id = ?"),
-    )
-    .bind(pool_id)
-    .fetch_one(&state.db.pool)
-    .await
-    .map_err(|_| AppError::NotFound("卡池不存在".to_string()))?;
-
     let account: VolcenginePoolAccount = sqlx::query_as(&state.db.format_query(
-        "INSERT INTO volcengine_pool_accounts (pool_id, name, api_key, daily_quota, hourly_quota, period_quota, priority) \
-         VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *",
+        "INSERT INTO volcengine_pool_accounts (name, base_url, api_key, models, quota_unit, daily_reset_hour, daily_reset_minute, period_start, period_end, daily_quota, hourly_quota, period_quota, priority) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     ))
-    .bind(pool_id)
     .bind(&req.name)
+    .bind(req.base_url.as_deref().unwrap_or("https://ark.cn-beijing.volces.com/api/v3"))
     .bind(&req.api_key)
+    .bind(req.models.as_deref().unwrap_or(""))
+    .bind(req.quota_unit.as_deref().unwrap_or("tokens"))
+    .bind(req.daily_reset_hour.unwrap_or(0))
+    .bind(req.daily_reset_minute.unwrap_or(0))
+    .bind(req.period_start.as_deref().unwrap_or(""))
+    .bind(req.period_end.as_deref().unwrap_or(""))
     .bind(req.daily_quota.unwrap_or(0.0))
     .bind(req.hourly_quota.unwrap_or(0.0))
     .bind(req.period_quota.unwrap_or(0.0))
@@ -299,21 +307,36 @@ async fn update_account(
     .await?;
 
     if let Some(name) = req.name { account.name = name; }
+    if let Some(url) = req.base_url { account.base_url = url; }
     if let Some(key) = req.api_key { account.api_key = key; }
+    if let Some(models) = req.models { account.models = models; }
     if let Some(status) = req.status { account.status = status; }
+    if let Some(quota_unit) = req.quota_unit { account.quota_unit = quota_unit; }
+    if let Some(h) = req.daily_reset_hour { account.daily_reset_hour = h; }
+    if let Some(m) = req.daily_reset_minute { account.daily_reset_minute = m; }
+    if let Some(s) = req.period_start { account.period_start = s; }
+    if let Some(e) = req.period_end { account.period_end = e; }
     if let Some(dq) = req.daily_quota { account.daily_quota = dq; }
     if let Some(hq) = req.hourly_quota { account.hourly_quota = hq; }
     if let Some(pq) = req.period_quota { account.period_quota = pq; }
     if let Some(p) = req.priority { account.priority = p; }
 
     sqlx::query(&state.db.format_query(
-        "UPDATE volcengine_pool_accounts SET name = ?, api_key = ?, status = ?, \
+        "UPDATE volcengine_pool_accounts SET name = ?, base_url = ?, api_key = ?, models = ?, status = ?, \
+         quota_unit = ?, daily_reset_hour = ?, daily_reset_minute = ?, period_start = ?, period_end = ?, \
          daily_quota = ?, hourly_quota = ?, period_quota = ?, priority = ?, \
          updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     ))
     .bind(&account.name)
+    .bind(&account.base_url)
     .bind(&account.api_key)
+    .bind(&account.models)
     .bind(&account.status)
+    .bind(&account.quota_unit)
+    .bind(account.daily_reset_hour)
+    .bind(account.daily_reset_minute)
+    .bind(&account.period_start)
+    .bind(&account.period_end)
     .bind(account.daily_quota)
     .bind(account.hourly_quota)
     .bind(account.period_quota)

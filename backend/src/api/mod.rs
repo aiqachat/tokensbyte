@@ -100,8 +100,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/system/about", get(settings::system_about))
 
         .merge(admin_routes)
-        .nest("/plugins", plugins::router())
         .nest("/plugins/volcengine_pool", volcengine_pool::router())
+        .nest("/plugins", plugins::router())
         .nest("/assets", assets::router())
         .nest("/team-marketing", team_marketing::router())
         .nest("/playground", playground::router())

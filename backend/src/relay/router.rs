@@ -67,14 +67,15 @@ pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str
         }
     }
 
-    // 5. 卡池集成：如果渠道绑定了卡池，从卡池中选择可用账号替换 API Key
+// 5. 卡池集成：如果渠道绑定了卡池，从卡池中选择可用账号替换 API Key 和 Base URL
     if let Some(pool_id) = ch.pool_id {
-        if let Some(account) = crate::services::volcengine_pool::select_account(state, pool_id).await {
+        if let Some(account) = crate::services::volcengine_pool::select_account(state, pool_id, model).await {
             tracing::info!(
-                "[Relay] 渠道 '{}' (id={}) 使用卡池账号 '{}' (id={}) 的 API Key",
+                "[Relay] 渠道 '{}' (id={}) 使用卡池账号 '{}' (id={}) 的 Base URL 和 API Key",
                 ch.name, ch.id, account.name, account.id
             );
             ch.api_key = account.api_key;
+            ch.base_url = account.base_url;
             // 将卡池账号 ID 存入 config 供后续计费回写使用
             if let Ok(mut config_val) = serde_json::from_str::<serde_json::Value>(&ch.config) {
                 config_val["_pool_account_id"] = serde_json::json!(account.id);
