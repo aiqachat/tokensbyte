@@ -11,6 +11,7 @@ import FloatingHeader from './components/FloatingHeader';
 import FloatingToolbar from './components/FloatingToolbar';
 import PromptInput from './components/PromptInput';
 import SettingsWidget from './components/SettingsWidget';
+import ResourceManagerWidget from './components/ResourceManagerWidget';
 import ModelDrawer from './components/ModelDrawer';
 import TokenModal from './components/TokenModal';
 import ZoomIndicator from './components/ZoomIndicator';
@@ -40,6 +41,7 @@ const PlaygroundLayout: React.FC = () => {
       <FloatingHeader />          {/* 左上角 — 返回按钮 (固定) */}
       <ZoomIndicator />           {/* 右下角 — 缩放控制 (固定) */}
       <SettingsWidget />          {/* 右上角 — 模型选择器 (可拖拽) */}
+      <ResourceManagerWidget />   {/* 左侧 — 资源管理器 (可拖拽) */}
 
       {/* ═══════════ Layer 3: 弹出层 (Overlay Layer) ═══════════ */}
       <ModelDrawer />             {/* 模型全景选择器抽屉 */}

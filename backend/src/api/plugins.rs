@@ -280,6 +280,7 @@ async fn get_storage_config(
 
     Ok(Json(json!({
         "tos_access_key": configs.get("tos_access_key").cloned().unwrap_or_default(),
+        "tos_secret_key": sk,
         "tos_secret_key_masked": masked_sk,
         "tos_endpoint": configs.get("tos_endpoint").cloned().unwrap_or_default(),
         "tos_region": configs.get("tos_region").cloned().unwrap_or_default(),
@@ -374,6 +375,7 @@ pub struct ModerationConfigRequest {
     pub volc_app_id: Option<String>,
     pub volc_project_name: Option<String>,
     pub volc_group_id: Option<String>,
+    pub review_enabled: Option<bool>,
 }
 
 /// 管理员：获取审核配置
@@ -407,13 +409,19 @@ async fn get_moderation_config(
         }
     };
 
+    let review_enabled = configs.get("review_enabled")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
     Ok(Json(json!({
         "volc_access_key": configs.get("volc_access_key").cloned().unwrap_or_default(),
+        "volc_secret_key": sk,
         "volc_secret_key_masked": masked_sk,
         "volc_app_id": configs.get("volc_app_id").cloned().unwrap_or_default(),
         "volc_project_name": configs.get("volc_project_name").cloned().unwrap_or_else(|| "default".to_string()),
         "volc_group_id": configs.get("volc_group_id").cloned().unwrap_or_default(),
         "is_configured": !configs.get("volc_access_key").cloned().unwrap_or_default().is_empty(),
+        "review_enabled": review_enabled,
     })))
 }
 
@@ -455,6 +463,11 @@ async fn save_moderation_config(
     // group_id
     if let Some(ref gid) = payload.volc_group_id {
         upsert_config(&state, &name, "volc_group_id", gid.trim()).await?;
+    }
+
+    // review_enabled 审核开关
+    if let Some(re) = payload.review_enabled {
+        upsert_config(&state, &name, "review_enabled", if re { "true" } else { "false" }).await?;
     }
 
     Ok(Json(json!({ "message": "审核配置已保存" })))
@@ -593,14 +606,42 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             ]
         }),
         json!({
-            "id": "seedream",
-            "name": "Seedream 图片生成方案",
+            "id": "seedream_5_0",
+            "name": "Seedream 5.0 图片生成方案",
             "type": "image",
             "is_system": true,
-            "description": "支持多种尺寸和比例的高质量 AI 图片生成，适用于 doubao-seedream 系列模型",
+            "description": "高质量 AI 图片生成，支持 doubao-seedream-5.0-lite 模型",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","16:9","9:16","4:3","3:4","3:2","2:3"], "default": "1:1"},
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["512x512","1024x1024","1280x720","720x1280","1024x768","768x1024"], "default": "1024x1024"},
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "3072x3072", "1728x2304", "2592x3456", "2304x1728", "3456x2592", "2848x1600", "4096x2304", "1600x2848", "2304x4096", "2496x1664", "3744x2496", "1664x2496", "2496x3744", "3136x1344", "4704x2016"], "default": "2048x2048"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
+                {"key": "guidance_scale", "label": "引导强度", "type": "select", "options": [3,5,7,9,12], "default": 7},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        }),
+        json!({
+            "id": "seedream_4_5",
+            "name": "Seedream 4.5 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "高质量 AI 图片生成，支持 doubao-seedream-4.5 模型",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "4096x4096", "1728x2304", "3520x4704", "2304x1728", "4704x3520", "2848x1600", "5504x3040", "1600x2848", "3040x5504", "2496x1664", "4992x3328", "1664x2496", "3328x4992", "3136x1344", "6240x2656"], "default": "2048x2048"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
+                {"key": "guidance_scale", "label": "引导强度", "type": "select", "options": [3,5,7,9,12], "default": 7},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        }),
+        json!({
+            "id": "seedream_4_0",
+            "name": "Seedream 4.0 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "高质量 AI 图片生成，支持 doubao-seedream-4.0 模型",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1024x1024", "2048x2048", "4096x4096", "864x1152", "1728x2304", "3520x4704", "1152x864", "2304x1728", "4704x3520", "1312x736", "2848x1600", "5504x3040", "736x1312", "1600x2848", "3040x5504", "832x1248", "1664x2496", "3328x4992", "1248x832", "2496x1664", "4992x3328", "1568x672", "3136x1344", "6240x2656"], "default": "1024x1024"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
                 {"key": "guidance_scale", "label": "引导强度", "type": "select", "options": [3,5,7,9,12], "default": 7},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}

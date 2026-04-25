@@ -177,7 +177,12 @@ export const useCanvasInteraction = () => {
 
   /** 移除节点 */
   const removeNode = useCallback((id: string) => {
-    setNodes(prev => prev.filter(n => n.id !== id));
+    setNodes(prev => prev.map(n => {
+      if (n.id === id && n.status === 'completed') {
+        return { ...n, isHidden: true };
+      }
+      return n;
+    }).filter(n => !(n.id === id && n.status !== 'completed')));
   }, [setNodes]);
 
   /** 重置视图 */

@@ -6,13 +6,14 @@ import React from 'react';
 import { Button, Tooltip } from 'antd';
 import {
   EditOutlined, PictureOutlined, BgColorsOutlined,
-  StarOutlined, FullscreenExitOutlined
+  StarOutlined, FullscreenExitOutlined, FolderOpenOutlined
 } from '@ant-design/icons';
-import { useCanvas } from '../context/PlaygroundContext';
+import { useCanvas, usePlayground } from '../context/PlaygroundContext';
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction';
 
 const FloatingToolbar: React.FC = React.memo(() => {
   const { activeTool, setActiveTool } = useCanvas();
+  const { isResourceWidgetVisible, setIsResourceWidgetVisible } = usePlayground();
   const { resetView } = useCanvasInteraction();
 
   return (
@@ -90,9 +91,17 @@ const FloatingToolbar: React.FC = React.memo(() => {
           style={{ width: 40, height: 40, color: 'rgba(255,255,255,0.3)', cursor: 'not-allowed' }}
         />
       </Tooltip>
-      <Tooltip title="素材收藏夹 - 即将开放" placement="right">
-        <Button shape="circle" type="text" icon={<StarOutlined />}
-          style={{ width: 40, height: 40, color: 'rgba(255,255,255,0.3)', cursor: 'not-allowed' }}
+      <Tooltip title="资源管理器" placement="right">
+        <Button
+          shape="circle"
+          type={isResourceWidgetVisible ? 'primary' : 'text'}
+          onClick={() => setIsResourceWidgetVisible(!isResourceWidgetVisible)}
+          icon={<FolderOpenOutlined />}
+          style={{
+            width: 40, height: 40,
+            background: isResourceWidgetVisible ? '#A2C1FF' : 'transparent',
+            color: isResourceWidgetVisible ? '#000' : 'rgba(255,255,255,0.6)',
+          }}
         />
       </Tooltip>
 

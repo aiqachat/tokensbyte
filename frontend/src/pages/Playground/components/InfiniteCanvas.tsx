@@ -88,10 +88,10 @@ const InfiniteCanvas: React.FC = React.memo(() => {
         transformOrigin: '0 0',
         transform: `translate(${canvasTransform.x}px, ${canvasTransform.y}px) scale(${canvasTransform.scale})`
       }}>
-        {nodes.map(node => <CanvasNode key={node.id} node={node} />)}
+        {nodes.filter(node => !node.isHidden).map(node => <CanvasNode key={node.id} node={node} />)}
 
         {/* 空画布引导 */}
-        {nodes.length === 0 && (
+        {nodes.filter(node => !node.isHidden).length === 0 && (
           <div style={{
             position: 'absolute', left: 0, top: 0, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center',

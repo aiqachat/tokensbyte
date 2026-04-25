@@ -43,6 +43,7 @@ export interface CanvasNode {
   width: number;
   height: number;
   zIndex: number;
+  isHidden?: boolean;
 }
 
 /** 画布变换状态 */

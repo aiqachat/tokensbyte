@@ -1,15 +1,16 @@
 /**
  * 体验中心 - 项目列表首页 (Stitch Style)
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ConfigProvider, theme, Input, Tooltip, message, Dropdown } from 'antd';
+import { ConfigProvider, theme, Input, Tooltip, message, Dropdown, Avatar } from 'antd';
 import {
   SearchOutlined, PlusOutlined, DeleteOutlined, EditOutlined,
   AppstoreOutlined, TeamOutlined, AudioOutlined, ArrowUpOutlined,
   ThunderboltOutlined, FileTextOutlined, MobileOutlined, DesktopOutlined, RocketOutlined
 } from '@ant-design/icons';
 import request from '../../utils/request';
+import useAuthStore from '../../store/auth';
 
 interface ProjectItem {
   id: number;
@@ -43,6 +44,7 @@ const formatDateGroup = (dateStr: string): string => {
 
 const PlaygroundHome: React.FC = () => {
   const navigate = useNavigate();
+  const { user, logout } = useAuthStore();
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [selectedProject, setSelectedProject] = useState<ProjectItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,15 +55,31 @@ const PlaygroundHome: React.FC = () => {
   const [newPrompt, setNewPrompt] = useState('');
   const [activeTab, setActiveTab] = useState<'my' | 'shared'>('my');
   const [platform, setPlatform] = useState<'app' | 'web'>('app');
+  const isCreatingRef = useRef(false);
 
   const loadProjects = useCallback(async () => {
     try {
       const res = await request.get('/playground/projects') as any;
-      const list: ProjectItem[] = res?.projects || [];
-      setProjects(list);
-      if (list.length > 0 && !selectedProject) {
-        setSelectedProject(list[0]);
+      let list: ProjectItem[] = res?.projects || [];
+      if (list.length === 0 && !isCreatingRef.current) {
+        isCreatingRef.current = true;
+        try {
+          // 自动创建一个默认的未命名项目
+          const createRes = await request.post('/playground/projects', { name: '未命名项目' }) as any;
+          if (createRes?.id) {
+            const freshRes = await request.get('/playground/projects') as any;
+            list = freshRes?.projects || [];
+          }
+        } finally {
+          isCreatingRef.current = false;
+        }
       }
+      setProjects(list);
+      setSelectedProject(prev => {
+        if (!prev && list.length > 0) return list[0];
+        if (prev && !list.find(p => p.id === prev.id)) return list[0] || null;
+        return prev;
+      });
     } catch (e) {
       console.error('加载项目列表失败', e);
     } finally {
@@ -287,8 +305,7 @@ const PlaygroundHome: React.FC = () => {
                             {project.name}
                           </div>
                           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <DesktopOutlined style={{ fontSize: 10 }} />
-                            {new Date(project.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            ID: {project.id}
                           </div>
                         </>
                       )}
@@ -333,6 +350,22 @@ const PlaygroundHome: React.FC = () => {
           flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           position: 'relative', padding: '0 40px', zIndex: 1
         }}>
+          {/* 右上角头像区 */}
+          <div style={{ position: 'absolute', top: 24, right: 40, display: 'flex', alignItems: 'center', gap: 16 }}>
+            {user && (
+              <Dropdown menu={{
+                items: [
+                  { key: 'dashboard', label: '返回控制台', onClick: () => navigate(user.role === 'admin' ? '/admin' : '/dashboard') },
+                  { type: 'divider' },
+                  { key: 'logout', label: '退出登录', onClick: () => { logout(); navigate('/login'); } }
+                ]
+              }} placement="bottomRight" arrow={{ pointAtCenter: true }}>
+                <Avatar size={40} style={{ cursor: 'pointer', background: 'linear-gradient(135deg, #A2C1FF 0%, #6C8EFF 100%)', color: '#0a0b0d', fontWeight: 'bold', fontSize: 18, border: '2px solid rgba(255,255,255,0.1)' }}>
+                  {user.username?.charAt(0)?.toUpperCase()}
+                </Avatar>
+              </Dropdown>
+            )}
+          </div>
           {selectedProject ? (
             /* 选中项目 → 预览卡片 */
             <div style={{ textAlign: 'center', maxWidth: 500 }}>
@@ -399,147 +432,7 @@ const PlaygroundHome: React.FC = () => {
                 进入工作台
               </div>
             </div>
-          ) : (
-            /* 无项目时显示 Stitch 对话框 */
-            <div style={{ width: '100%', maxWidth: 760, position: 'relative', zIndex: 2 }}>
-              <h1 style={{
-                fontSize: 48, fontWeight: 400, color: '#fff', margin: '0 0 32px',
-                fontFamily: "'Inter', sans-serif", letterSpacing: '-0.5px'
-              }}>
-                欢迎使用 创作中心...
-              </h1>
-
-              {/* 推荐提示词 Chips */}
-              <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-                {suggestions.map((text, i) => (
-                  <div
-                    key={i}
-                    onClick={() => setNewPrompt(text)}
-                    style={{
-                      padding: '8px 16px', borderRadius: 20, fontSize: 13, color: 'rgba(255,255,255,0.7)',
-                      background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
-                      cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap'
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-                  >
-                    {text}
-                  </div>
-                ))}
-              </div>
-
-              {/* 大输入框 */}
-              <div style={{
-                background: '#1e1f20', borderRadius: 24, padding: '20px 20px 16px',
-                border: '1px solid rgba(255,255,255,0.1)',
-                boxShadow: '0 12px 40px rgba(0,0,0,0.3)',
-                display: 'flex', flexDirection: 'column', gap: 16
-              }}>
-                <Input.TextArea
-                  value={newPrompt}
-                  onChange={e => setNewPrompt(e.target.value)}
-                  placeholder="我们要设计什么样的原生移动应用？"
-                  autoSize={{ minRows: 2, maxRows: 6 }}
-                  variant="borderless"
-                  style={{
-                    fontSize: 16, color: '#fff', padding: 0, resize: 'none',
-                    boxShadow: 'none', background: 'transparent'
-                  }}
-                  onPressEnter={e => {
-                    if (!e.shiftKey) {
-                      e.preventDefault();
-                      if (newPrompt.trim()) handleCreateProject(newPrompt);
-                    }
-                  }}
-                />
-                
-                {/* 输入框底部工具栏 */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <Tooltip title="添加附件">
-                      <div style={{
-                        width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: 'rgba(255,255,255,0.6)', cursor: 'pointer', transition: 'all 0.2s'
-                      }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <PlusOutlined style={{ fontSize: 16 }} />
-                      </div>
-                    </Tooltip>
-
-                    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: 20, padding: 4 }}>
-                      <div
-                        onClick={() => setPlatform('app')}
-                        style={{
-                          padding: '6px 12px', borderRadius: 16, fontSize: 13, cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.2s',
-                          background: platform === 'app' ? '#3d3f42' : 'transparent',
-                          color: platform === 'app' ? '#fff' : 'rgba(255,255,255,0.6)'
-                        }}
-                      >
-                        <MobileOutlined /> 应用
-                      </div>
-                      <div
-                        onClick={() => setPlatform('web')}
-                        style={{
-                          padding: '6px 12px', borderRadius: 16, fontSize: 13, cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.2s',
-                          background: platform === 'web' ? '#3d3f42' : 'transparent',
-                          color: platform === 'web' ? '#fff' : 'rgba(255,255,255,0.6)'
-                        }}
-                      >
-                        <DesktopOutlined /> Web
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <Tooltip title="智能重写">
-                      <div style={{ color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}>
-                        <ThunderboltOutlined style={{ fontSize: 18 }} />
-                      </div>
-                    </Tooltip>
-
-                    <Dropdown menu={{ items: [{ key: '1', label: '3.0 Flash' }, { key: '2', label: '4.0 Pro' }] }} placement="topRight">
-                      <div style={{
-                        padding: '8px 12px', borderRadius: 16, background: 'rgba(255,255,255,0.08)',
-                        color: '#fff', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6
-                      }}>
-                        ✨ 3.0 Flash <span style={{ fontSize: 10, opacity: 0.5 }}>▼</span>
-                      </div>
-                    </Dropdown>
-
-                    <Tooltip title="语音输入">
-                      <div style={{ color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}>
-                        <AudioOutlined style={{ fontSize: 18 }} />
-                      </div>
-                    </Tooltip>
-
-                    <div
-                      onClick={() => { if (newPrompt.trim()) handleCreateProject(newPrompt); }}
-                      style={{
-                        width: 36, height: 36, borderRadius: '50%', background: newPrompt.trim() ? '#fff' : 'rgba(255,255,255,0.1)',
-                        color: newPrompt.trim() ? '#000' : 'rgba(255,255,255,0.4)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: newPrompt.trim() ? 'pointer' : 'not-allowed',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <ArrowUpOutlined style={{ fontSize: 16, fontWeight: 'bold' }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 底部附带按钮 */}
-              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 32 }}>
-                <div style={{
-                  padding: '10px 20px', borderRadius: 20, border: '1px solid rgba(255,255,255,0.1)',
-                  background: 'rgba(255,255,255,0.03)', color: 'rgba(255,255,255,0.7)', fontSize: 14,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.2s'
-                }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
-                  <FileTextOutlined /> Start with a DESIGN.md <span style={{ fontSize: 10, opacity: 0.5 }}>▼</span>
-                </div>
-              </div>
-            </div>
-          )}
+          ) : null}
         </div>
 
         <style>{`

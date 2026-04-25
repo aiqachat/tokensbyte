@@ -39,6 +39,7 @@ interface ModerationConfig {
   volc_project_name: string;
   volc_group_id: string;
   is_configured: boolean;
+  review_enabled: boolean;
 }
 
 // 火山引擎 TOS 地域及访问域名（来自官方文档）
@@ -392,7 +393,7 @@ const PluginConfigInner: React.FC = () => {
         setTimeout(() => {
           storageForm.setFieldsValue({
             tos_access_key: storageRes.tos_access_key || '',
-            tos_secret_key: '',
+            tos_secret_key: storageRes.tos_secret_key || '',
             tos_endpoint: storageRes.tos_endpoint || '',
             tos_region: storageRes.tos_region || '',
             tos_bucket: storageRes.tos_bucket || '',
@@ -407,7 +408,7 @@ const PluginConfigInner: React.FC = () => {
         setTimeout(() => {
           moderationForm.setFieldsValue({
             volc_access_key: moderationRes.volc_access_key || '',
-            volc_secret_key: '',
+            volc_secret_key: moderationRes.volc_secret_key || '',
             volc_app_id: moderationRes.volc_app_id || '',
             volc_project_name: moderationRes.volc_project_name || 'default',
             volc_group_id: moderationRes.volc_group_id || '',
@@ -498,11 +499,21 @@ const PluginConfigInner: React.FC = () => {
     }
   };
 
+  // 审核开关状态
+  const [reviewEnabled, setReviewEnabled] = useState(false);
+
+  // 同步服务端的 review_enabled 状态
+  useEffect(() => {
+    if (moderationConfig) {
+      setReviewEnabled(moderationConfig.review_enabled === true);
+    }
+  }, [moderationConfig]);
+
   const handleSaveModeration = async () => {
     try {
       const values = await moderationForm.validateFields();
       setSavingModeration(true);
-      await request.post(`/plugins/${name}/moderation-config`, values);
+      await request.post(`/plugins/${name}/moderation-config`, { ...values, review_enabled: reviewEnabled });
       message.success('审核配置已保存');
     } catch (error: any) {
       if (error?.errorFields) return; // 表单验证失败
@@ -898,6 +909,31 @@ const PluginConfigInner: React.FC = () => {
   // ====== 审核配置 Tab ======
   const moderationTab = (
     <div>
+      {/* 审核功能开关 */}
+      <div style={{
+        background: '#141414', borderRadius: 8,
+        border: '1px solid rgba(255,255,255,0.08)',
+        padding: '16px 20px', marginBottom: 16,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div>
+          <Text strong style={{ color: '#fff', fontSize: 14 }}>素材审核功能</Text><br />
+          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>
+            {moderationConfig?.is_configured
+              ? '开启后用户上传的素材需要通过火山引擎审核才能使用；关闭后素材上传即可用，无需审核流程。'
+              : '请先完成下方私域虚拟人像素材资产库配置（Access Key / Secret Key）后才可开启审核功能。'}
+          </Text>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Tag color={reviewEnabled ? 'success' : 'default'} style={{ margin: 0 }}>{reviewEnabled ? '已开启' : '已关闭'}</Tag>
+          <Switch
+            checked={reviewEnabled}
+            disabled={!moderationConfig?.is_configured}
+            onChange={setReviewEnabled}
+          />
+        </div>
+      </div>
+
       {/* 状态提示 */}
       {moderationConfig && (
         <div style={{ marginBottom: 16 }}>

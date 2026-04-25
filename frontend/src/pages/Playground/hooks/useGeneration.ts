@@ -15,6 +15,7 @@ export const useGeneration = () => {
     currentModel, prompt, paramValues,
     selectedTokenKey, generating, setGenerating,
     setTaskPollingNodes, currentProjectId,
+    attachedAsset,
   } = usePlayground();
 
   // 保持 currentProjectId 的最新引用（避免闭包过期问题）
@@ -66,6 +67,7 @@ export const useGeneration = () => {
 
   /** 发送生成请求 */
   const handleGenerate = useCallback(async () => {
+    if (generating) return;
     if (!currentModel || !prompt.trim()) return;
     if (!selectedTokenKey) {
       message.warning('请先选择一个 API 密钥');
@@ -74,7 +76,7 @@ export const useGeneration = () => {
 
     setGenerating(true);
 
-    const newNodeId = Date.now().toString();
+    const newNodeId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
     const centerX = -canvasTransform.x / canvasTransform.scale + window.innerWidth / 2 - 250;
     const centerY = -canvasTransform.y / canvasTransform.scale + window.innerHeight / 2 - 200;
     const offsetX = (Math.random() - 0.5) * 100;
@@ -114,14 +116,14 @@ export const useGeneration = () => {
 
         if (currentModel.endpoint) {
           const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
-          const imageUrl = paramValues.image_url;
+          const imageUrl = attachedAsset?.fullUrl || paramValues.image_url;
           if (imageUrl && String(imageUrl).trim()) {
             contentArr.push({ type: 'image_url', image_url: { url: String(imageUrl).trim() } });
           }
           body.content = contentArr;
           delete body.prompt;
         } else {
-          const imageUrl = paramValues.image_url;
+          const imageUrl = attachedAsset?.fullUrl || paramValues.image_url;
           if (imageUrl && String(imageUrl).trim()) {
             body.content = [
               { type: 'text', text: prompt.trim() },
@@ -133,6 +135,11 @@ export const useGeneration = () => {
         delete body.image_url;
       } else if (schemeType === 'image' || currentModel.type_name.includes('图片')) {
         endpoint = '/v1/images/generations';
+        const imgUrl = attachedAsset?.fullUrl || paramValues.image_url;
+        if (imgUrl) {
+           body.image = imgUrl;
+           body.image_url = imgUrl;
+        }
       } else {
         endpoint = '/v1/chat/completions';
         body.messages = [{ role: 'user', content: prompt.trim() }];
@@ -153,21 +160,45 @@ export const useGeneration = () => {
         setTaskPollingNodes(prev => [...prev, newNodeId]);
         pollTaskStatus(newNodeId, taskId, currentModel.model_id, currentModel.poll_endpoint);
       } else {
-        setNodes(prev => {
-          const updated = prev.map(n => n.id === newNodeId ? { ...n, status: 'completed' as const, resultData: res } : n);
-          const completedNode = updated.find(n => n.id === newNodeId);
-          if (completedNode) persistAsset(completedNode, res, currentModel);
-          return updated;
-        });
-        setGenerating(false);
-      }
+          let completedNodesToPersist: CanvasNode[] = [];
+          setNodes(prev => {
+            let updated = [...prev];
+            const mainNodeIndex = updated.findIndex(n => n.id === newNodeId);
+            if (mainNodeIndex >= 0) {
+              updated[mainNodeIndex] = { ...updated[mainNodeIndex], status: 'completed' as const, resultData: res };
+              
+              // 如果返回了多张图 (如 Seedream n>1)，裂变出额外的节点
+              if (res.data && Array.isArray(res.data) && res.data.length > 1) {
+                const extraNodes = res.data.slice(1).map((imgObj: any, idx: number) => {
+                  return {
+                    ...updated[mainNodeIndex],
+                    id: `${newNodeId}-ext-${idx}`,
+                    x: updated[mainNodeIndex].x + 40 * (idx + 1),
+                    y: updated[mainNodeIndex].y + 40 * (idx + 1),
+                    zIndex: updated[mainNodeIndex].zIndex + idx + 1,
+                    resultData: { ...res, data: [imgObj] }
+                  };
+                });
+                updated.push(...extraNodes);
+              }
+            }
+            
+            completedNodesToPersist = updated.filter(n => n.id === newNodeId || n.id.startsWith(`${newNodeId}-ext-`));
+            return updated;
+          });
+          
+          for (const node of completedNodesToPersist) {
+             persistAsset(node, node.resultData, currentModel);
+          }
+          setGenerating(false);
+        }
     } catch (e: any) {
       const errMsg = e?.response?.data?.error?.message || e?.message || '生成失败';
       message.error(errMsg);
       setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, status: 'error', resultData: { message: errMsg } } : n));
       setGenerating(false);
     }
-  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes]);
+  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAsset]);
 
   /** 轮询视频任务状态 */
   const pollTaskStatus = useCallback((nodeId: string, taskId: string, modelId: string, pollEndpointTemplate?: string) => {
@@ -196,12 +227,15 @@ export const useGeneration = () => {
         const status = res?.status || res?.final_result?.status || '';
 
         if (status === 'succeeded') {
+          let nodeToPersist: CanvasNode | undefined;
           setNodes(prev => {
             const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: res } : n);
-            const completedNode = updated.find(n => n.id === nodeId);
-            if (completedNode) persistAsset(completedNode, res, currentModel);
+            nodeToPersist = updated.find(n => n.id === nodeId);
             return updated;
           });
+          if (nodeToPersist) {
+            persistAsset(nodeToPersist, res, currentModel);
+          }
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
           setGenerating(false);
           return;
