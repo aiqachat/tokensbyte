@@ -21,6 +21,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/projects/{id}", get(get_project).put(update_project).delete(delete_project))
         .route("/projects/{id}/save-canvas", post(save_canvas))
         .route("/assets/persist", post(persist_asset))
+        .route("/assets/upload", post(upload_reference))
         .route("/assets/{id}", delete(delete_asset))
         .route("/storage-stats", get(storage_stats))
 }
@@ -577,4 +578,59 @@ fn guess_extension(url: &str, asset_type: &str) -> String {
         "audio" => "mp3".to_string(),
         _ => "json".to_string(),
     }
+}
+
+async fn upload_reference(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+    mut multipart: axum::extract::Multipart,
+) -> AppResult<Json<serde_json::Value>> {
+    let tos_config = get_tos_config(&state, "playground").await
+        .ok_or_else(|| AppError::BadRequest("Playground 存储未配置".to_string()))?;
+
+    // 获取用户 UID
+    let uid: String = sqlx::query_scalar(&state.db.format_query("SELECT uid FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+
+    let mut file_data: Option<axum::body::Bytes> = None;
+    let mut original_name = String::new();
+    let mut content_type = String::new();
+    let mut project_id: Option<i32> = None;
+
+    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        let name = field.name().unwrap_or("").to_string();
+        if name == "file" {
+            original_name = field.file_name().unwrap_or("unknown").to_string();
+            content_type = field.content_type().unwrap_or("application/octet-stream").to_string();
+            file_data = Some(field.bytes().await.map_err(|_| AppError::BadRequest("读取文件失败".to_string()))?);
+        } else if name == "project_id" {
+            project_id = field.text().await.ok().and_then(|v| v.parse().ok());
+        }
+    }
+
+    let data = file_data.ok_or_else(|| AppError::BadRequest("未提供文件".to_string()))?;
+    let ext = std::path::Path::new(&original_name)
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or("bin");
+
+    let timestamp = chrono::Utc::now().timestamp();
+    let hash = &format!("{:x}", sha2::Sha256::digest(&data))[..8];
+    
+    let pid_str = project_id.map(|id| format!("{:08}", id)).unwrap_or_else(|| "00000000".to_string());
+    
+    // 存放在 references 目录下
+    let relative_path = format!("{}/{}/references/{}_{}.{}", uid, pid_str, timestamp, hash, ext);
+    let object_key = tos_config.full_key(&relative_path);
+
+    let file_url = tos::upload_file(&tos_config, &object_key, data.to_vec(), &content_type, None).await
+        .map_err(|e| AppError::Internal(format!("TOS 上传失败: {}", e)))?;
+
+    Ok(Json(json!({
+        "url": file_url,
+        "object_key": object_key,
+        "original_name": original_name,
+    })))
 }

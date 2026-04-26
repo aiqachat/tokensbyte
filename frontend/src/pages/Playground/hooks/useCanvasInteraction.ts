@@ -9,12 +9,10 @@
 import { useCallback, useRef } from 'react';
 import { useCanvas } from '../context/PlaygroundContext';
 import type { CanvasTransform } from '../types';
+import type { CanvasParticlesHandle } from '../components/CanvasParticles';
 
 /**
  * 模块级共享拖拽状态
- * ⚠️ 必须在模块级定义，因为 useCanvasInteraction 被 InfiniteCanvas 和 CanvasNode
- * 分别调用（两个独立的 hook 实例）。useRef 会为每个实例创建独立 ref，
- * 导致 CanvasNode 设置的 nodeId 在 InfiniteCanvas 的 mousemove 中读不到。
  */
 const sharedNodeDrag = {
   nodeId: null as string | null,
@@ -22,7 +20,7 @@ const sharedNodeDrag = {
   offsetY: 0,
 };
 
-export const useCanvasInteraction = () => {
+export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasParticlesHandle>) => {
   const {
     canvasTransform, setCanvasTransform,
     activeTool, isSpaceDown,
@@ -52,26 +50,68 @@ export const useCanvasInteraction = () => {
     if (!rect) return;
 
     // e.ctrlKey 表示触控板捏合 (Pinch) 或按住 Ctrl 滚轮
-    if (e.ctrlKey || e.metaKey) {
-      // 放大 / 缩小
-      const zoomSensitivity = 0.01; 
-      const zoomFactor = -e.deltaY * zoomSensitivity;
-      let newScale = ct.scale * (1 + zoomFactor);
-      newScale = Math.min(Math.max(0.05, newScale), 5); // 允许 0.05x 到 5x
+    // e.metaKey (Mac ⌘) 和 e.altKey 也常用于缩放
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      // 放大 / 缩小：使用指数级缩放以获得平滑体验
+      let delta = 'deltaY' in e ? e.deltaY : 0;
+      
+      // 抹平不同输入设备的差异
+      if ('deltaMode' in e && e.deltaMode === 1) { // Line mode
+        delta *= 20;
+      }
+      
+      // 针对 Mac 触控板 Pinch 手势（ctrlKey 为 true）大幅优化灵敏度
+      // Pinch 的 delta 物理感更强，需要更灵敏的反馈
+      const sensitivity = e.ctrlKey ? 0.04 : 0.01;
+      const zoomFactor = Math.pow(1.1, -delta * sensitivity);
+      let newScale = ct.scale * zoomFactor;
+      
+      // 限制缩放范围：0.05x 到 5x
+      newScale = Math.min(Math.max(0.05, newScale), 5);
+      
+      if (newScale === ct.scale) return;
 
+      // 计算鼠标相对于画布的位置
       const pointerX = e.clientX - rect.left;
       const pointerY = e.clientY - rect.top;
+      
+      // 以鼠标位置为中心计算新的平移量
       const ratio = newScale / ct.scale;
       const newX = pointerX - (pointerX - ct.x) * ratio;
       const newY = pointerY - (pointerY - ct.y) * ratio;
       
-      setCanvasTransform({ x: newX, y: newY, scale: newScale });
+      // 性能优化：直接更新 DOM
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        const transformLayer = canvasRef.current?.firstElementChild as HTMLElement | null;
+        if (transformLayer) {
+          transformLayer.style.transform = `translate(${newX}px, ${newY}px) scale(${newScale})`;
+        }
+        if (canvasRef.current) {
+          // 更新网格背景
+          canvasRef.current.style.backgroundPosition = `${newX}px ${newY}px`;
+        }
+        // 同步更新粒子背景
+        if (particlesRef?.current) {
+          particlesRef.current.updateTransform(newX, newY, newScale);
+        }
+      });
+
+      // 更新引用缓存，保证后续事件能读到最新值
+      transformRef.current = { x: newX, y: newY, scale: newScale };
+
+      // 防抖同步到 React State
+      if (wheelTimeoutRef.current) window.clearTimeout(wheelTimeoutRef.current);
+      wheelTimeoutRef.current = window.setTimeout(() => {
+        setCanvasTransform({ x: transformRef.current.x, y: transformRef.current.y, scale: transformRef.current.scale });
+      }, 100);
     } else {
       // 平移 (双指滑动 或 普通滚轮)
+      // Mac 触控板的双指滑动 delta 已经非常丝滑，直接 1:1 映射
       const newX = ct.x - e.deltaX;
       const newY = ct.y - e.deltaY;
       
-      // 使用 RAF 立即更新 DOM，避免 React 重渲染卡顿
+      // 使用 RAF 立即更新 DOM
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
         const transformLayer = canvasRef.current?.firstElementChild as HTMLElement | null;
@@ -81,21 +121,26 @@ export const useCanvasInteraction = () => {
         if (canvasRef.current) {
           canvasRef.current.style.backgroundPosition = `${newX}px ${newY}px`;
         }
+        // 同步更新粒子背景
+        if (particlesRef?.current) {
+          particlesRef.current.updateTransform(newX, newY, ct.scale);
+        }
       });
       
       transformRef.current = { ...ct, x: newX, y: newY };
       
       // 防抖同步到 React State
-      if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
-      wheelTimeoutRef.current = setTimeout(() => {
+      if (wheelTimeoutRef.current) window.clearTimeout(wheelTimeoutRef.current);
+      wheelTimeoutRef.current = window.setTimeout(() => {
         setCanvasTransform({ x: transformRef.current.x, y: transformRef.current.y, scale: transformRef.current.scale });
       }, 100);
     }
-  }, [canvasRef, setCanvasTransform]);
+  }, [canvasRef, setCanvasTransform, particlesRef]);
 
   /** 画布鼠标按下 */
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
-    if (activeTool === 'hand' || isSpaceDown) {
+    // 允许通过手形工具、空格键或鼠标中键(button 1)进行平移
+    if (activeTool === 'hand' || isSpaceDown || e.button === 1) {
       canvasDragRef.current = {
         isDragging: true,
         startX: e.clientX,
@@ -104,6 +149,11 @@ export const useCanvasInteraction = () => {
         startTransformY: transformRef.current.y,
       };
       setIsDraggingCanvas(true);
+      
+      // 如果是中键，防止触发浏览器默认行为（如自动滚动）
+      if (e.button === 1) {
+        e.preventDefault();
+      }
     }
   }, [activeTool, isSpaceDown, setIsDraggingCanvas]);
 
@@ -127,6 +177,10 @@ export const useCanvasInteraction = () => {
         // 更新网格背景位置
         if (canvasRef.current) {
           canvasRef.current.style.backgroundPosition = `${newX}px ${newY}px`;
+        }
+        // 同步更新粒子背景
+        if (particlesRef?.current) {
+          particlesRef.current.updateTransform(newX, newY, transformRef.current.scale);
         }
       });
 

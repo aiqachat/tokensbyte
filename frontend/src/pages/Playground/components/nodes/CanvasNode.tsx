@@ -10,7 +10,7 @@ import {
   CloseOutlined, LoadingOutlined
 } from '@ant-design/icons';
 import type { CanvasNode as CanvasNodeType } from '../../types';
-import { useCanvas } from '../../context/PlaygroundContext';
+import { useCanvas, usePlayground } from '../../context/PlaygroundContext';
 import { useCanvasInteraction } from '../../hooks/useCanvasInteraction';
 import VideoNodeContent from './VideoNodeContent';
 import ImageNodeContent from './ImageNodeContent';
@@ -20,13 +20,18 @@ const { Text } = Typography;
 
 interface Props {
   node: CanvasNodeType;
+  isSelected: boolean;
+  isDragging: boolean;
+  activeTool: string;
+  onMouseDown: (e: React.MouseEvent, id: string, x: number, y: number) => void;
+  onRemove: (id: string) => void;
+  onSelect: (id: string) => void;
 }
 
-const CanvasNode: React.FC<Props> = React.memo(({ node }) => {
-  const { draggingNodeId, activeTool } = useCanvas();
-  const { handleNodeMouseDown, removeNode } = useCanvasInteraction();
-
-  const isDragging = draggingNodeId === node.id;
+const CanvasNode: React.FC<Props> = React.memo(({
+  node, isSelected, isDragging, activeTool,
+  onMouseDown, onRemove, onSelect
+}) => {
 
   const typeIcon = node.type === 'video'
     ? <VideoCameraOutlined />
@@ -39,6 +44,7 @@ const CanvasNode: React.FC<Props> = React.memo(({ node }) => {
   return (
     <div
       data-node-id={node.id}
+      onClick={() => onSelect(node.id)}
       style={{
         position: 'absolute',
         left: node.x,
@@ -48,12 +54,12 @@ const CanvasNode: React.FC<Props> = React.memo(({ node }) => {
         zIndex: node.zIndex,
         background: '#1A1B1E',
         borderRadius: 16,
-        border: `1px solid ${isDragging ? '#A2C1FF' : 'rgba(255,255,255,0.08)'}`,
-        boxShadow: isDragging ? '0 8px 32px rgba(162,193,255,0.2)' : '0 4px 20px rgba(0,0,0,0.4)',
+        border: `1px solid ${isSelected ? '#A2C1FF' : isDragging ? 'rgba(162,193,255,0.5)' : 'rgba(255,255,255,0.08)'}`,
+        boxShadow: isSelected ? '0 0 0 2px rgba(162,193,255,0.3), 0 8px 32px rgba(162,193,255,0.15)' : isDragging ? '0 8px 32px rgba(162,193,255,0.2)' : '0 4px 20px rgba(0,0,0,0.4)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        transition: isDragging ? 'none' : 'box-shadow 0.2s',
+        transition: isDragging ? 'none' : 'box-shadow 0.2s, border-color 0.2s',
       }}
     >
       {/* 标题栏 (拖拽手柄) */}
@@ -65,7 +71,7 @@ const CanvasNode: React.FC<Props> = React.memo(({ node }) => {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           cursor: activeTool === 'pointer' ? 'grab' : 'default', backdropFilter: 'blur(4px)'
         }}
-        onMouseDown={(e) => handleNodeMouseDown(e, node.id, node.x, node.y)}
+        onMouseDown={(e) => onMouseDown(e, node.id, node.x, node.y)}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {typeIcon}
@@ -74,7 +80,7 @@ const CanvasNode: React.FC<Props> = React.memo(({ node }) => {
         <Tooltip title="移除节点">
           <CloseOutlined
             style={{ padding: 4, cursor: 'pointer', opacity: 0.6, transition: 'opacity 0.2s' }}
-            onClick={(e) => { e.stopPropagation(); removeNode(node.id); }}
+            onClick={(e) => { e.stopPropagation(); onRemove(node.id); }}
             onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.6')}
           />
