@@ -662,7 +662,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           className="custom-sider"
         >
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ height: screens.xs ? 48 : 56, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
               {siteLogo ? (
                 (collapsed && !screens.xs) ? (
                   <img src={siteLogo} alt="logo" style={{ width: 32, height: 32, objectFit: 'contain' }} />
@@ -726,6 +726,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           <Header style={{ 
             padding: 0, 
             background: '#141414', 
+            height: screens.xs ? 48 : 56,
+            lineHeight: (screens.xs ? 48 : 56) + 'px',
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'space-between', 
@@ -737,7 +739,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 type="text"
                 icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
                 onClick={() => setCollapsed(!collapsed)}
-                style={{ fontSize: '16px', width: 64, height: 64, color: '#fff' }}
+                style={{ fontSize: '16px', width: screens.xs ? 48 : 56, height: screens.xs ? 48 : 56, color: '#fff' }}
               />
               {screens.xs && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }}>

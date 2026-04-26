@@ -37,7 +37,7 @@ const sharedResizeDrag = {
   startNodeH: 0,
 };
 
-export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasParticlesHandle>) => {
+export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasParticlesHandle> | React.MutableRefObject<CanvasParticlesHandle | null>) => {
   const {
     canvasTransform, setCanvasTransform,
     activeTool, isSpaceDown,

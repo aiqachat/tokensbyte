@@ -5,6 +5,32 @@ use axum::{
 };
 use std::sync::Arc;
 use std::collections::HashMap;
+use tokio::sync::RwLock;
+use std::time::Instant;
+
+/// 模型广场公开数据的内存缓存（TTL 60秒）
+struct MarketplaceCache {
+    data: Option<serde_json::Value>,
+    updated_at: Instant,
+}
+
+impl MarketplaceCache {
+    fn new() -> Self {
+        Self { data: None, updated_at: Instant::now() }
+    }
+    fn is_valid(&self) -> bool {
+        self.data.is_some() && self.updated_at.elapsed().as_secs() < 60
+    }
+    fn invalidate(&mut self) {
+        self.data = None;
+    }
+}
+
+static MARKETPLACE_CACHE: std::sync::OnceLock<RwLock<MarketplaceCache>> = std::sync::OnceLock::new();
+
+fn get_marketplace_cache() -> &'static RwLock<MarketplaceCache> {
+    MARKETPLACE_CACHE.get_or_init(|| RwLock::new(MarketplaceCache::new()))
+}
 use serde_json::json;
 use crate::{
     error::{AppResult, AppError},
@@ -996,14 +1022,18 @@ async fn save_marketplace_models(
         upsert_config(&state, &name, &config_key, &val.to_string()).await?;
     }
 
+    // 清除缓存，下次请求将重新构建
+    get_marketplace_cache().write().await.invalidate();
+
     Ok(Json(json!({ "message": "模型广场配置已保存" })))
 }
 
-/// 公开接口：获取模型广场展示数据（需登录，不需 admin）
+/// 公开接口：获取模型广场展示数据（需登录，校验用户等级权限）
 pub async fn get_marketplace_public(
     State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
-    // 检查插件是否启用
+    // 1. 检查插件是否启用
     let plugin: Option<Plugin> = sqlx::query_as(
         &state.db.format_query("SELECT * FROM plugins WHERE name = ? AND is_enabled = 1")
     )
@@ -1011,18 +1041,45 @@ pub async fn get_marketplace_public(
     .fetch_optional(&state.db.pool)
     .await?;
 
-    if plugin.is_none() {
-        return Ok(Json(json!({
+    let plugin = match plugin {
+        Some(p) => p,
+        None => return Ok(Json(json!({
             "enabled": false,
             "models": [],
             "providers": [],
             "types": [],
-        })));
+        }))),
+    };
+
+    // 2. 用户等级权限校验
+    if plugin.allowed_levels != "all" {
+        let user_group: String = sqlx::query_scalar(
+            &state.db.format_query("SELECT user_group FROM users WHERE id = ?")
+        )
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .unwrap_or_else(|| "default".to_string());
+
+        let allowed: Vec<&str> = plugin.allowed_levels.split(',').collect();
+        if !allowed.contains(&user_group.as_str()) {
+            return Err(AppError::Forbidden("您当前的用户等级无权访问模型广场".to_string()));
+        }
     }
 
+    // 3. 尝试从缓存读取
+    {
+        let cache = get_marketplace_cache().read().await;
+        if cache.is_valid() {
+            if let Some(ref data) = cache.data {
+                return Ok(Json(data.clone()));
+            }
+        }
+    }
+
+    // 4. 缓存未命中，从数据库查询并构建
     let configs = load_plugin_configs(&state, "model_marketplace").await?;
 
-    // 查出全部活跃模型
     let models: Vec<crate::models::Model> = sqlx::query_as(
         &state.db.format_query("SELECT * FROM models WHERE is_active = 1 ORDER BY id DESC")
     ).fetch_all(&state.db.pool).await?;
@@ -1039,7 +1096,6 @@ pub async fn get_marketplace_public(
         &state.db.format_query("SELECT * FROM billing_rules WHERE is_active = 1")
     ).fetch_all(&state.db.pool).await?;
 
-    // 过滤出在广场中启用的模型
     let mut marketplace_models: Vec<serde_json::Value> = Vec::new();
     for m in &models {
         let config_key = format!("mp_model_id_{}", m.id);
@@ -1063,7 +1119,6 @@ pub async fn get_marketplace_public(
             .map(|t| t.name.clone())
             .unwrap_or_default();
 
-        // 计费信息
         let billing_info = m.billing_rule_id
             .and_then(|bid| billing_rules.iter().find(|b| b.id == bid))
             .map(|b| json!({
@@ -1091,14 +1146,12 @@ pub async fn get_marketplace_public(
         }));
     }
 
-    // 按 sort_order 降序排序
     marketplace_models.sort_by(|a, b| {
         let sa = a.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
         let sb = b.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
         sb.cmp(&sa)
     });
 
-    // 构建供应商和类型列表（仅包含有模型的）
     let active_provider_ids: std::collections::HashSet<i32> = marketplace_models.iter()
         .filter_map(|m| m.get("provider_id").and_then(|v| v.as_i64()).map(|v| v as i32))
         .collect();
@@ -1116,11 +1169,20 @@ pub async fn get_marketplace_public(
         .map(|t| json!({"id": t.id, "name": t.name}))
         .collect();
 
-    Ok(Json(json!({
+    let result = json!({
         "enabled": true,
         "models": marketplace_models,
         "providers": provider_list,
         "types": type_list,
         "total": marketplace_models.len(),
-    })))
+    });
+
+    // 5. 写入缓存
+    {
+        let mut cache = get_marketplace_cache().write().await;
+        cache.data = Some(result.clone());
+        cache.updated_at = Instant::now();
+    }
+
+    Ok(Json(result))
 }
