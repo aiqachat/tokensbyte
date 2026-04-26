@@ -27,8 +27,11 @@ interface MarketplaceModel {
   model_id: string;
   provider_id: number;
   provider_name: string;
+  provider_logo?: string;
   type_id: number;
   type_name: string;
+  type_logo?: string;
+  logo?: string;
   sort_order: number;
   description: string;
   billing: any;
@@ -38,6 +41,7 @@ interface MarketplaceModel {
 interface FilterItem {
   id: number;
   name: string;
+  logo?: string;
 }
 
 // 类型图标映射
@@ -180,6 +184,7 @@ const ModelMarketplace: React.FC = () => {
     setSelectedProviders(prev =>
       prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
     );
+    setSelectedModel(null);
   };
 
   const activeFilters = (selectedType !== null ? 1 : 0) + (selectedProviders.length > 0 ? 1 : 0);
@@ -299,7 +304,7 @@ const ModelMarketplace: React.FC = () => {
               <Tooltip title={collapsed && !screens.xs ? "全部模型" : ""} placement="right">
                 <div
                   className={`mp-sidebar-item ${selectedType === null ? 'active' : ''}`}
-                  onClick={() => setSelectedType(null)}
+                  onClick={() => { setSelectedType(null); setSelectedModel(null); }}
                   style={{ justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start', padding: collapsed && !screens.xs ? '12px 0' : '8px 12px' }}
                 >
                   <AppstoreOutlined style={{ fontSize: 18 }} />
@@ -315,7 +320,7 @@ const ModelMarketplace: React.FC = () => {
                 <Tooltip key={t.id} title={collapsed && !screens.xs ? t.name : ""} placement="right">
                   <div
                     className={`mp-sidebar-item ${selectedType === t.id ? 'active' : ''}`}
-                    onClick={() => setSelectedType(t.id)}
+                    onClick={() => { setSelectedType(t.id); setSelectedModel(null); }}
                     style={{ justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start', padding: collapsed && !screens.xs ? '12px 0' : '8px 12px' }}
                   >
                     <span style={{ fontSize: 18, display: 'flex', alignItems: 'center' }}>{getTypeIcon(t.name)}</span>
@@ -335,7 +340,7 @@ const ModelMarketplace: React.FC = () => {
                 <div className="mp-sidebar-title" style={{ padding: '0 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   按供应商
                   {selectedProviders.length > 0 && (
-                    <button className="mp-clear-btn" onClick={() => setSelectedProviders([])}>
+                    <button className="mp-clear-btn" onClick={() => { setSelectedProviders([]); setSelectedModel(null); }}>
                       清除
                     </button>
                   )}
@@ -354,17 +359,25 @@ const ModelMarketplace: React.FC = () => {
                   >
                     {collapsed && !screens.xs ? (
                       <div style={{ 
-                        width: 18, height: 18, borderRadius: 4, 
+                        width: 24, height: 24, borderRadius: 4, 
                         border: `2px solid ${selectedProviders.includes(p.id) ? '#fff' : 'rgba(255,255,255,0.45)'}`, 
                         background: selectedProviders.includes(p.id) ? '#fff' : 'transparent', 
-                        display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        overflow: 'hidden',
                       }}>
-                         {selectedProviders.includes(p.id) && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#1677ff' }} />}
+                        {p.logo ? (
+                          <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 18, height: 18, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        ) : (
+                          selectedProviders.includes(p.id) && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#1677ff' }} />
+                        )}
                       </div>
                     ) : (
                       <>
                         <Checkbox checked={selectedProviders.includes(p.id)} />
-                        <span style={{ flex: 1, marginLeft: 8 }}>{p.name}</span>
+                        {p.logo && (
+                          <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 18, height: 18, objectFit: 'contain', marginLeft: 8 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        )}
+                        <span style={{ flex: 1, marginLeft: p.logo ? 6 : 8 }}>{p.name}</span>
                         <span className="mp-sidebar-count">{providerCounts[p.id] || 0}</span>
                       </>
                     )}
@@ -458,12 +471,21 @@ const ModelMarketplace: React.FC = () => {
                   {/* 左侧详情 */}
                   <div style={{ flex: '1 1 500px', background: 'rgba(255,255,255,0.02)', border: '1px solid #21262d', borderRadius: 16, padding: screens.xs ? '20px' : '40px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32 }}>
-                      <div style={{ width: 64, height: 64, borderRadius: 16, background: 'rgba(22, 119, 255, 0.1)', color: '#1677ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, border: '1px solid rgba(22, 119, 255, 0.2)' }}>
-                        {getTypeIcon(selectedModel.type_name)}
+                      <div style={{ width: 64, height: 64, borderRadius: 16, background: 'rgba(22, 119, 255, 0.1)', color: '#1677ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, border: '1px solid rgba(22, 119, 255, 0.2)', overflow: 'hidden' }}>
+                        {selectedModel.logo ? (
+                          <img src={`/assets/icons/lobe/${selectedModel.logo}.svg`} alt="" style={{ width: 40, height: 40, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        ) : selectedModel.provider_logo ? (
+                          <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 40, height: 40, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        ) : (
+                          getTypeIcon(selectedModel.type_name)
+                        )}
                       </div>
                       <div>
                         <h1 style={{ margin: 0, fontSize: screens.xs ? 24 : 32, fontWeight: 700, color: '#fff' }}>{selectedModel.name}</h1>
                         <div style={{ fontSize: 15, color: '#8b949e', marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {selectedModel.provider_logo && (
+                            <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          )}
                           {selectedModel.provider_name}
                           <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#484f58' }} />
                           <code style={{ background: '#21262d', padding: '2px 8px', borderRadius: 4, fontSize: 13, color: '#c9d1d9' }}>{selectedModel.model_id}</code>
@@ -510,25 +532,79 @@ const ModelMarketplace: React.FC = () => {
                   {/* 右侧价格卡片 */}
                   <div style={{ width: screens.xs ? '100%' : 340, flexShrink: 0 }}>
                     <div style={{ background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)', borderRadius: 16, padding: '24px', boxShadow: '0 8px 32px rgba(22, 119, 255, 0.2)', marginBottom: 24 }}>
-                      <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.8)', marginBottom: 8 }}>计费单价 (估计)</div>
-                      {selectedModel.billing && selectedModel.billing.billing_type === 'token' ? (
-                        <>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
-                            <span style={{ color: '#fff', fontSize: 14 }}>输入 (Prompt)</span>
-                            <span style={{ color: '#fff', fontSize: 24, fontWeight: 700 }}>¥{selectedModel.billing.prompt_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400 }}>/ 1M tokens</small></span>
+                      <div style={{ fontSize: 16, fontWeight: 600, color: '#fff', marginBottom: 16 }}>详细计费规则</div>
+                      
+                      {selectedModel.billing ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {/* 计费类型说明 */}
+                          <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>计费模式</div>
+                            <div style={{ fontSize: 15, color: '#fff', fontWeight: 500 }}>
+                              {getBillingLabel(selectedModel.billing)}
+                              {selectedModel.billing.name && ` - ${selectedModel.billing.name}`}
+                            </div>
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                            <span style={{ color: '#fff', fontSize: 14 }}>输出 (Completion)</span>
-                            <span style={{ color: '#fff', fontSize: 24, fontWeight: 700 }}>¥{selectedModel.billing.completion_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400 }}>/ 1M tokens</small></span>
-                          </div>
-                        </>
-                      ) : selectedModel.billing && selectedModel.billing.billing_type === 'fixed' ? (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                          <span style={{ color: '#fff', fontSize: 14 }}>单次调用价格</span>
-                          <span style={{ color: '#fff', fontSize: 24, fontWeight: 700 }}>¥{selectedModel.billing.fixed_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400 }}>/ 次</small></span>
+
+                          {/* 基础费率 */}
+                          {selectedModel.billing.billing_type === 'token' && (
+                            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输入 (Prompt)</span>
+                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.prompt_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输出 (Completion)</span>
+                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.completion_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedModel.billing.billing_type === 'fixed' && (
+                            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>单次调用费用</span>
+                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.fixed_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 次</small></span>
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedModel.billing.billing_type === 'duration' && (
+                            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>按时长计费</span>
+                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.duration_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 秒</small></span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 阶梯计费 */}
+                          {selectedModel.billing.pricing_tiers && (() => {
+                            try {
+                              const tiers = JSON.parse(selectedModel.billing.pricing_tiers);
+                              if (Array.isArray(tiers) && tiers.length > 0) {
+                                return (
+                                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}>上下文阶梯费率</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                      {tiers.map((t: any, i: number) => (
+                                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: i < tiers.length - 1 ? 10 : 0, borderBottom: i < tiers.length - 1 ? '1px dashed rgba(255,255,255,0.2)' : 'none' }}>
+                                          <span style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>&le; {t.max_prompt_tokens >= 1000 ? t.max_prompt_tokens / 1000 + 'k' : t.max_prompt_tokens} Tokens</span>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
+                                            <span>输入: ¥{t.prompt_rate} <small>/ 1M</small></span>
+                                            <span>输出: ¥{t.completion_rate} <small>/ 1M</small></span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              }
+                            } catch(e) {}
+                            return null;
+                          })()}
                         </div>
                       ) : (
-                        <div style={{ color: '#fff', fontSize: 20, fontWeight: 600 }}>暂未配置价格</div>
+                        <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 15 }}>暂未配置计费规则，该模型当前可能为免费使用或不可用。</div>
                       )}
                     </div>
                     
@@ -538,6 +614,17 @@ const ModelMarketplace: React.FC = () => {
                         该模型目前已在全平台上线。您可以直接在 API 调用或控制面板中使用。如果您有大规模调用需求，请联系客服获取专属优惠。
                       </div>
                     </div>
+                    
+                    {selectedModel.billing && selectedModel.billing.billing_rule && (
+                      <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 16, padding: '20px', marginTop: 24 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 12 }}>计费规则说明</div>
+                        <div 
+                          className="quill-content"
+                          dangerouslySetInnerHTML={{ __html: selectedModel.billing.billing_rule }}
+                          style={{ fontSize: 13, color: '#8b949e', lineHeight: 1.6, overflowWrap: 'break-word', wordBreak: 'break-all' }} 
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -581,8 +668,14 @@ const ModelMarketplace: React.FC = () => {
                         style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}
                       >
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-                          <div className="mp-card-icon" style={{ background: 'rgba(88,166,255,0.1)', color: '#58a6ff' }}>
-                            {getTypeIcon(model.type_name)}
+                          <div className="mp-card-icon" style={{ background: 'rgba(88,166,255,0.1)', color: '#58a6ff', overflow: 'hidden' }}>
+                            {model.logo ? (
+                              <img src={`/assets/icons/lobe/${model.logo}.svg`} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            ) : model.provider_logo ? (
+                              <img src={`/assets/icons/lobe/${model.provider_logo}.svg`} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).replaceWith(document.createTextNode('')); }} />
+                            ) : (
+                              getTypeIcon(model.type_name)
+                            )}
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>

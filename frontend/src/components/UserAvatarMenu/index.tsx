@@ -204,7 +204,7 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
           className="header-avatar-btn"
           style={{ 
             display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '4px', 
-            borderRadius: 20, transition: 'background 0.2s',
+            borderRadius: '50%', transition: 'background 0.2s',
             border: '2px solid transparent'
           }} 
         >

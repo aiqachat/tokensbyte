@@ -121,8 +121,8 @@ pub async fn create_model(
     let enable_log_content = req.enable_log_content.unwrap_or(0);
 
     let id_i32 = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO models (mid, name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, site_discount, site_discount_enabled, is_active, enable_log_content)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        &state.db.format_query(r#"INSERT INTO models (mid, name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, site_discount, site_discount_enabled, is_active, enable_log_content, logo)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#)
     )
     .bind(&mid)
@@ -138,6 +138,7 @@ pub async fn create_model(
     .bind(site_discount_enabled)
     .bind(is_active)
     .bind(enable_log_content)
+    .bind(&req.logo)
     .fetch_one(&state.db.pool)
     .await?
     .get::<i32, _>("id");
@@ -234,6 +235,9 @@ pub async fn update_model(
     }
     if let Some(sde) = req.site_discount_enabled {
         sqlx::query(&state.db.format_query("UPDATE models SET site_discount_enabled = ? WHERE id = ?")).bind(sde).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(ref logo) = req.logo {
+        sqlx::query(&state.db.format_query("UPDATE models SET logo = ? WHERE id = ?")).bind(logo).bind(id).execute(&state.db.pool).await?;
     }
 
     sqlx::query(&state.db.format_query("UPDATE models SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;

@@ -66,6 +66,7 @@ export interface ModelModel {
   enable_log_content?: number;
   site_discount?: number;
   site_discount_enabled?: number;
+  logo?: string;
   created_at: string;
   updated_at?: string;
 }
@@ -76,6 +77,7 @@ export interface ModelProvider {
   sort_order: number;
   is_active: boolean;
   remark?: string;
+  logo?: string;
   created_at: string;
   updated_at: string;
 }
@@ -85,6 +87,7 @@ export interface ModelType {
   name: string;
   sort_order: number;
   is_active: boolean;
+  logo?: string;
   created_at: string;
   updated_at: string;
 }
@@ -93,6 +96,7 @@ export interface ClassificationCount {
   id: number | null;
   name: string;
   count: number;
+  logo?: string;
 }
 
 export interface ClassificationsResponse {

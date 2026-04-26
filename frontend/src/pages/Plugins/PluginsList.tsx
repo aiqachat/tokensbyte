@@ -14,6 +14,7 @@ const pluginIcons: Record<string, React.ReactNode> = {
   volcengine_pool: <CloudServerOutlined style={{ fontSize: 22 }} />,
   gptimage_pool: <PictureOutlined style={{ fontSize: 22 }} />,
   model_marketplace: <ShopOutlined style={{ fontSize: 22 }} />,
+  site_icons: <AppstoreOutlined style={{ fontSize: 22 }} />,
 };
 
 // 系统增强插件使用不同的图标颜色

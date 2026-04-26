@@ -488,6 +488,86 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     }
   }, [pageName, siteTitle]);
 
+  const announcementContent = (
+    <div style={{ width: 360, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ 
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+        padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' 
+      }}>
+        <span style={{ color: '#fff', fontSize: 16, fontWeight: 500 }}>通知</span>
+      </div>
+      
+      <div style={{ 
+        maxHeight: 480, overflowY: 'auto', padding: announcements.length > 0 ? '16px' : '60px 20px',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {announcements.length > 0 ? (
+          <List
+            itemLayout="vertical"
+            dataSource={announcements}
+            split={false}
+            renderItem={(item) => (
+              <div 
+                key={item.id} 
+                style={{ 
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  borderRadius: 12,
+                  padding: '16px',
+                  marginBottom: 12,
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    {item.is_pinned === 1 && (
+                      <div style={{ 
+                        background: 'rgba(22, 119, 255, 0.2)', color: '#4096ff', fontSize: 12,
+                        padding: '2px 6px', borderRadius: 4, marginTop: 2, whiteSpace: 'nowrap'
+                      }}>
+                        置顶
+                      </div>
+                    )}
+                    <div style={{ color: '#fff', fontSize: 15, fontWeight: 500, lineHeight: 1.5 }}>
+                      {item.title}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
+                    <ScheduleOutlined />
+                    {new Date(item.created_at).toLocaleString(i18n.language === 'en' ? 'en-US' : 'zh-CN', {
+                      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+                    })}
+                  </div>
+                </div>
+                
+                <div 
+                  className="quill-content"
+                  dangerouslySetInnerHTML={{ __html: item.content }} 
+                  style={{ 
+                    color: 'rgba(255,255,255,0.7)', fontSize: 13, lineHeight: 1.6,
+                    background: 'transparent', padding: '0', overflowWrap: 'break-word', wordBreak: 'break-all'
+                  }}
+                />
+              </div>
+            )}
+          />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+            <BellOutlined style={{ fontSize: 64, color: 'rgba(255,255,255,0.1)', marginBottom: 24 }} />
+            <div style={{ color: '#e5e5e5', fontSize: 15, fontWeight: 500, marginBottom: 8 }}>你的通知将出现在这里</div>
+            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.6, maxWidth: 260 }}>
+              平台重要公告及更新内容将在这里展示，即可第一时间收到通知。
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <ConfigProvider
@@ -624,36 +704,71 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             </div>
             
             <Space size={screens.xs ? "small" : "middle"}>
+              {isUserEnd && isPluginVisibleForUser('model_marketplace') && (
+                <Button 
+                  type="text" 
+                  icon={<ShopOutlined style={{ fontSize: '18px' }} />} 
+                  style={{ 
+                    color: '#fff', 
+                    height: 42, 
+                    padding: '0 16px',
+                    borderRadius: 21,
+                    background: 'rgba(255,255,255,0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 14,
+                    fontWeight: 500,
+                    transition: 'background 0.2s'
+                  }} 
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+                  onClick={() => window.open('/models', '_blank')}
+                >
+                  模型广场
+                </Button>
+              )}
+
               {enableMultilingual && (
                 <Dropdown menu={{ items: langItems }} placement="bottomRight">
-                  <Button type="text" icon={<GlobalOutlined />} style={{ color: '#fff' }}>
-                    {!screens.xs && (i18n.language === 'zh' ? '中文' : 'EN')}
-                  </Button>
+                  <Button type="text" shape="circle" icon={<GlobalOutlined style={{ fontSize: '18px' }} />} style={{ color: '#fff', width: 42, height: 42 }} />
                 </Dropdown>
               )}
 
-              {isUserEnd && isPluginVisibleForUser('model_marketplace') && (
-                <Tooltip title="模型广场">
-                  <Button 
-                    type="text" 
-                    icon={<ShopOutlined />} 
-                    style={{ color: '#fff', fontSize: '18px' }} 
-                    onClick={() => window.open('/models', '_blank')}
-                  />
+              <Popover
+                content={announcementContent}
+                trigger="click"
+                placement="bottomRight"
+                overlayClassName="custom-premium-popover"
+                open={announcementsDrawerVisible}
+                onOpenChange={setAnnouncementsDrawerVisible}
+                overlayInnerStyle={{ 
+                  padding: 0, 
+                  borderRadius: 20, 
+                  background: 'rgba(30, 30, 30, 0.45)',
+                  backdropFilter: 'blur(30px) saturate(200%)',
+                  WebkitBackdropFilter: 'blur(30px) saturate(200%)',
+                  border: '1px solid rgba(255,255,255,0.15)', 
+                  boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
+                  transform: 'translateZ(0)',
+                  overflow: 'hidden'
+                }}
+                arrow={false}
+              >
+                <Tooltip title="通知" placement="bottom">
+                  <Badge count={unreadCount} overflowCount={99} offset={[-4, 4]}>
+                    <Button 
+                      type="text" 
+                      shape="circle"
+                      icon={<BellOutlined style={{ fontSize: '18px' }} />} 
+                      style={{ color: '#fff', width: 42, height: 42 }} 
+                      onClick={() => {
+                        setUnreadCount(0);
+                      }}
+                    />
+                  </Badge>
                 </Tooltip>
-              )}
-
-              <Badge count={unreadCount} overflowCount={99} offset={[-4, 4]}>
-                <Button 
-                  type="text" 
-                  icon={<BellOutlined />} 
-                  style={{ color: '#fff', fontSize: '18px' }} 
-                  onClick={() => {
-                    setAnnouncementsDrawerVisible(true);
-                    setUnreadCount(0);
-                  }}
-                />
-              </Badge>
+              </Popover>
 
               <UserAvatarMenu isUserEnd={isUserEnd} agreement={agreement} />
             </Space>
@@ -686,107 +801,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         </Layout>
       </Layout>
 
-      <Drawer
-        title={<span style={{ color: '#fff', fontSize: 18, fontWeight: 600, letterSpacing: '0.5px' }}>📌 最新公告</span>}
-        placement="right"
-        onClose={() => setAnnouncementsDrawerVisible(false)}
-        open={announcementsDrawerVisible}
-        width={screens.xs ? '100%' : 420}
-        closeIcon={<span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 16 }}>✕</span>}
-        styles={{
-          mask: {
-            background: 'rgba(0,0,0,0.45)',
-          },
-          content: {
-            background: 'rgba(30, 30, 30, 0.45)', // Make it more transparent
-            backdropFilter: 'blur(40px) saturate(200%)',
-            WebkitBackdropFilter: 'blur(40px) saturate(200%)',
-            borderLeft: '1px solid rgba(255,255,255,0.1)',
-            boxShadow: '-10px 0 40px rgba(0,0,0,0.6)',
-          },
-          header: {
-            background: 'transparent',
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
-            padding: '20px 24px',
-          },
-          body: {
-            padding: '24px 20px',
-          }
-        }}
-      >
-        <List
-          itemLayout="vertical"
-          dataSource={announcements}
-          split={false}
-          locale={{ emptyText: <div style={{ color: 'rgba(255,255,255,0.45)', padding: '40px 0', textAlign: 'center' }}>暂无公告信息</div> }}
-          renderItem={(item) => (
-              <div 
-              key={item.id} 
-              style={{ 
-                background: 'rgba(255, 255, 255, 0.04)',
-                borderRadius: 16,
-                padding: '20px',
-                marginBottom: 16,
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  {item.is_pinned === 1 && (
-                    <div style={{ 
-                      background: 'linear-gradient(135deg, #1677ff 0%, #36cfc9 100%)',
-                      color: '#fff',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      padding: '2px 8px',
-                      borderRadius: 6,
-                      marginTop: 2,
-                      whiteSpace: 'nowrap'
-                    }}>
-                      置顶
-                    </div>
-                  )}
-                  <div style={{ color: '#fff', fontSize: 16, fontWeight: 600, lineHeight: 1.5, letterSpacing: '0.3px' }}>
-                    {item.title}
-                  </div>
-                </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
-                  <ScheduleOutlined />
-                  {new Date(item.created_at).toLocaleString(i18n.language === 'en' ? 'en-US' : 'zh-CN', {
-                    year: 'numeric', month: '2-digit', day: '2-digit',
-                    hour: '2-digit', minute: '2-digit'
-                  })}
-                </div>
-              </div>
-              
-              <div 
-                className="quill-content"
-                dangerouslySetInnerHTML={{ __html: item.content }} 
-                style={{ 
-                  color: 'rgba(255,255,255,0.85)', 
-                  fontSize: 14, 
-                  lineHeight: 1.6,
-                  background: 'transparent',
-                  padding: '8px 0 0 0',
-                  overflowWrap: 'break-word',
-                  wordBreak: 'break-all'
-                }}
-              />
-            </div>
-          )}
-        />
-      </Drawer>
     </ConfigProvider>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -6,11 +6,24 @@ import request from '../../utils/request';
 import type { Plugin } from '../../types';
 import AdminPresetAssets from './AssetManager/AdminPresetAssets';
 import RelayConvertAssets from './AssetManager/RelayConvertAssets';
-import TeamConfig from './TeamMarketing/TeamConfig';
-import PoolManager from './VolcenginePool/PoolManager';
-import GptImagePoolManager from './GptImagePool/PoolManager';
 import JsonView from '@uiw/react-json-view';
 import { darkTheme } from '@uiw/react-json-view/dark';
+
+// ── 插件组件动态加载（删除插件源文件不影响系统运行） ──
+const safeLazy = (loader: () => Promise<any>) =>
+  React.lazy(() =>
+    loader().catch(() => ({ default: () => <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.35)' }}>该插件模块暂未安装</div> }))
+  );
+
+const TeamConfig = safeLazy(() => import('./TeamMarketing/TeamConfig'));
+const PoolManager = safeLazy(() => import('./VolcenginePool/PoolManager'));
+const GptImagePoolManager = safeLazy(() => import('./GptImagePool/PoolManager'));
+const SiteIconsManager = safeLazy(() => import('./SiteIcons/SiteIconsManager'));
+
+/** 插件组件包装器：Suspense + 降级 */
+const PluginModule: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' }}><Spin /></div>}>{children}</Suspense>
+);
 
 const { Title, Text } = Typography;
 
@@ -60,6 +73,7 @@ const pluginIcons: Record<string, React.ReactNode> = {
   volcengine_pool: <CloudServerOutlined style={{ fontSize: 20 }} />,
   gptimage_pool: <PictureOutlined style={{ fontSize: 20 }} />,
   model_marketplace: <ShopOutlined style={{ fontSize: 20 }} />,
+  site_icons: <AppstoreOutlined style={{ fontSize: 20 }} />,
 };
 
 const PluginConfigInner: React.FC = () => {
@@ -1788,7 +1802,7 @@ const PluginConfigInner: React.FC = () => {
           plugin.name === 'team_marketing'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
-                { key: 'team_config', label: '团队配置', children: <TeamConfig /> },
+                { key: 'team_config', label: '团队配置', children: <PluginModule><TeamConfig /></PluginModule> },
               ]
             : plugin.name === 'playground'
             ? [
@@ -1800,17 +1814,22 @@ const PluginConfigInner: React.FC = () => {
             : plugin.name === 'volcengine_pool'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
-                { key: 'pool_manager', label: '卡池管理', children: <PoolManager /> },
+                { key: 'pool_manager', label: '卡池管理', children: <PluginModule><PoolManager /></PluginModule> },
               ]
             : plugin.name === 'gptimage_pool'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
-                { key: 'pool_manager', label: '卡池管理', children: <GptImagePoolManager /> },
+                { key: 'pool_manager', label: '卡池管理', children: <PluginModule><GptImagePoolManager /></PluginModule> },
               ]
             : plugin.name === 'model_marketplace'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
                 { key: 'marketplace_models', label: '模型列表', children: marketplaceModelTab },
+              ]
+            : plugin.name === 'site_icons'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'icon_library', label: '图标库管理', children: <PluginModule><SiteIconsManager /></PluginModule> },
               ]
             : [
                 { key: 'audit_log', label: '审核日志', children: auditLogTab },

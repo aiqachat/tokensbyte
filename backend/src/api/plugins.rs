@@ -1127,8 +1127,19 @@ pub async fn get_marketplace_public(
                 "prompt_rate": b.prompt_rate,
                 "completion_rate": b.completion_rate,
                 "fixed_rate": b.fixed_rate,
+                "duration_rate": b.duration_rate,
+                "pricing_tiers": b.pricing_tiers,
+                "billing_rule": b.billing_rule,
             }))
             .unwrap_or(json!(null));
+
+        let provider_logo = m.provider_id
+            .and_then(|pid| providers.iter().find(|p| p.id == pid))
+            .and_then(|p| p.logo.clone());
+
+        let type_logo = m.type_id
+            .and_then(|tid| types.iter().find(|t| t.id == tid))
+            .and_then(|t| t.logo.clone());
 
         marketplace_models.push(json!({
             "id": m.id,
@@ -1137,8 +1148,11 @@ pub async fn get_marketplace_public(
             "model_id": m.model_id,
             "provider_id": m.provider_id,
             "provider_name": provider_name,
+            "provider_logo": provider_logo,
             "type_id": m.type_id,
             "type_name": type_name,
+            "type_logo": type_logo,
+            "logo": m.logo,
             "sort_order": sort_order,
             "description": description,
             "billing": billing_info,
@@ -1161,12 +1175,12 @@ pub async fn get_marketplace_public(
 
     let provider_list: Vec<serde_json::Value> = providers.iter()
         .filter(|p| active_provider_ids.contains(&p.id))
-        .map(|p| json!({"id": p.id, "name": p.name}))
+        .map(|p| json!({"id": p.id, "name": p.name, "logo": p.logo}))
         .collect();
 
     let type_list: Vec<serde_json::Value> = types.iter()
         .filter(|t| active_type_ids.contains(&t.id))
-        .map(|t| json!({"id": t.id, "name": t.name}))
+        .map(|t| json!({"id": t.id, "name": t.name, "logo": t.logo}))
         .collect();
 
     let result = json!({

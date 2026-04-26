@@ -26,6 +26,10 @@ export default defineConfig({
       '/v1beta': {
         target: apiTarget,
         changeOrigin: true,
+      },
+      '/assets': {
+        target: apiTarget,
+        changeOrigin: true,
       }
     }
   }

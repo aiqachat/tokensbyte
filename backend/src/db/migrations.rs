@@ -1112,6 +1112,62 @@ macro_rules! pg_migration_blocks {
            ON CONFLICT (name) DO NOTHING"#
     ).execute(pool).await?;
 
+    // ══════════════════════════════════════════════════════════════
+    //  站点 Icon 图标库插件
+    // ══════════════════════════════════════════════════════════════
+
+    // 种子：站点 Icon 图标库系统插件
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category)
+           VALUES ('site_icons', '站点icon图标库', '提供 AI/LLM 品牌 SVG 图标库，支持搜索选择和自定义上传，数据来源 lobehub/lobe-icons', 0, 'system')
+           ON CONFLICT (name) DO NOTHING"#
+    ).execute(pool).await?;
+
+    // 站点图标主表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS site_icons (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            file_path TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT 'lobe-icons',
+            category TEXT NOT NULL DEFAULT 'AI品牌',
+            tags TEXT NOT NULL DEFAULT '[]',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text),
+            UNIQUE(name, source)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE site_icons IS '站点图标库，存储 SVG 图标元数据'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.name IS '图标标识名（如 openai, claude）'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.title IS '显示名称（如 OpenAI, Claude）'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.file_path IS 'SVG 文件路径（相对于 data/assets/）'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.source IS '图标来源: lobe-icons=从 GitHub 同步 / custom=手动上传'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.category IS '分类: AI品牌 / 自定义'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.tags IS '标签(JSON数组)'").execute(pool).await.ok();
+
+    // 同步日志表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS site_icon_sync_logs (
+            id SERIAL PRIMARY KEY,
+            total_synced INTEGER NOT NULL DEFAULT 0,
+            total_new INTEGER NOT NULL DEFAULT 0,
+            total_updated INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'success',
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE site_icon_sync_logs IS '站点图标同步日志'").execute(pool).await.ok();
+
+    // ─── 模型 / 服务商 / 类型 增加 logo 字段 ───
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE model_types ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};
