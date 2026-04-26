@@ -1,7 +1,7 @@
 /**
  * 画布交互 Hook（高性能版）
  * 
- * 核心优化：所有拖拽操作（画布平移、节点拖拽）使用 useRef 存储中间值，
+ * 核心优化：所有拖拽操作（画布平移、节点拖拽、节点缩放）使用 useRef 存储中间值，
  * 通过 requestAnimationFrame 批量更新 DOM，仅在 mouseup 时提交最终状态到 React。
  * 
  * 这样每次 mousemove 不再触发 React re-render，实现 60fps 流畅拖拽。
@@ -10,6 +10,7 @@ import { useCallback, useRef } from 'react';
 import { useCanvas } from '../context/PlaygroundContext';
 import type { CanvasTransform } from '../types';
 import type { CanvasParticlesHandle } from '../components/CanvasParticles';
+import type { ResizeDirection } from '../components/nodes/CanvasNode';
 
 /**
  * 模块级共享拖拽状态
@@ -18,6 +19,22 @@ const sharedNodeDrag = {
   nodeId: null as string | null,
   offsetX: 0,
   offsetY: 0,
+};
+
+/** 节点缩放最小尺寸 */
+const MIN_NODE_WIDTH = 120;
+const MIN_NODE_HEIGHT = 80;
+
+/** 模块级共享缩放状态 */
+const sharedResizeDrag = {
+  nodeId: null as string | null,
+  direction: '' as ResizeDirection | '',
+  startMouseX: 0,
+  startMouseY: 0,
+  startNodeX: 0,
+  startNodeY: 0,
+  startNodeW: 0,
+  startNodeH: 0,
 };
 
 export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasParticlesHandle>) => {
@@ -187,6 +204,42 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       // 缓存最新位置供 mouseup 使用
       transformRef.current = { ...transformRef.current, x: newX, y: newY };
 
+    } else if (sharedResizeDrag.nodeId) {
+      // 节点缩放：直接操作节点 DOM 的 width/height/left/top
+      const rd = sharedResizeDrag;
+      const ct = transformRef.current;
+      const deltaX = (e.clientX - rd.startMouseX) / ct.scale;
+      const deltaY = (e.clientY - rd.startMouseY) / ct.scale;
+
+      let newX = rd.startNodeX;
+      let newY = rd.startNodeY;
+      let newW = rd.startNodeW;
+      let newH = rd.startNodeH;
+
+      // 根据方向计算新的尺寸和位置
+      if (rd.direction.includes('e')) { newW = Math.max(MIN_NODE_WIDTH, rd.startNodeW + deltaX); }
+      if (rd.direction.includes('s')) { newH = Math.max(MIN_NODE_HEIGHT, rd.startNodeH + deltaY); }
+      if (rd.direction.includes('w')) {
+        const dw = Math.min(deltaX, rd.startNodeW - MIN_NODE_WIDTH);
+        newW = rd.startNodeW - dw;
+        newX = rd.startNodeX + dw;
+      }
+      if (rd.direction.includes('n')) {
+        const dh = Math.min(deltaY, rd.startNodeH - MIN_NODE_HEIGHT);
+        newH = rd.startNodeH - dh;
+        newY = rd.startNodeY + dh;
+      }
+
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${rd.nodeId}"]`) as HTMLElement | null;
+        if (nodeEl) {
+          nodeEl.style.left = `${newX}px`;
+          nodeEl.style.top = `${newY}px`;
+          nodeEl.style.width = `${newW}px`;
+          nodeEl.style.height = `${newH}px`;
+        }
+      });
     } else if (nd.nodeId) {
       // 节点拖拽：直接操作节点 DOM
       const rect = canvasRef.current?.getBoundingClientRect();
@@ -199,7 +252,6 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
 
         cancelAnimationFrame(rafRef.current);
         rafRef.current = requestAnimationFrame(() => {
-          // 找到正在拖拽的节点 DOM 元素并直接更新位置
           const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${nd.nodeId}"]`) as HTMLElement | null;
           if (nodeEl) {
             nodeEl.style.left = `${newNodeX}px`;
@@ -224,6 +276,24 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       });
       cd.isDragging = false;
       setIsDraggingCanvas(false);
+    }
+
+    if (sharedResizeDrag.nodeId) {
+      // 提交最终缩放结果到 React state
+      const rd = sharedResizeDrag;
+      const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${rd.nodeId}"]`) as HTMLElement | null;
+      if (nodeEl) {
+        const finalX = parseFloat(nodeEl.style.left);
+        const finalY = parseFloat(nodeEl.style.top);
+        const finalW = parseFloat(nodeEl.style.width);
+        const finalH = parseFloat(nodeEl.style.height);
+        const resizedId = rd.nodeId;
+        setNodes(prev => prev.map(n =>
+          n.id === resizedId ? { ...n, x: finalX, y: finalY, width: finalW, height: finalH } : n
+        ));
+      }
+      rd.nodeId = null;
+      rd.direction = '';
     }
 
     if (nd.nodeId) {
@@ -261,6 +331,23 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       sharedNodeDrag.offsetY = startY - nodeY;
     }
   }, [activeTool, maxZIndex, setDraggingNodeId, setMaxZIndex, setNodes]);
+
+  /** 开始缩放节点 */
+  const handleResizeStart = useCallback((e: React.MouseEvent, nodeId: string, direction: ResizeDirection) => {
+    e.stopPropagation();
+    e.preventDefault();
+    // 从当前 nodes 中找到目标节点
+    const targetNode = nodes.find(n => n.id === nodeId);
+    if (!targetNode) return;
+    sharedResizeDrag.nodeId = nodeId;
+    sharedResizeDrag.direction = direction;
+    sharedResizeDrag.startMouseX = e.clientX;
+    sharedResizeDrag.startMouseY = e.clientY;
+    sharedResizeDrag.startNodeX = targetNode.x;
+    sharedResizeDrag.startNodeY = targetNode.y;
+    sharedResizeDrag.startNodeW = targetNode.width;
+    sharedResizeDrag.startNodeH = targetNode.height;
+  }, [nodes]);
 
   /** 移除节点 */
   const removeNode = useCallback((id: string) => {
@@ -359,6 +446,7 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
     handleCanvasMouseMove,
     handleCanvasMouseUp,
     handleNodeMouseDown,
+    handleResizeStart,
     removeNode,
     resetView,
     zoomIn,

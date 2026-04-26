@@ -31,7 +31,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
   const {
     handleWheel, handleCanvasMouseDown,
     handleCanvasMouseMove, handleCanvasMouseUp,
-    handleNodeMouseDown, removeNode,
+    handleNodeMouseDown, handleResizeStart, removeNode,
   } = useCanvasInteraction(particlesRef); // 将 particlesRef 传给 hook
 
   // 点击画布空白区域时取消节点选中
@@ -112,6 +112,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
               setSelectedNodeId(id);
               setIsGenLogVisible(true);
             }}
+            onResizeStart={handleResizeStart}
           />
         ))}
 
