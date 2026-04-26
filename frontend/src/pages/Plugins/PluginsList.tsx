@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Switch, message, Typography, Row, Col, Tag, Button, Space, Spin } from 'antd';
-import { SettingOutlined, AppstoreOutlined, PictureOutlined, ReloadOutlined, TeamOutlined, ExperimentOutlined, ThunderboltOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { SettingOutlined, AppstoreOutlined, PictureOutlined, ReloadOutlined, TeamOutlined, ExperimentOutlined, ThunderboltOutlined, CloudServerOutlined, ShopOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
@@ -13,6 +13,7 @@ const pluginIcons: Record<string, React.ReactNode> = {
   playground: <ExperimentOutlined style={{ fontSize: 22 }} />,
   volcengine_pool: <CloudServerOutlined style={{ fontSize: 22 }} />,
   gptimage_pool: <PictureOutlined style={{ fontSize: 22 }} />,
+  model_marketplace: <ShopOutlined style={{ fontSize: 22 }} />,
 };
 
 // 系统增强插件使用不同的图标颜色

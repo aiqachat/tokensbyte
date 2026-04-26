@@ -1103,6 +1103,15 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_name_key").execute(pool).await.ok();
     sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_model_id_key").execute(pool).await.ok();
 
+    // ══════════════════════════════════════════════════════════════
+    //  模型广场管理插件
+    // ══════════════════════════════════════════════════════════════
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category)
+           VALUES ('model_marketplace', '模型广场管理', '管理模型广场的模型展示，控制哪些模型对用户可见并配置展示信息', 0, 'user')
+           ON CONFLICT (name) DO NOTHING"#
+    ).execute(pool).await?;
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};

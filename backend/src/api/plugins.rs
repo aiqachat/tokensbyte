@@ -25,6 +25,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/{name}/playground-config", get(get_playground_config).post(save_playground_config))
         .route("/{name}/playground-schemes", get(get_playground_schemes).post(save_playground_schemes))
         .route("/{name}/playground-public-config", get(get_playground_public_config))
+        .route("/{name}/marketplace-models", get(get_marketplace_models).post(save_marketplace_models))
         .route("/{name}/test-connection", post(test_tos_connection))
         .route("/{name}/api-logs", get(get_plugin_api_logs))
 }
@@ -885,5 +886,241 @@ async fn get_playground_public_config(
 
     Ok(Json(json!({
         "models": enabled_models,
+    })))
+}
+
+// ========== 模型广场管理 (Model Marketplace) ==========
+
+/// 管理员：获取模型广场配置（返回全部模型 + 每个模型的广场展示配置）
+async fn get_marketplace_models(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let configs = load_plugin_configs(&state, &name).await?;
+
+    // 查出全部模型及其 provider/type 信息
+    let models: Vec<crate::models::Model> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM models ORDER BY id DESC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let providers: Vec<crate::models::ModelProvider> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM model_providers ORDER BY sort_order ASC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let types: Vec<crate::models::ModelType> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM model_types ORDER BY sort_order ASC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let mut model_list = Vec::new();
+    for m in &models {
+        let config_key = format!("mp_model_id_{}", m.id);
+        let model_conf: serde_json::Value = configs.get(&config_key)
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or(json!({"enabled": false, "sort_order": 0, "description": ""}));
+
+        let provider_name = m.provider_id
+            .and_then(|pid| providers.iter().find(|p| p.id == pid))
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+
+        let type_name = m.type_id
+            .and_then(|tid| types.iter().find(|t| t.id == tid))
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
+
+        model_list.push(json!({
+            "id": m.id,
+            "mid": m.mid,
+            "name": m.name,
+            "model_id": m.model_id,
+            "provider_id": m.provider_id,
+            "provider_name": provider_name,
+            "type_id": m.type_id,
+            "type_name": type_name,
+            "is_active": m.is_active,
+            "mp_enabled": model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+            "mp_sort_order": model_conf.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0),
+            "mp_description": model_conf.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+        }));
+    }
+
+    Ok(Json(json!({
+        "models": model_list,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct MarketplaceModelConfig {
+    pub id: i32,
+    pub enabled: bool,
+    pub sort_order: Option<i64>,
+    pub description: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct MarketplaceConfigRequest {
+    pub models: Vec<MarketplaceModelConfig>,
+}
+
+/// 管理员：保存模型广场配置
+async fn save_marketplace_models(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+    Json(payload): Json<MarketplaceConfigRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    for mc in &payload.models {
+        let config_key = format!("mp_model_id_{}", mc.id);
+        let val = json!({
+            "enabled": mc.enabled,
+            "sort_order": mc.sort_order.unwrap_or(0),
+            "description": mc.description.as_deref().unwrap_or(""),
+        });
+        upsert_config(&state, &name, &config_key, &val.to_string()).await?;
+    }
+
+    Ok(Json(json!({ "message": "模型广场配置已保存" })))
+}
+
+/// 公开接口：获取模型广场展示数据（需登录，不需 admin）
+pub async fn get_marketplace_public(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 检查插件是否启用
+    let plugin: Option<Plugin> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM plugins WHERE name = ? AND is_enabled = 1")
+    )
+    .bind("model_marketplace")
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    if plugin.is_none() {
+        return Ok(Json(json!({
+            "enabled": false,
+            "models": [],
+            "providers": [],
+            "types": [],
+        })));
+    }
+
+    let configs = load_plugin_configs(&state, "model_marketplace").await?;
+
+    // 查出全部活跃模型
+    let models: Vec<crate::models::Model> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM models WHERE is_active = 1 ORDER BY id DESC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let providers: Vec<crate::models::ModelProvider> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM model_providers WHERE is_active = 1 ORDER BY sort_order ASC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let types: Vec<crate::models::ModelType> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM model_types WHERE is_active = 1 ORDER BY sort_order ASC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let billing_rules: Vec<crate::models::BillingRule> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM billing_rules WHERE is_active = 1")
+    ).fetch_all(&state.db.pool).await?;
+
+    // 过滤出在广场中启用的模型
+    let mut marketplace_models: Vec<serde_json::Value> = Vec::new();
+    for m in &models {
+        let config_key = format!("mp_model_id_{}", m.id);
+        let model_conf: serde_json::Value = configs.get(&config_key)
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or(json!({"enabled": false, "sort_order": 0, "description": ""}));
+
+        let is_enabled = model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !is_enabled { continue; }
+
+        let sort_order = model_conf.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
+        let description = model_conf.get("description").and_then(|v| v.as_str()).unwrap_or("");
+
+        let provider_name = m.provider_id
+            .and_then(|pid| providers.iter().find(|p| p.id == pid))
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+
+        let type_name = m.type_id
+            .and_then(|tid| types.iter().find(|t| t.id == tid))
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
+
+        // 计费信息
+        let billing_info = m.billing_rule_id
+            .and_then(|bid| billing_rules.iter().find(|b| b.id == bid))
+            .map(|b| json!({
+                "billing_type": b.billing_type,
+                "name": b.name,
+                "prompt_rate": b.prompt_rate,
+                "completion_rate": b.completion_rate,
+                "fixed_rate": b.fixed_rate,
+            }))
+            .unwrap_or(json!(null));
+
+        marketplace_models.push(json!({
+            "id": m.id,
+            "mid": m.mid,
+            "name": m.name,
+            "model_id": m.model_id,
+            "provider_id": m.provider_id,
+            "provider_name": provider_name,
+            "type_id": m.type_id,
+            "type_name": type_name,
+            "sort_order": sort_order,
+            "description": description,
+            "billing": billing_info,
+            "created_at": m.created_at,
+        }));
+    }
+
+    // 按 sort_order 降序排序
+    marketplace_models.sort_by(|a, b| {
+        let sa = a.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
+        let sb = b.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
+        sb.cmp(&sa)
+    });
+
+    // 构建供应商和类型列表（仅包含有模型的）
+    let active_provider_ids: std::collections::HashSet<i32> = marketplace_models.iter()
+        .filter_map(|m| m.get("provider_id").and_then(|v| v.as_i64()).map(|v| v as i32))
+        .collect();
+    let active_type_ids: std::collections::HashSet<i32> = marketplace_models.iter()
+        .filter_map(|m| m.get("type_id").and_then(|v| v.as_i64()).map(|v| v as i32))
+        .collect();
+
+    let provider_list: Vec<serde_json::Value> = providers.iter()
+        .filter(|p| active_provider_ids.contains(&p.id))
+        .map(|p| json!({"id": p.id, "name": p.name}))
+        .collect();
+
+    let type_list: Vec<serde_json::Value> = types.iter()
+        .filter(|t| active_type_ids.contains(&t.id))
+        .map(|t| json!({"id": t.id, "name": t.name}))
+        .collect();
+
+    Ok(Json(json!({
+        "enabled": true,
+        "models": marketplace_models,
+        "providers": provider_list,
+        "types": type_list,
+        "total": marketplace_models.len(),
     })))
 }

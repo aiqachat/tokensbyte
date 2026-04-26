@@ -106,6 +106,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/plugins/volcengine_pool", volcengine_pool::router())
         .nest("/plugins/gptimage_pool", gptimage_pool::router())
         .nest("/plugins", plugins::router())
+        .route("/marketplace/public", get(plugins::get_marketplace_public))
         .nest("/assets", assets::router())
         .nest("/team-marketing", team_marketing::router())
         .nest("/playground", playground::router())

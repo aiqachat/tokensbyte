@@ -29,6 +29,7 @@ import UserAssets from './pages/UserAssets/UserAssets';
 import AdvancedMarketing from './pages/AdvancedMarketing/AdvancedMarketing';
 import Playground from './pages/Playground/Playground';
 import PlaygroundHome from './pages/Playground/PlaygroundHome';
+import ModelMarketplace from './pages/ModelMarketplace/ModelMarketplace';
 
 import Redemptions from './pages/Redemptions/Redemptions';
 import Profile from './pages/Profile/Profile';
@@ -85,6 +86,16 @@ const App: React.FC = () => {
           element={
             <PrivateRoute userOnly={true}>
               <Playground />
+            </PrivateRoute>
+          }
+        />
+
+        {/* Model Marketplace Route (Full Screen, Independent) */}
+        <Route
+          path="/models"
+          element={
+            <PrivateRoute userOnly={true}>
+              <ModelMarketplace />
             </PrivateRoute>
           }
         />

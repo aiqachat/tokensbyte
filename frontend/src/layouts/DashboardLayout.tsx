@@ -24,11 +24,12 @@ import {
   ExperimentOutlined,
   InfoCircleOutlined,
   BellOutlined,
+  ShopOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Dropdown, Modal, message, Popover, Avatar, Divider, Drawer, List, Badge } from 'antd';
+import { Dropdown, Modal, message, Popover, Avatar, Divider, Drawer, List, Badge, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import type { Announcement } from '../types';
 import useAuthStore from '../store/auth';
@@ -494,7 +495,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       <div style={{ marginTop: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, width: '100%', padding: '0 8px' }}>
         <Avatar 
           size={56} 
-          style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 24, flexShrink: 0 }}
+          style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 24, flexShrink: 0, cursor: 'pointer' }}
+          onClick={() => { navigate('/profile'); }}
         >
           {userInitial}
         </Avatar>
@@ -528,6 +530,22 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
               transition: 'all 0.2s'
             }}
             className="hover-bright-btn"
+            icon={<DashboardOutlined style={{ fontSize: 18 }} />}
+            onClick={() => { navigate('/'); }}
+          >
+            控制台
+          </Button>
+        )}
+
+        {isUserEnd && (
+          <Button 
+            type="default"
+            style={{ 
+              height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
+              transition: 'all 0.2s'
+            }}
+            className="hover-bright-btn"
             icon={<WalletOutlined style={{ fontSize: 18 }} />}
             onClick={() => { navigate('/wallet'); }}
           >
@@ -535,20 +553,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           </Button>
         )}
         
-        <Button 
-          type="default"
-          style={{ 
-            height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
-            transition: 'all 0.2s'
-          }}
-          className="hover-bright-btn"
-          icon={<UserOutlined style={{ fontSize: 18 }} />}
-          onClick={() => { navigate('/profile'); }}
-        >
-          {t('menu.profile', '个人中心')}
-        </Button>
-
         <Button 
           type="default"
           style={{ 
@@ -752,6 +756,17 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                     {!screens.xs && (i18n.language === 'zh' ? '中文' : 'EN')}
                   </Button>
                 </Dropdown>
+              )}
+
+              {isUserEnd && isPluginVisibleForUser('model_marketplace') && (
+                <Tooltip title="模型广场">
+                  <Button 
+                    type="text" 
+                    icon={<ShopOutlined />} 
+                    style={{ color: '#fff', fontSize: '18px' }} 
+                    onClick={() => window.open('/models', '_blank')}
+                  />
+                </Tooltip>
               )}
 
               <Badge count={unreadCount} overflowCount={99} offset={[-4, 4]}>
