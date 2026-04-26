@@ -33,6 +33,7 @@ import { Dropdown, Modal, message, Popover, Avatar, Divider, Drawer, List, Badge
 import type { MenuProps } from 'antd';
 import type { Announcement } from '../types';
 import useAuthStore from '../store/auth';
+import UserAvatarMenu from '../components/UserAvatarMenu';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -51,6 +52,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const { user, logout, setUser, isLoggedIn } = useAuthStore();
   const [siteName, setSiteName] = useState(isUserEnd ? 'TokensByte' : t('common.admin_title'));
   const [siteLogo, setSiteLogo] = useState<string>('');
+  const [siteTitle, setSiteTitle] = useState<string>('');
   const [announcementsDrawerVisible, setAnnouncementsDrawerVisible] = useState(false);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -94,7 +96,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       const response = await (request.get('/settings') as any);
       const { site, agreement: agreementData } = response;
       if (site.title) {
-        document.title = site.title;
+        setSiteTitle(site.title);
       }
       if (site.name && isUserEnd) {
         setSiteName(site.name);
@@ -113,41 +115,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     }
   };
 
-  const showAgreement = (type: 'tos' | 'privacy') => {
-    const isEn = i18n.language && i18n.language.startsWith('en');
-
-    if (!agreement) {
-      window.open(`/legal/${type === 'tos' ? 'terms' : 'privacy'}`, '_blank');
-      return;
-    }
-    
-    if (type === 'tos') {
-      const mode = isEn ? agreement.tos_mode_en : agreement.tos_mode;
-      const link = isEn && agreement.tos_link_en ? agreement.tos_link_en : agreement.tos_link;
-      if (mode === 'link' && link) {
-        window.open(link, '_blank');
-      } else {
-        window.open('/legal/terms', '_blank');
-      }
-    } else {
-      const mode = isEn ? agreement.privacy_mode_en : agreement.privacy_mode;
-      const link = isEn && agreement.privacy_link_en ? agreement.privacy_link_en : agreement.privacy_link;
-      if (mode === 'link' && link) {
-        window.open(link, '_blank');
-      } else {
-        window.open('/legal/privacy', '_blank');
-      }
-    }
-  };
-
-  const handleLogout = () => {
-    logout();
-    if (isUserEnd) {
-      navigate('/login');
-    } else {
-      navigate('/admin0755');
-    }
-  };
 
   const showSystemAbout = () => {
     navigate('/admin0755/about');
@@ -188,11 +155,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
 
   const menuItems: MenuProps['items'] = [];
 
-  // 1. Dashboard
   menuItems.push({
     key: isUserEnd ? '/' : '/admin0755/dashboard',
     icon: <DashboardOutlined style={{ fontSize: '18px' }} />,
-    label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{t('menu.dashboard')}</Link>,
+    label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{isUserEnd ? '控制面板' : t('menu.dashboard')}</Link>,
   });
 
   // 2. Relay API
@@ -486,95 +452,42 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     }
   }
 
+  let pageName = '';
+  const findName = (items: any[]): string | undefined => {
+    for (const item of items) {
+      if (!item) continue;
+      if (item.key === location.pathname || item.key === location.pathname + location.search) {
+        if (typeof item.label === 'string') return item.label;
+        if (item.label?.props?.children) {
+          if (typeof item.label.props.children === 'string') return item.label.props.children;
+          if (Array.isArray(item.label.props.children)) return item.label.props.children.join('');
+        }
+      }
+      if (item.children) {
+        const found = findName(item.children);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  };
+  
+  pageName = findName(menuItems) || '';
+  if (!pageName) {
+    if (location.pathname === '/profile') pageName = t('menu.profile', '个人中心') as string;
+    else if (location.pathname === '/wallet') pageName = t('menu.wallet', '我的钱包') as string;
+    else if (location.pathname === '/assets') pageName = t('menu.assets', '素材资产管理') as string;
+    else if (location.pathname === '/advanced-marketing') pageName = t('menu.advanced_marketing', '团队营销管理') as string;
+    else if (location.pathname === '/playground') pageName = t('menu.playground', '模型体验中心') as string;
+  }
 
-  const userInitial = user?.nickname?.charAt(0)?.toUpperCase() || user?.username?.charAt(0)?.toUpperCase() || '?';
-  const displayName = user?.nickname || user?.username || 'User';
+  useEffect(() => {
+    if (pageName && siteTitle) {
+      document.title = `${pageName}-${siteTitle}`;
+    } else if (siteTitle) {
+      document.title = siteTitle;
+    }
+  }, [pageName, siteTitle]);
 
-  const profileContent = (
-    <div style={{ width: 300, padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div style={{ marginTop: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, width: '100%', padding: '0 8px' }}>
-        <Avatar 
-          size={56} 
-          style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 24, flexShrink: 0, cursor: 'pointer' }}
-          onClick={() => { navigate('/profile'); }}
-        >
-          {userInitial}
-        </Avatar>
-        <div style={{ overflow: 'hidden', flex: 1 }}>
-          <div style={{ fontWeight: 500, fontSize: 16, color: '#e5e5e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</span>
-            {user?.level_name && (
-              <span style={{ 
-                fontSize: 11, padding: '0 6px', background: 'rgba(22, 119, 255, 0.15)', 
-                color: '#1677ff', borderRadius: 4, fontWeight: 'normal', flexShrink: 0,
-                border: '1px solid rgba(22, 119, 255, 0.3)', lineHeight: '18px',
-                userSelect: 'none'
-              }}>
-                {user.level_name}
-              </span>
-            )}
-          </div>
-          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
-            用户 UID:{user?.uid || '-'}
-          </div>
-        </div>
-      </div>
-
-      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {isUserEnd && (
-          <Button 
-            type="default"
-            style={{ 
-              height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
-              transition: 'all 0.2s'
-            }}
-            className="hover-bright-btn"
-            icon={<DashboardOutlined style={{ fontSize: 18 }} />}
-            onClick={() => { navigate('/'); }}
-          >
-            控制台
-          </Button>
-        )}
-
-        {isUserEnd && (
-          <Button 
-            type="default"
-            style={{ 
-              height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
-              transition: 'all 0.2s'
-            }}
-            className="hover-bright-btn"
-            icon={<WalletOutlined style={{ fontSize: 18 }} />}
-            onClick={() => { navigate('/wallet'); }}
-          >
-            {t('menu.wallet', '我的钱包')}
-          </Button>
-        )}
-        
-        <Button 
-          type="default"
-          style={{ 
-            height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
-            transition: 'all 0.2s'
-          }}
-          className="hover-bright-btn"
-          icon={<LogoutOutlined style={{ fontSize: 18 }} />}
-          onClick={handleLogout}
-        >
-          {t('common.logout', '退出账号')}
-        </Button>
-      </div>
-
-      <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center', gap: 24, width: '100%' }}>
-        <Button type="link" onClick={() => showAgreement('privacy')} style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, padding: 0 }}>{t('common.privacy_policy', '隐私政策')}</Button>
-        <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
-        <Button type="link" onClick={() => showAgreement('tos')} style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, padding: 0 }}>{t('common.terms_of_service', '服务条款')}</Button>
-      </div>
-    </div>
-  );
 
   return (
     <ConfigProvider
@@ -596,47 +509,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         }
       }}
     >
-      <style>
-        {`
-          .hover-bright-btn:hover {
-            background: rgba(255,255,255,0.1) !important;
-            border-color: rgba(255,255,255,0.2) !important;
-            color: #fff !important;
-          }
-          .header-avatar-btn:hover {
-            background: rgba(255,255,255,0.08);
-          }
-          
-          /* 弹窗居中放大动画 */
-          .popover-center-scale-enter,
-          .popover-center-scale-appear {
-            opacity: 0;
-            transform: scale(0.82);
-            transform-origin: 50% 50% !important;
-          }
-          .popover-center-scale-enter-active,
-          .popover-center-scale-appear-active {
-            opacity: 1;
-            transform: scale(1);
-            transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
-            transform-origin: 50% 50% !important;
-          }
-          .popover-center-scale-leave {
-            opacity: 1;
-            transform: scale(1);
-            transform-origin: 50% 50% !important;
-          }
-          .popover-center-scale-leave-active {
-            opacity: 0;
-            transform: scale(0.88);
-            transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
-            transform-origin: 50% 50% !important;
-          }
-          .custom-premium-popover {
-            transform-origin: 50% 50% !important;
-          }
-        `}
-      </style>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Sider 
           trigger={null} 
@@ -783,38 +655,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 />
               </Badge>
 
-              <Popover 
-                content={profileContent} 
-                trigger="click" 
-                placement="bottomRight"
-                overlayClassName="custom-premium-popover"
-                forceRender
-                destroyTooltipOnHide={false}
-                overlayInnerStyle={{ 
-                  padding: 0, 
-                  borderRadius: 20, 
-                  background: 'rgba(30, 30, 30, 0.45)',
-                  backdropFilter: 'blur(30px) saturate(200%)',
-                  WebkitBackdropFilter: 'blur(30px) saturate(200%)',
-                  border: '1px solid rgba(255,255,255,0.15)', 
-                  boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
-                  transform: 'translateZ(0)',
-                }}
-                arrow={false}
-              >
-                <div 
-                  className="header-avatar-btn"
-                  style={{ 
-                    display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '4px', 
-                    borderRadius: 20, transition: 'background 0.2s',
-                    border: '2px solid transparent'
-                  }} 
-                >
-                  <Avatar size={34} style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 16 }}>
-                    {userInitial}
-                  </Avatar>
-                </div>
-              </Popover>
+              <UserAvatarMenu isUserEnd={isUserEnd} agreement={agreement} />
             </Space>
 
           </Header>

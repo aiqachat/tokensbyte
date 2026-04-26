@@ -4,20 +4,21 @@
  */
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ConfigProvider, theme, Input, Checkbox, Avatar, Dropdown, Spin, Empty, Tooltip, Popover, Button, Layout, Grid, Space, Badge, Result } from 'antd';
+import { ConfigProvider, theme, Input, Checkbox, Avatar, Dropdown, Spin, Empty, Tooltip, Popover, Button, Layout, Grid, Space, Result, Descriptions, Tag, Breadcrumb } from 'antd';
 import {
   SearchOutlined, ArrowLeftOutlined, AppstoreOutlined,
   MessageOutlined, PictureOutlined, VideoCameraOutlined,
   AudioOutlined, CodeOutlined, ApiOutlined, ShopOutlined,
   FilterOutlined, SortAscendingOutlined, MenuOutlined, CloseOutlined,
   DashboardOutlined, WalletOutlined, LogoutOutlined, MenuUnfoldOutlined, MenuFoldOutlined,
-  GlobalOutlined, BellOutlined, LockOutlined
+  LockOutlined, InfoCircleOutlined
 } from '@ant-design/icons';
 
 const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
 import request from '../../utils/request';
 import useAuthStore from '../../store/auth';
+import UserAvatarMenu from '../../components/UserAvatarMenu';
 
 interface MarketplaceModel {
   id: number;
@@ -67,6 +68,7 @@ const ModelMarketplace: React.FC = () => {
   const { user, logout } = useAuthStore();
   const [siteName, setSiteName] = useState<string>('TokensByte');
   const [siteLogo, setSiteLogo] = useState<string>('');
+  const [agreement, setAgreement] = useState<any>(null);
 
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
@@ -80,7 +82,7 @@ const ModelMarketplace: React.FC = () => {
   const [selectedType, setSelectedType] = useState<number | null>(null);
   const [selectedProviders, setSelectedProviders] = useState<number[]>([]);
   const [sortBy, setSortBy] = useState<'popular' | 'name' | 'newest'>('popular');
-  const [hoveredModelId, setHoveredModelId] = useState<number | null>(null);
+  const [selectedModel, setSelectedModel] = useState<MarketplaceModel | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const screens = useBreakpoint();
 
@@ -97,6 +99,9 @@ const ModelMarketplace: React.FC = () => {
       if (settingsRes?.site) {
         if (settingsRes.site.name) setSiteName(settingsRes.site.name);
         if (settingsRes.site.logo) setSiteLogo(settingsRes.site.logo);
+      }
+      if (settingsRes?.agreement) {
+        setAgreement(settingsRes.agreement);
       }
 
       const res = await (request.get('/marketplace/public') as Promise<any>);
@@ -171,8 +176,6 @@ const ModelMarketplace: React.FC = () => {
     return counts;
   }, [models]);
 
-  const userInitial = user?.username?.charAt(0)?.toUpperCase() || '?';
-
   const handleProviderToggle = (id: number) => {
     setSelectedProviders(prev =>
       prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
@@ -187,41 +190,26 @@ const ModelMarketplace: React.FC = () => {
     setSearchKeyword('');
   };
 
-
-  const profileContent = (
-    <div style={{ minWidth: 260, padding: '16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <Avatar size={48} style={{ backgroundColor: '#1677ff', cursor: 'pointer' }} onClick={() => navigate('/profile')}>
-          {userInitial}
-        </Avatar>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {user?.username || '用户'}
-          </div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>
-            UID: {user?.id}
-          </div>
-        </div>
-      </div>
-      <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '0 -16px 12px' }} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <Button type="text" block style={{ textAlign: 'left', color: 'rgba(255,255,255,0.85)', padding: '6px 12px', height: 'auto', display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8 }} onClick={() => navigate('/')}>
-          <DashboardOutlined /> 控制台
-        </Button>
-        <Button type="text" block style={{ textAlign: 'left', color: 'rgba(255,255,255,0.85)', padding: '6px 12px', height: 'auto', display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8 }} onClick={() => navigate('/wallet')}>
-          <WalletOutlined /> 我的钱包
-        </Button>
-        <Button type="text" block style={{ textAlign: 'left', color: '#ff4d4f', padding: '6px 12px', height: 'auto', display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, marginTop: 4 }} onClick={logout} className="logout-btn">
-          <LogoutOutlined /> 退出登录
-        </Button>
-      </div>
-    </div>
-  );
-
   return (
     <ConfigProvider theme={{
       algorithm: theme.darkAlgorithm,
-      token: { fontFamily: "'Inter', 'PingFang SC', -apple-system, sans-serif", colorPrimary: '#58a6ff' }
+      token: { 
+        fontFamily: "'Inter', 'PingFang SC', -apple-system, sans-serif", 
+        colorPrimary: '#1677ff',
+        borderRadius: 8,
+      },
+      components: {
+        Layout: {
+          siderBg: '#141414',
+          headerBg: '#141414',
+        },
+        Menu: {
+          itemHeight: 50,
+          iconSize: 20,
+          itemMarginInline: 12,
+          darkItemBg: 'transparent',
+        }
+      }
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -238,9 +226,10 @@ const ModelMarketplace: React.FC = () => {
         .mp-sidebar-content::-webkit-scrollbar { width: 4px; }
         .mp-sidebar-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
         .mp-sidebar-title { font-size: 11px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
-        .mp-sidebar-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; cursor: pointer; transition: all 0.12s; font-size: 14px; color: #8b949e; margin-bottom: 2px; }
-        .mp-sidebar-item:hover { background: rgba(255,255,255,0.04); color: #c9d1d9; }
-        .mp-sidebar-item.active { background: rgba(88,166,255,0.1); color: #58a6ff; }
+        .mp-sidebar-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; cursor: pointer; transition: all 0.12s; font-size: 14px; color: rgba(255,255,255,0.65); margin-bottom: 2px; }
+        .mp-sidebar-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+        .mp-sidebar-item.active { background: #1677ff !important; color: #fff !important; }
+        .mp-sidebar-item.active .mp-sidebar-count { color: rgba(255,255,255,0.85); }
         .mp-sidebar-count { margin-left: auto; font-size: 12px; color: #484f58; font-weight: 500; }
         .mp-sidebar-divider { height: 1px; background: #21262d; margin: 20px 0; }
         .mp-provider-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; font-size: 14px; color: #8b949e; transition: color 0.12s; }
@@ -280,9 +269,11 @@ const ModelMarketplace: React.FC = () => {
             {/* Logo Area */}
             <div style={{ 
               height: screens.xs ? 48 : 56, 
-              display: 'flex', alignItems: 'center', justifyContent: 'center', 
-              padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.05)',
-              cursor: 'pointer'
+              display: 'flex', alignItems: 'center', justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start', 
+              padding: collapsed && !screens.xs ? '16px 0' : '16px 20px', 
+              borderBottom: '1px solid rgba(255,255,255,0.05)',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
             }} onClick={() => navigate('/')}>
               {siteLogo ? (
                 (collapsed && !screens.xs) ? (
@@ -302,42 +293,83 @@ const ModelMarketplace: React.FC = () => {
             </div>
             
             {/* Sidebar Content (Filters) */}
-            <div className="mp-sidebar-content" style={{ opacity: (collapsed && !screens.xs) ? 0 : 1, transition: 'opacity 0.2s', visibility: (collapsed && !screens.xs) ? 'hidden' : 'visible' }}>
-              <div className="mp-sidebar-title">浏览</div>
-              <div
-                className={`mp-sidebar-item ${selectedType === null ? 'active' : ''}`}
-                onClick={() => setSelectedType(null)}
-              >
-                <AppstoreOutlined /> 全部模型
-                <span className="mp-sidebar-count">{total}</span>
-              </div>
-              {types.map(t => (
+            {/* Sidebar Content (Filters) */}
+            <div className="mp-sidebar-content" style={{ padding: collapsed && !screens.xs ? '12px 0' : '24px 20px', transition: 'all 0.2s' }}>
+              {!(collapsed && !screens.xs) && <div className="mp-sidebar-title" style={{ padding: '0 12px' }}>浏览</div>}
+              <Tooltip title={collapsed && !screens.xs ? "全部模型" : ""} placement="right">
                 <div
-                  key={t.id}
-                  className={`mp-sidebar-item ${selectedType === t.id ? 'active' : ''}`}
-                  onClick={() => setSelectedType(t.id)}
+                  className={`mp-sidebar-item ${selectedType === null ? 'active' : ''}`}
+                  onClick={() => setSelectedType(null)}
+                  style={{ justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start', padding: collapsed && !screens.xs ? '12px 0' : '8px 12px' }}
                 >
-                  {getTypeIcon(t.name)} {t.name}
-                  <span className="mp-sidebar-count">{typeCounts[t.id] || 0}</span>
+                  <AppstoreOutlined style={{ fontSize: 18 }} />
+                  {!(collapsed && !screens.xs) && (
+                    <>
+                      全部模型
+                      <span className="mp-sidebar-count">{total}</span>
+                    </>
+                  )}
                 </div>
+              </Tooltip>
+              {types.map(t => (
+                <Tooltip key={t.id} title={collapsed && !screens.xs ? t.name : ""} placement="right">
+                  <div
+                    className={`mp-sidebar-item ${selectedType === t.id ? 'active' : ''}`}
+                    onClick={() => setSelectedType(t.id)}
+                    style={{ justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start', padding: collapsed && !screens.xs ? '12px 0' : '8px 12px' }}
+                  >
+                    <span style={{ fontSize: 18, display: 'flex', alignItems: 'center' }}>{getTypeIcon(t.name)}</span>
+                    {!(collapsed && !screens.xs) && (
+                      <>
+                        {t.name}
+                        <span className="mp-sidebar-count">{typeCounts[t.id] || 0}</span>
+                      </>
+                    )}
+                  </div>
+                </Tooltip>
               ))}
 
-              <div className="mp-sidebar-divider" />
+              <div className="mp-sidebar-divider" style={{ margin: collapsed && !screens.xs ? '8px 0' : '20px 0' }} />
 
-              <div className="mp-sidebar-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                按供应商
-                {selectedProviders.length > 0 && (
-                  <button className="mp-clear-btn" onClick={() => setSelectedProviders([])}>
-                    清除
-                  </button>
-                )}
-              </div>
-              {providers.map(p => (
-                <div key={p.id} className="mp-provider-item" onClick={() => handleProviderToggle(p.id)}>
-                  <Checkbox checked={selectedProviders.includes(p.id)} />
-                  <span style={{ flex: 1 }}>{p.name}</span>
-                  <span className="mp-sidebar-count">{providerCounts[p.id] || 0}</span>
+              {!(collapsed && !screens.xs) && (
+                <div className="mp-sidebar-title" style={{ padding: '0 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  按供应商
+                  {selectedProviders.length > 0 && (
+                    <button className="mp-clear-btn" onClick={() => setSelectedProviders([])}>
+                      清除
+                    </button>
+                  )}
                 </div>
+              )}
+              {providers.map(p => (
+                <Tooltip key={p.id} title={collapsed && !screens.xs ? p.name : ""} placement="right">
+                  <div 
+                    className={`mp-sidebar-item ${selectedProviders.includes(p.id) ? 'active' : ''}`} 
+                    onClick={() => handleProviderToggle(p.id)}
+                    style={{ 
+                      justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start', 
+                      padding: collapsed && !screens.xs ? '12px 0' : '8px 12px',
+                      color: selectedProviders.includes(p.id) ? '#fff' : 'rgba(255,255,255,0.65)'
+                    }}
+                  >
+                    {collapsed && !screens.xs ? (
+                      <div style={{ 
+                        width: 18, height: 18, borderRadius: 4, 
+                        border: `2px solid ${selectedProviders.includes(p.id) ? '#fff' : 'rgba(255,255,255,0.45)'}`, 
+                        background: selectedProviders.includes(p.id) ? '#fff' : 'transparent', 
+                        display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                      }}>
+                         {selectedProviders.includes(p.id) && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#1677ff' }} />}
+                      </div>
+                    ) : (
+                      <>
+                        <Checkbox checked={selectedProviders.includes(p.id)} />
+                        <span style={{ flex: 1, marginLeft: 8 }}>{p.name}</span>
+                        <span className="mp-sidebar-count">{providerCounts[p.id] || 0}</span>
+                      </>
+                    )}
+                  </div>
+                </Tooltip>
               ))}
             </div>
           </div>
@@ -371,45 +403,14 @@ const ModelMarketplace: React.FC = () => {
             </div>
             
             <Space size={screens.xs ? "small" : "middle"}>
-              <Dropdown menu={{ items: [] }} placement="bottomRight">
-                <Button type="text" icon={<GlobalOutlined />} style={{ color: '#fff' }}>
-                  {!screens.xs && '中文'}
-                </Button>
-              </Dropdown>
 
-              <Badge count={0} overflowCount={99} offset={[-4, 4]}>
-                <Button type="text" icon={<BellOutlined />} style={{ color: '#fff', fontSize: '18px' }} />
-              </Badge>
-
-              <Popover 
-                content={profileContent} 
-                trigger="click" 
-                placement="bottomRight"
-                overlayClassName="custom-premium-popover"
-                forceRender
-                overlayInnerStyle={{ 
-                  padding: 0, 
-                  borderRadius: 20, 
-                  background: 'rgba(30, 30, 30, 0.45)',
-                  backdropFilter: 'blur(30px) saturate(200%)',
-                  WebkitBackdropFilter: 'blur(30px) saturate(200%)',
-                  border: '1px solid rgba(255,255,255,0.15)', 
-                  boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
-                }}
-                arrow={false}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '4px', borderRadius: 20 }}>
-                  <Avatar size={34} style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 16 }}>
-                    {userInitial}
-                  </Avatar>
-                </div>
-              </Popover>
+              <UserAvatarMenu isUserEnd={true} agreement={agreement} />
             </Space>
           </Header>
           
           <Content style={{ 
             margin: screens.xs ? '8px' : '12px', 
-            padding: screens.xs ? '20px 16px' : '32px 40px',
+            padding: screens.xs ? '10px 8px' : '16px 20px',
             minHeight: 280, 
             background: '#000', 
             borderRadius: 8, 
@@ -427,22 +428,121 @@ const ModelMarketplace: React.FC = () => {
                   title={<span style={{ color: '#f0f6fc' }}>无权访问模型广场</span>}
                   subTitle={<span style={{ color: '#8b949e' }}>您当前的用户等级暂无权限浏览模型广场，请联系管理员或升级等级。</span>}
                   extra={
-                    <Button type="primary" onClick={() => navigate('/')}>返回控制台</Button>
+                    <Button type="primary" onClick={() => navigate('/')}>返回控制面板</Button>
                   }
                 />
               </div>
-            ) : (
-              <>
-                <div style={{ marginBottom: 24 }}>
-                  <h1 style={{ fontSize: screens.xs ? 24 : 32, fontWeight: 700, color: '#f0f6fc', display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 8px 0' }}>
-                    探索模型
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', background: '#21262d', padding: '2px 10px', borderRadius: 12 }}>
-                      {total}
-                    </span>
-                  </h1>
-                  <p style={{ fontSize: 15, color: '#8b949e', margin: 0 }}>发现并测试最前沿的 AI 模型，集成到您的应用中</p>
+            ) : selectedModel ? (
+              <div style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
+                <style>{`
+                  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                `}</style>
+                <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <Button 
+                    type="text" 
+                    icon={<ArrowLeftOutlined />} 
+                    onClick={() => setSelectedModel(null)}
+                    style={{ color: '#8b949e', fontSize: 16 }}
+                  >
+                    返回列表
+                  </Button>
+                  <Breadcrumb
+                    items={[
+                      { title: <span style={{ color: '#8b949e', cursor: 'pointer' }} onClick={() => setSelectedModel(null)}>模型广场</span> },
+                      { title: <span style={{ color: '#fff' }}>{selectedModel.name}</span> },
+                    ]}
+                  />
                 </div>
 
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, alignItems: 'flex-start' }}>
+                  {/* 左侧详情 */}
+                  <div style={{ flex: '1 1 500px', background: 'rgba(255,255,255,0.02)', border: '1px solid #21262d', borderRadius: 16, padding: screens.xs ? '20px' : '40px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32 }}>
+                      <div style={{ width: 64, height: 64, borderRadius: 16, background: 'rgba(22, 119, 255, 0.1)', color: '#1677ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, border: '1px solid rgba(22, 119, 255, 0.2)' }}>
+                        {getTypeIcon(selectedModel.type_name)}
+                      </div>
+                      <div>
+                        <h1 style={{ margin: 0, fontSize: screens.xs ? 24 : 32, fontWeight: 700, color: '#fff' }}>{selectedModel.name}</h1>
+                        <div style={{ fontSize: 15, color: '#8b949e', marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {selectedModel.provider_name}
+                          <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#484f58' }} />
+                          <code style={{ background: '#21262d', padding: '2px 8px', borderRadius: 4, fontSize: 13, color: '#c9d1d9' }}>{selectedModel.model_id}</code>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 40 }}>
+                      <h3 style={{ fontSize: 16, fontWeight: 600, color: '#fff', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <InfoCircleOutlined style={{ color: '#1677ff' }} /> 模型简介
+                      </h3>
+                      <div style={{ fontSize: 16, color: '#c9d1d9', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
+                        {selectedModel.description || '该模型暂无详细描述信息。作为行业领先的 AI 模型，它能够提供高质量的生成结果。'}
+                      </div>
+                    </div>
+
+                    <Descriptions
+                      column={screens.xs ? 1 : 2}
+                      bordered
+                      size="middle"
+                      labelStyle={{ background: 'rgba(255,255,255,0.02)', color: '#8b949e', width: 120 }}
+                      contentStyle={{ background: 'transparent', color: '#fff' }}
+                      style={{ border: '1px solid #21262d', borderRadius: 8, overflow: 'hidden' }}
+                    >
+                      <Descriptions.Item label="能力分类">
+                        <Tag color="blue" bordered={false} style={{ borderRadius: 6, background: 'rgba(22, 119, 255, 0.15)', color: '#1677ff' }}>{selectedModel.type_name}</Tag>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="运营商">
+                        {selectedModel.provider_name}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="计费标准">
+                        {selectedModel.billing ? (
+                          <Tag color="cyan" bordered={false} style={{ borderRadius: 6, background: 'rgba(54, 207, 201, 0.15)', color: '#36cfc9' }}>{getBillingLabel(selectedModel.billing)}</Tag>
+                        ) : (
+                          <span style={{ color: '#484f58' }}>暂未定价</span>
+                        )}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="更新时间">
+                        {selectedModel.created_at ? new Date(selectedModel.created_at).toLocaleDateString('zh-CN') : '-'}
+                      </Descriptions.Item>
+                    </Descriptions>
+                  </div>
+
+                  {/* 右侧价格卡片 */}
+                  <div style={{ width: screens.xs ? '100%' : 340, flexShrink: 0 }}>
+                    <div style={{ background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)', borderRadius: 16, padding: '24px', boxShadow: '0 8px 32px rgba(22, 119, 255, 0.2)', marginBottom: 24 }}>
+                      <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.8)', marginBottom: 8 }}>计费单价 (估计)</div>
+                      {selectedModel.billing && selectedModel.billing.billing_type === 'token' ? (
+                        <>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
+                            <span style={{ color: '#fff', fontSize: 14 }}>输入 (Prompt)</span>
+                            <span style={{ color: '#fff', fontSize: 24, fontWeight: 700 }}>¥{selectedModel.billing.prompt_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400 }}>/ 1M tokens</small></span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                            <span style={{ color: '#fff', fontSize: 14 }}>输出 (Completion)</span>
+                            <span style={{ color: '#fff', fontSize: 24, fontWeight: 700 }}>¥{selectedModel.billing.completion_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400 }}>/ 1M tokens</small></span>
+                          </div>
+                        </>
+                      ) : selectedModel.billing && selectedModel.billing.billing_type === 'fixed' ? (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                          <span style={{ color: '#fff', fontSize: 14 }}>单次调用价格</span>
+                          <span style={{ color: '#fff', fontSize: 24, fontWeight: 700 }}>¥{selectedModel.billing.fixed_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400 }}>/ 次</small></span>
+                        </div>
+                      ) : (
+                        <div style={{ color: '#fff', fontSize: 20, fontWeight: 600 }}>暂未配置价格</div>
+                      )}
+                    </div>
+                    
+                    <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 16, padding: '20px' }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 12 }}>关于该模型</div>
+                      <div style={{ fontSize: 13, color: '#8b949e', lineHeight: 1.6 }}>
+                        该模型目前已在全平台上线。您可以直接在 API 调用或控制面板中使用。如果您有大规模调用需求，请联系客服获取专属优惠。
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
                 <div className="mp-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
                   <div className="mp-search" style={{ flex: 1, minWidth: 200, maxWidth: screens.xs ? '100%' : 420 }}>
                     <Input
@@ -477,8 +577,8 @@ const ModelMarketplace: React.FC = () => {
                       <div
                         key={model.id}
                         className="mp-card"
-                        onMouseEnter={() => setHoveredModelId(model.id)}
-                        onMouseLeave={() => setHoveredModelId(null)}
+                        onClick={() => setSelectedModel(model)}
+                        style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}
                       >
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
                           <div className="mp-card-icon" style={{ background: 'rgba(88,166,255,0.1)', color: '#58a6ff' }}>
@@ -516,17 +616,6 @@ const ModelMarketplace: React.FC = () => {
                               {getBillingLabel(model.billing)}
                             </span>
                           )}
-                        </div>
-
-                        <div style={{
-                          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                          background: 'linear-gradient(to top, #161b22 0%, rgba(22,27,34,0) 100%)',
-                          borderRadius: 10, opacity: hoveredModelId === model.id ? 1 : 0, transition: 'opacity 0.2s',
-                          display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 20, pointerEvents: 'none'
-                        }}>
-                          <Button type="primary" style={{ width: '100%', background: '#58a6ff', pointerEvents: 'auto' }} onClick={(e) => { e.stopPropagation(); navigate('/playground'); }}>
-                            去体验
-                          </Button>
                         </div>
                       </div>
                     ))}

@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons';
 import request from '../../utils/request';
 import useAuthStore from '../../store/auth';
+import UserAvatarMenu from '../../components/UserAvatarMenu';
 
 interface ProjectItem {
   id: number;
@@ -48,6 +49,7 @@ const PlaygroundHome: React.FC = () => {
   const { user, logout } = useAuthStore();
   const [siteName, setSiteName] = useState<string>('TokensByte');
   const [siteLogo, setSiteLogo] = useState<string>('');
+  const [agreement, setAgreement] = useState<any>(null);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [selectedProject, setSelectedProject] = useState<ProjectItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,6 +70,9 @@ const PlaygroundHome: React.FC = () => {
         if (settingsRes?.site) {
           if (settingsRes.site.name) setSiteName(settingsRes.site.name);
           if (settingsRes.site.logo) setSiteLogo(settingsRes.site.logo);
+        }
+        if (settingsRes?.agreement) {
+          setAgreement(settingsRes.agreement);
         }
       } catch (e) {
         console.error('获取站点配置失败', e);
@@ -373,34 +378,7 @@ const PlaygroundHome: React.FC = () => {
           {/* 右上角头像区 */}
           <div style={{ position: 'absolute', top: 24, right: 40, display: 'flex', alignItems: 'center', gap: 16 }}>
             {user && (
-              <Popover
-                content={
-                  <div style={{ width: 300, padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <div style={{ marginTop: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, width: '100%', padding: '0 8px' }}>
-                      <Avatar size={56} style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 24, flexShrink: 0, cursor: 'pointer' }} onClick={() => navigate('/profile')}>
-                        {user.username?.charAt(0)?.toUpperCase()}
-                      </Avatar>
-                      <div style={{ overflow: 'hidden', flex: 1 }}>
-                        <div style={{ fontWeight: 500, fontSize: 16, color: '#e5e5e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.nickname || user.username}</div>
-                        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>用户 UID:{(user as any)?.uid || '-'}</div>
-                      </div>
-                    </div>
-                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <Button type="default" style={{ height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15 }} icon={<DashboardOutlined style={{ fontSize: 18 }} />} onClick={() => navigate('/')}>控制台</Button>
-                      <Button type="default" style={{ height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15 }} icon={<WalletOutlined style={{ fontSize: 18 }} />} onClick={() => navigate('/wallet')}>我的钱包</Button>
-                      <Button type="default" style={{ height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15 }} icon={<LogoutOutlined style={{ fontSize: 18 }} />} onClick={() => { logout(); navigate('/login'); }}>退出登录</Button>
-                    </div>
-                  </div>
-                }
-                trigger="click"
-                placement="bottomRight"
-                arrow={false}
-                overlayInnerStyle={{ padding: 0, borderRadius: 20, background: 'rgba(30, 30, 30, 0.45)', backdropFilter: 'blur(30px) saturate(200%)', WebkitBackdropFilter: 'blur(30px) saturate(200%)', border: '1px solid rgba(255,255,255,0.15)', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)' }}
-              >
-                <Avatar size={40} style={{ cursor: 'pointer', background: '#1677ff', color: '#fff', fontWeight: 'bold', fontSize: 18, border: '2px solid rgba(255,255,255,0.1)' }}>
-                  {user.username?.charAt(0)?.toUpperCase()}
-                </Avatar>
-              </Popover>
+              <UserAvatarMenu isUserEnd={true} agreement={agreement} />
             )}
           </div>
           {selectedProject ? (
