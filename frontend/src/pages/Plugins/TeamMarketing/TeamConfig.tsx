@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Input, InputNumber, Select, Space, Tag, message, Popconfirm, Spin, Tooltip } from 'antd';
+import { Typography, Button, Table, Modal, Input, InputNumber, Select, Space, Tag, message, Popconfirm, Spin, Tooltip, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, TeamOutlined, CrownOutlined, CopyOutlined, LinkOutlined, TrophyOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import type { MarketingTeam, TeamMember, UserLevel } from '../../../types';
@@ -23,6 +23,7 @@ const TeamConfig: React.FC = () => {
   const [teamName, setTeamName] = useState('');
   const [teamDesc, setTeamDesc] = useState('');
   const [maxMembers, setMaxMembers] = useState(10);
+  const [membersCanSetLevel, setMembersCanSetLevel] = useState(0);
   const [selectedLeaders, setSelectedLeaders] = useState<string[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
@@ -71,14 +72,18 @@ const TeamConfig: React.FC = () => {
   };
 
   const openCreateModal = () => {
+    const defaultLevel = allLevels.find(l => l.is_default === 1);
+    const defaultLevelIds = defaultLevel ? [defaultLevel.id] : [];
+
     setEditingTeam(null);
     setTeamName('');
     setTeamDesc('');
     setMaxMembers(10);
+    setMembersCanSetLevel(0);
     setSelectedLeaders([]);
     setSelectedMembers([]);
-    setSelectedLevels([]);
-    setSelectedMemberLevels([]);
+    setSelectedLevels(defaultLevelIds);
+    setSelectedMemberLevels(defaultLevelIds);
     setUserOptions([]);
     setModalVisible(true);
   };
@@ -88,6 +93,7 @@ const TeamConfig: React.FC = () => {
     setTeamName(team.name);
     setTeamDesc(team.description || '');
     setMaxMembers(team.max_members || 10);
+    setMembersCanSetLevel((team as any).members_can_set_level || 0);
     setSelectedLeaders(team.leaders.map(l => l.user_id));
     setSelectedMembers(team.members.map(m => m.user_id));
     // Pre-populate user options with existing leaders and members
@@ -126,6 +132,7 @@ const TeamConfig: React.FC = () => {
         leader_ids: selectedLeaders,
         member_ids: selectedMembers,
         max_members: maxMembers,
+        members_can_set_level: membersCanSetLevel,
         allowed_level_ids: selectedLevels,
         allowed_member_level_ids: selectedMemberLevels,
       };
@@ -414,11 +421,21 @@ const TeamConfig: React.FC = () => {
 
           {/* 授权用户等级（推荐用户） */}
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
-              <TrophyOutlined style={{ color: '#52c41a', marginRight: 4 }} />
-              授权用户等级
-              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可将推荐用户设置为以下等级</Text>
-            </Text>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block' }}>
+                <TrophyOutlined style={{ color: '#52c41a', marginRight: 4 }} />
+                授权用户等级
+                <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可将推荐用户设置为以下等级</Text>
+              </Text>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>成员也可设置</Text>
+                <Switch 
+                  size="small" 
+                  checked={membersCanSetLevel === 1} 
+                  onChange={(c) => setMembersCanSetLevel(c ? 1 : 0)} 
+                />
+              </div>
+            </div>
             <Select
               mode="multiple"
               value={selectedLevels}
