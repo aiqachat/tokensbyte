@@ -1184,6 +1184,10 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS cached_tokens INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
     sqlx::query("COMMENT ON COLUMN logs.cached_tokens IS '缓存命中的Token数量(属于输入的子集)'").execute(pool).await.ok();
 
+    // ─── users 表增加 remark 字段（兼容线上旧数据） ───
+    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN users.remark IS '推广用户备注'").execute(pool).await.ok();
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};
