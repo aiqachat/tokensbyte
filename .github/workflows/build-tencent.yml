@@ -9,8 +9,8 @@ on:
       - 'docs/**'
 
 env:
-  REGISTRY: ccr.ccs.tencentyun.com
-  IMAGE_PREFIX: ${{ secrets.TENCENT_NAMESPACE }}/tokensbyte
+  REGISTRY: ccr.ccs.tencentyun.com/ws-api
+  IMAGE_PREFIX: tokensbyte
 
 jobs:
   build-and-push:
