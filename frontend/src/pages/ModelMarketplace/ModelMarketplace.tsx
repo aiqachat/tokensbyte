@@ -59,8 +59,8 @@ const getTypeIcon = (typeName: string) => {
 const getBillingLabel = (billing: any) => {
   if (!billing) return null;
   switch (billing.billing_type) {
-    case 'token': return '按 Token 计费';
-    case 'fixed': return '固定费用';
+    case 'tokens': return '按 Token 计费';
+    case 'requests': return '固定费用';
     case 'duration': return '按时长计费';
     case 'tiered': return '阶梯计费';
     default: return billing.billing_type;
@@ -71,6 +71,7 @@ const ModelMarketplace: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [siteName, setSiteName] = useState<string>('TokensByte');
+  const [currencySymbol, setCurrencySymbol] = useState<string>('¥');
   const [siteLogo, setSiteLogo] = useState<string>('');
   const [agreement, setAgreement] = useState<any>(null);
 
@@ -103,6 +104,9 @@ const ModelMarketplace: React.FC = () => {
       if (settingsRes?.site) {
         if (settingsRes.site.name) setSiteName(settingsRes.site.name);
         if (settingsRes.site.logo) setSiteLogo(settingsRes.site.logo);
+      }
+      if (settingsRes?.currency?.currency_symbol) {
+        setCurrencySymbol(settingsRes.currency.currency_symbol);
       }
       if (settingsRes?.agreement) {
         setAgreement(settingsRes.agreement);
@@ -527,86 +531,90 @@ const ModelMarketplace: React.FC = () => {
                         {selectedModel.created_at ? new Date(selectedModel.created_at).toLocaleDateString('zh-CN') : '-'}
                       </Descriptions.Item>
                     </Descriptions>
+
+                    <div style={{ marginTop: 40 }}>
+                      <div style={{ background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)', borderRadius: 16, padding: '24px', boxShadow: '0 8px 32px rgba(22, 119, 255, 0.2)', marginBottom: 24 }}>
+                                            <div style={{ fontSize: 16, fontWeight: 600, color: '#fff', marginBottom: 16 }}>详细计费规则</div>
+                                            
+                                            {selectedModel.billing ? (
+                                              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                                {/* 计费类型说明 */}
+                                                <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>计费模式</div>
+                                                  <div style={{ fontSize: 15, color: '#fff', fontWeight: 500 }}>
+                                                    {getBillingLabel(selectedModel.billing)}
+                                                    {selectedModel.billing.name && ` - ${selectedModel.billing.name}`}
+                                                  </div>
+                                                </div>
+                      
+                                                {/* 基础费率 */}
+                                                {selectedModel.billing.billing_type === 'tokens' && (
+                                                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                                      <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输入 (Prompt)</span>
+                                                      <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.prompt_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                      <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输出 (Completion)</span>
+                                                      <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.completion_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                                                    </div>
+                                                  </div>
+                                                )}
+                      
+                                                {selectedModel.billing.billing_type === 'requests' && (
+                                                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                      <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>单次调用费用</span>
+                                                      <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.fixed_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 次</small></span>
+                                                    </div>
+                                                  </div>
+                                                )}
+                      
+                                                {selectedModel.billing.billing_type === 'duration' && (
+                                                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                      <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>按时长计费</span>
+                                                      <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.duration_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 秒</small></span>
+                                                    </div>
+                                                  </div>
+                                                )}
+                      
+                                                {/* 阶梯计费 */}
+                                                {selectedModel.billing.pricing_tiers && (() => {
+                                                  try {
+                                                    const tiers = JSON.parse(selectedModel.billing.pricing_tiers);
+                                                    if (Array.isArray(tiers) && tiers.length > 0) {
+                                                      return (
+                                                        <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                                          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}>上下文阶梯费率</div>
+                                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                                            {tiers.map((t: any, i: number) => (
+                                                              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: i < tiers.length - 1 ? 10 : 0, borderBottom: i < tiers.length - 1 ? '1px dashed rgba(255,255,255,0.2)' : 'none' }}>
+                                                                <span style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>&le; {t.max_prompt_tokens >= 1000 ? t.max_prompt_tokens / 1000 + 'k' : t.max_prompt_tokens} Tokens</span>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
+                                                                  <span>输入: {currencySymbol}{t.prompt_rate} <small>/ 1M</small></span>
+                                                                  <span>输出: {currencySymbol}{t.completion_rate} <small>/ 1M</small></span>
+                                                                </div>
+                                                              </div>
+                                                            ))}
+                                                          </div>
+                                                        </div>
+                                                      );
+                                                    }
+                                                  } catch(e) {}
+                                                  return null;
+                                                })()}
+                                              </div>
+                                            ) : (
+                                              <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 15 }}>暂未配置计费规则，该模型当前可能为免费使用或不可用。</div>
+                                            )}
+                                          </div>
+                    </div>
                   </div>
 
                   {/* 右侧价格卡片 */}
                   <div style={{ width: screens.xs ? '100%' : 340, flexShrink: 0 }}>
-                    <div style={{ background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)', borderRadius: 16, padding: '24px', boxShadow: '0 8px 32px rgba(22, 119, 255, 0.2)', marginBottom: 24 }}>
-                      <div style={{ fontSize: 16, fontWeight: 600, color: '#fff', marginBottom: 16 }}>详细计费规则</div>
-                      
-                      {selectedModel.billing ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                          {/* 计费类型说明 */}
-                          <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>计费模式</div>
-                            <div style={{ fontSize: 15, color: '#fff', fontWeight: 500 }}>
-                              {getBillingLabel(selectedModel.billing)}
-                              {selectedModel.billing.name && ` - ${selectedModel.billing.name}`}
-                            </div>
-                          </div>
-
-                          {/* 基础费率 */}
-                          {selectedModel.billing.billing_type === 'token' && (
-                            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输入 (Prompt)</span>
-                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.prompt_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输出 (Completion)</span>
-                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.completion_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
-                              </div>
-                            </div>
-                          )}
-
-                          {selectedModel.billing.billing_type === 'fixed' && (
-                            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>单次调用费用</span>
-                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.fixed_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 次</small></span>
-                              </div>
-                            </div>
-                          )}
-
-                          {selectedModel.billing.billing_type === 'duration' && (
-                            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>按时长计费</span>
-                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.duration_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 秒</small></span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* 阶梯计费 */}
-                          {selectedModel.billing.pricing_tiers && (() => {
-                            try {
-                              const tiers = JSON.parse(selectedModel.billing.pricing_tiers);
-                              if (Array.isArray(tiers) && tiers.length > 0) {
-                                return (
-                                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}>上下文阶梯费率</div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                      {tiers.map((t: any, i: number) => (
-                                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: i < tiers.length - 1 ? 10 : 0, borderBottom: i < tiers.length - 1 ? '1px dashed rgba(255,255,255,0.2)' : 'none' }}>
-                                          <span style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>&le; {t.max_prompt_tokens >= 1000 ? t.max_prompt_tokens / 1000 + 'k' : t.max_prompt_tokens} Tokens</span>
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
-                                            <span>输入: ¥{t.prompt_rate} <small>/ 1M</small></span>
-                                            <span>输出: ¥{t.completion_rate} <small>/ 1M</small></span>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                            } catch(e) {}
-                            return null;
-                          })()}
-                        </div>
-                      ) : (
-                        <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 15 }}>暂未配置计费规则，该模型当前可能为免费使用或不可用。</div>
-                      )}
-                    </div>
+                    
                     
                     <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 16, padding: '20px' }}>
                       <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 12 }}>关于该模型</div>
@@ -704,11 +712,7 @@ const ModelMarketplace: React.FC = () => {
                           <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', color: '#8b949e', border: '1px solid #30363d' }}>
                             {model.type_name}
                           </span>
-                          {model.billing && (
-                            <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: 'rgba(88,166,255,0.1)', color: '#58a6ff', border: '1px solid rgba(88,166,255,0.2)' }}>
-                              {getBillingLabel(model.billing)}
-                            </span>
-                          )}
+
                         </div>
                       </div>
                     ))}
