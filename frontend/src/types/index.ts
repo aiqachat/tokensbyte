@@ -214,6 +214,7 @@ export interface RequestLog {
   upstream_req_content?: string;
   is_stream?: number;
   billing_detail?: string;
+  cached_tokens?: number;
   created_at: string;
 }
 
