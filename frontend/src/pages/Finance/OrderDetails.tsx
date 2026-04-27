@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Card, Typography, Space, Input, Button, Tag, Select, DatePicker } from 'antd';
+import { Table, Card, Typography, Space, Input, Button, Tag, Select, DatePicker, Grid, List } from 'antd';
 import { SyncOutlined, SearchOutlined, BarChartOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
@@ -36,6 +36,7 @@ const methodMap: Record<string, { color: string; label: string }> = {
 
 const OrderDetails: React.FC = () => {
   const { t } = useTranslation();
+  const screens = Grid.useBreakpoint();
   const { settings } = useSettingsStore();
   const currencySymbol = settings?.currency?.currency_symbol || '¥';
   const [data, setData] = useState<OrderRecord[]>([]);
@@ -206,7 +207,72 @@ const OrderDetails: React.FC = () => {
         </Space>
       </div>
 
-      <Table
+      {screens.xs ? (
+        <List
+          dataSource={data}
+          loading={loading}
+          pagination={{
+            total,
+            current: page,
+            pageSize,
+            onChange: (p, s) => {
+              setPage(p);
+              setPageSize(s);
+            },
+            showSizeChanger: true,
+            size: "small",
+            showTotal: (t) => `共 ${t} 条`
+          }}
+          renderItem={(record) => {
+            const statusInfo = statusMap[record.status] || { color: 'default', label: record.status };
+            const methodInfo = methodMap[record.payment_method] || { color: 'default', label: record.payment_method };
+            return (
+              <List.Item style={{ padding: '0 0 16px 0', border: 'none' }}>
+                <Card 
+                  size="small" 
+                  style={{ width: '100%', borderRadius: 8, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                  title={<Text strong>{record.username}</Text>}
+                  extra={<Tag color={statusInfo.color}>{statusInfo.label}</Tag>}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>订单号</Text>
+                    <Text copyable style={{ fontFamily: 'monospace', fontSize: 12 }}>{record.out_trade_no}</Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>UID</Text>
+                    <Text style={{ fontSize: 12 }}>{record.uid}</Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>支付方式</Text>
+                    <Tag color={methodInfo.color} style={{ margin: 0 }}>{methodInfo.label}</Tag>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>金额</Text>
+                    <Text strong style={{ color: '#ff4d4f' }}>¥ {record.amount.toFixed(2)}</Text>
+                  </div>
+                  {record.trade_no && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>第三方交易号</Text>
+                      <Text copyable style={{ fontFamily: 'monospace', fontSize: 12 }}>{record.trade_no}</Text>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>创建时间</Text>
+                    <Text style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+                  </div>
+                  {record.paid_at && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 0 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>支付时间</Text>
+                      <Text style={{ fontSize: 12 }}>{dayjs(record.paid_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+                    </div>
+                  )}
+                </Card>
+              </List.Item>
+            );
+          }}
+        />
+      ) : (
+        <Table
         dataSource={data}
         columns={columns}
         rowKey="id"
@@ -225,6 +291,7 @@ const OrderDetails: React.FC = () => {
         size="middle"
         scroll={{ x: 'max-content' }}
       />
+      )}
     </Card>
   );
 };

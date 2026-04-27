@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Card, Typography, Space, Input, Button, Tag, Select, DatePicker } from 'antd';
+import { Table, Card, Typography, Space, Input, Button, Tag, Select, DatePicker, Grid, List } from 'antd';
 import { SyncOutlined, SearchOutlined, WalletOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
@@ -23,6 +23,7 @@ interface RechargeRecord {
 
 const RechargeRecords: React.FC = () => {
   const { t } = useTranslation();
+  const screens = Grid.useBreakpoint();
   const { settings } = useSettingsStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [data, setData] = useState<RechargeRecord[]>([]);
@@ -173,7 +174,62 @@ const RechargeRecords: React.FC = () => {
         </Space>
       </div>
 
-      <Table
+      {screens.xs ? (
+        <List
+          dataSource={data}
+          loading={loading}
+          pagination={{
+            total,
+            current: page,
+            pageSize,
+            pageSizeOptions: ['50', '100', '200'],
+            onChange: (p, s) => {
+              setPage(p);
+              setPageSize(s);
+            },
+            showSizeChanger: true,
+            size: "small"
+          }}
+          renderItem={(record) => {
+            let color = 'default';
+            if (record.recharge_type === 'registration') color = 'magenta';
+            if (record.recharge_type === 'manual') color = 'orange';
+            if (record.recharge_type === 'redemption') color = 'blue';
+            const label = t(`finance.recharge_type_${record.recharge_type}`) || t('finance.recharge_type_other');
+
+            return (
+              <List.Item style={{ padding: '0 0 16px 0', border: 'none' }}>
+                <Card 
+                  size="small" 
+                  style={{ width: '100%', borderRadius: 8, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                  title={<Text strong>{record.username}</Text>}
+                  extra={<Tag color={color}>{label}</Tag>}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>UID</Text>
+                    <Text style={{ fontSize: 12 }}>{record.uid}</Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>金额</Text>
+                    <Text strong style={{ color: record.amount >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                      {record.amount >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(record.amount).toFixed(2)}
+                    </Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>时间</Text>
+                    <Text style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 0 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>备注</Text>
+                    <Text style={{ fontSize: 12, wordBreak: 'break-all', maxWidth: '60%', textAlign: 'right' }}>{record.remark || '-'}</Text>
+                  </div>
+                </Card>
+              </List.Item>
+            );
+          }}
+        />
+      ) : (
+        <Table
         dataSource={data}
         columns={columns}
         rowKey="id"
@@ -192,6 +248,7 @@ const RechargeRecords: React.FC = () => {
         size="middle"
         scroll={{ x: 'max-content' }}
       />
+      )}
     </Card>
   );
 };
