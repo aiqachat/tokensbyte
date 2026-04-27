@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: docker.cnb.cool
-  IMAGE_PREFIX: netbcloud
+  IMAGE_PREFIX: netbcloud/tokensbyte
 
 jobs:
   build-and-push:
