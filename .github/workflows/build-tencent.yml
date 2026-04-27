@@ -1,4 +1,4 @@
-name: Quick Build
+name: Build to Tencent Cloud
 
 on:
   workflow_dispatch:  # 手动触发
@@ -9,28 +9,25 @@ on:
       - 'docs/**'
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/tokensbyte
+  REGISTRY: ccr.ccs.tencentyun.com
+  IMAGE_PREFIX: ${{ secrets.TENCENT_NAMESPACE }}/tokensbyte
 
 jobs:
-  quick-build:
-    name: Quick Build & Push
+  build-and-push:
+    name: Build & Push to Tencent Cloud
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
+      - name: Log in to Tencent Cloud Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.TENCENT_REGISTRY_USERNAME }}
+          password: ${{ secrets.TENCENT_REGISTRY_PASSWORD }}
 
       - name: Build & Push Backend
         uses: docker/build-push-action@v6
@@ -58,16 +55,7 @@ jobs:
 
       - name: Build Summary
         run: |
-          echo "## Docker Images Built" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Images Pushed to Tencent Cloud" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Backend: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Frontend: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Quick Deploy (本地):**" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }} tokensbyte-backend:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }} tokensbyte-frontend:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker compose up -d" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
