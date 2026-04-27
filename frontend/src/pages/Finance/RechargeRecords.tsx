@@ -131,15 +131,15 @@ const RechargeRecords: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24, alignItems: 'center' }}>
-        <Space size="middle" align="baseline">
-            <WalletOutlined style={{ fontSize: '24px', color: '#1677ff' }} />
-            <Title level={2} style={{ margin: 0 }}>{t('finance.recharge_title')}</Title>
-            <Text type="secondary" style={{ marginLeft: 8 }}>
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, alignItems: screens.xs ? 'flex-start' : 'center', gap: 16 }}>
+        <Space size="small" align="center" wrap>
+            <WalletOutlined style={{ fontSize: 24, color: '#1677ff' }} />
+            <Title level={2} style={{ margin: 0, fontSize: screens.xs ? 20 : 24 }}>{t('finance.recharge_title')}</Title>
+            <Text type="secondary" style={{ marginLeft: screens.xs ? 0 : 8 }}>
               金额合计: <Text strong style={{ color: '#1677ff', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(2)}</Text>
             </Text>
         </Space>
-        <Space>
+        <Space wrap style={{ width: screens.xs ? '100%' : 'auto' }}>
           <RangePicker 
             defaultValue={[dayjs().startOf('month'), dayjs().endOf('month')]}
             onChange={(dates) => {

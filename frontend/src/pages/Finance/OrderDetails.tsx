@@ -152,15 +152,15 @@ const OrderDetails: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24, alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-        <Space size="middle" align="baseline">
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, alignItems: screens.xs ? 'flex-start' : 'center', gap: 16 }}>
+        <Space size="small" align="center" wrap>
           <BarChartOutlined style={{ fontSize: 24, color: '#52c41a' }} />
-          <Title level={2} style={{ margin: 0 }}>支付订单</Title>
-          <Text type="secondary" style={{ marginLeft: 8 }}>
+          <Title level={2} style={{ margin: 0, fontSize: screens.xs ? 20 : 24 }}>支付订单</Title>
+          <Text type="secondary" style={{ marginLeft: screens.xs ? 0 : 8 }}>
             (已支付) 合计: <Text strong style={{ color: '#52c41a', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(2)}</Text>
           </Text>
         </Space>
-        <Space wrap>
+        <Space wrap style={{ width: screens.xs ? '100%' : 'auto' }}>
           <RangePicker 
             defaultValue={[dayjs().startOf('month'), dayjs().endOf('month')]}
             onChange={(dates) => {
