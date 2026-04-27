@@ -91,7 +91,7 @@ case "${choice:-1}" in
     trap 'echo ""; echo "🛑 正在停止所有服务..."; kill 0; wait 2>/dev/null' EXIT INT TERM
 
     # 使用 shell 后台进程同时运行前后端，带日志前缀
-    (cd backend && cargo watch -c -w src -x run) 2>&1 | sed $'s/^/\033[36m[Rust]\033[0m /' &
+    (cd backend && cargo watch -w src -x run) 2>&1 | sed $'s/^/\033[36m[Rust]\033[0m /' &
     (cd frontend && npm run dev) 2>&1 | sed $'s/^/\033[34m[Vite]\033[0m /' &
 
     wait

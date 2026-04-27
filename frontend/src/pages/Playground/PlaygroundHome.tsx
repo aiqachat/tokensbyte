@@ -3,14 +3,16 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ConfigProvider, theme, Input, Tooltip, message, Dropdown, Avatar } from 'antd';
+import { ConfigProvider, theme, Input, Tooltip, message, Popover, Avatar, Button } from 'antd';
 import {
   SearchOutlined, PlusOutlined, DeleteOutlined, EditOutlined,
   AppstoreOutlined, TeamOutlined, AudioOutlined, ArrowUpOutlined,
-  ThunderboltOutlined, FileTextOutlined, MobileOutlined, DesktopOutlined, RocketOutlined
+  ThunderboltOutlined, FileTextOutlined, MobileOutlined, DesktopOutlined, RocketOutlined,
+  DashboardOutlined, WalletOutlined, LogoutOutlined,
 } from '@ant-design/icons';
 import request from '../../utils/request';
 import useAuthStore from '../../store/auth';
+import UserAvatarMenu from '../../components/UserAvatarMenu';
 
 interface ProjectItem {
   id: number;
@@ -45,6 +47,9 @@ const formatDateGroup = (dateStr: string): string => {
 const PlaygroundHome: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+  const [siteName, setSiteName] = useState<string>('TokensByte');
+  const [siteLogo, setSiteLogo] = useState<string>('');
+  const [agreement, setAgreement] = useState<any>(null);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [selectedProject, setSelectedProject] = useState<ProjectItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +64,20 @@ const PlaygroundHome: React.FC = () => {
 
   const loadProjects = useCallback(async () => {
     try {
+      // 获取站点基础设置
+      try {
+        const settingsRes = await (request.get('/settings') as any);
+        if (settingsRes?.site) {
+          if (settingsRes.site.name) setSiteName(settingsRes.site.name);
+          if (settingsRes.site.logo) setSiteLogo(settingsRes.site.logo);
+        }
+        if (settingsRes?.agreement) {
+          setAgreement(settingsRes.agreement);
+        }
+      } catch (e) {
+        console.error('获取站点配置失败', e);
+      }
+
       const res = await request.get('/playground/projects') as any;
       let list: ProjectItem[] = res?.projects || [];
       if (list.length === 0 && !isCreatingRef.current) {
@@ -173,6 +192,12 @@ const PlaygroundHome: React.FC = () => {
           boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
           zIndex: 10,
         }}>
+          {/* Logo 区 */}
+          <div style={{ padding: '24px 20px 0', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => navigate('/')}>
+            {siteLogo && <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />}
+            <span style={{ color: '#fff', fontSize: '18px', fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{siteName || 'TokensByte'}</span>
+          </div>
+
           {/* 顶部按钮区 */}
           <div style={{ padding: '20px 20px 16px', display: 'flex', gap: 12, alignItems: 'center' }}>
             <div style={{
@@ -353,17 +378,7 @@ const PlaygroundHome: React.FC = () => {
           {/* 右上角头像区 */}
           <div style={{ position: 'absolute', top: 24, right: 40, display: 'flex', alignItems: 'center', gap: 16 }}>
             {user && (
-              <Dropdown menu={{
-                items: [
-                  { key: 'dashboard', label: '返回控制台', onClick: () => navigate(user.role === 'admin' ? '/admin' : '/dashboard') },
-                  { type: 'divider' },
-                  { key: 'logout', label: '退出登录', onClick: () => { logout(); navigate('/login'); } }
-                ]
-              }} placement="bottomRight" arrow={{ pointAtCenter: true }}>
-                <Avatar size={40} style={{ cursor: 'pointer', background: 'linear-gradient(135deg, #A2C1FF 0%, #6C8EFF 100%)', color: '#0a0b0d', fontWeight: 'bold', fontSize: 18, border: '2px solid rgba(255,255,255,0.1)' }}>
-                  {user.username?.charAt(0)?.toUpperCase()}
-                </Avatar>
-              </Dropdown>
+              <UserAvatarMenu isUserEnd={true} agreement={agreement} />
             )}
           </div>
           {selectedProject ? (

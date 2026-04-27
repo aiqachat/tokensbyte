@@ -324,7 +324,63 @@ pub fn default_agreement_settings() -> AgreementSettings {
 }
 
 pub async fn system_about() -> AppResult<Json<serde_json::Value>> {
-    // 采用静态构建劫持保护：在 build.rs 时生成 JSON，运行时变为 O(1) 的纯内存读取，防范 DoS 攻击。
+    #[cfg(debug_assertions)]
+    {
+        // Debug 模式下动态调用 git log，以保证每次刷新均能看到最新 commit
+        let output = std::process::Command::new("git")
+            .args([
+                "log",
+                "-10",
+                "--format=%H\x1F%h\x1F%an\x1F%cd\x1F%s",
+                "--date=format:%Y-%m-%d %H:%M:%S",
+            ])
+            .output();
+
+        if let Ok(out) = output {
+            if out.status.success() {
+                let raw = String::from_utf8_lossy(&out.stdout).to_string();
+                let mut commits = vec![];
+                for (i, line) in raw.lines().filter(|l| !l.trim().is_empty()).enumerate() {
+                    let parts: Vec<&str> = line.splitn(5, '\x1F').collect();
+                    let version = format!("v1.0.{}", 10usize.saturating_sub(i));
+                    let hash = parts.get(0).unwrap_or(&"").replace("\"", "\\\"");
+                    let short_hash = parts.get(1).unwrap_or(&"").replace("\"", "\\\"");
+                    let raw_author = parts.get(2).unwrap_or(&"").replace("\"", "\\\"");
+                    let author = if raw_author.chars().count() > 2 {
+                        let chars: Vec<char> = raw_author.chars().collect();
+                        format!("{}***{}", chars.first().unwrap_or(&'a'), chars.last().unwrap_or(&'z'))
+                    } else if raw_author.chars().count() == 2 {
+                        let chars: Vec<char> = raw_author.chars().collect();
+                        format!("{}*", chars.first().unwrap_or(&'a'))
+                    } else {
+                        raw_author
+                    };
+                    let date = parts.get(3).unwrap_or(&"").replace("\"", "\\\"");
+                    let message = parts.get(4).unwrap_or(&"").replace("\"", "\\\"").replace("\n", " ");
+                    
+                    commits.push(serde_json::json!({
+                        "index": i,
+                        "is_current": i == 0,
+                        "version": version,
+                        "hash": hash,
+                        "short_hash": short_hash,
+                        "author": author,
+                        "date": date,
+                        "message": message
+                    }));
+                }
+                
+                let current = commits.first().cloned().unwrap_or(serde_json::json!({}));
+                return Ok(Json(serde_json::json!({
+                    "success": true,
+                    "current": current,
+                    "commits": commits,
+                })));
+            }
+        }
+    }
+
+    // Release 模式或动态调用失败时：采用静态构建劫持保护
     let static_commits_json = include_str!(concat!(env!("OUT_DIR"), "/git_commits.json"));
     
     let commits: Vec<serde_json::Value> = serde_json::from_str(static_commits_json).unwrap_or_else(|_| {

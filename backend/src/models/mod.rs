@@ -38,3 +38,5 @@ pub use plugin::*;
 
 pub mod volcengine_pool;
 pub mod gptimage_pool;
+pub mod site_icon;
+pub use site_icon::*;

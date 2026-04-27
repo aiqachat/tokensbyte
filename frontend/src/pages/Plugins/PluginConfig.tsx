@@ -1,16 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
 import AdminPresetAssets from './AssetManager/AdminPresetAssets';
 import RelayConvertAssets from './AssetManager/RelayConvertAssets';
-import TeamConfig from './TeamMarketing/TeamConfig';
-import PoolManager from './VolcenginePool/PoolManager';
-import GptImagePoolManager from './GptImagePool/PoolManager';
 import JsonView from '@uiw/react-json-view';
 import { darkTheme } from '@uiw/react-json-view/dark';
+
+// ── 插件组件动态加载（删除插件源文件不影响系统运行） ──
+const safeLazy = (loader: () => Promise<any>) =>
+  React.lazy(() =>
+    loader().catch(() => ({ default: () => <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.35)' }}>该插件模块暂未安装</div> }))
+  );
+
+const TeamConfig = safeLazy(() => import('./TeamMarketing/TeamConfig'));
+const PoolManager = safeLazy(() => import('./VolcenginePool/PoolManager'));
+const GptImagePoolManager = safeLazy(() => import('./GptImagePool/PoolManager'));
+const SiteIconsManager = safeLazy(() => import('./SiteIcons/SiteIconsManager'));
+
+/** 插件组件包装器：Suspense + 降级 */
+const PluginModule: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' }}><Spin /></div>}>{children}</Suspense>
+);
 
 const { Title, Text } = Typography;
 
@@ -59,6 +72,8 @@ const pluginIcons: Record<string, React.ReactNode> = {
   playground: <ExperimentOutlined style={{ fontSize: 20 }} />,
   volcengine_pool: <CloudServerOutlined style={{ fontSize: 20 }} />,
   gptimage_pool: <PictureOutlined style={{ fontSize: 20 }} />,
+  model_marketplace: <ShopOutlined style={{ fontSize: 20 }} />,
+  site_icons: <AppstoreOutlined style={{ fontSize: 20 }} />,
 };
 
 const PluginConfigInner: React.FC = () => {
@@ -93,7 +108,7 @@ const PluginConfigInner: React.FC = () => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [activeTabKey, setActiveTabKey] = useState(() => {
     const hash = window.location.hash.replace('#', '');
-    if (['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log', 'team_config', 'pg_storage'].includes(hash)) return hash;
+    if (['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log', 'team_config', 'pg_storage', 'marketplace_models'].includes(hash)) return hash;
     return 'basic'; // default to basic, will be adjusted when plugin loads
   });
   const handleTabChange = (key: string) => {
@@ -127,6 +142,58 @@ const PluginConfigInner: React.FC = () => {
   const [pgSchemeDrawerVisible, setPgSchemeDrawerVisible] = useState(false);
   const [pgCurrentId, setPgCurrentId] = useState<number | null>(null);
   const [pgSelectedSchemeId, setPgSelectedSchemeId] = useState<string>('');
+
+  // ====== 模型广场管理 (Model Marketplace) 配置 ======
+  const [mpModels, setMpModels] = useState<any[]>([]);
+  const [savingMarketplace, setSavingMarketplace] = useState(false);
+  const [mpSearchKeyword, setMpSearchKeyword] = useState('');
+
+  const fetchMarketplaceConfig = async () => {
+    try {
+      const res = await (request.get(`/plugins/${name}/marketplace-models`) as Promise<any>);
+      if (res.models) setMpModels(res.models);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    if (name === 'model_marketplace') {
+      fetchMarketplaceConfig();
+    }
+  }, [name]);
+
+  const handleSaveMarketplaceConfig = async () => {
+    try {
+      setSavingMarketplace(true);
+      const payload = {
+        models: mpModels.map(m => ({
+          id: m.id,
+          enabled: m.mp_enabled,
+          sort_order: m.mp_sort_order || 0,
+          description: m.mp_description || '',
+        }))
+      };
+      await request.post(`/plugins/${name}/marketplace-models`, payload);
+      message.success('模型广场配置保存成功');
+    } catch (e) {
+      message.error('保存失败');
+    } finally {
+      setSavingMarketplace(false);
+    }
+  };
+
+  const handleMpToggle = (id: number, enabled: boolean) => {
+    setMpModels(prev => prev.map(m => m.id === id ? { ...m, mp_enabled: enabled } : m));
+  };
+
+  const handleMpSortChange = (id: number, sort: number) => {
+    setMpModels(prev => prev.map(m => m.id === id ? { ...m, mp_sort_order: sort } : m));
+  };
+
+  const handleMpDescChange = (id: number, desc: string) => {
+    setMpModels(prev => prev.map(m => m.id === id ? { ...m, mp_description: desc } : m));
+  };
 
   const fetchPlaygroundConfigBase = async () => {
     try {
@@ -636,7 +703,7 @@ const PluginConfigInner: React.FC = () => {
             <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedLevels.length} 个等级</Text>
             {levels.map(lv => {
               const isSelected = selectedLevels.includes(lv.group_key);
-              const showLimits = name !== 'team_marketing' && name !== 'playground';
+              const showLimits = name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace';
               return (
                 <div key={lv.group_key}
                   style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, transition: 'all 0.15s' }}
@@ -699,7 +766,7 @@ const PluginConfigInner: React.FC = () => {
         )}
       </div>
 
-      {isAllLevels && (name !== 'team_marketing' && name !== 'playground') && (
+      {isAllLevels && (name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace') && (
         <div style={{
           background: '#141414', borderRadius: 8,
           border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
@@ -1580,6 +1647,127 @@ const PluginConfigInner: React.FC = () => {
     </div>
   );
 
+  // ====== 模型广场管理 模型列表 Tab ======
+  const filteredMpModels = mpModels.filter(m => {
+    if (!mpSearchKeyword) return true;
+    const kw = mpSearchKeyword.toLowerCase();
+    return m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid?.toLowerCase()?.includes(kw) || m.provider_name?.toLowerCase()?.includes(kw);
+  });
+
+  const mpModelColumns = [
+    {
+      title: '模型名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (nameVal: string, record: any) => (
+        <div>
+          <Text strong style={{ color: '#fff', fontSize: 13 }}>{nameVal}</Text>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
+        </div>
+      ),
+    },
+    {
+      title: '供应商',
+      dataIndex: 'provider_name',
+      key: 'provider_name',
+      width: 100,
+      render: (p: string) => p ? (
+        <Tag style={{ borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>{p}</Tag>
+      ) : <Text type="secondary">-</Text>,
+    },
+    {
+      title: '类型',
+      dataIndex: 'type_name',
+      key: 'type_name',
+      width: 100,
+      render: (t: string) => t ? (
+        <Tag style={{ borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>
+          {t.includes('视频') ? <VideoCameraOutlined style={{ marginRight: 4 }} /> : t.includes('图片') ? <PictureOutlined style={{ marginRight: 4 }} /> : null}
+          {t}
+        </Tag>
+      ) : <Text type="secondary">-</Text>,
+    },
+    {
+      title: '广场展示',
+      key: 'mp_enabled',
+      width: 100,
+      render: (_: any, record: any) => (
+        <Switch
+          checked={record.mp_enabled}
+          onChange={(val) => handleMpToggle(record.id, val)}
+          checkedChildren="展示"
+          unCheckedChildren="隐藏"
+        />
+      ),
+    },
+    {
+      title: '排序权重',
+      key: 'mp_sort_order',
+      width: 120,
+      render: (_: any, record: any) => (
+        <InputNumber
+          size="small"
+          min={0}
+          max={9999}
+          value={record.mp_sort_order || 0}
+          onChange={(val) => handleMpSortChange(record.id, val ?? 0)}
+          style={{ width: 80, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+        />
+      ),
+    },
+    {
+      title: '广场描述',
+      key: 'mp_description',
+      width: 240,
+      render: (_: any, record: any) => (
+        <Input
+          size="small"
+          value={record.mp_description || ''}
+          onChange={(e) => handleMpDescChange(record.id, e.target.value)}
+          placeholder="简短描述..."
+          style={{ background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+        />
+      ),
+    },
+  ];
+
+  const marketplaceModelTab = (
+    <div>
+      <div style={{ background: '#141414', borderRadius: 8, padding: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <Text strong style={{ color: '#fff', fontSize: 14 }}>模型广场模型列表</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
+              开启展示开关后，该模型将在用户端模型广场中可见。数字越大排序越靠前。已展示 {mpModels.filter(m => m.mp_enabled).length} / {mpModels.length} 个模型
+            </Text>
+          </div>
+          <Input
+            placeholder="搜索模型..."
+            value={mpSearchKeyword}
+            onChange={e => setMpSearchKeyword(e.target.value)}
+            style={{ width: 220, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+            allowClear
+          />
+        </div>
+
+        <Table
+          dataSource={filteredMpModels}
+          columns={mpModelColumns}
+          rowKey="id"
+          size="small"
+          pagination={{ pageSize: 20 }}
+          style={{ marginBottom: 16 }}
+        />
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button type="primary" loading={savingMarketplace} onClick={handleSaveMarketplaceConfig} icon={<SaveOutlined />}>
+            保存全部配置
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
 
     <div>
@@ -1614,7 +1802,7 @@ const PluginConfigInner: React.FC = () => {
           plugin.name === 'team_marketing'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
-                { key: 'team_config', label: '团队配置', children: <TeamConfig /> },
+                { key: 'team_config', label: '团队配置', children: <PluginModule><TeamConfig /></PluginModule> },
               ]
             : plugin.name === 'playground'
             ? [
@@ -1626,12 +1814,22 @@ const PluginConfigInner: React.FC = () => {
             : plugin.name === 'volcengine_pool'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
-                { key: 'pool_manager', label: '卡池管理', children: <PoolManager /> },
+                { key: 'pool_manager', label: '卡池管理', children: <PluginModule><PoolManager /></PluginModule> },
               ]
             : plugin.name === 'gptimage_pool'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
-                { key: 'pool_manager', label: '卡池管理', children: <GptImagePoolManager /> },
+                { key: 'pool_manager', label: '卡池管理', children: <PluginModule><GptImagePoolManager /></PluginModule> },
+              ]
+            : plugin.name === 'model_marketplace'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'marketplace_models', label: '模型列表', children: marketplaceModelTab },
+              ]
+            : plugin.name === 'site_icons'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'icon_library', label: '图标库管理', children: <PluginModule><SiteIconsManager /></PluginModule> },
               ]
             : [
                 { key: 'audit_log', label: '审核日志', children: auditLogTab },

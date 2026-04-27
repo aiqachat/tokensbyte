@@ -42,6 +42,10 @@ interface CanvasContextValue {
   setSettingsWidgetPos: React.Dispatch<React.SetStateAction<Point>>;
   resourceWidgetPos: Point;
   setResourceWidgetPos: React.Dispatch<React.SetStateAction<Point>>;
+  modelWidgetPos: Point;
+  setModelWidgetPos: React.Dispatch<React.SetStateAction<Point>>;
+  selectedNodeId: string | null;
+  setSelectedNodeId: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const CanvasContext = createContext<CanvasContextValue | null>(null);
@@ -92,6 +96,10 @@ interface PlaygroundContextValue {
   setIsSettingsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   isResourceWidgetVisible: boolean;
   setIsResourceWidgetVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  isSettingsWidgetVisible: boolean;
+  setIsSettingsWidgetVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  isGenLogVisible: boolean;
+  setIsGenLogVisible: React.Dispatch<React.SetStateAction<boolean>>;
   // 操作
   handleCategoryChange: (cat: string) => void;
   handleSelectModel: (mid: string) => void;
@@ -103,8 +111,8 @@ interface PlaygroundContextValue {
   createProject: (name?: string) => Promise<number | null>;
   saveCanvasState: () => Promise<void>;
   // 素材附件
-  attachedAsset: { asset: any; fullUrl: string } | null;
-  setAttachedAsset: React.Dispatch<React.SetStateAction<{ asset: any; fullUrl: string } | null>>;
+  attachedAssets: { asset: any; fullUrl: string; file?: File }[];
+  setAttachedAssets: React.Dispatch<React.SetStateAction<{ asset: any; fullUrl: string; file?: File }[]>>;
 }
 
 const PlaygroundContext = createContext<PlaygroundContextValue | null>(null);
@@ -135,7 +143,9 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
   const [isTokenModalVisible, setIsTokenModalVisible] = useState(false);
   const [isSettingsCollapsed, setIsSettingsCollapsed] = useState(false);
   const [isResourceWidgetVisible, setIsResourceWidgetVisible] = useState(false);
-  const [attachedAsset, setAttachedAsset] = useState<{ asset: any; fullUrl: string } | null>(null);
+  const [isSettingsWidgetVisible, setIsSettingsWidgetVisible] = useState(true);
+  const [isGenLogVisible, setIsGenLogVisible] = useState(false);
+  const [attachedAssets, setAttachedAssets] = useState<{ asset: any; fullUrl: string; file?: File }[]>([]);
 
   // --- 项目管理 ---
   const [projects, setProjects] = useState<PlaygroundProject[]>([]);
@@ -150,7 +160,9 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [maxZIndex, setMaxZIndex] = useState(10);
   const [settingsWidgetPos, setSettingsWidgetPos] = useState<Point>({ x: window.innerWidth - 380, y: 32 });
-  const [resourceWidgetPos, setResourceWidgetPos] = useState<Point>({ x: 96, y: 32 });
+  const [resourceWidgetPos, setResourceWidgetPos] = useState<Point>({ x: window.innerWidth - 380, y: 120 });
+  const [modelWidgetPos, setModelWidgetPos] = useState<Point>({ x: window.innerWidth - 480, y: 100 });
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null!);
 
   // --- 派生数据 ---
@@ -460,9 +472,11 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
     canvasRef,
     settingsWidgetPos, setSettingsWidgetPos,
     resourceWidgetPos, setResourceWidgetPos,
+    modelWidgetPos, setModelWidgetPos,
+    selectedNodeId, setSelectedNodeId,
   }), [
     canvasTransform, activeTool, isSpaceDown, isDraggingCanvas,
-    draggingNodeId, nodes, maxZIndex, settingsWidgetPos, resourceWidgetPos
+    draggingNodeId, nodes, maxZIndex, settingsWidgetPos, resourceWidgetPos, modelWidgetPos, selectedNodeId
   ]);
 
   const playgroundValue = useMemo<PlaygroundContextValue>(() => ({
@@ -478,19 +492,21 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
     isTokenModalVisible, setIsTokenModalVisible,
     isSettingsCollapsed, setIsSettingsCollapsed,
     isResourceWidgetVisible, setIsResourceWidgetVisible,
+    isSettingsWidgetVisible, setIsSettingsWidgetVisible,
+    isGenLogVisible, setIsGenLogVisible,
     handleCategoryChange, handleSelectModel,
     projects, currentProjectId, setCurrentProjectId,
     loadProjects, createProject, saveCanvasState,
-    attachedAsset, setAttachedAsset,
+    attachedAssets, setAttachedAssets,
   }), [
     loading, models, selectedMid, currentModel, categories,
     activeCategory, modelsInCategory, searchModelKeyword,
     paramValues, prompt, generating, taskPollingNodes,
     apiTokens, selectedTokenKey,
-    isModelDrawerVisible, isTokenModalVisible, isSettingsCollapsed, isResourceWidgetVisible,
+    isModelDrawerVisible, isTokenModalVisible, isSettingsCollapsed, isResourceWidgetVisible, isSettingsWidgetVisible, isGenLogVisible,
     handleCategoryChange, handleSelectModel, initParamDefaults,
     projects, currentProjectId, loadProjects, createProject, saveCanvasState,
-    attachedAsset, setAttachedAsset,
+    attachedAssets, setAttachedAssets,
   ]);
 
   return (

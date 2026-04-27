@@ -19,6 +19,7 @@ pub struct AppState {
     pub config: AppConfig,
     pub http_client: reqwest::Client,
     pub rate_limiter: middleware::rate_limit::GlobalRateLimiter,
+    pub icon_sync_progress: api::site_icons::SyncProgress,
 }
 
 #[tokio::main]
@@ -40,6 +41,7 @@ async fn main() -> anyhow::Result<()> {
         config: config_data.clone(),
         http_client: reqwest::Client::new(),
         rate_limiter: middleware::rate_limit::GlobalRateLimiter::new(),
+        icon_sync_progress: api::site_icons::SyncProgress::new(),
     });
 
     // 启动后台异步任务轮询器（每 2 分钟自动检查未结算的视频/图片生成任务）

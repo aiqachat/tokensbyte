@@ -105,7 +105,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(admin_routes)
         .nest("/plugins/volcengine_pool", volcengine_pool::router())
         .nest("/plugins/gptimage_pool", gptimage_pool::router())
+        .nest("/plugins/site-icons", site_icons::router())
         .nest("/plugins", plugins::router())
+        .route("/marketplace/public", get(plugins::get_marketplace_public))
         .nest("/assets", assets::router())
         .nest("/team-marketing", team_marketing::router())
         .nest("/playground", playground::router())
@@ -184,6 +186,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(volcengine_native_routes)
         .with_state(state)
         .layer(tower_http::cors::CorsLayer::permissive())
+        .layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024))
 }
 
 pub mod plugins;
@@ -192,3 +195,4 @@ pub mod team_marketing;
 pub mod playground;
 pub mod volcengine_pool;
 pub mod gptimage_pool;
+pub mod site_icons;

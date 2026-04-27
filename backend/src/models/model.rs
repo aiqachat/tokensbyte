@@ -19,6 +19,8 @@ pub struct Model {
     pub site_discount: f64,         // 全站折扣倍率（1.0=原价）
     #[sqlx(default)]
     pub site_discount_enabled: i32, // 全站折扣开关（0=关，1=开，开启后优先于等级折扣）
+    #[sqlx(default)]
+    pub logo: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -124,6 +126,8 @@ pub struct ModelProvider {
     #[serde(default)]
     pub is_system: i32,
     pub remark: Option<String>,
+    #[sqlx(default)]
+    pub logo: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -136,6 +140,8 @@ pub struct ModelType {
     pub is_active: i32,
     #[serde(default)]
     pub is_system: i32,
+    #[sqlx(default)]
+    pub logo: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -180,6 +186,7 @@ pub struct CreateModelRequest {
     pub enable_log_content: Option<i32>,
     pub site_discount: Option<f64>,
     pub site_discount_enabled: Option<i32>,
+    pub logo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -196,6 +203,7 @@ pub struct UpdateModelRequest {
     pub enable_log_content: Option<i32>,
     pub site_discount: Option<f64>,
     pub site_discount_enabled: Option<i32>,
+    pub logo: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -210,4 +218,5 @@ pub struct ClassificationRequest {
     pub sort_order: i32,
     pub is_active: i32,
     pub remark: Option<String>,
+    pub logo: Option<String>,
 }

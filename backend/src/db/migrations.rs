@@ -982,6 +982,21 @@ macro_rules! pg_migration_blocks {
     sqlx::query("COMMENT ON COLUMN channels.pool_id IS '关联的火山引擎卡池ID，为空表示不使用卡池'")
         .execute(pool).await.ok();
 
+
+    // Migration: marketing_teams 新增 allowed_level_ids 字段
+    // 存储团队负责人被授权可分配的用户等级 ID 列表（JSON 数组格式，如 [1,3,5]）
+    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_level_ids TEXT NOT NULL DEFAULT '[]'")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN marketing_teams.allowed_level_ids IS '团队负责人被授权可分配的用户等级ID列表(JSON数组)'")
+        .execute(pool).await.ok();
+
+    // Migration: marketing_teams 新增 allowed_member_level_ids 字段
+    // 存储团队负责人被授权可分配给团队成员的用户等级 ID 列表（JSON 数组格式）
+    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_member_level_ids TEXT NOT NULL DEFAULT '[]'")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN marketing_teams.allowed_member_level_ids IS '团队负责人被授权可分配给团队成员的用户等级ID列表(JSON数组)'")
+        .execute(pool).await.ok();
+
     // ══════════════════════════════════════════════════════════════
     //  GPT-Image 卡池系统
     // ══════════════════════════════════════════════════════════════
@@ -1089,19 +1104,70 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_name_key").execute(pool).await.ok();
     sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_model_id_key").execute(pool).await.ok();
 
-    // Migration: marketing_teams 新增 allowed_level_ids 字段
-    // 存储团队负责人被授权可分配的用户等级 ID 列表（JSON 数组格式，如 [1,3,5]）
-    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_level_ids TEXT NOT NULL DEFAULT '[]'")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN marketing_teams.allowed_level_ids IS '团队负责人被授权可分配的用户等级ID列表(JSON数组)'")
-        .execute(pool).await.ok();
+    // ══════════════════════════════════════════════════════════════
+    //  模型广场管理插件
+    // ══════════════════════════════════════════════════════════════
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category)
+           VALUES ('model_marketplace', '模型广场管理', '管理模型广场的模型展示，控制哪些模型对用户可见并配置展示信息', 0, 'user')
+           ON CONFLICT (name) DO NOTHING"#
+    ).execute(pool).await?;
 
-    // Migration: marketing_teams 新增 allowed_member_level_ids 字段
-    // 存储团队负责人被授权可分配给团队成员的用户等级 ID 列表（JSON 数组格式）
-    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_member_level_ids TEXT NOT NULL DEFAULT '[]'")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN marketing_teams.allowed_member_level_ids IS '团队负责人被授权可分配给团队成员的用户等级ID列表(JSON数组)'")
-        .execute(pool).await.ok();
+    // ══════════════════════════════════════════════════════════════
+    //  站点 Icon 图标库插件
+    // ══════════════════════════════════════════════════════════════
+
+    // 种子：站点 Icon 图标库系统插件
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category)
+           VALUES ('site_icons', '站点icon图标库', '提供 AI/LLM 品牌 SVG 图标库，支持搜索选择和自定义上传，数据来源 lobehub/lobe-icons', 0, 'system')
+           ON CONFLICT (name) DO NOTHING"#
+    ).execute(pool).await?;
+
+    // 站点图标主表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS site_icons (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            file_path TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT 'lobe-icons',
+            category TEXT NOT NULL DEFAULT 'AI品牌',
+            tags TEXT NOT NULL DEFAULT '[]',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text),
+            UNIQUE(name, source)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE site_icons IS '站点图标库，存储 SVG 图标元数据'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.name IS '图标标识名（如 openai, claude）'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.title IS '显示名称（如 OpenAI, Claude）'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.file_path IS 'SVG 文件路径（相对于 data/assets/）'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.source IS '图标来源: lobe-icons=从 GitHub 同步 / custom=手动上传'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.category IS '分类: AI品牌 / 自定义'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.tags IS '标签(JSON数组)'").execute(pool).await.ok();
+
+    // 同步日志表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS site_icon_sync_logs (
+            id SERIAL PRIMARY KEY,
+            total_synced INTEGER NOT NULL DEFAULT 0,
+            total_new INTEGER NOT NULL DEFAULT 0,
+            total_updated INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'success',
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE site_icon_sync_logs IS '站点图标同步日志'").execute(pool).await.ok();
+
+    // ─── 模型 / 服务商 / 类型 增加 logo 字段 ───
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE model_types ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
