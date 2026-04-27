@@ -25,6 +25,8 @@ import {
   InfoCircleOutlined,
   BellOutlined,
   ShopOutlined,
+  SunOutlined,
+  MoonOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
@@ -642,6 +644,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                       itemHeight: 36, // default is 40
                       itemMarginInline: 8, 
                       itemMarginBlock: 2, 
+                      itemHoverBg: themeMode === 'light' ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.08)',
+                      itemSelectedBg: themeMode === 'light' ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.12)',
+                      itemActiveBg: themeMode === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.16)',
+                      itemSelectedColor: themeMode === 'light' ? '#1f2937' : '#fff',
+                      itemHoverColor: themeMode === 'light' ? '#1f2937' : '#fff',
+                      itemColor: themeMode === 'light' ? '#4b5563' : 'rgba(255, 255, 255, 0.65)',
                     } 
                   } 
                 }}
@@ -731,15 +739,15 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 </Button>
               )}
 
-              <Tooltip title={themeMode === 'light' ? '切换暗色模式' : '切换亮色模式'} placement="bottom">
+              <Tooltip title={themeMode === 'light' ? '切换暗色模式' : '切换亮色模式'} placement="bottom" color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
                 <Button 
                   type="text" 
                   shape="circle" 
                   onClick={toggleTheme}
                   icon={
                     themeMode === 'light' 
-                    ? <span style={{fontSize: 18}}>🌙</span> 
-                    : <span style={{fontSize: 18}}>☀️</span>
+                    ? <MoonOutlined style={{ fontSize: 18 }} /> 
+                    : <SunOutlined style={{ fontSize: 18 }} />
                   } 
                   style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', width: 42, height: 42 }} 
                 />
@@ -771,7 +779,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 }}
                 arrow={false}
               >
-                <Tooltip title="通知" placement="bottom">
+                <Tooltip title="通知" placement="bottom" color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
                   <Badge count={unreadCount} overflowCount={99} offset={[-4, 4]}>
                     <Button 
                       type="text" 

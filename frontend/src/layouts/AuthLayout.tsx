@@ -1,5 +1,5 @@
 import { Card, Typography, Space, ConfigProvider, theme, Divider, Tooltip, Button, Dropdown } from 'antd';
-import { RocketOutlined, GlobalOutlined } from '@ant-design/icons';
+import { RocketOutlined, GlobalOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '../store/theme';
 
@@ -47,7 +47,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
     const activeColor = brandColor || '#1677ff';
     
     return (
-      <Tooltip key={method.key} title={method.label}>
+      <Tooltip key={method.key} title={method.label} color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
         <div
           onClick={method.onClick ? method.onClick : () => onMethodChange?.(method.key)}
           style={{
@@ -96,15 +96,15 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
         position: 'relative',
       }}>
         <div style={{ position: 'absolute', top: 24, right: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Tooltip title={themeMode === 'light' ? '切换暗色模式' : '切换亮色模式'} placement="bottom">
+          <Tooltip title={themeMode === 'light' ? '切换暗色模式' : '切换亮色模式'} placement="bottom" color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
             <Button 
               type="text" 
               shape="circle" 
               onClick={toggleTheme}
               icon={
                 themeMode === 'light' 
-                ? <span style={{fontSize: 18}}>🌙</span> 
-                : <span style={{fontSize: 18}}>☀️</span>
+                ? <MoonOutlined style={{ fontSize: 18 }} /> 
+                : <SunOutlined style={{ fontSize: 18 }} />
               } 
               style={{ color: themeMode === 'light' ? '#1f2937' : 'rgba(255,255,255,0.65)' }} 
             />

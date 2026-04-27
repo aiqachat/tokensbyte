@@ -47,7 +47,6 @@ interface FilterItem {
 
 // 类型图标映射
 const getTypeIcon = (typeName: string) => {
-  const { themeMode } = useThemeStore();
   if (typeName.includes('聊天') || typeName.includes('对话') || typeName.includes('LLM')) return <MessageOutlined />;
   if (typeName.includes('图片') || typeName.includes('图像')) return <PictureOutlined />;
   if (typeName.includes('视频')) return <VideoCameraOutlined />;
@@ -341,56 +340,7 @@ const ModelMarketplace: React.FC = () => {
                 </Tooltip>
               ))}
 
-              <div className="mp-sidebar-divider" style={{ margin: collapsed && !screens.xs ? '8px 0' : '20px 0' }} />
 
-              {!(collapsed && !screens.xs) && (
-                <div className="mp-sidebar-title" style={{ padding: '0 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  按供应商
-                  {selectedProviders.length > 0 && (
-                    <button className="mp-clear-btn" onClick={() => { setSelectedProviders([]); setSelectedModel(null); }}>
-                      清除
-                    </button>
-                  )}
-                </div>
-              )}
-              {providers.map(p => (
-                <Tooltip key={p.id} title={collapsed && !screens.xs ? p.name : ""} placement="right">
-                  <div 
-                    className={`mp-sidebar-item ${selectedProviders.includes(p.id) ? 'active' : ''}`} 
-                    onClick={() => handleProviderToggle(p.id)}
-                    style={{ 
-                      justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start', 
-                      padding: collapsed && !screens.xs ? '12px 0' : '8px 12px',
-                      color: selectedProviders.includes(p.id) ? '#fff' : 'rgba(255,255,255,0.65)'
-                    }}
-                  >
-                    {collapsed && !screens.xs ? (
-                      <div style={{ 
-                        width: 24, height: 24, borderRadius: 4, 
-                        border: `2px solid ${selectedProviders.includes(p.id) ? '#fff' : 'rgba(255,255,255,0.45)'}`, 
-                        background: selectedProviders.includes(p.id) ? '#fff' : 'transparent', 
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        overflow: 'hidden',
-                      }}>
-                        {p.logo ? (
-                          <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 18, height: 18, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        ) : (
-                          selectedProviders.includes(p.id) && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#1677ff' }} />
-                        )}
-                      </div>
-                    ) : (
-                      <>
-                        <Checkbox checked={selectedProviders.includes(p.id)} />
-                        {p.logo && (
-                          <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 18, height: 18, objectFit: 'contain', marginLeft: 8 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        )}
-                        <span style={{ flex: 1, marginLeft: p.logo ? 6 : 8 }}>{p.name}</span>
-                        <span className="mp-sidebar-count">{providerCounts[p.id] || 0}</span>
-                      </>
-                    )}
-                  </div>
-                </Tooltip>
-              ))}
             </div>
           </div>
         </Sider>
@@ -640,103 +590,189 @@ const ModelMarketplace: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <>
-                <div className="mp-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
-                  <div className="mp-search" style={{ flex: 1, minWidth: 200, maxWidth: screens.xs ? '100%' : 420 }}>
-                    <Input
-                      placeholder="搜索模型名称、ID或描述..."
-                      prefix={<SearchOutlined style={{ color: '#8b949e', marginRight: 8 }} />}
-                      value={searchKeyword}
-                      onChange={e => setSearchKeyword(e.target.value)}
-                      allowClear
-                    />
-                  </div>
-                  <Dropdown
-                    menu={{
-                      items: [
-                        { key: 'popular', label: '最受欢迎' },
-                        { key: 'newest', label: '最新上架' },
-                        { key: 'name', label: '名称 A-Z' },
-                      ],
-                      onClick: ({ key }) => setSortBy(key as any)
-                    }}
-                    placement="bottomRight"
-                  >
-                    <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', fontSize: 13, cursor: 'pointer', marginLeft: screens.xs ? 0 : 'auto' }}>
-                      <SortAscendingOutlined />
-                      {sortBy === 'popular' ? '最受欢迎' : sortBy === 'newest' ? '最新上架' : '名称排序'}
-                    </button>
-                  </Dropdown>
-                </div>
-
-                {filteredModels.length > 0 ? (
-                  <div className="mp-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-                    {filteredModels.map(model => (
-                      <div
-                        key={model.id}
-                        className="mp-card"
-                        onClick={() => setSelectedModel(model)}
-                        style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-                          <div className="mp-card-icon" style={{ background: 'rgba(88,166,255,0.1)', color: '#58a6ff', overflow: 'hidden' }}>
-                            {model.logo ? (
-                              <img src={`/assets/icons/lobe/${model.logo}.svg`} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                            ) : model.provider_logo ? (
-                              <img src={`/assets/icons/lobe/${model.provider_logo}.svg`} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).replaceWith(document.createTextNode('')); }} />
-                            ) : (
-                              getTypeIcon(model.type_name)
-                            )}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#f0f6fc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {model.name}
-                              </h3>
-                              {model.sort_order > 900 && (
-                                <Tooltip title="热门推荐">
-                                  <span style={{ fontSize: 12 }}>🔥</span>
-                                </Tooltip>
-                              )}
-                            </div>
-                            <div style={{ fontSize: 13, color: '#8b949e', display: 'flex', alignItems: 'center', gap: 6 }}>
-                              {model.provider_name}
-                              <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#484f58' }} />
-                              <span style={{ fontFamily: 'monospace' }}>{model.model_id}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ fontSize: 13, color: '#8b949e', lineHeight: 1.5, marginBottom: 16, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: 39 }}>
-                          {model.description || '暂无描述'}
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', color: '#8b949e', border: '1px solid #30363d' }}>
-                            {model.type_name}
-                          </span>
-
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: '#484f58' }}>
-                    <ShopOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }} />
-                    <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8, color: '#8b949e' }}>
-                      {searchKeyword || selectedType !== null || selectedProviders.length > 0 ? '没有找到匹配的模型' : '暂无模型'}
+              <div style={{ display: 'flex', gap: 24, alignItems: 'stretch' }}>
+                {/* 左侧：供应商过滤（仅在桌面端显示） */}
+                {!screens.xs && (
+                  <div style={{ 
+                    width: 240, 
+                    flexShrink: 0,
+                    background: themeMode === 'light' ? '#ffffff' : '#0d1117',
+                    border: `1px solid ${themeMode === 'light' ? '#e5e7eb' : '#21262d'}`,
+                    borderRadius: 12,
+                    padding: '20px 16px'
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: themeMode === 'light' ? '#6b7280' : '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+                      按供应商
+                      {selectedProviders.length > 0 && (
+                        <button onClick={() => { setSelectedProviders([]); setSelectedModel(null); }} style={{ fontSize: 12, color: themeMode === 'light' ? '#2563eb' : '#58a6ff', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
+                          清除
+                        </button>
+                      )}
                     </div>
-                    <div style={{ fontSize: 14 }}>
-                      {searchKeyword || selectedType !== null || selectedProviders.length > 0 ? '尝试调整筛选条件或搜索关键词' : '管理员尚未在模型广场中启用任何模型'}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {providers.map(p => (
+                        <div 
+                          key={p.id}
+                          onClick={() => handleProviderToggle(p.id)}
+                          style={{ 
+                            display: 'flex', alignItems: 'center', padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                            background: selectedProviders.includes(p.id) ? (themeMode === 'light' ? '#eff6ff' : 'rgba(88,166,255,0.1)') : 'transparent',
+                            color: selectedProviders.includes(p.id) ? (themeMode === 'light' ? '#2563eb' : '#58a6ff') : (themeMode === 'light' ? '#4b5563' : '#c9d1d9'),
+                            transition: 'all 0.15s',
+                            fontSize: 14
+                          }}
+                          onMouseEnter={e => { if (!selectedProviders.includes(p.id)) e.currentTarget.style.background = themeMode === 'light' ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)' }}
+                          onMouseLeave={e => { if (!selectedProviders.includes(p.id)) e.currentTarget.style.background = 'transparent' }}
+                        >
+                          {p.logo && (
+                            <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain', marginRight: 10, filter: themeMode === 'light' ? 'none' : 'brightness(0.9)' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          )}
+                          <span style={{ flex: 1, fontWeight: selectedProviders.includes(p.id) ? 500 : 400 }}>{p.name}</span>
+                          <span style={{ fontSize: 12, color: selectedProviders.includes(p.id) ? (themeMode === 'light' ? '#2563eb' : '#58a6ff') : (themeMode === 'light' ? '#9ca3af' : '#484f58') }}>{providerCounts[p.id] || 0}</span>
+                        </div>
+                      ))}
                     </div>
-                    {(searchKeyword || selectedType !== null || selectedProviders.length > 0) && (
-                      <button onClick={clearFilters} style={{ marginTop: 16, fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6, color: '#58a6ff', cursor: 'pointer', background: 'transparent', border: 'none' }}>
-                        <FilterOutlined /> 清除所有筛选
-                      </button>
-                    )}
                   </div>
                 )}
-              </>
+
+                {/* 右侧：工具栏与模型列表 */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="mp-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
+                    <div className="mp-search" style={{ flex: 1, minWidth: 200, maxWidth: screens.xs ? '100%' : 420 }}>
+                      <Input
+                        placeholder="搜索模型名称、ID或描述..."
+                        prefix={<SearchOutlined style={{ color: '#8b949e', marginRight: 8 }} />}
+                        value={searchKeyword}
+                        onChange={e => setSearchKeyword(e.target.value)}
+                        allowClear
+                      />
+                    </div>
+                    <Dropdown
+                      menu={{
+                        items: [
+                          { key: 'popular', label: '最受欢迎' },
+                          { key: 'newest', label: '最新上架' },
+                          { key: 'name', label: '名称 A-Z' },
+                        ],
+                        onClick: ({ key }) => setSortBy(key as any)
+                      }}
+                      placement="bottomRight"
+                    >
+                      <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', fontSize: 13, cursor: 'pointer', marginLeft: screens.xs ? 0 : 'auto' }}>
+                        <SortAscendingOutlined />
+                        {sortBy === 'popular' ? '最受欢迎' : sortBy === 'newest' ? '最新上架' : '名称排序'}
+                      </button>
+                    </Dropdown>
+                  </div>
+
+                  {filteredModels.length > 0 ? (
+                    <div className="mp-grid" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {filteredModels.map(model => (
+                        <div
+                          key={model.id}
+                          className="mp-card"
+                          onClick={() => setSelectedModel(model)}
+                          style={{ 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            position: 'relative',
+                            padding: '16px 20px',
+                            background: themeMode === 'light' ? '#ffffff' : '#0d1117',
+                            borderColor: themeMode === 'light' ? '#e5e7eb' : '#21262d',
+                            borderRadius: 8
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                            <div className="mp-card-icon" style={{ 
+                              background: themeMode === 'light' ? '#f3f4f6' : 'rgba(255,255,255,0.1)', 
+                              color: themeMode === 'light' ? '#374151' : '#c9d1d9', 
+                              overflow: 'hidden',
+                              width: 20,
+                              height: 20,
+                              borderRadius: 4,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0
+                            }}>
+                              {model.logo ? (
+                                <img src={`/assets/icons/lobe/${model.logo}.svg`} alt="" style={{ width: 14, height: 14, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                              ) : model.provider_logo ? (
+                                <img src={`/assets/icons/lobe/${model.provider_logo}.svg`} alt="" style={{ width: 14, height: 14, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).replaceWith(document.createTextNode('')); }} />
+                              ) : (
+                                <span style={{ fontSize: 12 }}>{getTypeIcon(model.type_name)}</span>
+                              )}
+                            </div>
+                            
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                              <h3 style={{ 
+                                margin: 0, 
+                                fontSize: 16, 
+                                fontWeight: 500, 
+                                color: themeMode === 'light' ? '#111827' : '#e6edf3', 
+                                overflow: 'hidden', 
+                                textOverflow: 'ellipsis', 
+                                whiteSpace: 'nowrap',
+                                fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace",
+                                letterSpacing: '-0.3px'
+                              }}>
+                                {model.provider_name}/{model.model_id}
+                              </h3>
+                            </div>
+                          </div>
+
+                          <div style={{ 
+                            fontSize: 13, 
+                            color: themeMode === 'light' ? '#6b7280' : '#8b949e', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            flexWrap: 'wrap',
+                            gap: '0 8px'
+                          }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              {getTypeIcon(model.type_name)}
+                              {model.type_name}
+                            </span>
+                            <span style={{ color: themeMode === 'light' ? '#d1d5db' : '#484f58' }}>•</span>
+                            <span>Updated {new Date(model.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                            
+                            {model.sort_order > 900 && (
+                              <>
+                                <span style={{ color: themeMode === 'light' ? '#d1d5db' : '#484f58' }}>•</span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ color: '#e3b341' }}>⚡</span>
+                                </span>
+                              </>
+                            )}
+                            
+                            {model.billing && model.billing.billing_type === 'tokens' && (
+                              <>
+                                <span style={{ color: themeMode === 'light' ? '#d1d5db' : '#484f58' }}>•</span>
+                                <span>按 Token 计费</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: '#484f58' }}>
+                      <ShopOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }} />
+                      <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8, color: '#8b949e' }}>
+                        {searchKeyword || selectedType !== null || selectedProviders.length > 0 ? '没有找到匹配的模型' : '暂无模型'}
+                      </div>
+                      <div style={{ fontSize: 14 }}>
+                        {searchKeyword || selectedType !== null || selectedProviders.length > 0 ? '尝试调整筛选条件或搜索关键词' : '管理员尚未在模型广场中启用任何模型'}
+                      </div>
+                      {(searchKeyword || selectedType !== null || selectedProviders.length > 0) && (
+                        <button onClick={clearFilters} style={{ marginTop: 16, fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6, color: '#58a6ff', cursor: 'pointer', background: 'transparent', border: 'none' }}>
+                          <FilterOutlined /> 清除所有筛选
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </Content>
           {screens.xs && !collapsed && (
