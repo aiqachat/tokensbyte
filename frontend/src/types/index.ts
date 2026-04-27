@@ -426,6 +426,7 @@ export interface ReferralUser {
   is_active: number;
   created_at: string;
   total_recharge: number;
+  remark?: string;
 }
 
 export interface ReferralRecharge {
