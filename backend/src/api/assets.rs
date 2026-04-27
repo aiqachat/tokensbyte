@@ -1235,7 +1235,7 @@ async fn submit_virtual_portrait_review(
 
     // 查找素材，确认归属当前用户且状态为 uploaded
     let asset: PluginAsset = sqlx::query_as(&state.db.format_query(
-        "SELECT * FROM plugin_assets WHERE id = ? AND user_id = ? AND status = 'uploaded'"
+        "SELECT * FROM plugin_assets WHERE id = ? AND user_id = ? AND (status = 'uploaded' OR (status = 'approved' AND (asset_id IS NULL OR asset_id = '')))"
     ))
     .bind(id)
     .bind(&claims.sub)

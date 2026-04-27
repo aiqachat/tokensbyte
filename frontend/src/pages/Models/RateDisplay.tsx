@@ -23,6 +23,7 @@ interface BillingRuleInfo {
   billing_rule: string;
   prompt_rate: number;
   completion_rate: number;
+  cached_rate?: number;
   fixed_rate: number;
   duration_rate: number;
   extended_config: string;
@@ -94,10 +95,11 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol }) => {
         return <>{lines}</>;
       }
       // standard
+      const cacheStr = rule.cached_rate && rule.cached_rate > 0 ? ` Cache: ${currencySymbol}${rule.cached_rate}/1M` : '';
       return (
         <>
           <Text type="secondary" style={s}>P: {currencySymbol}{rule.prompt_rate}/1M</Text>
-          <Text type="secondary" style={s}>C: {currencySymbol}{rule.completion_rate}/1M</Text>
+          <Text type="secondary" style={s}>C: {currencySymbol}{rule.completion_rate}/1M{cacheStr}</Text>
         </>
       );
     }

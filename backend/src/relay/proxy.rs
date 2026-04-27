@@ -169,12 +169,12 @@ pub async fn record_error_log(
 
 pub async fn record_and_bill(
     state: &Arc<AppState>, token: &ApiToken, channel_id: i64, model_name: &str,
-    prompt_tokens: i32, completion_tokens: i32, cost: f64, status_code: u16,
+    prompt_tokens: i32, completion_tokens: i32, cached_tokens: i32, cost: f64, status_code: u16,
     endpoint: &str, error_msg: Option<&str>, latency_ms: u32, is_stream: i32,
     request_content: Option<String>, response_content: Option<String>, upstream_req_content: Option<String>,
     billing_detail: Option<String>,
 ) {
-    record_and_bill_with_prededuction(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cost, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail).await;
+    record_and_bill_with_prededuction(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail).await;
 }
 
 pub async fn record_and_bill_with_prededuction(
@@ -184,8 +184,9 @@ pub async fn record_and_bill_with_prededuction(
     model_name: &str,
     prompt_tokens: i32,
     completion_tokens: i32,
+    cached_tokens: i32,
     cost: f64,
-    pre_deducted: f64, // 新增参数，已预扣的金额
+    pre_deducted: f64,
     status_code: u16,
     endpoint: &str,
     error_msg: Option<&str>,
@@ -330,8 +331,8 @@ pub async fn record_and_bill_with_prededuction(
             }
         }
         sqlx::query(&state.db.format_query(
-            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ))
         .bind(&token.user_id)
         .bind(channel_id)
@@ -339,6 +340,7 @@ pub async fn record_and_bill_with_prededuction(
         .bind(model_name)
         .bind(prompt_tokens)
         .bind(completion_tokens)
+        .bind(cached_tokens)
         .bind(cost)
         .bind(status_code as i32)
         .bind(system_endpoint)

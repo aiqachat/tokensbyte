@@ -10,6 +10,8 @@ pub struct TaskLog {
     pub endpoint: String,
     pub prompt_tokens: i32,
     pub completion_tokens: i32,
+    #[sqlx(default)]
+    pub cached_tokens: i32,
     pub cost: f64,
     pub latency_ms: i32,
     pub status_code: i32,

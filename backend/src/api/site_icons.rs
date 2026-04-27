@@ -474,7 +474,7 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
     }
 
     let mut total_synced = 0i64;
-    let mut total_new = 0i64;
+    let mut _total_new = 0i64;
     let mut total_skipped = 0i64;
     let mut errors: Vec<String> = Vec::new();
 
@@ -564,7 +564,7 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
         match result {
             Ok(_) => {
                 total_synced += 1;
-                total_new += 1;
+                _total_new += 1;
                 progress.log(format!("✅ [{}/{}] {} 同步成功", idx + 1, total_count, original_name)).await;
             }
             Err(e) => {

@@ -402,9 +402,9 @@ async fn create_asset(
     // 错误处理：如果是无效的素材组（比如换了 Access Key），尝试重新生成一次
     if let Err(e) = &asset_id_res {
         let e_lower = e.to_string().to_lowercase();
-        // 启发式判断：如果错误提示与 group、权限、找不到、无效参数有关，则尝试重置 GroupID
+        // 启发式判断：如果错误提示与 group、权限有关，则尝试重置 GroupID
         // 避免因为单纯的图片 URL 无效或网络超时导致滥建素材组
-        if e_lower.contains("group") || e_lower.contains("auth") || e_lower.contains("not found") || e_lower.contains("invalid") || e_lower.contains("permission") {
+        if e_lower.contains("group") || e_lower.contains("auth") {
             tracing::warn!("[AssetConvert] CreateAsset 失败，可能由于 AccessKey 变更导致原 GroupID 无效，准备重试。原错误: {}", e);
             
             // 防止高并发下产生多个冗余 Group，先从数据库重新拉取一次最新配置，判断是否已被其他并发请求刷新

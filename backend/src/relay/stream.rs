@@ -30,6 +30,7 @@ pub async fn handle_chat_stream(
     tokio::spawn(async move {
         let mut total_prompt_tokens = prompt_tokens;
         let mut total_completion_tokens = 0;
+        let mut total_cached_tokens = 0;
         let mut buffer = String::new();
         let mut raw_response_text = String::new();
         
@@ -76,6 +77,7 @@ pub async fn handle_chat_stream(
             if actual_usage.prompt > 0 || actual_usage.completion > 0 {
                 total_prompt_tokens = actual_usage.prompt;
                 total_completion_tokens = actual_usage.completion;
+                total_cached_tokens = actual_usage.cached;
             }
         }
         
@@ -103,7 +105,7 @@ pub async fn handle_chat_stream(
         let req_json = serde_json::from_str::<serde_json::Value>(&request_content_str).unwrap_or(serde_json::json!({}));
         let features = crate::relay::usage_extractor::extract_request_features(&req_json);
         let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), discount);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, final_discount, &features);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, total_cached_tokens, final_discount, &features);
         detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(&model);
         if model != resolved_model {
@@ -113,7 +115,7 @@ pub async fn handle_chat_stream(
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/chat/completions|{}", upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
-            &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens,
+            &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens, total_cached_tokens,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,
             Some(request_content_str), Some(raw_response_text), upstream_req_content, Some(detail)
         ).await;
@@ -219,7 +221,7 @@ pub async fn handle_image_stream(
             features.image_count = Some(resp_count);
         }
         let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), discount);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, final_discount, &features);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), total_prompt_tokens, total_completion_tokens, 0, final_discount, &features);
         detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(&model);
         if model != resolved_model {
@@ -229,7 +231,7 @@ pub async fn handle_image_stream(
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/images/generations|{}", upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
-            &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens,
+            &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens, 0,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,
             Some(request_content_str), Some(full_response_text), upstream_req_content, Some(detail)
         ).await;
@@ -337,7 +339,7 @@ pub async fn handle_native_stream(
             features.image_count = Some(resp_count);
         }
         let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), discount);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, final_discount, &features);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, 0, final_discount, &features);
         detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(&model);
         if model != resolved_model {
@@ -346,7 +348,7 @@ pub async fn handle_native_stream(
         
         let ep = format!("{}|{}", upstream_path, upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
-            &state, &token, channel.id, &model, prompt_tokens, completion_tokens,
+            &state, &token, channel.id, &model, prompt_tokens, completion_tokens, 0,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,
             Some(request_content_str), Some(full_response_text), upstream_req_content, Some(detail)
         ).await;

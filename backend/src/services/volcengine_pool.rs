@@ -242,6 +242,7 @@ async fn check_and_reset_quotas(
 }
 
 /// 记录账号使用量，超出配额后自动标记 exhausted
+#[allow(dead_code)]
 pub async fn record_usage(
     state: &Arc<AppState>,
     pool_id: i64,
@@ -313,6 +314,7 @@ pub async fn record_usage(
 }
 
 /// 标记账号故障：当请求失败时调用
+#[allow(dead_code)]
 pub async fn mark_failed(
     state: &Arc<AppState>,
     pool_id: i64,

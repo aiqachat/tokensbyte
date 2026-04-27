@@ -196,6 +196,8 @@ export interface RequestLog {
   model: string;
   prompt_tokens: number;
   completion_tokens: number;
+  /** 缓存命中的 Token 数量（属于输入的子集） */
+  cached_tokens?: number;
   cost: number;
   latency_ms: number;
   status_code: number;

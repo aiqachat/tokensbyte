@@ -64,7 +64,7 @@ pub async fn video_generations(
         let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("{}|{}", entry_path, resolved.upstream_path.replace("${model}", &resolved_model));
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status,
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, status,
             &ep, Some(&display_err), latency_ms, 0,
             Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()), asset_convert_log.clone()).await;
         return Err(AppError::UpstreamError(display_err));
@@ -115,7 +115,7 @@ pub async fn video_generations(
             "异步任务处理中(冻结)".to_string()
         }
     };
-    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200,
+    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200,
         &ep, None, latency_ms, 0,
         Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail)).await;
 
@@ -262,6 +262,8 @@ pub async fn video_generations_status(
                     if features.resolution.is_none() { features.resolution = req_feat.resolution; }
                     if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
                     if req_feat.has_video { features.has_video = true; }
+                    if req_feat.has_audio { features.has_audio = true; }
+                    if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
                 }
             }
             // 视频 duration 兜底
@@ -273,7 +275,7 @@ pub async fn video_generations_status(
             }
 
             let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, 0, final_discount, &features);
             detail.push_str(&format!(" | {}", discount_source));
             let resolved_model = channel.resolve_model(&model_name);
             if model_name != resolved_model {
@@ -285,8 +287,8 @@ pub async fn video_generations_status(
 
             // 更新日志（无论 cost 是否为 0，都要写入计费明细以解除冻结状态）
             let _ = sqlx::query(&state.db.format_query(
-                "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-            )).bind(usage.prompt).bind(usage.completion).bind(cost).bind(detail).bind(log_id)
+                "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+            )).bind(usage.prompt).bind(usage.completion).bind(0_i32).bind(cost).bind(detail).bind(log_id)
             .execute(&state.db.pool).await;
 
             // 余额结算
@@ -304,6 +306,30 @@ pub async fn video_generations_status(
                 tracing::info!("[Video Billing] task={}, model={}, tokens={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}", 
                     task_id, model_name, usage.total, cost, pre_deduction, apply_balance);
             }
+        } else if task_status == "failed" && !already_billed {
+            // 任务失败：退回预扣费并标记
+            let pre_deduction = sqlx::query_scalar::<_, f64>(&state.db.format_query("SELECT pre_deduction FROM models WHERE model_id = ? AND is_active = 1"))
+                .bind(&model_name).fetch_optional(&state.db.pool).await.unwrap_or(None).unwrap_or(0.0);
+
+            if pre_deduction > 0.0 {
+                let _ = sqlx::query(&state.db.format_query(
+                    "UPDATE users SET balance = balance + ?, used_quota = used_quota - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                )).bind(pre_deduction).bind(pre_deduction).bind(&token.user_id)
+                .execute(&state.db.pool).await;
+
+                let _ = sqlx::query(&state.db.format_query(
+                    "UPDATE api_tokens SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                )).bind(pre_deduction).bind(token.id)
+                .execute(&state.db.pool).await;
+            }
+
+            let detail = if pre_deduction > 0.0 { "任务失败，预扣费已退回" } else { "任务失败，该模型无预扣费" };
+            let _ = sqlx::query(&state.db.format_query(
+                "UPDATE logs SET billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+            )).bind(detail).bind(log_id)
+            .execute(&state.db.pool).await;
+
+            tracing::info!("[Video Billing] task={} failed, model={}, refunded pre_deduction={:.6}", task_id, model_name, pre_deduction);
         }
     }
 

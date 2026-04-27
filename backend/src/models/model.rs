@@ -32,6 +32,8 @@ pub struct BillingRule {
     pub billing_type: String,
     pub prompt_rate: f64,
     pub completion_rate: f64,
+    #[sqlx(default)]
+    pub cached_rate: f64,
     pub fixed_rate: f64,
     pub duration_rate: f64,
     pub billing_rule: String,
@@ -49,6 +51,8 @@ pub struct CreateBillingRuleRequest {
     pub billing_type: String,
     pub prompt_rate: f64,
     pub completion_rate: f64,
+    #[serde(default)]
+    pub cached_rate: f64,
     pub fixed_rate: f64,
     pub duration_rate: f64,
     pub billing_rule: String,
@@ -64,6 +68,7 @@ pub struct UpdateBillingRuleRequest {
     pub billing_type: Option<String>,
     pub prompt_rate: Option<f64>,
     pub completion_rate: Option<f64>,
+    pub cached_rate: Option<f64>,
     pub fixed_rate: Option<f64>,
     pub duration_rate: Option<f64>,
     pub billing_rule: Option<String>,
@@ -78,6 +83,9 @@ pub struct PricingTier {
     pub max_completion_tokens: Option<i32>,
     pub prompt_rate: f64,
     pub completion_rate: f64,
+    /// 缓存 Token 费率（/1M），属于输入的子集，#[serde(default)] 兼容旧数据
+    #[serde(default)]
+    pub cached_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

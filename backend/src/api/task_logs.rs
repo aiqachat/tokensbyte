@@ -74,7 +74,7 @@ pub async fn list_task_logs(
     // 数据查询
     let data_sql = state.db.format_query(&format!(
         "SELECT l.id, l.user_id, l.channel_id, l.model, l.endpoint, \
-         l.prompt_tokens, l.completion_tokens, l.cost, l.latency_ms, l.status_code, \
+         l.prompt_tokens, l.completion_tokens, l.cached_tokens, l.cost, l.latency_ms, l.status_code, \
          l.error_message, l.request_content, l.response_content, l.billing_detail, \
          c.name AS channel_name, c.group_aid AS channel_group_aid, \
          COALESCE(u.nickname, u.username) AS user_nickname, \

@@ -174,6 +174,11 @@ const BillingRules: React.FC = () => {
         fixed_rate: 0,
         duration_rate: 0,
         ...values,
+        cached_rate: values.cached_rate || 0,
+        pricing_tiers: values.pricing_tiers?.map((tier: any) => ({
+          ...tier,
+          cached_rate: tier.cached_rate || 0,
+        })) || [],
         extended_config: extConfig,
         is_active: values.is_active ? 1 : 0,
       };
@@ -349,13 +354,18 @@ const BillingRules: React.FC = () => {
                   if (rule === 'standard') {
                     return (
                       <Row gutter={16}>
-                        <Col span={12}>
+                        <Col span={8}>
                           <Form.Item name="prompt_rate" label={unitLabel} rules={[{ required: true }]}>
                             <InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" />
                           </Form.Item>
                         </Col>
-                        <Col span={12}>
+                        <Col span={8}>
                           <Form.Item name="completion_rate" label={unitLabelComp} rules={[{ required: true }]}>
+                            <InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item name="cached_rate" label="缓存费率(选填)">
                             <InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" />
                           </Form.Item>
                         </Col>
@@ -434,7 +444,7 @@ const BillingRules: React.FC = () => {
                         <div style={{ marginBottom: 16 }}>
                           <Title level={5} style={{ marginBottom: 6, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>{t('models.pricing_tiers')}</Title>
                           <Text type="secondary" style={{ fontSize: '12px' }}>
-                            界定说明：输入界限与输出上限填写的数值单位是以“千(K)”为步长判定的（例如输入 128 即为 128K Token）。命中落区后，最终费用将结合后面配置的费率采用 1M (一百万) 定标结算。
+                            界定说明：输入上限与输出上限填写的数值单位是以"千(K)"为步长判定的。例如输入 128 即表示 ≤128K Token 命中此阶梯；输出上限不填则表示不限制输出。缓存费率用于对命中输入缓存的 Token 独立定价（属于输入的子集），未填写则缓存按输入费率计。命中落区后，最终费用将结合配置的费率采用 1M (一百万) 定标结算。
                           </Text>
                         </div>
                         <Form.List name="pricing_tiers" initialValue={[]}>
@@ -442,27 +452,32 @@ const BillingRules: React.FC = () => {
                             <>
                               {fields.map(({ key, name, ...restField }) => (
                                 <Row key={key} gutter={12} align="middle" style={{ marginBottom: 12 }}>
-                                  <Col span={9}>
+                                  <Col span={7}>
                                     <Space.Compact style={{ width: '100%' }}>
                                       <Form.Item {...restField} name={[name, 'max_prompt_tokens']} rules={[{ required: true, message: '' }]} noStyle>
-                                        <InputNumber placeholder="输入界限(千Token)" style={{ width: '50%' }} />
+                                        <InputNumber placeholder="输入上限(如:128)" style={{ width: '50%' }} />
                                       </Form.Item>
                                       <Form.Item {...restField} name={[name, 'max_completion_tokens']} noStyle>
-                                        <InputNumber placeholder="输出上限(千Token/选填)" style={{ width: '50%' }} />
+                                        <InputNumber placeholder="输出上限(如:16)" style={{ width: '50%' }} />
                                       </Form.Item>
                                     </Space.Compact>
                                   </Col>
-                                  <Col span={6}>
+                                  <Col span={5}>
                                     <Form.Item {...restField} name={[name, 'prompt_rate']} rules={[{ required: true }]} noStyle>
                                       <InputNumber placeholder={t('models.input_rate')} style={{ width: '100%' }} precision={6} />
                                     </Form.Item>
                                   </Col>
-                                  <Col span={6}>
+                                  <Col span={5}>
                                     <Form.Item {...restField} name={[name, 'completion_rate']} rules={[{ required: true }]} noStyle>
                                       <InputNumber placeholder={t('models.output_rate')} style={{ width: '100%' }} precision={6} />
                                     </Form.Item>
                                   </Col>
-                                  <Col span={3} style={{ textAlign: 'right' }}>
+                                  <Col span={5}>
+                                    <Form.Item {...restField} name={[name, 'cached_rate']} noStyle>
+                                      <InputNumber placeholder="缓存费率(选填)" style={{ width: '100%' }} precision={6} />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={2} style={{ textAlign: 'right' }}>
                                     <Button type="text" danger icon={<DeleteTwoTone />} onClick={() => remove(name)} />
                                   </Col>
                                 </Row>

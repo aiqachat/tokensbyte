@@ -470,10 +470,10 @@ const UserAssets: React.FC = () => {
 
   // 批量提交审核
   const handleBatchSubmitReview = async () => {
-    // 找出选中的素材中需要提交审核的（过滤掉已通过、审核中的）
+    // 找出选中的素材中需要提交审核的（过滤掉已通过且有 asset_id 的、审核中的）
     const needReviewIds = Array.from(selectedAssetIds).filter(id => {
       const asset = assets.find(a => a.id === id);
-      return asset && asset.source === 'user' && asset.status === 'uploaded';
+      return asset && asset.source === 'user' && (asset.status === 'uploaded' || (asset.status === 'approved' && !asset.asset_id));
     });
     if (needReviewIds.length === 0) {
       message.info('选中的素材中没有需要提交审核的项目');
@@ -618,7 +618,7 @@ const UserAssets: React.FC = () => {
       key: 'status',
       render: (_: any, record: PluginAsset) => {
         if (record.source === 'builtin') return <Tag color="gold">预设</Tag>;
-        if (record.status === 'uploaded') return <Tag color="blue" icon={<SendOutlined />}>待提交审核</Tag>;
+        if (record.status === 'uploaded' || (record.status === 'approved' && !record.asset_id)) return <Tag color="blue" icon={<SendOutlined />}>待提交审核</Tag>;
         if (record.status === 'processing') return <Tag color="processing" icon={<LoadingOutlined spin />}>审核中</Tag>;
         if (record.status === 'approved') return <Tag color="success" icon={<CheckCircleOutlined />}>已通过</Tag>;
         if (record.status === 'rejected') return (
@@ -645,7 +645,7 @@ const UserAssets: React.FC = () => {
       key: 'action',
       render: (_: any, record: PluginAsset) => (
         <Space size="middle">
-          {reviewEnabled && record.source === 'user' && record.status === 'uploaded' && (
+          {reviewEnabled && record.source === 'user' && (record.status === 'uploaded' || (record.status === 'approved' && !record.asset_id)) && (
             <Button
               type="primary"
               size="small"
@@ -843,7 +843,7 @@ const UserAssets: React.FC = () => {
                   编辑
                 </Button>
               )}
-              {reviewEnabled && a.source === 'user' && a.status === 'uploaded' && (
+              {reviewEnabled && a.source === 'user' && (a.status === 'uploaded' || (a.status === 'approved' && !a.asset_id)) && (
                 <Button
                   icon={<SendOutlined />}
                   style={{ flex: 1, borderRadius: 8, height: 38, fontWeight: 500, background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)', color: '#fff' }}
@@ -900,7 +900,7 @@ const UserAssets: React.FC = () => {
           {reviewEnabled && a.source === 'user' && (
             <div style={{ padding: '12px 20px 0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {a.status === 'uploaded' ? <Tag color="blue">待提交审核</Tag> :
+                {(a.status === 'uploaded' || (a.status === 'approved' && !a.asset_id)) ? <Tag color="blue">待提交审核</Tag> :
                  a.status === 'processing' ? <Tag color="processing" icon={<LoadingOutlined spin />}>审核中</Tag> :
                  a.status === 'approved' ? <Tag color="success" icon={<CheckCircleOutlined />}>已通过</Tag> :
                  a.status === 'rejected' ? <Tag color="error" icon={<CloseCircleOutlined />}>已驳回</Tag> :
@@ -1545,7 +1545,7 @@ const UserAssets: React.FC = () => {
                               color: '#fff',
                               backdropFilter: 'blur(4px)'
                             }}>
-                              {asset.status === 'uploaded' ? '待审核' : asset.status === 'processing' ? '审核中' : asset.status === 'rejected' ? '已驳回' : asset.status}
+                              {(asset.status === 'uploaded' || (asset.status === 'approved' && !asset.asset_id)) ? '待审核' : asset.status === 'processing' ? '审核中' : asset.status === 'rejected' ? '已驳回' : asset.status}
                             </div>
                           )}
                           

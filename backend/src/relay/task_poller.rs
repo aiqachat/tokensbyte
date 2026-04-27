@@ -213,6 +213,7 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
                 if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
                 if req_feat.has_video { features.has_video = true; }
                 if req_feat.has_audio { features.has_audio = true; }
+                if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
             }
         }
     }
@@ -229,7 +230,7 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
     }
 
     let (final_discount, discount_source) = super::proxy::resolve_discount(db_model.as_ref(), user_discount);
-    let (cost, mut detail) = super::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+    let (cost, mut detail) = super::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, 0, final_discount, &features);
     detail.push_str(&format!(" | {} | [后台自动轮询结算]", discount_source));
 
     let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
@@ -237,8 +238,8 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
 
     // 更新日志计费
     let _ = sqlx::query(&state.db.format_query(
-        "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-    )).bind(usage.prompt).bind(usage.completion).bind(cost).bind(&detail).bind(log_id)
+        "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+    )).bind(usage.prompt).bind(usage.completion).bind(0_i32).bind(cost).bind(&detail).bind(log_id)
     .execute(&state.db.pool).await;
 
     // 余额结算
