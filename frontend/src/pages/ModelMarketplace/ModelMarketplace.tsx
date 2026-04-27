@@ -17,6 +17,7 @@ import {
 const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
 import request from '../../utils/request';
+import { useThemeStore } from '../../store/theme';
 import useAuthStore from '../../store/auth';
 import UserAvatarMenu from '../../components/UserAvatarMenu';
 
@@ -46,6 +47,7 @@ interface FilterItem {
 
 // 类型图标映射
 const getTypeIcon = (typeName: string) => {
+  const { themeMode } = useThemeStore();
   if (typeName.includes('聊天') || typeName.includes('对话') || typeName.includes('LLM')) return <MessageOutlined />;
   if (typeName.includes('图片') || typeName.includes('图像')) return <PictureOutlined />;
   if (typeName.includes('视频')) return <VideoCameraOutlined />;
@@ -68,6 +70,7 @@ const getBillingLabel = (billing: any) => {
 };
 
 const ModelMarketplace: React.FC = () => {
+  const { themeMode } = useThemeStore();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [siteName, setSiteName] = useState<string>('TokensByte');
@@ -201,7 +204,7 @@ const ModelMarketplace: React.FC = () => {
 
   return (
     <ConfigProvider theme={{
-      algorithm: theme.darkAlgorithm,
+      
       token: { 
         fontFamily: "'Inter', 'PingFang SC', -apple-system, sans-serif", 
         colorPrimary: '#1677ff',
@@ -290,13 +293,13 @@ const ModelMarketplace: React.FC = () => {
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-                    <span style={{ color: '#fff', fontSize: '18px', fontWeight: 600 }}>{siteName}</span>
+                    <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: '18px', fontWeight: 600 }}>{siteName}</span>
                   </div>
                 )
               ) : (
                 <>
                   <ShopOutlined style={{ fontSize: 20, color: '#58a6ff', marginRight: collapsed && !screens.xs ? 0 : 10 }} />
-                  {!(collapsed && !screens.xs) && <span style={{ color: '#fff', fontSize: '18px', fontWeight: 600 }}>{siteName || 'TokensByte'}</span>}
+                  {!(collapsed && !screens.xs) && <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: '18px', fontWeight: 600 }}>{siteName || 'TokensByte'}</span>}
                 </>
               )}
             </div>
@@ -395,7 +398,7 @@ const ModelMarketplace: React.FC = () => {
         <Layout style={{ marginLeft: (screens.xs || collapsed) ? 0 : 0 }}>
           <Header style={{
             padding: 0,
-            background: '#141414',
+            background: themeMode === 'light' ? '#ffffff' : '#141414',
             height: screens.xs ? 48 : 56,
             lineHeight: (screens.xs ? 48 : 56) + 'px',
             display: 'flex',
@@ -409,12 +412,12 @@ const ModelMarketplace: React.FC = () => {
                 type="text"
                 icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
                 onClick={() => setCollapsed(!collapsed)}
-                style={{ fontSize: '16px', width: screens.xs ? 48 : 56, height: screens.xs ? 48 : 56, color: '#fff' }}
+                style={{ fontSize: '16px', width: screens.xs ? 48 : 56, height: screens.xs ? 48 : 56, color: themeMode === 'light' ? '#1f2937' : '#fff' }}
               />
               {screens.xs && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }} onClick={() => navigate('/')}>
                   {siteLogo && <img src={siteLogo} alt="logo" style={{ width: 24, height: 24, objectFit: 'contain' }} />}
-                  <span style={{ color: '#fff', fontSize: '16px', fontWeight: 600 }}>{siteName}</span>
+                  <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: '16px', fontWeight: 600 }}>{siteName}</span>
                 </div>
               )}
             </div>
@@ -429,7 +432,7 @@ const ModelMarketplace: React.FC = () => {
             margin: screens.xs ? '8px' : '12px', 
             padding: screens.xs ? '10px 8px' : '16px 20px',
             minHeight: 280, 
-            background: '#000', 
+            background: themeMode === 'light' ? '#f8f9fa' : '#000', 
             borderRadius: 8, 
             overflow: 'auto',
             position: 'relative'
@@ -466,7 +469,7 @@ const ModelMarketplace: React.FC = () => {
                   <Breadcrumb
                     items={[
                       { title: <span style={{ color: '#8b949e', cursor: 'pointer' }} onClick={() => setSelectedModel(null)}>模型广场</span> },
-                      { title: <span style={{ color: '#fff' }}>{selectedModel.name}</span> },
+                      { title: <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>{selectedModel.name}</span> },
                     ]}
                   />
                 </div>
@@ -485,7 +488,7 @@ const ModelMarketplace: React.FC = () => {
                         )}
                       </div>
                       <div>
-                        <h1 style={{ margin: 0, fontSize: screens.xs ? 24 : 32, fontWeight: 700, color: '#fff' }}>{selectedModel.name}</h1>
+                        <h1 style={{ margin: 0, fontSize: screens.xs ? 24 : 32, fontWeight: 700, color: themeMode === 'light' ? '#1f2937' : '#fff' }}>{selectedModel.name}</h1>
                         <div style={{ fontSize: 15, color: '#8b949e', marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
                           {selectedModel.provider_logo && (
                             <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -498,7 +501,7 @@ const ModelMarketplace: React.FC = () => {
                     </div>
 
                     <div style={{ marginBottom: 40 }}>
-                      <h3 style={{ fontSize: 16, fontWeight: 600, color: '#fff', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <h3 style={{ fontSize: 16, fontWeight: 600, color: themeMode === 'light' ? '#1f2937' : '#fff', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <InfoCircleOutlined style={{ color: '#1677ff' }} /> 模型简介
                       </h3>
                       <div style={{ fontSize: 16, color: '#c9d1d9', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
@@ -511,7 +514,7 @@ const ModelMarketplace: React.FC = () => {
                       bordered
                       size="middle"
                       labelStyle={{ background: 'rgba(255,255,255,0.02)', color: '#8b949e', width: 120 }}
-                      contentStyle={{ background: 'transparent', color: '#fff' }}
+                      contentStyle={{ background: 'transparent', color: themeMode === 'light' ? '#1f2937' : '#fff' }}
                       style={{ border: '1px solid #21262d', borderRadius: 8, overflow: 'hidden' }}
                     >
                       <Descriptions.Item label="能力分类">
@@ -534,14 +537,14 @@ const ModelMarketplace: React.FC = () => {
 
                     <div style={{ marginTop: 40 }}>
                       <div style={{ background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)', borderRadius: 16, padding: '24px', boxShadow: '0 8px 32px rgba(22, 119, 255, 0.2)', marginBottom: 24 }}>
-                                            <div style={{ fontSize: 16, fontWeight: 600, color: '#fff', marginBottom: 16 }}>详细计费规则</div>
+                                            <div style={{ fontSize: 16, fontWeight: 600, color: themeMode === 'light' ? '#1f2937' : '#fff', marginBottom: 16 }}>详细计费规则</div>
                                             
                                             {selectedModel.billing ? (
                                               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                                 {/* 计费类型说明 */}
                                                 <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
                                                   <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>计费模式</div>
-                                                  <div style={{ fontSize: 15, color: '#fff', fontWeight: 500 }}>
+                                                  <div style={{ fontSize: 15, color: themeMode === 'light' ? '#1f2937' : '#fff', fontWeight: 500 }}>
                                                     {getBillingLabel(selectedModel.billing)}
                                                     {selectedModel.billing.name && ` - ${selectedModel.billing.name}`}
                                                   </div>
@@ -552,11 +555,11 @@ const ModelMarketplace: React.FC = () => {
                                                   <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                                                       <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输入 (Prompt)</span>
-                                                      <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.prompt_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                                                      <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.prompt_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                       <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输出 (Completion)</span>
-                                                      <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.completion_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                                                      <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.completion_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
                                                     </div>
                                                   </div>
                                                 )}
@@ -565,7 +568,7 @@ const ModelMarketplace: React.FC = () => {
                                                   <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                       <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>单次调用费用</span>
-                                                      <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.fixed_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 次</small></span>
+                                                      <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.fixed_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 次</small></span>
                                                     </div>
                                                   </div>
                                                 )}
@@ -574,7 +577,7 @@ const ModelMarketplace: React.FC = () => {
                                                   <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                       <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>按时长计费</span>
-                                                      <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.duration_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 秒</small></span>
+                                                      <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.duration_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 秒</small></span>
                                                     </div>
                                                   </div>
                                                 )}
@@ -590,7 +593,7 @@ const ModelMarketplace: React.FC = () => {
                                                           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                                                             {tiers.map((t: any, i: number) => (
                                                               <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: i < tiers.length - 1 ? 10 : 0, borderBottom: i < tiers.length - 1 ? '1px dashed rgba(255,255,255,0.2)' : 'none' }}>
-                                                                <span style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>&le; {t.max_prompt_tokens >= 1000 ? t.max_prompt_tokens / 1000 + 'k' : t.max_prompt_tokens} Tokens</span>
+                                                                <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 13, fontWeight: 500 }}>&le; {t.max_prompt_tokens >= 1000 ? t.max_prompt_tokens / 1000 + 'k' : t.max_prompt_tokens} Tokens</span>
                                                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
                                                                   <span>输入: {currencySymbol}{t.prompt_rate} <small>/ 1M</small></span>
                                                                   <span>输出: {currencySymbol}{t.completion_rate} <small>/ 1M</small></span>
@@ -617,7 +620,7 @@ const ModelMarketplace: React.FC = () => {
                     
                     
                     <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 16, padding: '20px' }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 12 }}>关于该模型</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: themeMode === 'light' ? '#1f2937' : '#fff', marginBottom: 12 }}>关于该模型</div>
                       <div style={{ fontSize: 13, color: '#8b949e', lineHeight: 1.6 }}>
                         该模型目前已在全平台上线。您可以直接在 API 调用或控制面板中使用。如果您有大规模调用需求，请联系客服获取专属优惠。
                       </div>
@@ -625,7 +628,7 @@ const ModelMarketplace: React.FC = () => {
                     
                     {selectedModel.billing && selectedModel.billing.billing_rule && (
                       <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 16, padding: '20px', marginTop: 24 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 12 }}>计费规则说明</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: themeMode === 'light' ? '#1f2937' : '#fff', marginBottom: 12 }}>计费规则说明</div>
                         <div 
                           className="quill-content"
                           dangerouslySetInnerHTML={{ __html: selectedModel.billing.billing_rule }}

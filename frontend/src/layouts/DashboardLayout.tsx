@@ -33,6 +33,7 @@ import { Dropdown, Modal, message, Popover, Avatar, Divider, Drawer, List, Badge
 import type { MenuProps } from 'antd';
 import type { Announcement } from '../types';
 import useAuthStore from '../store/auth';
+import { useThemeStore } from '../store/theme';
 import UserAvatarMenu from '../components/UserAvatarMenu';
 
 const { Header, Sider, Content } = Layout;
@@ -50,6 +51,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, setUser, isLoggedIn } = useAuthStore();
+  const { themeMode, toggleTheme } = useThemeStore();
   const [siteName, setSiteName] = useState(isUserEnd ? 'TokensByte' : t('common.admin_title'));
   const [siteLogo, setSiteLogo] = useState<string>('');
   const [siteTitle, setSiteTitle] = useState<string>('');
@@ -494,7 +496,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
         padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' 
       }}>
-        <span style={{ color: '#fff', fontSize: 16, fontWeight: 500 }}>通知</span>
+        <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 16, fontWeight: 500 }}>通知</span>
       </div>
       
       <div style={{ 
@@ -533,7 +535,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                         置顶
                       </div>
                     )}
-                    <div style={{ color: '#fff', fontSize: 15, fontWeight: 500, lineHeight: 1.5 }}>
+                    <div style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 15, fontWeight: 500, lineHeight: 1.5 }}>
                       {item.title}
                     </div>
                   </div>
@@ -572,14 +574,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   return (
     <ConfigProvider
       theme={{
-        algorithm: theme.darkAlgorithm,
+        
         token: {
           colorPrimary: '#1677ff',
           borderRadius: 8,
         },
         components: {
           Layout: {
-            siderBg: '#141414',
+            /* siderBg handled by global */
           },
           Menu: {
             itemHeight: 50,
@@ -594,7 +596,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           trigger={null} 
           collapsible 
           collapsed={collapsed} 
-          theme="dark" 
+          theme={themeMode} 
           width={200}
           breakpoint="lg"
           collapsedWidth={screens.xs ? 0 : 80}
@@ -621,13 +623,13 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-                    <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    <Title level={4} style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
                       {siteName}
                     </Title>
                   </div>
                 )
               ) : (
-                <Title level={4} style={{ color: '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                <Title level={4} style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
                   {(collapsed && !screens.xs) ? 'TB' : siteName}
                 </Title>
               )}
@@ -645,7 +647,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 }}
               >
                 <Menu
-                  theme="dark"
+                  theme={themeMode}
                   mode="inline"
                   selectedKeys={[location.pathname + location.search]}
                   defaultOpenKeys={menuItems
@@ -664,7 +666,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 <Button 
                   type="text" 
                   icon={<InfoCircleOutlined style={{ fontSize: '18px' }} />} 
-                  style={{ color: 'rgba(255,255,255,0.65)', width: '100%', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start' }}
+                  style={{ color: themeMode === 'light' ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', width: '100%', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start' }}
                   onClick={showSystemAbout}
                   title={t('menu.system_about')}
                 >
@@ -677,7 +679,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         <Layout style={{ marginLeft: (screens.xs || collapsed) ? 0 : 0 }}>
           <Header style={{ 
             padding: 0, 
-            background: '#141414', 
+            background: themeMode === 'light' ? '#ffffff' : '#141414', 
             height: screens.xs ? 48 : 56,
             lineHeight: (screens.xs ? 48 : 56) + 'px',
             display: 'flex', 
@@ -691,12 +693,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 type="text"
                 icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
                 onClick={() => setCollapsed(!collapsed)}
-                style={{ fontSize: '16px', width: screens.xs ? 48 : 56, height: screens.xs ? 48 : 56, color: '#fff' }}
+                style={{ fontSize: '16px', width: screens.xs ? 48 : 56, height: screens.xs ? 48 : 56, color: themeMode === 'light' ? '#1f2937' : '#fff' }}
               />
               {screens.xs && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }}>
                   {siteLogo && <img src={siteLogo} alt="logo" style={{ width: 24, height: 24, objectFit: 'contain' }} />}
-                  <Title level={5} style={{ color: '#fff', margin: 0 }}>
+                  <Title level={5} style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', margin: 0 }}>
                     {siteName}
                   </Title>
                 </div>
@@ -709,11 +711,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                   type="text" 
                   icon={<ShopOutlined style={{ fontSize: '18px' }} />} 
                   style={{ 
-                    color: '#fff', 
+                    color: themeMode === 'light' ? '#1f2937' : '#fff', 
                     height: 42, 
                     padding: '0 16px',
                     borderRadius: 21,
-                    background: 'rgba(255,255,255,0.12)',
+                    background: themeMode === 'light' ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.12)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
@@ -721,17 +723,31 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                     fontWeight: 500,
                     transition: 'background 0.2s'
                   }} 
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+                  onMouseEnter={(e) => e.currentTarget.style.background = themeMode === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.2)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = themeMode === 'light' ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.12)'}
                   onClick={() => window.open('/models', '_blank')}
                 >
                   模型广场
                 </Button>
               )}
 
+              <Tooltip title={themeMode === 'light' ? '切换暗色模式' : '切换亮色模式'} placement="bottom">
+                <Button 
+                  type="text" 
+                  shape="circle" 
+                  onClick={toggleTheme}
+                  icon={
+                    themeMode === 'light' 
+                    ? <span style={{fontSize: 18}}>🌙</span> 
+                    : <span style={{fontSize: 18}}>☀️</span>
+                  } 
+                  style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', width: 42, height: 42 }} 
+                />
+              </Tooltip>
+
               {enableMultilingual && (
                 <Dropdown menu={{ items: langItems }} placement="bottomRight">
-                  <Button type="text" shape="circle" icon={<GlobalOutlined style={{ fontSize: '18px' }} />} style={{ color: '#fff', width: 42, height: 42 }} />
+                  <Button type="text" shape="circle" icon={<GlobalOutlined style={{ fontSize: '18px' }} />} style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', width: 42, height: 42 }} />
                 </Dropdown>
               )}
 
@@ -745,10 +761,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 overlayInnerStyle={{ 
                   padding: 0, 
                   borderRadius: 20, 
-                  background: 'rgba(30, 30, 30, 0.45)',
+                  background: themeMode === 'light' ? 'rgba(255, 255, 255, 0.85)' : 'rgba(30, 30, 30, 0.45)',
                   backdropFilter: 'blur(30px) saturate(200%)',
                   WebkitBackdropFilter: 'blur(30px) saturate(200%)',
-                  border: '1px solid rgba(255,255,255,0.15)', 
+                  border: themeMode === 'light' ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.15)', 
                   boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
                   transform: 'translateZ(0)',
                   overflow: 'hidden'
@@ -761,7 +777,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                       type="text" 
                       shape="circle"
                       icon={<BellOutlined style={{ fontSize: '18px' }} />} 
-                      style={{ color: '#fff', width: 42, height: 42 }} 
+                      style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', width: 42, height: 42 }} 
                       onClick={() => {
                         setUnreadCount(0);
                       }}
@@ -778,7 +794,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             margin: screens.xs ? '8px' : '12px', 
             padding: screens.xs ? 12 : 16, 
             minHeight: 280, 
-            background: '#000', 
+            background: themeMode === 'light' ? '#f0f4f9' : '#000', 
             borderRadius: 8, 
             overflow: 'auto' 
           }}>

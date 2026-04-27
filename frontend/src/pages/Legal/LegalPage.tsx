@@ -74,7 +74,7 @@ const LegalPage: React.FC = () => {
   }
 
   return (
-    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
+    <ConfigProvider theme={{  }}>
       <div style={{ 
         minHeight: '100vh', 
         background: '#0a0a0a', 
