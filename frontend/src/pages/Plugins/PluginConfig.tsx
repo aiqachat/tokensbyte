@@ -1064,9 +1064,9 @@ const PluginConfigInner: React.FC = () => {
             <Form.Item
               label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Ark 转换素材组 ID (GroupID)</Text>}
               name="volc_group_id"
-              extra={<Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>若留空，系统将在首次转换素材时自动向方舟申请并绑定专属群组 ID。您也可以手动填入在方舟控制台申请的已有组标识如: g-xxx</Text>}
+              extra={<Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>系统将在首次转换素材时自动向方舟申请并绑定专属群组 ID，自动管理无需干预</Text>}
             >
-              <Input placeholder="留空交由系统自动为您生成管理，或输入火山引擎资产库 Group ID" style={inputStyle} />
+              <Input disabled placeholder="留空交由系统自动为您生成管理" style={{ ...inputStyle, color: 'rgba(255,255,255,0.45)' }} />
             </Form.Item>
           )}
         </Form>
