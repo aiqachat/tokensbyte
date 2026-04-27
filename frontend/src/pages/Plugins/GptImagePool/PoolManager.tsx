@@ -164,11 +164,17 @@ const GptImagePoolManager: React.FC = () => {
       const values = await accountForm.validateFields();
       const resetTime = values._resetTime;
       const periodRange = values._periodRange;
+      let modelsAsIds = Array.isArray(values.models) ? values.models : [];
+      modelsAsIds = modelsAsIds.map((midOrId: string) => {
+        const match = siteModels.find((m: any) => m.mid === midOrId);
+        return match ? match.model_id : midOrId;
+      });
+
       const payload: any = {
         name: values.name,
         base_url: values.base_url,
         api_key: values.api_key,
-        models: Array.isArray(values.models) ? values.models.join(',') : (values.models || ''),
+        models: modelsAsIds.join(','),
         quota_unit: values.quota_unit,
         daily_reset_hour: resetTime ? resetTime.hour() : 0,
         daily_reset_minute: resetTime ? resetTime.minute() : 0,
@@ -195,9 +201,15 @@ const GptImagePoolManager: React.FC = () => {
     setEditingAccount(account || null);
     accountForm.resetFields();
     if (account) {
+      let modelsAsMids = account.models ? account.models.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+      modelsAsMids = modelsAsMids.map((modelId: string) => {
+        const match = siteModels.find((m: any) => m.model_id === modelId);
+        return match ? match.mid : modelId;
+      });
+
       accountForm.setFieldsValue({
         ...account,
-        models: account.models ? account.models.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+        models: modelsAsMids,
         _resetTime: dayjs().hour(account.daily_reset_hour).minute(account.daily_reset_minute),
         _periodRange: account.period_start && account.period_end
           ? [dayjs(account.period_start, 'HH:mm'), dayjs(account.period_end, 'HH:mm')] : undefined,
@@ -418,9 +430,24 @@ const GptImagePoolManager: React.FC = () => {
         </Form>
       </Modal>
 
-      {/* 账号编辑弹窗 */}
-      <Modal title={editingAccount ? '编辑账号' : '添加账号'} open={accountModalVisible}
-        onCancel={() => setAccountModalVisible(false)} onOk={handleSaveAccount} width={560} destroyOnClose>
+      {/* 账号编辑全屏抽屉 */}
+      <Drawer
+        title={editingAccount ? '编辑账号' : '添加账号'}
+        placement="right"
+        width="100%"
+        onClose={() => setAccountModalVisible(false)}
+        open={accountModalVisible}
+        destroyOnClose
+        styles={{ body: { padding: '24px' } }}
+        footer={
+          <div style={{ textAlign: 'right' }}>
+            <Space>
+              <Button onClick={() => setAccountModalVisible(false)}>取消</Button>
+              <Button type="primary" onClick={handleSaveAccount}>保存</Button>
+            </Space>
+          </div>
+        }
+      >
         <Form form={accountForm} layout="vertical" initialValues={{ daily_quota: 0, hourly_quota: 0, period_quota: 0, priority: 0, quota_unit: 'images', base_url: '' }}>
           <Form.Item name="name" label="账号名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input placeholder="备注名，如：OpenAI 官方账号" />
@@ -437,20 +464,48 @@ const GptImagePoolManager: React.FC = () => {
               <Input.Password placeholder="留空保持原值" />
             </Form.Item>
           )}
-          <Form.Item name="models" label="支持的模型" tooltip="从站点已有模型中选择，也可手动输入自定义模型名并回车。留空表示支持所有模型。">
-            <Space direction="vertical" style={{ width: '100%' }} size={8}>
-              <Space size={8}>
-                <Select placeholder="按服务商筛选" allowClear style={{ width: 160 }} size="small"
-                  options={siteProviders.map((p: any) => ({ label: p.name, value: p.id }))}
-                  value={modelFilterProvider} onChange={setModelFilterProvider} />
-                <Select placeholder="按类型筛选" allowClear style={{ width: 140 }} size="small"
-                  options={siteTypes.map((t: any) => ({ label: t.name, value: t.id }))}
-                  value={modelFilterType} onChange={setModelFilterType} />
-              </Space>
-              <Select mode="tags" placeholder="搜索或选择模型" allowClear
-                options={groupedModelOptions}
-                filterOption={(input, option) => ((option as any)?.label ?? '').toLowerCase().includes(input.toLowerCase()) || ((option as any)?.value ?? '').toLowerCase().includes(input.toLowerCase())} />
-            </Space>
+          <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
+            {() => {
+              const selectedMids: string[] = accountForm.getFieldValue('models') || [];
+              const selectedModelIds = selectedMids.map(mid => {
+                const m = siteModels.find(m => m.mid === mid);
+                return m ? m.model_id : mid;
+              });
+
+              const providerMap = new Map(siteProviders.map((p: any) => [p.id, p.name]));
+              const groups: Record<string, { label: string; value: string; disabled: boolean }[]> = {};
+              let filtered = siteModels;
+              if (modelFilterProvider !== undefined) filtered = filtered.filter(m => m.provider_id === modelFilterProvider);
+              if (modelFilterType !== undefined) filtered = filtered.filter(m => m.type_id === modelFilterType);
+
+              for (const m of filtered) {
+                const groupName = providerMap.get(m.provider_id) || '未分类';
+                if (!groups[groupName]) groups[groupName] = [];
+                const isModelIdSelected = selectedModelIds.includes(m.model_id);
+                const isCurrentMidSelected = selectedMids.includes(m.mid);
+                const isDisabled = isModelIdSelected && !isCurrentMidSelected;
+                groups[groupName].push({ label: `${m.name} (${m.model_id}) [MID:${m.mid}]`, value: m.mid, disabled: isDisabled });
+              }
+              const finalOptions = Object.entries(groups).map(([label, options]) => ({ label, options }));
+
+              return (
+                <Form.Item name="models" label="支持的模型" tooltip="从站点已有模型中选择，也可手动输入自定义模型名并回车。留空表示支持所有模型。">
+                  <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                    <Space size={8}>
+                      <Select placeholder="按服务商筛选" allowClear style={{ width: 160 }} size="small"
+                        options={siteProviders.map((p: any) => ({ label: p.name, value: p.id }))}
+                        value={modelFilterProvider} onChange={setModelFilterProvider} />
+                      <Select placeholder="按类型筛选" allowClear style={{ width: 140 }} size="small"
+                        options={siteTypes.map((t: any) => ({ label: t.name, value: t.id }))}
+                        value={modelFilterType} onChange={setModelFilterType} />
+                    </Space>
+                    <Select mode="tags" placeholder="搜索或选择模型" allowClear
+                      options={finalOptions}
+                      filterOption={(input, option) => ((option as any)?.label ?? '').toLowerCase().includes(input.toLowerCase()) || ((option as any)?.value ?? '').toLowerCase().includes(input.toLowerCase())} />
+                  </Space>
+                </Form.Item>
+              );
+            }}
           </Form.Item>
           <Row gutter={16}>
             <Col span={8}>
@@ -493,7 +548,7 @@ const GptImagePoolManager: React.FC = () => {
             </Form.Item>
           )}
         </Form>
-      </Modal>
+      </Drawer>
 
       {/* 卡池详情全屏抽屉 */}
       <Drawer

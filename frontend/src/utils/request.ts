@@ -41,11 +41,10 @@ request.interceptors.response.use(
         // 当前有 token（登录态页面） → 清除 token 并跳转登录
         const hasToken = !!(sessionStorage.getItem('token') || localStorage.getItem('token'));
         if (hasToken) {
-          if (sessionStorage.getItem('token')) {
-            sessionStorage.removeItem('token');
-          } else {
-            localStorage.removeItem('token');
-          }
+          sessionStorage.removeItem('token');
+          sessionStorage.removeItem('user');
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
           message.error('登录状态已过期，请重新登录');
           if (window.location.pathname !== '/login') {
             window.location.href = '/login';

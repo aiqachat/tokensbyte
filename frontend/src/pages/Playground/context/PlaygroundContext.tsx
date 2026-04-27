@@ -481,6 +481,7 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
     handleCategoryChange, handleSelectModel,
     projects, currentProjectId, setCurrentProjectId,
     loadProjects, createProject, saveCanvasState,
+    attachedAsset, setAttachedAsset,
   }), [
     loading, models, selectedMid, currentModel, categories,
     activeCategory, modelsInCategory, searchModelKeyword,

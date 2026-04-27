@@ -32,8 +32,10 @@ const useAuthStore = create<AuthState>((set) => ({
     if (token) {
       if (useSession) {
         sessionStorage.setItem('token', token);
+        localStorage.removeItem('token');
       } else {
         localStorage.setItem('token', token);
+        sessionStorage.removeItem('token');
       }
     } else {
       localStorage.removeItem('token');
@@ -42,13 +44,10 @@ const useAuthStore = create<AuthState>((set) => ({
     set({ token, isLoggedIn: !!token });
   },
   logout: () => {
-    if (sessionStorage.getItem('token')) {
-      sessionStorage.removeItem('token');
-      sessionStorage.removeItem('user');
-    } else {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-    }
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('user');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     set({ user: null, token: null, isLoggedIn: false });
   },
 }));
