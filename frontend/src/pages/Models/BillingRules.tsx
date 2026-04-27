@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Radio, InputNumber, Row, Col, Typography, Grid } from 'antd';
+import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Radio, InputNumber, Row, Col, Typography, Grid, Tooltip } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, DeleteTwoTone } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +22,7 @@ interface BillingRuleData {
   pricing_tiers: string;
   extended_config: string;
   is_active: number;
+  is_system: number;
   created_at: string;
 }
 
@@ -235,9 +236,15 @@ const BillingRules: React.FC = () => {
       render: (_: any, record: BillingRuleData) => (
         <Space>
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />
-          <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-            <Button icon={<DeleteOutlined />} danger size="small" />
-          </Popconfirm>
+          {record.is_system === 1 ? (
+            <Tooltip title="系统内置规则，不可删除">
+              <Button icon={<DeleteOutlined />} disabled size="small" />
+            </Tooltip>
+          ) : (
+            <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+              <Button icon={<DeleteOutlined />} danger size="small" />
+            </Popconfirm>
+          )}
         </Space>
       ),
       width: 120,
@@ -269,9 +276,15 @@ const BillingRules: React.FC = () => {
                   <CardRow label="费率"><RateDisplay rule={record} currencySymbol={currencySymbol} /></CardRow>
                   <CardActions>
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-                    <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-                      <Button size="small" icon={<DeleteOutlined />} danger />
-                    </Popconfirm>
+                    {record.is_system === 1 ? (
+                      <Tooltip title="系统内置规则，不可删除">
+                        <Button size="small" icon={<DeleteOutlined />} disabled />
+                      </Tooltip>
+                    ) : (
+                      <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                        <Button size="small" icon={<DeleteOutlined />} danger />
+                      </Popconfirm>
+                    )}
                   </CardActions>
                 </MobileCard>
               );

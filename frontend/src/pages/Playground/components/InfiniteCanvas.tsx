@@ -14,6 +14,7 @@ import { usePlayground } from '../context/PlaygroundContext';
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction';
 import CanvasNode from './nodes/CanvasNode';
 import CanvasParticles from './CanvasParticles';
+import type { CanvasParticlesHandle } from './CanvasParticles';
 
 const { Title, Text } = Typography;
 
@@ -21,13 +22,27 @@ const InfiniteCanvas: React.FC = React.memo(() => {
   const {
     canvasTransform, canvasRef,
     activeTool, isSpaceDown, isDraggingCanvas,
-    nodes,
+    nodes, selectedNodeId, setSelectedNodeId,
+    draggingNodeId,
   } = useCanvas();
-  const { loading, currentModel } = usePlayground();
+  const { loading, currentModel, setIsGenLogVisible } = usePlayground();
+  const particlesRef = React.useRef<CanvasParticlesHandle>(null);
+
   const {
     handleWheel, handleCanvasMouseDown,
     handleCanvasMouseMove, handleCanvasMouseUp,
-  } = useCanvasInteraction();
+    handleNodeMouseDown, handleResizeStart, removeNode,
+  } = useCanvasInteraction(particlesRef); // 将 particlesRef 传给 hook
+
+  // 点击画布空白区域时取消节点选中
+  const handleCanvasMouseDownWithDeselect = (e: React.MouseEvent) => {
+    // 如果点击的不是节点区域，则取消选中
+    const target = e.target as HTMLElement;
+    if (!target.closest('[data-node-id]')) {
+      setSelectedNodeId(null);
+    }
+    handleCanvasMouseDown(e);
+  };
 
   // 全局 document 级 wheel 拦截（非 passive）
   // Mac 触控板双指缩放 = ctrlKey + wheel，必须在 document 级别 preventDefault 才能阻止浏览器原生缩放
@@ -35,8 +50,8 @@ const InfiniteCanvas: React.FC = React.memo(() => {
     const el = canvasRef.current;
 
     const nativeWheelHandler = (e: WheelEvent) => {
-      // 在 Playground 页面内，拦截所有 ctrlKey+wheel（Mac 触控板缩放手势）
-      if (e.ctrlKey) {
+      // 在 Playground 页面内，拦截缩放相关的修饰键 + 滚轮（防止触发浏览器缩放或前进后退）
+      if (e.ctrlKey || e.altKey || e.metaKey) {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -68,19 +83,15 @@ const InfiniteCanvas: React.FC = React.memo(() => {
         inset: 0,
         overflow: 'hidden',
         cursor: activeTool === 'hand' || isSpaceDown ? (isDraggingCanvas ? 'grabbing' : 'grab') : 'default',
-        background: '#090A0B',
+        background: '#1e1f23',
       }}
-      onMouseDown={handleCanvasMouseDown}
+      onMouseDown={handleCanvasMouseDownWithDeselect}
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
       onMouseLeave={handleCanvasMouseUp}
     >
       {/* 动态粒子背景层 */}
-      <CanvasParticles
-        offsetX={canvasTransform.x}
-        offsetY={canvasTransform.y}
-        scale={canvasTransform.scale}
-      />
+      <CanvasParticles ref={particlesRef} />
 
       {/* 变换层 */}
       <div style={{
@@ -88,10 +99,25 @@ const InfiniteCanvas: React.FC = React.memo(() => {
         transformOrigin: '0 0',
         transform: `translate(${canvasTransform.x}px, ${canvasTransform.y}px) scale(${canvasTransform.scale})`
       }}>
-        {nodes.map(node => <CanvasNode key={node.id} node={node} />)}
+        {nodes.filter(node => !node.isHidden).map(node => (
+          <CanvasNode
+            key={node.id}
+            node={node}
+            isSelected={selectedNodeId === node.id}
+            isDragging={draggingNodeId === node.id}
+            activeTool={activeTool}
+            onMouseDown={handleNodeMouseDown}
+            onRemove={removeNode}
+            onSelect={(id) => {
+              setSelectedNodeId(id);
+              setIsGenLogVisible(true);
+            }}
+            onResizeStart={handleResizeStart}
+          />
+        ))}
 
         {/* 空画布引导 */}
-        {nodes.length === 0 && (
+        {nodes.filter(node => !node.isHidden).length === 0 && (
           <div style={{
             position: 'absolute', left: 0, top: 0, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center',

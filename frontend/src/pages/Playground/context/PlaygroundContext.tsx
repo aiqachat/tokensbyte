@@ -40,6 +40,12 @@ interface CanvasContextValue {
   // 悬浮面板位置（仅初始化和 mouseup 时写入）
   settingsWidgetPos: Point;
   setSettingsWidgetPos: React.Dispatch<React.SetStateAction<Point>>;
+  resourceWidgetPos: Point;
+  setResourceWidgetPos: React.Dispatch<React.SetStateAction<Point>>;
+  modelWidgetPos: Point;
+  setModelWidgetPos: React.Dispatch<React.SetStateAction<Point>>;
+  selectedNodeId: string | null;
+  setSelectedNodeId: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const CanvasContext = createContext<CanvasContextValue | null>(null);
@@ -88,6 +94,12 @@ interface PlaygroundContextValue {
   setIsTokenModalVisible: React.Dispatch<React.SetStateAction<boolean>>;
   isSettingsCollapsed: boolean;
   setIsSettingsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+  isResourceWidgetVisible: boolean;
+  setIsResourceWidgetVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  isSettingsWidgetVisible: boolean;
+  setIsSettingsWidgetVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  isGenLogVisible: boolean;
+  setIsGenLogVisible: React.Dispatch<React.SetStateAction<boolean>>;
   // 操作
   handleCategoryChange: (cat: string) => void;
   handleSelectModel: (mid: string) => void;
@@ -98,6 +110,9 @@ interface PlaygroundContextValue {
   loadProjects: () => Promise<void>;
   createProject: (name?: string) => Promise<number | null>;
   saveCanvasState: () => Promise<void>;
+  // 素材附件
+  attachedAssets: { asset: any; fullUrl: string; file?: File }[];
+  setAttachedAssets: React.Dispatch<React.SetStateAction<{ asset: any; fullUrl: string; file?: File }[]>>;
 }
 
 const PlaygroundContext = createContext<PlaygroundContextValue | null>(null);
@@ -127,6 +142,10 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
   const [isModelDrawerVisible, setIsModelDrawerVisible] = useState(false);
   const [isTokenModalVisible, setIsTokenModalVisible] = useState(false);
   const [isSettingsCollapsed, setIsSettingsCollapsed] = useState(false);
+  const [isResourceWidgetVisible, setIsResourceWidgetVisible] = useState(false);
+  const [isSettingsWidgetVisible, setIsSettingsWidgetVisible] = useState(true);
+  const [isGenLogVisible, setIsGenLogVisible] = useState(false);
+  const [attachedAssets, setAttachedAssets] = useState<{ asset: any; fullUrl: string; file?: File }[]>([]);
 
   // --- 项目管理 ---
   const [projects, setProjects] = useState<PlaygroundProject[]>([]);
@@ -141,6 +160,9 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [maxZIndex, setMaxZIndex] = useState(10);
   const [settingsWidgetPos, setSettingsWidgetPos] = useState<Point>({ x: window.innerWidth - 380, y: 32 });
+  const [resourceWidgetPos, setResourceWidgetPos] = useState<Point>({ x: window.innerWidth - 380, y: 120 });
+  const [modelWidgetPos, setModelWidgetPos] = useState<Point>({ x: window.innerWidth - 480, y: 100 });
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null!);
 
   // --- 派生数据 ---
@@ -300,14 +322,19 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
             const canvasData = JSON.parse(res.project.canvas_data);
             if (canvasData?.nodes?.length > 0) {
               // 回填缺失的 resultData
-              const assetMap = new Map<string, any>();
+              // 回填缺失的 resultData (分组匹配以支持同 prompt 多次生成)
+              const assetGroup = new Map<string, any[]>();
               for (const a of assets) {
-                if (a.prompt) assetMap.set(a.prompt, a);
+                if (a.prompt) {
+                  if (!assetGroup.has(a.prompt)) assetGroup.set(a.prompt, []);
+                  assetGroup.get(a.prompt)!.push(a);
+                }
               }
               const fixedNodes = canvasData.nodes.map((n: any) => {
                 if (n.status === 'completed' && !n.resultData) {
-                  const match = assetMap.get(n.taskData?.prompt || '');
-                  if (match) {
+                  const matches = assetGroup.get(n.taskData?.prompt || '');
+                  if (matches && matches.length > 0) {
+                    const match = matches.shift(); // 消费掉一个
                     return {
                       ...n,
                       resultData: match.asset_type === 'image'
@@ -444,9 +471,12 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
     maxZIndex, setMaxZIndex,
     canvasRef,
     settingsWidgetPos, setSettingsWidgetPos,
+    resourceWidgetPos, setResourceWidgetPos,
+    modelWidgetPos, setModelWidgetPos,
+    selectedNodeId, setSelectedNodeId,
   }), [
     canvasTransform, activeTool, isSpaceDown, isDraggingCanvas,
-    draggingNodeId, nodes, maxZIndex, settingsWidgetPos
+    draggingNodeId, nodes, maxZIndex, settingsWidgetPos, resourceWidgetPos, modelWidgetPos, selectedNodeId
   ]);
 
   const playgroundValue = useMemo<PlaygroundContextValue>(() => ({
@@ -461,17 +491,22 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
     isModelDrawerVisible, setIsModelDrawerVisible,
     isTokenModalVisible, setIsTokenModalVisible,
     isSettingsCollapsed, setIsSettingsCollapsed,
+    isResourceWidgetVisible, setIsResourceWidgetVisible,
+    isSettingsWidgetVisible, setIsSettingsWidgetVisible,
+    isGenLogVisible, setIsGenLogVisible,
     handleCategoryChange, handleSelectModel,
     projects, currentProjectId, setCurrentProjectId,
     loadProjects, createProject, saveCanvasState,
+    attachedAssets, setAttachedAssets,
   }), [
     loading, models, selectedMid, currentModel, categories,
     activeCategory, modelsInCategory, searchModelKeyword,
     paramValues, prompt, generating, taskPollingNodes,
     apiTokens, selectedTokenKey,
-    isModelDrawerVisible, isTokenModalVisible, isSettingsCollapsed,
+    isModelDrawerVisible, isTokenModalVisible, isSettingsCollapsed, isResourceWidgetVisible, isSettingsWidgetVisible, isGenLogVisible,
     handleCategoryChange, handleSelectModel, initParamDefaults,
     projects, currentProjectId, loadProjects, createProject, saveCanvasState,
+    attachedAssets, setAttachedAssets,
   ]);
 
   return (

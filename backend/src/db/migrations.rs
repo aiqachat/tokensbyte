@@ -266,8 +266,8 @@ macro_rules! pg_migration_blocks {
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS models (
             id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            model_id TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            model_id TEXT NOT NULL,
             provider_id INTEGER REFERENCES model_providers(id),
             type_id INTEGER REFERENCES model_types(id),
             group_ratios TEXT NOT NULL DEFAULT '{}',
@@ -404,6 +404,7 @@ macro_rules! pg_migration_blocks {
         FROM (VALUES
             ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天', 1),
             ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片', 1),
+            ('OpenAI 兼容原生通道异步 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"},"poll_path":"/v1/tasks/${task_id}"}', '图片', 1),
             ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频', 1),
             ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}', '聊天', 1),
             ('Google Gemini 原生生图', 'gemini', '将标准的生图请求适配到 Gemini contents 接口', '{"mode":"transform","target_type":"gemini_image","path_rewrite":{"old":"/v1/images/generations","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '图片', 1),
@@ -412,14 +413,17 @@ macro_rules! pg_migration_blocks {
             ('火山方舟 视频生成', 'volcengine', '将标准的视频生成请求适配到火山方舟 tasks 接口', '{"mode":"transform","target_type":"volcengine","path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频', 1),
             ('火山方舟 聊天', 'volcengine', '将标准的聊天请求转发到火山方舟官方 Chat 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_chat","path_rewrite":{"old":"/v1/chat/completions","new":"/api/v3/chat/completions"},"auth_type":"bearer"}', '聊天', 1),
             ('火山方舟 图片生成', 'volcengine', '将标准的图片生成请求转发到火山方舟官方 images 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_image","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/images/generations"},"auth_type":"bearer"}', '图片', 1),
-            ('火山方舟 视频素材转换', 'volcengine', '在火山方舟视频生成基础上，自动将 content 中的网络 URL 通过 CreateAsset API 转换为素材 ID（asset://前缀），需配置素材资产管理插件的审核凭证', '{"mode":"transform","target_type":"volcengine","asset_convert":true,"path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频', 1)
+            ('火山方舟 视频素材转换', 'volcengine', '在火山方舟视频生成基础上，自动将 content 中的网络 URL 通过 CreateAsset API 转换为素材 ID（asset://前缀），需配置素材资产管理插件的审核凭证', '{"mode":"transform","target_type":"volcengine","asset_convert":true,"path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频', 1),
+            ('mart', 'mart', '自定义mart通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"},"poll_path":"/v1/tasks/${task_id}"}', '图片', 1),
+            ('mart-视频', 'Mart', '自定义mart视频通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos/generations","new":"/v1/videos/generations"},"poll_path":"/v1/tasks/${task_id}"}', '视频', 1)
         ) AS t(name, rule_type, description, config_json, category, is_system)
         WHERE NOT EXISTS (SELECT 1 FROM forward_rules WHERE name = t.name)
     "#).execute(pool).await.ok();
 
     // 更新老数据
-    sqlx::query("UPDATE forward_rules SET is_system = 1 WHERE name IN ('OpenAI 兼容原生通道 (聊天)', 'OpenAI 兼容原生通道 (图片)', 'OpenAI 兼容原生通道 (视频)', 'Anthropic 原生转化', 'Google Gemini 原生生图', 'Google Gemini 格式转换 (聊天)', 'Google Gemini 流式转换 (聊天)', '火山方舟 视频生成', '火山方舟 聊天', '火山方舟 图片生成', '火山方舟 视频素材转换')")
+    sqlx::query("UPDATE forward_rules SET is_system = 1")
         .execute(pool).await.ok();
+
 
     // Billing Rules table
     sqlx::query(
@@ -467,13 +471,18 @@ macro_rules! pg_migration_blocks {
         .execute(pool)
         .await?;
 
+    sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0")
+        .execute(pool)
+        .await?;
+
     // Seed Billing Rules
     let bcount: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM billing_rules").fetch_one(pool).await?;
     if bcount == 0 {
-        sqlx::query(r#"INSERT INTO billing_rules (name, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule) VALUES 
-            ('免费公益模型模板', 'tokens', 0.0, 0.0, 0.0, 0.0, 'standard'),
-            ('标准 1M 万字计费 ($1)', 'tokens', 1.0, 1.0, 0.0, 0.0, 'standard'),
-            ('单次请求扣费 ($0.1)', 'requests', 0.0, 0.0, 0.1, 0.0, 'standard')
+        sqlx::query(r#"INSERT INTO billing_rules (name, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule, extended_config, is_system) VALUES 
+            ('标准1M万字计费 (1)', 'tokens', 1.0, 2.0, 0.0, 0.0, 'standard', '{}', 1),
+            ('单次请求扣费 (0.1)', 'requests', 0.0, 0.0, 0.1, 0.0, 'standard', '{}', 1),
+            ('Seedance2.0官方计费', 'tokens', 0.0, 0.0, 0.0, 0.0, 'seedance2.0', '{"resolution_rates":{"1080p":{"with_video":31,"without_video":51},"480p":{"with_video":28,"without_video":46},"720p":{"with_video":28,"without_video":46}}}', 1),
+            ('Seedance2.0Fast官方计费', 'tokens', 0.0, 0.0, 0.0, 0.0, 'seedance2.0', '{"resolution_rates":{"480p":{"with_video":22,"without_video":37},"720p":{"with_video":22,"without_video":37}}}', 1)
         "#).execute(pool).await?;
     }
 
@@ -771,6 +780,21 @@ macro_rules! pg_migration_blocks {
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_projects_uid ON playground_projects(uid)")
         .execute(pool).await.ok();
 
+    // Announcements table
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS announcements (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            is_pinned INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    )
+    .execute(pool)
+    .await?;
+
     // Playground Assets table
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS playground_assets (
@@ -826,6 +850,324 @@ macro_rules! pg_migration_blocks {
                 .execute(&*pool).await.ok();
         }
     }
+
+    // ── 火山引擎卡池系统 Migration ──────────────────────────────────
+
+    // plugins 表新增 category 列：区分用户增强插件和系统增强插件
+    sqlx::query("ALTER TABLE plugins ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'user'")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN plugins.category IS '插件分类: user=用户增强, system=系统增强'")
+        .execute(pool).await.ok();
+
+    // 更新现有插件为用户增强
+    sqlx::query("UPDATE plugins SET category = 'user' WHERE name IN ('asset_manager', 'team_marketing', 'playground') AND category = ''")
+        .execute(pool).await.ok();
+
+    // 种子：火山引擎卡池系统插件
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category)
+           VALUES ('volcengine_pool', '火山引擎卡池系统', '管理多个火山引擎账号，实现智能调度、配额限制与故障自动隔离', 0, 'system')
+           ON CONFLICT (name) DO NOTHING"#
+    ).execute(pool).await?;
+
+    // 卡池主表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS volcengine_pools (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            pool_type TEXT NOT NULL DEFAULT 'chat',
+            strategy TEXT NOT NULL DEFAULT 'random',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE volcengine_pools IS '火山引擎卡池分组表'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pools.pool_type IS '卡池类型: chat=聊天, image=图片, video=视频, custom=自定义'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pools.strategy IS '调度策略: random=随机分布, sequential=顺序轮转'").execute(pool).await.ok();
+
+    // 移除旧版本不需要的列（支持平滑升级）
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS quota_unit").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS daily_reset_hour").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS daily_reset_minute").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS period_start").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS period_end").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_daily_quota").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_hourly_quota").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_period_quota").execute(pool).await.ok();
+
+    // 卡池账号表（独立资源池）
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS volcengine_pool_accounts (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            base_url TEXT NOT NULL DEFAULT 'https://ark.cn-beijing.volces.com/api/v3',
+            api_key TEXT NOT NULL,
+            models TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            quota_unit TEXT NOT NULL DEFAULT 'tokens',
+            daily_reset_hour INTEGER NOT NULL DEFAULT 0,
+            daily_reset_minute INTEGER NOT NULL DEFAULT 0,
+            period_start TEXT NOT NULL DEFAULT '',
+            period_end TEXT NOT NULL DEFAULT '',
+            daily_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            hourly_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            period_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            daily_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            hourly_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            period_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            last_daily_reset TEXT NOT NULL DEFAULT '',
+            last_hourly_reset TEXT NOT NULL DEFAULT '',
+            last_period_reset TEXT NOT NULL DEFAULT '',
+            last_error TEXT,
+            last_error_at TEXT,
+            priority INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("ALTER TABLE volcengine_pool_accounts DROP COLUMN IF EXISTS pool_id").execute(pool).await.ok(); // 移除旧绑定
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS base_url TEXT NOT NULL DEFAULT 'https://ark.cn-beijing.volces.com/api/v3'").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS models TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS quota_unit TEXT NOT NULL DEFAULT 'tokens'").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS daily_reset_hour INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS daily_reset_minute INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS period_start TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS period_end TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+
+    sqlx::query("COMMENT ON TABLE volcengine_pool_accounts IS '火山引擎独立账号表'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.base_url IS '请求地址'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.models IS '支持的模型列表，逗号分隔'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.quota_unit IS '配额计量单位: tokens=Token数, requests=请求次数, images=图片张数'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.status IS '账号状态: active=可用, disabled=故障禁用, exhausted=配额耗尽'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.daily_quota IS '每日配额上限(0=不限)'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.hourly_quota IS '每小时配额上限(0=不限)'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.period_quota IS '时段配额上限(0=不限)'").execute(pool).await.ok();
+
+    // 卡池-账号多对多映射表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS volcengine_pool_account_mapping (
+            pool_id INTEGER NOT NULL REFERENCES volcengine_pools(id) ON DELETE CASCADE,
+            account_id INTEGER NOT NULL REFERENCES volcengine_pool_accounts(id) ON DELETE CASCADE,
+            PRIMARY KEY (pool_id, account_id)
+        )"#
+    ).execute(pool).await?;
+    sqlx::query("COMMENT ON TABLE volcengine_pool_account_mapping IS '卡池与账号的多对多映射表'").execute(pool).await.ok();
+
+    // 卡池调度日志表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS volcengine_pool_logs (
+            id SERIAL PRIMARY KEY,
+            pool_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            account_name TEXT NOT NULL DEFAULT '',
+            model_id TEXT NOT NULL DEFAULT '',
+            channel_id INTEGER NOT NULL DEFAULT 0,
+            usage_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+            quota_unit TEXT NOT NULL DEFAULT 'tokens',
+            status TEXT NOT NULL DEFAULT 'success',
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE volcengine_pool_logs IS '卡池调度使用日志'").execute(pool).await.ok();
+
+    // channels 表新增 pool_id 字段：关联卡池
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS pool_id INTEGER")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN channels.pool_id IS '关联的火山引擎卡池ID，为空表示不使用卡池'")
+        .execute(pool).await.ok();
+
+
+    // Migration: marketing_teams 新增 allowed_level_ids 字段
+    // 存储团队负责人被授权可分配的用户等级 ID 列表（JSON 数组格式，如 [1,3,5]）
+    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_level_ids TEXT NOT NULL DEFAULT '[]'")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN marketing_teams.allowed_level_ids IS '团队负责人被授权可分配的用户等级ID列表(JSON数组)'")
+        .execute(pool).await.ok();
+
+    // Migration: marketing_teams 新增 allowed_member_level_ids 字段
+    // 存储团队负责人被授权可分配给团队成员的用户等级 ID 列表（JSON 数组格式）
+    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_member_level_ids TEXT NOT NULL DEFAULT '[]'")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN marketing_teams.allowed_member_level_ids IS '团队负责人被授权可分配给团队成员的用户等级ID列表(JSON数组)'")
+        .execute(pool).await.ok();
+
+    // ══════════════════════════════════════════════════════════════
+    //  GPT-Image 卡池系统
+    // ══════════════════════════════════════════════════════════════
+
+    // 种子：GPT-Image 卡池系统插件
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category)
+           VALUES ('gptimage_pool', 'GPT-Image卡池系统', '管理多个GPT-Image来源账号，实现智能调度、配额限制与故障自动隔离', 0, 'system')
+           ON CONFLICT (name) DO NOTHING"#
+    ).execute(pool).await?;
+
+    // GPT-Image 卡池主表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS gptimage_pools (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            pool_type TEXT NOT NULL DEFAULT 'image',
+            strategy TEXT NOT NULL DEFAULT 'random',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE gptimage_pools IS 'GPT-Image卡池分组表'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pools.pool_type IS '卡池类型: image=图片, custom=自定义'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pools.strategy IS '调度策略: random=随机分布, sequential=顺序轮转'").execute(pool).await.ok();
+
+    // GPT-Image 卡池账号表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS gptimage_pool_accounts (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            base_url TEXT NOT NULL DEFAULT '',
+            api_key TEXT NOT NULL,
+            models TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            quota_unit TEXT NOT NULL DEFAULT 'images',
+            daily_reset_hour INTEGER NOT NULL DEFAULT 0,
+            daily_reset_minute INTEGER NOT NULL DEFAULT 0,
+            period_start TEXT NOT NULL DEFAULT '',
+            period_end TEXT NOT NULL DEFAULT '',
+            daily_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            hourly_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            period_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            daily_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            hourly_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            period_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            last_daily_reset TEXT NOT NULL DEFAULT '',
+            last_hourly_reset TEXT NOT NULL DEFAULT '',
+            last_period_reset TEXT NOT NULL DEFAULT '',
+            last_error TEXT,
+            last_error_at TEXT,
+            priority INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE gptimage_pool_accounts IS 'GPT-Image来源账号表'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.base_url IS '请求地址，如 https://api.openai.com'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.models IS '支持的模型列表，逗号分隔'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.quota_unit IS '配额计量单位: tokens=Token数, requests=请求次数, images=图片张数'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.status IS '账号状态: active=可用, disabled=故障禁用, exhausted=配额耗尽'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.daily_quota IS '每日配额上限(0=不限)'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.hourly_quota IS '每小时配额上限(0=不限)'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.period_quota IS '时段配额上限(0=不限)'").execute(pool).await.ok();
+
+    // GPT-Image 卡池-账号多对多映射表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS gptimage_pool_account_mapping (
+            pool_id INTEGER NOT NULL REFERENCES gptimage_pools(id) ON DELETE CASCADE,
+            account_id INTEGER NOT NULL REFERENCES gptimage_pool_accounts(id) ON DELETE CASCADE,
+            PRIMARY KEY (pool_id, account_id)
+        )"#
+    ).execute(pool).await?;
+    sqlx::query("COMMENT ON TABLE gptimage_pool_account_mapping IS 'GPT-Image卡池与账号的多对多映射表'").execute(pool).await.ok();
+
+    // GPT-Image 卡池调度日志表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS gptimage_pool_logs (
+            id SERIAL PRIMARY KEY,
+            pool_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            account_name TEXT NOT NULL DEFAULT '',
+            model_id TEXT NOT NULL DEFAULT '',
+            channel_id INTEGER NOT NULL DEFAULT 0,
+            usage_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+            quota_unit TEXT NOT NULL DEFAULT 'images',
+            status TEXT NOT NULL DEFAULT 'success',
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+    sqlx::query("COMMENT ON TABLE gptimage_pool_logs IS 'GPT-Image卡池调度使用日志'").execute(pool).await.ok();
+
+    // channels 表新增 gptimage_pool_id 字段
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS gptimage_pool_id INTEGER")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN channels.gptimage_pool_id IS '关联的GPT-Image卡池ID，为空表示不使用卡池'")
+        .execute(pool).await.ok();
+
+    // 移除 models 表的 name 和 model_id 的唯一性约束，改由 mid 保证唯一性
+    sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_name_key").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_model_id_key").execute(pool).await.ok();
+
+    // ══════════════════════════════════════════════════════════════
+    //  模型广场管理插件
+    // ══════════════════════════════════════════════════════════════
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category)
+           VALUES ('model_marketplace', '模型广场管理', '管理模型广场的模型展示，控制哪些模型对用户可见并配置展示信息', 0, 'user')
+           ON CONFLICT (name) DO NOTHING"#
+    ).execute(pool).await?;
+
+    // ══════════════════════════════════════════════════════════════
+    //  站点 Icon 图标库插件
+    // ══════════════════════════════════════════════════════════════
+
+    // 种子：站点 Icon 图标库系统插件
+    sqlx::query(
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category)
+           VALUES ('site_icons', '站点icon图标库', '提供 AI/LLM 品牌 SVG 图标库，支持搜索选择和自定义上传，数据来源 lobehub/lobe-icons', 0, 'system')
+           ON CONFLICT (name) DO NOTHING"#
+    ).execute(pool).await?;
+
+    // 站点图标主表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS site_icons (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            file_path TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT 'lobe-icons',
+            category TEXT NOT NULL DEFAULT 'AI品牌',
+            tags TEXT NOT NULL DEFAULT '[]',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (now()::text),
+            updated_at TEXT NOT NULL DEFAULT (now()::text),
+            UNIQUE(name, source)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE site_icons IS '站点图标库，存储 SVG 图标元数据'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.name IS '图标标识名（如 openai, claude）'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.title IS '显示名称（如 OpenAI, Claude）'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.file_path IS 'SVG 文件路径（相对于 data/assets/）'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.source IS '图标来源: lobe-icons=从 GitHub 同步 / custom=手动上传'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.category IS '分类: AI品牌 / 自定义'").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN site_icons.tags IS '标签(JSON数组)'").execute(pool).await.ok();
+
+    // 同步日志表
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS site_icon_sync_logs (
+            id SERIAL PRIMARY KEY,
+            total_synced INTEGER NOT NULL DEFAULT 0,
+            total_new INTEGER NOT NULL DEFAULT 0,
+            total_updated INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'success',
+            error_message TEXT,
+            created_at TEXT NOT NULL DEFAULT (now()::text)
+        )"#
+    ).execute(pool).await?;
+
+    sqlx::query("COMMENT ON TABLE site_icon_sync_logs IS '站点图标同步日志'").execute(pool).await.ok();
+
+    // ─── 模型 / 服务商 / 类型 增加 logo 字段 ───
+    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE model_types ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())

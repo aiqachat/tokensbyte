@@ -11,6 +11,8 @@ import FloatingHeader from './components/FloatingHeader';
 import FloatingToolbar from './components/FloatingToolbar';
 import PromptInput from './components/PromptInput';
 import SettingsWidget from './components/SettingsWidget';
+import ResourceManagerWidget from './components/ResourceManagerWidget';
+import GenerationLogWidget from './components/GenerationLogWidget';
 import ModelDrawer from './components/ModelDrawer';
 import TokenModal from './components/TokenModal';
 import ZoomIndicator from './components/ZoomIndicator';
@@ -26,7 +28,7 @@ import './Playground.css';
  */
 const PlaygroundLayout: React.FC = () => {
   return (
-    <div style={{ height: '100vh', width: '100vw', overflow: 'hidden', background: '#090A0B', position: 'relative' }}>
+    <div style={{ height: '100vh', width: '100vw', overflow: 'hidden', background: '#1e1f23', position: 'relative' }}>
 
       {/* ═══════════ Layer 1: 无限画布层 (Canvas Layer) ═══════════ */}
       {/* 画布视口容器 — 包含画布 + 固定位置面板，保证鼠标事件冒泡链完整 */}
@@ -40,6 +42,8 @@ const PlaygroundLayout: React.FC = () => {
       <FloatingHeader />          {/* 左上角 — 返回按钮 (固定) */}
       <ZoomIndicator />           {/* 右下角 — 缩放控制 (固定) */}
       <SettingsWidget />          {/* 右上角 — 模型选择器 (可拖拽) */}
+      <ResourceManagerWidget />   {/* 左侧 — 资源管理器 (可拖拽) */}
+      <GenerationLogWidget />     {/* 左侧 — 创作日志面板 */}
 
       {/* ═══════════ Layer 3: 弹出层 (Overlay Layer) ═══════════ */}
       <ModelDrawer />             {/* 模型全景选择器抽屉 */}

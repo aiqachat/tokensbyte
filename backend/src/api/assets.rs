@@ -41,6 +41,20 @@ pub fn router() -> Router<Arc<AppState>> {
         .layer(DefaultBodyLimit::disable())
 }
 
+/// 读取素材资产库的审核开关（true=需要火山引擎审核，false=独立素材库模式）
+async fn is_review_enabled(state: &AppState) -> bool {
+    sqlx::query_scalar::<sqlx::Any, Option<String>>(
+        &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = 'review_enabled'")
+    )
+    .fetch_optional(&state.db.pool)
+    .await
+    .ok()
+    .flatten()
+    .flatten()
+    .map(|v| v == "true")
+    .unwrap_or(false) // 默认关闭审核
+}
+
 #[derive(Deserialize)]
 pub struct AssetQuery {
     pub status: Option<String>,
@@ -780,6 +794,8 @@ async fn user_storage_info(
         }
     };
 
+    let review_enabled = is_review_enabled(&state).await;
+
     Ok(Json(json!({
         "folder": folder_name,
         "files": files,
@@ -791,6 +807,7 @@ async fn user_storage_info(
         "is_admin": user.role == "admin",
         "virtual_portrait_count": vp_count,
         "virtual_portrait_quota": folder_quota,
+        "review_enabled": review_enabled,
     })))
 }
 
@@ -1182,14 +1199,19 @@ async fn upload_virtual_portrait(
         AppError::Internal(format!("文件上传失败: {}", e))
     })?;
 
-    // 写入数据库，状态为 uploaded（待提交审核）
+    // 根据审核开关决定初始状态
+    let review_enabled = is_review_enabled(&state).await;
+    let initial_status = if review_enabled { "uploaded" } else { "approved" };
+
+    // 写入数据库
     let asset: PluginAsset = sqlx::query_as(&state.db.format_query(
         "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, mime_type, size, category, group_id)
-         VALUES (?, ?, 'user', 'uploaded', ?, ?, ?, ?, '虚拟人像', ?)
+         VALUES (?, ?, 'user', ?, ?, ?, ?, ?, '虚拟人像', ?)
          RETURNING *"
     ))
     .bind(&claims.sub)
     .bind(&asset_type)
+    .bind(initial_status)
     .bind(&file_name)
     .bind(&file_url)
     .bind(&mime_type)
@@ -1197,7 +1219,8 @@ async fn upload_virtual_portrait(
     .bind(&group_id)
     .fetch_one(&state.db.pool).await?;
 
-    Ok(Json(json!({ "message": "上传成功，请提交审核", "asset": asset })))
+    let msg = if review_enabled { "上传成功，请提交审核" } else { "上传成功" };
+    Ok(Json(json!({ "message": msg, "asset": asset })))
 }
 
 /// 用户：提交虚拟人像审核（阶段二：调用火山引擎 CreateAsset）
@@ -1337,23 +1360,31 @@ async fn user_create_group(
         return Err(AppError::BadRequest(format!("最多只能创建 {} 个素材组合", max_folders)));
     }
 
-    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
-        .ok_or_else(|| AppError::BadRequest("API配置未完成".to_string()))?;
-    let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
-        .with_logger(state.db.clone(), claims.sub.clone());
+    let review_enabled = is_review_enabled(&state).await;
 
-    let create_group_req = crate::services::volcengine::CreateAssetGroupRequest {
-        name: payload.name.clone(),
-        description: payload.description.clone(),
-        group_type: Some("AIGC".to_string()),
-        project_name: Some(volc_config.project_name.clone()),
+    let group_id = if review_enabled {
+        // 审核模式：调用方舟 CreateAssetGroup
+        let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+            .ok_or_else(|| AppError::BadRequest("API配置未完成".to_string()))?;
+        let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
+            .with_logger(state.db.clone(), claims.sub.clone());
+
+        let create_group_req = crate::services::volcengine::CreateAssetGroupRequest {
+            name: payload.name.clone(),
+            description: payload.description.clone(),
+            group_type: Some("AIGC".to_string()),
+            project_name: Some(volc_config.project_name.clone()),
+        };
+
+        let group_res: crate::services::volcengine::CreateAssetGroupResponse = client.call_api(
+            "ark", "cn-beijing", "CreateAssetGroup", "2024-01-01", create_group_req
+        ).await.map_err(|e| AppError::Internal(format!("创建方舟组合失败: {}", e)))?;
+
+        group_res.id
+    } else {
+        // 独立素材库模式：生成本地 group_id，不调用火山引擎
+        format!("local_{}", uuid::Uuid::new_v4().simple())
     };
-
-    let group_res: crate::services::volcengine::CreateAssetGroupResponse = client.call_api(
-        "ark", "cn-beijing", "CreateAssetGroup", "2024-01-01", create_group_req
-    ).await.map_err(|e| AppError::Internal(format!("创建方舟组合失败: {}", e)))?;
-
-    let group_id = group_res.id;
 
     // 在 TOS 上创建对应的文件夹（上传一个 0 字节占位符）
     if let Some(tos_config) = crate::api::plugins::get_tos_config(&state, "asset_manager").await {
@@ -1410,22 +1441,25 @@ async fn user_update_group(
     .await?
     .ok_or_else(|| AppError::BadRequest("文件夹不存在或无权操作".to_string()))?;
 
-    // 调用方舟 UpdateAssetGroup API
-    let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
-        .ok_or_else(|| AppError::BadRequest("API配置未完成".to_string()))?;
-    let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
-        .with_logger(state.db.clone(), claims.sub.clone());
+    // 仅在审核模式下调用方舟 UpdateAssetGroup API
+    let review_enabled = is_review_enabled(&state).await;
+    if review_enabled {
+        let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
+            .ok_or_else(|| AppError::BadRequest("API配置未完成".to_string()))?;
+        let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
+            .with_logger(state.db.clone(), claims.sub.clone());
 
-    let update_req = crate::services::volcengine::UpdateAssetGroupRequest {
-        id: group_id.clone(),
-        name: payload.name.clone(),
-        description: payload.description.clone(),
-        project_name: Some(volc_config.project_name.clone()),
-    };
+        let update_req = crate::services::volcengine::UpdateAssetGroupRequest {
+            id: group_id.clone(),
+            name: payload.name.clone(),
+            description: payload.description.clone(),
+            project_name: Some(volc_config.project_name.clone()),
+        };
 
-    let _: crate::services::volcengine::UpdateAssetGroupResponse = client.call_api(
-        "ark", "cn-beijing", "UpdateAssetGroup", "2024-01-01", update_req
-    ).await.map_err(|e| AppError::Internal(format!("更新方舟组合失败: {}", e)))?;
+        let _: crate::services::volcengine::UpdateAssetGroupResponse = client.call_api(
+            "ark", "cn-beijing", "UpdateAssetGroup", "2024-01-01", update_req
+        ).await.map_err(|e| AppError::Internal(format!("更新方舟组合失败: {}", e)))?;
+    }
 
     // 如果修改了名字，需要在 TOS 上重命名文件夹（TOS 不支持直接重命名，但占位符可以更新）
     let old_name = group.name.clone();
@@ -1476,28 +1510,31 @@ async fn user_delete_group(
         return Err(AppError::BadRequest(format!("文件夹中还有 {} 个素材，请先删除素材后再删除文件夹", asset_count)));
     }
 
-    // 1. 调用方舟 DeleteAssetGroup API
+    // 1. 仅在审核模式下调用方舟 DeleteAssetGroup API
     let mut ark_deleted = false;
-    if let Some(volc_config) = crate::api::plugins::get_volc_config(&state, "asset_manager").await {
-        let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
-            .with_logger(state.db.clone(), claims.sub.clone());
+    let review_enabled = is_review_enabled(&state).await;
+    if review_enabled {
+        if let Some(volc_config) = crate::api::plugins::get_volc_config(&state, "asset_manager").await {
+            let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
+                .with_logger(state.db.clone(), claims.sub.clone());
 
-        let delete_req = crate::services::volcengine::DeleteAssetGroupRequest {
-            id: group_id.clone(),
-            project_name: Some(volc_config.project_name.clone()),
-        };
+            let delete_req = crate::services::volcengine::DeleteAssetGroupRequest {
+                id: group_id.clone(),
+                project_name: Some(volc_config.project_name.clone()),
+            };
 
-        match client.call_api::<_, crate::services::volcengine::DeleteAssetGroupResponse>(
-            "ark", "cn-beijing", "DeleteAssetGroup", "2024-01-01", delete_req
-        ).await {
-            Ok(_) => {
-                tracing::info!("用户 {} 删除方舟组合: {}", claims.sub, group_id);
-                ark_deleted = true;
-            }
+            match client.call_api::<_, crate::services::volcengine::DeleteAssetGroupResponse>(
+                "ark", "cn-beijing", "DeleteAssetGroup", "2024-01-01", delete_req
+            ).await {
+                Ok(_) => {
+                    tracing::info!("用户 {} 删除方舟组合: {}", claims.sub, group_id);
+                    ark_deleted = true;
+                }
             Err(e) => {
                 tracing::warn!("方舟 DeleteAssetGroup 失败: {} - {}", group_id, e);
             }
         }
+    }
     }
 
     // 2. 删除 TOS 上的文件夹及其内容

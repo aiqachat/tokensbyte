@@ -18,7 +18,7 @@ pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str
            ORDER BY priority DESC"#)
     )
     .bind(format!("%{:?}%", model))
-    .bind(format!("%\"{}\"%", user_group))
+    .bind(format!("%\"{}\"%" , user_group))
     .fetch_all(&state.db.pool)
     .await?;
 
@@ -38,44 +38,24 @@ pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str
         total_weight += channel.weight;
     }
 
-    if total_weight <= 0 {
-        let mut ch = top_tier_channels[0].clone();
-        if let Some(pid) = ch.preset_id {
-            if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
-                .bind(pid)
-                .fetch_optional(&state.db.pool)
-                .await 
-            {
-                ch.base_url = preset.base_url;
-                ch.api_key = preset.api_key;
+    let mut ch = if total_weight <= 0 {
+        top_tier_channels[0].clone()
+    } else {
+        let mut rng = rand::rngs::OsRng;
+        let random_value = rng.gen_range(0..total_weight);
+        let mut current_sum = 0;
+        let mut selected = &top_tier_channels[0];
+        for channel in &top_tier_channels {
+            current_sum += channel.weight;
+            if random_value < current_sum {
+                selected = channel;
+                break;
             }
         }
-        return Ok(ch);
-    }
+        selected.clone()
+    };
 
-    let mut rng = rand::rngs::OsRng;
-    let random_value = rng.gen_range(0..total_weight);
-    
-    let mut current_sum = 0;
-    for channel in &top_tier_channels {
-        current_sum += channel.weight;
-        if random_value < current_sum {
-            let mut ch = channel.clone();
-            if let Some(pid) = ch.preset_id {
-                if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
-                    .bind(pid)
-                    .fetch_optional(&state.db.pool)
-                    .await 
-                {
-                    ch.base_url = preset.base_url;
-                    ch.api_key = preset.api_key;
-                }
-            }
-            return Ok(ch);
-        }
-    }
-
-    let mut ch = top_tier_channels[0].clone();
+    // 4. Resolve preset (channel config template)
     if let Some(pid) = ch.preset_id {
         if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
             .bind(pid)
@@ -86,6 +66,37 @@ pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str
             ch.api_key = preset.api_key;
         }
     }
+
+// 5. 卡池集成：如果渠道绑定了卡池，从卡池中选择可用账号替换 API Key 和 Base URL
+    if let Some(pool_id) = ch.pool_id {
+        if let Some(account) = crate::services::volcengine_pool::select_account(state, pool_id, model).await {
+            tracing::info!(
+                "[Relay] 渠道 '{}' (id={}) 使用卡池账号 '{}' (id={}) 的 Base URL 和 API Key",
+                ch.name, ch.id, account.name, account.id
+            );
+            ch.api_key = account.api_key;
+            ch.base_url = account.base_url;
+            // 将卡池账号 ID 存入 config 供后续计费回写使用
+            if let Ok(mut config_val) = serde_json::from_str::<serde_json::Value>(&ch.config) {
+                config_val["_pool_account_id"] = serde_json::json!(account.id);
+                config_val["_pool_account_name"] = serde_json::json!(account.name);
+                config_val["_pool_id"] = serde_json::json!(pool_id);
+                ch.config = serde_json::to_string(&config_val).unwrap_or(ch.config);
+            } else {
+                ch.config = serde_json::json!({
+                    "_pool_account_id": account.id,
+                    "_pool_account_name": account.name,
+                    "_pool_id": pool_id,
+                }).to_string();
+            }
+        } else {
+            tracing::warn!(
+                "[Relay] 渠道 '{}' (id={}) 绑定了卡池 (pool_id={}) 但无可用账号",
+                ch.name, ch.id, pool_id
+            );
+        }
+    }
+
     Ok(ch)
 }
 

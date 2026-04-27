@@ -176,7 +176,17 @@ const ChannelConfigs: React.FC = () => {
             />
           </Form.Item>
           <Form.Item name="base_url" label="端点基础地址 (Base URL)" rules={[{ required: true }]}>
-            <Input placeholder="https://api.openai.com" />
+            <AutoComplete
+              options={[
+                { value: 'https://api.openai.com', label: 'OpenAI 官方 (https://api.openai.com)' },
+                { value: 'https://ark.cn-beijing.volces.com/api/v3', label: '火山方舟 (https://ark.cn-beijing.volces.com/api/v3)' }
+              ]}
+              placeholder="可直接选择预设地址或自由输入"
+              filterOption={(inputValue, option) =>
+                String(option?.label || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1 ||
+                String(option?.value || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+              }
+            />
           </Form.Item>
           <Form.Item 
             name="api_key" 

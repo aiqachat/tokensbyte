@@ -18,30 +18,44 @@ interface Props {
 }
 
 /** 网格间距（基础像素） */
-const GRID_GAP = 20;
+const GRID_GAP = 16;
 /** 鼠标影响半径（像素） */
-const INFLUENCE_RADIUS = 160;
+const INFLUENCE_RADIUS = 120;
 /** 粒子基础亮度 */
-const BASE_ALPHA = 0.08;
+const BASE_ALPHA = 0.50;
 /** 粒子高亮亮度 */
-const HIGHLIGHT_ALPHA = 0.55;
+const HIGHLIGHT_ALPHA = 0.45;
 /** 高亮衰减速度 */
 const DECAY_RATE = 0.93;
 /** 粒子基础半径 */
-const BASE_RADIUS = 0.8;
+const BASE_RADIUS = 0.6;
 /** 粒子高亮半径 */
-const HIGHLIGHT_RADIUS = 2.2;
+const HIGHLIGHT_RADIUS = 1.2;
 /** 最小绘制间距（像素），低于此值则跳步绘制 */
 const MIN_DRAW_GAP = 6;
 /** 最大绘制间距（像素），高于此值仍正常绘制 */
 const MAX_DRAW_GAP = 200;
 
-const CanvasParticles: React.FC<Props> = React.memo(({ offsetX, offsetY, scale }) => {
+export interface CanvasParticlesHandle {
+  updateTransform: (x: number, y: number, scale: number) => void;
+}
+
+const CanvasParticles = React.forwardRef<CanvasParticlesHandle, {}>((_, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: -9999, y: -9999 });
   const particleBrightnessRef = useRef<Map<string, number>>(new Map());
   const rafRef = useRef<number>(0);
   const sizeRef = useRef({ w: 0, h: 0 });
+
+  // 使用 ref 存储变换，以实现高性能非 React 更新
+  const transformRef = useRef({ x: 0, y: 0, scale: 1 });
+
+  // 暴露给外部的更新接口
+  React.useImperativeHandle(ref, () => ({
+    updateTransform: (x, y, scale) => {
+      transformRef.current = { x, y, scale };
+    }
+  }));
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     mouseRef.current = { x: e.clientX, y: e.clientY };
@@ -79,70 +93,71 @@ const CanvasParticles: React.FC<Props> = React.memo(({ offsetX, offsetY, scale }
     const draw = () => {
       const { w, h } = sizeRef.current;
       const mouse = mouseRef.current;
+      const { x: offsetX, y: offsetY, scale } = transformRef.current;
+
       ctx.clearRect(0, 0, w, h);
 
       // 计算屏幕上的网格间距
       let gap = GRID_GAP * scale;
-
-      // 缩放很小时：跳步绘制（每 N 个点画一个）保证覆盖且不卡
       let step = 1;
-      if (gap < MIN_DRAW_GAP) {
-        step = Math.ceil(MIN_DRAW_GAP / gap);
+      if (gap < 12) {
+        step = Math.ceil(12 / gap);
         gap = gap * step;
       }
 
-      // 使用模运算确保网格始终无缝铺满整个视口
-      // offsetMod 是第一个可见点的屏幕坐标（始终在 [0, gap) 范围内）
       const ox = ((offsetX % gap) + gap) % gap;
       const oy = ((offsetY % gap) + gap) % gap;
 
-      // 从视口左上角之外一个 gap 开始，到右下角之外一个 gap 结束
-      for (let screenX = ox - gap; screenX <= w + gap; screenX += gap) {
-        for (let screenY = oy - gap; screenY <= h + gap; screenY += gap) {
-          // 与鼠标的距离
-          const dx = screenX - mouse.x;
-          const dy = screenY - mouse.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
+      // 1. 批量绘制背景静态点 (极致性能)
+      ctx.fillStyle = `rgba(255, 255, 255, ${BASE_ALPHA})`;
+      const radius = BASE_RADIUS * Math.min(Math.max(scale, 0.5), 1.2);
 
-          // 用屏幕坐标的整数网格作为 key
-          const col = Math.round((screenX - ox) / gap);
-          const row = Math.round((screenY - oy) / gap);
-          const key = `${col},${row}`;
-
-          const prevBrightness = brightnessMap.get(key) || 0;
-
-          let targetBrightness = 0;
-          if (dist < INFLUENCE_RADIUS) {
-            const proximity = 1 - (dist / INFLUENCE_RADIUS);
-            targetBrightness = proximity * proximity;
-          }
-
-          let brightness = Math.max(targetBrightness, prevBrightness * DECAY_RATE);
-          if (brightness < 0.005) brightness = 0;
-          brightnessMap.set(key, brightness);
-
-          const alpha = BASE_ALPHA + brightness * (HIGHLIGHT_ALPHA - BASE_ALPHA);
-          const radius = BASE_RADIUS + brightness * (HIGHLIGHT_RADIUS - BASE_RADIUS);
-
-          ctx.beginPath();
-          ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
-
-          if (brightness > 0.01) {
-            const r = Math.round(162 + brightness * 40);
-            const g = Math.round(193 + brightness * 30);
-            ctx.fillStyle = `rgba(${r}, ${g}, 255, ${alpha})`;
-          } else {
-            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-          }
-          ctx.fill();
+      ctx.beginPath();
+      for (let sx = ox - gap; sx <= w + gap; sx += gap) {
+        for (let sy = oy - gap; sy <= h + gap; sy += gap) {
+          // 使用圆形绘制小点，效果更柔和
+          ctx.moveTo(sx + radius, sy);
+          ctx.arc(sx, sy, radius, 0, Math.PI * 2);
         }
       }
+      ctx.fill();
 
-      // 定期清理过期的亮度缓存（避免内存泄漏）
-      if (brightnessMap.size > 8000) {
-        const entries = Array.from(brightnessMap.entries());
-        for (const [k, v] of entries) {
-          if (v < 0.005) brightnessMap.delete(k);
+      // 2. 局部交互高亮 (仅计算鼠标附近的粒子)
+      if (mouse.x > -1000) {
+        // 空间裁剪：只遍历鼠标半径内的网格点
+        const searchRadius = INFLUENCE_RADIUS;
+        const gridXStart = Math.floor((mouse.x - searchRadius - ox) / gap) * gap + ox;
+        const gridXEnd = Math.ceil((mouse.x + searchRadius - ox) / gap) * gap + ox;
+        const gridYStart = Math.floor((mouse.y - searchRadius - oy) / gap) * gap + oy;
+        const gridYEnd = Math.ceil((mouse.y + searchRadius - oy) / gap) * gap + oy;
+
+        for (let sx = gridXStart; sx <= gridXEnd; sx += gap) {
+          if (sx < -gap || sx > w + gap) continue;
+          for (let sy = gridYStart; sy <= gridYEnd; sy += gap) {
+            if (sy < -gap || sy > h + gap) continue;
+
+            const dx = sx - mouse.x;
+            const dy = sy - mouse.y;
+            const distSq = dx * dx + dy * dy;
+            const radSq = searchRadius * searchRadius;
+
+            if (distSq < radSq) {
+              const dist = Math.sqrt(distSq);
+              const proximity = 1 - (dist / searchRadius);
+              const brightness = proximity * proximity;
+
+              const alpha = BASE_ALPHA + brightness * (HIGHLIGHT_ALPHA - BASE_ALPHA);
+              const hRadius = (radius + brightness * HIGHLIGHT_RADIUS) * 1.5;
+
+              const r = Math.round(162 + brightness * 40);
+              const g = Math.round(193 + brightness * 30);
+
+              ctx.beginPath();
+              ctx.fillStyle = `rgba(${r}, ${g}, 255, ${alpha})`;
+              ctx.arc(sx, sy, hRadius, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
         }
       }
 
@@ -157,7 +172,7 @@ const CanvasParticles: React.FC<Props> = React.memo(({ offsetX, offsetY, scale }
       window.removeEventListener('resize', updateSize);
       canvas.removeEventListener('mouseleave', handleMouseLeave);
     };
-  }, [offsetX, offsetY, scale, handleMouseMove, handleMouseLeave]);
+  }, [handleMouseMove, handleMouseLeave]);
 
   return (
     <canvas

@@ -858,37 +858,48 @@ async fn get_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> {
     crate::api::settings::load_all_settings(state).await
 }
 
-/// 用户名合规校验：禁止系统保留词 + 最少4字符
+/// 用户名合规校验：仅限英文字母和数字，至少6个字符，并且包含敏感词过滤
 fn validate_username(username: &str) -> AppResult<()> {
     let name = username.trim();
 
-    if name.len() < 4 {
-        return Err(AppError::BadRequest("用户名长度不能少于4个字符".to_string()));
+    if name.len() < 6 {
+        return Err(AppError::BadRequest("用户名长度不能少于 6 个字符".to_string()));
     }
 
-    // 常见系统保留用户名（全部小写比对）
-    const RESERVED: &[&str] = &[
-        "admin", "administrator", "root", "system", "sys",
-        "superadmin", "super", "master", "operator",
-        "moderator", "mod", "staff", "support", "help",
-        "service", "official", "test", "tester", "testing",
-        "demo", "guest", "anonymous", "nobody", "null",
-        "undefined", "api", "www", "mail", "ftp",
-        "smtp", "pop", "imap", "dns", "ns",
-        "server", "database", "db", "mysql", "postgres",
-        "redis", "mongo", "nginx", "apache", "proxy",
-        "bot", "robot", "crawler", "spider",
-        "postmaster", "webmaster", "hostmaster", "abuse",
-        "security", "info", "noreply", "no-reply",
-        "ceo", "cto", "cfo", "coo",
-        "token", "tokens", "tokensbyte", "tokenbyte",
-        "管理员", "系统", "官方", "客服", "运营",
+    // 只允许英文字母和数字，禁止中文、特殊字符（防止数据库注入及特殊符号）
+    for c in name.chars() {
+        if !c.is_ascii_alphanumeric() {
+            return Err(AppError::BadRequest("用户名只能包含英文字母和数字，不能使用特殊字符或其他语言".to_string()));
+        }
+    }
+
+    // 包含即拒绝的敏感词/保留字（模糊匹配）
+    const CONTAINS_RESERVED: &[&str] = &[
+        "admin", "root", "system", "superadmin", "moderator", "support", 
+        "official", "anonymous", "tokensbyte", "security", "noreply",
+        "select", "update", "delete", "insert", "drop", "database"
+    ];
+
+    // 精确匹配的保留字（较短的词，防止模糊匹配误伤正常单词）
+    const EXACT_RESERVED: &[&str] = &[
+        "sys", "super", "master", "operator", "mod", "staff", "help", "service", 
+        "test", "tester", "testing", "demo", "guest", "nobody", "null", "undefined",
+        "api", "www", "mail", "ftp", "smtp", "pop", "imap", "dns", "ns", "server", 
+        "db", "mysql", "postgres", "redis", "mongo", "nginx", "apache", "proxy",
+        "bot", "robot", "crawler", "spider", "info", "ceo", "cto", "cfo", "coo", "token"
     ];
 
     let lower = name.to_lowercase();
-    for &word in RESERVED {
+    
+    for &word in CONTAINS_RESERVED {
+        if lower.contains(word) {
+            return Err(AppError::BadRequest("此用户名不能注册".to_string()));
+        }
+    }
+
+    for &word in EXACT_RESERVED {
         if lower == word {
-            return Err(AppError::BadRequest(format!("用户名 '{}' 为系统保留名称，请换一个", name)));
+            return Err(AppError::BadRequest("此用户名不能注册".to_string()));
         }
     }
 

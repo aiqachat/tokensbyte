@@ -9,6 +9,8 @@ pub struct Plugin {
     pub description: Option<String>,
     pub is_enabled: i64,
     pub allowed_levels: String,
+    #[sqlx(default)]
+    pub category: String,        // user=用户增强插件, system=系统增强插件
     pub created_at: String,
     pub updated_at: String,
 }

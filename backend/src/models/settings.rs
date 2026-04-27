@@ -23,6 +23,39 @@ fn default_enable_multilingual() -> bool {
     true
 }
 
+/// 站点协议设置
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AgreementSettings {
+    #[serde(default = "default_agreement_mode")]
+    pub tos_mode: String, // "text" or "link"
+    #[serde(default = "default_agreement_mode")]
+    pub tos_mode_en: String,
+    #[serde(default)]
+    pub tos_content: String,
+    #[serde(default)]
+    pub tos_content_en: String,
+    #[serde(default)]
+    pub tos_link: String,
+    #[serde(default)]
+    pub tos_link_en: String,
+    #[serde(default = "default_agreement_mode")]
+    pub privacy_mode: String, // "text" or "link"
+    #[serde(default = "default_agreement_mode")]
+    pub privacy_mode_en: String,
+    #[serde(default)]
+    pub privacy_content: String,
+    #[serde(default)]
+    pub privacy_content_en: String,
+    #[serde(default)]
+    pub privacy_link: String,
+    #[serde(default)]
+    pub privacy_link_en: String,
+}
+
+fn default_agreement_mode() -> String {
+    "link".to_string()
+}
+
 /// 货币设置
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CurrencySettings {
@@ -221,6 +254,7 @@ pub struct AllSettings {
     pub payment_alipay: Option<PaymentAlipaySettings>,
     pub google_oauth: Option<GoogleOAuthSettings>,
     pub wechat_oauth: Option<WechatOAuthSettings>,
+    pub agreement: AgreementSettings,
 }
 
 /// 更新设置请求（写入）
@@ -238,4 +272,5 @@ pub struct UpdateSettingsRequest {
     pub payment_alipay: Option<PaymentAlipaySettings>,
     pub google_oauth: Option<GoogleOAuthSettings>,
     pub wechat_oauth: Option<WechatOAuthSettings>,
+    pub agreement: Option<AgreementSettings>,
 }

@@ -135,35 +135,66 @@ pub fn count_response_images(response: &str) -> Option<i32> {
 
 /// 从单个 JSON Value 中提取图片数量（内部辅助函数）
 fn count_images_from_value(v: &Value) -> Option<i32> {
-    // OpenAI / 火山方舟: { "data": [{"url": "..."}, ...] }
+    let mut total_count = 0i32;
+
+    // 1. 处理标准的 OpenAI / 火山方舟格式: { "data": [{"url": "..."}, ...] }
+    // 兼容逻辑：如果 url 本身是数组（某些渠道会把 4 宫格塞在一个 url 数组里），则按数组长度计费
     if let Some(data) = v.get("data").and_then(|d| d.as_array()) {
-        if !data.is_empty() {
-            return Some(data.len() as i32);
+        for item in data {
+            if let Some(url) = item.get("url") {
+                if let Some(arr) = url.as_array() {
+                    total_count += arr.len() as i32;
+                } else {
+                    total_count += 1;
+                }
+            } else if item.is_object() {
+                // 如果 data 数组里的项没有 url 字段但它是对象，也算 1 张（兜底同步成功）
+                total_count += 1;
+            }
         }
     }
 
-    // Google Gemini: candidates[].content.parts[] 中含 inline_data 的图片
-    if let Some(candidates) = v.get("candidates").and_then(|c| c.as_array()) {
-        let mut count = 0i32;
-        for candidate in candidates {
-            if let Some(parts) = candidate
-                .get("content")
-                .and_then(|c| c.get("parts"))
-                .and_then(|p| p.as_array())
-            {
-                for part in parts {
-                    if part.get("inline_data").is_some() || part.get("inlineData").is_some() {
-                        count += 1;
+    // 2. 针对异步任务终态结果深度解析 (兼容用户提供的 data.result.images 结构)
+    if total_count == 0 {
+        let images_node = v.get("data").and_then(|d| d.get("result")).and_then(|r| r.get("images"))
+            .or_else(|| v.get("result").and_then(|r| r.get("images")))
+            .or_else(|| v.get("images")); // 各种厂商可能的嵌套结构兜底
+            
+        if let Some(images) = images_node.and_then(|i| i.as_array()) {
+            for img in images {
+                if let Some(url) = img.get("url") {
+                    if let Some(arr) = url.as_array() {
+                        total_count += arr.len() as i32;
+                    } else {
+                        total_count += 1;
+                    }
+                } else {
+                    total_count += 1;
+                }
+            }
+        }
+    }
+
+    // 3. Google Gemini: candidates[].content.parts[] 中含 inline_data 的图片
+    if total_count == 0 {
+        if let Some(candidates) = v.get("candidates").and_then(|c| c.as_array()) {
+            for candidate in candidates {
+                if let Some(parts) = candidate
+                    .get("content")
+                    .and_then(|c| c.get("parts"))
+                    .and_then(|p| p.as_array())
+                {
+                    for part in parts {
+                        if part.get("inline_data").is_some() || part.get("inlineData").is_some() {
+                            total_count += 1;
+                        }
                     }
                 }
             }
         }
-        if count > 0 {
-            return Some(count);
-        }
     }
 
-    None
+    if total_count > 0 { Some(total_count) } else { None }
 }
 
 pub struct UsageTokens {
@@ -201,6 +232,17 @@ pub fn parse_usage(response: &str) -> UsageTokens {
                  u.completion = usage.get("completion_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
                  u.total = usage.get("total_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
                  found = true;
+            }
+        }
+        // 4. 包裹格式: { code, data: { usage: {...} } }
+        if !found {
+            if let Some(usage) = v.get("data").and_then(|d| d.get("usage")) {
+                u.prompt = usage.get("prompt_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                u.completion = usage.get("completion_tokens")
+                    .or_else(|| usage.get("output_tokens"))
+                    .and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                u.total = usage.get("total_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                found = true;
             }
         }
         found
@@ -244,6 +286,10 @@ pub fn extract_usage_json_string(response: &str) -> Option<String> {
         }
         if let Some(usage) = v.get("final_result").and_then(|fr| fr.get("usage")) {
             return Some(serde_json::json!({ "final_result": { "usage": usage } }).to_string());
+        }
+        // 包裹格式: { code, data: { usage: {...} } }
+        if let Some(usage) = v.get("data").and_then(|d| d.get("usage")) {
+            return Some(serde_json::json!({ "usage": usage }).to_string());
         }
     } else {
         // SSE 模式下，寻找最后一条包含 usage 字段的 chunk，仅提取 usage 部分

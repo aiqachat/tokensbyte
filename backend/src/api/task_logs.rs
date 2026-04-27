@@ -43,7 +43,7 @@ pub async fn list_task_logs(
                 " AND l.endpoint LIKE '%images/generations%'"
             ),
             "video" => where_clause.push_str(
-                " AND (l.endpoint LIKE '%video/generations%' OR l.endpoint LIKE '%contents/generations%')"
+                " AND (l.endpoint LIKE '%video%/generations%' OR l.endpoint LIKE '%contents/generations%')"
             ),
             _ => {}
         }

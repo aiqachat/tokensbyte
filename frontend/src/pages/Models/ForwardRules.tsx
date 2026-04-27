@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Select, Alert, Popover, Grid, Typography } from 'antd';
+import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Select, Alert, Popover, Grid, Typography, Tooltip } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CodeOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -60,10 +60,17 @@ const ForwardRules: React.FC = () => {
   };
 
   const handleEdit = (item: ForwardRule) => {
+    let pollPath = '';
+    try {
+      const config = JSON.parse(item.config_json);
+      pollPath = config.poll_path || '';
+    } catch (e) { /* ignore */ }
+
     setEditingItem(item);
     form.setFieldsValue({
       ...item,
       category: item.category ? [item.category] : ['聊天'],
+      poll_path: pollPath,
       is_active: item.is_active === 1,
     });
     setIsModalVisible(true);
@@ -95,21 +102,29 @@ const ForwardRules: React.FC = () => {
 
   const handleSave = async (values: any) => {
     try {
-      // Validate JSON content
-      if (values.config_json) {
-        try {
-          JSON.parse(values.config_json);
-        } catch (err) {
-          message.error("配置内容不是合法的 JSON 格式");
-          return;
-        }
+      let configObj: any = {};
+      try {
+        configObj = JSON.parse(values.config_json || '{}');
+      } catch (err) {
+        message.error("配置内容不是合法的 JSON 格式");
+        return;
+      }
+
+      // 自动同步 poll_path 到 config_json
+      if (values.poll_path) {
+        configObj.poll_path = values.poll_path;
+      } else {
+        delete configObj.poll_path;
       }
 
       const payload = {
         ...values,
+        config_json: JSON.stringify(configObj, null, 2),
         category: (Array.isArray(values.category) && values.category.length > 0) ? values.category[0] : (values.category || '聊天'),
         is_active: values.is_active ? 1 : 0,
       };
+      // poll_path 已合并到 config_json 内，不需要作为独立字段发送
+      delete payload.poll_path;
 
       if (editingItem) {
         await request.put(`/forward-rules/${editingItem.id}`, payload);
@@ -207,8 +222,12 @@ const ForwardRules: React.FC = () => {
       key: 'actions',
       render: (_: any, record: ForwardRule) => (
         <Space>
-          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" disabled={record.is_system === 1} />
-          {record.is_system === 1 ? null : (
+          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />
+          {record.is_system === 1 ? (
+            <Tooltip title="系统内置规则，不可删除">
+              <Button icon={<DeleteOutlined />} disabled size="small" />
+            </Tooltip>
+          ) : (
             <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
               <Button icon={<DeleteOutlined />} danger size="small" />
             </Popconfirm>
@@ -239,6 +258,7 @@ const ForwardRules: React.FC = () => {
             </ul>
           </li>
           <li><CText>auth_type</CText>: <span style={{ color: '#888' }}>(可选)</span> 强行覆盖认证鉴权机制传递方式，例如 <CText>"query_key"</CText> 将 API-Key 拼装至 URL Query 参数中发放，或 <CText>"bearer"</CText> 强制走 Authorization 头。</li>
+          <li><CText>poll_path</CText>: <span style={{ color: '#888' }}>(可选)</span> <strong>异步轮询路径</strong>。例如针对图片模型设为 <CText>{`"/v1/tasks/\${task_id}"`}</CText>。支持宏变量 <CText>{`\${task_id}`}</CText> 和 <CText>{`\${model}`}</CText>。</li>
           <li><CText>asset_convert</CText>: <span style={{ color: '#888' }}>(可选)</span> 设为 <CText>true</CText> 时启用火山方舟视频素材自动转换，系统会将请求体 content 中的网络 URL（图片/视频/音频）通过 CreateAsset API 注册为方舟素材 ID（<CText>asset://</CText> 前缀格式），同一 URL 仅转换一次。<span style={{ color: '#faad14' }}>需先在素材资产管理插件中配置审核凭证。</span></li>
         </ul>
       </div>
@@ -284,8 +304,12 @@ const ForwardRules: React.FC = () => {
                   {record.description && <CardRow label="描述"><Text type="secondary" style={{ fontSize: 12 }}>{record.description}</Text></CardRow>}
                   <CardActions>
                     <Button size="small" type="dashed" icon={<CodeOutlined />} onClick={() => viewConfigJson(record.config_json)}>JSON</Button>
-                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} disabled={record.is_system === 1} />
-                    {record.is_system !== 1 && (
+                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                    {record.is_system === 1 ? (
+                      <Tooltip title="系统内置规则，不可删除">
+                        <Button size="small" icon={<DeleteOutlined />} disabled />
+                      </Tooltip>
+                    ) : (
                       <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
                         <Button size="small" icon={<DeleteOutlined />} danger />
                       </Popconfirm>
@@ -340,6 +364,10 @@ const ForwardRules: React.FC = () => {
 
           <Form.Item name="description" label="详细阐述">
             <Input.TextArea placeholder="用以描述该规则专门为了对接什么样的通道代理结构" rows={2} />
+          </Form.Item>
+          
+          <Form.Item name="poll_path" label={<Space>异步任务轮询路径 (可选) <Popover content={`如果该模型是异步任务且上游查询路径非标准，请在此填写。例如：/v1/tasks/\${task_id}`}><QuestionCircleOutlined /></Popover></Space>}>
+            <Input placeholder={`例如: /v1/tasks/\${task_id} 或 /v1/video/generations/\${task_id}`} />
           </Form.Item>
 
           <Form.Item name="config_json" label="JSON 引擎路由协议参数配置 (核心)" rules={[{ required: true }]}>

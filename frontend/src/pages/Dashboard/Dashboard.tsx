@@ -9,7 +9,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
-import type { DashboardStats, RequestLog } from '../../types';
+import type { DashboardStats, RequestLog, Announcement } from '../../types';
 import dayjs from 'dayjs';
 
 const { Title, Text, Paragraph } = Typography;
@@ -20,6 +20,7 @@ const Dashboard: React.FC = () => {
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pinnedAnnouncement, setPinnedAnnouncement] = useState<Announcement | null>(null);
 
   const fetchStats = async () => {
     try {
@@ -32,8 +33,21 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const fetchAnnouncement = async () => {
+    try {
+      const response = await (request.get('/announcements/public') as any);
+      if (response.data && response.data.length > 0) {
+        const pinned = response.data.find((a: Announcement) => a.is_pinned === 1);
+        if (pinned) {
+          setPinnedAnnouncement(pinned);
+        }
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     fetchStats();
+    fetchAnnouncement();
     const timer = setInterval(fetchStats, 30000); // 30s refresh
     return () => clearInterval(timer);
   }, []);
@@ -79,7 +93,17 @@ const Dashboard: React.FC = () => {
 
   return (
     <div>
-      <Title level={2} style={{ marginBottom: 24 }}>{t('dashboard.title')}</Title>
+      <Title level={2} style={{ marginBottom: pinnedAnnouncement ? 16 : 24 }}>{t('dashboard.title')}</Title>
+
+      {pinnedAnnouncement && (
+        <Alert
+          message={<span style={{ fontWeight: 600 }}>{pinnedAnnouncement.title}</span>}
+          description={<div className="quill-content" dangerouslySetInnerHTML={{ __html: pinnedAnnouncement.content }} />}
+          type="info"
+          showIcon
+          style={{ marginBottom: 24, borderRadius: 12, border: '1px solid #1677ff33' }}
+        />
+      )}
       
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>

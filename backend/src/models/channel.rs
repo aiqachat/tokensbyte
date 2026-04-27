@@ -16,6 +16,10 @@ pub struct Channel {
     pub group_aid: Option<String>,
     #[sqlx(default)]
     pub preset_id: Option<i64>,
+    #[sqlx(default)]
+    pub pool_id: Option<i64>,    // 关联的卡池ID
+    #[sqlx(default)]
+    pub gptimage_pool_id: Option<i64>, // GPT-Image卡池ID
     pub priority: i32,
     pub weight: i32,
     pub status: i32,           // 1=active, 0=disabled, 2=testing
@@ -80,6 +84,8 @@ pub struct CreateChannelRequest {
     pub user_groups: Option<Vec<String>>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
+    pub pool_id: Option<i64>,
+    pub gptimage_pool_id: Option<i64>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub max_rps: Option<i32>,
@@ -99,6 +105,8 @@ pub struct UpdateChannelRequest {
     pub user_groups: Option<Vec<String>>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
+    pub pool_id: Option<i64>,
+    pub gptimage_pool_id: Option<i64>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub status: Option<i32>,
@@ -127,6 +135,8 @@ pub struct ChannelSafe {
     pub user_groups: Vec<String>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
+    pub pool_id: Option<i64>,
+    pub gptimage_pool_id: Option<i64>,
     pub priority: i32,
     pub weight: i32,
     pub status: i32,
@@ -154,6 +164,8 @@ impl From<Channel> for ChannelSafe {
             user_groups,
             group_aid: ch.group_aid,
             preset_id: ch.preset_id,
+            pool_id: ch.pool_id,
+            gptimage_pool_id: ch.gptimage_pool_id,
             priority: ch.priority,
             weight: ch.weight,
             status: ch.status,

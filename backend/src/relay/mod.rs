@@ -3,6 +3,7 @@ pub mod stream;
 pub mod proxy;
 pub mod image;
 pub mod video;
+pub mod task;
 pub mod native;
 pub mod url_utils;
 pub mod forward;

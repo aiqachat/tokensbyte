@@ -5,6 +5,32 @@ use axum::{
 };
 use std::sync::Arc;
 use std::collections::HashMap;
+use tokio::sync::RwLock;
+use std::time::Instant;
+
+/// 模型广场公开数据的内存缓存（TTL 60秒）
+struct MarketplaceCache {
+    data: Option<serde_json::Value>,
+    updated_at: Instant,
+}
+
+impl MarketplaceCache {
+    fn new() -> Self {
+        Self { data: None, updated_at: Instant::now() }
+    }
+    fn is_valid(&self) -> bool {
+        self.data.is_some() && self.updated_at.elapsed().as_secs() < 60
+    }
+    fn invalidate(&mut self) {
+        self.data = None;
+    }
+}
+
+static MARKETPLACE_CACHE: std::sync::OnceLock<RwLock<MarketplaceCache>> = std::sync::OnceLock::new();
+
+fn get_marketplace_cache() -> &'static RwLock<MarketplaceCache> {
+    MARKETPLACE_CACHE.get_or_init(|| RwLock::new(MarketplaceCache::new()))
+}
 use serde_json::json;
 use crate::{
     error::{AppResult, AppError},
@@ -25,6 +51,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/{name}/playground-config", get(get_playground_config).post(save_playground_config))
         .route("/{name}/playground-schemes", get(get_playground_schemes).post(save_playground_schemes))
         .route("/{name}/playground-public-config", get(get_playground_public_config))
+        .route("/{name}/marketplace-models", get(get_marketplace_models).post(save_marketplace_models))
         .route("/{name}/test-connection", post(test_tos_connection))
         .route("/{name}/api-logs", get(get_plugin_api_logs))
 }
@@ -280,6 +307,7 @@ async fn get_storage_config(
 
     Ok(Json(json!({
         "tos_access_key": configs.get("tos_access_key").cloned().unwrap_or_default(),
+        "tos_secret_key": sk,
         "tos_secret_key_masked": masked_sk,
         "tos_endpoint": configs.get("tos_endpoint").cloned().unwrap_or_default(),
         "tos_region": configs.get("tos_region").cloned().unwrap_or_default(),
@@ -374,6 +402,7 @@ pub struct ModerationConfigRequest {
     pub volc_app_id: Option<String>,
     pub volc_project_name: Option<String>,
     pub volc_group_id: Option<String>,
+    pub review_enabled: Option<bool>,
 }
 
 /// 管理员：获取审核配置
@@ -407,13 +436,19 @@ async fn get_moderation_config(
         }
     };
 
+    let review_enabled = configs.get("review_enabled")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
     Ok(Json(json!({
         "volc_access_key": configs.get("volc_access_key").cloned().unwrap_or_default(),
+        "volc_secret_key": sk,
         "volc_secret_key_masked": masked_sk,
         "volc_app_id": configs.get("volc_app_id").cloned().unwrap_or_default(),
         "volc_project_name": configs.get("volc_project_name").cloned().unwrap_or_else(|| "default".to_string()),
         "volc_group_id": configs.get("volc_group_id").cloned().unwrap_or_default(),
         "is_configured": !configs.get("volc_access_key").cloned().unwrap_or_default().is_empty(),
+        "review_enabled": review_enabled,
     })))
 }
 
@@ -455,6 +490,11 @@ async fn save_moderation_config(
     // group_id
     if let Some(ref gid) = payload.volc_group_id {
         upsert_config(&state, &name, "volc_group_id", gid.trim()).await?;
+    }
+
+    // review_enabled 审核开关
+    if let Some(re) = payload.review_enabled {
+        upsert_config(&state, &name, "review_enabled", if re { "true" } else { "false" }).await?;
     }
 
     Ok(Json(json!({ "message": "审核配置已保存" })))
@@ -593,14 +633,42 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             ]
         }),
         json!({
-            "id": "seedream",
-            "name": "Seedream 图片生成方案",
+            "id": "seedream_5_0",
+            "name": "Seedream 5.0 图片生成方案",
             "type": "image",
             "is_system": true,
-            "description": "支持多种尺寸和比例的高质量 AI 图片生成，适用于 doubao-seedream 系列模型",
+            "description": "高质量 AI 图片生成，支持 doubao-seedream-5.0-lite 模型",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","16:9","9:16","4:3","3:4","3:2","2:3"], "default": "1:1"},
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["512x512","1024x1024","1280x720","720x1280","1024x768","768x1024"], "default": "1024x1024"},
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "3072x3072", "1728x2304", "2592x3456", "2304x1728", "3456x2592", "2848x1600", "4096x2304", "1600x2848", "2304x4096", "2496x1664", "3744x2496", "1664x2496", "2496x3744", "3136x1344", "4704x2016"], "default": "2048x2048"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
+                {"key": "guidance_scale", "label": "引导强度", "type": "select", "options": [3,5,7,9,12], "default": 7},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        }),
+        json!({
+            "id": "seedream_4_5",
+            "name": "Seedream 4.5 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "高质量 AI 图片生成，支持 doubao-seedream-4.5 模型",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "4096x4096", "1728x2304", "3520x4704", "2304x1728", "4704x3520", "2848x1600", "5504x3040", "1600x2848", "3040x5504", "2496x1664", "4992x3328", "1664x2496", "3328x4992", "3136x1344", "6240x2656"], "default": "2048x2048"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
+                {"key": "guidance_scale", "label": "引导强度", "type": "select", "options": [3,5,7,9,12], "default": 7},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        }),
+        json!({
+            "id": "seedream_4_0",
+            "name": "Seedream 4.0 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "高质量 AI 图片生成，支持 doubao-seedream-4.0 模型",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1024x1024", "2048x2048", "4096x4096", "864x1152", "1728x2304", "3520x4704", "1152x864", "2304x1728", "4704x3520", "1312x736", "2848x1600", "5504x3040", "736x1312", "1600x2848", "3040x5504", "832x1248", "1664x2496", "3328x4992", "1248x832", "2496x1664", "4992x3328", "1568x672", "3136x1344", "6240x2656"], "default": "1024x1024"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
                 {"key": "guidance_scale", "label": "引导强度", "type": "select", "options": [3,5,7,9,12], "default": 7},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
@@ -845,4 +913,290 @@ async fn get_playground_public_config(
     Ok(Json(json!({
         "models": enabled_models,
     })))
+}
+
+// ========== 模型广场管理 (Model Marketplace) ==========
+
+/// 管理员：获取模型广场配置（返回全部模型 + 每个模型的广场展示配置）
+async fn get_marketplace_models(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let configs = load_plugin_configs(&state, &name).await?;
+
+    // 查出全部模型及其 provider/type 信息
+    let models: Vec<crate::models::Model> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM models ORDER BY id DESC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let providers: Vec<crate::models::ModelProvider> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM model_providers ORDER BY sort_order ASC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let types: Vec<crate::models::ModelType> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM model_types ORDER BY sort_order ASC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let mut model_list = Vec::new();
+    for m in &models {
+        let config_key = format!("mp_model_id_{}", m.id);
+        let model_conf: serde_json::Value = configs.get(&config_key)
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or(json!({"enabled": false, "sort_order": 0, "description": ""}));
+
+        let provider_name = m.provider_id
+            .and_then(|pid| providers.iter().find(|p| p.id == pid))
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+
+        let type_name = m.type_id
+            .and_then(|tid| types.iter().find(|t| t.id == tid))
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
+
+        model_list.push(json!({
+            "id": m.id,
+            "mid": m.mid,
+            "name": m.name,
+            "model_id": m.model_id,
+            "provider_id": m.provider_id,
+            "provider_name": provider_name,
+            "type_id": m.type_id,
+            "type_name": type_name,
+            "is_active": m.is_active,
+            "mp_enabled": model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+            "mp_sort_order": model_conf.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0),
+            "mp_description": model_conf.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+        }));
+    }
+
+    Ok(Json(json!({
+        "models": model_list,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct MarketplaceModelConfig {
+    pub id: i32,
+    pub enabled: bool,
+    pub sort_order: Option<i64>,
+    pub description: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct MarketplaceConfigRequest {
+    pub models: Vec<MarketplaceModelConfig>,
+}
+
+/// 管理员：保存模型广场配置
+async fn save_marketplace_models(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+    Json(payload): Json<MarketplaceConfigRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    for mc in &payload.models {
+        let config_key = format!("mp_model_id_{}", mc.id);
+        let val = json!({
+            "enabled": mc.enabled,
+            "sort_order": mc.sort_order.unwrap_or(0),
+            "description": mc.description.as_deref().unwrap_or(""),
+        });
+        upsert_config(&state, &name, &config_key, &val.to_string()).await?;
+    }
+
+    // 清除缓存，下次请求将重新构建
+    get_marketplace_cache().write().await.invalidate();
+
+    Ok(Json(json!({ "message": "模型广场配置已保存" })))
+}
+
+/// 公开接口：获取模型广场展示数据（需登录，校验用户等级权限）
+pub async fn get_marketplace_public(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 1. 检查插件是否启用
+    let plugin: Option<Plugin> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM plugins WHERE name = ? AND is_enabled = 1")
+    )
+    .bind("model_marketplace")
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    let plugin = match plugin {
+        Some(p) => p,
+        None => return Ok(Json(json!({
+            "enabled": false,
+            "models": [],
+            "providers": [],
+            "types": [],
+        }))),
+    };
+
+    // 2. 用户等级权限校验
+    if plugin.allowed_levels != "all" {
+        let user_group: String = sqlx::query_scalar(
+            &state.db.format_query("SELECT user_group FROM users WHERE id = ?")
+        )
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .unwrap_or_else(|| "default".to_string());
+
+        let allowed: Vec<&str> = plugin.allowed_levels.split(',').collect();
+        if !allowed.contains(&user_group.as_str()) {
+            return Err(AppError::Forbidden("您当前的用户等级无权访问模型广场".to_string()));
+        }
+    }
+
+    // 3. 尝试从缓存读取
+    {
+        let cache = get_marketplace_cache().read().await;
+        if cache.is_valid() {
+            if let Some(ref data) = cache.data {
+                return Ok(Json(data.clone()));
+            }
+        }
+    }
+
+    // 4. 缓存未命中，从数据库查询并构建
+    let configs = load_plugin_configs(&state, "model_marketplace").await?;
+
+    let models: Vec<crate::models::Model> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM models WHERE is_active = 1 ORDER BY id DESC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let providers: Vec<crate::models::ModelProvider> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM model_providers WHERE is_active = 1 ORDER BY sort_order ASC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let types: Vec<crate::models::ModelType> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM model_types WHERE is_active = 1 ORDER BY sort_order ASC")
+    ).fetch_all(&state.db.pool).await?;
+
+    let billing_rules: Vec<crate::models::BillingRule> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM billing_rules WHERE is_active = 1")
+    ).fetch_all(&state.db.pool).await?;
+
+    let mut marketplace_models: Vec<serde_json::Value> = Vec::new();
+    for m in &models {
+        let config_key = format!("mp_model_id_{}", m.id);
+        let model_conf: serde_json::Value = configs.get(&config_key)
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or(json!({"enabled": false, "sort_order": 0, "description": ""}));
+
+        let is_enabled = model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !is_enabled { continue; }
+
+        let sort_order = model_conf.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
+        let description = model_conf.get("description").and_then(|v| v.as_str()).unwrap_or("");
+
+        let provider_name = m.provider_id
+            .and_then(|pid| providers.iter().find(|p| p.id == pid))
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+
+        let type_name = m.type_id
+            .and_then(|tid| types.iter().find(|t| t.id == tid))
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
+
+        let billing_info = m.billing_rule_id
+            .and_then(|bid| billing_rules.iter().find(|b| b.id == bid))
+            .map(|b| json!({
+                "billing_type": b.billing_type,
+                "name": b.name,
+                "prompt_rate": b.prompt_rate,
+                "completion_rate": b.completion_rate,
+                "fixed_rate": b.fixed_rate,
+                "duration_rate": b.duration_rate,
+                "pricing_tiers": b.pricing_tiers,
+                "billing_rule": b.billing_rule,
+            }))
+            .unwrap_or(json!(null));
+
+        let provider_logo = m.provider_id
+            .and_then(|pid| providers.iter().find(|p| p.id == pid))
+            .and_then(|p| p.logo.clone());
+
+        let type_logo = m.type_id
+            .and_then(|tid| types.iter().find(|t| t.id == tid))
+            .and_then(|t| t.logo.clone());
+
+        marketplace_models.push(json!({
+            "id": m.id,
+            "mid": m.mid,
+            "name": m.name,
+            "model_id": m.model_id,
+            "provider_id": m.provider_id,
+            "provider_name": provider_name,
+            "provider_logo": provider_logo,
+            "type_id": m.type_id,
+            "type_name": type_name,
+            "type_logo": type_logo,
+            "logo": m.logo,
+            "sort_order": sort_order,
+            "description": description,
+            "billing": billing_info,
+            "created_at": m.created_at,
+        }));
+    }
+
+    marketplace_models.sort_by(|a, b| {
+        let sa = a.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
+        let sb = b.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
+        sb.cmp(&sa)
+    });
+
+    let active_provider_ids: std::collections::HashSet<i32> = marketplace_models.iter()
+        .filter_map(|m| m.get("provider_id").and_then(|v| v.as_i64()).map(|v| v as i32))
+        .collect();
+    let active_type_ids: std::collections::HashSet<i32> = marketplace_models.iter()
+        .filter_map(|m| m.get("type_id").and_then(|v| v.as_i64()).map(|v| v as i32))
+        .collect();
+
+    let provider_list: Vec<serde_json::Value> = providers.iter()
+        .filter(|p| active_provider_ids.contains(&p.id))
+        .map(|p| json!({"id": p.id, "name": p.name, "logo": p.logo}))
+        .collect();
+
+    let type_list: Vec<serde_json::Value> = types.iter()
+        .filter(|t| active_type_ids.contains(&t.id))
+        .map(|t| json!({"id": t.id, "name": t.name, "logo": t.logo}))
+        .collect();
+
+    let result = json!({
+        "enabled": true,
+        "models": marketplace_models,
+        "providers": provider_list,
+        "types": type_list,
+        "total": marketplace_models.len(),
+    });
+
+    // 5. 写入缓存
+    {
+        let mut cache = get_marketplace_cache().write().await;
+        cache.data = Some(result.clone());
+        cache.updated_at = Instant::now();
+    }
+
+    Ok(Json(result))
 }

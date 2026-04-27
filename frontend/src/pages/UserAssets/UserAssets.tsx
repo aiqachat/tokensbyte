@@ -40,6 +40,7 @@ interface StorageInfo {
   is_admin: boolean;
   virtual_portrait_count?: number;
   virtual_portrait_quota?: number;
+  review_enabled?: boolean;
 }
 
 // 我的素材固定二级分类
@@ -434,7 +435,7 @@ const UserAssets: React.FC = () => {
 
       // 上传完毕 — 统一提示
       if (failCount === 0) {
-        message.success(`全部 ${doneCount} 个文件上传成功，请提交审核`);
+        message.success(reviewEnabled ? `全部 ${doneCount} 个文件上传成功，请提交审核` : `全部 ${doneCount} 个文件上传成功`);
       } else if (doneCount === 0) {
         message.error(Array.from(errorMessages).join('；'));
       } else {
@@ -543,6 +544,7 @@ const UserAssets: React.FC = () => {
   const usedMB = storage ? parseFloat(storage.total_size_mb) : 0;
   const quotaMB = storage?.quota_mb ?? 100;
   const isAdmin = storage?.is_admin ?? false;
+  const reviewEnabled = storage?.review_enabled !== false; // 默认开启
   const remainMB = isAdmin ? 0 : Math.max(0, quotaMB - usedMB);
   const usagePercent = (!isAdmin && quotaMB > 0) ? Math.min(100, (usedMB / quotaMB) * 100) : 0;
   const progressColor = usagePercent > 90 ? '#ff4d4f' : usagePercent > 70 ? '#faad14' : '#52c41a';
@@ -611,7 +613,7 @@ const UserAssets: React.FC = () => {
         return `${(record.size / 1024 / 1024).toFixed(2)} MB`;
       }
     },
-    {
+    ...(reviewEnabled ? [{
       title: '审核状态',
       key: 'status',
       render: (_: any, record: PluginAsset) => {
@@ -630,13 +632,20 @@ const UserAssets: React.FC = () => {
         if (record.status === 'pending') return <Tag color="warning">审核中</Tag>;
         return <Tag>{record.status}</Tag>;
       }
-    },
+    }] : [{
+      title: '状态',
+      key: 'status',
+      render: (_: any, record: PluginAsset) => {
+        if (record.source === 'builtin') return <Tag color="gold">预设</Tag>;
+        return <Tag color="success" icon={<CheckCircleOutlined />}>可用</Tag>;
+      }
+    }]),
     {
       title: '操作',
       key: 'action',
       render: (_: any, record: PluginAsset) => (
         <Space size="middle">
-          {record.source === 'user' && record.status === 'uploaded' && (
+          {reviewEnabled && record.source === 'user' && record.status === 'uploaded' && (
             <Button
               type="primary"
               size="small"
@@ -834,7 +843,7 @@ const UserAssets: React.FC = () => {
                   编辑
                 </Button>
               )}
-              {a.source === 'user' && a.status === 'uploaded' && (
+              {reviewEnabled && a.source === 'user' && a.status === 'uploaded' && (
                 <Button
                   icon={<SendOutlined />}
                   style={{ flex: 1, borderRadius: 8, height: 38, fontWeight: 500, background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)', color: '#fff' }}
@@ -888,7 +897,7 @@ const UserAssets: React.FC = () => {
           </div>
 
           {/* 审核状态 */}
-          {a.source === 'user' && (
+          {reviewEnabled && a.source === 'user' && (
             <div style={{ padding: '12px 20px 0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {a.status === 'uploaded' ? <Tag color="blue">待提交审核</Tag> :
@@ -967,6 +976,9 @@ const UserAssets: React.FC = () => {
                   border: idx === 0 ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.1)',
                   color: idx === 0 ? '#1677ff' : 'rgba(255,255,255,0.75)',
                   fontSize: 13,
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-all',
+                  height: 'auto',
                 }}>{tag}</Tag>
               ))}
             </div>
@@ -1407,6 +1419,7 @@ const UserAssets: React.FC = () => {
                     {selectedAssetIds.size > 0 && (
                       <>
                         <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>已选 {selectedAssetIds.size} 项</Text>
+                        {reviewEnabled && (
                         <Button
                           type="primary"
                           size="small"
@@ -1417,6 +1430,7 @@ const UserAssets: React.FC = () => {
                         >
                           批量提交
                         </Button>
+                        )}
                         <Button
                           danger
                           size="small"
@@ -1690,7 +1704,7 @@ const UserAssets: React.FC = () => {
               <div>• 图像：jpeg、png、webp、bmp、tiff、gif、heic/heif（≤ 30 MB，宽高 300-6000px）</div>
               <div>• 视频：mp4、mov、webm、avi、mkv（≤ 300 MB）</div>
               <div>• 音频：mp3、wav、aac、flac、ogg、m4a（≤ 100 MB）</div>
-              <div>• 支持混合选择多种类型文件，上传后需提交审核</div>
+              <div>• 支持混合选择多种类型文件{reviewEnabled ? '，上传后需提交审核' : ''}</div>
             </div>
           </Form.Item>
           <Form.Item name="category" hidden>

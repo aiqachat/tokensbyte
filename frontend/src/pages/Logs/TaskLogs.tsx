@@ -43,20 +43,30 @@ const getTaskType = (ep: string) => {
   return { label: '其它', color: 'default', icon: '🔧' };
 };
 
-// ── 工具函数：判断是否异步提交（视频 POST） ─────────────────────
-const isAsyncPost = (ep: string) =>
-  ep.endsWith('/video/generations') || ep.endsWith('/generations/tasks');
+// ── 工具函数：判断是否异步提交（视频 POST 或带有 task_id 的图片 POST） ─────────────────────
+const isAsyncPost = (r: TaskLog) => {
+  const ep = r.endpoint || '';
+  if (ep.endsWith('/video/generations') || ep.endsWith('/videos/generations') || ep.endsWith('/generations/tasks')) return true;
+  if (ep.endsWith('/images/generations') && r.response_content) {
+    try {
+      const v = JSON.parse(r.response_content);
+      // 支持根节点、data 对象、data 数组第一项
+      return !!(v.task_id || v.id || v.data?.task_id || v.data?.id || (Array.isArray(v.data) && v.data[0]?.task_id));
+    } catch { return false; }
+  }
+  return false;
+};
 
 // ── 工具函数：获取异步任务终态 ─────────────────────────
 const getAsyncFinalStatus = (r: TaskLog): 'pending' | 'succeeded' | 'failed' => {
-  if (!isAsyncPost(r.endpoint)) return 'succeeded';
+  if (!isAsyncPost(r)) return 'succeeded';
   
   // 1. 优先从最新的响应结果中解析状态
   if (r.response_content) {
     try {
       const v = JSON.parse(r.response_content);
-      const status = v.status || v.final_result?.status || v.output?.status;
-      if (status === 'succeeded' || status === 'SUCCESS') return 'succeeded';
+      const status = v.status || v.data?.status || v.final_result?.status || v.output?.status;
+      if (status === 'succeeded' || status === 'SUCCESS' || status === 'completed') return 'succeeded';
       if (status === 'failed' || status === 'FAILED') return 'failed';
     } catch { /* ignore */ }
   }
@@ -86,15 +96,15 @@ const getAsyncCompletedTs = (r: TaskLog): number | null => {
 const getTaskId = (record: TaskLog): string => {
   const ep = record.endpoint;
   // 视频 GET：末尾是 task_id
-  if ((ep.includes('video/generations/') || ep.includes('generations/tasks/'))
+  if ((ep.includes('video/generations/') || ep.includes('videos/generations/') || ep.includes('generations/tasks/'))
     && !ep.endsWith('/generations') && !ep.endsWith('/tasks')) {
     return ep.split('/').pop() || '-';
   }
-  // 视频 POST：从 response_content 提取
-  if (isAsyncPost(ep) && record.response_content) {
+  // 视频 POST / 异步图片：从 response_content 提取
+  if (isAsyncPost(record) && record.response_content) {
     try {
       const r = JSON.parse(record.response_content);
-      return r.task_id || r.id || '-';
+      return r.task_id || r.id || r.data?.task_id || r.data?.id || (Array.isArray(r.data) && r.data[0]?.task_id) || '-';
     } catch { /* ignore */ }
   }
   return '-';
@@ -188,7 +198,7 @@ const TaskLogs: React.FC = () => {
       width: 170,
       render: (v: string, r: TaskLog) => {
         // 异步任务 created_at 就是提交时间，同步任务需减去耗时
-        const submit = isAsyncPost(r.endpoint) ? dayjs(v) : dayjs(v).subtract(r.latency_ms, 'ms');
+        const submit = isAsyncPost(r) ? dayjs(v) : dayjs(v).subtract(r.latency_ms, 'ms');
         return <Text style={{ fontSize: 13 }}>{submit.format('YYYY-MM-DD HH:mm:ss')}</Text>;
       },
     },
@@ -212,7 +222,7 @@ const TaskLogs: React.FC = () => {
       width: 100,
       render: (_: any, r: TaskLog) => {
         const status = getAsyncFinalStatus(r);
-        if (isAsyncPost(r.endpoint)) {
+        if (isAsyncPost(r)) {
           if (status === 'pending') return <Tag color="processing">处理中...</Tag>;
           // 异步已完成：计算从提交到完成的总耗时
           const ts = getAsyncCompletedTs(r);
@@ -360,9 +370,9 @@ const TaskLogs: React.FC = () => {
           </CardRow>
         )}
         {isAdmin && <CardRow label="用户"><Text style={{ fontSize: 12 }}>{record.user_nickname || record.user_id}</Text></CardRow>}
-        <CardRow label="提交"><Text type="secondary" style={{ fontSize: 12 }}>{(isAsyncPost(record.endpoint) ? dayjs(record.created_at) : dayjs(record.created_at).subtract(record.latency_ms, 'ms')).format('MM-DD HH:mm:ss')}</Text></CardRow>
+        <CardRow label="提交"><Text type="secondary" style={{ fontSize: 12 }}>{(isAsyncPost(record) ? dayjs(record.created_at) : dayjs(record.created_at).subtract(record.latency_ms, 'ms')).format('MM-DD HH:mm:ss')}</Text></CardRow>
         <CardRow label="耗时"><Text type="secondary" style={{ fontSize: 12 }}>🕗 {(() => {
-          if (isAsyncPost(record.endpoint)) {
+          if (isAsyncPost(record)) {
             if (status === 'pending') return '处理中...';
             const ts = getAsyncCompletedTs(record);
             if (ts) { const sec = ts - dayjs(record.created_at).unix(); return sec >= 60 ? `${(sec / 60).toFixed(1)}m` : `${sec.toFixed(1)}s`; }

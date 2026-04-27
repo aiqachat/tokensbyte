@@ -1,14 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
 import AdminPresetAssets from './AssetManager/AdminPresetAssets';
 import RelayConvertAssets from './AssetManager/RelayConvertAssets';
-import TeamConfig from './TeamMarketing/TeamConfig';
 import JsonView from '@uiw/react-json-view';
 import { darkTheme } from '@uiw/react-json-view/dark';
+
+// ── 插件组件动态加载（删除插件源文件不影响系统运行） ──
+const safeLazy = (loader: () => Promise<any>) =>
+  React.lazy(() =>
+    loader().catch(() => ({ default: () => <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.35)' }}>该插件模块暂未安装</div> }))
+  );
+
+const TeamConfig = safeLazy(() => import('./TeamMarketing/TeamConfig'));
+const PoolManager = safeLazy(() => import('./VolcenginePool/PoolManager'));
+const GptImagePoolManager = safeLazy(() => import('./GptImagePool/PoolManager'));
+const SiteIconsManager = safeLazy(() => import('./SiteIcons/SiteIconsManager'));
+
+/** 插件组件包装器：Suspense + 降级 */
+const PluginModule: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' }}><Spin /></div>}>{children}</Suspense>
+);
 
 const { Title, Text } = Typography;
 
@@ -38,6 +53,7 @@ interface ModerationConfig {
   volc_project_name: string;
   volc_group_id: string;
   is_configured: boolean;
+  review_enabled: boolean;
 }
 
 // 火山引擎 TOS 地域及访问域名（来自官方文档）
@@ -54,6 +70,10 @@ const pluginIcons: Record<string, React.ReactNode> = {
   asset_manager: <PictureOutlined style={{ fontSize: 20 }} />,
   team_marketing: <TeamOutlined style={{ fontSize: 20 }} />,
   playground: <ExperimentOutlined style={{ fontSize: 20 }} />,
+  volcengine_pool: <CloudServerOutlined style={{ fontSize: 20 }} />,
+  gptimage_pool: <PictureOutlined style={{ fontSize: 20 }} />,
+  model_marketplace: <ShopOutlined style={{ fontSize: 20 }} />,
+  site_icons: <AppstoreOutlined style={{ fontSize: 20 }} />,
 };
 
 const PluginConfigInner: React.FC = () => {
@@ -75,6 +95,11 @@ const PluginConfigInner: React.FC = () => {
   const [levelApiEnabled, setLevelApiEnabled] = useState<Record<string, boolean>>({});
   const [defaultApiEnabled, setDefaultApiEnabled] = useState<boolean>(true);
 
+  // 管理员分组（系统增强插件使用）
+  const [adminGroups, setAdminGroups] = useState<{id: number; name: string; description?: string}[]>([]);
+  const [selectedAdminGroups, setSelectedAdminGroups] = useState<number[]>([]);
+  const [isAllAdminGroups, setIsAllAdminGroups] = useState(true);
+
   // 存储配置
   const [storageConfig, setStorageConfig] = useState<StorageConfig | null>(null);
   const [storageForm] = Form.useForm();
@@ -83,7 +108,7 @@ const PluginConfigInner: React.FC = () => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [activeTabKey, setActiveTabKey] = useState(() => {
     const hash = window.location.hash.replace('#', '');
-    if (['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log', 'team_config', 'pg_storage'].includes(hash)) return hash;
+    if (['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log', 'team_config', 'pg_storage', 'marketplace_models'].includes(hash)) return hash;
     return 'basic'; // default to basic, will be adjusted when plugin loads
   });
   const handleTabChange = (key: string) => {
@@ -117,6 +142,58 @@ const PluginConfigInner: React.FC = () => {
   const [pgSchemeDrawerVisible, setPgSchemeDrawerVisible] = useState(false);
   const [pgCurrentId, setPgCurrentId] = useState<number | null>(null);
   const [pgSelectedSchemeId, setPgSelectedSchemeId] = useState<string>('');
+
+  // ====== 模型广场管理 (Model Marketplace) 配置 ======
+  const [mpModels, setMpModels] = useState<any[]>([]);
+  const [savingMarketplace, setSavingMarketplace] = useState(false);
+  const [mpSearchKeyword, setMpSearchKeyword] = useState('');
+
+  const fetchMarketplaceConfig = async () => {
+    try {
+      const res = await (request.get(`/plugins/${name}/marketplace-models`) as Promise<any>);
+      if (res.models) setMpModels(res.models);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    if (name === 'model_marketplace') {
+      fetchMarketplaceConfig();
+    }
+  }, [name]);
+
+  const handleSaveMarketplaceConfig = async () => {
+    try {
+      setSavingMarketplace(true);
+      const payload = {
+        models: mpModels.map(m => ({
+          id: m.id,
+          enabled: m.mp_enabled,
+          sort_order: m.mp_sort_order || 0,
+          description: m.mp_description || '',
+        }))
+      };
+      await request.post(`/plugins/${name}/marketplace-models`, payload);
+      message.success('模型广场配置保存成功');
+    } catch (e) {
+      message.error('保存失败');
+    } finally {
+      setSavingMarketplace(false);
+    }
+  };
+
+  const handleMpToggle = (id: number, enabled: boolean) => {
+    setMpModels(prev => prev.map(m => m.id === id ? { ...m, mp_enabled: enabled } : m));
+  };
+
+  const handleMpSortChange = (id: number, sort: number) => {
+    setMpModels(prev => prev.map(m => m.id === id ? { ...m, mp_sort_order: sort } : m));
+  };
+
+  const handleMpDescChange = (id: number, desc: string) => {
+    setMpModels(prev => prev.map(m => m.id === id ? { ...m, mp_description: desc } : m));
+  };
 
   const fetchPlaygroundConfigBase = async () => {
     try {
@@ -319,17 +396,35 @@ const PluginConfigInner: React.FC = () => {
       const found = pluginRes.plugins?.find((p: Plugin) => p.name === name);
       if (found) {
         setPlugin(found);
-        if (found.allowed_levels === 'all') {
-          setIsAllLevels(true);
-          setSelectedLevels([]);
+        if (found.category === 'system') {
+          // 系统增强插件：解析管理员分组权限
+          if (found.allowed_levels === 'all') {
+            setIsAllAdminGroups(true);
+            setSelectedAdminGroups([]);
+          } else {
+            setIsAllAdminGroups(false);
+            setSelectedAdminGroups(found.allowed_levels.split(',').filter(Boolean).map(Number).filter((n: number) => !isNaN(n)));
+          }
         } else {
-          setIsAllLevels(false);
-          setSelectedLevels(found.allowed_levels.split(',').filter(Boolean));
+          if (found.allowed_levels === 'all') {
+            setIsAllLevels(true);
+            setSelectedLevels([]);
+          } else {
+            setIsAllLevels(false);
+            setSelectedLevels(found.allowed_levels.split(',').filter(Boolean));
+          }
         }
       }
 
       const allLevels = Array.isArray(levelRes) ? levelRes : (levelRes.data || levelRes.levels || []);
       setLevels(allLevels);
+
+      // 系统增强插件：加载管理员分组
+      try {
+        const agRes = await (request.get('/admin_groups') as any);
+        const groups = agRes?.data || agRes || [];
+        if (Array.isArray(groups)) setAdminGroups(groups);
+      } catch { /* 忽略 */ }
 
       if (storageRes) {
         setStorageConfig(storageRes);
@@ -367,7 +462,7 @@ const PluginConfigInner: React.FC = () => {
         setTimeout(() => {
           storageForm.setFieldsValue({
             tos_access_key: storageRes.tos_access_key || '',
-            tos_secret_key: '',
+            tos_secret_key: storageRes.tos_secret_key || '',
             tos_endpoint: storageRes.tos_endpoint || '',
             tos_region: storageRes.tos_region || '',
             tos_bucket: storageRes.tos_bucket || '',
@@ -382,7 +477,7 @@ const PluginConfigInner: React.FC = () => {
         setTimeout(() => {
           moderationForm.setFieldsValue({
             volc_access_key: moderationRes.volc_access_key || '',
-            volc_secret_key: '',
+            volc_secret_key: moderationRes.volc_secret_key || '',
             volc_app_id: moderationRes.volc_app_id || '',
             volc_project_name: moderationRes.volc_project_name || 'default',
             volc_group_id: moderationRes.volc_group_id || '',
@@ -409,10 +504,20 @@ const PluginConfigInner: React.FC = () => {
 
   const handleSaveBasic = async () => {
     if (!plugin) return;
-    const allowed = isAllLevels ? 'all' : selectedLevels.join(',');
-    if (!isAllLevels && selectedLevels.length === 0) {
-      message.warning('请至少选择一个用户等级');
-      return;
+    let allowed: string;
+    if (plugin.category === 'system') {
+      // 系统增强插件：保存管理员分组 ID
+      allowed = isAllAdminGroups ? 'all' : selectedAdminGroups.join(',');
+      if (!isAllAdminGroups && selectedAdminGroups.length === 0) {
+        message.warning('请至少选择一个管理员分组');
+        return;
+      }
+    } else {
+      allowed = isAllLevels ? 'all' : selectedLevels.join(',');
+      if (!isAllLevels && selectedLevels.length === 0) {
+        message.warning('请至少选择一个用户等级');
+        return;
+      }
     }
     try {
       setSaving(true);
@@ -463,11 +568,21 @@ const PluginConfigInner: React.FC = () => {
     }
   };
 
+  // 审核开关状态
+  const [reviewEnabled, setReviewEnabled] = useState(false);
+
+  // 同步服务端的 review_enabled 状态
+  useEffect(() => {
+    if (moderationConfig) {
+      setReviewEnabled(moderationConfig.review_enabled === true);
+    }
+  }, [moderationConfig]);
+
   const handleSaveModeration = async () => {
     try {
       const values = await moderationForm.validateFields();
       setSavingModeration(true);
-      await request.post(`/plugins/${name}/moderation-config`, values);
+      await request.post(`/plugins/${name}/moderation-config`, { ...values, review_enabled: reviewEnabled });
       message.success('审核配置已保存');
     } catch (error: any) {
       if (error?.errorFields) return; // 表单验证失败
@@ -486,6 +601,7 @@ const PluginConfigInner: React.FC = () => {
     return <div style={{ textAlign: 'center', padding: 80 }}><Text type="secondary">插件不存在</Text></div>;
   }
 
+  const isSystemPlugin = plugin.category === 'system';
   const isEnabled = plugin.is_enabled === 1;
 
   // ====== 基本配置 Tab ======
@@ -500,7 +616,9 @@ const PluginConfigInner: React.FC = () => {
       }}>
         <div>
           <Text strong style={{ color: '#fff', fontSize: 14 }}>启用状态</Text><br />
-          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>开启后，符合等级要求的用户将在菜单中看到此功能</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>
+            {isSystemPlugin ? '开启后，有权限的管理员将在管理后台看到此插件' : '开启后，符合等级要求的用户将在菜单中看到此功能'}
+          </Text>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Tag color={isEnabled ? 'success' : 'default'} style={{ margin: 0 }}>{isEnabled ? '运行中' : '已停用'}</Tag>
@@ -508,7 +626,56 @@ const PluginConfigInner: React.FC = () => {
         </div>
       </div>
 
-      {/* 用户等级 */}
+      {/* 系统增强插件：管理员分组权限 */}
+      {isSystemPlugin ? (
+        <div style={{
+          background: '#141414', borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
+        }}>
+          <Text strong style={{ color: '#fff', fontSize: 14 }}>管理员分组权限</Text><br />
+          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置哪些管理员分组可以在管理后台看到并管理此插件</Text>
+          <Divider style={{ borderColor: 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
+
+          <div
+            style={{ padding: '12px 16px', borderRadius: 6, border: isAllAdminGroups ? '1px solid rgba(250,140,22,0.4)' : '1px solid rgba(255,255,255,0.08)', background: isAllAdminGroups ? 'rgba(250,140,22,0.06)' : 'transparent', cursor: 'pointer', marginBottom: 8, transition: 'all 0.15s' }}
+            onClick={() => { setIsAllAdminGroups(true); setSelectedAdminGroups([]); }}
+          >
+            <Checkbox checked={isAllAdminGroups}><Text style={{ color: '#fff', fontSize: 13 }}>所有管理员分组可见</Text></Checkbox>
+            <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, display: 'block', marginLeft: 24, marginTop: 2 }}>所有管理员分组均可管理此插件</Text>
+          </div>
+          <div
+            style={{ padding: '12px 16px', borderRadius: 6, border: !isAllAdminGroups ? '1px solid rgba(250,140,22,0.4)' : '1px solid rgba(255,255,255,0.08)', background: !isAllAdminGroups ? 'rgba(250,140,22,0.06)' : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}
+            onClick={() => setIsAllAdminGroups(false)}
+          >
+            <Checkbox checked={!isAllAdminGroups}><Text style={{ color: '#fff', fontSize: 13 }}>仅指定管理员分组可见</Text></Checkbox>
+          </div>
+
+          {!isAllAdminGroups && (
+            <div style={{ marginTop: 14 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedAdminGroups.length} 个分组</Text>
+              {adminGroups.map(ag => {
+                const isSelected = selectedAdminGroups.includes(ag.id);
+                return (
+                  <div key={ag.id}
+                    style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(250,140,22,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(250,140,22,0.04)' : 'transparent', marginBottom: 6, cursor: 'pointer', transition: 'all 0.15s' }}
+                    onClick={() => setSelectedAdminGroups(prev => prev.includes(ag.id) ? prev.filter(id => id !== ag.id) : [...prev, ag.id])}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Checkbox checked={isSelected} />
+                      <Text style={{ color: '#fff', fontSize: 13 }}>{ag.name}</Text>
+                      {ag.description && <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>({ag.description})</Text>}
+                    </div>
+                  </div>
+                );
+              })}
+              {adminGroups.length === 0 && <Text style={{ color: 'rgba(255,255,255,0.25)', display: 'block', textAlign: 'center', padding: 16, fontSize: 13 }}>暂无管理员分组，请先在「站点设置 → 管理员分组」中创建</Text>}
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
+
+      {/* 用户增强插件：用户等级 */}
       <div style={{
         background: '#141414', borderRadius: 8,
         border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
@@ -536,7 +703,7 @@ const PluginConfigInner: React.FC = () => {
             <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedLevels.length} 个等级</Text>
             {levels.map(lv => {
               const isSelected = selectedLevels.includes(lv.group_key);
-              const showLimits = name !== 'team_marketing' && name !== 'playground';
+              const showLimits = name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace';
               return (
                 <div key={lv.group_key}
                   style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, transition: 'all 0.15s' }}
@@ -599,7 +766,7 @@ const PluginConfigInner: React.FC = () => {
         )}
       </div>
 
-      {isAllLevels && (name !== 'team_marketing' && name !== 'playground') && (
+      {isAllLevels && (name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace') && (
         <div style={{
           background: '#141414', borderRadius: 8,
           border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
@@ -684,6 +851,8 @@ const PluginConfigInner: React.FC = () => {
             </>
           )}
         </div>
+      )}
+      </>
       )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -809,6 +978,31 @@ const PluginConfigInner: React.FC = () => {
   // ====== 审核配置 Tab ======
   const moderationTab = (
     <div>
+      {/* 审核功能开关 */}
+      <div style={{
+        background: '#141414', borderRadius: 8,
+        border: '1px solid rgba(255,255,255,0.08)',
+        padding: '16px 20px', marginBottom: 16,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div>
+          <Text strong style={{ color: '#fff', fontSize: 14 }}>素材审核功能</Text><br />
+          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>
+            {moderationConfig?.is_configured
+              ? '开启后用户上传的素材需要通过火山引擎审核才能使用；关闭后素材上传即可用，无需审核流程。'
+              : '请先完成下方私域虚拟人像素材资产库配置（Access Key / Secret Key）后才可开启审核功能。'}
+          </Text>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Tag color={reviewEnabled ? 'success' : 'default'} style={{ margin: 0 }}>{reviewEnabled ? '已开启' : '已关闭'}</Tag>
+          <Switch
+            checked={reviewEnabled}
+            disabled={!moderationConfig?.is_configured}
+            onChange={setReviewEnabled}
+          />
+        </div>
+      </div>
+
       {/* 状态提示 */}
       {moderationConfig && (
         <div style={{ marginBottom: 16 }}>
@@ -1453,6 +1647,127 @@ const PluginConfigInner: React.FC = () => {
     </div>
   );
 
+  // ====== 模型广场管理 模型列表 Tab ======
+  const filteredMpModels = mpModels.filter(m => {
+    if (!mpSearchKeyword) return true;
+    const kw = mpSearchKeyword.toLowerCase();
+    return m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid?.toLowerCase()?.includes(kw) || m.provider_name?.toLowerCase()?.includes(kw);
+  });
+
+  const mpModelColumns = [
+    {
+      title: '模型名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (nameVal: string, record: any) => (
+        <div>
+          <Text strong style={{ color: '#fff', fontSize: 13 }}>{nameVal}</Text>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
+        </div>
+      ),
+    },
+    {
+      title: '供应商',
+      dataIndex: 'provider_name',
+      key: 'provider_name',
+      width: 100,
+      render: (p: string) => p ? (
+        <Tag style={{ borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>{p}</Tag>
+      ) : <Text type="secondary">-</Text>,
+    },
+    {
+      title: '类型',
+      dataIndex: 'type_name',
+      key: 'type_name',
+      width: 100,
+      render: (t: string) => t ? (
+        <Tag style={{ borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>
+          {t.includes('视频') ? <VideoCameraOutlined style={{ marginRight: 4 }} /> : t.includes('图片') ? <PictureOutlined style={{ marginRight: 4 }} /> : null}
+          {t}
+        </Tag>
+      ) : <Text type="secondary">-</Text>,
+    },
+    {
+      title: '广场展示',
+      key: 'mp_enabled',
+      width: 100,
+      render: (_: any, record: any) => (
+        <Switch
+          checked={record.mp_enabled}
+          onChange={(val) => handleMpToggle(record.id, val)}
+          checkedChildren="展示"
+          unCheckedChildren="隐藏"
+        />
+      ),
+    },
+    {
+      title: '排序权重',
+      key: 'mp_sort_order',
+      width: 120,
+      render: (_: any, record: any) => (
+        <InputNumber
+          size="small"
+          min={0}
+          max={9999}
+          value={record.mp_sort_order || 0}
+          onChange={(val) => handleMpSortChange(record.id, val ?? 0)}
+          style={{ width: 80, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+        />
+      ),
+    },
+    {
+      title: '广场描述',
+      key: 'mp_description',
+      width: 240,
+      render: (_: any, record: any) => (
+        <Input
+          size="small"
+          value={record.mp_description || ''}
+          onChange={(e) => handleMpDescChange(record.id, e.target.value)}
+          placeholder="简短描述..."
+          style={{ background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+        />
+      ),
+    },
+  ];
+
+  const marketplaceModelTab = (
+    <div>
+      <div style={{ background: '#141414', borderRadius: 8, padding: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <Text strong style={{ color: '#fff', fontSize: 14 }}>模型广场模型列表</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
+              开启展示开关后，该模型将在用户端模型广场中可见。数字越大排序越靠前。已展示 {mpModels.filter(m => m.mp_enabled).length} / {mpModels.length} 个模型
+            </Text>
+          </div>
+          <Input
+            placeholder="搜索模型..."
+            value={mpSearchKeyword}
+            onChange={e => setMpSearchKeyword(e.target.value)}
+            style={{ width: 220, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+            allowClear
+          />
+        </div>
+
+        <Table
+          dataSource={filteredMpModels}
+          columns={mpModelColumns}
+          rowKey="id"
+          size="small"
+          pagination={{ pageSize: 20 }}
+          style={{ marginBottom: 16 }}
+        />
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button type="primary" loading={savingMarketplace} onClick={handleSaveMarketplaceConfig} icon={<SaveOutlined />}>
+            保存全部配置
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
 
     <div>
@@ -1487,7 +1802,7 @@ const PluginConfigInner: React.FC = () => {
           plugin.name === 'team_marketing'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
-                { key: 'team_config', label: '团队配置', children: <TeamConfig /> },
+                { key: 'team_config', label: '团队配置', children: <PluginModule><TeamConfig /></PluginModule> },
               ]
             : plugin.name === 'playground'
             ? [
@@ -1495,6 +1810,26 @@ const PluginConfigInner: React.FC = () => {
                 { key: 'pg_storage', label: '存储配置', children: storageTab },
                 { key: 'playground_models', label: '体验模型管理', children: playgroundModelTab },
                 { key: 'playground_schemes', label: '体验方案配置', children: playgroundSchemeTab },
+              ]
+            : plugin.name === 'volcengine_pool'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'pool_manager', label: '卡池管理', children: <PluginModule><PoolManager /></PluginModule> },
+              ]
+            : plugin.name === 'gptimage_pool'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'pool_manager', label: '卡池管理', children: <PluginModule><GptImagePoolManager /></PluginModule> },
+              ]
+            : plugin.name === 'model_marketplace'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'marketplace_models', label: '模型列表', children: marketplaceModelTab },
+              ]
+            : plugin.name === 'site_icons'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'icon_library', label: '图标库管理', children: <PluginModule><SiteIconsManager /></PluginModule> },
               ]
             : [
                 { key: 'audit_log', label: '审核日志', children: auditLogTab },

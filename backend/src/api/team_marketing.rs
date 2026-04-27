@@ -23,6 +23,10 @@ pub struct MarketingTeam {
     pub invite_code: Option<String>,
     #[sqlx(default)]
     pub max_members: i64,
+    #[sqlx(default)]
+    pub allowed_level_ids: String,
+    #[sqlx(default)]
+    pub allowed_member_level_ids: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -41,6 +45,8 @@ pub struct TeamWithMembers {
     pub description: Option<String>,
     pub invite_code: String,
     pub max_members: i64,
+    pub allowed_level_ids: Vec<i64>,
+    pub allowed_member_level_ids: Vec<i64>,
     pub leaders: Vec<TeamMember>,
     pub members: Vec<TeamMember>,
     pub created_at: String,
@@ -54,6 +60,8 @@ pub struct CreateTeamRequest {
     pub leader_ids: Vec<String>,
     pub member_ids: Vec<String>,
     pub max_members: Option<i64>,
+    pub allowed_level_ids: Option<Vec<i64>>,
+    pub allowed_member_level_ids: Option<Vec<i64>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +71,13 @@ pub struct UpdateTeamRequest {
     pub leader_ids: Vec<String>,
     pub member_ids: Vec<String>,
     pub max_members: Option<i64>,
+    pub allowed_level_ids: Option<Vec<i64>>,
+    pub allowed_member_level_ids: Option<Vec<i64>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetUserLevelRequest {
+    pub group_key: String,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -105,6 +120,10 @@ pub fn router() -> Router<Arc<AppState>> {
         // User routes
         .route("/my-referrals", get(my_referrals))
         .route("/referral/{user_id}/recharges", get(referral_recharges))
+        .route("/referral/{user_id}/level", put(set_referral_user_level))
+        .route("/member/{user_id}/level", put(set_member_user_level))
+        .route("/allowed-levels", get(get_allowed_levels))
+        .route("/allowed-member-levels", get(get_allowed_member_levels))
         .route("/team-overview", get(team_overview))
         .route("/join", post(join_team))
         .route("/my-team", get(my_team))
@@ -231,12 +250,16 @@ async fn list_teams(
     for team in teams {
         let leaders = load_team_members(&state, team.id, "marketing_team_leaders").await?;
         let members = load_team_members(&state, team.id, "marketing_team_members").await?;
+        let level_ids: Vec<i64> = serde_json::from_str(&team.allowed_level_ids).unwrap_or_default();
+        let member_level_ids: Vec<i64> = serde_json::from_str(&team.allowed_member_level_ids).unwrap_or_default();
         result.push(TeamWithMembers {
             id: team.id,
             name: team.name,
             description: team.description,
             invite_code: team.invite_code.unwrap_or_default(),
             max_members: team.max_members,
+            allowed_level_ids: level_ids,
+            allowed_member_level_ids: member_level_ids,
             leaders,
             members,
             created_at: team.created_at,
@@ -261,23 +284,19 @@ async fn create_team(
 
     let invite_code = generate_invite_code();
     let max_members = payload.max_members.unwrap_or(10);
+    let level_ids_json = serde_json::to_string(&payload.allowed_level_ids.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
+    let member_level_ids_json = serde_json::to_string(&payload.allowed_member_level_ids.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
 
     // Insert team
-    sqlx::query(
-        &state.db.format_query("INSERT INTO marketing_teams (name, description, invite_code, max_members) VALUES (?, ?, ?, ?)")
+    let team_id: i64 = sqlx::query_scalar(
+        &state.db.format_query("INSERT INTO marketing_teams (name, description, invite_code, max_members, allowed_level_ids, allowed_member_level_ids) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
     )
     .bind(&payload.name)
     .bind(&payload.description)
     .bind(&invite_code)
     .bind(max_members)
-    .execute(&state.db.pool)
-    .await?;
-
-    // Get last inserted id
-    let team_id: i64 = sqlx::query_scalar(
-        &state.db.format_query("SELECT id FROM marketing_teams WHERE name = ? ORDER BY id DESC LIMIT 1")
-    )
-    .bind(&payload.name)
+    .bind(&level_ids_json)
+    .bind(&member_level_ids_json)
     .fetch_one(&state.db.pool)
     .await?;
 
@@ -320,14 +339,18 @@ async fn update_team(
     }
 
     let max_members = payload.max_members.unwrap_or(10);
+    let level_ids_json = serde_json::to_string(&payload.allowed_level_ids.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
+    let member_level_ids_json = serde_json::to_string(&payload.allowed_member_level_ids.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
 
     // Update team
     sqlx::query(
-        &state.db.format_query("UPDATE marketing_teams SET name = ?, description = ?, max_members = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        &state.db.format_query("UPDATE marketing_teams SET name = ?, description = ?, max_members = ?, allowed_level_ids = ?, allowed_member_level_ids = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
     )
     .bind(&payload.name)
     .bind(&payload.description)
     .bind(max_members)
+    .bind(&level_ids_json)
+    .bind(&member_level_ids_json)
     .bind(id)
     .execute(&state.db.pool)
     .await?;
@@ -655,14 +678,14 @@ async fn team_overview(
 
         let mut member_stats: Vec<serde_json::Value> = Vec::new();
         for mid in &member_ids {
-            let user_info: Option<(String, String, String)> = sqlx::query_as(
-                &state.db.format_query("SELECT id, username, uid FROM users WHERE id = ?")
+            let user_info: Option<(String, String, String, String, f64)> = sqlx::query_as(
+                &state.db.format_query("SELECT id, username, uid, user_group, balance FROM users WHERE id = ?")
             )
             .bind(mid)
             .fetch_optional(&state.db.pool)
             .await?;
 
-            let (uid_str, username, uid) = match user_info {
+            let (uid_str, username, uid, user_group, member_balance) = match user_info {
                 Some(u) => u,
                 None => continue,
             };
@@ -684,10 +707,22 @@ async fn team_overview(
             .await
             .unwrap_or(0.0);
 
+            // 成员自身的总充值金额
+            let member_total_recharge: f64 = sqlx::query_scalar(
+                &state.db.format_query("SELECT COALESCE(SUM(amount), 0.0) FROM recharge_records WHERE user_id = ?")
+            )
+            .bind(mid)
+            .fetch_one(&state.db.pool)
+            .await
+            .unwrap_or(0.0);
+
             member_stats.push(json!({
                 "user_id": uid_str,
                 "username": username,
                 "uid": uid,
+                "user_group": user_group,
+                "balance": member_balance,
+                "total_recharge": member_total_recharge,
                 "referred_count": referred_count,
                 "total_recharge_from_referrals": total_recharge,
             }));
@@ -705,4 +740,370 @@ async fn team_overview(
     }
 
     Ok(Json(json!({ "teams": teams, "is_leader": true })))
+}
+
+// ========== Team Leader: Allowed Levels & Set User Level ==========
+
+/// 用户端：获取团队负责人被授权的用户等级列表
+async fn get_allowed_levels(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let my_id = &claims.sub;
+
+    // 查询当前用户是负责人的所有团队
+    let team_ids: Vec<i64> = sqlx::query_scalar(
+        &state.db.format_query("SELECT team_id FROM marketing_team_leaders WHERE user_id = ?")
+    )
+    .bind(my_id)
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    if team_ids.is_empty() {
+        return Ok(Json(json!({ "levels": [], "is_leader": false })));
+    }
+
+    // 收集所有团队授权的等级 ID（去重）
+    let mut all_level_ids: Vec<i64> = Vec::new();
+    for tid in &team_ids {
+        let allowed_str: String = sqlx::query_scalar(
+            &state.db.format_query("SELECT allowed_level_ids FROM marketing_teams WHERE id = ?")
+        )
+        .bind(tid)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or_else(|_| "[]".to_string());
+
+        let ids: Vec<i64> = serde_json::from_str(&allowed_str).unwrap_or_default();
+        for id in ids {
+            if !all_level_ids.contains(&id) {
+                all_level_ids.push(id);
+            }
+        }
+    }
+
+    if all_level_ids.is_empty() {
+        return Ok(Json(json!({ "levels": [], "is_leader": true })));
+    }
+
+    // 查询这些等级的详细信息
+    let placeholders: Vec<String> = (1..=all_level_ids.len()).map(|i| format!("${}", i)).collect();
+    let query_str = format!("SELECT id, name, group_key, discount, description FROM user_levels WHERE id IN ({})", placeholders.join(","));
+    
+    let mut query = sqlx::query_as::<_, (i64, String, String, f64, String)>(&query_str);
+    for id in &all_level_ids {
+        query = query.bind(id);
+    }
+    let levels: Vec<(i64, String, String, f64, String)> = query
+        .fetch_all(&state.db.pool)
+        .await?;
+
+    let result: Vec<serde_json::Value> = levels.into_iter().map(|(id, name, group_key, discount, description)| {
+        json!({
+            "id": id,
+            "name": name,
+            "group_key": group_key,
+            "discount": discount,
+            "description": description,
+        })
+    }).collect();
+
+    Ok(Json(json!({ "levels": result, "is_leader": true })))
+}
+
+/// 用户端：团队负责人设置推荐用户的用户等级
+async fn set_referral_user_level(
+    State(state): State<Arc<AppState>>,
+    Path(target_user_id): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+    Json(payload): Json<SetUserLevelRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let my_id = &claims.sub;
+
+    // 获取当前用户 uid
+    let my_uid: String = sqlx::query_scalar(
+        &state.db.format_query("SELECT uid FROM users WHERE id = ?")
+    )
+    .bind(my_id)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    // 1. 验证当前用户是至少一个团队的负责人
+    let team_ids: Vec<i64> = sqlx::query_scalar(
+        &state.db.format_query("SELECT team_id FROM marketing_team_leaders WHERE user_id = ?")
+    )
+    .bind(my_id)
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    if team_ids.is_empty() {
+        return Err(AppError::Unauthorized);
+    }
+
+    // 2. 验证目标用户是当前用户推荐的，或者是当前用户团队成员推荐的
+    let is_my_referral: i64 = sqlx::query_scalar(
+        &state.db.format_query("SELECT COUNT(*) FROM users WHERE id = ? AND (referred_by = ? OR referred_by = ?)")
+    )
+    .bind(&target_user_id)
+    .bind(my_id)
+    .bind(&my_uid)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    let mut is_team_member_referral = false;
+    if is_my_referral == 0 {
+        // 检查是否为团队成员推荐的用户
+        for tid in &team_ids {
+            let member_ids: Vec<String> = sqlx::query_scalar(
+                &state.db.format_query("SELECT user_id FROM marketing_team_members WHERE team_id = ?")
+            )
+            .bind(tid)
+            .fetch_all(&state.db.pool)
+            .await?;
+
+            for mid in &member_ids {
+                let mid_uid: String = sqlx::query_scalar(
+                    &state.db.format_query("SELECT uid FROM users WHERE id = ?")
+                )
+                .bind(mid)
+                .fetch_optional(&state.db.pool)
+                .await?
+                .unwrap_or_default();
+
+                let count: i64 = sqlx::query_scalar(
+                    &state.db.format_query("SELECT COUNT(*) FROM users WHERE id = ? AND (referred_by = ? OR referred_by = ?)")
+                )
+                .bind(&target_user_id)
+                .bind(mid)
+                .bind(&mid_uid)
+                .fetch_one(&state.db.pool)
+                .await?;
+
+                if count > 0 {
+                    is_team_member_referral = true;
+                    break;
+                }
+            }
+            if is_team_member_referral { break; }
+        }
+
+        if !is_team_member_referral {
+            return Err(AppError::BadRequest("目标用户不在您的推荐范围内".to_string()));
+        }
+    }
+
+    // 3. 验证要设置的等级在团队授权范围内
+    // 先通过 group_key 找到等级 ID
+    let target_level_id: Option<i64> = sqlx::query_scalar(
+        &state.db.format_query("SELECT id FROM user_levels WHERE group_key = ?")
+    )
+    .bind(&payload.group_key)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    let target_level_id = match target_level_id {
+        Some(id) => id,
+        None => return Err(AppError::BadRequest("无效的用户等级".to_string())),
+    };
+
+    let mut is_authorized = false;
+    for tid in &team_ids {
+        let allowed_str: String = sqlx::query_scalar(
+            &state.db.format_query("SELECT allowed_level_ids FROM marketing_teams WHERE id = ?")
+        )
+        .bind(tid)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or_else(|_| "[]".to_string());
+
+        let ids: Vec<i64> = serde_json::from_str(&allowed_str).unwrap_or_default();
+        if ids.contains(&target_level_id) {
+            is_authorized = true;
+            break;
+        }
+    }
+
+    if !is_authorized {
+        return Err(AppError::BadRequest("您没有权限分配该用户等级".to_string()));
+    }
+
+    // 4. 执行更新
+    sqlx::query(
+        &state.db.format_query("UPDATE users SET user_group = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    )
+    .bind(&payload.group_key)
+    .bind(&target_user_id)
+    .execute(&state.db.pool)
+    .await?;
+
+    // 查询等级名称用于返回
+    let level_name: String = sqlx::query_scalar(
+        &state.db.format_query("SELECT name FROM user_levels WHERE group_key = ?")
+    )
+    .bind(&payload.group_key)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or_else(|_| payload.group_key.clone());
+
+    Ok(Json(json!({ "message": format!("用户等级已设置为: {}", level_name), "level_name": level_name, "group_key": payload.group_key })))
+}
+
+/// 用户端：获取团队负责人被授权的团队成员用户等级列表
+async fn get_allowed_member_levels(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let my_id = &claims.sub;
+
+    let team_ids: Vec<i64> = sqlx::query_scalar(
+        &state.db.format_query("SELECT team_id FROM marketing_team_leaders WHERE user_id = ?")
+    )
+    .bind(my_id)
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    if team_ids.is_empty() {
+        return Ok(Json(json!({ "levels": [], "is_leader": false })));
+    }
+
+    let mut all_level_ids: Vec<i64> = Vec::new();
+    for tid in &team_ids {
+        let allowed_str: String = sqlx::query_scalar(
+            &state.db.format_query("SELECT allowed_member_level_ids FROM marketing_teams WHERE id = ?")
+        )
+        .bind(tid)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or_else(|_| "[]".to_string());
+
+        let ids: Vec<i64> = serde_json::from_str(&allowed_str).unwrap_or_default();
+        for id in ids {
+            if !all_level_ids.contains(&id) {
+                all_level_ids.push(id);
+            }
+        }
+    }
+
+    if all_level_ids.is_empty() {
+        return Ok(Json(json!({ "levels": [], "is_leader": true })));
+    }
+
+    let placeholders: Vec<String> = (1..=all_level_ids.len()).map(|i| format!("${}", i)).collect();
+    let query_str = format!("SELECT id, name, group_key, discount, description FROM user_levels WHERE id IN ({})", placeholders.join(","));
+    
+    let mut query = sqlx::query_as::<_, (i64, String, String, f64, String)>(&query_str);
+    for id in &all_level_ids {
+        query = query.bind(id);
+    }
+    let levels: Vec<(i64, String, String, f64, String)> = query
+        .fetch_all(&state.db.pool)
+        .await?;
+
+    let result: Vec<serde_json::Value> = levels.into_iter().map(|(id, name, group_key, discount, description)| {
+        json!({
+            "id": id,
+            "name": name,
+            "group_key": group_key,
+            "discount": discount,
+            "description": description,
+        })
+    }).collect();
+
+    Ok(Json(json!({ "levels": result, "is_leader": true })))
+}
+
+/// 用户端：团队负责人设置团队成员的用户等级
+async fn set_member_user_level(
+    State(state): State<Arc<AppState>>,
+    Path(target_user_id): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+    Json(payload): Json<SetUserLevelRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let my_id = &claims.sub;
+
+    // 1. 验证当前用户是至少一个团队的负责人
+    let team_ids: Vec<i64> = sqlx::query_scalar(
+        &state.db.format_query("SELECT team_id FROM marketing_team_leaders WHERE user_id = ?")
+    )
+    .bind(my_id)
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    if team_ids.is_empty() {
+        return Err(AppError::Unauthorized);
+    }
+
+    // 2. 验证目标用户是当前用户管理的团队的成员
+    let mut is_team_member = false;
+    for tid in &team_ids {
+        let count: i64 = sqlx::query_scalar(
+            &state.db.format_query("SELECT COUNT(*) FROM marketing_team_members WHERE team_id = ? AND user_id = ?")
+        )
+        .bind(tid)
+        .bind(&target_user_id)
+        .fetch_one(&state.db.pool)
+        .await?;
+
+        if count > 0 {
+            is_team_member = true;
+            break;
+        }
+    }
+
+    if !is_team_member {
+        return Err(AppError::BadRequest("目标用户不是您管理的团队成员".to_string()));
+    }
+
+    // 3. 验证要设置的等级在团队 allowed_member_level_ids 范围内
+    let target_level_id: Option<i64> = sqlx::query_scalar(
+        &state.db.format_query("SELECT id FROM user_levels WHERE group_key = ?")
+    )
+    .bind(&payload.group_key)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    let target_level_id = match target_level_id {
+        Some(id) => id,
+        None => return Err(AppError::BadRequest("无效的用户等级".to_string())),
+    };
+
+    let mut is_authorized = false;
+    for tid in &team_ids {
+        let allowed_str: String = sqlx::query_scalar(
+            &state.db.format_query("SELECT allowed_member_level_ids FROM marketing_teams WHERE id = ?")
+        )
+        .bind(tid)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or_else(|_| "[]".to_string());
+
+        let ids: Vec<i64> = serde_json::from_str(&allowed_str).unwrap_or_default();
+        if ids.contains(&target_level_id) {
+            is_authorized = true;
+            break;
+        }
+    }
+
+    if !is_authorized {
+        return Err(AppError::BadRequest("您没有权限分配该用户等级".to_string()));
+    }
+
+    // 4. 执行更新
+    sqlx::query(
+        &state.db.format_query("UPDATE users SET user_group = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    )
+    .bind(&payload.group_key)
+    .bind(&target_user_id)
+    .execute(&state.db.pool)
+    .await?;
+
+    let level_name: String = sqlx::query_scalar(
+        &state.db.format_query("SELECT name FROM user_levels WHERE group_key = ?")
+    )
+    .bind(&payload.group_key)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or_else(|_| payload.group_key.clone());
+
+    Ok(Json(json!({ "message": format!("成员等级已设置为: {}", level_name), "level_name": level_name, "group_key": payload.group_key })))
 }

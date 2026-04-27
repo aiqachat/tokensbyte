@@ -121,11 +121,14 @@ const HistoryPanel: React.FC = () => {
 
       let restored = false;
 
-      // 构建 assets 的 URL 映射（用于回填 resultData）
-      const assetUrlMap = new Map<string, PlaygroundAsset>();
+      // 构建 assets 的 URL 映射（用于回填 resultData，分组支持多节点）
+      const assetUrlGroup = new Map<string, PlaygroundAsset[]>();
       for (const a of assets) {
         // 按 prompt 匹配（canvas 节点的 taskData.prompt 对应 asset.prompt）
-        if (a.prompt) assetUrlMap.set(a.prompt, a);
+        if (a.prompt) {
+          if (!assetUrlGroup.has(a.prompt)) assetUrlGroup.set(a.prompt, []);
+          assetUrlGroup.get(a.prompt)!.push(a);
+        }
       }
 
       // 4. 尝试从 canvas_data 恢复画布
@@ -137,13 +140,14 @@ const HistoryPanel: React.FC = () => {
             const fixedNodes = canvasData.nodes.map((n: any) => {
               if (n.status === 'completed' && !n.resultData) {
                 // resultData 为空，尝试从 assets 回填
-                const matchedAsset = assetUrlMap.get(n.taskData?.prompt || '');
-                if (matchedAsset) {
+                const matches = assetUrlGroup.get(n.taskData?.prompt || '');
+                if (matches && matches.length > 0) {
+                  const matchedAsset = matches.shift();
                   return {
                     ...n,
-                    resultData: matchedAsset.asset_type === 'image'
-                      ? { data: [{ url: matchedAsset.file_url }] }
-                      : { content: { video_url: matchedAsset.file_url } },
+                    resultData: matchedAsset!.asset_type === 'image'
+                      ? { data: [{ url: matchedAsset!.file_url }] }
+                      : { content: { video_url: matchedAsset!.file_url } },
                   };
                 }
               }

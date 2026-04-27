@@ -8,6 +8,7 @@ import useSettingsStore from '../../store/settings';
 import { type ModelModel, type ClassificationsResponse, type ModelProvider, type ModelType, type ClassificationCount } from '../../types';
 import ClassificationFilter from '../../components/Models/ClassificationFilter';
 import ClassificationManager from '../../components/Models/ClassificationManager';
+import IconPicker from '../../components/IconPicker';
 import RateDisplay from './RateDisplay';
 
 const { Title, Text } = Typography;
@@ -111,6 +112,7 @@ const Models: React.FC = () => {
       enable_log_content: record.enable_log_content === 1,
       site_discount_enabled: record.site_discount_enabled === 1,
       site_discount: record.site_discount ?? 1.0,
+      logo: record.logo || undefined,
     });
     setIsModalVisible(true);
   };
@@ -165,16 +167,26 @@ const Models: React.FC = () => {
       dataIndex: 'name',
       key: 'name',
       render: (text: string, record: ModelModel) => (
-        <Space direction="vertical" size={0}>
-          <Text strong>{text}</Text>
-          <Space size={4}>
-            {record.provider_id && <Tag color="default" style={{ fontSize: '10px' }}>{getProviderName(record.provider_id)}</Tag>}
-            {record.type_id && <Tag color="blue" style={{ fontSize: '10px' }}>{getTypeName(record.type_id)}</Tag>}
-            {(() => {
-              const br = allBillingRules.find(b => b.id === record.billing_rule_id);
-              if (br) return <Tag color="gold" style={{ fontSize: '10px' }}>{br.name}</Tag>;
-              return null;
-            })()}
+        <Space size={8} align="start">
+          {record.logo && (
+            <img
+              src={`/assets/icons/lobe/${record.logo}.svg`}
+              alt=""
+              style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, flexShrink: 0, marginTop: 2 }}
+              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+          )}
+          <Space direction="vertical" size={0}>
+            <Text strong>{text}</Text>
+            <Space size={4}>
+              {record.provider_id && <Tag color="default" style={{ fontSize: '10px' }}>{getProviderName(record.provider_id)}</Tag>}
+              {record.type_id && <Tag color="blue" style={{ fontSize: '10px' }}>{getTypeName(record.type_id)}</Tag>}
+              {(() => {
+                const br = allBillingRules.find(b => b.id === record.billing_rule_id);
+                if (br) return <Tag color="gold" style={{ fontSize: '10px' }}>{br.name}</Tag>;
+                return null;
+              })()}
+            </Space>
           </Space>
         </Space>
       ),
@@ -262,8 +274,14 @@ const Models: React.FC = () => {
         </div>
 
       <ClassificationFilter
-        providers={classStats.providers}
-        types={classStats.types}
+        providers={classStats.providers.map(p => ({
+          ...p,
+          logo: allProviders.find(ap => ap.id === p.id)?.logo
+        }))}
+        types={classStats.types.map(t => ({
+          ...t,
+          logo: allTypes.find(at => at.id === t.id)?.logo
+        }))}
         selectedProvider={selectedProvider}
         selectedType={selectedType}
         onProviderChange={setSelectedProvider}
@@ -286,11 +304,16 @@ const Models: React.FC = () => {
             return (
               <MobileCard
                 title={
-                  <div>
-                    <Text strong>{record.name}</Text>
-                    <div style={{ marginTop: 4 }}>
-                      {record.provider_id && <Tag color="default" style={{ fontSize: 10 }}>{getProviderName(record.provider_id)}</Tag>}
-                      {record.type_id && <Tag color="blue" style={{ fontSize: 10 }}>{getTypeName(record.type_id)}</Tag>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {record.logo && (
+                      <img src={`/assets/icons/lobe/${record.logo}.svg`} alt="" style={{ width: 24, height: 24, objectFit: 'contain', borderRadius: 4 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    )}
+                    <div>
+                      <Text strong>{record.name}</Text>
+                      <div style={{ marginTop: 4 }}>
+                        {record.provider_id && <Tag color="default" style={{ fontSize: 10 }}>{getProviderName(record.provider_id)}</Tag>}
+                        {record.type_id && <Tag color="blue" style={{ fontSize: 10 }}>{getTypeName(record.type_id)}</Tag>}
+                      </div>
                     </div>
                   </div>
                 }
@@ -348,6 +371,14 @@ const Models: React.FC = () => {
               </Form.Item>
             </Col>
           </Row>
+
+          <Form.Item name="logo" label="模型 Logo">
+            <IconPicker
+              value={form.getFieldValue('logo')}
+              onChange={(icon) => form.setFieldsValue({ logo: icon?.name || undefined })}
+              placeholder="选择模型图标"
+            />
+          </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>

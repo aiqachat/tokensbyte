@@ -23,13 +23,17 @@ import {
   PictureOutlined,
   ExperimentOutlined,
   InfoCircleOutlined,
+  BellOutlined,
+  ShopOutlined,
 } from '@ant-design/icons';
 
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Dropdown, Modal, message, Popover, Avatar, Divider } from 'antd';
+import { Dropdown, Modal, message, Popover, Avatar, Divider, Drawer, List, Badge, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
+import type { Announcement } from '../types';
 import useAuthStore from '../store/auth';
+import UserAvatarMenu from '../components/UserAvatarMenu';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -48,8 +52,13 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const { user, logout, setUser, isLoggedIn } = useAuthStore();
   const [siteName, setSiteName] = useState(isUserEnd ? 'TokensByte' : t('common.admin_title'));
   const [siteLogo, setSiteLogo] = useState<string>('');
+  const [siteTitle, setSiteTitle] = useState<string>('');
+  const [announcementsDrawerVisible, setAnnouncementsDrawerVisible] = useState(false);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
   const [enableMultilingual, setEnableMultilingual] = useState(true);
+  const [agreement, setAgreement] = useState<any>(null);
 
 
   useEffect(() => {
@@ -85,9 +94,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const fetchGlobalSettings = async () => {
     try {
       const response = await (request.get('/settings') as any);
-      const { site } = response;
+      const { site, agreement: agreementData } = response;
       if (site.title) {
-        document.title = site.title;
+        setSiteTitle(site.title);
       }
       if (site.name && isUserEnd) {
         setSiteName(site.name);
@@ -98,19 +107,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       if (site.enable_multilingual !== undefined) {
         setEnableMultilingual(site.enable_multilingual);
       }
+      if (agreementData) {
+        setAgreement(agreementData);
+      }
     } catch (error) {
       console.error('Failed to fetch global settings:', error);
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    if (isUserEnd) {
-      navigate('/login');
-    } else {
-      navigate('/admin0755');
-    }
-  };
 
   const showSystemAbout = () => {
     navigate('/admin0755/about');
@@ -134,13 +138,27 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     },
   ];
 
+  useEffect(() => {
+    const fetchAnnouncements = async () => {
+      try {
+        const response = await (request.get('/announcements/public') as any);
+        if (response.data) {
+          setAnnouncements(response.data);
+          setUnreadCount(response.data.length);
+        }
+      } catch (error) {
+        console.error('Failed to fetch announcements:', error);
+      }
+    };
+    fetchAnnouncements();
+  }, []);
+
   const menuItems: MenuProps['items'] = [];
 
-  // 1. Dashboard
   menuItems.push({
     key: isUserEnd ? '/' : '/admin0755/dashboard',
     icon: <DashboardOutlined style={{ fontSize: '18px' }} />,
-    label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{t('menu.dashboard')}</Link>,
+    label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{isUserEnd ? '控制面板' : t('menu.dashboard')}</Link>,
   });
 
   // 2. Relay API
@@ -336,6 +354,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           {
             key: '/admin0755/marketing/registration-gifts',
             label: <Link to="/admin0755/marketing/registration-gifts">{t('menu.registration_gifts')}</Link>,
+          },
+          {
+            key: '/admin0755/marketing/announcements',
+            label: <Link to="/admin0755/marketing/announcements">站点公告</Link>,
           }
         ]
       });
@@ -430,89 +452,119 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     }
   }
 
+  let pageName = '';
+  const findName = (items: any[]): string | undefined => {
+    for (const item of items) {
+      if (!item) continue;
+      if (item.key === location.pathname || item.key === location.pathname + location.search) {
+        if (typeof item.label === 'string') return item.label;
+        if (item.label?.props?.children) {
+          if (typeof item.label.props.children === 'string') return item.label.props.children;
+          if (Array.isArray(item.label.props.children)) return item.label.props.children.join('');
+        }
+      }
+      if (item.children) {
+        const found = findName(item.children);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  };
+  
+  pageName = findName(menuItems) || '';
+  if (!pageName) {
+    if (location.pathname === '/profile') pageName = t('menu.profile', '个人中心') as string;
+    else if (location.pathname === '/wallet') pageName = t('menu.wallet', '我的钱包') as string;
+    else if (location.pathname === '/assets') pageName = t('menu.assets', '素材资产管理') as string;
+    else if (location.pathname === '/advanced-marketing') pageName = t('menu.advanced_marketing', '团队营销管理') as string;
+    else if (location.pathname === '/playground') pageName = t('menu.playground', '模型体验中心') as string;
+  }
 
-  const userInitial = user?.nickname?.charAt(0)?.toUpperCase() || user?.username?.charAt(0)?.toUpperCase() || '?';
-  const displayName = user?.nickname || user?.username || 'User';
+  useEffect(() => {
+    if (pageName && siteTitle) {
+      document.title = `${pageName}-${siteTitle}`;
+    } else if (siteTitle) {
+      document.title = siteTitle;
+    }
+  }, [pageName, siteTitle]);
 
-  const profileContent = (
-    <div style={{ width: 300, padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div style={{ marginTop: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, width: '100%', padding: '0 8px' }}>
-        <Avatar 
-          size={56} 
-          style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 24, flexShrink: 0 }}
-        >
-          {userInitial}
-        </Avatar>
-        <div style={{ overflow: 'hidden', flex: 1 }}>
-          <div style={{ fontWeight: 500, fontSize: 16, color: '#e5e5e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</span>
-            {user?.level_name && (
-              <span style={{ 
-                fontSize: 11, padding: '0 6px', background: 'rgba(22, 119, 255, 0.15)', 
-                color: '#1677ff', borderRadius: 4, fontWeight: 'normal', flexShrink: 0,
-                border: '1px solid rgba(22, 119, 255, 0.3)', lineHeight: '18px',
-                userSelect: 'none'
-              }}>
-                {user.level_name}
-              </span>
+  const announcementContent = (
+    <div style={{ width: 360, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ 
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+        padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' 
+      }}>
+        <span style={{ color: '#fff', fontSize: 16, fontWeight: 500 }}>通知</span>
+      </div>
+      
+      <div style={{ 
+        maxHeight: 480, overflowY: 'auto', padding: announcements.length > 0 ? '16px' : '60px 20px',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {announcements.length > 0 ? (
+          <List
+            itemLayout="vertical"
+            dataSource={announcements}
+            split={false}
+            renderItem={(item) => (
+              <div 
+                key={item.id} 
+                style={{ 
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  borderRadius: 12,
+                  padding: '16px',
+                  marginBottom: 12,
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    {item.is_pinned === 1 && (
+                      <div style={{ 
+                        background: 'rgba(22, 119, 255, 0.2)', color: '#4096ff', fontSize: 12,
+                        padding: '2px 6px', borderRadius: 4, marginTop: 2, whiteSpace: 'nowrap'
+                      }}>
+                        置顶
+                      </div>
+                    )}
+                    <div style={{ color: '#fff', fontSize: 15, fontWeight: 500, lineHeight: 1.5 }}>
+                      {item.title}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
+                    <ScheduleOutlined />
+                    {new Date(item.created_at).toLocaleString(i18n.language === 'en' ? 'en-US' : 'zh-CN', {
+                      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+                    })}
+                  </div>
+                </div>
+                
+                <div 
+                  className="quill-content"
+                  dangerouslySetInnerHTML={{ __html: item.content }} 
+                  style={{ 
+                    color: 'rgba(255,255,255,0.7)', fontSize: 13, lineHeight: 1.6,
+                    background: 'transparent', padding: '0', overflowWrap: 'break-word', wordBreak: 'break-all'
+                  }}
+                />
+              </div>
             )}
+          />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+            <BellOutlined style={{ fontSize: 64, color: 'rgba(255,255,255,0.1)', marginBottom: 24 }} />
+            <div style={{ color: '#e5e5e5', fontSize: 15, fontWeight: 500, marginBottom: 8 }}>你的通知将出现在这里</div>
+            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.6, maxWidth: 260 }}>
+              平台重要公告及更新内容将在这里展示，即可第一时间收到通知。
+            </div>
           </div>
-          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
-            用户 UID:{user?.uid || '-'}
-          </div>
-        </div>
-      </div>
-
-      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {isUserEnd && (
-          <Button 
-            type="default"
-            style={{ 
-              height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
-              transition: 'all 0.2s'
-            }}
-            className="hover-bright-btn"
-            icon={<WalletOutlined style={{ fontSize: 18 }} />}
-            onClick={() => { navigate('/wallet'); }}
-          >
-            {t('menu.wallet', '我的钱包')}
-          </Button>
         )}
-        
-        <Button 
-          type="default"
-          style={{ 
-            height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
-            transition: 'all 0.2s'
-          }}
-          className="hover-bright-btn"
-          icon={<UserOutlined style={{ fontSize: 18 }} />}
-          onClick={() => { navigate('/profile'); }}
-        >
-          {t('menu.profile', '个人中心')}
-        </Button>
-
-        <Button 
-          type="default"
-          style={{ 
-            height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
-            transition: 'all 0.2s'
-          }}
-          className="hover-bright-btn"
-          icon={<LogoutOutlined style={{ fontSize: 18 }} />}
-          onClick={handleLogout}
-        >
-          {t('common.logout', '退出账号')}
-        </Button>
-      </div>
-
-      <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center', gap: 24, width: '100%' }}>
-        <Button type="link" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, padding: 0 }}>隐私政策</Button>
-        <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
-        <Button type="link" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, padding: 0 }}>服务条款</Button>
       </div>
     </div>
   );
@@ -537,47 +589,6 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         }
       }}
     >
-      <style>
-        {`
-          .hover-bright-btn:hover {
-            background: rgba(255,255,255,0.1) !important;
-            border-color: rgba(255,255,255,0.2) !important;
-            color: #fff !important;
-          }
-          .header-avatar-btn:hover {
-            background: rgba(255,255,255,0.08);
-          }
-          
-          /* 弹窗居中放大动画 */
-          .popover-center-scale-enter,
-          .popover-center-scale-appear {
-            opacity: 0;
-            transform: scale(0.82);
-            transform-origin: 50% 50% !important;
-          }
-          .popover-center-scale-enter-active,
-          .popover-center-scale-appear-active {
-            opacity: 1;
-            transform: scale(1);
-            transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
-            transform-origin: 50% 50% !important;
-          }
-          .popover-center-scale-leave {
-            opacity: 1;
-            transform: scale(1);
-            transform-origin: 50% 50% !important;
-          }
-          .popover-center-scale-leave-active {
-            opacity: 0;
-            transform: scale(0.88);
-            transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
-            transform-origin: 50% 50% !important;
-          }
-          .custom-premium-popover {
-            transform-origin: 50% 50% !important;
-          }
-        `}
-      </style>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Sider 
           trigger={null} 
@@ -603,7 +614,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           className="custom-sider"
         >
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ height: screens.xs ? 48 : 56, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
               {siteLogo ? (
                 (collapsed && !screens.xs) ? (
                   <img src={siteLogo} alt="logo" style={{ width: 32, height: 32, objectFit: 'contain' }} />
@@ -667,6 +678,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           <Header style={{ 
             padding: 0, 
             background: '#141414', 
+            height: screens.xs ? 48 : 56,
+            lineHeight: (screens.xs ? 48 : 56) + 'px',
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'space-between', 
@@ -678,7 +691,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 type="text"
                 icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
                 onClick={() => setCollapsed(!collapsed)}
-                style={{ fontSize: '16px', width: 64, height: 64, color: '#fff' }}
+                style={{ fontSize: '16px', width: screens.xs ? 48 : 56, height: screens.xs ? 48 : 56, color: '#fff' }}
               />
               {screens.xs && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }}>
@@ -691,21 +704,44 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             </div>
             
             <Space size={screens.xs ? "small" : "middle"}>
+              {isUserEnd && isPluginVisibleForUser('model_marketplace') && (
+                <Button 
+                  type="text" 
+                  icon={<ShopOutlined style={{ fontSize: '18px' }} />} 
+                  style={{ 
+                    color: '#fff', 
+                    height: 42, 
+                    padding: '0 16px',
+                    borderRadius: 21,
+                    background: 'rgba(255,255,255,0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 14,
+                    fontWeight: 500,
+                    transition: 'background 0.2s'
+                  }} 
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+                  onClick={() => window.open('/models', '_blank')}
+                >
+                  模型广场
+                </Button>
+              )}
+
               {enableMultilingual && (
                 <Dropdown menu={{ items: langItems }} placement="bottomRight">
-                  <Button type="text" icon={<GlobalOutlined />} style={{ color: '#fff' }}>
-                    {!screens.xs && (i18n.language === 'zh' ? '中文' : 'EN')}
-                  </Button>
+                  <Button type="text" shape="circle" icon={<GlobalOutlined style={{ fontSize: '18px' }} />} style={{ color: '#fff', width: 42, height: 42 }} />
                 </Dropdown>
               )}
-              
-              <Popover 
-                content={profileContent} 
-                trigger="click" 
+
+              <Popover
+                content={announcementContent}
+                trigger="click"
                 placement="bottomRight"
                 overlayClassName="custom-premium-popover"
-                forceRender
-                destroyTooltipOnHide={false}
+                open={announcementsDrawerVisible}
+                onOpenChange={setAnnouncementsDrawerVisible}
                 overlayInnerStyle={{ 
                   padding: 0, 
                   borderRadius: 20, 
@@ -715,22 +751,26 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                   border: '1px solid rgba(255,255,255,0.15)', 
                   boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
                   transform: 'translateZ(0)',
+                  overflow: 'hidden'
                 }}
                 arrow={false}
               >
-                <div 
-                  className="header-avatar-btn"
-                  style={{ 
-                    display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '4px', 
-                    borderRadius: 20, transition: 'background 0.2s',
-                    border: '2px solid transparent'
-                  }} 
-                >
-                  <Avatar size={34} style={{ backgroundColor: '#1677ff', color: '#fff', fontSize: 16 }}>
-                    {userInitial}
-                  </Avatar>
-                </div>
+                <Tooltip title="通知" placement="bottom">
+                  <Badge count={unreadCount} overflowCount={99} offset={[-4, 4]}>
+                    <Button 
+                      type="text" 
+                      shape="circle"
+                      icon={<BellOutlined style={{ fontSize: '18px' }} />} 
+                      style={{ color: '#fff', width: 42, height: 42 }} 
+                      onClick={() => {
+                        setUnreadCount(0);
+                      }}
+                    />
+                  </Badge>
+                </Tooltip>
               </Popover>
+
+              <UserAvatarMenu isUserEnd={isUserEnd} agreement={agreement} />
             </Space>
 
           </Header>
@@ -760,6 +800,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           )}
         </Layout>
       </Layout>
+
     </ConfigProvider>
   );
 };

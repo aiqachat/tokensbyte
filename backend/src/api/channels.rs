@@ -49,8 +49,8 @@ pub async fn create_channel(
         group_aid_val = rand::thread_rng().gen_range(1000..10000).to_string(); // fallback
     }
 
-    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, group_aid, preset_id, priority, weight, status, max_rps, quota_limit, quota_used, config)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?) RETURNING id"#;
+    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, group_aid, preset_id, pool_id, gptimage_pool_id, priority, weight, status, max_rps, quota_limit, quota_used, config)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?) RETURNING id"#;
 
     let id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(sql))
         .bind(&request.name)
@@ -62,6 +62,8 @@ pub async fn create_channel(
         .bind(&groups_json)
         .bind(&group_aid_val)
         .bind(request.preset_id)
+        .bind(request.pool_id)
+        .bind(request.gptimage_pool_id)
         .bind(request.priority.unwrap_or(0))
         .bind(request.weight.unwrap_or(1))
         .bind(request.max_rps.unwrap_or(0))
@@ -106,6 +108,8 @@ pub async fn update_channel(
     if let Some(quota_limit) = request.quota_limit { channel.quota_limit = quota_limit; }
     if let Some(quota_used) = request.quota_used { channel.quota_used = quota_used; }
     if let Some(config) = request.config { channel.config = serde_json::to_string(&config).unwrap_or_else(|_| "{}".to_string()); }
+    if let Some(pool_id) = request.pool_id { channel.pool_id = Some(pool_id); }
+    if let Some(gptimage_pool_id) = request.gptimage_pool_id { channel.gptimage_pool_id = Some(gptimage_pool_id); }
 
     let mut group_aid_val = channel.group_aid.clone().unwrap_or_default();
     if group_aid_val.is_empty() {
@@ -129,7 +133,7 @@ pub async fn update_channel(
 
     sqlx::query(
         &state.db.format_query(r#"UPDATE channels SET name = ?, provider_type = ?, base_url = ?, api_key = ?, models = ?, 
-           model_mapping = ?, user_groups = ?, preset_id = ?, priority = ?, weight = ?, status = ?, max_rps = ?, quota_limit = ?, quota_used = ?, config = ?, group_aid = ?, updated_at = CURRENT_TIMESTAMP
+           model_mapping = ?, user_groups = ?, preset_id = ?, pool_id = ?, gptimage_pool_id = ?, priority = ?, weight = ?, status = ?, max_rps = ?, quota_limit = ?, quota_used = ?, config = ?, group_aid = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&channel.name)
@@ -140,6 +144,8 @@ pub async fn update_channel(
     .bind(&channel.model_mapping)
     .bind(&channel.user_groups)
     .bind(channel.preset_id)
+    .bind(channel.pool_id)
+    .bind(channel.gptimage_pool_id)
     .bind(channel.priority)
     .bind(channel.weight)
     .bind(channel.status)
@@ -221,7 +227,7 @@ pub async fn test_channel(
                     .unwrap_or("/v1/chat/completions")
                     .to_string();
                 let auth_type = config.get("auth_type").and_then(|v| v.as_str()).unwrap_or("bearer").to_string();
-                resolved = Some(crate::relay::forward::ResolvedForward { target_type, upstream_path, auth_type, asset_convert: false });
+                resolved = Some(crate::relay::forward::ResolvedForward { target_type, upstream_path, auth_type, asset_convert: false, poll_path: None });
             }
         }
     }

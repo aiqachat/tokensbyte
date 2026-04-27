@@ -274,7 +274,7 @@ pub async fn volcengine_status(
         model_name = m_name;
         // 如果计费明细中没有"冻结"字样，说明已经结算过了，阻断重复扣费
         if let Some(detail) = b_detail {
-            if !detail.contains("冻结") {
+            if !detail.is_empty() && !detail.contains("冻结") {
                 already_billed = true;
             }
         }
@@ -322,11 +322,17 @@ pub async fn volcengine_status(
     let get_resp_str = String::from_utf8_lossy(&data).to_string();
 
     if let Some(log_id) = db_log_id {
-        // 解析状态（兼容顶层 status 和 final_result.status）
+        // 解析状态：兼容根节点、data 节点、final_result 节点
         let resp_json: serde_json::Value = serde_json::from_str(&get_resp_str).unwrap_or(serde_json::json!({}));
-        let task_status = resp_json.get("status")
+        let raw_status = resp_json.get("status")
+            .or_else(|| resp_json.get("data").and_then(|d| d.get("status")))
             .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
             .and_then(|s| s.as_str()).unwrap_or("");
+        let task_status = match raw_status {
+            "completed" | "succeeded" => "succeeded",
+            "failed" => "failed",
+            other => other,
+        };
 
         // 更新日志响应内容
         let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ? WHERE id = ?"))
@@ -334,60 +340,57 @@ pub async fn volcengine_status(
             .bind(log_id)
             .execute(&state.db.pool).await;
 
-        // 任务完成时提取 token 用量并执行计费
+        // 任务完成时执行计费（统一交由 compute_cost 引擎处理）
         if task_status == "succeeded" && !already_billed {
             let usage = crate::relay::usage_extractor::parse_usage(&get_resp_str);
-            if usage.total > 0 {
-                let db_model: Option<crate::models::Model> = sqlx::query_as(
-                    &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-                ).bind(&model_name).fetch_optional(&state.db.pool).await.unwrap_or(None);
+            let image_count = crate::relay::usage_extractor::count_response_images(&get_resp_str);
 
-                let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
-                    if let Some(rule_id) = m.billing_rule_id {
-                        sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
-                            .bind(rule_id).fetch_optional(&state.db.pool).await.unwrap_or(None)
-                    } else { None }
-                } else { None };
+            let db_model: Option<crate::models::Model> = sqlx::query_as(
+                &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
+            ).bind(&model_name).fetch_optional(&state.db.pool).await.unwrap_or(None);
 
-                let features = crate::relay::usage_extractor::extract_request_features(&resp_json);
-                let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-                let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
-                detail.push_str(&format!(" | {}", discount_source));
-                let resolved_model = channel.resolve_model(&model_name);
-                if model_name != resolved_model {
-                    detail.push_str(&format!(" | 模型映射: {} ➞ {}", model_name, resolved_model));
-                }
+            let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
+                if let Some(rule_id) = m.billing_rule_id {
+                    sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+                        .bind(rule_id).fetch_optional(&state.db.pool).await.unwrap_or(None)
+                } else { None }
+            } else { None };
 
-                let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
-                let apply_balance = cost - pre_deduction;
+            let mut features = crate::relay::usage_extractor::extract_request_features(&resp_json);
+            if let Some(resp_count) = image_count {
+                features.image_count = Some(resp_count);
+            }
+            let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+            detail.push_str(&format!(" | {}", discount_source));
+            let resolved_model = channel.resolve_model(&model_name);
+            if model_name != resolved_model {
+                detail.push_str(&format!(" | 模型映射: {} ➞ {}", model_name, resolved_model));
+            }
 
-                // 更新日志
+            let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
+            let apply_balance = cost - pre_deduction;
+
+            // 更新日志（无论 cost 是否为 0，都要写入计费明细以解除冻结状态）
+            let _ = sqlx::query(&state.db.format_query(
+                "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+            )).bind(usage.prompt).bind(usage.completion).bind(cost).bind(detail).bind(log_id)
+            .execute(&state.db.pool).await;
+
+            // 余额结算
+            if cost > 0.0 || pre_deduction > 0.0 {
                 let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-                )).bind(usage.prompt).bind(usage.completion).bind(cost).bind(detail).bind(log_id)
+                    "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                )).bind(apply_balance).bind(apply_balance).bind(&token.user_id)
                 .execute(&state.db.pool).await;
 
-                // 余额结算
-                if cost > 0.0 || pre_deduction > 0.0 {
-                    let _ = sqlx::query(&state.db.format_query(
-                        "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                    )).bind(apply_balance).bind(apply_balance).bind(&token.user_id)
-                    .execute(&state.db.pool).await;
-
-                    let _ = sqlx::query(&state.db.format_query(
-                        "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                    )).bind(apply_balance).bind(token.id)
-                    .execute(&state.db.pool).await;
-
-                    tracing::info!("[Volcengine Video Billing] task={}, model={}, tokens={}, cost={:.6}, pre_deducted={:.6}", 
-                        task_id, model_name, usage.total, cost, pre_deduction);
-                }
-            } else {
-                // 模型返回成功但未提供 token 消耗：直接解除冻结并标记结算
                 let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE logs SET billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-                )).bind("任务成功，该模型无token用量").bind(log_id)
+                    "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                )).bind(apply_balance).bind(token.id)
                 .execute(&state.db.pool).await;
+
+                tracing::info!("[Volcengine Billing] task={}, model={}, tokens={}, cost={:.6}, pre_deducted={:.6}", 
+                    task_id, model_name, usage.total, cost, pre_deduction);
             }
         }
     }
@@ -461,41 +464,65 @@ pub async fn volcengine_images(
     let response_content_str = String::from_utf8_lossy(&data).to_string();
 
     // 提取 token 用量
-    let usage = crate::relay::usage_extractor::parse_usage(&response_content_str);
-    let mut features = crate::relay::usage_extractor::extract_request_features(&body);
-    // 用响应中的实际图片数量覆盖请求体的 n 值（按张计费的最终依据）
-    if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
-        features.image_count = Some(resp_count);
-    }
-
-    // 查询模型与计费规则
-    let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
-        .bind(model).fetch_optional(&state.db.pool).await.unwrap_or(None);
-    let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
-        if let Some(rule_id) = m.billing_rule_id {
-            sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
-                .bind(rule_id).fetch_optional(&state.db.pool).await.unwrap_or(None)
-        } else { None }
-    } else { None };
-
-    // 因为 pre_deduction 已经在前置 check_access 中获取过了
-    if pre_deduction > 0.0 {
-        let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
-    }
-
-    let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-    let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
-    detail.push_str(&format!(" | {}", discount_source));
-    let resolved_model = channel.resolve_model(model);
-    if model != resolved_model {
-        detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
-    }
-    tracing::info!("[Volcengine Image] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
+    let resp_json: serde_json::Value = serde_json::from_str(&response_content_str).unwrap_or(serde_json::json!({}));
+    // 健壮的异步任务判定：支持根节点、data 对象、以及 data 数组格式
+    let is_async = resp_json.get("task_id").is_some() 
+        || resp_json.get("data").and_then(|d| d.get("task_id")).is_some()
+        || resp_json.get("data").and_then(|d| d.as_array()).and_then(|a| a.first()).and_then(|f| f.get("task_id")).is_some();
 
     let latency_ms = start_time.elapsed().as_millis() as u32;
-    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, cost, pre_deduction, 200,
-        "/api/v3/images/generations", None, latency_ms, final_is_stream,
-        Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some(detail)).await;
+
+    if is_async {
+        tracing::info!("[Volcengine Image] model={}, path=ASYNC_SUBMIT, pre_deduction={}", model, pre_deduction);
+        // 因为 pre_deduction 已经在前置 check_access 中获取过了
+        if pre_deduction > 0.0 {
+            let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
+        }
+
+        let billing_detail = if pre_deduction > 0.0 {
+            "异步任务预扣费冻结"
+        } else {
+            "异步任务处理中(冻结)"
+        };
+        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200,
+            "/api/v3/images/generations", None, latency_ms, final_is_stream,
+            Some(request_content_str), Some(response_content_str.clone()), Some(fwd.to_string()), Some(billing_detail.to_string())).await;
+    } else {
+        let usage = crate::relay::usage_extractor::parse_usage(&response_content_str);
+        let mut features = crate::relay::usage_extractor::extract_request_features(&body);
+        // 用响应中的实际图片数量覆盖请求体的 n 值（按张计费的最终依据）
+        if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
+            features.image_count = Some(resp_count);
+        }
+
+        // 查询模型与计费规则
+        let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
+            .bind(model).fetch_optional(&state.db.pool).await.unwrap_or(None);
+        let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
+            if let Some(rule_id) = m.billing_rule_id {
+                sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+                    .bind(rule_id).fetch_optional(&state.db.pool).await.unwrap_or(None)
+            } else { None }
+        } else { None };
+
+        // 因为 pre_deduction 已经在前置 check_access 中获取过了
+        if pre_deduction > 0.0 {
+            let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
+        }
+
+        let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+        detail.push_str(&format!(" | {}", discount_source));
+        let resolved_model = channel.resolve_model(model);
+        if model != resolved_model {
+            detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
+        }
+        tracing::info!("[Volcengine Image] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
+
+        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, cost, pre_deduction, 200,
+            "/api/v3/images/generations", None, latency_ms, final_is_stream,
+            Some(request_content_str), Some(response_content_str.clone()), Some(fwd.to_string()), Some(detail)).await;
+    }
 
     Ok(Response::builder()
         .header("Content-Type", "application/json")

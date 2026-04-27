@@ -18,6 +18,8 @@ pub struct ResolvedForward {
     pub auth_type: String,
     /// 是否启用素材 URL→素材ID 自动转换（火山方舟视频素材专用）
     pub asset_convert: bool,
+    /// 异步任务轮询路径 (可选)，如果规则里配置了则优先使用
+    pub poll_path: Option<String>,
 }
 
 // ── 转发规则解析 ──────────────────────────────────────────────
@@ -153,13 +155,20 @@ pub async fn resolve_forward_rule(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    tracing::info!("[Forward] 命中规则 '{}': target_type={}, upstream_path={}, auth_type={}, asset_convert={}", rule.name, target_type, upstream_path, auth_type, asset_convert);
+    let poll_path = config
+        .get("poll_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    tracing::info!("[Forward] 命中规则 '{}': target_type={}, upstream_path={}, auth_type={}, asset_convert={}, poll_path={:?}", 
+        rule.name, target_type, upstream_path, auth_type, asset_convert, poll_path);
 
     Some(ResolvedForward {
         target_type,
         upstream_path,
         auth_type,
         asset_convert,
+        poll_path,
     })
 }
 
@@ -381,9 +390,14 @@ pub fn transform_request_body(
         }
     };
 
-    // 视频模型默认分辨率 720p（确保上游数据与计费一致）
-    if category == "视频" && result.get("resolution").is_none() {
-        result["resolution"] = serde_json::json!("720p");
+    // 视频模型默认参数兜底（确保上游数据与计费一致）
+    if category == "视频" {
+        if result.get("resolution").is_none() {
+            result["resolution"] = serde_json::json!("720p");
+        }
+        if result.get("duration").is_none() {
+            result["duration"] = serde_json::json!(5);
+        }
     }
 
     // 统一后处理：web_search 联网搜索参数转换
@@ -434,6 +448,7 @@ pub fn default_openai_forward(entry_path: &str) -> ResolvedForward {
         upstream_path: entry_path.to_string(),
         auth_type: "bearer".to_string(),
         asset_convert: false,
+        poll_path: None,
     }
 }
 
@@ -452,18 +467,21 @@ pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedFo
                 upstream_path: "/api/v3/images/generations".to_string(),
                 auth_type: "bearer".to_string(),
                 asset_convert: false,
+                poll_path: None,
             },
             "视频" => ResolvedForward {
                 target_type: "volcengine".to_string(),
                 upstream_path: "/api/v3/contents/generations/tasks".to_string(),
                 auth_type: "bearer".to_string(),
                 asset_convert: false,
+                poll_path: None,
             },
             _ => ResolvedForward {
                 target_type: "volcengine_chat".to_string(),
                 upstream_path: "/api/v3/chat/completions".to_string(),
                 auth_type: "bearer".to_string(),
                 asset_convert: false,
+                poll_path: None,
             },
         }
     } else if url_lower.contains("googleapis.com") || url_lower.contains("generativelanguage") {
@@ -473,12 +491,14 @@ pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedFo
                 upstream_path: "/v1beta/models/${model}:generateContent".to_string(),
                 auth_type: "query_key".to_string(),
                 asset_convert: false,
+                poll_path: None,
             },
             _ => ResolvedForward {
                 target_type: "gemini".to_string(),
                 upstream_path: "/v1beta/models/${model}:generateContent".to_string(),
                 auth_type: "query_key".to_string(),
                 asset_convert: false,
+                poll_path: None,
             },
         }
     } else if url_lower.contains("anthropic.com") {
@@ -487,6 +507,7 @@ pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedFo
             upstream_path: "/v1/messages".to_string(),
             auth_type: "x-api-key".to_string(),
             asset_convert: false,
+            poll_path: None,
         }
     } else {
         default_openai_forward(match category {

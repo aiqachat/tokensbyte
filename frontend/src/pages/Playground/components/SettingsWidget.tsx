@@ -6,7 +6,7 @@
  */
 import React, { useRef, useCallback, useEffect } from 'react';
 import { Typography, Button, Tooltip, message } from 'antd';
-import { FolderOpenOutlined, DownOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CloseOutlined, DownOutlined } from '@ant-design/icons';
 import { useCanvas } from '../context/PlaygroundContext';
 import { usePlayground } from '../context/PlaygroundContext';
 import { getCategoryIcon } from '../constants';
@@ -18,6 +18,7 @@ const SettingsWidget: React.FC = React.memo(() => {
   const { settingsWidgetPos, setSettingsWidgetPos } = useCanvas();
   const {
     isSettingsCollapsed, setIsSettingsCollapsed,
+    isSettingsWidgetVisible, setIsSettingsWidgetVisible,
     categories, activeCategory, handleCategoryChange,
     currentModel, setIsModelDrawerVisible,
   } = usePlayground();
@@ -37,7 +38,7 @@ const SettingsWidget: React.FC = React.memo(() => {
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // 忽略来自按钮等交互元素的事件
-    if ((e.target as HTMLElement).closest('button, .ant-tooltip-open')) return;
+    if ((e.target as HTMLElement).closest('button, .ant-tooltip-open, .close-btn')) return;
     
     isDraggingRef.current = true;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -78,6 +79,8 @@ const SettingsWidget: React.FC = React.memo(() => {
     document.addEventListener('mouseup', handleMouseUp);
   }, [setSettingsWidgetPos]);
 
+  if (!isSettingsWidgetVisible) return null;
+
   return (
     <div
       ref={containerRef}
@@ -112,22 +115,19 @@ const SettingsWidget: React.FC = React.memo(() => {
         }}
       >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <Tooltip title="双击标题栏折叠/展开">
-            <div
-              style={{ width: 12, height: 12, borderRadius: '50%', background: '#ff5f56', cursor: 'pointer', transition: 'transform 0.2s' }}
-              onClick={() => setIsSettingsCollapsed(!isSettingsCollapsed)}
-              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.2)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            />
-          </Tooltip>
+          <AppstoreOutlined style={{ color: '#A2C1FF', fontSize: 16 }} />
           <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500, userSelect: 'none' }}>模型选择器</Text>
         </div>
-        <Tooltip title="我的素材">
-          <Button
-            type="text" shape="circle" icon={<FolderOpenOutlined />}
-            onClick={() => message.info('即将开放：此处将用于保存和管理每次生成后的视频及图片素材。')}
-            style={{ color: 'rgba(255,255,255,0.7)', background: 'rgba(255,255,255,0.05)' }}
-          />
+        <Tooltip title="关闭">
+          <div
+            className="close-btn"
+            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
+            onClick={() => setIsSettingsWidgetVisible(false)}
+            onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255,255,255,0.5)'}
+          >
+            <CloseOutlined />
+          </div>
         </Tooltip>
       </div>
 

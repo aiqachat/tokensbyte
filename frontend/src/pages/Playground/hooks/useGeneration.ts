@@ -15,6 +15,7 @@ export const useGeneration = () => {
     currentModel, prompt, paramValues,
     selectedTokenKey, generating, setGenerating,
     setTaskPollingNodes, currentProjectId,
+    attachedAssets, setAttachedAssets,
   } = usePlayground();
 
   // 保持 currentProjectId 的最新引用（避免闭包过期问题）
@@ -66,6 +67,7 @@ export const useGeneration = () => {
 
   /** 发送生成请求 */
   const handleGenerate = useCallback(async () => {
+    if (generating) return;
     if (!currentModel || !prompt.trim()) return;
     if (!selectedTokenKey) {
       message.warning('请先选择一个 API 密钥');
@@ -74,7 +76,7 @@ export const useGeneration = () => {
 
     setGenerating(true);
 
-    const newNodeId = Date.now().toString();
+    const newNodeId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
     const centerX = -canvasTransform.x / canvasTransform.scale + window.innerWidth / 2 - 250;
     const centerY = -canvasTransform.y / canvasTransform.scale + window.innerHeight / 2 - 200;
     const offsetX = (Math.random() - 0.5) * 100;
@@ -89,7 +91,13 @@ export const useGeneration = () => {
         : currentModel.type_name.includes('图片') || currentModel.scheme_type === 'image' ? 'image'
         : 'text',
       status: 'loading',
-      taskData: { prompt: prompt.trim() },
+      taskData: {
+        prompt: prompt.trim(),
+        model_name: currentModel.name,
+        model_id: currentModel.model_id,
+        attached_urls: attachedAssets.map(a => a.fullUrl),
+        created_at: new Date().toISOString(),
+      },
       resultData: null,
       x: centerX + offsetX,
       y: centerY + offsetY,
@@ -101,6 +109,57 @@ export const useGeneration = () => {
     setNodes(prev => [...prev, initialNode]);
 
     try {
+      // 1. 预处理：将本地附件上传到永久存储，确保日志记录的是永久 URL 而非临时的 blob
+      const uploadedAssets = await Promise.all(attachedAssets.map(async (item) => {
+        if (item.file) {
+          const formData = new FormData();
+          formData.append('file', item.file);
+          if (currentProjectId) formData.append('project_id', currentProjectId.toString());
+          
+          try {
+            const res = await axios.post('/playground/assets/upload', formData, {
+              headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${selectedTokenKey}` }
+            }).then(r => r.data);
+            
+            if (res.url) {
+              return { ...item, fullUrl: res.url, isUploaded: true };
+            }
+          } catch (e) {
+            console.error('附件上传失败', e);
+          }
+        }
+        return item;
+      }));
+
+      // 更新全局状态，这样如果生成失败，下次点 Run 也不用重新上传
+      setAttachedAssets(uploadedAssets);
+
+      // 准备 taskData (包含永久 URL)
+      const finalAttachedUrls = uploadedAssets.map(a => a.fullUrl);
+      setNodes(prev => prev.map(n => n.id === newNodeId ? {
+        ...n,
+        taskData: {
+          ...n.taskData,
+          attached_url: finalAttachedUrls[0] || '',
+          attached_urls: finalAttachedUrls,
+        }
+      } : n));
+
+      // 2. 收集用于 AI 接口的 base64 或 URL
+      const resolvedAssetsForAI = await Promise.all(uploadedAssets.map(async (item) => {
+        // 如果已经上传到永久存储且模型支持 URL，可以直接传 URL。
+        // 但为了最大限度保证成功率，本地新上传的建议还是传 base64 (部分 AI 模型不直接抓取动态 URL)
+        if (item.file) {
+          const b64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(item.file!);
+          });
+          return { url: b64, type: item.asset.asset_type };
+        }
+        return { url: item.fullUrl, type: item.asset.asset_type };
+      }));
+
       const schemeType = currentModel.scheme_type || '';
       const body: any = {
         model: currentModel.model_id,
@@ -111,21 +170,20 @@ export const useGeneration = () => {
       let endpoint = '';
       if (schemeType === 'video' || currentModel.type_name.includes('视频')) {
         endpoint = currentModel.endpoint || '/v1/video/generations';
+        const firstImage = resolvedAssetsForAI.find(a => a.type === 'image')?.url || paramValues.image_url;
 
         if (currentModel.endpoint) {
           const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
-          const imageUrl = paramValues.image_url;
-          if (imageUrl && String(imageUrl).trim()) {
-            contentArr.push({ type: 'image_url', image_url: { url: String(imageUrl).trim() } });
+          if (firstImage) {
+            contentArr.push({ type: 'image_url', image_url: { url: firstImage } });
           }
           body.content = contentArr;
           delete body.prompt;
         } else {
-          const imageUrl = paramValues.image_url;
-          if (imageUrl && String(imageUrl).trim()) {
+          if (firstImage) {
             body.content = [
               { type: 'text', text: prompt.trim() },
-              { type: 'image_url', image_url: { url: String(imageUrl).trim() } }
+              { type: 'image_url', image_url: { url: firstImage } }
             ];
             delete body.prompt;
           }
@@ -133,9 +191,19 @@ export const useGeneration = () => {
         delete body.image_url;
       } else if (schemeType === 'image' || currentModel.type_name.includes('图片')) {
         endpoint = '/v1/images/generations';
+        const firstImage = resolvedAssetsForAI.find(a => a.type === 'image')?.url || paramValues.image_url;
+        if (firstImage) {
+           body.image = firstImage;
+           body.image_url = firstImage;
+        }
       } else {
         endpoint = '/v1/chat/completions';
-        body.messages = [{ role: 'user', content: prompt.trim() }];
+        const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
+        // 对对话模型，支持多个图片输入
+        resolvedAssetsForAI.filter(a => a.type === 'image').forEach(img => {
+          contentArr.push({ type: 'image_url', image_url: { url: img.url } });
+        });
+        body.messages = [{ role: 'user', content: contentArr }];
         delete body.prompt;
       }
 
@@ -153,21 +221,45 @@ export const useGeneration = () => {
         setTaskPollingNodes(prev => [...prev, newNodeId]);
         pollTaskStatus(newNodeId, taskId, currentModel.model_id, currentModel.poll_endpoint);
       } else {
-        setNodes(prev => {
-          const updated = prev.map(n => n.id === newNodeId ? { ...n, status: 'completed' as const, resultData: res } : n);
-          const completedNode = updated.find(n => n.id === newNodeId);
-          if (completedNode) persistAsset(completedNode, res, currentModel);
-          return updated;
-        });
-        setGenerating(false);
-      }
+          let completedNodesToPersist: CanvasNode[] = [];
+          setNodes(prev => {
+            let updated = [...prev];
+            const mainNodeIndex = updated.findIndex(n => n.id === newNodeId);
+            if (mainNodeIndex >= 0) {
+              updated[mainNodeIndex] = { ...updated[mainNodeIndex], status: 'completed' as const, resultData: res };
+              
+              // 如果返回了多张图 (如 Seedream n>1)，裂变出额外的节点
+              if (res.data && Array.isArray(res.data) && res.data.length > 1) {
+                const extraNodes = res.data.slice(1).map((imgObj: any, idx: number) => {
+                  return {
+                    ...updated[mainNodeIndex],
+                    id: `${newNodeId}-ext-${idx}`,
+                    x: updated[mainNodeIndex].x + 40 * (idx + 1),
+                    y: updated[mainNodeIndex].y + 40 * (idx + 1),
+                    zIndex: updated[mainNodeIndex].zIndex + idx + 1,
+                    resultData: { ...res, data: [imgObj] }
+                  };
+                });
+                updated.push(...extraNodes);
+              }
+            }
+            
+            completedNodesToPersist = updated.filter(n => n.id === newNodeId || n.id.startsWith(`${newNodeId}-ext-`));
+            return updated;
+          });
+          
+          for (const node of completedNodesToPersist) {
+             persistAsset(node, node.resultData, currentModel);
+          }
+          setGenerating(false);
+        }
     } catch (e: any) {
       const errMsg = e?.response?.data?.error?.message || e?.message || '生成失败';
       message.error(errMsg);
       setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, status: 'error', resultData: { message: errMsg } } : n));
       setGenerating(false);
     }
-  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes]);
+  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets]);
 
   /** 轮询视频任务状态 */
   const pollTaskStatus = useCallback((nodeId: string, taskId: string, modelId: string, pollEndpointTemplate?: string) => {
@@ -196,12 +288,15 @@ export const useGeneration = () => {
         const status = res?.status || res?.final_result?.status || '';
 
         if (status === 'succeeded') {
+          let nodeToPersist: CanvasNode | undefined;
           setNodes(prev => {
             const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: res } : n);
-            const completedNode = updated.find(n => n.id === nodeId);
-            if (completedNode) persistAsset(completedNode, res, currentModel);
+            nodeToPersist = updated.find(n => n.id === nodeId);
             return updated;
           });
+          if (nodeToPersist) {
+            persistAsset(nodeToPersist, res, currentModel);
+          }
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
           setGenerating(false);
           return;

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Typography, Button, Table, Modal, Input, InputNumber, Select, Space, Tag, message, Popconfirm, Spin, Tooltip } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, TeamOutlined, CrownOutlined, CopyOutlined, LinkOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, TeamOutlined, CrownOutlined, CopyOutlined, LinkOutlined, TrophyOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
-import type { MarketingTeam, TeamMember } from '../../../types';
+import type { MarketingTeam, TeamMember, UserLevel } from '../../../types';
 
 const { Text } = Typography;
 
@@ -27,10 +27,23 @@ const TeamConfig: React.FC = () => {
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [selectedLevels, setSelectedLevels] = useState<number[]>([]);
+  const [selectedMemberLevels, setSelectedMemberLevels] = useState<number[]>([]);
+  const [allLevels, setAllLevels] = useState<UserLevel[]>([]);
 
   useEffect(() => {
     fetchTeams();
+    fetchAllLevels();
   }, []);
+
+  const fetchAllLevels = async () => {
+    try {
+      const resp = await (request.get('/user_levels') as unknown as Promise<{ data: UserLevel[] }>);
+      setAllLevels(resp.data || []);
+    } catch (e) {
+      console.error('获取用户等级列表失败', e);
+    }
+  };
 
   const fetchTeams = async () => {
     try {
@@ -64,6 +77,8 @@ const TeamConfig: React.FC = () => {
     setMaxMembers(10);
     setSelectedLeaders([]);
     setSelectedMembers([]);
+    setSelectedLevels([]);
+    setSelectedMemberLevels([]);
     setUserOptions([]);
     setModalVisible(true);
   };
@@ -88,6 +103,8 @@ const TeamConfig: React.FC = () => {
       return true;
     });
     setUserOptions(deduped);
+    setSelectedLevels(team.allowed_level_ids || []);
+    setSelectedMemberLevels(team.allowed_member_level_ids || []);
     setModalVisible(true);
   };
 
@@ -109,6 +126,8 @@ const TeamConfig: React.FC = () => {
         leader_ids: selectedLeaders,
         member_ids: selectedMembers,
         max_members: maxMembers,
+        allowed_level_ids: selectedLevels,
+        allowed_member_level_ids: selectedMemberLevels,
       };
 
       if (editingTeam) {
@@ -325,6 +344,7 @@ const TeamConfig: React.FC = () => {
             />
           </div>
 
+          {/* 团队负责人 */}
           <div>
             <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               <CrownOutlined style={{ color: '#faad14', marginRight: 4 }} />
@@ -347,6 +367,29 @@ const TeamConfig: React.FC = () => {
             />
           </div>
 
+          {/* 团队成员授权等级 */}
+          <div>
+            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+              <TrophyOutlined style={{ color: '#1677ff', marginRight: 4 }} />
+              团队成员授权等级
+              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可将团队成员设置为以下等级</Text>
+            </Text>
+            <Select
+              mode="multiple"
+              value={selectedMemberLevels}
+              onChange={setSelectedMemberLevels}
+              options={allLevels.map(l => ({
+                value: l.id,
+                label: `${l.name} (${l.group_key})`,
+              }))}
+              placeholder="选择可分配给团队成员的用户等级..."
+              style={{ width: '100%' }}
+              optionFilterProp="label"
+              notFoundContent="暂无可用等级"
+            />
+          </div>
+
+          {/* 团队成员 */}
           <div>
             <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               <TeamOutlined style={{ color: '#1677ff', marginRight: 4 }} />
@@ -366,6 +409,28 @@ const TeamConfig: React.FC = () => {
               notFoundContent={searchLoading ? <Spin size="small" /> : '输入关键词搜索用户'}
               style={{ width: '100%' }}
               suffixIcon={<SearchOutlined />}
+            />
+          </div>
+
+          {/* 授权用户等级（推荐用户） */}
+          <div>
+            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+              <TrophyOutlined style={{ color: '#52c41a', marginRight: 4 }} />
+              授权用户等级
+              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可将推荐用户设置为以下等级</Text>
+            </Text>
+            <Select
+              mode="multiple"
+              value={selectedLevels}
+              onChange={setSelectedLevels}
+              options={allLevels.map(l => ({
+                value: l.id,
+                label: `${l.name} (${l.group_key})`,
+              }))}
+              placeholder="选择可分配的用户等级..."
+              style={{ width: '100%' }}
+              optionFilterProp="label"
+              notFoundContent="暂无可用等级"
             />
           </div>
         </div>
