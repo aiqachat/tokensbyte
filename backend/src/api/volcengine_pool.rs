@@ -229,6 +229,12 @@ async fn delete_pool(
         )));
     }
 
+    // 先清理映射关系
+    sqlx::query(&state.db.format_query("DELETE FROM volcengine_pool_account_mapping WHERE pool_id = ?"))
+        .bind(id)
+        .execute(&state.db.pool)
+        .await?;
+
     sqlx::query(&state.db.format_query("DELETE FROM volcengine_pools WHERE id = ?"))
         .bind(id)
         .execute(&state.db.pool)
@@ -356,6 +362,12 @@ async fn delete_account(
 ) -> AppResult<Json<serde_json::Value>> {
     require_admin(&state, &claims).await?;
 
+    // 先清理映射关系
+    sqlx::query(&state.db.format_query("DELETE FROM volcengine_pool_account_mapping WHERE account_id = ?"))
+        .bind(id)
+        .execute(&state.db.pool)
+        .await?;
+
     sqlx::query(&state.db.format_query("DELETE FROM volcengine_pool_accounts WHERE id = ?"))
         .bind(id)
         .execute(&state.db.pool)
@@ -379,7 +391,14 @@ async fn test_account(
     .fetch_one(&state.db.pool)
     .await?;
 
-    // 发送一个最小化的聊天请求到火山方舟
+    let base = if account.base_url.is_empty() {
+        "https://ark.cn-beijing.volces.com/api/v3".to_string()
+    } else {
+        account.base_url.trim_end_matches('/').to_string()
+    };
+
+    // 使用 /chat/completions 端点进行轻量级探测
+    let url = format!("{}/chat/completions", base);
     let start = std::time::Instant::now();
     let client = reqwest::Client::new();
     let test_body = json!({
@@ -389,7 +408,7 @@ async fn test_account(
     });
 
     let resp = client
-        .post("https://ark.cn-beijing.volces.com/api/v3/chat/completions")
+        .post(&url)
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", account.api_key))
         .json(&test_body)

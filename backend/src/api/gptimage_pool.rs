@@ -225,6 +225,12 @@ async fn delete_pool(
         )));
     }
 
+    // 先清理映射关系
+    sqlx::query(&state.db.format_query("DELETE FROM gptimage_pool_account_mapping WHERE pool_id = ?"))
+        .bind(id)
+        .execute(&state.db.pool)
+        .await?;
+
     sqlx::query(&state.db.format_query("DELETE FROM gptimage_pools WHERE id = ?"))
         .bind(id)
         .execute(&state.db.pool)
@@ -351,6 +357,12 @@ async fn delete_account(
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     require_admin(&state, &claims).await?;
+
+    // 先清理映射关系
+    sqlx::query(&state.db.format_query("DELETE FROM gptimage_pool_account_mapping WHERE account_id = ?"))
+        .bind(id)
+        .execute(&state.db.pool)
+        .await?;
 
     sqlx::query(&state.db.format_query("DELETE FROM gptimage_pool_accounts WHERE id = ?"))
         .bind(id)

@@ -211,6 +211,10 @@ pub async fn update_model(
     if let Some(tid) = req.type_id {
         sqlx::query(&state.db.format_query("UPDATE models SET type_id = ? WHERE id = ?")).bind(tid).bind(id).execute(&state.db.pool).await?;
     }
+    if let Some(ref gr) = req.group_ratios {
+        let gr_str = serde_json::to_string(gr).unwrap_or_else(|_| "{}".to_string());
+        sqlx::query(&state.db.format_query("UPDATE models SET group_ratios = ? WHERE id = ?")).bind(&gr_str).bind(id).execute(&state.db.pool).await?;
+    }
     if let Some(rule_id) = req.billing_rule_id {
         sqlx::query(&state.db.format_query("UPDATE models SET billing_rule_id = ? WHERE id = ?")).bind(rule_id).bind(id).execute(&state.db.pool).await?;
     }

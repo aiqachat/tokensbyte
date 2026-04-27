@@ -288,8 +288,8 @@ async fn create_team(
     let member_level_ids_json = serde_json::to_string(&payload.allowed_member_level_ids.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
 
     // Insert team
-    sqlx::query(
-        &state.db.format_query("INSERT INTO marketing_teams (name, description, invite_code, max_members, allowed_level_ids, allowed_member_level_ids) VALUES (?, ?, ?, ?, ?, ?)")
+    let team_id: i64 = sqlx::query_scalar(
+        &state.db.format_query("INSERT INTO marketing_teams (name, description, invite_code, max_members, allowed_level_ids, allowed_member_level_ids) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
     )
     .bind(&payload.name)
     .bind(&payload.description)
@@ -297,14 +297,6 @@ async fn create_team(
     .bind(max_members)
     .bind(&level_ids_json)
     .bind(&member_level_ids_json)
-    .execute(&state.db.pool)
-    .await?;
-
-    // Get last inserted id
-    let team_id: i64 = sqlx::query_scalar(
-        &state.db.format_query("SELECT id FROM marketing_teams WHERE name = ? ORDER BY id DESC LIMIT 1")
-    )
-    .bind(&payload.name)
     .fetch_one(&state.db.pool)
     .await?;
 
