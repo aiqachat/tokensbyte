@@ -33,7 +33,11 @@ const RechargeRecords: React.FC = () => {
   const [search, setSearch] = useState('');
   const [rechargeTypes, setRechargeTypes] = useState<string[]>([]);
   const [selectedType, setSelectedType] = useState<string | undefined>();
-  const [dateRange, setDateRange] = useState<[string, string] | undefined>();
+  const [totalAmount, setTotalAmount] = useState<number>(0);
+  const [dateRange, setDateRange] = useState<[string, string] | undefined>([
+    dayjs().startOf('month').format('YYYY-MM-DD'),
+    dayjs().endOf('month').format('YYYY-MM-DD')
+  ]);
 
   useEffect(() => {
     const init = async () => {
@@ -59,9 +63,10 @@ const RechargeRecords: React.FC = () => {
           start_time: dateRange?.[0] || undefined,
           end_time: dateRange?.[1] ? dateRange[1] + ' 23:59:59' : undefined,
         }
-      }) as unknown as Promise<{ data: RechargeRecord[]; total: number }>);
+      }) as unknown as Promise<{ data: RechargeRecord[]; total: number; total_amount: number }>);
       setData(resp.data);
       setTotal(resp.total);
+      setTotalAmount(resp.total_amount || 0);
     } catch (e) {
       console.error(e);
     } finally {
@@ -126,12 +131,16 @@ const RechargeRecords: React.FC = () => {
   return (
     <Card bordered={false}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24, alignItems: 'center' }}>
-        <Space size="middle">
+        <Space size="middle" align="baseline">
             <WalletOutlined style={{ fontSize: '24px', color: '#1677ff' }} />
             <Title level={2} style={{ margin: 0 }}>{t('finance.recharge_title')}</Title>
+            <Text type="secondary" style={{ marginLeft: 8 }}>
+              金额合计: <Text strong style={{ color: '#1677ff', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(2)}</Text>
+            </Text>
         </Space>
         <Space>
           <RangePicker 
+            defaultValue={[dayjs().startOf('month'), dayjs().endOf('month')]}
             onChange={(dates) => {
               if (dates && dates[0] && dates[1]) {
                  setDateRange([dates[0].format('YYYY-MM-DD'), dates[1].format('YYYY-MM-DD')]);

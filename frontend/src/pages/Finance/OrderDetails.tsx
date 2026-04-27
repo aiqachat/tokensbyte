@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Card, Typography, Space, Input, Button, Tag, Select } from 'antd';
+import { Table, Card, Typography, Space, Input, Button, Tag, Select, DatePicker } from 'antd';
 import { SyncOutlined, SearchOutlined, BarChartOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
 
 interface OrderRecord {
   id: number;
@@ -34,14 +36,21 @@ const methodMap: Record<string, { color: string; label: string }> = {
 
 const OrderDetails: React.FC = () => {
   const { t } = useTranslation();
+  const { settings } = useSettingsStore();
+  const currencySymbol = settings?.currency?.currency_symbol || '¥';
   const [data, setData] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
+  const [totalAmount, setTotalAmount] = useState<number>(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [methodFilter, setMethodFilter] = useState<string | undefined>();
+  const [dateRange, setDateRange] = useState<[string, string] | undefined>([
+    dayjs().startOf('month').format('YYYY-MM-DD'),
+    dayjs().endOf('month').format('YYYY-MM-DD')
+  ]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -53,16 +62,19 @@ const OrderDetails: React.FC = () => {
           user_id: search || undefined,
           status: statusFilter,
           payment_method: methodFilter,
+          start_time: dateRange?.[0] || undefined,
+          end_time: dateRange?.[1] ? dateRange[1] + ' 23:59:59' : undefined,
         }
-      }) as unknown as Promise<{ data: OrderRecord[]; total: number }>);
+      }) as unknown as Promise<{ data: OrderRecord[]; total: number; total_amount: number }>);
       setData(resp.data);
       setTotal(resp.total);
+      setTotalAmount(resp.total_amount || 0);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, statusFilter, methodFilter]);
+  }, [page, pageSize, search, statusFilter, methodFilter, dateRange]);
 
   useEffect(() => {
     fetchData();
@@ -140,11 +152,25 @@ const OrderDetails: React.FC = () => {
   return (
     <Card bordered={false}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24, alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-        <Space size="middle">
+        <Space size="middle" align="baseline">
           <BarChartOutlined style={{ fontSize: 24, color: '#52c41a' }} />
           <Title level={2} style={{ margin: 0 }}>支付订单</Title>
+          <Text type="secondary" style={{ marginLeft: 8 }}>
+            (已支付) 合计: <Text strong style={{ color: '#52c41a', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(2)}</Text>
+          </Text>
         </Space>
         <Space wrap>
+          <RangePicker 
+            defaultValue={[dayjs().startOf('month'), dayjs().endOf('month')]}
+            onChange={(dates) => {
+              if (dates && dates[0] && dates[1]) {
+                 setDateRange([dates[0].format('YYYY-MM-DD'), dates[1].format('YYYY-MM-DD')]);
+              } else {
+                 setDateRange(undefined);
+              }
+            }} 
+            style={{ width: 240 }}
+          />
           <Select
             placeholder="支付状态"
             allowClear
