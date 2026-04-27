@@ -425,8 +425,6 @@ pub async fn register_email(
         let user_id = uuid::Uuid::new_v4().to_string();
         let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
         let username = generate_unique_username(&state, &request.email).await?;
-        // 自动生成的用户名也做保留词校验
-        validate_username(&username)?;
         let password_hash = auth::hash_password(&request.password)?;
 
         let mut tx = state.db.pool.begin().await?;
@@ -533,8 +531,6 @@ pub async fn register_mobile(
         let base_username = format!("m_{}", &request.mobile[request.mobile.len().saturating_sub(4)..]);
         // 确保用户名唯一
         let username = ensure_unique_username(&state, &base_username).await?;
-        // 自动生成的用户名也做保留词校验
-        validate_username(&username)?;
         let password_hash = auth::hash_password(&request.password)?;
         let placeholder_email = format!("m_{}@tokensbyte.local", &uid);
 

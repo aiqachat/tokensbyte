@@ -154,9 +154,56 @@ pub async fn update_user(
 pub async fn delete_user(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
-    // Prevent self-deletion if needed (optional)
-    sqlx::query(&state.db.format_query("DELETE FROM users WHERE id = ?")).bind(id).execute(&state.db.pool).await?;
+    // 防止管理员删除自己
+    if claims.sub == id {
+        return Err(AppError::BadRequest("不能删除当前登录的管理员账户".to_string()));
+    }
+
+    // 使用事务，按外键依赖顺序逐层清理关联数据
+    let mut tx = state.db.pool.begin().await?;
+
+    // 1. commissions 引用 recharge_records(id) 和 users(id)，必须最先删
+    sqlx::query(&state.db.format_query("DELETE FROM commissions WHERE user_id = ? OR from_user_id = ?"))
+        .bind(&id).bind(&id).execute(&mut *tx).await?;
+
+    // 2. recharge_records 引用 users(id)
+    sqlx::query(&state.db.format_query("DELETE FROM recharge_records WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 3. api_tokens 引用 users(id)
+    sqlx::query(&state.db.format_query("DELETE FROM api_tokens WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 4. orders 引用 users(id)
+    sqlx::query(&state.db.format_query("DELETE FROM orders WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 5. plugin_assets 引用 users(id)
+    sqlx::query(&state.db.format_query("DELETE FROM plugin_assets WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 6. plugin_asset_groups 引用 users(id)
+    sqlx::query(&state.db.format_query("DELETE FROM plugin_asset_groups WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 7. 无外键但需清理的业务数据
+    sqlx::query(&state.db.format_query("DELETE FROM logs WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+    sqlx::query(&state.db.format_query("DELETE FROM plugin_api_logs WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+    // marketing 关联（无外键但需清理）
+    sqlx::query(&state.db.format_query("DELETE FROM marketing_team_leaders WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+    sqlx::query(&state.db.format_query("DELETE FROM marketing_team_members WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 8. 最终删除用户主记录（playground_projects / playground_assets 已有 ON DELETE CASCADE）
+    sqlx::query(&state.db.format_query("DELETE FROM users WHERE id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    tx.commit().await?;
 
     Ok(Json(serde_json::json!({ "success": true })))
 }

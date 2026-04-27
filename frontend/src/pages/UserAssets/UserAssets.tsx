@@ -409,13 +409,23 @@ const UserAssets: React.FC = () => {
           continue;
         }
         try {
-          const formData = new FormData();
-          formData.append('file', fileItem.originFileObj as any);
-          formData.append('category', category);
+          const rawFile = fileItem.originFileObj as File;
           const ext = fileItem.name?.split('.').pop()?.toLowerCase() || '';
           const videoExts = ['mp4', 'mov', 'webm', 'avi', 'mkv'];
           const audioExts = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'];
           const detectedType = videoExts.includes(ext) ? 'video' : audioExts.includes(ext) ? 'audio' : 'image';
+          // 文件名超过64字符时自动截断（保留扩展名）
+          let uploadFile: File = rawFile;
+          if (rawFile.name.length > 64) {
+            const dotIdx = rawFile.name.lastIndexOf('.');
+            const fileExt = dotIdx >= 0 ? rawFile.name.slice(dotIdx) : '';
+            const baseName = dotIdx >= 0 ? rawFile.name.slice(0, dotIdx) : rawFile.name;
+            const truncatedName = baseName.slice(0, 64 - fileExt.length) + fileExt;
+            uploadFile = new File([rawFile], truncatedName, { type: rawFile.type });
+          }
+          const formData = new FormData();
+          formData.append('file', uploadFile);
+          formData.append('category', category);
           formData.append('asset_type', detectedType);
           if (category === '虚拟人像' && groupId) { formData.append('group_id', groupId); }
           await request.post(api, formData, { headers: { 'Content-Type': 'multipart/form-data' }, skipErrorHandler: true } as any);
@@ -1532,7 +1542,7 @@ const UserAssets: React.FC = () => {
                           </div>
                           
                           {/* 待审核标记 */}
-                          {asset.status !== 'approved' && asset.source === 'user' && (
+                          {(asset.status !== 'approved' || !asset.asset_id) && asset.source === 'user' && (
                             <div style={{
                               position: 'absolute',
                               top: 8,
@@ -1616,11 +1626,15 @@ const UserAssets: React.FC = () => {
         cancelText="取消"
       >
         <Form form={groupForm} layout="vertical">
-          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}>
-            <Input placeholder="输入素材资产组合名称..." maxLength={64} />
+          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}
+            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>名称最多 64 个字符，建议使用简短易识别的名称</span>}
+          >
+            <Input placeholder="输入素材资产组合名称..." maxLength={64} showCount />
           </Form.Item>
-          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}>
-            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} />
+          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}
+            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>描述最多 300 个字符</span>}
+          >
+            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} showCount />
           </Form.Item>
         </Form>
       </Modal>
@@ -1705,6 +1719,7 @@ const UserAssets: React.FC = () => {
               <div>• 视频：mp4、mov、webm、avi、mkv（≤ 300 MB）</div>
               <div>• 音频：mp3、wav、aac、flac、ogg、m4a（≤ 100 MB）</div>
               <div>• 支持混合选择多种类型文件{reviewEnabled ? '，上传后需提交审核' : ''}</div>
+              <div>• 文件名最多 64 个字符，超出部分将自动截取</div>
             </div>
           </Form.Item>
           <Form.Item name="category" hidden>
@@ -1743,11 +1758,15 @@ const UserAssets: React.FC = () => {
         }}
       >
         <Form form={editGroupForm} layout="vertical">
-          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}>
-            <Input placeholder="输入素材资产组合名称..." maxLength={64} />
+          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}
+            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>名称最多 64 个字符</span>}
+          >
+            <Input placeholder="输入素材资产组合名称..." maxLength={64} showCount />
           </Form.Item>
-          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}>
-            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} />
+          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}
+            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>描述最多 300 个字符</span>}
+          >
+            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} showCount />
           </Form.Item>
         </Form>
       </Modal>
@@ -1763,8 +1782,10 @@ const UserAssets: React.FC = () => {
         cancelText="取消"
       >
         <Form form={editForm} layout="vertical">
-          <Form.Item label="素材名称" name="file_name" rules={[{ required: true, message: '请输入素材名称' }]}>
-            <Input placeholder="输入新的素材名称" />
+          <Form.Item label="素材名称" name="file_name" rules={[{ required: true, message: '请输入素材名称' }]}
+            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>名称最多 64 个字符</span>}
+          >
+            <Input placeholder="输入新的素材名称" maxLength={64} showCount />
           </Form.Item>
           <Form.Item label="素材分类" name="category" rules={[{ required: true, message: '请选择分类' }]}>
             <Select placeholder="请选择分类" disabled>
