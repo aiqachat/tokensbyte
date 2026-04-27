@@ -3,13 +3,13 @@ name: Build to Tencent Cloud
 on:
   workflow_dispatch:  # 手动触发
   push:
-    branches: [feature/samdo]
+    branches: [develop, main]
     paths-ignore:
       - '**.md'
       - 'docs/**'
 
 env:
-  REGISTRY: ccr.ccs.tencentyun.com/ws-api
+  REGISTRY: ccr.ccs.tencentyun.com/netbcloud
   IMAGE_PREFIX: tokensbyte
 
 jobs:

@@ -3,7 +3,7 @@ name: Build to GHCR
 on:
   workflow_dispatch:  # 手动触发
   push:
-    branches: [feature/samdo]
+    branches: [develop, main]
     paths-ignore:
       - '**.md'
       - 'docs/**'
