@@ -21,8 +21,9 @@ pub struct MarketingTeam {
     pub description: Option<String>,
     #[sqlx(default)]
     pub invite_code: Option<String>,
-    #[sqlx(default)]
     pub max_members: i64,
+    #[sqlx(default)]
+    pub members_can_set_level: i64,
     #[sqlx(default)]
     pub allowed_level_ids: String,
     #[sqlx(default)]
@@ -45,6 +46,7 @@ pub struct TeamWithMembers {
     pub description: Option<String>,
     pub invite_code: String,
     pub max_members: i64,
+    pub members_can_set_level: i64,
     pub allowed_level_ids: Vec<i64>,
     pub allowed_member_level_ids: Vec<i64>,
     pub leaders: Vec<TeamMember>,
@@ -60,6 +62,7 @@ pub struct CreateTeamRequest {
     pub leader_ids: Vec<String>,
     pub member_ids: Vec<String>,
     pub max_members: Option<i64>,
+    pub members_can_set_level: Option<i64>,
     pub allowed_level_ids: Option<Vec<i64>>,
     pub allowed_member_level_ids: Option<Vec<i64>>,
 }
@@ -71,6 +74,7 @@ pub struct UpdateTeamRequest {
     pub leader_ids: Vec<String>,
     pub member_ids: Vec<String>,
     pub max_members: Option<i64>,
+    pub members_can_set_level: Option<i64>,
     pub allowed_level_ids: Option<Vec<i64>>,
     pub allowed_member_level_ids: Option<Vec<i64>>,
 }
@@ -92,6 +96,7 @@ pub struct ReferralUser {
     pub balance: f64,
     pub is_active: i64,
     pub created_at: String,
+    pub remark: Option<String>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -121,6 +126,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/my-referrals", get(my_referrals))
         .route("/referral/{user_id}/recharges", get(referral_recharges))
         .route("/referral/{user_id}/level", put(set_referral_user_level))
+        .route("/referral/{user_id}/remark", put(update_referral_remark))
         .route("/member/{user_id}/level", put(set_member_user_level))
         .route("/allowed-levels", get(get_allowed_levels))
         .route("/allowed-member-levels", get(get_allowed_member_levels))
@@ -258,6 +264,7 @@ async fn list_teams(
             description: team.description,
             invite_code: team.invite_code.unwrap_or_default(),
             max_members: team.max_members,
+            members_can_set_level: team.members_can_set_level,
             allowed_level_ids: level_ids,
             allowed_member_level_ids: member_level_ids,
             leaders,
@@ -284,17 +291,19 @@ async fn create_team(
 
     let invite_code = generate_invite_code();
     let max_members = payload.max_members.unwrap_or(10);
+    let members_can_set_level = payload.members_can_set_level.unwrap_or(0);
     let level_ids_json = serde_json::to_string(&payload.allowed_level_ids.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
     let member_level_ids_json = serde_json::to_string(&payload.allowed_member_level_ids.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
 
     // Insert team
     let team_id: i64 = sqlx::query_scalar(
-        &state.db.format_query("INSERT INTO marketing_teams (name, description, invite_code, max_members, allowed_level_ids, allowed_member_level_ids) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
+        &state.db.format_query("INSERT INTO marketing_teams (name, description, invite_code, max_members, members_can_set_level, allowed_level_ids, allowed_member_level_ids) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id")
     )
     .bind(&payload.name)
     .bind(&payload.description)
     .bind(&invite_code)
     .bind(max_members)
+    .bind(members_can_set_level)
     .bind(&level_ids_json)
     .bind(&member_level_ids_json)
     .fetch_one(&state.db.pool)
@@ -339,16 +348,18 @@ async fn update_team(
     }
 
     let max_members = payload.max_members.unwrap_or(10);
+    let members_can_set_level = payload.members_can_set_level.unwrap_or(0);
     let level_ids_json = serde_json::to_string(&payload.allowed_level_ids.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
     let member_level_ids_json = serde_json::to_string(&payload.allowed_member_level_ids.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
 
     // Update team
     sqlx::query(
-        &state.db.format_query("UPDATE marketing_teams SET name = ?, description = ?, max_members = ?, allowed_level_ids = ?, allowed_member_level_ids = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        &state.db.format_query("UPDATE marketing_teams SET name = ?, description = ?, max_members = ?, members_can_set_level = ?, allowed_level_ids = ?, allowed_member_level_ids = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
     )
     .bind(&payload.name)
     .bind(&payload.description)
     .bind(max_members)
+    .bind(members_can_set_level)
     .bind(&level_ids_json)
     .bind(&member_level_ids_json)
     .bind(id)
@@ -542,7 +553,7 @@ async fn my_referrals(
     let referrals: Vec<ReferralUser> = sqlx::query_as(
         &state.db.format_query(
             r#"SELECT u.id, u.uid, u.username, u.email, u.user_group, ul.name as level_name,
-                      u.balance, u.is_active, u.created_at
+                      u.balance, u.is_active, u.created_at, u.remark
                FROM users u
                LEFT JOIN user_levels ul ON u.user_group = ul.group_key
                WHERE u.referred_by = ? OR u.referred_by = ?
@@ -575,6 +586,7 @@ async fn my_referrals(
             "balance": r.balance,
             "is_active": r.is_active,
             "created_at": r.created_at,
+            "remark": r.remark,
             "total_recharge": total_recharge,
         }));
     }
@@ -678,14 +690,14 @@ async fn team_overview(
 
         let mut member_stats: Vec<serde_json::Value> = Vec::new();
         for mid in &member_ids {
-            let user_info: Option<(String, String, String, String, f64)> = sqlx::query_as(
-                &state.db.format_query("SELECT id, username, uid, user_group, balance FROM users WHERE id = ?")
+            let user_info: Option<(String, String, String, String, Option<String>, f64)> = sqlx::query_as(
+                &state.db.format_query("SELECT u.id, u.username, u.uid, u.user_group, ul.name as level_name, u.balance FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
             )
             .bind(mid)
             .fetch_optional(&state.db.pool)
             .await?;
 
-            let (uid_str, username, uid, user_group, member_balance) = match user_info {
+            let (uid_str, username, uid, user_group, level_name, member_balance) = match user_info {
                 Some(u) => u,
                 None => continue,
             };
@@ -721,6 +733,7 @@ async fn team_overview(
                 "username": username,
                 "uid": uid,
                 "user_group": user_group,
+                "level_name": level_name,
                 "balance": member_balance,
                 "total_recharge": member_total_recharge,
                 "referred_count": referred_count,
@@ -752,12 +765,26 @@ async fn get_allowed_levels(
     let my_id = &claims.sub;
 
     // 查询当前用户是负责人的所有团队
-    let team_ids: Vec<i64> = sqlx::query_scalar(
+    let mut team_ids: Vec<i64> = sqlx::query_scalar(
         &state.db.format_query("SELECT team_id FROM marketing_team_leaders WHERE user_id = ?")
     )
     .bind(my_id)
     .fetch_all(&state.db.pool)
     .await?;
+
+    // 另外加上用户作为成员且被授权设置等级的团队
+    let member_team_ids: Vec<i64> = sqlx::query_scalar(
+        &state.db.format_query("SELECT m.team_id FROM marketing_team_members m JOIN marketing_teams t ON m.team_id = t.id WHERE m.user_id = ? AND t.members_can_set_level = 1")
+    )
+    .bind(my_id)
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    for id in member_team_ids {
+        if !team_ids.contains(&id) {
+            team_ids.push(id);
+        }
+    }
 
     if team_ids.is_empty() {
         return Ok(Json(json!({ "levels": [], "is_leader": false })));
@@ -828,19 +855,33 @@ async fn set_referral_user_level(
     .fetch_one(&state.db.pool)
     .await?;
 
-    // 1. 验证当前用户是至少一个团队的负责人
-    let team_ids: Vec<i64> = sqlx::query_scalar(
+    // 1. 验证当前用户是至少一个团队的负责人或被授权的成员
+    let leader_team_ids: Vec<i64> = sqlx::query_scalar(
         &state.db.format_query("SELECT team_id FROM marketing_team_leaders WHERE user_id = ?")
     )
     .bind(my_id)
     .fetch_all(&state.db.pool)
     .await?;
 
-    if team_ids.is_empty() {
+    let member_team_ids: Vec<i64> = sqlx::query_scalar(
+        &state.db.format_query("SELECT m.team_id FROM marketing_team_members m JOIN marketing_teams t ON m.team_id = t.id WHERE m.user_id = ? AND t.members_can_set_level = 1")
+    )
+    .bind(my_id)
+    .fetch_all(&state.db.pool)
+    .await?;
+
+    if leader_team_ids.is_empty() && member_team_ids.is_empty() {
         return Err(AppError::Unauthorized);
     }
 
-    // 2. 验证目标用户是当前用户推荐的，或者是当前用户团队成员推荐的
+    let mut all_team_ids = leader_team_ids.clone();
+    for id in &member_team_ids {
+        if !all_team_ids.contains(id) {
+            all_team_ids.push(*id);
+        }
+    }
+
+    // 2. 验证目标用户是当前用户推荐的，或者是当前用户作为负责人时其团队成员推荐的
     let is_my_referral: i64 = sqlx::query_scalar(
         &state.db.format_query("SELECT COUNT(*) FROM users WHERE id = ? AND (referred_by = ? OR referred_by = ?)")
     )
@@ -850,10 +891,11 @@ async fn set_referral_user_level(
     .fetch_one(&state.db.pool)
     .await?;
 
-    let mut is_team_member_referral = false;
-    if is_my_referral == 0 {
-        // 检查是否为团队成员推荐的用户
-        for tid in &team_ids {
+    let mut is_authorized_target = is_my_referral > 0;
+
+    if !is_authorized_target {
+        // 检查是否为团队成员推荐的用户（仅针对自己是负责人的团队）
+        for tid in &leader_team_ids {
             let member_ids: Vec<String> = sqlx::query_scalar(
                 &state.db.format_query("SELECT user_id FROM marketing_team_members WHERE team_id = ?")
             )
@@ -880,16 +922,16 @@ async fn set_referral_user_level(
                 .await?;
 
                 if count > 0 {
-                    is_team_member_referral = true;
+                    is_authorized_target = true;
                     break;
                 }
             }
-            if is_team_member_referral { break; }
+            if is_authorized_target { break; }
         }
+    }
 
-        if !is_team_member_referral {
-            return Err(AppError::BadRequest("目标用户不在您的推荐范围内".to_string()));
-        }
+    if !is_authorized_target {
+        return Err(AppError::BadRequest("目标用户不在您的推荐范围内".to_string()));
     }
 
     // 3. 验证要设置的等级在团队授权范围内
@@ -907,7 +949,7 @@ async fn set_referral_user_level(
     };
 
     let mut is_authorized = false;
-    for tid in &team_ids {
+    for tid in &all_team_ids {
         let allowed_str: String = sqlx::query_scalar(
             &state.db.format_query("SELECT allowed_level_ids FROM marketing_teams WHERE id = ?")
         )
@@ -1106,4 +1148,49 @@ async fn set_member_user_level(
     .unwrap_or_else(|_| payload.group_key.clone());
 
     Ok(Json(json!({ "message": format!("成员等级已设置为: {}", level_name), "level_name": level_name, "group_key": payload.group_key })))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateRemarkReq {
+    pub remark: Option<String>,
+}
+
+async fn update_referral_remark(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+    Path(user_id): Path<String>,
+    Json(payload): Json<UpdateRemarkReq>,
+) -> AppResult<Json<serde_json::Value>> {
+    let my_id = &claims.sub;
+
+    let my_uid: String = sqlx::query_scalar(
+        &state.db.format_query("SELECT uid FROM users WHERE id = ?")
+    )
+    .bind(my_id)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    // Check if the target user was referred by the current user
+    let is_my_referral: bool = sqlx::query_scalar(
+        &state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND (referred_by = ? OR referred_by = ?))")
+    )
+    .bind(&user_id)
+    .bind(my_id)
+    .bind(&my_uid)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    if !is_my_referral {
+        return Err(AppError::Forbidden("无权操作该用户".to_string()));
+    }
+
+    sqlx::query(
+        &state.db.format_query("UPDATE users SET remark = ? WHERE id = ?")
+    )
+    .bind(&payload.remark)
+    .bind(&user_id)
+    .execute(&state.db.pool)
+    .await?;
+
+    Ok(Json(serde_json::json!({ "message": "备注更新成功" })))
 }

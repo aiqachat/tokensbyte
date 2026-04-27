@@ -654,6 +654,8 @@ macro_rules! pg_migration_blocks {
         .execute(pool).await.ok();
     sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS max_members INTEGER NOT NULL DEFAULT 10")
         .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS members_can_set_level INTEGER NOT NULL DEFAULT 0")
+        .execute(pool).await.ok();
 
     // Backfill: generate invite_code for existing teams that don't have one
     {
