@@ -99,7 +99,9 @@ pub async fn resolve_forward_rule(
         category_matched
     };
 
-    // 4. 智能匹配：从 config_json.path_rewrite.old 匹配入口路径
+    // 4. 严格匹配：从 config_json.path_rewrite.old 匹配入口路径
+    //    必须至少有一条规则的 path_rewrite.old 与入口路径一致，否则拒绝匹配，
+    //    防止聊天接口错误地路由到图片/视频模型的转发规则。
     let mut best: Option<&crate::models::ForwardRule> = None;
     for rule in &candidates {
         if let Ok(config) = serde_json::from_str::<serde_json::Value>(&rule.config_json) {
@@ -117,7 +119,8 @@ pub async fn resolve_forward_rule(
             }
         }
     }
-    let rule = best.unwrap_or(candidates.first()?);
+    // 未找到与入口路径匹配的规则时直接返回 None，不回落到不匹配的规则
+    let rule = best?;
 
     // 5. 解析 config_json
     let config: serde_json::Value =
@@ -170,6 +173,27 @@ pub async fn resolve_forward_rule(
         asset_convert,
         poll_path,
     })
+}
+
+/// 快速检查模型是否绑定了转发规则（不做路径匹配）。
+/// 配合 resolve_forward_rule 使用：当 resolve 返回 None 时，
+/// 若此函数返回 true 说明模型绑定了规则但入口路径不匹配，应拒绝请求。
+pub async fn model_has_forward_rules(state: &AppState, model_id: &str) -> bool {
+    let ids: Option<String> = sqlx::query_scalar(
+        &state.db.format_query("SELECT forward_rule_ids FROM models WHERE model_id = ? AND is_active = 1"),
+    )
+    .bind(model_id)
+    .fetch_optional(&state.db.pool)
+    .await
+    .unwrap_or(None);
+
+    match ids {
+        Some(s) => {
+            let arr: Vec<i64> = serde_json::from_str(&s).unwrap_or_default();
+            !arr.is_empty()
+        }
+        None => false,
+    }
 }
 
 // ── URL 构建 ──────────────────────────────────────────────────

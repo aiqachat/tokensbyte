@@ -31,9 +31,17 @@ pub async fn video_generations(
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &entry_path).await?;
 
     // 解析转发规则
-    let resolved = forward::resolve_forward_rule(&state, model, "视频", &entry_path)
-        .await
-        .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, "视频"));
+    let resolved = match forward::resolve_forward_rule(&state, model, "视频", &entry_path).await {
+        Some(r) => r,
+        None => {
+            if forward::model_has_forward_rules(&state, model).await {
+                return Err(AppError::BadRequest(format!(
+                    "模型 '{}' 不支持当前接口，请检查模型对应的 API 调用方式", model
+                )));
+            }
+            forward::infer_forward_from_base_url(&channel.base_url, "视频")
+        }
+    };
 
     let mut upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "视频");
     let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
