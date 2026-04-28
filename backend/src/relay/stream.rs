@@ -308,6 +308,7 @@ pub async fn handle_native_stream(
              let fallback = crate::relay::usage_extractor::parse_usage(&full_response_text);
              prompt_tokens = fallback.prompt;
              completion_tokens = fallback.completion;
+             let cached_tokens = fallback.cached; // 获取缓存 Token
         }
         // 仍为 0 则估算
         if prompt_tokens == 0 && completion_tokens == 0 {
@@ -339,7 +340,7 @@ pub async fn handle_native_stream(
             features.image_count = Some(resp_count);
         }
         let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), discount);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, 0, final_discount, &features);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, cached_tokens, final_discount, &features);
         detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(&model);
         if model != resolved_model {
@@ -348,7 +349,7 @@ pub async fn handle_native_stream(
         
         let ep = format!("{}|{}", upstream_path, upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
-            &state, &token, channel.id, &model, prompt_tokens, completion_tokens, 0,
+            &state, &token, channel.id, &model, prompt_tokens, completion_tokens, cached_tokens,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,
             Some(request_content_str), Some(full_response_text), upstream_req_content, Some(detail)
         ).await;
