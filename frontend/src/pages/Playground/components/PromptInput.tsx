@@ -49,6 +49,7 @@ const PromptInput: React.FC = React.memo(() => {
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
   const [isVideoPreviewOpen, setIsVideoPreviewOpen] = useState(false);
   const [editingAssetIndex, setEditingAssetIndex] = useState<number | null>(null);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -419,8 +420,13 @@ const PromptInput: React.FC = React.memo(() => {
             </div>
           </Tooltip>
 
-          <Dropdown menu={{ items: dropdownItems, onClick: handleMenuClick }} trigger={['click']} placement="topLeft">
-            <Tooltip title="添加图片/视频/音频" placement="bottom">
+          <Dropdown
+            menu={{ items: dropdownItems, onClick: handleMenuClick }}
+            trigger={['click']}
+            placement="topLeft"
+            onOpenChange={setIsAddMenuOpen}
+          >
+            <Tooltip title="添加图片/视频/音频" placement="bottom" open={isAddMenuOpen ? false : undefined}>
               <div
                 style={{
                   display: 'flex',
