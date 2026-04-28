@@ -31,11 +31,9 @@ const VideoNodeContent: React.FC<Props> = React.memo(({ resultData }) => {
             src={videoUrl}
             controls
             loop
+            disablePictureInPicture
+            controlsList="nopictureinpicture"
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            onMouseDown={(e) => {
-              // 允许用户拖拽视频文件本身或点击进度条，不冒泡到画布
-              e.stopPropagation();
-            }}
           />
         </div>
       )

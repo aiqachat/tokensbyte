@@ -37,7 +37,7 @@ interface StorageInfo {
 interface AssetPickerModalProps {
   open: boolean;
   onClose: () => void;
-  onSelect: (asset: PluginAsset, fullUrl: string) => void;
+  onSelect: (items: { asset: PluginAsset; fullUrl: string }[]) => void;
 }
 
 // 分类配置
@@ -62,7 +62,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
   const [loading, setLoading] = useState(false);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [selectedAsset, setSelectedAsset] = useState<PluginAsset | null>(null);
+  const [selectedAssets, setSelectedAssets] = useState<PluginAsset[]>([]);
 
   // 获取存储信息
   useEffect(() => {
@@ -110,7 +110,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
 
   useEffect(() => {
     if (!open) return;
-    setSelectedAsset(null);
+    setSelectedAssets([]);
     setCurrentGroup(null);
     setSearchKeyword('');
     fetchAssets();
@@ -151,12 +151,24 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
   };
 
   const handleConfirm = () => {
-    if (!selectedAsset) {
-      message.warning('请先选择一个素材');
+    if (selectedAssets.length === 0) {
+      message.warning('请先至少选择一个素材');
       return;
     }
-    onSelect(selectedAsset, getFullUrl(selectedAsset.file_url));
+    onSelect(selectedAssets.map(a => ({ asset: a, fullUrl: getFullUrl(a.file_url) })));
     onClose();
+  };
+
+  const toggleAsset = (asset: PluginAsset) => {
+    setSelectedAssets(prev => {
+      const exists = prev.find(a => a.id === asset.id);
+      if (exists) return prev.filter(a => a.id !== asset.id);
+      if (prev.length >= 10) {
+        message.warning('最多只能选择 10 个素材');
+        return prev;
+      }
+      return [...prev, asset];
+    });
   };
 
   // 存储空间
@@ -387,7 +399,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
                 }}>
                   {filteredAssets.map(asset => {
                     const fullUrl = getFullUrl(asset.file_url);
-                    const isSelected = selectedAsset?.id === asset.id;
+                    const isSelected = selectedAssets.some(a => a.id === asset.id);
                     const ext = asset.file_name.split('.').pop()?.toLowerCase() || '';
                     const isVideo = asset.asset_type === 'video' || ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext);
                     const isAudio = asset.asset_type === 'audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext);
@@ -395,7 +407,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
                     return (
                       <div
                         key={asset.id}
-                        onClick={() => setSelectedAsset(isSelected ? null : asset)}
+                        onClick={() => toggleAsset(asset)}
                         style={{
                           position: 'relative',
                           borderRadius: 10,
@@ -504,12 +516,12 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
                 }}>
                   {filteredAssets.map(asset => {
                     const fullUrl = getFullUrl(asset.file_url);
-                    const isSelected = selectedAsset?.id === asset.id;
+                    const isSelected = selectedAssets.some(a => a.id === asset.id);
 
                     return (
                       <div
                         key={asset.id}
-                        onClick={() => setSelectedAsset(isSelected ? null : asset)}
+                        onClick={() => toggleAsset(asset)}
                         style={{
                           position: 'relative',
                           borderRadius: 10, overflow: 'hidden',
@@ -569,9 +581,9 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
           background: 'rgba(0,0,0,0.15)',
         }}>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>
-            {selectedAsset ? (
+            {selectedAssets.length > 0 ? (
               <span>
-                已选择: <span style={{ color: '#1677ff', fontWeight: 500 }}>{selectedAsset.file_name}</span>
+                已选择: <span style={{ color: '#1677ff', fontWeight: 500 }}>{selectedAssets.length} 项</span>
               </span>
             ) : (
               <span>点击素材进行选择</span>
@@ -597,20 +609,20 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
               onClick={handleConfirm}
               style={{
                 padding: '7px 24px', borderRadius: 8,
-                background: selectedAsset
+                background: selectedAssets.length > 0
                   ? 'linear-gradient(135deg, #1677ff 0%, #36cfc9 100%)'
                   : 'rgba(255,255,255,0.04)',
-                color: selectedAsset ? '#fff' : 'rgba(255,255,255,0.25)',
+                color: selectedAssets.length > 0 ? '#fff' : 'rgba(255,255,255,0.25)',
                 fontSize: 13, fontWeight: 500,
-                cursor: selectedAsset ? 'pointer' : 'not-allowed',
+                cursor: selectedAssets.length > 0 ? 'pointer' : 'not-allowed',
                 transition: 'all 0.2s',
-                boxShadow: selectedAsset ? '0 4px 12px rgba(22,119,255,0.3)' : 'none',
+                boxShadow: selectedAssets.length > 0 ? '0 4px 12px rgba(22,119,255,0.3)' : 'none',
               }}
               onMouseEnter={(e) => {
-                if (selectedAsset) e.currentTarget.style.boxShadow = '0 6px 20px rgba(22,119,255,0.45)';
+                if (selectedAssets.length > 0) e.currentTarget.style.boxShadow = '0 6px 20px rgba(22,119,255,0.45)';
               }}
               onMouseLeave={(e) => {
-                if (selectedAsset) e.currentTarget.style.boxShadow = '0 4px 12px rgba(22,119,255,0.3)';
+                if (selectedAssets.length > 0) e.currentTarget.style.boxShadow = '0 4px 12px rgba(22,119,255,0.3)';
               }}
             >
               确认选择

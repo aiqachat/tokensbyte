@@ -5,7 +5,7 @@
  * - 下层：功能芯片栏（模型选择、API 密钥、附加功能按钮）+ 运行按钮
  */
 import React, { useState, useRef } from 'react';
-import { Input, Tooltip, message, Dropdown } from 'antd';
+import { Input, Tooltip, message, Dropdown, Modal } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   KeyOutlined, PlayCircleOutlined, AppstoreOutlined,
@@ -47,6 +47,7 @@ const PromptInput: React.FC = React.memo(() => {
   const [isFocused, setIsFocused] = useState(false);
   const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false);
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
+  const [isVideoPreviewOpen, setIsVideoPreviewOpen] = useState(false);
   const [editingAssetIndex, setEditingAssetIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -156,15 +157,21 @@ const PromptInput: React.FC = React.memo(() => {
     >
       {/* 已附加的素材预览列表 */}
       {attachedAssets.length > 0 && (
-        <div style={{
-          padding: '12px 16px 0 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-        }}>
+        <div 
+          className="prompt-assets-scroll"
+          onWheel={(e) => {
+            if (e.deltaY !== 0) {
+              e.currentTarget.scrollLeft += e.deltaY;
+            }
+          }}
+          style={{
+            padding: '12px 16px 8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            overflowX: 'auto',
+          }}
+        >
           {attachedAssets.map((assetItem, index) => (
             <div key={assetItem.asset.id} style={{
               position: 'relative',
@@ -194,10 +201,23 @@ const PromptInput: React.FC = React.memo(() => {
                 }
                 if (isVideo) {
                   return (
-                    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                    <div 
+                      onClick={() => {
+                        setEditingAssetIndex(index);
+                        setIsVideoPreviewOpen(true);
+                      }}
+                      style={{ width: '100%', height: '100%', position: 'relative', cursor: 'pointer' }}
+                      title="点击预览视频"
+                    >
                       <video src={assetItem.fullUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" />
-                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
-                        <VideoCameraOutlined style={{ fontSize: 20, color: '#fff' }} />
+                      <div style={{ position: 'absolute', bottom: 4, left: 4, background: 'rgba(0,0,0,0.5)', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <VideoCameraOutlined style={{ fontSize: 10, color: '#fff' }} />
+                      </div>
+                      <div className="hover-edit-overlay" style={{
+                        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', 
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s'
+                      }}>
+                        <PlayCircleOutlined style={{ fontSize: 20, color: '#fff' }} />
                       </div>
                     </div>
                   );
@@ -400,7 +420,7 @@ const PromptInput: React.FC = React.memo(() => {
           </Tooltip>
 
           <Dropdown menu={{ items: dropdownItems, onClick: handleMenuClick }} trigger={['click']} placement="topLeft">
-            <Tooltip title="添加附件">
+            <Tooltip title="添加图片/视频/音频" placement="bottom">
               <div
                 style={{
                   display: 'flex',
@@ -507,13 +527,18 @@ const PromptInput: React.FC = React.memo(() => {
       <AssetPickerModal
         open={isAssetPickerOpen}
         onClose={() => setIsAssetPickerOpen(false)}
-        onSelect={(asset, fullUrl) => {
-          if (attachedAssets.length >= 10) {
-            message.error('最多只能附加 10 个附件');
-            return;
-          }
-          setAttachedAssets(prev => [...prev, { asset, fullUrl }]);
-          message.success(`已附加素材: ${asset.file_name}`);
+        onSelect={(items) => {
+          setAttachedAssets(prev => {
+            const newTotal = prev.length + items.length;
+            if (newTotal > 10) {
+              message.error(`最多只能附加 10 个附件，已截断超出部分`);
+              const allowed = 10 - prev.length;
+              const toAdd = items.slice(0, Math.max(0, allowed));
+              return [...prev, ...toAdd];
+            }
+            return [...prev, ...items];
+          });
+          message.success(`已附加 ${items.length} 个素材`);
         }}
       />
 
@@ -549,6 +574,30 @@ const PromptInput: React.FC = React.memo(() => {
           }}
         />
       )}
+
+      {/* 视频预览弹窗 */}
+      <Modal
+        open={isVideoPreviewOpen}
+        title="视频预览"
+        footer={null}
+        onCancel={() => {
+          setIsVideoPreviewOpen(false);
+          setEditingAssetIndex(null);
+        }}
+        width={800}
+        centered
+        styles={{ body: { padding: 0, background: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center' } }}
+        destroyOnClose
+      >
+        {editingAssetIndex !== null && (attachedAssets[editingAssetIndex]?.asset.asset_type === 'video' || attachedAssets[editingAssetIndex]?.asset.file_name?.match(/\.(mp4|mov|webm|avi|mkv)$/i)) && (
+          <video
+            src={attachedAssets[editingAssetIndex].fullUrl}
+            style={{ width: '100%', maxHeight: '75vh', display: 'block' }}
+            controls
+            autoPlay
+          />
+        )}
+      </Modal>
 
       {/* 隐藏的本地文件上传 */}
       <input

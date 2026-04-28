@@ -117,9 +117,10 @@ export const useGeneration = () => {
           if (currentProjectId) formData.append('project_id', currentProjectId.toString());
           
           try {
-            const res = await axios.post('/playground/assets/upload', formData, {
-              headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${selectedTokenKey}` }
-            }).then(r => r.data);
+            const { default: requestUtil } = await import('../../../utils/request');
+            const res = await requestUtil.post('/playground/assets/upload', formData, {
+              headers: { 'Content-Type': 'multipart/form-data' }
+            }) as any;
             
             if (res.url) {
               return { ...item, fullUrl: res.url, isUploaded: true };

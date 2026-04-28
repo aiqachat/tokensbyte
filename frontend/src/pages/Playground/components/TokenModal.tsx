@@ -2,8 +2,9 @@
  * API 密钥选择弹窗
  */
 import React from 'react';
-import { Modal } from 'antd';
-import { CloseOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Modal, Button } from 'antd';
+import { CloseOutlined, CheckCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { usePlayground } from '../context/PlaygroundContext';
 
 const TokenModal: React.FC = React.memo(() => {
@@ -11,6 +12,7 @@ const TokenModal: React.FC = React.memo(() => {
     isTokenModalVisible, setIsTokenModalVisible,
     apiTokens, selectedTokenKey, setSelectedTokenKey,
   } = usePlayground();
+  const navigate = useNavigate();
 
   return (
     <Modal
@@ -27,8 +29,35 @@ const TokenModal: React.FC = React.memo(() => {
     >
       <div style={{ maxHeight: 400, overflowY: 'auto', padding: '12px 0' }}>
         {apiTokens.length === 0 ? (
-          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)', padding: '60px 0' }}>
-            暂无可用的接口密钥，请先在「接口令牌」页创建
+          <div style={{ 
+            textAlign: 'center', 
+            color: 'rgba(255,255,255,0.45)', 
+            padding: '40px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 20
+          }}>
+            <span style={{ fontSize: 14 }}>暂无可用的接口密钥，请先在「接口令牌」页创建</span>
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />}
+              onClick={() => {
+                setIsTokenModalVisible(false);
+                navigate('/tokens');
+              }}
+              style={{
+                borderRadius: 8,
+                height: 40,
+                background: 'linear-gradient(135deg, #1677ff 0%, #003eb3 100%)',
+                border: 'none',
+                boxShadow: '0 4px 12px rgba(22,119,255,0.3)',
+                fontWeight: 500,
+                padding: '0 24px'
+              }}
+            >
+              去创建接口令牌
+            </Button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
