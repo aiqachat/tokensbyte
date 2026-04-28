@@ -285,6 +285,7 @@ pub async fn handle_native_stream(
         
         let mut prompt_tokens = 0;
         let mut completion_tokens = 0;
+        let mut cached_tokens = 0;
         
         // Very basic attempt to parse usageMetadata if it's JSON array or SSE JSON
         let last_bracket = full_response_text.rfind('}');
@@ -308,7 +309,7 @@ pub async fn handle_native_stream(
              let fallback = crate::relay::usage_extractor::parse_usage(&full_response_text);
              prompt_tokens = fallback.prompt;
              completion_tokens = fallback.completion;
-             let cached_tokens = fallback.cached; // 获取缓存 Token
+             cached_tokens = fallback.cached; // 获取缓存 Token
         }
         // 仍为 0 则估算
         if prompt_tokens == 0 && completion_tokens == 0 {

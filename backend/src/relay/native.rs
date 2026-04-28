@@ -378,7 +378,7 @@ pub async fn volcengine_status(
                 features.image_count = Some(resp_count);
             }
             let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, 0, final_discount, &features);
+            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, usage.cached, final_discount, &features);
             detail.push_str(&format!(" | {}", discount_source));
             let resolved_model = channel.resolve_model(&model_name);
             if model_name != resolved_model {
@@ -391,7 +391,7 @@ pub async fn volcengine_status(
             // 更新日志（无论 cost 是否为 0，都要写入计费明细以解除冻结状态）
             let _ = sqlx::query(&state.db.format_query(
                 "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-            )).bind(usage.prompt).bind(usage.completion).bind(0_i32).bind(cost).bind(detail).bind(log_id)
+            )).bind(usage.prompt).bind(usage.completion).bind(usage.cached).bind(cost).bind(detail).bind(log_id)
             .execute(&state.db.pool).await;
 
             // 余额结算
@@ -552,7 +552,7 @@ pub async fn volcengine_images(
         }
 
         let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, 0, final_discount, &features);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, usage.cached, final_discount, &features);
         detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(model);
         if model != resolved_model {
@@ -560,7 +560,7 @@ pub async fn volcengine_images(
         }
         tracing::info!("[Volcengine Image] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
 
-        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, 0, cost, pre_deduction, 200,
+        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, usage.cached, cost, pre_deduction, 200,
             "/api/v3/images/generations", None, latency_ms, final_is_stream,
             Some(request_content_str), Some(response_content_str.clone()), Some(fwd.to_string()), Some(detail)).await;
     }
