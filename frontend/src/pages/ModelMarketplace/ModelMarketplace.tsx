@@ -11,7 +11,7 @@ import {
   AudioOutlined, CodeOutlined, ApiOutlined, ShopOutlined,
   FilterOutlined, SortAscendingOutlined, MenuOutlined, CloseOutlined,
   DashboardOutlined, WalletOutlined, LogoutOutlined, MenuUnfoldOutlined, MenuFoldOutlined,
-  LockOutlined, InfoCircleOutlined
+  LockOutlined, InfoCircleOutlined, UnorderedListOutlined
 } from '@ant-design/icons';
 
 const { Header, Sider, Content } = Layout;
@@ -94,6 +94,7 @@ const ModelMarketplace: React.FC = () => {
   const [selectedProviders, setSelectedProviders] = useState<number[]>([]);
   const [sortBy, setSortBy] = useState<'popular' | 'name' | 'newest'>('popular');
   const [selectedModel, setSelectedModel] = useState<MarketplaceModel | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [collapsed, setCollapsed] = useState(false);
   const screens = useBreakpoint();
 
@@ -657,6 +658,38 @@ const ModelMarketplace: React.FC = () => {
                         allowClear
                       />
                     </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: screens.xs ? 0 : 'auto' }}>
+                      <Tooltip title="列表布局" placement="top">
+                        <button
+                          onClick={() => setViewMode('list')}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: 36, height: 36, borderRadius: 8,
+                            border: `1px solid ${viewMode === 'list' ? '#1677ff' : c.sortBorder}`,
+                            background: viewMode === 'list' ? (isLight ? '#eff6ff' : 'rgba(22,119,255,0.15)') : 'transparent',
+                            color: viewMode === 'list' ? '#1677ff' : c.text3,
+                            cursor: 'pointer', fontSize: 16, transition: 'all 0.2s',
+                          }}
+                        >
+                          <UnorderedListOutlined />
+                        </button>
+                      </Tooltip>
+                      <Tooltip title="网格布局" placement="top">
+                        <button
+                          onClick={() => setViewMode('grid')}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: 36, height: 36, borderRadius: 8,
+                            border: `1px solid ${viewMode === 'grid' ? '#1677ff' : c.sortBorder}`,
+                            background: viewMode === 'grid' ? (isLight ? '#eff6ff' : 'rgba(22,119,255,0.15)') : 'transparent',
+                            color: viewMode === 'grid' ? '#1677ff' : c.text3,
+                            cursor: 'pointer', fontSize: 16, transition: 'all 0.2s',
+                          }}
+                        >
+                          <AppstoreOutlined />
+                        </button>
+                      </Tooltip>
+                    </div>
                     <Dropdown
                       menu={{
                         items: [
@@ -668,7 +701,7 @@ const ModelMarketplace: React.FC = () => {
                       }}
                       placement="bottomRight"
                     >
-                      <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: `1px solid ${c.sortBorder}`, background: 'transparent', color: c.text3, fontSize: 13, cursor: 'pointer', marginLeft: screens.xs ? 0 : 'auto' }}>
+                      <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: `1px solid ${c.sortBorder}`, background: 'transparent', color: c.text3, fontSize: 13, cursor: 'pointer' }}>
                         <SortAscendingOutlined />
                         {sortBy === 'popular' ? '最受欢迎' : sortBy === 'newest' ? '最新上架' : '名称排序'}
                       </button>
@@ -676,7 +709,13 @@ const ModelMarketplace: React.FC = () => {
                   </div>
 
                   {filteredModels.length > 0 ? (
-                    <div className="mp-grid" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div className="mp-grid" style={{
+                      display: viewMode === 'grid' ? 'grid' : 'flex',
+                      ...(viewMode === 'grid'
+                        ? { gridTemplateColumns: screens.xs ? '1fr' : 'repeat(3, 1fr)', gap: 16 }
+                        : { flexDirection: 'column' as const, gap: 12 }
+                      ),
+                    }}>
                       {filteredModels.map(model => (
                         <div
                           key={model.id}
@@ -686,63 +725,79 @@ const ModelMarketplace: React.FC = () => {
                             display: 'flex', 
                             flexDirection: 'column', 
                             position: 'relative',
-                            padding: '16px 20px',
+                            padding: viewMode === 'grid' ? '20px' : '16px 20px',
                             background: c.cardBg,
                             borderColor: c.cardBorder,
-                            borderRadius: 8
+                            borderRadius: viewMode === 'grid' ? 12 : 8,
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                          <div style={{ display: 'flex', alignItems: viewMode === 'grid' ? 'flex-start' : 'center', gap: 12, marginBottom: 8 }}>
                             <div className="mp-card-icon" style={{ 
                               overflow: 'hidden',
-                              width: 20,
-                              height: 20,
-                              borderRadius: 4,
+                              width: viewMode === 'grid' ? 32 : 20,
+                              height: viewMode === 'grid' ? 32 : 20,
+                              borderRadius: viewMode === 'grid' ? 8 : 4,
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               flexShrink: 0
                             }}>
                               {model.logo ? (
-                                <img src={`/assets/icons/lobe/${model.logo}.svg`} alt="" style={{ width: 14, height: 14, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                <img src={`/assets/icons/lobe/${model.logo}.svg`} alt="" style={{ width: viewMode === 'grid' ? 28 : 14, height: viewMode === 'grid' ? 28 : 14, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                               ) : model.provider_logo ? (
-                                <img src={`/assets/icons/lobe/${model.provider_logo}.svg`} alt="" style={{ width: 14, height: 14, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).replaceWith(document.createTextNode('')); }} />
+                                <img src={`/assets/icons/lobe/${model.provider_logo}.svg`} alt="" style={{ width: viewMode === 'grid' ? 28 : 14, height: viewMode === 'grid' ? 28 : 14, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).replaceWith(document.createTextNode('')); }} />
                               ) : (
-                                <span style={{ fontSize: 12 }}>{getTypeIcon(model.type_name)}</span>
+                                <span style={{ fontSize: viewMode === 'grid' ? 20 : 12 }}>{getTypeIcon(model.type_name)}</span>
                               )}
                             </div>
                             
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                               <h3 style={{ 
                                 margin: 0, 
-                                fontSize: 16, 
+                                fontSize: viewMode === 'grid' ? 14 : 16, 
                                 fontWeight: 500, 
                                 color: c.text1, 
                                 overflow: 'hidden', 
                                 textOverflow: 'ellipsis', 
-                                whiteSpace: 'nowrap',
+                                whiteSpace: viewMode === 'grid' ? 'normal' : 'nowrap',
                                 fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace",
-                                letterSpacing: '-0.3px'
+                                letterSpacing: '-0.3px',
+                                lineHeight: 1.4,
+                                ...(viewMode === 'grid' ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const } : {}),
                               }}>
                                 {model.provider_name}/{model.model_id}
                               </h3>
                             </div>
                           </div>
 
+                          {viewMode === 'grid' && model.description && (
+                            <div style={{
+                              fontSize: 12, color: c.text3, lineHeight: 1.5, marginBottom: 10,
+                              overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
+                            }}>
+                              {model.description}
+                            </div>
+                          )}
+
                           <div style={{ 
-                            fontSize: 13, 
+                            fontSize: viewMode === 'grid' ? 12 : 13, 
                             color: c.text3, 
                             display: 'flex', 
                             alignItems: 'center', 
                             flexWrap: 'wrap',
-                            gap: '0 8px'
+                            gap: viewMode === 'grid' ? '0 6px' : '0 8px',
+                            ...(viewMode === 'grid' ? { marginTop: 'auto' } : {}),
                           }}>
                             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                               {getTypeIcon(model.type_name)}
                               {model.type_name}
                             </span>
-                            <span style={{ color: c.textMuted }}>•</span>
-                            <span>Updated {new Date(model.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                            {viewMode !== 'grid' && (
+                              <>
+                                <span style={{ color: c.textMuted }}>•</span>
+                                <span>Updated {new Date(model.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                              </>
+                            )}
                             
                             {model.sort_order > 900 && (
                               <>
