@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Card, Typography, Space, Input, Button, Tag, Select } from 'antd';
+import { Table, Card, Typography, Space, Input, Button, Tag, Select, DatePicker, Grid, List } from 'antd';
 import { SyncOutlined, SearchOutlined, BarChartOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
 
 interface OrderRecord {
   id: number;
@@ -34,14 +36,22 @@ const methodMap: Record<string, { color: string; label: string }> = {
 
 const OrderDetails: React.FC = () => {
   const { t } = useTranslation();
+  const screens = Grid.useBreakpoint();
+  const { settings } = useSettingsStore();
+  const currencySymbol = settings?.currency?.currency_symbol || '¥';
   const [data, setData] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
+  const [totalAmount, setTotalAmount] = useState<number>(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [methodFilter, setMethodFilter] = useState<string | undefined>();
+  const [dateRange, setDateRange] = useState<[string, string] | undefined>([
+    dayjs().startOf('month').format('YYYY-MM-DD'),
+    dayjs().endOf('month').format('YYYY-MM-DD')
+  ]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -53,16 +63,19 @@ const OrderDetails: React.FC = () => {
           user_id: search || undefined,
           status: statusFilter,
           payment_method: methodFilter,
+          start_time: dateRange?.[0] || undefined,
+          end_time: dateRange?.[1] ? dateRange[1] + ' 23:59:59' : undefined,
         }
-      }) as unknown as Promise<{ data: OrderRecord[]; total: number }>);
+      }) as unknown as Promise<{ data: OrderRecord[]; total: number; total_amount: number }>);
       setData(resp.data);
       setTotal(resp.total);
+      setTotalAmount(resp.total_amount || 0);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, statusFilter, methodFilter]);
+  }, [page, pageSize, search, statusFilter, methodFilter, dateRange]);
 
   useEffect(() => {
     fetchData();
@@ -139,12 +152,26 @@ const OrderDetails: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24, alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-        <Space size="middle">
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, alignItems: screens.xs ? 'flex-start' : 'center', gap: 16 }}>
+        <Space size="small" align="center" wrap>
           <BarChartOutlined style={{ fontSize: 24, color: '#52c41a' }} />
-          <Title level={2} style={{ margin: 0 }}>支付订单</Title>
+          <Title level={2} style={{ margin: 0, fontSize: screens.xs ? 20 : 24 }}>支付订单</Title>
+          <Text type="secondary" style={{ marginLeft: screens.xs ? 0 : 8 }}>
+            (已支付) 合计: <Text strong style={{ color: '#52c41a', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(2)}</Text>
+          </Text>
         </Space>
-        <Space wrap>
+        <Space wrap style={{ width: screens.xs ? '100%' : 'auto' }}>
+          <RangePicker 
+            defaultValue={[dayjs().startOf('month'), dayjs().endOf('month')]}
+            onChange={(dates) => {
+              if (dates && dates[0] && dates[1]) {
+                 setDateRange([dates[0].format('YYYY-MM-DD'), dates[1].format('YYYY-MM-DD')]);
+              } else {
+                 setDateRange(undefined);
+              }
+            }} 
+            style={{ width: 240 }}
+          />
           <Select
             placeholder="支付状态"
             allowClear
@@ -180,7 +207,72 @@ const OrderDetails: React.FC = () => {
         </Space>
       </div>
 
-      <Table
+      {screens.xs ? (
+        <List
+          dataSource={data}
+          loading={loading}
+          pagination={{
+            total,
+            current: page,
+            pageSize,
+            onChange: (p, s) => {
+              setPage(p);
+              setPageSize(s);
+            },
+            showSizeChanger: true,
+            size: "small",
+            showTotal: (t) => `共 ${t} 条`
+          }}
+          renderItem={(record) => {
+            const statusInfo = statusMap[record.status] || { color: 'default', label: record.status };
+            const methodInfo = methodMap[record.payment_method] || { color: 'default', label: record.payment_method };
+            return (
+              <List.Item style={{ padding: '0 0 16px 0', border: 'none' }}>
+                <Card 
+                  size="small" 
+                  style={{ width: '100%', borderRadius: 8, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                  title={<Text strong>{record.username}</Text>}
+                  extra={<Tag color={statusInfo.color}>{statusInfo.label}</Tag>}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>订单号</Text>
+                    <Text copyable style={{ fontFamily: 'monospace', fontSize: 12 }}>{record.out_trade_no}</Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>UID</Text>
+                    <Text style={{ fontSize: 12 }}>{record.uid}</Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>支付方式</Text>
+                    <Tag color={methodInfo.color} style={{ margin: 0 }}>{methodInfo.label}</Tag>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>金额</Text>
+                    <Text strong style={{ color: '#ff4d4f' }}>¥ {record.amount.toFixed(2)}</Text>
+                  </div>
+                  {record.trade_no && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>第三方交易号</Text>
+                      <Text copyable style={{ fontFamily: 'monospace', fontSize: 12 }}>{record.trade_no}</Text>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>创建时间</Text>
+                    <Text style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+                  </div>
+                  {record.paid_at && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 0 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>支付时间</Text>
+                      <Text style={{ fontSize: 12 }}>{dayjs(record.paid_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+                    </div>
+                  )}
+                </Card>
+              </List.Item>
+            );
+          }}
+        />
+      ) : (
+        <Table
         dataSource={data}
         columns={columns}
         rowKey="id"
@@ -199,6 +291,7 @@ const OrderDetails: React.FC = () => {
         size="middle"
         scroll={{ x: 'max-content' }}
       />
+      )}
     </Card>
   );
 };

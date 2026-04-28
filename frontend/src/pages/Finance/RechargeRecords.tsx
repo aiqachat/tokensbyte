@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Card, Typography, Space, Input, Button, Tag, Select, DatePicker } from 'antd';
+import { Table, Card, Typography, Space, Input, Button, Tag, Select, DatePicker, Grid, List } from 'antd';
 import { SyncOutlined, SearchOutlined, WalletOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
@@ -23,6 +23,7 @@ interface RechargeRecord {
 
 const RechargeRecords: React.FC = () => {
   const { t } = useTranslation();
+  const screens = Grid.useBreakpoint();
   const { settings } = useSettingsStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [data, setData] = useState<RechargeRecord[]>([]);
@@ -33,7 +34,11 @@ const RechargeRecords: React.FC = () => {
   const [search, setSearch] = useState('');
   const [rechargeTypes, setRechargeTypes] = useState<string[]>([]);
   const [selectedType, setSelectedType] = useState<string | undefined>();
-  const [dateRange, setDateRange] = useState<[string, string] | undefined>();
+  const [totalAmount, setTotalAmount] = useState<number>(0);
+  const [dateRange, setDateRange] = useState<[string, string] | undefined>([
+    dayjs().startOf('month').format('YYYY-MM-DD'),
+    dayjs().endOf('month').format('YYYY-MM-DD')
+  ]);
 
   useEffect(() => {
     const init = async () => {
@@ -59,9 +64,10 @@ const RechargeRecords: React.FC = () => {
           start_time: dateRange?.[0] || undefined,
           end_time: dateRange?.[1] ? dateRange[1] + ' 23:59:59' : undefined,
         }
-      }) as unknown as Promise<{ data: RechargeRecord[]; total: number }>);
+      }) as unknown as Promise<{ data: RechargeRecord[]; total: number; total_amount: number }>);
       setData(resp.data);
       setTotal(resp.total);
+      setTotalAmount(resp.total_amount || 0);
     } catch (e) {
       console.error(e);
     } finally {
@@ -125,13 +131,17 @@ const RechargeRecords: React.FC = () => {
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24, alignItems: 'center' }}>
-        <Space size="middle">
-            <WalletOutlined style={{ fontSize: '24px', color: '#1677ff' }} />
-            <Title level={2} style={{ margin: 0 }}>{t('finance.recharge_title')}</Title>
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, alignItems: screens.xs ? 'flex-start' : 'center', gap: 16 }}>
+        <Space size="small" align="center" wrap>
+            <WalletOutlined style={{ fontSize: 24, color: '#1677ff' }} />
+            <Title level={2} style={{ margin: 0, fontSize: screens.xs ? 20 : 24 }}>{t('finance.recharge_title')}</Title>
+            <Text type="secondary" style={{ marginLeft: screens.xs ? 0 : 8 }}>
+              金额合计: <Text strong style={{ color: '#1677ff', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(2)}</Text>
+            </Text>
         </Space>
-        <Space>
+        <Space wrap style={{ width: screens.xs ? '100%' : 'auto' }}>
           <RangePicker 
+            defaultValue={[dayjs().startOf('month'), dayjs().endOf('month')]}
             onChange={(dates) => {
               if (dates && dates[0] && dates[1]) {
                  setDateRange([dates[0].format('YYYY-MM-DD'), dates[1].format('YYYY-MM-DD')]);
@@ -164,7 +174,62 @@ const RechargeRecords: React.FC = () => {
         </Space>
       </div>
 
-      <Table
+      {screens.xs ? (
+        <List
+          dataSource={data}
+          loading={loading}
+          pagination={{
+            total,
+            current: page,
+            pageSize,
+            pageSizeOptions: ['50', '100', '200'],
+            onChange: (p, s) => {
+              setPage(p);
+              setPageSize(s);
+            },
+            showSizeChanger: true,
+            size: "small"
+          }}
+          renderItem={(record) => {
+            let color = 'default';
+            if (record.recharge_type === 'registration') color = 'magenta';
+            if (record.recharge_type === 'manual') color = 'orange';
+            if (record.recharge_type === 'redemption') color = 'blue';
+            const label = t(`finance.recharge_type_${record.recharge_type}`) || t('finance.recharge_type_other');
+
+            return (
+              <List.Item style={{ padding: '0 0 16px 0', border: 'none' }}>
+                <Card 
+                  size="small" 
+                  style={{ width: '100%', borderRadius: 8, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                  title={<Text strong>{record.username}</Text>}
+                  extra={<Tag color={color}>{label}</Tag>}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>UID</Text>
+                    <Text style={{ fontSize: 12 }}>{record.uid}</Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>金额</Text>
+                    <Text strong style={{ color: record.amount >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                      {record.amount >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(record.amount).toFixed(2)}
+                    </Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>时间</Text>
+                    <Text style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 0 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>备注</Text>
+                    <Text style={{ fontSize: 12, wordBreak: 'break-all', maxWidth: '60%', textAlign: 'right' }}>{record.remark || '-'}</Text>
+                  </div>
+                </Card>
+              </List.Item>
+            );
+          }}
+        />
+      ) : (
+        <Table
         dataSource={data}
         columns={columns}
         rowKey="id"
@@ -183,6 +248,7 @@ const RechargeRecords: React.FC = () => {
         size="middle"
         scroll={{ x: 'max-content' }}
       />
+      )}
     </Card>
   );
 };

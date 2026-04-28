@@ -17,6 +17,7 @@ import {
 const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
 import request from '../../utils/request';
+import { useThemeStore } from '../../store/theme';
 import useAuthStore from '../../store/auth';
 import UserAvatarMenu from '../../components/UserAvatarMenu';
 
@@ -59,8 +60,8 @@ const getTypeIcon = (typeName: string) => {
 const getBillingLabel = (billing: any) => {
   if (!billing) return null;
   switch (billing.billing_type) {
-    case 'token': return '按 Token 计费';
-    case 'fixed': return '固定费用';
+    case 'tokens': return '按 Token 计费';
+    case 'requests': return '固定费用';
     case 'duration': return '按时长计费';
     case 'tiered': return '阶梯计费';
     default: return billing.billing_type;
@@ -68,9 +69,11 @@ const getBillingLabel = (billing: any) => {
 };
 
 const ModelMarketplace: React.FC = () => {
+  const { themeMode } = useThemeStore();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [siteName, setSiteName] = useState<string>('TokensByte');
+  const [currencySymbol, setCurrencySymbol] = useState<string>('¥');
   const [siteLogo, setSiteLogo] = useState<string>('');
   const [agreement, setAgreement] = useState<any>(null);
 
@@ -103,6 +106,9 @@ const ModelMarketplace: React.FC = () => {
       if (settingsRes?.site) {
         if (settingsRes.site.name) setSiteName(settingsRes.site.name);
         if (settingsRes.site.logo) setSiteLogo(settingsRes.site.logo);
+      }
+      if (settingsRes?.currency?.currency_symbol) {
+        setCurrencySymbol(settingsRes.currency.currency_symbol);
       }
       if (settingsRes?.agreement) {
         setAgreement(settingsRes.agreement);
@@ -197,7 +203,7 @@ const ModelMarketplace: React.FC = () => {
 
   return (
     <ConfigProvider theme={{
-      algorithm: theme.darkAlgorithm,
+      
       token: { 
         fontFamily: "'Inter', 'PingFang SC', -apple-system, sans-serif", 
         colorPrimary: '#1677ff',
@@ -286,13 +292,13 @@ const ModelMarketplace: React.FC = () => {
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-                    <span style={{ color: '#fff', fontSize: '18px', fontWeight: 600 }}>{siteName}</span>
+                    <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: '18px', fontWeight: 600 }}>{siteName}</span>
                   </div>
                 )
               ) : (
                 <>
                   <ShopOutlined style={{ fontSize: 20, color: '#58a6ff', marginRight: collapsed && !screens.xs ? 0 : 10 }} />
-                  {!(collapsed && !screens.xs) && <span style={{ color: '#fff', fontSize: '18px', fontWeight: 600 }}>{siteName || 'TokensByte'}</span>}
+                  {!(collapsed && !screens.xs) && <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: '18px', fontWeight: 600 }}>{siteName || 'TokensByte'}</span>}
                 </>
               )}
             </div>
@@ -334,56 +340,7 @@ const ModelMarketplace: React.FC = () => {
                 </Tooltip>
               ))}
 
-              <div className="mp-sidebar-divider" style={{ margin: collapsed && !screens.xs ? '8px 0' : '20px 0' }} />
 
-              {!(collapsed && !screens.xs) && (
-                <div className="mp-sidebar-title" style={{ padding: '0 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  按供应商
-                  {selectedProviders.length > 0 && (
-                    <button className="mp-clear-btn" onClick={() => { setSelectedProviders([]); setSelectedModel(null); }}>
-                      清除
-                    </button>
-                  )}
-                </div>
-              )}
-              {providers.map(p => (
-                <Tooltip key={p.id} title={collapsed && !screens.xs ? p.name : ""} placement="right">
-                  <div 
-                    className={`mp-sidebar-item ${selectedProviders.includes(p.id) ? 'active' : ''}`} 
-                    onClick={() => handleProviderToggle(p.id)}
-                    style={{ 
-                      justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start', 
-                      padding: collapsed && !screens.xs ? '12px 0' : '8px 12px',
-                      color: selectedProviders.includes(p.id) ? '#fff' : 'rgba(255,255,255,0.65)'
-                    }}
-                  >
-                    {collapsed && !screens.xs ? (
-                      <div style={{ 
-                        width: 24, height: 24, borderRadius: 4, 
-                        border: `2px solid ${selectedProviders.includes(p.id) ? '#fff' : 'rgba(255,255,255,0.45)'}`, 
-                        background: selectedProviders.includes(p.id) ? '#fff' : 'transparent', 
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        overflow: 'hidden',
-                      }}>
-                        {p.logo ? (
-                          <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 18, height: 18, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        ) : (
-                          selectedProviders.includes(p.id) && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#1677ff' }} />
-                        )}
-                      </div>
-                    ) : (
-                      <>
-                        <Checkbox checked={selectedProviders.includes(p.id)} />
-                        {p.logo && (
-                          <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 18, height: 18, objectFit: 'contain', marginLeft: 8 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        )}
-                        <span style={{ flex: 1, marginLeft: p.logo ? 6 : 8 }}>{p.name}</span>
-                        <span className="mp-sidebar-count">{providerCounts[p.id] || 0}</span>
-                      </>
-                    )}
-                  </div>
-                </Tooltip>
-              ))}
             </div>
           </div>
         </Sider>
@@ -391,7 +348,7 @@ const ModelMarketplace: React.FC = () => {
         <Layout style={{ marginLeft: (screens.xs || collapsed) ? 0 : 0 }}>
           <Header style={{
             padding: 0,
-            background: '#141414',
+            background: themeMode === 'light' ? '#ffffff' : '#141414',
             height: screens.xs ? 48 : 56,
             lineHeight: (screens.xs ? 48 : 56) + 'px',
             display: 'flex',
@@ -405,12 +362,12 @@ const ModelMarketplace: React.FC = () => {
                 type="text"
                 icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
                 onClick={() => setCollapsed(!collapsed)}
-                style={{ fontSize: '16px', width: screens.xs ? 48 : 56, height: screens.xs ? 48 : 56, color: '#fff' }}
+                style={{ fontSize: '16px', width: screens.xs ? 48 : 56, height: screens.xs ? 48 : 56, color: themeMode === 'light' ? '#1f2937' : '#fff' }}
               />
               {screens.xs && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }} onClick={() => navigate('/')}>
                   {siteLogo && <img src={siteLogo} alt="logo" style={{ width: 24, height: 24, objectFit: 'contain' }} />}
-                  <span style={{ color: '#fff', fontSize: '16px', fontWeight: 600 }}>{siteName}</span>
+                  <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: '16px', fontWeight: 600 }}>{siteName}</span>
                 </div>
               )}
             </div>
@@ -425,7 +382,7 @@ const ModelMarketplace: React.FC = () => {
             margin: screens.xs ? '8px' : '12px', 
             padding: screens.xs ? '10px 8px' : '16px 20px',
             minHeight: 280, 
-            background: '#000', 
+            background: themeMode === 'light' ? '#f8f9fa' : '#000', 
             borderRadius: 8, 
             overflow: 'auto',
             position: 'relative'
@@ -462,7 +419,7 @@ const ModelMarketplace: React.FC = () => {
                   <Breadcrumb
                     items={[
                       { title: <span style={{ color: '#8b949e', cursor: 'pointer' }} onClick={() => setSelectedModel(null)}>模型广场</span> },
-                      { title: <span style={{ color: '#fff' }}>{selectedModel.name}</span> },
+                      { title: <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>{selectedModel.name}</span> },
                     ]}
                   />
                 </div>
@@ -481,7 +438,7 @@ const ModelMarketplace: React.FC = () => {
                         )}
                       </div>
                       <div>
-                        <h1 style={{ margin: 0, fontSize: screens.xs ? 24 : 32, fontWeight: 700, color: '#fff' }}>{selectedModel.name}</h1>
+                        <h1 style={{ margin: 0, fontSize: screens.xs ? 24 : 32, fontWeight: 700, color: themeMode === 'light' ? '#1f2937' : '#fff' }}>{selectedModel.name}</h1>
                         <div style={{ fontSize: 15, color: '#8b949e', marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
                           {selectedModel.provider_logo && (
                             <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -494,7 +451,7 @@ const ModelMarketplace: React.FC = () => {
                     </div>
 
                     <div style={{ marginBottom: 40 }}>
-                      <h3 style={{ fontSize: 16, fontWeight: 600, color: '#fff', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <h3 style={{ fontSize: 16, fontWeight: 600, color: themeMode === 'light' ? '#1f2937' : '#fff', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <InfoCircleOutlined style={{ color: '#1677ff' }} /> 模型简介
                       </h3>
                       <div style={{ fontSize: 16, color: '#c9d1d9', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
@@ -507,7 +464,7 @@ const ModelMarketplace: React.FC = () => {
                       bordered
                       size="middle"
                       labelStyle={{ background: 'rgba(255,255,255,0.02)', color: '#8b949e', width: 120 }}
-                      contentStyle={{ background: 'transparent', color: '#fff' }}
+                      contentStyle={{ background: 'transparent', color: themeMode === 'light' ? '#1f2937' : '#fff' }}
                       style={{ border: '1px solid #21262d', borderRadius: 8, overflow: 'hidden' }}
                     >
                       <Descriptions.Item label="能力分类">
@@ -527,89 +484,93 @@ const ModelMarketplace: React.FC = () => {
                         {selectedModel.created_at ? new Date(selectedModel.created_at).toLocaleDateString('zh-CN') : '-'}
                       </Descriptions.Item>
                     </Descriptions>
+
+                    <div style={{ marginTop: 40 }}>
+                      <div style={{ background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)', borderRadius: 16, padding: '24px', boxShadow: '0 8px 32px rgba(22, 119, 255, 0.2)', marginBottom: 24 }}>
+                                            <div style={{ fontSize: 16, fontWeight: 600, color: themeMode === 'light' ? '#1f2937' : '#fff', marginBottom: 16 }}>详细计费规则</div>
+                                            
+                                            {selectedModel.billing ? (
+                                              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                                {/* 计费类型说明 */}
+                                                <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>计费模式</div>
+                                                  <div style={{ fontSize: 15, color: themeMode === 'light' ? '#1f2937' : '#fff', fontWeight: 500 }}>
+                                                    {getBillingLabel(selectedModel.billing)}
+                                                    {selectedModel.billing.name && ` - ${selectedModel.billing.name}`}
+                                                  </div>
+                                                </div>
+                      
+                                                {/* 基础费率 */}
+                                                {selectedModel.billing.billing_type === 'tokens' && (
+                                                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                                      <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输入 (Prompt)</span>
+                                                      <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.prompt_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                      <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输出 (Completion)</span>
+                                                      <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.completion_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                                                    </div>
+                                                  </div>
+                                                )}
+                      
+                                                {selectedModel.billing.billing_type === 'requests' && (
+                                                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                      <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>单次调用费用</span>
+                                                      <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.fixed_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 次</small></span>
+                                                    </div>
+                                                  </div>
+                                                )}
+                      
+                                                {selectedModel.billing.billing_type === 'duration' && (
+                                                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                      <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>按时长计费</span>
+                                                      <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.duration_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 秒</small></span>
+                                                    </div>
+                                                  </div>
+                                                )}
+                      
+                                                {/* 阶梯计费 */}
+                                                {selectedModel.billing.pricing_tiers && (() => {
+                                                  try {
+                                                    const tiers = JSON.parse(selectedModel.billing.pricing_tiers);
+                                                    if (Array.isArray(tiers) && tiers.length > 0) {
+                                                      return (
+                                                        <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                                                          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}>上下文阶梯费率</div>
+                                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                                            {tiers.map((t: any, i: number) => (
+                                                              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: i < tiers.length - 1 ? 10 : 0, borderBottom: i < tiers.length - 1 ? '1px dashed rgba(255,255,255,0.2)' : 'none' }}>
+                                                                <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 13, fontWeight: 500 }}>&le; {t.max_prompt_tokens >= 1000 ? t.max_prompt_tokens / 1000 + 'k' : t.max_prompt_tokens} Tokens</span>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
+                                                                  <span>输入: {currencySymbol}{t.prompt_rate} <small>/ 1M</small></span>
+                                                                  <span>输出: {currencySymbol}{t.completion_rate} <small>/ 1M</small></span>
+                                                                </div>
+                                                              </div>
+                                                            ))}
+                                                          </div>
+                                                        </div>
+                                                      );
+                                                    }
+                                                  } catch(e) {}
+                                                  return null;
+                                                })()}
+                                              </div>
+                                            ) : (
+                                              <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 15 }}>暂未配置计费规则，该模型当前可能为免费使用或不可用。</div>
+                                            )}
+                                          </div>
+                    </div>
                   </div>
 
                   {/* 右侧价格卡片 */}
                   <div style={{ width: screens.xs ? '100%' : 340, flexShrink: 0 }}>
-                    <div style={{ background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)', borderRadius: 16, padding: '24px', boxShadow: '0 8px 32px rgba(22, 119, 255, 0.2)', marginBottom: 24 }}>
-                      <div style={{ fontSize: 16, fontWeight: 600, color: '#fff', marginBottom: 16 }}>详细计费规则</div>
-                      
-                      {selectedModel.billing ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                          {/* 计费类型说明 */}
-                          <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 4 }}>计费模式</div>
-                            <div style={{ fontSize: 15, color: '#fff', fontWeight: 500 }}>
-                              {getBillingLabel(selectedModel.billing)}
-                              {selectedModel.billing.name && ` - ${selectedModel.billing.name}`}
-                            </div>
-                          </div>
-
-                          {/* 基础费率 */}
-                          {selectedModel.billing.billing_type === 'token' && (
-                            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输入 (Prompt)</span>
-                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.prompt_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>输出 (Completion)</span>
-                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.completion_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
-                              </div>
-                            </div>
-                          )}
-
-                          {selectedModel.billing.billing_type === 'fixed' && (
-                            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>单次调用费用</span>
-                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.fixed_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 次</small></span>
-                              </div>
-                            </div>
-                          )}
-
-                          {selectedModel.billing.billing_type === 'duration' && (
-                            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>按时长计费</span>
-                                <span style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>¥{selectedModel.billing.duration_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 秒</small></span>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* 阶梯计费 */}
-                          {selectedModel.billing.pricing_tiers && (() => {
-                            try {
-                              const tiers = JSON.parse(selectedModel.billing.pricing_tiers);
-                              if (Array.isArray(tiers) && tiers.length > 0) {
-                                return (
-                                  <div style={{ padding: '16px', background: 'rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}>上下文阶梯费率</div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                      {tiers.map((t: any, i: number) => (
-                                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: i < tiers.length - 1 ? 10 : 0, borderBottom: i < tiers.length - 1 ? '1px dashed rgba(255,255,255,0.2)' : 'none' }}>
-                                          <span style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>&le; {t.max_prompt_tokens >= 1000 ? t.max_prompt_tokens / 1000 + 'k' : t.max_prompt_tokens} Tokens</span>
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
-                                            <span>输入: ¥{t.prompt_rate} <small>/ 1M</small></span>
-                                            <span>输出: ¥{t.completion_rate} <small>/ 1M</small></span>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                            } catch(e) {}
-                            return null;
-                          })()}
-                        </div>
-                      ) : (
-                        <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 15 }}>暂未配置计费规则，该模型当前可能为免费使用或不可用。</div>
-                      )}
-                    </div>
+                    
                     
                     <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 16, padding: '20px' }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 12 }}>关于该模型</div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: themeMode === 'light' ? '#1f2937' : '#fff', marginBottom: 12 }}>关于该模型</div>
                       <div style={{ fontSize: 13, color: '#8b949e', lineHeight: 1.6 }}>
                         该模型目前已在全平台上线。您可以直接在 API 调用或控制面板中使用。如果您有大规模调用需求，请联系客服获取专属优惠。
                       </div>
@@ -617,7 +578,7 @@ const ModelMarketplace: React.FC = () => {
                     
                     {selectedModel.billing && selectedModel.billing.billing_rule && (
                       <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 16, padding: '20px', marginTop: 24 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 12 }}>计费规则说明</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: themeMode === 'light' ? '#1f2937' : '#fff', marginBottom: 12 }}>计费规则说明</div>
                         <div 
                           className="quill-content"
                           dangerouslySetInnerHTML={{ __html: selectedModel.billing.billing_rule }}
@@ -629,107 +590,189 @@ const ModelMarketplace: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <>
-                <div className="mp-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
-                  <div className="mp-search" style={{ flex: 1, minWidth: 200, maxWidth: screens.xs ? '100%' : 420 }}>
-                    <Input
-                      placeholder="搜索模型名称、ID或描述..."
-                      prefix={<SearchOutlined style={{ color: '#8b949e', marginRight: 8 }} />}
-                      value={searchKeyword}
-                      onChange={e => setSearchKeyword(e.target.value)}
-                      allowClear
-                    />
-                  </div>
-                  <Dropdown
-                    menu={{
-                      items: [
-                        { key: 'popular', label: '最受欢迎' },
-                        { key: 'newest', label: '最新上架' },
-                        { key: 'name', label: '名称 A-Z' },
-                      ],
-                      onClick: ({ key }) => setSortBy(key as any)
-                    }}
-                    placement="bottomRight"
-                  >
-                    <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', fontSize: 13, cursor: 'pointer', marginLeft: screens.xs ? 0 : 'auto' }}>
-                      <SortAscendingOutlined />
-                      {sortBy === 'popular' ? '最受欢迎' : sortBy === 'newest' ? '最新上架' : '名称排序'}
-                    </button>
-                  </Dropdown>
-                </div>
-
-                {filteredModels.length > 0 ? (
-                  <div className="mp-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-                    {filteredModels.map(model => (
-                      <div
-                        key={model.id}
-                        className="mp-card"
-                        onClick={() => setSelectedModel(model)}
-                        style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-                          <div className="mp-card-icon" style={{ background: 'rgba(88,166,255,0.1)', color: '#58a6ff', overflow: 'hidden' }}>
-                            {model.logo ? (
-                              <img src={`/assets/icons/lobe/${model.logo}.svg`} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                            ) : model.provider_logo ? (
-                              <img src={`/assets/icons/lobe/${model.provider_logo}.svg`} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).replaceWith(document.createTextNode('')); }} />
-                            ) : (
-                              getTypeIcon(model.type_name)
-                            )}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#f0f6fc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {model.name}
-                              </h3>
-                              {model.sort_order > 900 && (
-                                <Tooltip title="热门推荐">
-                                  <span style={{ fontSize: 12 }}>🔥</span>
-                                </Tooltip>
-                              )}
-                            </div>
-                            <div style={{ fontSize: 13, color: '#8b949e', display: 'flex', alignItems: 'center', gap: 6 }}>
-                              {model.provider_name}
-                              <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#484f58' }} />
-                              <span style={{ fontFamily: 'monospace' }}>{model.model_id}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ fontSize: 13, color: '#8b949e', lineHeight: 1.5, marginBottom: 16, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: 39 }}>
-                          {model.description || '暂无描述'}
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', color: '#8b949e', border: '1px solid #30363d' }}>
-                            {model.type_name}
-                          </span>
-                          {model.billing && (
-                            <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: 'rgba(88,166,255,0.1)', color: '#58a6ff', border: '1px solid rgba(88,166,255,0.2)' }}>
-                              {getBillingLabel(model.billing)}
-                            </span>
+              <div style={{ display: 'flex', gap: 24, alignItems: 'stretch' }}>
+                {/* 左侧：供应商过滤（仅在桌面端显示） */}
+                {!screens.xs && (
+                  <div style={{ 
+                    width: 240, 
+                    flexShrink: 0,
+                    background: themeMode === 'light' ? '#ffffff' : '#0d1117',
+                    border: `1px solid ${themeMode === 'light' ? '#e5e7eb' : '#21262d'}`,
+                    borderRadius: 12,
+                    padding: '20px 16px'
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: themeMode === 'light' ? '#6b7280' : '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+                      按供应商
+                      {selectedProviders.length > 0 && (
+                        <button onClick={() => { setSelectedProviders([]); setSelectedModel(null); }} style={{ fontSize: 12, color: themeMode === 'light' ? '#2563eb' : '#58a6ff', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
+                          清除
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {providers.map(p => (
+                        <div 
+                          key={p.id}
+                          onClick={() => handleProviderToggle(p.id)}
+                          style={{ 
+                            display: 'flex', alignItems: 'center', padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                            background: selectedProviders.includes(p.id) ? (themeMode === 'light' ? '#eff6ff' : 'rgba(88,166,255,0.1)') : 'transparent',
+                            color: selectedProviders.includes(p.id) ? (themeMode === 'light' ? '#2563eb' : '#58a6ff') : (themeMode === 'light' ? '#4b5563' : '#c9d1d9'),
+                            transition: 'all 0.15s',
+                            fontSize: 14
+                          }}
+                          onMouseEnter={e => { if (!selectedProviders.includes(p.id)) e.currentTarget.style.background = themeMode === 'light' ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)' }}
+                          onMouseLeave={e => { if (!selectedProviders.includes(p.id)) e.currentTarget.style.background = 'transparent' }}
+                        >
+                          {p.logo && (
+                            <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain', marginRight: 10, filter: themeMode === 'light' ? 'none' : 'brightness(0.9)' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                           )}
+                          <span style={{ flex: 1, fontWeight: selectedProviders.includes(p.id) ? 500 : 400 }}>{p.name}</span>
+                          <span style={{ fontSize: 12, color: selectedProviders.includes(p.id) ? (themeMode === 'light' ? '#2563eb' : '#58a6ff') : (themeMode === 'light' ? '#9ca3af' : '#484f58') }}>{providerCounts[p.id] || 0}</span>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: '#484f58' }}>
-                    <ShopOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }} />
-                    <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8, color: '#8b949e' }}>
-                      {searchKeyword || selectedType !== null || selectedProviders.length > 0 ? '没有找到匹配的模型' : '暂无模型'}
+                      ))}
                     </div>
-                    <div style={{ fontSize: 14 }}>
-                      {searchKeyword || selectedType !== null || selectedProviders.length > 0 ? '尝试调整筛选条件或搜索关键词' : '管理员尚未在模型广场中启用任何模型'}
-                    </div>
-                    {(searchKeyword || selectedType !== null || selectedProviders.length > 0) && (
-                      <button onClick={clearFilters} style={{ marginTop: 16, fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6, color: '#58a6ff', cursor: 'pointer', background: 'transparent', border: 'none' }}>
-                        <FilterOutlined /> 清除所有筛选
-                      </button>
-                    )}
                   </div>
                 )}
-              </>
+
+                {/* 右侧：工具栏与模型列表 */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="mp-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
+                    <div className="mp-search" style={{ flex: 1, minWidth: 200, maxWidth: screens.xs ? '100%' : 420 }}>
+                      <Input
+                        placeholder="搜索模型名称、ID或描述..."
+                        prefix={<SearchOutlined style={{ color: '#8b949e', marginRight: 8 }} />}
+                        value={searchKeyword}
+                        onChange={e => setSearchKeyword(e.target.value)}
+                        allowClear
+                      />
+                    </div>
+                    <Dropdown
+                      menu={{
+                        items: [
+                          { key: 'popular', label: '最受欢迎' },
+                          { key: 'newest', label: '最新上架' },
+                          { key: 'name', label: '名称 A-Z' },
+                        ],
+                        onClick: ({ key }) => setSortBy(key as any)
+                      }}
+                      placement="bottomRight"
+                    >
+                      <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#8b949e', fontSize: 13, cursor: 'pointer', marginLeft: screens.xs ? 0 : 'auto' }}>
+                        <SortAscendingOutlined />
+                        {sortBy === 'popular' ? '最受欢迎' : sortBy === 'newest' ? '最新上架' : '名称排序'}
+                      </button>
+                    </Dropdown>
+                  </div>
+
+                  {filteredModels.length > 0 ? (
+                    <div className="mp-grid" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {filteredModels.map(model => (
+                        <div
+                          key={model.id}
+                          className="mp-card"
+                          onClick={() => setSelectedModel(model)}
+                          style={{ 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            position: 'relative',
+                            padding: '16px 20px',
+                            background: themeMode === 'light' ? '#ffffff' : '#0d1117',
+                            borderColor: themeMode === 'light' ? '#e5e7eb' : '#21262d',
+                            borderRadius: 8
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                            <div className="mp-card-icon" style={{ 
+                              background: themeMode === 'light' ? '#f3f4f6' : 'rgba(255,255,255,0.1)', 
+                              color: themeMode === 'light' ? '#374151' : '#c9d1d9', 
+                              overflow: 'hidden',
+                              width: 20,
+                              height: 20,
+                              borderRadius: 4,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0
+                            }}>
+                              {model.logo ? (
+                                <img src={`/assets/icons/lobe/${model.logo}.svg`} alt="" style={{ width: 14, height: 14, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                              ) : model.provider_logo ? (
+                                <img src={`/assets/icons/lobe/${model.provider_logo}.svg`} alt="" style={{ width: 14, height: 14, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).replaceWith(document.createTextNode('')); }} />
+                              ) : (
+                                <span style={{ fontSize: 12 }}>{getTypeIcon(model.type_name)}</span>
+                              )}
+                            </div>
+                            
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                              <h3 style={{ 
+                                margin: 0, 
+                                fontSize: 16, 
+                                fontWeight: 500, 
+                                color: themeMode === 'light' ? '#111827' : '#e6edf3', 
+                                overflow: 'hidden', 
+                                textOverflow: 'ellipsis', 
+                                whiteSpace: 'nowrap',
+                                fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace",
+                                letterSpacing: '-0.3px'
+                              }}>
+                                {model.provider_name}/{model.model_id}
+                              </h3>
+                            </div>
+                          </div>
+
+                          <div style={{ 
+                            fontSize: 13, 
+                            color: themeMode === 'light' ? '#6b7280' : '#8b949e', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            flexWrap: 'wrap',
+                            gap: '0 8px'
+                          }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              {getTypeIcon(model.type_name)}
+                              {model.type_name}
+                            </span>
+                            <span style={{ color: themeMode === 'light' ? '#d1d5db' : '#484f58' }}>•</span>
+                            <span>Updated {new Date(model.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                            
+                            {model.sort_order > 900 && (
+                              <>
+                                <span style={{ color: themeMode === 'light' ? '#d1d5db' : '#484f58' }}>•</span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ color: '#e3b341' }}>⚡</span>
+                                </span>
+                              </>
+                            )}
+                            
+                            {model.billing && model.billing.billing_type === 'tokens' && (
+                              <>
+                                <span style={{ color: themeMode === 'light' ? '#d1d5db' : '#484f58' }}>•</span>
+                                <span>按 Token 计费</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: '#484f58' }}>
+                      <ShopOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }} />
+                      <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8, color: '#8b949e' }}>
+                        {searchKeyword || selectedType !== null || selectedProviders.length > 0 ? '没有找到匹配的模型' : '暂无模型'}
+                      </div>
+                      <div style={{ fontSize: 14 }}>
+                        {searchKeyword || selectedType !== null || selectedProviders.length > 0 ? '尝试调整筛选条件或搜索关键词' : '管理员尚未在模型广场中启用任何模型'}
+                      </div>
+                      {(searchKeyword || selectedType !== null || selectedProviders.length > 0) && (
+                        <button onClick={clearFilters} style={{ marginTop: 16, fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6, color: '#58a6ff', cursor: 'pointer', background: 'transparent', border: 'none' }}>
+                          <FilterOutlined /> 清除所有筛选
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </Content>
           {screens.xs && !collapsed && (
