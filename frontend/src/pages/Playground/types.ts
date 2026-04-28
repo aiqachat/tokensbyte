@@ -34,7 +34,7 @@ export interface PlaygroundModel {
 /** 画布节点定义 */
 export interface CanvasNode {
   id: string;
-  type: 'video' | 'image' | 'text';
+  type: 'video' | 'image' | 'text' | 'audio';
   status: 'loading' | 'completed' | 'error';
   taskData: any;
   resultData: any;

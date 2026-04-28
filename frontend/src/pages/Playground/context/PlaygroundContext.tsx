@@ -231,7 +231,7 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
     if (!currentProjectId) return;
     try {
       const canvasData = JSON.stringify({
-        nodes: nodes.map(n => {
+        nodes: nodes.filter(n => !n.id.startsWith('local-asset-')).map(n => {
           // 提取已完成节点的关键渲染数据（URL），丢弃大体积的原始 API 响应
           let savedResultData = n.resultData;
           if (n.status === 'completed' && n.resultData) {
@@ -401,7 +401,7 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
       const currentNodes = nodesRef.current;
       if (!pid || currentNodes.length === 0) return;
       const canvasData = JSON.stringify({
-        nodes: currentNodes.map(n => {
+        nodes: currentNodes.filter(n => !n.id.startsWith('local-asset-')).map(n => {
           let savedResultData = n.resultData;
           if (n.status === 'completed' && n.resultData) {
             if (n.type === 'image') {

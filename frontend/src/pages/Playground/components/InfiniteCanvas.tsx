@@ -110,7 +110,11 @@ const InfiniteCanvas: React.FC = React.memo(() => {
             onRemove={removeNode}
             onSelect={(id) => {
               setSelectedNodeId(id);
-              setIsGenLogVisible(true);
+              if (!id.startsWith('local-asset-')) {
+                setIsGenLogVisible(true);
+              } else {
+                setIsGenLogVisible(false);
+              }
             }}
             onResizeStart={handleResizeStart}
           />

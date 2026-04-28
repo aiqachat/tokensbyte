@@ -12,6 +12,7 @@ import type { CanvasNode as CanvasNodeType } from '../../types';
 import VideoNodeContent from './VideoNodeContent';
 import ImageNodeContent from './ImageNodeContent';
 import TextNodeContent from './TextNodeContent';
+import AudioNodeContent from './AudioNodeContent';
 
 const { Text } = Typography;
 
@@ -189,6 +190,9 @@ const CanvasNode: React.FC<Props> = React.memo(({
         )}
         {node.status === 'completed' && node.type === 'text' && (
           <TextNodeContent resultData={node.resultData} />
+        )}
+        {node.status === 'completed' && node.type === 'audio' && (
+          <AudioNodeContent resultData={node.resultData} />
         )}
       </div>
     </div>

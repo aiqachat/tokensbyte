@@ -52,10 +52,8 @@ const ChannelConfigs: React.FC = () => {
 
   const handleEdit = (record: ChannelConfig) => {
     setEditingConfig(record);
-    // 编辑时不预填 api_key —— 避免旧密钥被原样回传导致以为更新了实际没变
-    const { api_key: _removed, ...rest } = record as any;
     form.resetFields();
-    form.setFieldsValue(rest);
+    form.setFieldsValue(record);
     setIsModalVisible(true);
   };
 

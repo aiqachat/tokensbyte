@@ -15,6 +15,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const getFullUrl = (url: string) => {
   if (!url) return '';
+  if (url.startsWith('blob:') || url.startsWith('data:')) return url;
   if (!url.startsWith('http') && !url.startsWith('/')) return `https://${url}`;
   if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
   return url;
