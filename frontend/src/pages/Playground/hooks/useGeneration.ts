@@ -234,9 +234,7 @@ export const useGeneration = () => {
       if (asyncTaskId && (isVideoEndpoint || (Array.isArray(res?.data) && res.data[0]?.task_id))) {
         const taskId = asyncTaskId;
         // 为图片异步任务自动构造轮询端点
-        const pollEndpoint = currentModel.poll_endpoint || (
-          endpoint.includes('images') ? `/v1/images/generations/${taskId}` : undefined
-        );
+        const pollEndpoint = currentModel.poll_endpoint || `/v1/tasks/${taskId}`;
         setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, taskData: { ...(n.taskData || {}), task_id: taskId, poll_endpoint: pollEndpoint, ...res } } : n));
         setTaskPollingNodes(prev => [...prev, newNodeId]);
         pollTaskStatus(newNodeId, taskId, currentModel.model_id, pollEndpoint);
@@ -308,21 +306,29 @@ export const useGeneration = () => {
 
         // 兼容多种异步响应格式：
         // 视频: { status: 'succeeded', content: { video_url } }
-        // GPT Image: { data: [{ url, b64_json }], status: 'completed' } 或 { status: 'succeeded' }
-        const status = res?.status || res?.final_result?.status || (Array.isArray(res?.data) && res.data[0]?.status) || '';
-        const isCompleted = status === 'succeeded' || status === 'completed';
-        // GPT Image 完成时 data 数组中有 url 或 b64_json
-        const hasImageData = Array.isArray(res?.data) && res.data[0] && (res.data[0].url || res.data[0].b64_json) && !res.data[0].task_id;
+        // GPT Image /v1/tasks: { data: { status: 'completed', result: { images: [{ url: [...] }] } } }
+        const taskStatus = res?.status || res?.data?.status || res?.final_result?.status || (Array.isArray(res?.data) && res.data[0]?.status) || '';
+        const isCompleted = taskStatus === 'succeeded' || taskStatus === 'completed';
 
-        if (isCompleted || hasImageData) {
+        if (isCompleted) {
+          // 标准化结果：将 GPT Image tasks 响应转换为 ImageNodeContent 可识别的格式
+          let normalizedResult = res;
+          const taskResult = res?.data?.result || res?.result;
+          if (taskResult?.images && Array.isArray(taskResult.images)) {
+            // GPT Image: result.images[0].url 是数组
+            const imageUrls = taskResult.images.flatMap((img: any) => Array.isArray(img.url) ? img.url : [img.url]).filter(Boolean);
+            if (imageUrls.length > 0) {
+              normalizedResult = { ...res, data: imageUrls.map((u: string) => ({ url: u })) };
+            }
+          }
           let nodeToPersist: CanvasNode | undefined;
           setNodes(prev => {
-            const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: res } : n);
+            const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: normalizedResult } : n);
             nodeToPersist = updated.find(n => n.id === nodeId);
             return updated;
           });
           if (nodeToPersist) {
-            persistAsset(nodeToPersist, res, currentModel);
+            persistAsset(nodeToPersist, normalizedResult, currentModel);
           }
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
           setGenerating(false);

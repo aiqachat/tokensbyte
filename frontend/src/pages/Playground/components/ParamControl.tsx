@@ -43,7 +43,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
     return (
       <div key={param.key}>
         <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
-        <div style={{ width: '100%', display: 'flex', height: 68, background: '#17181A', borderRadius: 12, padding: 4 }}>
+        <div style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {param.options.map(opt => {
             const isActive = value === opt;
             return (
@@ -51,20 +51,24 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
                 key={String(opt)}
                 onClick={() => setParamValues(prev => ({ ...prev, [param.key]: opt }))}
                 style={{
-                  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer', background: isActive ? '#33373E' : 'transparent', borderRadius: 8,
-                  color: isActive ? '#fff' : 'rgba(255,255,255,0.45)', transition: 'all 0.2s',
-                  fontSize: 13, fontWeight: 500,
+                  width: 64, height: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer',
+                  background: isActive ? '#33373E' : '#17181A',
+                  borderRadius: 12,
+                  border: isActive ? '1.5px solid rgba(255,255,255,0.35)' : '1.5px solid transparent',
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.45)',
+                  transition: 'all 0.2s',
+                  fontSize: 12, fontWeight: 500,
                 }}
               >
                 {String(opt).includes(':') ? (
                   <>
                     <div style={{
-                      width: String(opt) === '16:9' || String(opt) === '21:9' ? 22 : String(opt) === '9:16' ? 12 : String(opt) === '1:1' ? 16 : String(opt) === '4:3' ? 18 : String(opt) === '3:4' ? 14 : 16,
-                      height: String(opt) === '16:9' || String(opt) === '21:9' ? 12 : String(opt) === '9:16' ? 22 : String(opt) === '1:1' ? 16 : String(opt) === '4:3' ? 14 : String(opt) === '3:4' ? 18 : 16,
-                      border: '1.5px solid currentColor', borderRadius: 2, marginBottom: 6
+                      width: String(opt) === '16:9' || String(opt) === '21:9' ? 22 : String(opt) === '9:16' ? 12 : String(opt) === '1:1' ? 16 : String(opt) === '4:3' ? 18 : String(opt) === '3:4' ? 14 : String(opt) === '3:2' ? 18 : String(opt) === '2:3' ? 14 : 16,
+                      height: String(opt) === '16:9' || String(opt) === '21:9' ? 12 : String(opt) === '9:16' ? 22 : String(opt) === '1:1' ? 16 : String(opt) === '4:3' ? 14 : String(opt) === '3:4' ? 18 : String(opt) === '3:2' ? 14 : String(opt) === '2:3' ? 18 : 16,
+                      border: '1.5px solid currentColor', borderRadius: 2, marginBottom: 4
                     }} />
-                    <span>{String(opt)}</span>
+                    <span style={{ fontSize: 11 }}>{String(opt)}</span>
                   </>
                 ) : (
                   <span>{String(opt)}</span>
