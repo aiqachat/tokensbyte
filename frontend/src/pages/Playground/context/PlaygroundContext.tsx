@@ -243,7 +243,8 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
               const videoUrl = n.resultData?.content?.video_url
                 || n.resultData?.final_result?.video_url
                 || n.resultData?.video_url;
-              savedResultData = videoUrl ? { content: { video_url: videoUrl } } : null;
+              const lastFrameUrl = n.resultData?.last_frame_url || n.resultData?.final_result?.last_frame_url || n.resultData?.content?.last_frame_url;
+              savedResultData = videoUrl ? { content: { video_url: videoUrl, last_frame_url: lastFrameUrl } } : null;
             } else {
               // 文本类型保留原始数据
               savedResultData = n.resultData;
@@ -331,12 +332,13 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
                 }
               }
               const fixedNodes = canvasData.nodes.map((n: any) => {
-                if (n.status === 'completed' && !n.resultData) {
+                if ((n.status === 'completed' && !n.resultData) || n.status === 'loading') {
                   const matches = assetGroup.get(n.taskData?.prompt || '');
                   if (matches && matches.length > 0) {
                     const match = matches.shift(); // 消费掉一个
                     return {
                       ...n,
+                      status: 'completed',
                       resultData: match.asset_type === 'image'
                         ? { data: [{ url: match.file_url }] }
                         : { content: { video_url: match.file_url } },
@@ -408,7 +410,8 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
               savedResultData = url ? { data: [{ url }] } : null;
             } else if (n.type === 'video') {
               const videoUrl = n.resultData?.content?.video_url || n.resultData?.final_result?.video_url || n.resultData?.video_url;
-              savedResultData = videoUrl ? { content: { video_url: videoUrl } } : null;
+              const lastFrameUrl = n.resultData?.last_frame_url || n.resultData?.final_result?.last_frame_url || n.resultData?.content?.last_frame_url;
+              savedResultData = videoUrl ? { content: { video_url: videoUrl, last_frame_url: lastFrameUrl } } : null;
             }
           }
           return {

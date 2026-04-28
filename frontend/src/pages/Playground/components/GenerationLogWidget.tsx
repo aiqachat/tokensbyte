@@ -233,6 +233,28 @@ const GenerationLogWidget: React.FC = React.memo(() => {
         </div>
 
 
+        {/* 生成尾帧区块 */}
+        {(() => {
+          const lastFrameUrl = selectedNode.resultData?.last_frame_url || selectedNode.resultData?.final_result?.last_frame_url || selectedNode.resultData?.content?.last_frame_url;
+          if (!lastFrameUrl) return null;
+          return (
+            <div style={{
+              background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: '12px 14px',
+              marginBottom: 16, border: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 10 }}>生成尾帧</Text>
+              <img
+                src={lastFrameUrl}
+                alt="生成尾帧"
+                style={{
+                  width: '100%', borderRadius: 8, objectFit: 'contain',
+                  background: '#000', border: '1px solid rgba(255,255,255,0.1)'
+                }}
+              />
+            </div>
+          );
+        })()}
+
         {/* 失败信息 */}
         {selectedNode.status === 'error' && selectedNode.resultData?.message && (
           <div style={{
