@@ -86,6 +86,58 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         }
     }
 
+    // DashScope 格式：从 parameters 内提取 resolution/duration
+    if let Some(params) = body.get("parameters") {
+        if resolution.is_none() {
+            if let Some(res) = params.get("resolution").and_then(|r| r.as_str()) {
+                resolution = Some(res.to_string());
+            }
+        }
+        if duration_seconds.is_none() {
+            if let Some(dur) = params.get("duration").and_then(|d| d.as_f64()) {
+                duration_seconds = Some(dur);
+            }
+        }
+    }
+
+    // DashScope 格式：从 usage 中提取 duration 和 SR（异步任务结果响应）
+    // 注意：usage 代表真实的后台消耗，必须无条件覆盖从 input 或 parameters 提取的可能不精确的值
+    if let Some(usage) = body.get("usage") {
+        if let Some(dur) = usage.get("duration").and_then(|d| d.as_f64()) {
+            duration_seconds = Some(dur);
+        }
+        
+        // SR 可能是纯数字（如 720）或字符串（如 "720P"）
+        if let Some(sr) = usage.get("SR") {
+            if let Some(n) = sr.as_i64() {
+                resolution = Some(format!("{}p", n));
+            } else if let Some(s) = sr.as_str() {
+                resolution = Some(s.to_string());
+            }
+        }
+    }
+
+    // DashScope 格式：从 input.media / input.image_url 检测视频/图片输入
+    if let Some(input) = body.get("input") {
+        if let Some(media) = input.get("media").and_then(|m| m.as_array()) {
+            for item in media {
+                if let Some(t) = item.get("type").and_then(|v| v.as_str()) {
+                    if t == "video" { has_video = true; }
+                }
+            }
+        }
+    }
+
+    // 分辨率统一转小写，确保与后台计费阶梯匹配一致
+    // 阿里返回大写 "720P" → "720p"；纯数字 "720" → "720p"
+    if let Some(ref mut res) = resolution {
+        *res = res.to_lowercase();
+        // 纯数字字符串自动加 p 后缀
+        if res.chars().all(|c| c.is_ascii_digit()) {
+            res.push('p');
+        }
+    }
+
     // 图片生成数量: 从请求体的 n 参数提取（用于预扣费阶段）
     let image_count = body.get("n")
         .and_then(|v| v.as_i64())
