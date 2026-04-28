@@ -5,14 +5,14 @@
  * - 下层：功能芯片栏（模型选择、API 密钥、附加功能按钮）+ 运行按钮
  */
 import React, { useState, useRef } from 'react';
-import { Input, Tooltip, message, Dropdown, Modal } from 'antd';
+import { Input, Tooltip, message, Dropdown, Modal, Switch } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   KeyOutlined, PlayCircleOutlined, AppstoreOutlined,
   LinkOutlined, PlusOutlined, AudioOutlined,
   CloseOutlined, ThunderboltOutlined,
   PaperClipOutlined, PictureOutlined, VideoCameraOutlined,
-  CloudOutlined, UploadOutlined,
+  CloudOutlined, UploadOutlined, GlobalOutlined,
 } from '@ant-design/icons';
 import { usePlayground } from '../context/PlaygroundContext';
 import { useGeneration } from '../hooks/useGeneration';
@@ -42,6 +42,7 @@ const PromptInput: React.FC = React.memo(() => {
     setIsTokenModalVisible,
     setIsModelDrawerVisible,
     attachedAssets, setAttachedAssets,
+    paramValues, setParamValues,
   } = usePlayground();
   const { handleGenerate } = useGeneration();
   const [isFocused, setIsFocused] = useState(false);
@@ -342,6 +343,33 @@ const PromptInput: React.FC = React.memo(() => {
               </span>
             </div>
           </Tooltip>
+
+          {/* 联网搜索开关 */}
+          {currentModel?.params?.some((p: any) => p.key === 'web_search') && (
+            <Tooltip title="开启后允许模型使用联网搜索能力">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '5px 10px',
+                  background: paramValues.web_search ? 'rgba(82, 196, 26, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  border: `1px solid ${paramValues.web_search ? 'rgba(82, 196, 26, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  color: paramValues.web_search ? '#52c41a' : 'rgba(255, 255, 255, 0.45)',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  whiteSpace: 'nowrap',
+                }}
+                onClick={() => setParamValues(prev => ({ ...prev, web_search: !prev.web_search }))}
+              >
+                <GlobalOutlined style={{ fontSize: 13 }} />
+                <span>联网搜索</span>
+              </div>
+            </Tooltip>
+          )}
 
           {/* API 密钥芯片 */}
           <Tooltip title={tokenName ? '点击更换 API 密钥' : '请选择 API 密钥'}>

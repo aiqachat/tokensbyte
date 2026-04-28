@@ -168,6 +168,12 @@ export const useGeneration = () => {
         ...paramValues,
       };
 
+      // Map web_search toggle to tools array
+      if (body.web_search) {
+        body.tools = [{ type: 'web_search' }];
+      }
+      delete body.web_search;
+
       let endpoint = '';
       if (schemeType === 'video' || currentModel.type_name.includes('视频')) {
         endpoint = currentModel.endpoint || '/v1/video/generations';

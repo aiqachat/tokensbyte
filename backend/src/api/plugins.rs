@@ -612,7 +612,8 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
                 {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
                 {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
-                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false},
+                {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
             ]
         }),
         json!({
@@ -629,7 +630,8 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
                 {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
                 {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
-                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false},
+                {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
             ]
         }),
         json!({
