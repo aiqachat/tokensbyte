@@ -207,27 +207,27 @@ const ModelMarketplace: React.FC = () => {
 
   const isLight = themeMode === 'light';
   const c = {
-    bg: isLight ? '#f8f9fa' : '#000',
+    bg: isLight ? '#f0f4f9' : '#000',
     siderBg: isLight ? '#ffffff' : '#141414',
-    cardBg: isLight ? '#ffffff' : '#0d1117',
-    cardBorder: isLight ? '#e5e7eb' : '#21262d',
-    cardHoverBg: isLight ? '#f9fafb' : '#161b22',
-    panelBg: isLight ? '#f3f4f6' : '#0d1117',
-    text1: isLight ? '#1f2937' : '#e6edf3',
-    text2: isLight ? '#4b5563' : '#c9d1d9',
-    text3: isLight ? '#9ca3af' : '#8b949e',
-    textMuted: isLight ? '#d1d5db' : '#484f58',
-    searchBg: isLight ? '#f3f4f6' : '#0d1117',
-    searchBorder: isLight ? '#d1d5db' : '#30363d',
-    focusBorder: isLight ? '#1677ff' : '#58a6ff',
+    cardBg: isLight ? '#ffffff' : '#141414',
+    cardBorder: isLight ? '#e5e7eb' : '#303030',
+    cardHoverBg: isLight ? '#f9fafb' : '#1f1f1f',
+    panelBg: isLight ? '#f3f4f6' : '#1f1f1f',
+    text1: isLight ? '#1f2937' : 'rgba(255,255,255,0.88)',
+    text2: isLight ? '#4b5563' : 'rgba(255,255,255,0.65)',
+    text3: isLight ? '#9ca3af' : 'rgba(255,255,255,0.45)',
+    textMuted: isLight ? '#d1d5db' : 'rgba(255,255,255,0.25)',
+    searchBg: isLight ? '#f3f4f6' : '#1f1f1f',
+    searchBorder: isLight ? '#d1d5db' : '#303030',
+    focusBorder: isLight ? '#1677ff' : '#1677ff',
     hoverBg: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)',
     sidebarText: isLight ? '#4b5563' : 'rgba(255,255,255,0.65)',
     scrollThumb: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
-    sortBorder: isLight ? '#d1d5db' : '#30363d',
-    link: isLight ? '#2563eb' : '#58a6ff',
-    codeBg: isLight ? '#f3f4f6' : '#21262d',
-    codeText: isLight ? '#374151' : '#c9d1d9',
-    detailBg: isLight ? '#ffffff' : '#161b22',
+    sortBorder: isLight ? '#d1d5db' : '#303030',
+    link: isLight ? '#1677ff' : '#1677ff',
+    codeBg: isLight ? '#f3f4f6' : '#1f1f1f',
+    codeText: isLight ? '#374151' : 'rgba(255,255,255,0.65)',
+    detailBg: isLight ? '#ffffff' : '#141414',
     shadow: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.3)',
   };
 
@@ -299,7 +299,7 @@ const ModelMarketplace: React.FC = () => {
                 )
               ) : (
                 <>
-                  <ShopOutlined style={{ fontSize: 20, color: '#58a6ff', marginRight: collapsed && !screens.xs ? 0 : 10 }} />
+                  <ShopOutlined style={{ fontSize: 20, color: '#1677ff', marginRight: collapsed && !screens.xs ? 0 : 10 }} />
                   {!(collapsed && !screens.xs) && <span style={{ color: c.text1, fontSize: '18px', fontWeight: 600 }}>{siteName || 'TokensByte'}</span>}
                 </>
               )}
@@ -438,13 +438,13 @@ const ModelMarketplace: React.FC = () => {
                   {/* 左侧详情 */}
                   <div style={{ flex: '1 1 500px', background: isLight ? '#fff' : 'rgba(255,255,255,0.02)', border: `1px solid ${c.cardBorder}`, borderRadius: 16, padding: screens.xs ? '20px' : '40px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32 }}>
-                      <div style={{ width: 64, height: 64, borderRadius: 16, background: 'rgba(22, 119, 255, 0.1)', color: '#1677ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, border: '1px solid rgba(22, 119, 255, 0.2)', overflow: 'hidden' }}>
+                      <div style={{ width: 64, height: 64, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, overflow: 'hidden' }}>
                         {selectedModel.logo ? (
-                          <img src={`/assets/icons/lobe/${selectedModel.logo}.svg`} alt="" style={{ width: 40, height: 40, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          <img src={`/assets/icons/lobe/${selectedModel.logo}.svg`} alt="" style={{ width: 48, height: 48, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         ) : selectedModel.provider_logo ? (
-                          <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 40, height: 40, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 48, height: 48, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         ) : (
-                          getTypeIcon(selectedModel.type_name)
+                          <span style={{ color: '#1677ff' }}>{getTypeIcon(selectedModel.type_name)}</span>
                         )}
                       </div>
                       <div>
@@ -626,7 +626,7 @@ const ModelMarketplace: React.FC = () => {
                           onClick={() => handleProviderToggle(p.id)}
                           style={{ 
                             display: 'flex', alignItems: 'center', padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
-                            background: selectedProviders.includes(p.id) ? (isLight ? '#eff6ff' : 'rgba(88,166,255,0.1)') : 'transparent',
+                            background: selectedProviders.includes(p.id) ? (isLight ? '#eff6ff' : 'rgba(22,119,255,0.12)') : 'transparent',
                             color: selectedProviders.includes(p.id) ? (c.link) : (c.text2),
                             transition: 'all 0.15s',
                             fontSize: 14
@@ -694,8 +694,6 @@ const ModelMarketplace: React.FC = () => {
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
                             <div className="mp-card-icon" style={{ 
-                              background: c.panelBg, 
-                              color: c.codeText, 
                               overflow: 'hidden',
                               width: 20,
                               height: 20,
