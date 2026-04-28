@@ -1,24 +1,42 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Typography, Button, Table, Tag, Tabs, Modal, Form, Input, InputNumber, Select, Space, Spin, message, Popconfirm, TimePicker, Tooltip, Card, Row, Col, Statistic, Drawer } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, ApiOutlined, CloudServerOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, ApiOutlined, CloudServerOutlined, CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;
 
+interface PoolAccountMapping {
+  account_id: number;
+  status: string;
+  quota_unit: string;
+  daily_reset_hour: number;
+  daily_reset_minute: number;
+  period_start: string;
+  period_end: string;
+  daily_quota: number;
+  hourly_quota: number;
+  period_quota: number;
+  daily_used: number;
+  hourly_used: number;
+  period_used: number;
+  last_daily_reset: string;
+  last_hourly_reset: string;
+  last_period_reset: string;
+  priority: number;
+}
+
 interface Pool {
   id: number; name: string; pool_type: string; strategy: string;
-  is_active: number; remark?: string; total_accounts: number; active_accounts: number;
-  account_ids: number[];
+  is_active: number; remark?: string; model_id: string; total_accounts: number; active_accounts: number;
+  accounts: PoolAccountMapping[];
   created_at: string; updated_at: string;
 }
 
 interface PoolAccount {
-  id: number; name: string; base_url: string; api_key_masked: string; models: string; status: string;
-  quota_unit: string; daily_reset_hour: number; daily_reset_minute: number; period_start: string; period_end: string;
-  daily_quota: number; hourly_quota: number; period_quota: number;
-  daily_used: number; hourly_used: number; period_used: number;
-  last_error?: string; last_error_at?: string; priority: number;
+  id: number; name: string; base_url: string; api_key_masked: string; status: string;
+  account_id: string; access_key: string; secret_key_masked: string; models: string;
+  last_error?: string; last_error_at?: string;
   created_at: string; updated_at: string;
 }
 
@@ -61,6 +79,8 @@ const PoolManager: React.FC = () => {
   const [siteModels, setSiteModels] = useState<any[]>([]);
   const [siteProviders, setSiteProviders] = useState<any[]>([]);
   const [siteTypes, setSiteTypes] = useState<any[]>([]);
+  const [poolSaving, setPoolSaving] = useState(false);
+  const [accountSaving, setAccountSaving] = useState(false);
   const [modelFilterProvider, setModelFilterProvider] = useState<number | undefined>();
   const [modelFilterType, setModelFilterType] = useState<number | undefined>();
 
@@ -104,17 +124,19 @@ const PoolManager: React.FC = () => {
     } catch { /* silent */ }
   };
 
-  // 根据筛选条件构建分组选项
   const groupedModelOptions = React.useMemo(() => {
     let filtered = siteModels;
     if (modelFilterProvider !== undefined) filtered = filtered.filter(m => m.provider_id === modelFilterProvider);
     if (modelFilterType !== undefined) filtered = filtered.filter(m => m.type_id === modelFilterType);
     const providerMap = new Map(siteProviders.map((p: any) => [p.id, p.name]));
-    const groups: Record<string, { label: string; value: string }[]> = {};
+    const groups: Record<string, { label: string; value: string; disabled: boolean }[]> = {};
+    const poolModelId = poolForm.getFieldValue('model_id');
+
     for (const m of filtered) {
       const groupName = providerMap.get(m.provider_id) || '未分类';
       if (!groups[groupName]) groups[groupName] = [];
-      groups[groupName].push({ label: `${m.name} (${m.model_id})`, value: m.model_id });
+      const isDisabled = poolModelId && poolModelId !== m.mid && poolModelId !== m.model_id;
+      groups[groupName].push({ label: `${m.name} (${m.model_id}) [MID:${m.mid}]`, value: m.mid, disabled: !!isDisabled });
     }
     return Object.entries(groups).map(([label, options]) => ({ label, options }));
   }, [siteModels, siteProviders, modelFilterProvider, modelFilterType]);
@@ -126,10 +148,35 @@ const PoolManager: React.FC = () => {
   // ── 卡池 CRUD ─────────────────────────────────────────────
   const handleSavePool = async () => {
     try {
+      setPoolSaving(true);
       const values = await poolForm.validateFields();
+      let modelValue = values.model_id;
+      if (modelValue) {
+        const match = siteModels.find((m: any) => m.mid === modelValue);
+        modelValue = match ? match.model_id : modelValue;
+      }
+
+      const formattedAccounts = (values.accounts || []).map((acc: any) => {
+        const resetTime = acc._resetTime;
+        const periodRange = acc._periodRange;
+        return {
+          account_id: acc.account_id,
+          status: acc.status || 'active',
+          quota_unit: acc.quota_unit || 'tokens',
+          daily_reset_hour: resetTime ? resetTime.hour() : 0,
+          daily_reset_minute: resetTime ? resetTime.minute() : 0,
+          period_start: periodRange?.[0] ? periodRange[0].format('HH:mm') : '',
+          period_end: periodRange?.[1] ? periodRange[1].format('HH:mm') : '',
+          daily_quota: acc.daily_quota || 0,
+          hourly_quota: acc.hourly_quota || 0,
+          period_quota: acc.period_quota || 0,
+          priority: acc.priority || 0,
+        };
+      });
+
       const payload: any = {
         name: values.name, pool_type: values.pool_type, strategy: values.strategy,
-        remark: values.remark || '', account_ids: values.account_ids || [],
+        remark: values.remark || '', model_id: modelValue || '', accounts: formattedAccounts,
       };
       if (editingPool) {
         payload.is_active = values.is_active;
@@ -141,13 +188,23 @@ const PoolManager: React.FC = () => {
       }
       setPoolModalVisible(false); fetchPools();
     } catch { /* validation */ }
+    finally { setPoolSaving(false); }
   };
 
   const openPoolModal = (pool?: Pool) => {
     setEditingPool(pool || null);
     poolForm.resetFields();
     if (pool) {
-      poolForm.setFieldsValue({ ...pool });
+      const match = siteModels.find((m: any) => m.model_id === pool.model_id);
+      const mid = match ? match.mid : pool.model_id;
+
+      const formattedAccounts = (pool.accounts || []).map(acc => ({
+        ...acc,
+        _resetTime: dayjs().hour(acc.daily_reset_hour).minute(acc.daily_reset_minute),
+        _periodRange: acc.period_start && acc.period_end ? [dayjs(acc.period_start, 'HH:mm'), dayjs(acc.period_end, 'HH:mm')] : undefined,
+      }));
+
+      poolForm.setFieldsValue({ ...pool, model_id: mid || undefined, accounts: formattedAccounts });
     }
     setPoolModalVisible(true);
   };
@@ -164,29 +221,17 @@ const PoolManager: React.FC = () => {
   // ── 账号 CRUD ─────────────────────────────────────────────
   const handleSaveAccount = async () => {
     try {
+      setAccountSaving(true);
       const values = await accountForm.validateFields();
-      const resetTime = values._resetTime;
-      const periodRange = values._periodRange;
-      let modelsAsIds = Array.isArray(values.models) ? values.models : [];
-      modelsAsIds = modelsAsIds.map((midOrId: string) => {
-        const match = siteModels.find((m: any) => m.mid === midOrId);
-        return match ? match.model_id : midOrId;
-      });
-
+      
       const payload: any = {
         name: values.name,
         base_url: values.base_url,
         api_key: values.api_key,
-        models: modelsAsIds.join(','),
-        quota_unit: values.quota_unit,
-        daily_reset_hour: resetTime ? resetTime.hour() : 0,
-        daily_reset_minute: resetTime ? resetTime.minute() : 0,
-        period_start: periodRange?.[0] ? periodRange[0].format('HH:mm') : '',
-        period_end: periodRange?.[1] ? periodRange[1].format('HH:mm') : '',
-        daily_quota: values.daily_quota || 0,
-        hourly_quota: values.hourly_quota || 0,
-        period_quota: values.period_quota || 0,
-        priority: values.priority || 0,
+        account_id: values.account_id,
+        access_key: values.access_key,
+        secret_key: values.secret_key,
+        models: values.models,
       };
       if (editingAccount) {
         payload.status = values.status;
@@ -198,25 +243,14 @@ const PoolManager: React.FC = () => {
       }
       setAccountModalVisible(false); fetchAccounts();
     } catch { /* validation */ }
+    finally { setAccountSaving(false); }
   };
 
   const openAccountModal = (account?: PoolAccount) => {
     setEditingAccount(account || null);
     accountForm.resetFields();
     if (account) {
-      let modelsAsMids = account.models ? account.models.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
-      modelsAsMids = modelsAsMids.map((modelId: string) => {
-        const match = siteModels.find((m: any) => m.model_id === modelId);
-        return match ? match.mid : modelId;
-      });
-
-      accountForm.setFieldsValue({
-        ...account,
-        models: modelsAsMids,
-        _resetTime: dayjs().hour(account.daily_reset_hour).minute(account.daily_reset_minute),
-        _periodRange: account.period_start && account.period_end
-          ? [dayjs(account.period_start, 'HH:mm'), dayjs(account.period_end, 'HH:mm')] : undefined,
-      });
+      accountForm.setFieldsValue({ ...account });
     }
     setAccountModalVisible(true);
   };
@@ -238,7 +272,7 @@ const PoolManager: React.FC = () => {
 
   const handleResetAccount = async (id: number) => {
     await request.post(`/plugins/volcengine_pool/accounts/${id}/reset`);
-    message.success('配额已重置'); fetchAccounts();
+    message.success('配额已重置'); fetchAccounts(); fetchPools();
   };
 
   // ── 渲染 ─────────────────────────────────────────────────
@@ -258,21 +292,17 @@ const PoolManager: React.FC = () => {
     );
   };
 
-  const accountColumns = [
+  const baseAccountColumns = [
     { title: '名称', dataIndex: 'name', key: 'name', width: 120 },
     { title: 'URL & API Key', key: 'url_key', width: 200, render: (_: any, r: PoolAccount) => (
       <div>
         <Text style={{ fontSize: 12, display: 'block' }} ellipsis title={r.base_url}>{r.base_url}</Text>
-        <Text type="secondary" style={{ fontSize: 12 }}>{r.api_key_masked}</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>API: {r.api_key_masked}</Text>
+        {r.access_key && <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>AK: {r.access_key}</Text>}
       </div>
     )},
-    { title: '支持模型', dataIndex: 'models', key: 'models', width: 160, render: (v: string) => v ? <Tooltip title={v}><Text ellipsis style={{ maxWidth: 140 }}>{v}</Text></Tooltip> : <Text type="secondary">全部</Text> },
     { title: '状态', dataIndex: 'status', key: 'status', width: 100,
       render: (v: string) => { const c = statusConfig[v] || statusConfig.active; return <Tag icon={c.icon} color={c.color}>{c.label}</Tag>; } },
-    { title: '每日用量', key: 'daily', width: 120, render: (_: any, r: PoolAccount) => quotaBar(r.daily_used, r.daily_quota) },
-    { title: '每小时用量', key: 'hourly', width: 120, render: (_: any, r: PoolAccount) => quotaBar(r.hourly_used, r.hourly_quota) },
-    { title: '时段用量', key: 'period', width: 120, render: (_: any, r: PoolAccount) => quotaBar(r.period_used, r.period_quota) },
-    { title: '优先级', dataIndex: 'priority', key: 'priority', width: 70 },
     { title: '最近错误', key: 'error', width: 180, render: (_: any, r: PoolAccount) =>
       r.last_error ? <Tooltip title={r.last_error}><Text ellipsis style={{ maxWidth: 160, fontSize: 12, color: '#ff4d4f' }}>{r.last_error}</Text></Tooltip> : '-' },
     { title: '操作', key: 'action', width: 220, render: (_: any, r: PoolAccount) => (
@@ -285,6 +315,19 @@ const PoolManager: React.FC = () => {
         </Popconfirm>
       </Space>
     )},
+  ];
+
+  const poolMappingColumns = [
+    { title: '账号名称', key: 'name', width: 120, render: (_: any, m: PoolAccountMapping) => {
+        const acc = accounts.find(a => a.id === m.account_id);
+        return <Text>{acc ? acc.name : `未知(${m.account_id})`}</Text>;
+    }},
+    { title: '映射状态', dataIndex: 'status', key: 'status', width: 100,
+      render: (v: string) => { const c = statusConfig[v] || statusConfig.active; return <Tag icon={c.icon} color={c.color}>{c.label}</Tag>; } },
+    { title: '优先级', dataIndex: 'priority', key: 'priority', width: 70 },
+    { title: '每日用量', key: 'daily', width: 120, render: (_: any, r: PoolAccountMapping) => quotaBar(r.daily_used, r.daily_quota) },
+    { title: '每小时用量', key: 'hourly', width: 120, render: (_: any, r: PoolAccountMapping) => quotaBar(r.hourly_used, r.hourly_quota) },
+    { title: '时段用量', key: 'period', width: 120, render: (_: any, r: PoolAccountMapping) => quotaBar(r.period_used, r.period_quota) },
   ];
 
   const logColumns = [
@@ -302,7 +345,7 @@ const PoolManager: React.FC = () => {
   const poolTab = (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>管理所有卡池，每个卡池可包含多个火山引擎账号</Text>
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>管理所有卡池，每个卡池固定一种模型，可分配多个账号并设置独立配额</Text>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchPools} loading={loading}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openPoolModal()}>新建卡池</Button>
@@ -335,6 +378,9 @@ const PoolManager: React.FC = () => {
                   </Space>
                   <Tag color={pool.is_active ? 'success' : 'default'}>{pool.is_active ? '启用' : '禁用'}</Tag>
                 </div>
+                <div style={{ marginBottom: 10 }}>
+                   <Text type="secondary" style={{ fontSize: 12 }}>绑定的模型: {pool.model_id || '未配置'}</Text>
+                </div>
                 <Row gutter={16}>
                   <Col span={8}><Statistic title="账号" value={pool.total_accounts} valueStyle={{ fontSize: 16, color: '#fff' }} /></Col>
                   <Col span={8}><Statistic title="在线" value={pool.active_accounts} valueStyle={{ fontSize: 16, color: '#52c41a' }} /></Col>
@@ -361,14 +407,14 @@ const PoolManager: React.FC = () => {
   const accountTab = (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>独立账号池，配置账号请求地址、密钥及配额，用于分配给各个卡池</Text>
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>独立账号池，配置基础账号认证信息，用于分配给各个卡池</Text>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => fetchAccounts()}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openAccountModal()}>添加账号</Button>
         </Space>
       </div>
-      <Table dataSource={accounts} columns={accountColumns} rowKey="id" size="small" pagination={{ pageSize: 20 }}
-        scroll={{ x: 1300 }} style={{ background: '#141414' }} />
+      <Table dataSource={accounts} columns={baseAccountColumns} rowKey="id" size="small" pagination={{ pageSize: 20 }}
+        style={{ background: '#141414' }} />
     </div>
   );
 
@@ -398,13 +444,39 @@ const PoolManager: React.FC = () => {
         { key: 'logs', label: '调度日志', children: logTab },
       ]} />
 
-      {/* 卡池编辑弹窗 */}
-      <Modal title={editingPool ? '编辑卡池' : '新建卡池'} open={poolModalVisible}
-        onCancel={() => setPoolModalVisible(false)} onOk={handleSavePool} width={560} destroyOnClose>
-        <Form form={poolForm} layout="vertical" initialValues={{ pool_type: 'chat', strategy: 'random', is_active: 1, account_ids: [] }}>
-          <Form.Item name="name" label="卡池名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="如：视频模型卡池" />
-          </Form.Item>
+      {/* 卡池编辑全屏抽屉 */}
+      <Drawer
+        title={editingPool ? '编辑卡池' : '新建卡池'}
+        placement="right"
+        width="100%"
+        onClose={() => setPoolModalVisible(false)}
+        open={poolModalVisible}
+        destroyOnClose
+        styles={{ body: { padding: '24px' } }}
+        footer={
+          <div style={{ textAlign: 'right' }}>
+            <Space>
+              <Button onClick={() => setPoolModalVisible(false)} disabled={poolSaving}>取消</Button>
+              <Button type="primary" onClick={handleSavePool} loading={poolSaving}>保存</Button>
+            </Space>
+          </div>
+        }
+      >
+        <Form form={poolForm} layout="vertical" initialValues={{ pool_type: 'chat', strategy: 'random', is_active: 1 }}>
+          <Row gutter={16}>
+            <Col span={12}>
+                <Form.Item name="name" label="卡池名称" rules={[{ required: true, message: '请输入名称' }]}>
+                    <Input placeholder="如：视频模型卡池" />
+                </Form.Item>
+            </Col>
+            <Col span={12}>
+               <Form.Item name="model_id" label="绑定的模型" rules={[{ required: true, message: '请选择模型' }]} tooltip="卡池固定支持该模型。">
+                  <Select placeholder="搜索或选择模型" allowClear showSearch
+                    options={groupedModelOptions}
+                    filterOption={(input, option) => ((option as any)?.label ?? '').toLowerCase().includes(input.toLowerCase()) || ((option as any)?.value ?? '').toLowerCase().includes(input.toLowerCase())} />
+                </Form.Item>
+            </Col>
+          </Row>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="pool_type" label="卡池类型">
@@ -420,10 +492,78 @@ const PoolManager: React.FC = () => {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="account_ids" label="分配账号" tooltip="选择要分配到此卡池的账号">
-            <Select mode="multiple" placeholder="请选择账号" allowClear
-              options={accounts.map(a => ({ label: a.name, value: a.id }))} />
-          </Form.Item>
+
+          <Form.List name="accounts">
+            {(fields, { add, remove }) => (
+              <>
+                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text strong>分配账号及配额</Text>
+                  <Button type="dashed" onClick={() => add({ status: 'active', quota_unit: 'tokens', daily_quota: 0, hourly_quota: 0, period_quota: 0, priority: 0 })} icon={<PlusOutlined />}>
+                    添加账号
+                  </Button>
+                </div>
+                {fields.map(({ key, name, ...restField }) => (
+                  <Card key={key} size="small" style={{ marginBottom: 16, background: '#141414', border: '1px solid #303030' }}>
+                    <div style={{ position: 'absolute', right: 16, top: 12 }}>
+                      <MinusCircleOutlined style={{ color: '#ff4d4f', fontSize: 18, cursor: 'pointer' }} onClick={() => remove(name)} />
+                    </div>
+                    <Row gutter={16}>
+                      <Col span={8}>
+                        <Form.Item {...restField} name={[name, 'account_id']} label="选择账号" rules={[{ required: true, message: '请选择账号' }]}>
+                          <Select placeholder="请选择" options={accounts.map(a => ({ label: a.name, value: a.id }))} showSearch optionFilterProp="label" />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item {...restField} name={[name, 'status']} label="映射状态">
+                          <Select options={[{ label: '可用', value: 'active' }, { label: '禁用', value: 'disabled' }]} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item {...restField} name={[name, 'priority']} label="优先级(顺序模式)">
+                          <InputNumber min={0} max={999} style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                    <Row gutter={16}>
+                        <Col span={8}>
+                          <Form.Item {...restField} name={[name, 'quota_unit']} label="配额计量单位">
+                            <Select options={[{ label: 'Token 数', value: 'tokens' }, { label: '请求次数', value: 'requests' }, { label: '图片张数', value: 'images' }]} />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item {...restField} name={[name, '_resetTime']} label="每日配额刷新时间">
+                            <TimePicker format="HH:mm" style={{ width: '100%' }} placeholder="选择时间" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item {...restField} name={[name, '_periodRange']} label="时段范围（可选）">
+                            <TimePicker.RangePicker format="HH:mm" style={{ width: '100%' }} placeholder={['开始', '结束']} />
+                          </Form.Item>
+                        </Col>
+                    </Row>
+                    <Form.Item noStyle shouldUpdate={(prev, cur) => {
+                        const pu = prev.accounts?.[name]?.quota_unit;
+                        const cu = cur.accounts?.[name]?.quota_unit;
+                        return pu !== cu;
+                    }}>
+                        {({ getFieldValue }) => {
+                          const unit = getFieldValue(['accounts', name, 'quota_unit']) || 'tokens';
+                          const unitLabel = unit === 'tokens' ? 'Token' : unit === 'requests' ? '次' : '张';
+                          return (
+                            <Row gutter={16}>
+                              <Col span={8}><Form.Item {...restField} name={[name, 'daily_quota']} label={`每日限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} /></Form.Item></Col>
+                              <Col span={8}><Form.Item {...restField} name={[name, 'hourly_quota']} label={`每小时限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} /></Form.Item></Col>
+                              <Col span={8}><Form.Item {...restField} name={[name, 'period_quota']} label={`时段限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} /></Form.Item></Col>
+                            </Row>
+                          );
+                        }}
+                    </Form.Item>
+                  </Card>
+                ))}
+              </>
+            )}
+          </Form.List>
+
           {editingPool && (
             <Form.Item name="is_active" label="启用状态">
               <Select options={[{ label: '启用', value: 1 }, { label: '禁用', value: 0 }]} />
@@ -431,13 +571,13 @@ const PoolManager: React.FC = () => {
           )}
           <Form.Item name="remark" label="备注"><Input.TextArea rows={2} /></Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
-      {/* 账号编辑全屏抽屉 */}
+      {/* 账号编辑抽屉（简化版） */}
       <Drawer
         title={editingAccount ? '编辑账号' : '添加账号'}
         placement="right"
-        width="100%"
+        width={500}
         onClose={() => setAccountModalVisible(false)}
         open={accountModalVisible}
         destroyOnClose
@@ -445,105 +585,45 @@ const PoolManager: React.FC = () => {
         footer={
           <div style={{ textAlign: 'right' }}>
             <Space>
-              <Button onClick={() => setAccountModalVisible(false)}>取消</Button>
-              <Button type="primary" onClick={handleSaveAccount}>保存</Button>
+              <Button onClick={() => setAccountModalVisible(false)} disabled={accountSaving}>取消</Button>
+              <Button type="primary" onClick={handleSaveAccount} loading={accountSaving}>保存</Button>
             </Space>
           </div>
         }
       >
-        <Form form={accountForm} layout="vertical" initialValues={{ daily_quota: 0, hourly_quota: 0, period_quota: 0, priority: 0, quota_unit: 'tokens', base_url: 'https://ark.cn-beijing.volces.com/api/v3' }}>
-          <Form.Item name="name" label="账号名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="备注名，如：账号A" />
+        <Form form={accountForm} layout="vertical" initialValues={{ base_url: 'https://ark.cn-beijing.volces.com/api/v3' }}>
+          <Form.Item name="account_id" label="账号 ID (Account ID)">
+            <Input placeholder="非必填，火山引擎 Account ID 或自定义标识" />
           </Form.Item>
           <Form.Item name="base_url" label="请求地址 (Base URL)" rules={[{ required: true, message: '请输入请求地址' }]}>
             <Input placeholder="例如: https://ark.cn-beijing.volces.com/api/v3" />
           </Form.Item>
           {!editingAccount ? (
-            <Form.Item name="api_key" label="API Key" rules={[{ required: true, message: '请输入API Key' }]}>
-              <Input.Password placeholder="火山引擎 API Key" />
+            <Form.Item name="api_key" label="API Key (密钥)" rules={[{ required: true, message: '请输入API Key' }]}>
+              <Input.Password placeholder="火山引擎 API Key (Bearer Token)" />
             </Form.Item>
           ) : (
-            <Form.Item name="api_key" label="API Key（留空不修改）">
+            <Form.Item name="api_key" label="API Key (密钥)（留空不修改）">
               <Input.Password placeholder="留空保持原值" />
             </Form.Item>
           )}
-          <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
-            {() => {
-              const selectedMids: string[] = accountForm.getFieldValue('models') || [];
-              const selectedModelIds = selectedMids.map(mid => {
-                const m = siteModels.find(m => m.mid === mid);
-                return m ? m.model_id : mid;
-              });
-
-              const providerMap = new Map(siteProviders.map((p: any) => [p.id, p.name]));
-              const groups: Record<string, { label: string; value: string; disabled: boolean }[]> = {};
-              let filtered = siteModels;
-              if (modelFilterProvider !== undefined) filtered = filtered.filter(m => m.provider_id === modelFilterProvider);
-              if (modelFilterType !== undefined) filtered = filtered.filter(m => m.type_id === modelFilterType);
-
-              for (const m of filtered) {
-                const groupName = providerMap.get(m.provider_id) || '未分类';
-                if (!groups[groupName]) groups[groupName] = [];
-                const isModelIdSelected = selectedModelIds.includes(m.model_id);
-                const isCurrentMidSelected = selectedMids.includes(m.mid);
-                const isDisabled = isModelIdSelected && !isCurrentMidSelected;
-                groups[groupName].push({ label: `${m.name} (${m.model_id}) [MID:${m.mid}]`, value: m.mid, disabled: isDisabled });
-              }
-              const finalOptions = Object.entries(groups).map(([label, options]) => ({ label, options }));
-
-              return (
-                <Form.Item name="models" label="支持的模型" tooltip="从站点已有模型中选择，也可手动输入自定义模型名并回车。留空表示支持所有模型。">
-                  <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                    <Space size={8}>
-                      <Select placeholder="按服务商筛选" allowClear style={{ width: 160 }} size="small"
-                        options={siteProviders.map((p: any) => ({ label: p.name, value: p.id }))}
-                        value={modelFilterProvider} onChange={setModelFilterProvider} />
-                      <Select placeholder="按类型筛选" allowClear style={{ width: 140 }} size="small"
-                        options={siteTypes.map((t: any) => ({ label: t.name, value: t.id }))}
-                        value={modelFilterType} onChange={setModelFilterType} />
-                    </Space>
-                    <Select mode="tags" placeholder="搜索或选择模型" allowClear
-                      options={finalOptions}
-                      filterOption={(input, option) => ((option as any)?.label ?? '').toLowerCase().includes(input.toLowerCase()) || ((option as any)?.value ?? '').toLowerCase().includes(input.toLowerCase())} />
-                  </Space>
-                </Form.Item>
-              );
-            }}
+          <Form.Item name="access_key" label="Access Key (AK)">
+            <Input placeholder="非必填，IAM AK (若需要)" />
           </Form.Item>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name="quota_unit" label="配额计量单位">
-                <Select options={[{ label: 'Token 数', value: 'tokens' }, { label: '请求次数', value: 'requests' }, { label: '图片张数', value: 'images' }]} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="_resetTime" label="每日配额刷新时间">
-                <TimePicker format="HH:mm" style={{ width: '100%' }} placeholder="选择时间" />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="_periodRange" label="时段范围（可选）">
-                <TimePicker.RangePicker format="HH:mm" style={{ width: '100%' }} placeholder={['开始', '结束']} />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* 动态限额后缀 */}
-          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.quota_unit !== cur.quota_unit}>
-            {({ getFieldValue }) => {
-              const unit = getFieldValue('quota_unit') || 'tokens';
-              const unitLabel = unit === 'tokens' ? 'Token' : unit === 'requests' ? '次' : '张';
-              return (
-                <Row gutter={16}>
-                  <Col span={8}><Form.Item name="daily_quota" label={`每日限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} /></Form.Item></Col>
-                  <Col span={8}><Form.Item name="hourly_quota" label={`每小时限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} /></Form.Item></Col>
-                  <Col span={8}><Form.Item name="period_quota" label={`时段限额(0=不限)`}><InputNumber min={0} style={{ width: '100%' }} addonAfter={unitLabel} /></Form.Item></Col>
-                </Row>
-              );
-            }}
+          {!editingAccount ? (
+            <Form.Item name="secret_key" label="Secret Key (SK)">
+              <Input.Password placeholder="非必填，IAM SK (若需要)" />
+            </Form.Item>
+          ) : (
+            <Form.Item name="secret_key" label="Secret Key (SK)（留空不修改）">
+              <Input.Password placeholder="留空保持原值" />
+            </Form.Item>
+          )}
+          <Form.Item name="models" label="限制调用的模型" tooltip="限制此账号仅可调用哪些模型，以逗号分隔，留空表示不限制">
+            <Input placeholder="例如: doubao-pro-32k,ep-2024..." />
           </Form.Item>
-          <Form.Item name="priority" label="优先级（越大越优先，顺序模式下有效）">
-            <InputNumber min={0} max={999} style={{ width: '100%' }} />
+          <Form.Item name="name" label="备注" rules={[{ required: true, message: '请输入备注名' }]}>
+            <Input placeholder="如：账号A" />
           </Form.Item>
           {editingAccount && (
             <Form.Item name="status" label="状态">
@@ -567,16 +647,16 @@ const PoolManager: React.FC = () => {
             <div style={{ marginBottom: 16 }}>
               <Text style={{ fontSize: 16, fontWeight: 'bold' }}>该卡池绑定的账号使用情况</Text>
               <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
-                总计账号数: {detailPool.total_accounts} | 当前可用数: {detailPool.active_accounts}
+                绑定模型: {detailPool.model_id} | 账号数: {detailPool.total_accounts} | 当前可用数: {detailPool.active_accounts}
               </Text>
             </div>
             <Table
-              dataSource={accounts.filter(a => detailPool.account_ids?.includes(a.id))}
-              columns={accountColumns}
-              rowKey="id"
+              dataSource={detailPool.accounts}
+              columns={poolMappingColumns}
+              rowKey="account_id"
               size="small"
               pagination={false}
-              scroll={{ x: 1300 }}
+              scroll={{ x: 1000 }}
               style={{ background: '#141414' }}
             />
           </div>

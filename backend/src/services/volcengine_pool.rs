@@ -10,6 +10,38 @@ use crate::models::volcengine_pool::{VolcenginePool, VolcenginePoolAccount};
 use chrono::{Local, Timelike, NaiveTime};
 use rand::seq::SliceRandom;
 use std::sync::Arc;
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct AccountWithMapping {
+    pub id: i64,
+    pub name: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub account_id_str: String,
+    pub access_key: String,
+    pub secret_key: String,
+    pub account_status: String,
+    pub last_error: Option<String>,
+    pub last_error_at: Option<String>,
+    pub pool_id: i64,
+    pub account_id: i64,
+    pub status: String,
+    pub quota_unit: String,
+    pub daily_reset_hour: i32,
+    pub daily_reset_minute: i32,
+    pub period_start: String,
+    pub period_end: String,
+    pub daily_quota: f64,
+    pub hourly_quota: f64,
+    pub period_quota: f64,
+    pub daily_used: f64,
+    pub hourly_used: f64,
+    pub period_used: f64,
+    pub last_daily_reset: String,
+    pub last_hourly_reset: String,
+    pub last_period_reset: String,
+    pub priority: i32,
+}
+
 
 /// 从指定卡池中选择一个可用账号
 ///
@@ -33,9 +65,9 @@ pub async fn select_account(
     .await
     .ok()??;
 
-    // 2. 获取所有账号
-    let mut accounts: Vec<VolcenginePoolAccount> = sqlx::query_as(
-        &state.db.format_query("SELECT a.* FROM volcengine_pool_accounts a JOIN volcengine_pool_account_mapping m ON a.id = m.account_id WHERE m.pool_id = ? ORDER BY a.priority DESC"),
+    // 2. 获取所有账号及映射关系
+    let mut accounts: Vec<AccountWithMapping> = sqlx::query_as(
+        &state.db.format_query("SELECT a.id, a.name, a.base_url, a.api_key, a.account_id as account_id_str, a.access_key, a.secret_key, a.status as account_status, a.last_error, a.last_error_at, m.pool_id, m.account_id, m.status, m.quota_unit, m.daily_reset_hour, m.daily_reset_minute, m.period_start, m.period_end, m.daily_quota, m.hourly_quota, m.period_quota, m.daily_used, m.hourly_used, m.period_used, m.last_daily_reset, m.last_hourly_reset, m.last_period_reset, m.priority FROM volcengine_pool_accounts a JOIN volcengine_pool_account_mapping m ON a.id = m.account_id WHERE m.pool_id = ? ORDER BY m.priority DESC"),
     )
     .bind(pool_id)
     .fetch_all(&state.db.pool)
@@ -47,11 +79,11 @@ pub async fn select_account(
         return None;
     }
 
-    // 3. 检查并重置配额 (现在重置规则在账号自己身上)
+    // 3. 检查并重置配额
     check_and_reset_quotas(state, &mut accounts).await;
 
-    // 4. 过滤可用账号（状态正常、配额充足、且支持请求的模型）
-    let available: Vec<&VolcenginePoolAccount> = accounts
+    // 4. 过滤可用账号（状态正常、配额充足）
+    let available: Vec<&AccountWithMapping> = accounts
         .iter()
         .filter(|a| is_account_available(a, model_id))
         .collect();
@@ -82,25 +114,36 @@ pub async fn select_account(
             "[卡池] 选中账号: '{}' (id={}) | 卡池: '{}' | 策略: {}",
             account.name, account.id, pool.name, pool.strategy
         );
-        Some(account.clone())
+        Some(VolcenginePoolAccount {
+            id: account.id,
+            name: account.name.clone(),
+            base_url: account.base_url.clone(),
+            api_key: account.api_key.clone(),
+            account_id: account.account_id_str.clone(),
+            access_key: account.access_key.clone(),
+            secret_key: account.secret_key.clone(),
+            models: "".into(),
+            status: account.account_status.clone(),
+            quota_unit: account.quota_unit.clone(),
+            daily_reset_hour: account.daily_reset_hour,
+            daily_reset_minute: account.daily_reset_minute,
+            period_start: account.period_start.clone(),
+            period_end: account.period_end.clone(),
+            last_error: account.last_error.clone(),
+            last_error_at: account.last_error_at.clone(),
+            created_at: "".into(),
+            updated_at: "".into(),
+        })
     } else {
         None
     }
 }
 
 /// 判断账号是否可用
-fn is_account_available(account: &VolcenginePoolAccount, model_id: &str) -> bool {
-    // 状态非 active 一律不可用
-    if account.status != "active" {
+fn is_account_available(account: &AccountWithMapping, _model_id: &str) -> bool {
+    // 账号自身状态或映射状态非 active 一律不可用
+    if account.account_status != "active" || account.status != "active" {
         return false;
-    }
-
-    // 模型过滤：如果账号配置了 models，必须包含请求的 model_id
-    if !account.models.is_empty() {
-        let supported: Vec<&str> = account.models.split(',').map(|s| s.trim()).collect();
-        if !supported.contains(&model_id) {
-            return false;
-        }
     }
 
     // 每日配额检查
@@ -155,7 +198,7 @@ fn is_in_period(start: &str, end: &str) -> bool {
 /// - 时段配额：时段开始时间重置 period_used
 async fn check_and_reset_quotas(
     state: &Arc<AppState>,
-    accounts: &mut Vec<VolcenginePoolAccount>,
+    accounts: &mut Vec<AccountWithMapping>,
 ) {
     let now = Local::now();
     let today = now.format("%Y-%m-%d").to_string();
@@ -222,9 +265,9 @@ async fn check_and_reset_quotas(
                 &account.status
             };
             sqlx::query(&state.db.format_query(
-                "UPDATE volcengine_pool_accounts SET daily_used = ?, hourly_used = ?, period_used = ?, \
+                "UPDATE volcengine_pool_account_mapping SET daily_used = ?, hourly_used = ?, period_used = ?, \
                  last_daily_reset = ?, last_hourly_reset = ?, last_period_reset = ?, \
-                 status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                 status = ? WHERE pool_id = ? AND account_id = ?",
             ))
             .bind(account.daily_used)
             .bind(account.hourly_used)
@@ -233,7 +276,8 @@ async fn check_and_reset_quotas(
             .bind(&account.last_hourly_reset)
             .bind(&account.last_period_reset)
             .bind(status_val)
-            .bind(account.id)
+            .bind(account.pool_id)
+            .bind(account.account_id)
             .execute(&state.db.pool)
             .await
             .ok();
@@ -255,22 +299,24 @@ pub async fn record_usage(
 ) {
     // 更新使用量
     sqlx::query(&state.db.format_query(
-        "UPDATE volcengine_pool_accounts SET \
-         daily_used = daily_used + ?, hourly_used = hourly_used + ?, period_used = period_used + ?, \
-         updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        "UPDATE volcengine_pool_account_mapping SET \
+         daily_used = daily_used + ?, hourly_used = hourly_used + ?, period_used = period_used + ? \
+         WHERE pool_id = ? AND account_id = ?",
     ))
     .bind(usage_amount)
     .bind(usage_amount)
     .bind(usage_amount)
+    .bind(pool_id)
     .bind(account_id)
     .execute(&state.db.pool)
     .await
     .ok();
 
     // 检查是否超出配额，标记 exhausted
-    let account: Option<VolcenginePoolAccount> = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM volcengine_pool_accounts WHERE id = ?"),
+    let account: Option<AccountWithMapping> = sqlx::query_as(
+        &state.db.format_query("SELECT a.id, a.name, a.base_url, a.api_key, a.account_id as account_id_str, a.access_key, a.secret_key, a.status as account_status, a.last_error, a.last_error_at, m.pool_id, m.account_id, m.status, m.quota_unit, m.daily_reset_hour, m.daily_reset_minute, m.period_start, m.period_end, m.daily_quota, m.hourly_quota, m.period_quota, m.daily_used, m.hourly_used, m.period_used, m.last_daily_reset, m.last_hourly_reset, m.last_period_reset, m.priority FROM volcengine_pool_accounts a JOIN volcengine_pool_account_mapping m ON a.id = m.account_id WHERE m.pool_id = ? AND m.account_id = ?"),
     )
+    .bind(pool_id)
     .bind(account_id)
     .fetch_optional(&state.db.pool)
     .await
@@ -283,8 +329,9 @@ pub async fn record_usage(
 
         if daily_exhausted || hourly_exhausted || period_exhausted {
             sqlx::query(&state.db.format_query(
-                "UPDATE volcengine_pool_accounts SET status = 'exhausted', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                "UPDATE volcengine_pool_account_mapping SET status = 'exhausted' WHERE pool_id = ? AND account_id = ?",
             ))
+            .bind(pool_id)
             .bind(account_id)
             .execute(&state.db.pool)
             .await

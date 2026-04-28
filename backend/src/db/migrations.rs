@@ -943,6 +943,9 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE volcengine_pool_accounts DROP COLUMN IF EXISTS pool_id").execute(pool).await.ok(); // 移除旧绑定
     sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS base_url TEXT NOT NULL DEFAULT 'https://ark.cn-beijing.volces.com/api/v3'").execute(pool).await.ok();
     sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS models TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS account_id TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS access_key TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS secret_key TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
     sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS quota_unit TEXT NOT NULL DEFAULT 'tokens'").execute(pool).await.ok();
     sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS daily_reset_hour INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
     sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS daily_reset_minute INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
@@ -966,6 +969,22 @@ macro_rules! pg_migration_blocks {
             PRIMARY KEY (pool_id, account_id)
         )"#
     ).execute(pool).await?;
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS quota_unit TEXT NOT NULL DEFAULT 'tokens'").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_reset_hour INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_reset_minute INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_start TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_end TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_quota DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS hourly_quota DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_quota DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_used DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS hourly_used DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_used DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS last_daily_reset TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS last_hourly_reset TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS last_period_reset TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
     sqlx::query("COMMENT ON TABLE volcengine_pool_account_mapping IS '卡池与账号的多对多映射表'").execute(pool).await.ok();
 
     // 卡池调度日志表
