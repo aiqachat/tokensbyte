@@ -504,8 +504,17 @@ const PoolManager: React.FC = () => {
                 </div>
                 {fields.map(({ key, name, ...restField }) => (
                   <Card key={key} size="small" style={{ marginBottom: 16, background: '#141414', border: '1px solid #303030' }}>
-                    <div style={{ position: 'absolute', right: 16, top: 12 }}>
-                      <MinusCircleOutlined style={{ color: '#ff4d4f', fontSize: 18, cursor: 'pointer' }} onClick={() => remove(name)} />
+                    <div style={{ position: 'absolute', right: 12, top: 8, zIndex: 10 }}>
+                      <Button 
+                        type="text" 
+                        danger 
+                        size="small"
+                        icon={<MinusCircleOutlined style={{ fontSize: 18 }} />} 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          remove(name);
+                        }} 
+                      />
                     </div>
                     <Row gutter={16}>
                       <Col span={8}>
