@@ -1,0 +1,13 @@
+bash: line 1:  1667 Killed: 9               cargo run > ../backend.log 2>&1
+bash: line 1:  1668 Killed: 9               npm run dev > ../frontend.log 2>&1
+bash: line 1:  1723 Killed: 9               npm run dev > ../frontend.log 2>&1
+bash: line 1:  1896 Killed: 9               npm run dev > ../frontend.log 2>&1
+bash: line 1:  2218 Killed: 9               cargo run > ../backend.log 2>&1
+bash: line 1:  2219 Killed: 9               npm run dev > ../frontend.log 2>&1
+bash: line 1:  2500 Killed: 9               cargo run > ../backend.log 2>&1
+bash: line 1:  2499 Killed: 9               npm run dev > ../frontend.log 2>&1
+bash: line 1:  2659 Killed: 9               cargo run > ../backend.log 2>&1
+bash: line 1:  2878 Killed: 9               npm run dev > ../frontend.log 2>&1
+bash: line 1:  2658 Killed: 9               npm run dev > ../frontend.log 2>&1
+bash: line 1:  2951 Killed: 9               cargo run > ../backend.log 2>&1
+bash: line 1:  2952 Killed: 9               npm run dev > ../frontend.log 2>&1
