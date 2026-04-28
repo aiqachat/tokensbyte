@@ -21,9 +21,17 @@ pub async fn image_generations(
     let is_stream = body["stream"].as_bool().unwrap_or(false);
 
     // 解析转发规则，未绑定规则时根据域名智能推断
-    let resolved = forward::resolve_forward_rule(&state, model, "图片", "/v1/images/generations")
-        .await
-        .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, "图片"));
+    let resolved = match forward::resolve_forward_rule(&state, model, "图片", "/v1/images/generations").await {
+        Some(r) => r,
+        None => {
+            if forward::model_has_forward_rules(&state, model).await {
+                return Err(AppError::BadRequest(format!(
+                    "模型 '{}' 不支持当前接口，请检查模型对应的 API 调用方式", model
+                )));
+            }
+            forward::infer_forward_from_base_url(&channel.base_url, "图片")
+        }
+    };
 
     let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "图片");
     let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);

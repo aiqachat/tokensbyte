@@ -41,9 +41,19 @@ pub async fn chat_completions(
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/v1/chat/completions").await?;
 
     // 4. 解析转发规则，未绑定规则时根据域名智能推断
-    let resolved = forward::resolve_forward_rule(&state, model, "聊天", "/v1/chat/completions")
-        .await
-        .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, "聊天"));
+    let resolved = match forward::resolve_forward_rule(&state, model, "聊天", "/v1/chat/completions").await {
+        Some(r) => r,
+        None => {
+            // 模型绑定了转发规则但入口路径不匹配 → 拒绝请求
+            if forward::model_has_forward_rules(&state, model).await {
+                return Err(AppError::BadRequest(format!(
+                    "模型 '{}' 不支持当前接口，请检查模型对应的 API 调用方式", model
+                )));
+            }
+            // 模型未绑定转发规则 → 根据渠道域名智能推断
+            forward::infer_forward_from_base_url(&channel.base_url, "聊天")
+        }
+    };
 
     let target_type = resolved.target_type.clone();
     let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "聊天");

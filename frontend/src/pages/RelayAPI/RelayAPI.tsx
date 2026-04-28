@@ -13,15 +13,17 @@ const RelayAPI: React.FC = () => {
   const endpoints = [
     { label: 'OpenAI 聊天', path: '/v1/chat/completions', method: 'POST', type: 'openai' },
     { label: 'OpenAI 图片', path: '/v1/images/generations', method: 'POST', type: 'openai' },
-    { label: '图片/视频异步状态 (查询)', path: '/v1/tasks/{task_id}', method: 'GET', type: 'openai' },
     { label: 'OpenAI 视频 (提交)', path: '/v1/video/generations', method: 'POST', type: 'openai' },
     { label: 'OpenAI 视频 (查询)', path: '/v1/video/generations/{task_id}', method: 'GET', type: 'openai' },
+    { label: '图片/视频异步状态 (查询)', path: '/v1/tasks/{task_id}', method: 'GET', type: 'openai' },
     { label: 'Google 原生 (非流式)', path: '/v1beta/models/{model}:generateContent', method: 'POST', type: 'google' },
     { label: 'Google 原生 (流式)', path: '/v1beta/models/{model}:streamGenerateContent', method: 'POST', type: 'google' },
     { label: '火山方舟聊天', path: '/api/v3/chat/completions', method: 'POST', type: 'volcengine' },
     { label: '火山方舟生图', path: '/api/v3/images/generations', method: 'POST', type: 'volcengine' },
     { label: '火山方舟视频 (提交)', path: '/api/v3/contents/generations/tasks', method: 'POST', type: 'volcengine' },
     { label: '火山方舟视频 (查询)', path: '/api/v3/contents/generations/tasks/{task_id}', method: 'GET', type: 'volcengine' },
+    { label: '阿里百炼视频 (提交)', path: '/api/v1/services/aigc/video-generation/video-synthesis', method: 'POST', type: 'dashscope' },
+    { label: '阿里百炼视频 (查询)', path: '/api/v1/tasks/{task_id}', method: 'GET', type: 'dashscope' },
   ];
 
   const errorCodes = [
@@ -149,7 +151,7 @@ const RelayAPI: React.FC = () => {
                 </div>
 
                 <Descriptions column={1} bordered size="small" title={<Text strong style={{ fontSize: 13 }}>核心参数</Text>}>
-                  <Descriptions.Item label="model (必填)">视频生成模型名称，如 "doubao-seedance-2-0-fast-260128"</Descriptions.Item>
+                  <Descriptions.Item label="model (必填)">视频生成模型名称，如 "doubao-seedance-2-0-fast-260128", "wanx-v1" (阿里百炼万相视频)</Descriptions.Item>
                   <Descriptions.Item label="prompt (必填)">视频生成的提示词描述文本</Descriptions.Item>
                   <Descriptions.Item label="images (选填)">
                     <Text>参考图片数组，支持两种格式：</Text>
@@ -203,7 +205,7 @@ const RelayAPI: React.FC = () => {
           },
           {
             key: '2',
-            label: 'Google / 火山方舟 原生协议',
+            label: '原生协议 (Google/火山/阿里)',
             children: (
               <Card variant="borderless" style={{ background: '#1f1f1f' }}>
                 <Title level={5}>Google Gemini 原生接口</Title>
@@ -244,6 +246,23 @@ const RelayAPI: React.FC = () => {
                   <Descriptions.Item label="聊天/图片">请求体完全兼容 OpenAI 格式（与 /v1/ 系列参数一致），仅路径不同</Descriptions.Item>
                   <Descriptions.Item label="视频任务提交">请求体同 OpenAI 视频接口参数，或直接传入火山官方 content 数组。控制参数（resolution、duration 等）支持顶层直传</Descriptions.Item>
                   <Descriptions.Item label="异步任务轮询">GET 请求返回原始上游响应，任务完成时（status=succeeded）网关自动提取 Token 用量并执行最终计费结算</Descriptions.Item>
+                  <Descriptions.Item label="鉴权说明">统一使用 <Text code>Authorization: Bearer sk-xxx</Text></Descriptions.Item>
+                </Descriptions>
+
+                <Divider />
+
+                <Title level={5}>阿里百炼 (DashScope) 原生视频接口</Title>
+                <Paragraph type="secondary">使用阿里百炼官方路径和请求体格式（支持文生视频、图生视频等），网关自动拦截注入 X-DashScope-Async 请求头并完成计费。如果使用 OpenAI 标准协议调用 `/v1/video/generations`，系统也会自动转换兼容。</Paragraph>
+                <div style={codeStyle}>
+                  <Text code>POST /api/v1/services/aigc/video-generation/video-synthesis</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">视频生成任务提交（官方 DashScope 格式）</Text></span>
+                  <br />
+                  <Text code>GET  /api/v1/tasks/{'{task_id}'}</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">异步任务状态查询</Text></span>
+                </div>
+                <Descriptions column={1} bordered size="small">
+                  <Descriptions.Item label="视频任务提交">请求体完全支持阿里官方格式，形如 <Text code>{`{"input": {"prompt": "..."}, "parameters": {"resolution": "720P"}}`}</Text>。支持传入模型参数、分辨率等。</Descriptions.Item>
+                  <Descriptions.Item label="异步任务轮询">使用原生任务 ID 进行轮询查询，网关将无缝解析 DashScope 返回的 `output.task_status` 与使用量进行自动扣费。</Descriptions.Item>
                   <Descriptions.Item label="鉴权说明">统一使用 <Text code>Authorization: Bearer sk-xxx</Text></Descriptions.Item>
                 </Descriptions>
               </Card>

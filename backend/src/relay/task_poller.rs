@@ -123,16 +123,19 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
 
     let body = resp.text().await.unwrap_or_default();
     let resp_json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
-    // 提取任务状态：兼容根节点、data 节点、final_result 节点
+    // 提取任务状态：兼容根节点、data 节点、final_result 节点、output.task_status（DashScope）
     let raw_status = resp_json.get("status")
         .or_else(|| resp_json.get("data").and_then(|d| d.get("status")))
         .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
+        .or_else(|| resp_json.get("output").and_then(|o| o.get("task_status")))
         .and_then(|s| s.as_str()).unwrap_or("");
-    // 某些上游（如图片异步 API）用 "completed" 表示成功，统一归一化
-    let task_status = match raw_status {
-        "completed" | "succeeded" => "succeeded",
-        "failed" => "failed",
-        other => other,
+    // 将各种厂商返回的状态统一转化为全小写并归一化
+    // DashScope 会返回 SUCCEEDED / FAILED / CANCELED / UNKNOWN
+    let task_status_str = raw_status.to_lowercase();
+    let task_status = match task_status_str.as_str() {
+        "completed" | "succeeded" | "success" => "succeeded",
+        "failed" | "canceled" | "cancelled" | "unknown" => "failed",
+        _ => task_status_str.as_str(),
     };
 
     if task_status != "succeeded" && task_status != "failed" {
@@ -328,7 +331,14 @@ fn extract_task_id(response: &str) -> Option<String> {
         return Some(id.to_string());
     }
 
-    // 2. 尝试从 data 节点获取 (支持对象或数组)
+    // 2. 尝试从 output 节点获取（DashScope 格式：{ output: { task_id: "..." } }）
+    if let Some(output) = v.get("output") {
+        if let Some(id) = output.get("task_id").or_else(|| output.get("id")).and_then(|id| id.as_str()) {
+            return Some(id.to_string());
+        }
+    }
+
+    // 3. 尝试从 data 节点获取 (支持对象或数组)
     if let Some(data) = v.get("data") {
         if let Some(id) = data.get("task_id").or_else(|| data.get("id")).and_then(|id| id.as_str()) {
             return Some(id.to_string());
