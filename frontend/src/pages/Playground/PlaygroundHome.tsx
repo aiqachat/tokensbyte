@@ -11,6 +11,7 @@ import {
   DashboardOutlined, WalletOutlined, LogoutOutlined,
 } from '@ant-design/icons';
 import request from '../../utils/request';
+import { useThemeStore } from '../../store/theme';
 import useAuthStore from '../../store/auth';
 import UserAvatarMenu from '../../components/UserAvatarMenu';
 
@@ -27,6 +28,7 @@ interface ProjectItem {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const getFullUrl = (url: string) => {
+  const { themeMode } = useThemeStore();
   if (!url) return '';
   if (!url.startsWith('http') && !url.startsWith('/')) return `https://${url}`;
   if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
@@ -45,6 +47,7 @@ const formatDateGroup = (dateStr: string): string => {
 };
 
 const PlaygroundHome: React.FC = () => {
+  const { themeMode } = useThemeStore();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [siteName, setSiteName] = useState<string>('TokensByte');
@@ -170,13 +173,13 @@ const PlaygroundHome: React.FC = () => {
 
   return (
     <ConfigProvider theme={{
-      algorithm: theme.darkAlgorithm,
+      
       token: { fontFamily: "'Inter', 'PingFang SC', sans-serif" }
     }}>
       <div style={{
         height: '100vh', width: '100vw', display: 'flex',
         background: '#131314', // Very dark background like Stitch
-        color: '#fff',
+        color: themeMode === 'light' ? '#1f2937' : '#fff',
         overflow: 'hidden',
         backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)',
         backgroundSize: '24px 24px',
@@ -195,7 +198,7 @@ const PlaygroundHome: React.FC = () => {
           {/* Logo 区 */}
           <div style={{ padding: '24px 20px 0', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => navigate('/')}>
             {siteLogo && <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />}
-            <span style={{ color: '#fff', fontSize: '18px', fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{siteName || 'TokensByte'}</span>
+            <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: '18px', fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{siteName || 'TokensByte'}</span>
           </div>
 
           {/* 顶部按钮区 */}
@@ -254,7 +257,7 @@ const PlaygroundHome: React.FC = () => {
               onChange={e => setSearchKeyword(e.target.value)}
               style={{
                 background: '#282a2c', borderRadius: 20,
-                height: 40, fontSize: 14, color: '#fff',
+                height: 40, fontSize: 14, color: themeMode === 'light' ? '#1f2937' : '#fff',
               }}
             />
           </div>
@@ -318,7 +321,7 @@ const PlaygroundHome: React.FC = () => {
                           onClick={e => e.stopPropagation()}
                           style={{
                             background: '#131314', border: '1px solid #4a4a4a',
-                            color: '#fff', borderRadius: 6, height: 26, fontSize: 13,
+                            color: themeMode === 'light' ? '#1f2937' : '#fff', borderRadius: 6, height: 26, fontSize: 13,
                           }}
                         />
                       ) : (
@@ -421,7 +424,7 @@ const PlaygroundHome: React.FC = () => {
                 )}
               </div>
 
-              <h2 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: '0 0 8px' }}>
+              <h2 style={{ fontSize: 24, fontWeight: 700, color: themeMode === 'light' ? '#1f2937' : '#fff', margin: '0 0 8px' }}>
                 {selectedProject.name}
               </h2>
               <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', margin: '0 0 32px' }}>

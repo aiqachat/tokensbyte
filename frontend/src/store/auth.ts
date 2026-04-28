@@ -21,6 +21,7 @@ const useAuthStore = create<AuthState>((set) => ({
         sessionStorage.setItem('user', JSON.stringify(user));
       } else {
         localStorage.setItem('user', JSON.stringify(user));
+        sessionStorage.removeItem('user');
       }
     } else {
       localStorage.removeItem('user');
@@ -32,7 +33,6 @@ const useAuthStore = create<AuthState>((set) => ({
     if (token) {
       if (useSession) {
         sessionStorage.setItem('token', token);
-        localStorage.removeItem('token');
       } else {
         localStorage.setItem('token', token);
         sessionStorage.removeItem('token');
@@ -44,11 +44,21 @@ const useAuthStore = create<AuthState>((set) => ({
     set({ token, isLoggedIn: !!token });
   },
   logout: () => {
-    sessionStorage.removeItem('token');
-    sessionStorage.removeItem('user');
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    set({ user: null, token: null, isLoggedIn: false });
+    if (sessionStorage.getItem('token')) {
+      // 代理登录状态下，退出只清除 session，保留 admin 的 local 状态
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
+      const fallbackToken = localStorage.getItem('token');
+      const fallbackUser = JSON.parse(localStorage.getItem('user') || 'null');
+      set({ user: fallbackUser, token: fallbackToken, isLoggedIn: !!fallbackToken });
+    } else {
+      // 正常退出登录
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
+      set({ user: null, token: null, isLoggedIn: false });
+    }
   },
 }));
 

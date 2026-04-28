@@ -425,8 +425,6 @@ pub async fn register_email(
         let user_id = uuid::Uuid::new_v4().to_string();
         let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
         let username = generate_unique_username(&state, &request.email).await?;
-        // 自动生成的用户名也做保留词校验
-        validate_username(&username)?;
         let password_hash = auth::hash_password(&request.password)?;
 
         let mut tx = state.db.pool.begin().await?;
@@ -530,11 +528,9 @@ pub async fn register_mobile(
 
         let user_id = uuid::Uuid::new_v4().to_string();
         let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
-        let username = format!("m_{}", &request.mobile[request.mobile.len().saturating_sub(4)..]);
+        let base_username = format!("m_{}", &request.mobile[request.mobile.len().saturating_sub(4)..]);
         // 确保用户名唯一
-        let username = ensure_unique_username(&state, &username).await?;
-        // 自动生成的用户名也做保留词校验
-        validate_username(&username)?;
+        let username = ensure_unique_username(&state, &base_username).await?;
         let password_hash = auth::hash_password(&request.password)?;
         let placeholder_email = format!("m_{}@tokensbyte.local", &uid);
 
@@ -866,10 +862,10 @@ fn validate_username(username: &str) -> AppResult<()> {
         return Err(AppError::BadRequest("用户名长度不能少于 6 个字符".to_string()));
     }
 
-    // 只允许英文字母和数字，禁止中文、特殊字符（防止数据库注入及特殊符号）
+    // 只允许英文字母、数字和下划线，禁止中文、特殊字符（防止数据库注入及特殊符号）
     for c in name.chars() {
-        if !c.is_ascii_alphanumeric() {
-            return Err(AppError::BadRequest("用户名只能包含英文字母和数字，不能使用特殊字符或其他语言".to_string()));
+        if !c.is_ascii_alphanumeric() && c != '_' {
+            return Err(AppError::BadRequest("用户名只能包含英文字母、数字和下划线，不能使用特殊字符或其他语言".to_string()));
         }
     }
 
@@ -1038,17 +1034,30 @@ fn calc_gift_amount(marketing: &crate::models::MarketingSettings) -> f64 {
 
 /// 从邮箱前缀生成唯一用户名
 async fn generate_unique_username(state: &Arc<AppState>, email: &str) -> AppResult<String> {
-    let base = email.split('@').next().unwrap_or("user").to_string();
+    let mut base = email.split('@').next().unwrap_or("user").to_string();
+    // 过滤掉非字母数字和下划线的字符，确保合规
+    base.retain(|c| c.is_ascii_alphanumeric() || c == '_');
+    if base.is_empty() {
+        base = "user".to_string();
+    }
+    // 保证至少6位
+    while base.len() < 6 {
+        base.push_str(&rand::thread_rng().gen_range(0..10).to_string());
+    }
     ensure_unique_username(state, &base).await
 }
 
 /// 确保用户名唯一（存在则追加随机后缀）
 async fn ensure_unique_username(state: &Arc<AppState>, base: &str) -> AppResult<String> {
-    let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)"))
-        .bind(base).fetch_one(&state.db.pool).await?;
-    if !exists {
-        return Ok(base.to_string());
+    let mut current = base.to_string();
+    loop {
+        let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)"))
+            .bind(&current).fetch_one(&state.db.pool).await?;
+        if !exists {
+            return Ok(current);
+        }
+        let suffix: String = (0..4).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
+        // 恢复下划线拼接
+        current = format!("{}_{}", base, suffix);
     }
-    let suffix: String = (0..4).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
-    Ok(format!("{}_{}", base, suffix))
 }

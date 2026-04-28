@@ -409,13 +409,23 @@ const UserAssets: React.FC = () => {
           continue;
         }
         try {
-          const formData = new FormData();
-          formData.append('file', fileItem.originFileObj as any);
-          formData.append('category', category);
+          const rawFile = fileItem.originFileObj as File;
           const ext = fileItem.name?.split('.').pop()?.toLowerCase() || '';
           const videoExts = ['mp4', 'mov', 'webm', 'avi', 'mkv'];
           const audioExts = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'];
           const detectedType = videoExts.includes(ext) ? 'video' : audioExts.includes(ext) ? 'audio' : 'image';
+          // 文件名超过64字符时自动截断（保留扩展名）
+          let uploadFile: File = rawFile;
+          if (rawFile.name.length > 64) {
+            const dotIdx = rawFile.name.lastIndexOf('.');
+            const fileExt = dotIdx >= 0 ? rawFile.name.slice(dotIdx) : '';
+            const baseName = dotIdx >= 0 ? rawFile.name.slice(0, dotIdx) : rawFile.name;
+            const truncatedName = baseName.slice(0, 64 - fileExt.length) + fileExt;
+            uploadFile = new File([rawFile], truncatedName, { type: rawFile.type });
+          }
+          const formData = new FormData();
+          formData.append('file', uploadFile);
+          formData.append('category', category);
           formData.append('asset_type', detectedType);
           if (category === '虚拟人像' && groupId) { formData.append('group_id', groupId); }
           await request.post(api, formData, { headers: { 'Content-Type': 'multipart/form-data' }, skipErrorHandler: true } as any);
@@ -470,10 +480,10 @@ const UserAssets: React.FC = () => {
 
   // 批量提交审核
   const handleBatchSubmitReview = async () => {
-    // 找出选中的素材中需要提交审核的（过滤掉已通过、审核中的）
+    // 找出选中的素材中需要提交审核的（过滤掉已通过且有 asset_id 的、审核中的）
     const needReviewIds = Array.from(selectedAssetIds).filter(id => {
       const asset = assets.find(a => a.id === id);
-      return asset && asset.source === 'user' && asset.status === 'uploaded';
+      return asset && asset.source === 'user' && (asset.status === 'uploaded' || (asset.status === 'approved' && !asset.asset_id));
     });
     if (needReviewIds.length === 0) {
       message.info('选中的素材中没有需要提交审核的项目');
@@ -618,7 +628,7 @@ const UserAssets: React.FC = () => {
       key: 'status',
       render: (_: any, record: PluginAsset) => {
         if (record.source === 'builtin') return <Tag color="gold">预设</Tag>;
-        if (record.status === 'uploaded') return <Tag color="blue" icon={<SendOutlined />}>待提交审核</Tag>;
+        if (record.status === 'uploaded' || (record.status === 'approved' && !record.asset_id)) return <Tag color="blue" icon={<SendOutlined />}>待提交审核</Tag>;
         if (record.status === 'processing') return <Tag color="processing" icon={<LoadingOutlined spin />}>审核中</Tag>;
         if (record.status === 'approved') return <Tag color="success" icon={<CheckCircleOutlined />}>已通过</Tag>;
         if (record.status === 'rejected') return (
@@ -645,7 +655,7 @@ const UserAssets: React.FC = () => {
       key: 'action',
       render: (_: any, record: PluginAsset) => (
         <Space size="middle">
-          {reviewEnabled && record.source === 'user' && record.status === 'uploaded' && (
+          {reviewEnabled && record.source === 'user' && (record.status === 'uploaded' || (record.status === 'approved' && !record.asset_id)) && (
             <Button
               type="primary"
               size="small"
@@ -695,8 +705,8 @@ const UserAssets: React.FC = () => {
         <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'linear-gradient(180deg, rgba(22,119,255,0.05) 0%, rgba(255,255,255,0.02) 100%)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '32px 24px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <FolderOutlined style={{ fontSize: 64, color: '#1677ff', marginBottom: 16 }} />
-            <Title level={4} style={{ margin: 0, color: '#fff' }}>{g.name}</Title>
-            <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>{g.description || '暂无描述'}</Text>
+            <Title level={4} style={{ margin: 0, color: '#fff', wordBreak: 'break-all' }}>{g.name}</Title>
+            <Text type="secondary" style={{ display: 'block', marginTop: 8, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{g.description || '暂无描述'}</Text>
           </div>
           <div style={{ padding: 24, flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -843,7 +853,7 @@ const UserAssets: React.FC = () => {
                   编辑
                 </Button>
               )}
-              {reviewEnabled && a.source === 'user' && a.status === 'uploaded' && (
+              {reviewEnabled && a.source === 'user' && (a.status === 'uploaded' || (a.status === 'approved' && !a.asset_id)) && (
                 <Button
                   icon={<SendOutlined />}
                   style={{ flex: 1, borderRadius: 8, height: 38, fontWeight: 500, background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)', color: '#fff' }}
@@ -900,7 +910,7 @@ const UserAssets: React.FC = () => {
           {reviewEnabled && a.source === 'user' && (
             <div style={{ padding: '12px 20px 0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {a.status === 'uploaded' ? <Tag color="blue">待提交审核</Tag> :
+                {(a.status === 'uploaded' || (a.status === 'approved' && !a.asset_id)) ? <Tag color="blue">待提交审核</Tag> :
                  a.status === 'processing' ? <Tag color="processing" icon={<LoadingOutlined spin />}>审核中</Tag> :
                  a.status === 'approved' ? <Tag color="success" icon={<CheckCircleOutlined />}>已通过</Tag> :
                  a.status === 'rejected' ? <Tag color="error" icon={<CloseCircleOutlined />}>已驳回</Tag> :
@@ -1532,7 +1542,7 @@ const UserAssets: React.FC = () => {
                           </div>
                           
                           {/* 待审核标记 */}
-                          {asset.status !== 'approved' && asset.source === 'user' && (
+                          {(asset.status !== 'approved' || !asset.asset_id) && asset.source === 'user' && (
                             <div style={{
                               position: 'absolute',
                               top: 8,
@@ -1545,7 +1555,7 @@ const UserAssets: React.FC = () => {
                               color: '#fff',
                               backdropFilter: 'blur(4px)'
                             }}>
-                              {asset.status === 'uploaded' ? '待审核' : asset.status === 'processing' ? '审核中' : asset.status === 'rejected' ? '已驳回' : asset.status}
+                              {(asset.status === 'uploaded' || (asset.status === 'approved' && !asset.asset_id)) ? '待审核' : asset.status === 'processing' ? '审核中' : asset.status === 'rejected' ? '已驳回' : asset.status}
                             </div>
                           )}
                           
@@ -1616,11 +1626,15 @@ const UserAssets: React.FC = () => {
         cancelText="取消"
       >
         <Form form={groupForm} layout="vertical">
-          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}>
-            <Input placeholder="输入素材资产组合名称..." maxLength={64} />
+          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}
+            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>名称最多 64 个字符，建议使用简短易识别的名称</span>}
+          >
+            <Input placeholder="输入素材资产组合名称..." maxLength={64} showCount />
           </Form.Item>
-          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}>
-            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} />
+          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}
+            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>描述最多 300 个字符</span>}
+          >
+            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} showCount />
           </Form.Item>
         </Form>
       </Modal>
@@ -1705,6 +1719,7 @@ const UserAssets: React.FC = () => {
               <div>• 视频：mp4、mov、webm、avi、mkv（≤ 300 MB）</div>
               <div>• 音频：mp3、wav、aac、flac、ogg、m4a（≤ 100 MB）</div>
               <div>• 支持混合选择多种类型文件{reviewEnabled ? '，上传后需提交审核' : ''}</div>
+              <div>• 文件名最多 64 个字符，超出部分将自动截取</div>
             </div>
           </Form.Item>
           <Form.Item name="category" hidden>
@@ -1743,11 +1758,15 @@ const UserAssets: React.FC = () => {
         }}
       >
         <Form form={editGroupForm} layout="vertical">
-          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}>
-            <Input placeholder="输入素材资产组合名称..." maxLength={64} />
+          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}
+            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>名称最多 64 个字符</span>}
+          >
+            <Input placeholder="输入素材资产组合名称..." maxLength={64} showCount />
           </Form.Item>
-          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}>
-            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} />
+          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}
+            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>描述最多 300 个字符</span>}
+          >
+            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} showCount />
           </Form.Item>
         </Form>
       </Modal>
@@ -1763,8 +1782,10 @@ const UserAssets: React.FC = () => {
         cancelText="取消"
       >
         <Form form={editForm} layout="vertical">
-          <Form.Item label="素材名称" name="file_name" rules={[{ required: true, message: '请输入素材名称' }]}>
-            <Input placeholder="输入新的素材名称" />
+          <Form.Item label="素材名称" name="file_name" rules={[{ required: true, message: '请输入素材名称' }]}
+            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>名称最多 64 个字符</span>}
+          >
+            <Input placeholder="输入新的素材名称" maxLength={64} showCount />
           </Form.Item>
           <Form.Item label="素材分类" name="category" rules={[{ required: true, message: '请选择分类' }]}>
             <Select placeholder="请选择分类" disabled>

@@ -19,6 +19,7 @@ interface TaskLog {
   endpoint: string;
   prompt_tokens: number;
   completion_tokens: number;
+  cached_tokens: number;
   cost: number;
   latency_ms: number;
   status_code: number;
@@ -171,7 +172,7 @@ const TaskLogs: React.FC = () => {
         contentStyle={{ background: '#141414', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12, maxHeight: 300, overflow: 'auto' }}
       >
         <Descriptions.Item label="Token 用量">
-          输入 {record.prompt_tokens} / 输出 {record.completion_tokens}
+          输入 {record.prompt_tokens} / 输出 {record.completion_tokens}{(record.cached_tokens ?? 0) > 0 ? ` / 缓存(输入内) ${record.cached_tokens}` : ''}
         </Descriptions.Item>
         <Descriptions.Item label="费用">
           {record.cost > 0 ? record.cost.toFixed(6) : '0'}

@@ -60,7 +60,7 @@ const AdminLogin: React.FC = () => {
   return (
     <ConfigProvider
       theme={{
-        algorithm: theme.darkAlgorithm,
+        
         token: {
           colorPrimary: '#00ff41',
           colorBgContainer: '#0a0a0a',

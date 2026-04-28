@@ -201,10 +201,12 @@ pub struct UsageTokens {
     pub prompt: i32,
     pub completion: i32,
     pub total: i32,
+    /// 缓存命中的 Token 数量（属于 prompt 的子集）
+    pub cached: i32,
 }
 
 pub fn parse_usage(response: &str) -> UsageTokens {
-    let mut u = UsageTokens { prompt: 0, completion: 0, total: 0 };
+    let mut u = UsageTokens { prompt: 0, completion: 0, total: 0, cached: 0 };
     
     let mut extract_from_value = |v: &Value| -> bool {
         let mut found = false;
@@ -215,6 +217,11 @@ pub fn parse_usage(response: &str) -> UsageTokens {
                 .or_else(|| usage.get("output_tokens"))
                 .and_then(|val| val.as_i64()).unwrap_or(0) as i32;
             u.total = usage.get("total_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+            // OpenAI cached_tokens: usage.prompt_tokens_details.cached_tokens
+            u.cached = usage.get("prompt_tokens_details")
+                .and_then(|d| d.get("cached_tokens"))
+                .and_then(|val| val.as_i64())
+                .unwrap_or(0) as i32;
             found = true;
         }
         // 2. Google Gemini
@@ -223,6 +230,8 @@ pub fn parse_usage(response: &str) -> UsageTokens {
             let total = usage.get("totalTokenCount").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
             u.total = total;
             u.completion = if total >= u.prompt { total - u.prompt } else { 0 };
+            // Gemini cached: usageMetadata.cachedContentTokenCount
+            u.cached = usage.get("cachedContentTokenCount").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
             found = true;
         }
         // 3. Volcengine Video (final_result.usage)
@@ -231,6 +240,10 @@ pub fn parse_usage(response: &str) -> UsageTokens {
                  u.prompt = usage.get("prompt_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
                  u.completion = usage.get("completion_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
                  u.total = usage.get("total_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                 u.cached = usage.get("prompt_tokens_details")
+                     .and_then(|d| d.get("cached_tokens"))
+                     .and_then(|val| val.as_i64())
+                     .unwrap_or(0) as i32;
                  found = true;
             }
         }
@@ -242,6 +255,10 @@ pub fn parse_usage(response: &str) -> UsageTokens {
                     .or_else(|| usage.get("output_tokens"))
                     .and_then(|val| val.as_i64()).unwrap_or(0) as i32;
                 u.total = usage.get("total_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+                u.cached = usage.get("prompt_tokens_details")
+                    .and_then(|d| d.get("cached_tokens"))
+                    .and_then(|val| val.as_i64())
+                    .unwrap_or(0) as i32;
                 found = true;
             }
         }

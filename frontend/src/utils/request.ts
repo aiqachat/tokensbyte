@@ -39,12 +39,18 @@ request.interceptors.response.use(
         // 区分"业务认证失败"与"登录态过期"：
         // 当前无 token（登录/注册等未登录页面）→ 直接展示后端消息
         // 当前有 token（登录态页面） → 清除 token 并跳转登录
-        const hasToken = !!(sessionStorage.getItem('token') || localStorage.getItem('token'));
+        const isImpersonating = !!sessionStorage.getItem('token');
+        const hasToken = isImpersonating || !!localStorage.getItem('token');
         if (hasToken) {
-          sessionStorage.removeItem('token');
-          sessionStorage.removeItem('user');
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
+          if (isImpersonating) {
+            // 代理登录态过期，仅清 session，保留管理员的 localStorage
+            sessionStorage.removeItem('token');
+            sessionStorage.removeItem('user');
+          } else {
+            // 正常登录态过期，全部清除
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+          }
           message.error('登录状态已过期，请重新登录');
           if (window.location.pathname !== '/login') {
             window.location.href = '/login';

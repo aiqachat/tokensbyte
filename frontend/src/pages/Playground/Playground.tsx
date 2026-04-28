@@ -3,6 +3,7 @@
  * 通过 URL 参数 projectId 确定当前项目
  */
 import React from 'react';
+import { useThemeStore } from "../../store/theme";
 import { ConfigProvider, theme } from 'antd';
 import { useParams, Navigate } from 'react-router-dom';
 import { PlaygroundProvider } from './context/PlaygroundContext';
@@ -27,6 +28,7 @@ import './Playground.css';
  *   Layer 3: 弹出层 (Overlay Layer)       — Modal / Drawer
  */
 const PlaygroundLayout: React.FC = () => {
+  const { themeMode } = useThemeStore();
   return (
     <div style={{ height: '100vh', width: '100vw', overflow: 'hidden', background: '#1e1f23', position: 'relative' }}>
 
@@ -54,6 +56,7 @@ const PlaygroundLayout: React.FC = () => {
 
 /** 根组件：从 URL 获取 projectId → 提供主题 + 状态 */
 const Playground: React.FC = () => {
+  const { themeMode } = useThemeStore();
   const { projectId } = useParams<{ projectId: string }>();
 
   // 无 projectId 时回退到项目列表
@@ -64,7 +67,7 @@ const Playground: React.FC = () => {
 
   return (
     <ConfigProvider theme={{
-      algorithm: theme.darkAlgorithm,
+      
       token: {
         colorPrimary: '#A2C1FF',
         borderRadius: 12,

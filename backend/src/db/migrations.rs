@@ -110,6 +110,7 @@ macro_rules! pg_migration_blocks {
             model TEXT NOT NULL DEFAULT '',
             prompt_tokens INTEGER NOT NULL DEFAULT 0,
             completion_tokens INTEGER NOT NULL DEFAULT 0,
+            cached_tokens INTEGER NOT NULL DEFAULT 0,
             cost DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             latency_ms INTEGER NOT NULL DEFAULT 0,
             status_code INTEGER NOT NULL DEFAULT 200,
@@ -389,8 +390,7 @@ macro_rules! pg_migration_blocks {
         .execute(pool)
         .await
         .ok();
-    sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0")
-        .execute(pool).await.ok();
+
 
     // Alter models to add rule link
     sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS forward_rule_ids TEXT")
@@ -433,6 +433,7 @@ macro_rules! pg_migration_blocks {
             billing_type TEXT NOT NULL,
             prompt_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             completion_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            cached_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             fixed_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             duration_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0,
             billing_rule TEXT NOT NULL DEFAULT 'standard',
@@ -471,9 +472,17 @@ macro_rules! pg_migration_blocks {
         .execute(pool)
         .await?;
 
+    sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0")
+        .execute(pool).await.ok();
+        
     sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0")
         .execute(pool)
         .await?;
+
+    sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS cached_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN billing_rules.cached_rate IS '缓存费率'")
+        .execute(pool).await.ok();
 
     // Seed Billing Rules
     let bcount: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM billing_rules").fetch_one(pool).await?;
@@ -653,6 +662,8 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS invite_code TEXT UNIQUE")
         .execute(pool).await.ok();
     sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS max_members INTEGER NOT NULL DEFAULT 10")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS members_can_set_level INTEGER NOT NULL DEFAULT 0")
         .execute(pool).await.ok();
 
     // Backfill: generate invite_code for existing teams that don't have one
@@ -1168,6 +1179,14 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
     sqlx::query("ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
     sqlx::query("ALTER TABLE model_types ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
+
+    // ─── logs 表增加 cached_tokens 字段（缓存命中的 Token 数量，属于输入的子集） ───
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS cached_tokens INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN logs.cached_tokens IS '缓存命中的Token数量(属于输入的子集)'").execute(pool).await.ok();
+
+    // ─── users 表增加 remark 字段（兼容线上旧数据） ───
+    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN users.remark IS '推广用户备注'").execute(pool).await.ok();
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())

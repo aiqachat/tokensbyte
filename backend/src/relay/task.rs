@@ -176,6 +176,7 @@ pub async fn task_status(
                     if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
                     if req_feat.has_video { features.has_video = true; }
                     if req_feat.has_audio { features.has_audio = true; }
+                    if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
                 }
             }
             // 视频 duration 兜底
@@ -187,7 +188,7 @@ pub async fn task_status(
             }
 
             let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, 0, final_discount, &features);
             detail.push_str(&format!(" | {}", discount_source));
             let resolved_model = channel.resolve_model(&model_name);
             if model_name != resolved_model {
@@ -199,8 +200,8 @@ pub async fn task_status(
 
             // 更新日志（无论 cost 是否为 0，都要写入计费明细以解除冻结状态）
             let _ = sqlx::query(&state.db.format_query(
-                "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-            )).bind(usage.prompt).bind(usage.completion).bind(cost).bind(detail).bind(log_id)
+                "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+            )).bind(usage.prompt).bind(usage.completion).bind(0_i32).bind(cost).bind(detail).bind(log_id)
             .execute(&state.db.pool).await;
 
             // 余额结算

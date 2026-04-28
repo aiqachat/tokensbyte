@@ -107,7 +107,7 @@ pub async fn gemini_proxy(
     if !resp.status().is_success() {
         let err = resp.text().await?;
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, &endpoint, Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(request_content_str.clone()), None).await;
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, status, &endpoint, Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(request_content_str.clone()), None).await;
         return Err(AppError::UpstreamError(err));
     }
 
@@ -149,7 +149,7 @@ pub async fn gemini_proxy(
             features.image_count = Some(resp_count);
         }
         let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, 0, final_discount, &features);
         detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(model);
         if model != resolved_model {
@@ -158,7 +158,7 @@ pub async fn gemini_proxy(
         tracing::info!("[Gemini] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, cost, pre_deduction, 200, &endpoint, None, latency_ms, is_stream, Some(request_content_str.clone()), Some(response_content_str), Some(request_content_str), Some(detail)).await;
+        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, 0, cost, pre_deduction, 200, &endpoint, None, latency_ms, is_stream, Some(request_content_str.clone()), Some(response_content_str), Some(request_content_str), Some(detail)).await;
         Ok(Response::builder()
             .header("Content-Type", "application/json")
             .body(axum::body::Body::from(data))
@@ -216,7 +216,7 @@ pub async fn volcengine_submit(
     if !resp.status().is_success() {
         let err = resp.text().await?;
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status, "/api/v3/contents/generations/tasks", Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string()), asset_convert_log.clone()).await;
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, status, "/api/v3/contents/generations/tasks", Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string()), asset_convert_log.clone()).await;
         return Err(AppError::UpstreamError(err));
     }
 
@@ -242,7 +242,7 @@ pub async fn volcengine_submit(
             "异步任务处理中(冻结)".to_string()
         }
     };
-    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200, "/api/v3/contents/generations/tasks", None, latency_ms, is_stream, Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some(billing_detail)).await;
+    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200, "/api/v3/contents/generations/tasks", None, latency_ms, is_stream, Some(request_content_str), Some(response_content_str), Some(fwd.to_string()), Some(billing_detail)).await;
 
     Ok(Response::builder()
         .header("Content-Type", "application/json")
@@ -260,18 +260,20 @@ pub async fn volcengine_status(
     let mut model_name = params.get("model").map(|s| s.as_str()).unwrap_or("video-gen").to_string();
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, billing_detail FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
+    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, ''), billing_detail FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
     let mut db_log_id: Option<i64> = None;
+    let mut original_request: Option<String> = None;
     let mut already_billed = false;
-    let log_row: Option<(i64, i64, String, String, Option<String>)> = sqlx::query_as(&log_query)
+    let log_row: Option<(i64, i64, String, String, String, Option<String>)> = sqlx::query_as(&log_query)
         .bind(format!("%{}%", task_id))
         .fetch_optional(&state.db.pool)
         .await
         .unwrap_or(None);
 
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _orig_content, b_detail)) = log_row {
+    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _orig_content, req_content, b_detail)) = log_row {
         db_log_id = Some(l_id);
         model_name = m_name;
+        if !req_content.is_empty() { original_request = Some(req_content); }
         // 如果计费明细中没有"冻结"字样，说明已经结算过了，阻断重复扣费
         if let Some(detail) = b_detail {
             if !detail.is_empty() && !detail.contains("冻结") {
@@ -357,11 +359,26 @@ pub async fn volcengine_status(
             } else { None };
 
             let mut features = crate::relay::usage_extractor::extract_request_features(&resp_json);
+            // 从原始请求补充分辨率、视频输入、时长信息（GET 响应通常不含这些字段）
+            if let Some(ref req_str) = original_request {
+                if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(req_str) {
+                    let req_feat = crate::relay::usage_extractor::extract_request_features(&req_json);
+                    if features.resolution.is_none() { features.resolution = req_feat.resolution; }
+                    if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
+                    if req_feat.has_video { features.has_video = true; }
+                    if req_feat.has_audio { features.has_audio = true; }
+                    if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
+                }
+            }
+            // 视频 duration 兜底：确保按秒计费时不为 0
+            if features.duration_seconds.is_none() {
+                features.duration_seconds = Some(5.0);
+            }
             if let Some(resp_count) = image_count {
                 features.image_count = Some(resp_count);
             }
             let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, 0, final_discount, &features);
             detail.push_str(&format!(" | {}", discount_source));
             let resolved_model = channel.resolve_model(&model_name);
             if model_name != resolved_model {
@@ -373,8 +390,8 @@ pub async fn volcengine_status(
 
             // 更新日志（无论 cost 是否为 0，都要写入计费明细以解除冻结状态）
             let _ = sqlx::query(&state.db.format_query(
-                "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-            )).bind(usage.prompt).bind(usage.completion).bind(cost).bind(detail).bind(log_id)
+                "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+            )).bind(usage.prompt).bind(usage.completion).bind(0_i32).bind(cost).bind(detail).bind(log_id)
             .execute(&state.db.pool).await;
 
             // 余额结算
@@ -392,6 +409,30 @@ pub async fn volcengine_status(
                 tracing::info!("[Volcengine Billing] task={}, model={}, tokens={}, cost={:.6}, pre_deducted={:.6}", 
                     task_id, model_name, usage.total, cost, pre_deduction);
             }
+        } else if task_status == "failed" && !already_billed {
+            // 任务失败：退回预扣费并标记
+            let pre_deduction = sqlx::query_scalar::<_, f64>(&state.db.format_query("SELECT pre_deduction FROM models WHERE model_id = ? AND is_active = 1"))
+                .bind(&model_name).fetch_optional(&state.db.pool).await.unwrap_or(None).unwrap_or(0.0);
+
+            if pre_deduction > 0.0 {
+                let _ = sqlx::query(&state.db.format_query(
+                    "UPDATE users SET balance = balance + ?, used_quota = used_quota - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                )).bind(pre_deduction).bind(pre_deduction).bind(&token.user_id)
+                .execute(&state.db.pool).await;
+
+                let _ = sqlx::query(&state.db.format_query(
+                    "UPDATE api_tokens SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                )).bind(pre_deduction).bind(token.id)
+                .execute(&state.db.pool).await;
+            }
+
+            let detail = if pre_deduction > 0.0 { "任务失败，预扣费已退回" } else { "任务失败，该模型无预扣费" };
+            let _ = sqlx::query(&state.db.format_query(
+                "UPDATE logs SET billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+            )).bind(detail).bind(log_id)
+            .execute(&state.db.pool).await;
+
+            tracing::info!("[Volcengine Billing] task={} failed, model={}, refunded pre_deduction={:.6}", task_id, model_name, pre_deduction);
         }
     }
 
@@ -447,7 +488,7 @@ pub async fn volcengine_images(
     if !resp.status().is_success() {
         let err = resp.text().await?;
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0.0, status,
+        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, status,
             "/api/v3/images/generations", Some(&err), latency_ms, is_stream,
             Some(request_content_str.clone()), None, Some(fwd.to_string()), None).await;
         return Err(AppError::UpstreamError(err));
@@ -484,7 +525,7 @@ pub async fn volcengine_images(
         } else {
             "异步任务处理中(冻结)"
         };
-        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200,
+        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200,
             "/api/v3/images/generations", None, latency_ms, final_is_stream,
             Some(request_content_str), Some(response_content_str.clone()), Some(fwd.to_string()), Some(billing_detail.to_string())).await;
     } else {
@@ -511,7 +552,7 @@ pub async fn volcengine_images(
         }
 
         let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, final_discount, &features);
+        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, 0, final_discount, &features);
         detail.push_str(&format!(" | {}", discount_source));
         let resolved_model = channel.resolve_model(model);
         if model != resolved_model {
@@ -519,7 +560,7 @@ pub async fn volcengine_images(
         }
         tracing::info!("[Volcengine Image] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
 
-        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, cost, pre_deduction, 200,
+        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, 0, cost, pre_deduction, 200,
             "/api/v3/images/generations", None, latency_ms, final_is_stream,
             Some(request_content_str), Some(response_content_str.clone()), Some(fwd.to_string()), Some(detail)).await;
     }

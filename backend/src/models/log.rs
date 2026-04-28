@@ -10,6 +10,9 @@ pub struct RequestLog {
     pub model: String,
     pub prompt_tokens: i32,
     pub completion_tokens: i32,
+    /// 缓存命中的 Token 数量（属于输入的子集）
+    #[sqlx(default)]
+    pub cached_tokens: i32,
     pub cost: f64,
     pub latency_ms: i32,
     pub status_code: i32,

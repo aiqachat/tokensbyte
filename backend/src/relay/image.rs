@@ -46,7 +46,7 @@ pub async fn image_generations(
         let latency_ms = start_time.elapsed().as_millis() as u32;
         let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
             proxy::record_and_bill(
-                &state, &token, channel.id, model, 0, 0, 0.0, status,
+                &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
                 &ep, Some(&display_err), latency_ms, 0,
                 Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
                 None
@@ -113,7 +113,7 @@ pub async fn image_generations(
             } else {
                 "异步任务处理中(冻结)".to_string()
             };
-            proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, pre_deduction, pre_deduction, 200,
+            proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200,
                 &ep, None, latency_ms, 0,
                 Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail)).await;
         } else {
@@ -129,13 +129,13 @@ pub async fn image_generations(
                 features.image_count = Some(resp_count);
             }
             let (final_discount, discount_source) = proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, final_discount, &features);
+            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, 0, final_discount, &features);
             detail.push_str(&format!(" | {}", discount_source));
             if model != resolved_model {
                 detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
             }
 
-            proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, p_tokens, c_tokens, cost, pre_deduction, 200,
+            proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, p_tokens, c_tokens, 0, cost, pre_deduction, 200,
                 &ep, None, latency_ms, 0,
                 Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(detail)).await;
         }

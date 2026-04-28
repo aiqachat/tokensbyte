@@ -1,6 +1,7 @@
 import { Card, Typography, Space, ConfigProvider, theme, Divider, Tooltip, Button, Dropdown } from 'antd';
-import { RocketOutlined, GlobalOutlined } from '@ant-design/icons';
+import { RocketOutlined, GlobalOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useThemeStore } from '../store/theme';
 
 const { Title, Text } = Typography;
 
@@ -39,13 +40,14 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
   onMethodChange,
 }) => {
   const { i18n, t } = useTranslation();
+  const { themeMode, toggleTheme } = useThemeStore();
   const renderIconBtn = (method: AuthMethodOption) => {
     const isActive = activeMethod === method.key;
     const { brandColor } = method;
     const activeColor = brandColor || '#1677ff';
     
     return (
-      <Tooltip key={method.key} title={method.label}>
+      <Tooltip key={method.key} title={method.label} color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
         <div
           onClick={method.onClick ? method.onClick : () => onMethodChange?.(method.key)}
           style={{
@@ -87,13 +89,26 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
   };
 
   return (
-    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
+    <ConfigProvider theme={{  }}>
       <div style={{
         minHeight: '100vh', padding: '40px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: '#000', backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
+        background: themeMode === 'light' ? '#f0f4f9' : '#000', backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
         position: 'relative',
       }}>
-        <div style={{ position: 'absolute', top: 24, right: 24 }}>
+        <div style={{ position: 'absolute', top: 24, right: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Tooltip title={themeMode === 'light' ? '切换暗色模式' : '切换亮色模式'} placement="bottom" color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
+            <Button 
+              type="text" 
+              shape="circle" 
+              onClick={toggleTheme}
+              icon={
+                themeMode === 'light' 
+                ? <MoonOutlined style={{ fontSize: 18 }} /> 
+                : <SunOutlined style={{ fontSize: 18 }} />
+              } 
+              style={{ color: themeMode === 'light' ? '#1f2937' : 'rgba(255,255,255,0.65)' }} 
+            />
+          </Tooltip>
           <Dropdown
             menu={{
               items: [
@@ -110,7 +125,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
         </div>
 
         <Card style={{
-          width: 'min(420px, 92vw)', borderRadius: 16, background: '#141414',
+          width: 'min(420px, 92vw)', borderRadius: 16, background: themeMode === 'light' ? '#ffffff' : '#141414',
           border: '1px solid #303030', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
         }}>
           <div style={{ textAlign: 'center', marginBottom: 24 }}>
