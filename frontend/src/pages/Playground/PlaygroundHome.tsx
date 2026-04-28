@@ -350,10 +350,16 @@ const PlaygroundHome: React.FC = () => {
                         />
                       ) : (
                         <>
-                          <div style={{
-                            fontSize: 14, fontWeight: 500, color: '#e3e3e3',
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}>
+                          <div
+                            onClick={(e) => { e.stopPropagation(); handleOpenProject(project.id); }}
+                            style={{
+                              fontSize: 14, fontWeight: 500, color: '#e3e3e3',
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              cursor: 'pointer',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = '#A2C1FF'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = '#e3e3e3'; }}
+                          >
                             {project.name}
                           </div>
                           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>

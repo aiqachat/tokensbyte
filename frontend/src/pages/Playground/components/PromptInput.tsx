@@ -19,6 +19,7 @@ import { useGeneration } from '../hooks/useGeneration';
 import { getCategoryLabel } from '../constants';
 import AssetPickerModal from './AssetPickerModal';
 import ImageEditorModal from './ImageEditorModal';
+import VideoEditorModal from './VideoEditorModal';
 import type { PluginAsset } from '../../../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -637,29 +638,38 @@ const PromptInput: React.FC = React.memo(() => {
         />
       )}
 
-      {/* 视频预览弹窗 */}
-      <Modal
-        open={isVideoPreviewOpen}
-        title="视频预览"
-        footer={null}
-        onCancel={() => {
-          setIsVideoPreviewOpen(false);
-          setEditingAssetIndex(null);
-        }}
-        width={800}
-        centered
-        styles={{ body: { padding: 0, background: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center' } }}
-        destroyOnClose
-      >
-        {editingAssetIndex !== null && (attachedAssets[editingAssetIndex]?.asset.asset_type === 'video' || attachedAssets[editingAssetIndex]?.asset.file_name?.match(/\.(mp4|mov|webm|avi|mkv)$/i)) && (
-          <video
-            src={attachedAssets[editingAssetIndex].fullUrl}
-            style={{ width: '100%', maxHeight: '75vh', display: 'block' }}
-            controls
-            autoPlay
-          />
-        )}
-      </Modal>
+      {/* 视频编辑弹窗 */}
+      {editingAssetIndex !== null && (attachedAssets[editingAssetIndex]?.asset.asset_type === 'video' || attachedAssets[editingAssetIndex]?.asset.file_name?.match(/\.(mp4|mov|webm|avi|mkv)$/i)) && (
+        <VideoEditorModal
+          open={isVideoPreviewOpen}
+          videoUrl={attachedAssets[editingAssetIndex].fullUrl}
+          onCancel={() => {
+            setIsVideoPreviewOpen(false);
+            setEditingAssetIndex(null);
+          }}
+          onSave={(newUrl, file) => {
+            const index = editingAssetIndex;
+            setAttachedAssets(prev => {
+              const updated = [...prev];
+              updated[index] = {
+                ...updated[index],
+                asset: {
+                  ...updated[index].asset,
+                  file_name: file.name,
+                  size: file.size,
+                  file_url: newUrl,
+                },
+                fullUrl: newUrl,
+                file: file,
+              };
+              return updated;
+            });
+            setIsVideoPreviewOpen(false);
+            setEditingAssetIndex(null);
+            message.success('视频编辑已保存');
+          }}
+        />
+      )}
 
       {/* 隐藏的本地文件上传 */}
       <input
