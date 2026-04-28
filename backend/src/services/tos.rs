@@ -429,8 +429,9 @@ pub async fn list_folder(config: &TosConfig, folder_prefix: &str) -> Result<(Vec
     let date_str = now.format("%Y%m%dT%H%M%SZ").to_string();
     let date_short = now.format("%Y%m%d").to_string();
 
+    // S3/TOS 签名要求 query string 必须按字母顺序排序: list-type, max-keys, prefix
     let query_string = format!(
-        "list-type=2&prefix={}&max-keys=1000",
+        "list-type=2&max-keys=1000&prefix={}",
         urlencoding::encode(&prefix)
     );
 

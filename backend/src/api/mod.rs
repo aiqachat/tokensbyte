@@ -151,6 +151,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/videos/generations", post(crate::relay::video::video_generations))
         .route("/video/generations", post(crate::relay::video::video_generations))
         .route("/video/generations/{task_id}", get(crate::relay::video::video_generations_status))
+        // 阿里百炼 DashScope 视频生成 API 原生路径
+        .route("/v1/services/aigc/video-generation/video-synthesis", post(crate::relay::video::video_generations))
+        // 阿里百炼 DashScope 图像生成 API 原生路径 (多模态)
+        .route("/v1/services/aigc/multimodal-generation/generation", post(crate::relay::image::image_generations))
+        .route("/v1/tasks/{task_id}", get(crate::relay::video::video_generations_status))
         .route("/tasks/{task_id}", get(crate::relay::task::task_status))
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());

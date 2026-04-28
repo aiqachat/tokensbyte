@@ -10,6 +10,8 @@ pub struct ExtractedFeatures {
     pub image_count: Option<i32>,
     /// 服务等级（用于离线推理等特定计费，如 flex）
     pub service_tier: Option<String>,
+    /// 提示词扩写（DashScope 等图片模型，可能影响计费）
+    pub prompt_extend: bool,
 }
 
 pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
@@ -17,6 +19,7 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
     let mut has_audio = false;
     let mut duration_seconds = None;
     let mut resolution = None;
+    let mut prompt_extend = false;
 
     // Check service tier (支持火山等在根或者parameters内)
     let service_tier = body.get("service_tier")
@@ -86,6 +89,66 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         }
     }
 
+    // DashScope 格式：从 parameters 内提取 resolution/duration
+    if let Some(params) = body.get("parameters") {
+        if resolution.is_none() {
+            if let Some(res) = params.get("resolution").and_then(|r| r.as_str()) {
+                resolution = Some(res.to_string());
+            }
+        }
+        if duration_seconds.is_none() {
+            if let Some(dur) = params.get("duration").and_then(|d| d.as_f64()) {
+                duration_seconds = Some(dur);
+            }
+        }
+        if params.get("prompt_extend").and_then(|v| v.as_bool()).unwrap_or(false) {
+            prompt_extend = true;
+        }
+    }
+
+    // 根节点的 prompt_extend (OpenAI 兼容扩展)
+    if body.get("prompt_extend").and_then(|v| v.as_bool()).unwrap_or(false) {
+        prompt_extend = true;
+    }
+
+    // DashScope 格式：从 usage 中提取 duration 和 SR（异步任务结果响应）
+    // 注意：usage 代表真实的后台消耗，必须无条件覆盖从 input 或 parameters 提取的可能不精确的值
+    if let Some(usage) = body.get("usage") {
+        if let Some(dur) = usage.get("duration").and_then(|d| d.as_f64()) {
+            duration_seconds = Some(dur);
+        }
+        
+        // SR 可能是纯数字（如 720）或字符串（如 "720P"）
+        if let Some(sr) = usage.get("SR") {
+            if let Some(n) = sr.as_i64() {
+                resolution = Some(format!("{}p", n));
+            } else if let Some(s) = sr.as_str() {
+                resolution = Some(s.to_string());
+            }
+        }
+    }
+
+    // DashScope 格式：从 input.media / input.image_url 检测视频/图片输入
+    if let Some(input) = body.get("input") {
+        if let Some(media) = input.get("media").and_then(|m| m.as_array()) {
+            for item in media {
+                if let Some(t) = item.get("type").and_then(|v| v.as_str()) {
+                    if t == "video" { has_video = true; }
+                }
+            }
+        }
+    }
+
+    // 分辨率统一转小写，确保与后台计费阶梯匹配一致
+    // 阿里返回大写 "720P" → "720p"；纯数字 "720" → "720p"
+    if let Some(ref mut res) = resolution {
+        *res = res.to_lowercase().replace("*", "x"); // 统一使用 x 分隔符匹配计费阶梯
+        // 纯数字字符串自动加 p 后缀
+        if res.chars().all(|c| c.is_ascii_digit()) {
+            res.push('p');
+        }
+    }
+
     // 图片生成数量: 从请求体的 n 参数提取（用于预扣费阶段）
     let image_count = body.get("n")
         .and_then(|v| v.as_i64())
@@ -98,6 +161,7 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         resolution,
         image_count,
         service_tier,
+        prompt_extend,
     }
 }
 
@@ -194,6 +258,22 @@ fn count_images_from_value(v: &Value) -> Option<i32> {
         }
     }
 
+    // 4. DashScope 格式 (output.results 数组)
+    if total_count == 0 {
+        if let Some(output) = v.get("output") {
+            if let Some(results) = output.get("results").and_then(|r| r.as_array()) {
+                total_count = results.len() as i32;
+            }
+        }
+    }
+
+    // 5. DashScope 多模态格式 (usage.image_count)
+    if total_count == 0 {
+        if let Some(count) = v.get("usage").and_then(|u| u.get("image_count")).and_then(|c| c.as_i64()) {
+            total_count = count as i32;
+        }
+    }
+
     if total_count > 0 { Some(total_count) } else { None }
 }
 
@@ -216,6 +296,12 @@ pub fn parse_usage(response: &str) -> UsageTokens {
             u.completion = usage.get("completion_tokens")
                 .or_else(|| usage.get("output_tokens"))
                 .and_then(|val| val.as_i64()).unwrap_or(0) as i32;
+            
+            // DashScope 额外字段兼容：image_count -> completion
+            if let Some(count) = usage.get("image_count").and_then(|v| v.as_i64()) {
+                u.completion = count as i32;
+            }
+
             u.total = usage.get("total_tokens").and_then(|val| val.as_i64()).unwrap_or(0) as i32;
             // OpenAI cached_tokens: usage.prompt_tokens_details.cached_tokens
             u.cached = usage.get("prompt_tokens_details")

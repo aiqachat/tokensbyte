@@ -41,9 +41,19 @@ pub async fn chat_completions(
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/v1/chat/completions").await?;
 
     // 4. 解析转发规则，未绑定规则时根据域名智能推断
-    let resolved = forward::resolve_forward_rule(&state, model, "聊天", "/v1/chat/completions")
-        .await
-        .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, "聊天"));
+    let resolved = match forward::resolve_forward_rule(&state, model, "聊天", "/v1/chat/completions").await {
+        Some(r) => r,
+        None => {
+            // 模型绑定了转发规则但入口路径不匹配 → 拒绝请求
+            if forward::model_has_forward_rules(&state, model).await {
+                return Err(AppError::BadRequest(format!(
+                    "模型 '{}' 不支持当前接口，请检查模型对应的 API 调用方式", model
+                )));
+            }
+            // 模型未绑定转发规则 → 根据渠道域名智能推断
+            forward::infer_forward_from_base_url(&channel.base_url, "聊天")
+        }
+    };
 
     let target_type = resolved.target_type.clone();
     let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "聊天");
@@ -316,6 +326,16 @@ pub fn compute_cost(
                     }
                 };
                 detail_desc = "按张返回计费".to_string();
+                
+                // 兼容阿里百炼 prompt_extend 计费调整（如果配置了倍率）
+                if features.prompt_extend {
+                    if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                        if let Some(m) = ext.get("prompt_extend_multiplier").and_then(|v| v.as_f64()) {
+                            rate *= m;
+                            detail_desc.push_str(&format!(" [提示词扩写 x{}]", m));
+                        }
+                    }
+                }
             } else if rule.billing_rule == "image_resolution" {
                 count = features.image_count.map(|c| c.max(1) as f64).unwrap_or(1.0);
                 detail_desc = format!("分辨率匹配计费(默认单价: {})", rate);
@@ -324,15 +344,25 @@ pub fn compute_cost(
                         for tier in tiers {
                             if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
                                 rate = tier.rate; 
-                                detail_desc = format!("命中分辨率阶梯 {} 单价: {}", res, rate);
+                                detail_desc = format!("命中分辨率阶梯 {} 单价: {:.6}", res, rate);
                                 break;
                             }
                         }
                     }
                 }
+                
+                // 提示词扩写倍率支持
+                if features.prompt_extend {
+                    if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                        if let Some(m) = ext.get("prompt_extend_multiplier").and_then(|v| v.as_f64()) {
+                            rate *= m;
+                            detail_desc.push_str(&format!(" [提示词扩写 x{}]", m));
+                        }
+                    }
+                }
             }
             let cost = count * rate * discount;
-            (cost, format!("{} -> ({}量 * {}单价 * {:.2}倍率)", detail_desc, count, rate, discount))
+            (cost, format!("{} -> ({}量 * {:.6}单价 * {:.2}倍率)", detail_desc, count, rate, discount))
         },
         "duration" => {
             let dur = features.duration_seconds.unwrap_or(0.0);

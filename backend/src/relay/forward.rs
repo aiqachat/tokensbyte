@@ -59,32 +59,29 @@ pub async fn resolve_forward_rule(
 
     let rule_ids_str = model.forward_rule_ids.as_deref().unwrap_or("[]");
     let rule_ids: Vec<i64> = serde_json::from_str(rule_ids_str).unwrap_or_default();
-    if rule_ids.is_empty() {
-        tracing::debug!("[Forward] 模型 '{}' 未绑定转发规则 (forward_rule_ids={})", model_id, rule_ids_str);
-        return None;
-    }
 
     tracing::info!("[Forward] 模型 '{}' 绑定规则 IDs: {:?}, 类别: {}, 入口: {}", model_id, rule_ids, category, entry_path);
 
     // 2. 查所有关联的转发规则
-    let placeholders: Vec<String> = rule_ids.iter().map(|_| "?".to_string()).collect();
-    let query_str = format!(
-        "SELECT * FROM forward_rules WHERE id IN ({}) AND is_active = 1",
-        placeholders.join(",")
-    );
-    let formatted = state.db.format_query(&query_str);
-    let mut q = sqlx::query_as::<_, crate::models::ForwardRule>(&formatted);
-    for id in &rule_ids {
-        q = q.bind(id);
-    }
-    let rules: Vec<crate::models::ForwardRule> = q
-        .fetch_all(&state.db.pool)
-        .await
-        .unwrap_or_default();
-
-    if rules.is_empty() {
-        tracing::warn!("[Forward] 规则 IDs {:?} 在 forward_rules 表中未找到(或 is_active!=1)", rule_ids);
-        return None;
+    let mut rules: Vec<crate::models::ForwardRule> = Vec::new();
+    if !rule_ids.is_empty() {
+        tracing::info!("[Forward] 模型 '{}' 绑定规则 IDs: {:?}, 类别: {}, 入口: {}", model_id, rule_ids, category, entry_path);
+        let placeholders: Vec<String> = rule_ids.iter().map(|_| "?".to_string()).collect();
+        let query_str = format!(
+            "SELECT * FROM forward_rules WHERE id IN ({}) AND is_active = 1",
+            placeholders.join(",")
+        );
+        let formatted = state.db.format_query(&query_str);
+        let mut q = sqlx::query_as::<_, crate::models::ForwardRule>(&formatted);
+        for id in &rule_ids {
+            q = q.bind(id);
+        }
+        rules = q.fetch_all(&state.db.pool).await.unwrap_or_default();
+        if rules.is_empty() {
+            tracing::warn!("[Forward] 规则 IDs {:?} 在 forward_rules 表中未找到(或 is_active!=1)", rule_ids);
+        }
+    } else {
+        tracing::debug!("[Forward] 模型 '{}' 未明确绑定规则，将尝试按渠道协议回退", model_id);
     }
 
     // 3. 按 category 筛选
@@ -99,7 +96,9 @@ pub async fn resolve_forward_rule(
         category_matched
     };
 
-    // 4. 智能匹配：从 config_json.path_rewrite.old 匹配入口路径
+    // 4. 严格匹配：从 config_json.path_rewrite.old 匹配入口路径
+    //    必须至少有一条规则的 path_rewrite.old 与入口路径一致，否则拒绝匹配，
+    //    防止聊天接口错误地路由到图片/视频模型的转发规则。
     let mut best: Option<&crate::models::ForwardRule> = None;
     for rule in &candidates {
         if let Ok(config) = serde_json::from_str::<serde_json::Value>(&rule.config_json) {
@@ -117,7 +116,8 @@ pub async fn resolve_forward_rule(
             }
         }
     }
-    let rule = best.unwrap_or(candidates.first()?);
+    // 未找到与入口路径匹配的规则时直接返回 None，不回落到不匹配的规则
+    let rule = best?;
 
     // 5. 解析 config_json
     let config: serde_json::Value =
@@ -172,6 +172,27 @@ pub async fn resolve_forward_rule(
     })
 }
 
+/// 快速检查模型是否绑定了转发规则（不做路径匹配）。
+/// 配合 resolve_forward_rule 使用：当 resolve 返回 None 时，
+/// 若此函数返回 true 说明模型绑定了规则但入口路径不匹配，应拒绝请求。
+pub async fn model_has_forward_rules(state: &AppState, model_id: &str) -> bool {
+    let ids: Option<String> = sqlx::query_scalar(
+        &state.db.format_query("SELECT forward_rule_ids FROM models WHERE model_id = ? AND is_active = 1"),
+    )
+    .bind(model_id)
+    .fetch_optional(&state.db.pool)
+    .await
+    .unwrap_or(None);
+
+    match ids {
+        Some(s) => {
+            let arr: Vec<i64> = serde_json::from_str(&s).unwrap_or_default();
+            !arr.is_empty()
+        }
+        None => false,
+    }
+}
+
 // ── URL 构建 ──────────────────────────────────────────────────
 
 /// 构建上游完整 URL，支持 ${model} 变量替换
@@ -196,6 +217,7 @@ pub fn build_upstream_url(
 /// 将 OpenAI 格式请求体转换为目标上游格式。
 ///
 /// 数据驱动映射：
+/// - dashscope（视频）: prompt → input.prompt + parameters 格式
 /// - volcengine（图片/视频）: prompt → content[{type:"text",text:...}]
 /// - volcengine_chat / volcengine（聊天）: 保持 OpenAI 格式（火山兼容）
 /// - gemini / gemini_image: messages/prompt → contents[{parts:[{text:...}]}]
@@ -208,6 +230,12 @@ pub fn transform_request_body(
     category: &str,
 ) -> serde_json::Value {
     let mut result = match resolved.target_type.as_str() {
+        // 阿里百炼 DashScope 视频：OpenAI → input/parameters 格式
+        // 参考文档：https://help.aliyun.com/zh/model-studio/text-to-video-api-reference
+        "dashscope" if category == "视频" => {
+            build_dashscope_video_body(model, body)
+        }
+
         // 火山方舟图片（/api/v3/images/generations）: 保持 OpenAI 兼容格式
         // 参考 Seedream 5.0 API: https://www.volcengine.com/docs/82379/1541523
         "volcengine_image" => {
@@ -226,6 +254,11 @@ pub fn transform_request_body(
             if let Some(obj) = fwd.as_object_mut() { obj.remove("n"); }
             // watermark 直接透传（火山方舟原生支持，默认 true）
             fwd
+        }
+
+        // 阿里百炼图像生成: prompt → input.prompt
+        "dashscope_image" if category == "图片" => {
+            build_dashscope_image_body(model, body)
         }
 
         // 火山方舟图片/视频（/api/v3/contents/generations/tasks）: prompt → content 格式
@@ -392,11 +425,26 @@ pub fn transform_request_body(
 
     // 视频模型默认参数兜底（确保上游数据与计费一致）
     if category == "视频" {
-        if result.get("resolution").is_none() {
-            result["resolution"] = serde_json::json!("720p");
-        }
-        if result.get("duration").is_none() {
-            result["duration"] = serde_json::json!(5);
+        if resolved.target_type == "dashscope" {
+            // DashScope 的 resolution/duration 在 parameters 内部
+            if result.get("parameters").is_none() {
+                result["parameters"] = serde_json::json!({});
+            }
+            if let Some(params) = result.get_mut("parameters").and_then(|p| p.as_object_mut()) {
+                if !params.contains_key("resolution") {
+                    params.insert("resolution".to_string(), serde_json::json!("720P"));
+                }
+                if !params.contains_key("duration") {
+                    params.insert("duration".to_string(), serde_json::json!(5));
+                }
+            }
+        } else {
+            if result.get("resolution").is_none() {
+                result["resolution"] = serde_json::json!("720p");
+            }
+            if result.get("duration").is_none() {
+                result["duration"] = serde_json::json!(5);
+            }
         }
     }
 
@@ -426,7 +474,7 @@ fn convert_web_search(result: &mut serde_json::Value, original: &serde_json::Val
 
 /// 根据 auth_type 构建请求 Headers
 pub fn build_auth_headers(resolved: &ResolvedForward, api_key: &str) -> Vec<(String, String)> {
-    match resolved.auth_type.as_str() {
+    let mut headers = match resolved.auth_type.as_str() {
         "x-api-key" => vec![
             ("x-api-key".to_string(), api_key.to_string()),
             ("anthropic-version".to_string(), "2023-06-01".to_string()),
@@ -436,7 +484,16 @@ pub fn build_auth_headers(resolved: &ResolvedForward, api_key: &str) -> Vec<(Str
             "Authorization".to_string(),
             format!("Bearer {}", api_key),
         )],
+    };
+    // DashScope 异步视频任务需要 X-DashScope-Async: enable
+    if resolved.target_type == "dashscope" || resolved.target_type == "dashscope_image" {
+        // 注：DashScope 图片目前主要是同步，但加上这个头通常不影响
+        // 如果明确是同步接口且阿里要求不能带此头，则在此根据路径或 target_type 进一步区分
+        if resolved.target_type == "dashscope" {
+            headers.push(("X-DashScope-Async".to_string(), "enable".to_string()));
+        }
     }
+    headers
 }
 
 // ── 默认转发配置（无规则时的 OpenAI 透传）─────────────────────
@@ -459,6 +516,31 @@ pub fn default_openai_forward(entry_path: &str) -> ResolvedForward {
 /// 错误地按 OpenAI 路径透传。
 pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedForward {
     let url_lower = base_url.to_lowercase();
+
+    // 阿里百炼 DashScope
+    if url_lower.contains("dashscope") {
+        return match category {
+            "视频" => ResolvedForward {
+                target_type: "dashscope".to_string(),
+                upstream_path: "/api/v1/services/aigc/video-generation/video-synthesis".to_string(),
+                auth_type: "bearer".to_string(),
+                asset_convert: false,
+                poll_path: Some("/api/v1/tasks/${task_id}".to_string()),
+            },
+            "图片" => ResolvedForward {
+                target_type: "dashscope_image".to_string(),
+                upstream_path: "/api/v1/services/aigc/multimodal-generation/generation".to_string(),
+                auth_type: "bearer".to_string(),
+                asset_convert: false,
+                poll_path: None,
+            },
+            _ => default_openai_forward(match category {
+                "聊天" => "/v1/chat/completions",
+                "图片" => "/v1/images/generations",
+                _ => "/v1/chat/completions",
+            }),
+        };
+    }
 
     if url_lower.contains("volces.com") || url_lower.contains("volcengine") {
         match category {
@@ -567,6 +649,260 @@ fn create_openai_chunk(text: &str, model: &str) -> serde_json::Value {
             "finish_reason": null
         }]
     })
+}
+
+
+// ── 阿里百炼 DashScope 图像请求体构建器 ─────────────────────────
+//
+// 将 OpenAI 风格的参数转换为 DashScope /api/v1/services/aigc/text2image/image-synthesis 格式。
+// 参考文档：https://help.aliyun.com/zh/model-studio/user-guide/wanx-v2-text-to-image-api-reference
+
+fn build_dashscope_image_body(model: &str, body: &serde_json::Value) -> serde_json::Value {
+    // ── 直通模式 ──
+    if body.get("input").is_some() {
+        let mut fwd = body.clone();
+        fwd["model"] = serde_json::json!(model);
+        return fwd;
+    }
+
+    // ── 转换模式 ──
+    let mut input = serde_json::Map::new();
+
+    // 优先处理 messages (支持多模态及万相 2.7/千问 2.0 格式)
+    if let Some(msgs) = body.get("messages").and_then(|m| m.as_array()) {
+        let mut dashscope_msgs = Vec::new();
+        for msg in msgs {
+            let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
+            let mut dash_content = Vec::new();
+            
+            if let Some(content) = msg.get("content") {
+                if let Some(text) = content.as_str() {
+                    dash_content.push(serde_json::json!({ "text": text }));
+                } else if let Some(arr) = content.as_array() {
+                    for item in arr {
+                        if let Some(t) = item.get("type").and_then(|v| v.as_str()) {
+                            if t == "text" {
+                                if let Some(txt) = item.get("text").and_then(|v| v.as_str()) {
+                                    dash_content.push(serde_json::json!({ "text": txt }));
+                                }
+                            } else if t == "image_url" {
+                                if let Some(url) = item.get("image_url").and_then(|v| v.get("url")).and_then(|v| v.as_str()) {
+                                    dash_content.push(serde_json::json!({ "image": url }));
+                                }
+                            }
+                        } else if let Some(_url) = item.get("image").and_then(|v| v.as_str()) {
+                            // 兼容阿里原生传入的 {"image": "..."}
+                            dash_content.push(item.clone());
+                        } else if let Some(_txt) = item.get("text").and_then(|v| v.as_str()) {
+                            dash_content.push(item.clone());
+                        }
+                    }
+                }
+            }
+            dashscope_msgs.push(serde_json::json!({
+                "role": role,
+                "content": dash_content
+            }));
+        }
+        input.insert("messages".to_string(), serde_json::json!(dashscope_msgs));
+    } else {
+        // 强制包装为 messages 结构，不使用快捷 prompt 字段
+        let prompt = body.get("prompt").and_then(|v| v.as_str()).unwrap_or("Generate an image");
+        let mut dash_content = Vec::new();
+        
+        // 支持顶层 image 参数 (OpenAI 扩展支持，兼容字符串或数组)
+        // 确保图片先于文本内容
+        if let Some(img_val) = body.get("image") {
+            if let Some(url) = img_val.as_str() {
+                dash_content.push(serde_json::json!({ "image": url }));
+            } else if let Some(arr) = img_val.as_array() {
+                for item in arr {
+                    if let Some(url) = item.as_str() {
+                        dash_content.push(serde_json::json!({ "image": url }));
+                    }
+                }
+            }
+        }
+        
+        dash_content.push(serde_json::json!({ "text": prompt }));
+
+        input.insert("messages".to_string(), serde_json::json!([
+            {
+                "role": "user",
+                "content": dash_content
+            }
+        ]));
+    }
+
+    let mut params = serde_json::Map::new();
+    
+    // negative_prompt 移入 parameters
+    if let Some(np) = body.get("negative_prompt").and_then(|v| v.as_str()) {
+        params.insert("negative_prompt".to_string(), serde_json::json!(np));
+    }
+    
+    // n -> n
+    if let Some(n) = body.get("n").and_then(|v| v.as_i64()) {
+        params.insert("n".to_string(), serde_json::json!(n));
+    }
+
+    // size -> size (1024x1024 -> 1024*1024)
+    if let Some(size) = body.get("size").and_then(|v| v.as_str()) {
+        params.insert("size".to_string(), serde_json::json!(size.replace("x", "*")));
+    }
+
+    // style/quality/prompt_extend
+    let passthrough = ["style", "quality", "prompt_extend", "seed"];
+    for &key in &passthrough {
+        if let Some(val) = body.get(key) {
+            params.insert(key.to_string(), val.clone());
+        }
+    }
+
+    serde_json::json!({
+        "model": model,
+        "input": input,
+        "parameters": params
+    })
+}
+
+// ── 阿里百炼 DashScope 视频请求体构建器 ─────────────────────────
+//
+// 将 OpenAI 风格的扁平参数转换为 DashScope /api/v1/services/aigc/video-generation/video-synthesis 格式。
+// 参考文档：https://help.aliyun.com/zh/model-studio/text-to-video-api-reference
+//
+// DashScope 请求格式：
+//   { "model": "...", "input": { "prompt": "...", "media": [...] }, "parameters": { "resolution": "720P", ... } }
+// 其中 media 数组元素 type 区分：first_frame（图生视频首帧）、reference_image（参考图）、video（视频编辑）
+
+/// DashScope parameters 内的合法参数白名单
+const DASHSCOPE_PARAM_KEYS: &[&str] = &[
+    "resolution", "ratio", "duration", "prompt_extend", "watermark", "seed",
+];
+
+/// 构建阿里百炼 DashScope 视频生成请求体
+fn build_dashscope_video_body(model: &str, body: &serde_json::Value) -> serde_json::Value {
+    // ── 直通模式：body 中已有 input 对象 → 原样使用，仅替换 model ──
+    if body.get("input").is_some() {
+        let mut fwd = body.clone();
+        fwd["model"] = serde_json::json!(model);
+        return fwd;
+    }
+
+    // ── 转换模式：从 OpenAI 风格提取参数 ──
+    // prompt: 优先取 body.prompt，其次从 messages[-1].content 提取
+    let prompt = body.get("prompt")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            body.get("messages")
+                .and_then(|m| m.as_array())
+                .and_then(|arr| arr.last())
+                .and_then(|msg| msg.get("content"))
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "Generate a video".to_string());
+
+    let mut input = serde_json::json!({ "prompt": prompt });
+
+    // negative_prompt 透传
+    if let Some(np) = body.get("negative_prompt").and_then(|v| v.as_str()) {
+        input["negative_prompt"] = serde_json::json!(np);
+    }
+
+    // audio_url 透传
+    if let Some(au) = body.get("audio_url").and_then(|v| v.as_str()) {
+        input["audio_url"] = serde_json::json!(au);
+    }
+
+    // ── media 数组构建 ──
+    // 支持两种传入方式：
+    //   1) body.media 已是 DashScope 格式数组 → 直接透传
+    //   2) body.images / body.image_url / body.videos → 自动构建 media
+    if let Some(media) = body.get("media").filter(|v| v.is_array()) {
+        input["media"] = media.clone();
+    } else {
+        let mut media = Vec::new();
+
+        // 单图快捷字段 image_url → first_frame
+        if let Some(url) = body.get("image_url").and_then(|v| v.as_str()) {
+            media.push(serde_json::json!({ "type": "first_frame", "url": url }));
+        }
+
+        // images 数组：按数量智能推断 type
+        //   1 张 → first_frame，2 张 → first_frame + last_frame，3+ 张 → reference_image
+        if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
+            let defaults = infer_image_default_roles(arr.len());
+            for (i, item) in arr.iter().enumerate() {
+                let default_type = defaults.get(i).copied().unwrap_or("reference_image");
+                match item {
+                    serde_json::Value::String(url) => {
+                        media.push(serde_json::json!({ "type": default_type, "url": url }));
+                    }
+                    serde_json::Value::Object(obj) => {
+                        let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                        let t = obj.get("type").and_then(|v| v.as_str())
+                            .or_else(|| obj.get("role").and_then(|v| v.as_str()))
+                            .unwrap_or(default_type);
+                        if !url.is_empty() {
+                            media.push(serde_json::json!({ "type": t, "url": url }));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // videos 数组 → type: "video"
+        if let Some(arr) = body.get("videos").and_then(|v| v.as_array()) {
+            for item in arr {
+                match item {
+                    serde_json::Value::String(url) => {
+                        media.push(serde_json::json!({ "type": "video", "url": url }));
+                    }
+                    serde_json::Value::Object(obj) => {
+                        let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                        let t = obj.get("type").and_then(|v| v.as_str()).unwrap_or("video");
+                        if !url.is_empty() {
+                            media.push(serde_json::json!({ "type": t, "url": url }));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if !media.is_empty() {
+            input["media"] = serde_json::json!(media);
+        }
+    }
+
+    // ── parameters 构建 ──
+    let mut params = serde_json::Map::new();
+    for key in DASHSCOPE_PARAM_KEYS {
+        if let Some(v) = body.get(*key) {
+            params.insert(key.to_string(), v.clone());
+        }
+    }
+    // size → resolution 映射（兼容 OpenAI 的 size 字段）
+    // DashScope API 接受大写的 720P 和 1080P，如果用户传小写，需转成大写
+    if !params.contains_key("resolution") {
+        if let Some(size) = body.get("size").and_then(|v| v.as_str()) {
+            params.insert("resolution".to_string(), serde_json::json!(size.to_uppercase()));
+        }
+    } else if let Some(res) = params.get("resolution").and_then(|v| v.as_str()) {
+        params.insert("resolution".to_string(), serde_json::json!(res.to_uppercase()));
+    }
+
+    let mut result = serde_json::json!({
+        "model": model,
+        "input": input,
+    });
+    if !params.is_empty() {
+        result["parameters"] = serde_json::Value::Object(params);
+    }
+    result
 }
 
 // ── 火山方舟视频/图片请求体构建器 ──────────────────────────────

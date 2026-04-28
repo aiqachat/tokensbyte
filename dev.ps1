@@ -1,4 +1,4 @@
-# TokensByte 开发环境启动脚本 (Windows PowerShell)
+﻿# TokensByte 开发环境启动脚本 (Windows PowerShell)
 # ──────────────────────────────────────────────────
 
 $ErrorActionPreference = "Stop"

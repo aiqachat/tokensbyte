@@ -18,8 +18,9 @@ pub async fn video_generations(
 ) -> AppResult<Response> {
     let start_time = std::time::Instant::now();
     let raw_path = uri.path();
-    // 归一化：/api/... 和 /v1/... 路由指向同一 handler，统一为 /v1/ 前缀
-    let entry_path = if raw_path.starts_with("/api/") {
+    // 归一化：将 /api/video... 和 /api/videos... 路由归一化为 /v1/ 前缀
+    // 避免破坏阿里原生路径 /api/v1/services/...
+    let entry_path = if raw_path.starts_with("/api/video") || raw_path.starts_with("/api/videos") {
         format!("/v1/{}", &raw_path[5..])
     } else {
         raw_path.to_string()
@@ -31,9 +32,17 @@ pub async fn video_generations(
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &entry_path).await?;
 
     // 解析转发规则
-    let resolved = forward::resolve_forward_rule(&state, model, "视频", &entry_path)
-        .await
-        .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, "视频"));
+    let resolved = match forward::resolve_forward_rule(&state, model, "视频", &entry_path).await {
+        Some(r) => r,
+        None => {
+            if forward::model_has_forward_rules(&state, model).await {
+                return Err(AppError::BadRequest(format!(
+                    "模型 '{}' 不支持当前接口，请检查模型对应的 API 调用方式", model
+                )));
+            }
+            forward::infer_forward_from_base_url(&channel.base_url, "视频")
+        }
+    };
 
     let mut upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "视频");
     let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
@@ -220,16 +229,18 @@ pub async fn video_generations_status(
     let get_resp_str = String::from_utf8_lossy(&data).to_string();
 
     if let Some(log_id) = db_log_id {
-        // 解析响应获取任务状态：兼容根节点、data 节点、final_result 节点
+        // 解析响应获取任务状态：兼容根节点、data 节点、final_result 节点、output.task_status（DashScope）
         let resp_json: serde_json::Value = serde_json::from_str(&get_resp_str).unwrap_or(serde_json::json!({}));
         let raw_status = resp_json.get("status")
             .or_else(|| resp_json.get("data").and_then(|d| d.get("status")))
             .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
+            .or_else(|| resp_json.get("output").and_then(|o| o.get("task_status")))
             .and_then(|s| s.as_str()).unwrap_or("");
-        let task_status = match raw_status {
-            "completed" | "succeeded" => "succeeded",
-            "failed" => "failed",
-            other => other,
+        let task_status_str = raw_status.to_lowercase();
+        let task_status = match task_status_str.as_str() {
+            "completed" | "succeeded" | "success" => "succeeded",
+            "failed" | "canceled" | "cancelled" | "unknown" => "failed",
+            _ => task_status_str.as_str(),
         };
 
         // 更新日志响应内容
