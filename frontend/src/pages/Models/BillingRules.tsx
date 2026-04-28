@@ -77,6 +77,7 @@ const BillingRules: React.FC = () => {
       volc_audio_rate: 0, volc_base_rate: 0,
       volc_offline_discount: 0.5,
       s1_online_rate: 0, s1_offline_rate: 0,
+      prompt_extend_multiplier: 1,
     });
     setIsModalVisible(true);
   };
@@ -112,6 +113,7 @@ const BillingRules: React.FC = () => {
       volc_offline_discount: ext.offline_discount ?? 0.5,
       s1_online_rate: ext.online_rate || 0,
       s1_offline_rate: ext.offline_rate || 0,
+      prompt_extend_multiplier: ext.prompt_extend_multiplier || 1,
       is_active: item.is_active === 1,
     });
     setIsModalVisible(true);
@@ -160,6 +162,11 @@ const BillingRules: React.FC = () => {
           offline_rate: values.s1_offline_rate || 0,
         };
       }
+      
+      // 图像模型特有：提示词扩写倍率
+      if (values.billing_rule === 'per_image' || values.billing_rule === 'image_resolution') {
+        extConfig = { ...extConfig, prompt_extend_multiplier: values.prompt_extend_multiplier || 1 };
+      }
 
       // 清除表单中不应提交的临时字段
       delete values.sd2_480p_video; delete values.sd2_480p_base; delete values.sd2_480p_enabled;
@@ -167,6 +174,7 @@ const BillingRules: React.FC = () => {
       delete values.sd2_1080p_video; delete values.sd2_1080p_base; delete values.sd2_1080p_enabled;
       delete values.volc_audio_rate; delete values.volc_base_rate; delete values.volc_offline_discount;
       delete values.s1_online_rate; delete values.s1_offline_rate;
+      delete values.prompt_extend_multiplier;
 
       const payload = {
         prompt_rate: 0,
@@ -564,12 +572,34 @@ const BillingRules: React.FC = () => {
                     );
                   } else {
                     return (
-                      <Form.Item name="fixed_rate" label={t('models.fixed_rate')} rules={[{ required: true }]}>
-                        <InputNumber style={{ width: '100%' }} precision={6} addonAfter={rule === 'per_image' ? "/ 张" : "/ Request"} />
-                      </Form.Item>
+                      <Row gutter={16}>
+                        <Col span={12}>
+                          <Form.Item name="fixed_rate" label={t('models.fixed_rate')} rules={[{ required: true }]}>
+                            <InputNumber style={{ width: '100%' }} precision={6} addonAfter={rule === 'per_image' ? "/ 张" : "/ Request"} />
+                          </Form.Item>
+                        </Col>
+                        {rule === 'per_image' && (
+                          <Col span={12}>
+                            <Form.Item name="prompt_extend_multiplier" label="提示词扩写倍率" tooltip="当请求开启 prompt_extend 时，单价将乘以该倍率 (默认 1.0)">
+                              <InputNumber style={{ width: '100%' }} precision={2} step={0.1} min={0} />
+                            </Form.Item>
+                          </Col>
+                        )}
+                      </Row>
                     );
                   }
                 }}
+              </Form.Item>
+              
+              {/* 分辨率计费模式下的扩写倍率支持 */}
+              <Form.Item noStyle shouldUpdate={(prev, curr) => prev.billing_rule !== curr.billing_rule}>
+                {({ getFieldValue }) => getFieldValue('billing_rule') === 'image_resolution' && (
+                  <div style={{ marginBottom: 24 }}>
+                    <Form.Item name="prompt_extend_multiplier" label="提示词扩写倍率" tooltip="当请求开启 prompt_extend 时，分辨率阶梯单价将乘以该倍率 (默认 1.0)">
+                      <InputNumber style={{ width: '200px' }} precision={2} step={0.1} min={0} />
+                    </Form.Item>
+                  </div>
+                )}
               </Form.Item>
             </>
           )}

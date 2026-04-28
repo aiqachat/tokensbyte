@@ -10,18 +10,20 @@ use super::{proxy, forward};
 pub async fn image_generations(
     State(state): State<Arc<AppState>>,
     Extension(token): Extension<ApiToken>,
+    axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     Json(body): Json<serde_json::Value>,
 ) -> AppResult<Response> {
+    let request_path = uri.path();
     let start_time = std::time::Instant::now();
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
     let model = body["model"].as_str().unwrap_or("dall-e-3");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/v1/images/generations").await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, request_path).await?;
     let is_stream = body["stream"].as_bool().unwrap_or(false);
-
+    
     // 解析转发规则，未绑定规则时根据域名智能推断
-    let resolved = match forward::resolve_forward_rule(&state, model, "图片", "/v1/images/generations").await {
+    let resolved = match forward::resolve_forward_rule(&state, model, "图片", request_path).await {
         Some(r) => r,
         None => {
             if forward::model_has_forward_rules(&state, model).await {
@@ -52,7 +54,7 @@ pub async fn image_generations(
         let err = upstream_resp.text().await?;
         let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+        let ep = format!("{}|{}", request_path, resolved.upstream_path.replace("${model}", &resolved_model));
             proxy::record_and_bill(
                 &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
                 &ep, Some(&display_err), latency_ms, 0,
@@ -112,7 +114,7 @@ pub async fn image_generations(
             || resp_json.get("data").and_then(|d| d.as_array()).and_then(|a| a.first()).and_then(|f| f.get("task_id")).is_some();
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+        let ep = format!("{}|{}", request_path, resolved.upstream_path.replace("${model}", &resolved_model));
 
         if is_async {
             tracing::info!("[Image] model={}, path=ASYNC_SUBMIT, pre_deduction={}", model, pre_deduction);

@@ -417,14 +417,12 @@ macro_rules! pg_migration_blocks {
             ('mart', 'mart', '自定义mart通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"},"poll_path":"/v1/tasks/${task_id}"}', '图片', 1),
             ('mart-视频', 'Mart', '自定义mart视频通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos/generations","new":"/v1/videos/generations"},"poll_path":"/v1/tasks/${task_id}"}', '视频', 1),
             ('阿里百炼 DashScope 视频生成', 'dashscope', '将标准视频生成请求（/v1/video/generations）转换为阿里百炼 DashScope 格式，支持文生视频/图生视频/参考生视频/视频编辑，异步任务自动注入 X-DashScope-Async Header', '{"mode":"transform","target_type":"dashscope","path_rewrite":{"old":"/v1/video/generations","new":"/api/v1/services/aigc/video-generation/video-synthesis"},"auth_type":"bearer","poll_path":"/api/v1/tasks/${task_id}"}', '视频', 1),
-            ('阿里百炼 DashScope 视频生成 (官方路径)', 'dashscope', '阿里百炼官方原生路径直通，适用于直接使用 DashScope API 地址调用的场景', '{"mode":"transform","target_type":"dashscope","path_rewrite":{"old":"/api/v1/services/aigc/video-generation/video-synthesis","new":"/api/v1/services/aigc/video-generation/video-synthesis"},"auth_type":"bearer","poll_path":"/api/v1/tasks/${task_id}"}', '视频', 1)
+            ('阿里百炼 DashScope 视频生成 (官方路径)', 'dashscope', '阿里百炼官方原生路径直通，适用于直接使用 DashScope API 地址调用的场景', '{"mode":"transform","target_type":"dashscope","path_rewrite":{"old":"/api/v1/services/aigc/video-generation/video-synthesis","new":"/api/v1/services/aigc/video-generation/video-synthesis"},"auth_type":"bearer","poll_path":"/api/v1/tasks/${task_id}"}', '视频', 1),
+            ('阿里百炼 DashScope 图片生成', 'dashscope', '将标准图片生成请求（/v1/images/generations）转换为阿里百炼 DashScope 格式', '{"mode":"transform","target_type":"dashscope_image","path_rewrite":{"old":"/v1/images/generations","new":"/api/v1/services/aigc/multimodal-generation/generation"},"auth_type":"bearer"}', '图片', 1),
+            ('阿里百炼 DashScope 图片生成 (官方路径)', 'dashscope', '阿里百炼官方原生路径直通', '{"mode":"transform","target_type":"dashscope_image","path_rewrite":{"old":"/api/v1/services/aigc/multimodal-generation/generation","new":"/api/v1/services/aigc/multimodal-generation/generation"},"auth_type":"bearer"}', '图片', 1)
         ) AS t(name, rule_type, description, config_json, category, is_system)
         WHERE NOT EXISTS (SELECT 1 FROM forward_rules WHERE name = t.name)
     "#).execute(pool).await.ok();
-
-    // 更新老数据
-    sqlx::query("UPDATE forward_rules SET is_system = 1")
-        .execute(pool).await.ok();
 
 
     // Billing Rules table
