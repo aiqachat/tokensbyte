@@ -705,7 +705,7 @@ const ModelMarketplace: React.FC = () => {
                     <div className="mp-grid" style={{
                       display: viewMode === 'grid' ? 'grid' : 'flex',
                       ...(viewMode === 'grid'
-                        ? { gridTemplateColumns: screens.xs ? '1fr' : 'repeat(3, 1fr)', gap: 16 }
+                        ? { gridTemplateColumns: screens.xs ? '1fr' : 'repeat(4, 1fr)', gap: 16 }
                         : { flexDirection: 'column' as const, gap: 12 }
                       ),
                     }}>
