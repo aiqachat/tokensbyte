@@ -220,12 +220,15 @@ const ModelMarketplace: React.FC = () => {
     textMuted: isLight ? '#d1d5db' : 'rgba(255,255,255,0.25)',
     searchBg: isLight ? '#f3f4f6' : '#1f1f1f',
     searchBorder: isLight ? '#d1d5db' : '#303030',
-    focusBorder: isLight ? '#1677ff' : '#1677ff',
+    focusBorder: isLight ? '#6b7280' : '#1677ff',
     hoverBg: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)',
     sidebarText: isLight ? '#4b5563' : 'rgba(255,255,255,0.65)',
     scrollThumb: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
     sortBorder: isLight ? '#d1d5db' : '#303030',
-    link: isLight ? '#1677ff' : '#1677ff',
+    link: isLight ? '#4b5563' : '#1677ff',
+    active: isLight ? '#1f2937' : '#1677ff',
+    activeBg: isLight ? '#f3f4f6' : 'rgba(22,119,255,0.15)',
+    activeBorder: isLight ? '#9ca3af' : '#1677ff',
     codeBg: isLight ? '#f3f4f6' : '#1f1f1f',
     codeText: isLight ? '#374151' : 'rgba(255,255,255,0.65)',
     detailBg: isLight ? '#ffffff' : '#141414',
@@ -248,7 +251,7 @@ const ModelMarketplace: React.FC = () => {
         .mp-sidebar-title { font-size: 11px; font-weight: 600; color: ${c.text3}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
         .mp-sidebar-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; cursor: pointer; transition: all 0.12s; font-size: 14px; color: ${c.sidebarText}; margin-bottom: 2px; }
         .mp-sidebar-item:hover { background: ${c.hoverBg}; color: ${c.text1}; }
-        .mp-sidebar-item.active { background: #1677ff !important; color: #fff !important; }
+        .mp-sidebar-item.active { background: ${isLight ? '#e5e7eb' : '#1677ff'} !important; color: ${isLight ? '#1f2937' : '#fff'} !important; }
         .mp-sidebar-item.active .mp-sidebar-count { color: rgba(255,255,255,0.85); }
         .mp-sidebar-count { margin-left: auto; font-size: 12px; color: ${c.textMuted}; font-weight: 500; }
         .mp-sidebar-divider { height: 1px; background: ${c.cardBorder}; margin: 20px 0; }
@@ -300,7 +303,7 @@ const ModelMarketplace: React.FC = () => {
                 )
               ) : (
                 <>
-                  <ShopOutlined style={{ fontSize: 20, color: '#1677ff', marginRight: collapsed && !screens.xs ? 0 : 10 }} />
+                  <ShopOutlined style={{ fontSize: 20, color: isLight ? '#6b7280' : '#1677ff', marginRight: collapsed && !screens.xs ? 0 : 10 }} />
                   {!(collapsed && !screens.xs) && <span style={{ color: c.text1, fontSize: '18px', fontWeight: 600 }}>{siteName || 'TokensByte'}</span>}
                 </>
               )}
@@ -619,9 +622,9 @@ const ModelMarketplace: React.FC = () => {
                           style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             width: 36, height: 36, borderRadius: 8,
-                            border: `1px solid ${viewMode === 'list' ? '#1677ff' : c.sortBorder}`,
-                            background: viewMode === 'list' ? (isLight ? '#eff6ff' : 'rgba(22,119,255,0.15)') : 'transparent',
-                            color: viewMode === 'list' ? '#1677ff' : c.text3,
+                            border: `1px solid ${viewMode === 'list' ? c.activeBorder : c.sortBorder}`,
+                            background: viewMode === 'list' ? c.activeBg : 'transparent',
+                            color: viewMode === 'list' ? c.active : c.text3,
                             cursor: 'pointer', fontSize: 16, transition: 'all 0.2s',
                           }}
                         >
@@ -634,9 +637,9 @@ const ModelMarketplace: React.FC = () => {
                           style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             width: 36, height: 36, borderRadius: 8,
-                            border: `1px solid ${viewMode === 'grid' ? '#1677ff' : c.sortBorder}`,
-                            background: viewMode === 'grid' ? (isLight ? '#eff6ff' : 'rgba(22,119,255,0.15)') : 'transparent',
-                            color: viewMode === 'grid' ? '#1677ff' : c.text3,
+                            border: `1px solid ${viewMode === 'grid' ? c.activeBorder : c.sortBorder}`,
+                            background: viewMode === 'grid' ? c.activeBg : 'transparent',
+                            color: viewMode === 'grid' ? c.active : c.text3,
                             cursor: 'pointer', fontSize: 16, transition: 'all 0.2s',
                           }}
                         >
@@ -675,9 +678,9 @@ const ModelMarketplace: React.FC = () => {
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: 6,
                               padding: '4px 12px', borderRadius: 20, fontSize: 13,
-                              border: `1px solid ${isActive ? '#1677ff' : c.sortBorder}`,
-                              background: isActive ? (isLight ? '#eff6ff' : 'rgba(22,119,255,0.12)') : 'transparent',
-                              color: isActive ? '#1677ff' : c.text2,
+                              border: `1px solid ${isActive ? c.activeBorder : c.sortBorder}`,
+                              background: isActive ? c.activeBg : 'transparent',
+                              color: isActive ? c.active : c.text2,
                               cursor: 'pointer', transition: 'all 0.2s', fontWeight: isActive ? 500 : 400,
                               whiteSpace: 'nowrap',
                             }}
