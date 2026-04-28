@@ -705,8 +705,8 @@ const UserAssets: React.FC = () => {
         <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'linear-gradient(180deg, rgba(22,119,255,0.05) 0%, rgba(255,255,255,0.02) 100%)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '32px 24px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <FolderOutlined style={{ fontSize: 64, color: '#1677ff', marginBottom: 16 }} />
-            <Title level={4} style={{ margin: 0, color: '#fff' }}>{g.name}</Title>
-            <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>{g.description || '暂无描述'}</Text>
+            <Title level={4} style={{ margin: 0, color: '#fff', wordBreak: 'break-all' }}>{g.name}</Title>
+            <Text type="secondary" style={{ display: 'block', marginTop: 8, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{g.description || '暂无描述'}</Text>
           </div>
           <div style={{ padding: 24, flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
