@@ -49,5 +49,3 @@ yarn-error.log*
 .gemini/
 /tmp/
 docker-images/
-scripts/
-CI-CD-GUIDE.md

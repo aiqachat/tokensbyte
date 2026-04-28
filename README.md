@@ -145,6 +145,142 @@ docker compose up -d
 > docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 > ```
 
+## 🔄 CI/CD 自动化部署
+
+项目已配置完整的 CI/CD 流程，支持代码质量保障、自动构建和部署。
+
+### GitHub Actions 工作流
+
+| 工作流 | 触发条件 | 功能说明 |
+|--------|----------|----------|
+| **CI** | Push 到 main/develop 分支或 PR | 前端 lint + 构建，后端 clippy + 测试 + 构建 |
+| **Release** | 推送 tag (如 `v1.0.0`) | 构建 Docker 镜像并推送到 GHCR，创建 GitHub Release |
+| **Deploy** | 手动触发 | 部署到指定环境 (staging/production) |
+| **Quick Deploy** | 手动触发或 push 到 main | 快速构建并部署，**跳过 lint/check**，适合快速验证 |
+
+### 本地快速部署脚本
+
+#### Windows (PowerShell)
+```powershell
+.\scripts\quick-deploy.ps1
+```
+
+#### Windows (CMD)
+```cmd
+scripts\quick-deploy.bat
+```
+
+#### Linux/Mac
+```bash
+chmod +x scripts/quick-deploy.sh
+./scripts/quick-deploy.sh
+```
+
+**脚本功能**：
+1. 停止现有服务
+2. 构建后端 Docker 镜像 (Rust)
+3. 构建前端 Docker 镜像 (React)
+4. 启动所有服务 (PostgreSQL + Backend + Frontend)
+5. 等待并验证服务状态
+
+### GitHub Actions 部署配置
+
+#### 1. 配置 Secrets（只需一次）
+
+在 GitHub 仓库 Settings → Secrets and variables → Actions 中添加：
+
+```
+DEPLOY_HOST=你的服务器IP
+DEPLOY_USER=ssh用户名
+DEPLOY_SSH_KEY=SSH私钥
+DEPLOY_PORT=22 (可选,默认22)
+DEPLOY_PATH=/opt/tokensbyte (可选)
+```
+
+#### 2. 触发部署
+
+- **方式 A**: Push 到 main 分支自动触发 Quick Deploy
+- **方式 B**: GitHub → Actions → 选择工作流 → Run workflow
+
+#### 3. 查看结果
+
+在 Actions 页面查看部署日志
+
+### 常用运维命令
+
+```bash
+# 启动所有服务
+docker compose up -d
+
+# 查看服务状态
+docker compose ps
+
+# 查看日志
+docker compose logs -f
+
+# 查看特定服务日志
+docker compose logs -f backend
+docker compose logs -f frontend
+
+# 停止服务
+docker compose down
+
+# 停止并删除数据卷
+docker compose down -v
+
+# 重新构建并启动
+docker compose up -d --build
+
+# 重启单个服务
+docker compose restart backend
+
+# 查看所有镜像
+docker images | grep tokensbyte
+
+# 清理未使用的镜像
+docker image prune -f
+```
+
+### 故障排查
+
+#### 后端启动失败
+```bash
+# 查看后端日志
+docker compose logs backend
+
+# 检查数据库连接
+docker compose exec backend ping postgres
+
+# 手动测试健康检查
+curl http://localhost:3000/api/health
+```
+
+#### 前端无法访问后端
+检查 Nginx 配置，确保代理设置正确：
+```bash
+docker compose exec frontend cat /etc/nginx/conf.d/default.conf
+```
+
+#### 数据库连接失败
+```bash
+# 检查数据库是否运行
+docker compose ps postgres
+
+# 测试数据库连接
+docker compose exec postgres pg_isready -U tokensapi
+```
+
+#### 端口冲突
+```bash
+# Windows 查看端口占用
+netstat -ano | findstr :3000
+netstat -ano | findstr :8080
+
+# Linux/Mac 查看端口占用
+lsof -i :3000
+lsof -i :8080
+```
+
 ## 🛠️ 开发环境搭建
 
 ### 方式一：Docker 热重载开发模式（推荐）

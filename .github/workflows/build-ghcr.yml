@@ -3,7 +3,7 @@ name: Build to GHCR
 on:
   workflow_dispatch:  # 手动触发
   push:
-    branches: [develop, main]
+    branches: [dev, main]
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -32,6 +32,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          else
+            echo "tag=dev" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build & Push Backend
         uses: docker/build-push-action@v6
         with:
@@ -39,7 +48,7 @@ jobs:
           file: backend/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/tokensbyte-backend:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/tokensbyte-backend:${{ steps.tag.outputs.tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/tokensbyte-backend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -51,7 +60,7 @@ jobs:
           file: frontend/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/tokensbyte-frontend:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/tokensbyte-frontend:${{ steps.tag.outputs.tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/tokensbyte-frontend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
