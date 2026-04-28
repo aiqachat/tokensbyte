@@ -299,6 +299,52 @@ pub async fn record_and_bill_with_prededuction(
         final_endpoint = super::forward::mask_key_in_string(&final_endpoint, &key);
     }
 
+    // ── 火山引擎卡池统计集成 ──
+    if let Ok(config_val) = serde_json::from_str::<serde_json::Value>(&ch.config) {
+        if let (Some(acc_id), Some(p_id)) = (config_val["_pool_account_id"].as_i64(), config_val["_pool_id"].as_i64()) {
+            let acc_name = config_val["_pool_account_name"].as_str().unwrap_or("Unknown").to_string();
+            let state_pool = state.clone();
+            let model_pool = model_name.to_string();
+            let cid_pool = channel_id;
+            let p_tokens = prompt_tokens;
+            let c_tokens = completion_tokens;
+            let s_code = status_code;
+            let err_msg_pool = error_msg.map(|s| s.to_string());
+            
+            tokio::spawn(async move {
+                // 获取配额单位
+                let mapping: Option<(String,)> = sqlx::query_as(&state_pool.db.format_query(
+                    "SELECT quota_unit FROM volcengine_pool_account_mapping WHERE pool_id = ? AND account_id = ?"
+                ))
+                .bind(p_id)
+                .bind(acc_id)
+                .fetch_optional(&state_pool.db.pool)
+                .await
+                .unwrap_or(None);
+                
+                if let Some((unit,)) = mapping {
+                    let usage_amount = match unit.as_str() {
+                        "tokens" => (p_tokens + c_tokens) as f64,
+                        "requests" => 1.0,
+                        "images" => 1.0, // 简化处理，生图场景默认为 1
+                        _ => (p_tokens + c_tokens) as f64,
+                    };
+                    
+                    if s_code == 200 {
+                        crate::services::volcengine_pool::record_usage(
+                            &state_pool, p_id, acc_id, &acc_name, &model_pool, cid_pool, usage_amount, &unit
+                        ).await;
+                    } else {
+                        let err = err_msg_pool.unwrap_or_else(|| format!("HTTP {}", s_code));
+                        crate::services::volcengine_pool::mark_failed(
+                            &state_pool, p_id, acc_id, &acc_name, &model_pool, cid_pool, &err
+                        ).await;
+                    }
+                }
+            });
+        }
+    }
+
     let res: Result<(), sqlx::Error> = async {
         let mut tx = state.db.pool.begin().await?;
         if cost > 0.0 || pre_deducted > 0.0 {
