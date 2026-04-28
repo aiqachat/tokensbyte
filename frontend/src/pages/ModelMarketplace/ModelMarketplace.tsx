@@ -601,54 +601,8 @@ const ModelMarketplace: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: 24, alignItems: 'stretch' }}>
-                {/* 左侧：供应商过滤（仅在桌面端显示） */}
-                {!screens.xs && (
-                  <div style={{ 
-                    width: 240, 
-                    flexShrink: 0,
-                    background: c.cardBg,
-                    border: `1px solid ${c.cardBorder}`,
-                    borderRadius: 12,
-                    padding: '20px 16px'
-                  }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: c.text3, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
-                      按供应商
-                      {selectedProviders.length > 0 && (
-                        <button onClick={() => { setSelectedProviders([]); setSelectedModel(null); }} style={{ fontSize: 12, color: c.link, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
-                          清除
-                        </button>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      {providers.map(p => (
-                        <div 
-                          key={p.id}
-                          onClick={() => handleProviderToggle(p.id)}
-                          style={{ 
-                            display: 'flex', alignItems: 'center', padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
-                            background: selectedProviders.includes(p.id) ? (isLight ? '#eff6ff' : 'rgba(22,119,255,0.12)') : 'transparent',
-                            color: selectedProviders.includes(p.id) ? (c.link) : (c.text2),
-                            transition: 'all 0.15s',
-                            fontSize: 14
-                          }}
-                          onMouseEnter={e => { if (!selectedProviders.includes(p.id)) e.currentTarget.style.background = c.hoverBg }}
-                          onMouseLeave={e => { if (!selectedProviders.includes(p.id)) e.currentTarget.style.background = 'transparent' }}
-                        >
-                          {p.logo && (
-                            <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain', marginRight: 10, filter: isLight ? 'none' : 'brightness(0.9)' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                          )}
-                          <span style={{ flex: 1, fontWeight: selectedProviders.includes(p.id) ? 500 : 400 }}>{p.name}</span>
-                          <span style={{ fontSize: 12, color: selectedProviders.includes(p.id) ? (c.link) : (c.textMuted) }}>{providerCounts[p.id] || 0}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 右侧：工具栏与模型列表 */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="mp-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="mp-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
                     <div className="mp-search" style={{ flex: 1, minWidth: 200, maxWidth: screens.xs ? '100%' : 420 }}>
                       <Input
                         placeholder="搜索模型名称、ID或描述..."
@@ -707,6 +661,45 @@ const ModelMarketplace: React.FC = () => {
                       </button>
                     </Dropdown>
                   </div>
+
+                  {/* 供应商横向筛选标签 */}
+                  {providers.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, color: c.text3, fontWeight: 500, marginRight: 4, whiteSpace: 'nowrap' }}>供应商</span>
+                      {providers.map(p => {
+                        const isActive = selectedProviders.includes(p.id);
+                        return (
+                          <button
+                            key={p.id}
+                            onClick={() => handleProviderToggle(p.id)}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              padding: '4px 12px', borderRadius: 20, fontSize: 13,
+                              border: `1px solid ${isActive ? '#1677ff' : c.sortBorder}`,
+                              background: isActive ? (isLight ? '#eff6ff' : 'rgba(22,119,255,0.12)') : 'transparent',
+                              color: isActive ? '#1677ff' : c.text2,
+                              cursor: 'pointer', transition: 'all 0.2s', fontWeight: isActive ? 500 : 400,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {p.logo && (
+                              <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 14, height: 14, objectFit: 'contain', filter: isLight ? 'none' : 'brightness(0.9)' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            )}
+                            {p.name}
+                            <span style={{ fontSize: 11, opacity: 0.7 }}>{providerCounts[p.id] || 0}</span>
+                          </button>
+                        );
+                      })}
+                      {selectedProviders.length > 0 && (
+                        <button
+                          onClick={() => { setSelectedProviders([]); setSelectedModel(null); }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, fontSize: 12, border: 'none', background: 'transparent', color: c.link, cursor: 'pointer' }}
+                        >
+                          <CloseOutlined style={{ fontSize: 10 }} /> 清除
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {filteredModels.length > 0 ? (
                     <div className="mp-grid" style={{
@@ -839,7 +832,6 @@ const ModelMarketplace: React.FC = () => {
                     </div>
                   )}
                 </div>
-              </div>
             )}
           </Content>
           {screens.xs && !collapsed && (
