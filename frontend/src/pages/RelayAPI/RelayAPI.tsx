@@ -24,6 +24,7 @@ const RelayAPI: React.FC = () => {
     { label: '火山方舟视频 (查询)', path: '/api/v3/contents/generations/tasks/{task_id}', method: 'GET', type: 'volcengine' },
     { label: '阿里百炼视频 (提交)', path: '/api/v1/services/aigc/video-generation/video-synthesis', method: 'POST', type: 'dashscope' },
     { label: '阿里百炼视频 (查询)', path: '/api/v1/tasks/{task_id}', method: 'GET', type: 'dashscope' },
+    { label: '阿里百炼图片 (提交)', path: '/api/v1/services/aigc/multimodal-generation/generation', method: 'POST', type: 'dashscope' },
   ];
 
   const errorCodes = [
@@ -120,11 +121,16 @@ const RelayAPI: React.FC = () => {
                     <ul style={{ marginTop: 4, marginBottom: 0, paddingLeft: 20 }}>
                       <li><Text type="secondary">火山方舟：n {'>'} 1 时自动设置 <Text code>sequential_image_generation: "auto"</Text> + <Text code>sequential_image_generation_options.max_images = n</Text></Text></li>
                       <li><Text type="secondary">Google Gemini：自动转为 <Text code>generationConfig.candidateCount = n</Text></Text></li>
+                      <li><Text type="secondary">阿里百炼 (DashScope)：n 保持原样</Text></li>
                     </ul>
                   </Descriptions.Item>
-                  <Descriptions.Item label="watermark (选填)">true/false — 是否在图片上添加水印标识（火山方舟默认 true）</Descriptions.Item>
-                  <Descriptions.Item label="size (选填)">图片分辨率（例："1024x1024"）。Google Gemini 自动转为 <Text code>generationConfig.imageConfig.imageSize</Text></Descriptions.Item>
-                  <Descriptions.Item label="ratio (选填)">图片宽高比（例："16:9"、"1:1"）。Google Gemini 自动转为 <Text code>generationConfig.imageConfig.aspectRatio</Text></Descriptions.Item>
+                  <Descriptions.Item label="watermark (选填)">true/false — 是否在图片上添加水印标识（火山/阿里模型均支持）</Descriptions.Item>
+                  <Descriptions.Item label="size (选填)">图片分辨率（例："1024x1024"）。阿里模型自动转为 <Text code>1024*1024</Text>；Gemini 自动转为 <Text code>imageSize</Text></Descriptions.Item>
+                  <Descriptions.Item label="ratio (选填)">图片宽高比（例："16:9"、"1:1"）。Gemini 自动转为 <Text code>aspectRatio</Text></Descriptions.Item>
+                  <Descriptions.Item label="image (选填)">
+                    <Text>参考图 URL (OpenAI 协议扩展)。阿里百炼模型自动将其封装进 <Text code>input.messages</Text> 用于图生图或参考生图模式。</Text>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="prompt_extend (选填)">true/false — 阿里百炼特有：是否启用提示词智能改写（默认 false）</Descriptions.Item>
                   <Descriptions.Item label="stream (选填)">true/false — 部分原生支持流式的模型（如 Gemini）可启用，网关自动解析 SSE 流提取图像</Descriptions.Item>
                   <Descriptions.Item label="web_search (选填)">true/false — 联网搜索，转换规则同聊天接口</Descriptions.Item>
                   <Descriptions.Item label="其他透传参数">
@@ -133,7 +139,7 @@ const RelayAPI: React.FC = () => {
                       <li><Text code>quality</Text>: 图片质量级别（例："standard", "hd"）</li>
                       <li><Text code>style</Text>: 艺术渲染风格（例："vivid", "natural"）</li>
                       <li><Text code>response_format</Text>: 返回格式（例："url", "b64_json"）</li>
-                      <li>以及任何上游厂商官方定义的合法扩展参数…</li>
+                      <li>以及任何上游厂商官方定义的扩展参数 (如阿里 <Text code>seed</Text>) …</li>
                     </ul>
                   </Descriptions.Item>
                 </Descriptions>
@@ -263,6 +269,26 @@ const RelayAPI: React.FC = () => {
                 <Descriptions column={1} bordered size="small">
                   <Descriptions.Item label="视频任务提交">请求体完全支持阿里官方格式，形如 <Text code>{`{"input": {"prompt": "..."}, "parameters": {"resolution": "720P"}}`}</Text>。支持传入模型参数、分辨率等。</Descriptions.Item>
                   <Descriptions.Item label="异步任务轮询">使用原生任务 ID 进行轮询查询，网关将无缝解析 DashScope 返回的 `output.task_status` 与使用量进行自动扣费。</Descriptions.Item>
+                  <Descriptions.Item label="鉴权说明">统一使用 <Text code>Authorization: Bearer sk-xxx</Text></Descriptions.Item>
+                </Descriptions>
+
+                <Divider />
+
+                <Title level={5}>阿里百炼 (DashScope) 原生接口</Title>
+                <Paragraph type="secondary">使用阿里官方原生路径调用图像与视频生成接口。</Paragraph>
+                <div style={codeStyle}>
+                  <Text code>POST /api/v1/services/aigc/multimodal-generation/generation</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">图片生成（多模态原生格式）</Text></span>
+                  <br />
+                  <Text code>POST /api/v1/services/aigc/video-generation/video-synthesis</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">视频生成（原生格式）</Text></span>
+                  <br />
+                  <Text code>GET  /api/v1/tasks/{'{task_id}'}</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">任务查询（同步返回 200，异步返回任务 ID 后轮询此路径）</Text></span>
+                </div>
+                <Descriptions column={1} bordered size="small">
+                  <Descriptions.Item label="请求体说明">完全兼容阿里百炼官方文档中定义的 <Text code>input</Text> 与 <Text code>parameters</Text> 嵌套格式</Descriptions.Item>
+                  <Descriptions.Item label="计费机制">网关自动从 <Text code>usage.image_count</Text> 或 <Text code>usage.duration</Text> 提取实际消耗量，扣除对应资产</Descriptions.Item>
                   <Descriptions.Item label="鉴权说明">统一使用 <Text code>Authorization: Bearer sk-xxx</Text></Descriptions.Item>
                 </Descriptions>
               </Card>
