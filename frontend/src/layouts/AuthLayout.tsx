@@ -2,6 +2,7 @@ import { Card, Typography, Space, ConfigProvider, theme, Divider, Tooltip, Butto
 import { RocketOutlined, GlobalOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useThemeStore } from '../store/theme';
+import useSettingsStore from '../store/settings';
 
 const { Title, Text } = Typography;
 
@@ -41,6 +42,8 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
 }) => {
   const { i18n, t } = useTranslation();
   const { themeMode, toggleTheme } = useThemeStore();
+  const { settings } = useSettingsStore();
+  const enableThemeToggle = settings?.site?.enable_theme_toggle !== false;
   const renderIconBtn = (method: AuthMethodOption) => {
     const isActive = activeMethod === method.key;
     const { brandColor } = method;
@@ -96,6 +99,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
         position: 'relative',
       }}>
         <div style={{ position: 'absolute', top: 24, right: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {enableThemeToggle && (
           <Tooltip title={themeMode === 'light' ? '切换暗色模式' : '切换亮色模式'} placement="bottom" color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
             <Button 
               type="text" 
@@ -109,6 +113,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
               style={{ color: themeMode === 'light' ? '#1f2937' : 'rgba(255,255,255,0.65)' }} 
             />
           </Tooltip>
+          )}
           <Dropdown
             menu={{
               items: [
