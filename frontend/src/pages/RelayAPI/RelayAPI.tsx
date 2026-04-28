@@ -1,10 +1,11 @@
 import React from 'react';
-import { Card, Typography, Tag, Tabs, Descriptions, Table, Alert, Divider } from 'antd';
+import { Card, Typography, Tag, Tabs, Descriptions, Table, Alert, Divider, theme } from 'antd';
 import { RocketOutlined, CodeOutlined, InfoCircleOutlined } from '@ant-design/icons';
 
 const { Title, Text, Paragraph } = Typography;
 
 const RelayAPI: React.FC = () => {
+  const { token: themeToken } = theme.useToken();
   const isLocal = window.location.hostname === 'localhost' || /^(127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
   const baseUrl = isLocal
     ? `${window.location.protocol}//${window.location.hostname}:3000`
@@ -37,7 +38,7 @@ const RelayAPI: React.FC = () => {
     { code: 502, desc: 'Bad Gateway — 上游服务请求失败（渠道不可达或已耗尽）' },
   ];
 
-  const codeStyle: React.CSSProperties = { background: '#000', padding: 12, borderRadius: 8, marginBottom: 16 };
+  const codeStyle: React.CSSProperties = { background: themeToken.colorFillQuaternary, padding: 12, borderRadius: 8, marginBottom: 16 };
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
@@ -74,7 +75,7 @@ const RelayAPI: React.FC = () => {
           <div key={item.path + item.method} style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 12 }}>
             <Tag color={item.method === 'POST' ? 'green' : 'blue'} style={{ width: 60, textAlign: 'center', margin: 0 }}>{item.method}</Tag>
             <Text type="secondary" style={{ minWidth: 160 }}>{item.label}</Text>
-            <Paragraph copyable style={{ margin: 0, fontFamily: 'monospace', fontSize: 13, background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: 4 }}>
+            <Paragraph copyable style={{ margin: 0, fontFamily: 'monospace', fontSize: 13, background: themeToken.colorFillQuaternary, padding: '2px 8px', borderRadius: 4 }}>
               {`${baseUrl}${item.path}`}
             </Paragraph>
           </div>
@@ -88,7 +89,7 @@ const RelayAPI: React.FC = () => {
             key: '1',
             label: 'OpenAI 协议指南',
             children: (
-              <Card variant="borderless" style={{ background: '#1f1f1f' }}>
+              <Card variant="borderless" style={{ background: themeToken.colorBgContainer }}>
                 {/* ── 聊天 ── */}
                 <Title level={5}>聊天接口 (Chat Completions)</Title>
                 <div style={codeStyle}><Text code>POST /v1/chat/completions</Text></div>
@@ -181,7 +182,7 @@ const RelayAPI: React.FC = () => {
                   </Descriptions.Item>
                   <Descriptions.Item label="content (选填)">
                     <Text>高级直通模式 — 直接传入火山方舟官方 content 数组结构，系统将原样透传：</Text>
-                    <div style={{ background: '#000', padding: 8, borderRadius: 4, marginTop: 4, fontSize: 12, fontFamily: 'monospace' }}>
+                    <div style={{ background: themeToken.colorFillQuaternary, padding: 8, borderRadius: 4, marginTop: 4, fontSize: 12, fontFamily: 'monospace' }}>
                       <Text code style={{ whiteSpace: 'pre-wrap' }}>{`[
   {"type":"text","text":"..."},
   {"type":"image_url","image_url":{"url":"..."},"role":"first_frame"},
@@ -213,7 +214,7 @@ const RelayAPI: React.FC = () => {
             key: '2',
             label: '原生协议 (Google/火山/阿里)',
             children: (
-              <Card variant="borderless" style={{ background: '#1f1f1f' }}>
+              <Card variant="borderless" style={{ background: themeToken.colorBgContainer }}>
                 <Title level={5}>Google Gemini 原生接口</Title>
                 <Paragraph type="secondary">发送原生 Gemini Payload，网关自动完成鉴权替换、计费审计并路由到最优渠道节点。</Paragraph>
                 <div style={codeStyle}>
@@ -298,7 +299,7 @@ const RelayAPI: React.FC = () => {
             key: '3',
             label: '错误码说明',
             children: (
-              <Card variant="borderless" style={{ background: '#1f1f1f' }}>
+              <Card variant="borderless" style={{ background: themeToken.colorBgContainer }}>
                 <Table
                   dataSource={errorCodes}
                   rowKey="code"
