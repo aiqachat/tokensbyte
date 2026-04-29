@@ -8,6 +8,7 @@ import {
   CheckCircleFilled, DownloadOutlined, DeleteOutlined, FilterOutlined, LoginOutlined
 } from '@ant-design/icons';
 import request from '../../utils/request';
+import { useThemeStore } from '../../store/theme';
 import type { PluginAsset } from '../../types';
 import type { MenuProps } from 'antd';
 
@@ -50,6 +51,24 @@ const MY_ASSET_SUBCATEGORIES = [
 ];
 
 const UserAssets: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
+  // 主题适配变量
+  const panelBg = isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)';
+  const panelBorder = isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)';
+  const panelBorderStrong = isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)';
+  const mainText = isLight ? '#1f2937' : '#fff';
+  const subText = isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)';
+  const descText = isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)';
+  const hintText = isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
+  const dimText = isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
+  const btnBg = isLight ? '#f0f0f0' : '#262626';
+  const btnText = isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)';
+  const tagBg = isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)';
+  const tagBorder = isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.1)';
+  const tagText = isLight ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.75)';
+  const actionBtnBg = isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)';
+  const actionBtnBorder = isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)';
   const [assets, setAssets] = useState<PluginAsset[]>([]);
   const [loading, setLoading] = useState(false);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
@@ -688,8 +707,8 @@ const UserAssets: React.FC = () => {
   const renderRightPanel = () => {
     if (!selectedRecord) {
       return (
-        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
-          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)' }}>
+        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: panelBg, borderRadius: 12, border: panelBorder, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+          <div style={{ textAlign: 'center', color: hintText }}>
             <AppstoreOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }} />
             <div style={{ fontSize: 16 }}>请选择一个项目以查看详情</div>
             <div style={{ fontSize: 12, marginTop: 8 }}>支持点击文件夹或素材文件</div>
@@ -702,36 +721,36 @@ const UserAssets: React.FC = () => {
       const g = selectedRecord.data as AssetGroup;
       const groupAssets = assets.filter(a => a.group_id === g.group_id);
       return (
-        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'linear-gradient(180deg, rgba(22,119,255,0.05) 0%, rgba(255,255,255,0.02) 100%)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '32px 24px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: isLight ? 'linear-gradient(180deg, rgba(22,119,255,0.05) 0%, rgba(0,0,0,0.01) 100%)' : 'linear-gradient(180deg, rgba(22,119,255,0.05) 0%, rgba(255,255,255,0.02) 100%)', borderRadius: 12, border: panelBorderStrong, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '32px 24px', textAlign: 'center', borderBottom: panelBorder }}>
             <FolderOutlined style={{ fontSize: 64, color: '#1677ff', marginBottom: 16 }} />
-            <Title level={4} style={{ margin: 0, color: '#fff', wordBreak: 'break-all' }}>{g.name}</Title>
+            <Title level={4} style={{ margin: 0, color: mainText, wordBreak: 'break-all' }}>{g.name}</Title>
             <Text type="secondary" style={{ display: 'block', marginTop: 8, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{g.description || '暂无描述'}</Text>
           </div>
           <div style={{ padding: 24, flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <Text type="secondary">Group ID</Text>
-              <Text copyable={{ text: g.group_id }} style={{ color: 'rgba(255,255,255,0.65)' }}>{g.group_id.substring(0, 16)}...</Text>
+              <Text copyable={{ text: g.group_id }} style={{ color: descText }}>{g.group_id.substring(0, 16)}...</Text>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <Text type="secondary">包含素材</Text>
-              <Text style={{ color: '#fff', fontWeight: 500 }}>{groupAssets.length} 项</Text>
+              <Text style={{ color: mainText, fontWeight: 500 }}>{groupAssets.length} 项</Text>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <Text type="secondary">创建时间</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.65)' }}>{new Date(g.created_at).toLocaleString()}</Text>
+              <Text style={{ color: descText }}>{new Date(g.created_at).toLocaleString()}</Text>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <Text type="secondary">最近更新</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.65)' }}>{g.updated_at ? new Date(g.updated_at).toLocaleString() : new Date(g.created_at).toLocaleString()}</Text>
+              <Text style={{ color: descText }}>{g.updated_at ? new Date(g.updated_at).toLocaleString() : new Date(g.created_at).toLocaleString()}</Text>
             </div>
             <div style={{ flex: 1 }} />
             {/* 操作按钮组 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', gap: 12 }}>
                 <Button 
-                  icon={<EditOutlined style={{ color: 'rgba(255,255,255,0.85)' }} />} 
-                  style={{ flex: 1, background: '#262626', border: 'none', color: 'rgba(255,255,255,0.85)', height: 40, borderRadius: 8, fontSize: 14 }} 
+                  icon={<EditOutlined style={{ color: btnText }} />} 
+                  style={{ flex: 1, background: btnBg, border: 'none', color: btnText, height: 40, borderRadius: 8, fontSize: 14 }} 
                   onClick={() => {
                     setEditingGroup(g);
                     editGroupForm.setFieldsValue({ name: g.name, description: g.description || '' });
@@ -741,7 +760,7 @@ const UserAssets: React.FC = () => {
                 </Button>
                 <Button 
                   icon={<DeleteOutlined style={{ color: '#ff7875' }} />} 
-                  style={{ flex: 1, background: '#262626', border: 'none', color: '#ff7875', height: 40, borderRadius: 8, fontSize: 14 }} 
+                  style={{ flex: 1, background: btnBg, border: 'none', color: '#ff7875', height: 40, borderRadius: 8, fontSize: 14 }} 
                   onClick={() => {
                     Modal.confirm({
                       title: '确认删除文件夹',
@@ -805,13 +824,13 @@ const UserAssets: React.FC = () => {
       const infoRowStyle: React.CSSProperties = {
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '10px 16px',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: panelBorder,
       };
 
       return (
-        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: panelBg, borderRadius: 12, border: panelBorderStrong, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
           {/* 顶部标题 */}
-          <div style={{ padding: '16px 20px 0', fontSize: 16, fontWeight: 600, color: '#fff' }}>详情</div>
+          <div style={{ padding: '16px 20px 0', fontSize: 16, fontWeight: 600, color: mainText }}>详情</div>
 
           {/* 预览区 */}
           <div style={{ margin: '16px 20px 0', borderRadius: 10, overflow: 'hidden', background: '#111', flexShrink: 0 }}>
@@ -826,13 +845,13 @@ const UserAssets: React.FC = () => {
               </div>
             ) : (
               <div style={{ padding: 40, textAlign: 'center' }}>
-                <FileOutlined style={{ fontSize: 56, color: 'rgba(255,255,255,0.3)' }} />
+                <FileOutlined style={{ fontSize: 56, color: hintText }} />
               </div>
             )}
           </div>
 
           {/* 文件名 */}
-          <div style={{ padding: '16px 20px 0', fontSize: 17, fontWeight: 600, color: '#fff', wordBreak: 'break-all', lineHeight: 1.4 }}>
+          <div style={{ padding: '16px 20px 0', fontSize: 17, fontWeight: 600, color: mainText, wordBreak: 'break-all', lineHeight: 1.4 }}>
             {a.file_name}
           </div>
 
@@ -856,7 +875,7 @@ const UserAssets: React.FC = () => {
               {reviewEnabled && a.source === 'user' && (a.status === 'uploaded' || (a.status === 'approved' && !a.asset_id)) && (
                 <Button
                   icon={<SendOutlined />}
-                  style={{ flex: 1, borderRadius: 8, height: 38, fontWeight: 500, background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)', color: '#fff' }}
+                  style={{ flex: 1, borderRadius: 8, height: 38, fontWeight: 500, background: actionBtnBg, borderColor: actionBtnBorder, color: mainText }}
                   loading={submittingReview === a.id}
                   onClick={() => handleSubmitReview(a.id)}
                 >
@@ -867,7 +886,7 @@ const UserAssets: React.FC = () => {
             <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
               <Button
                 icon={<DownloadOutlined />}
-                style={{ flex: 1, borderRadius: 8, height: 38, background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}
+                style={{ flex: 1, borderRadius: 8, height: 38, background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', borderColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)', color: tagText }}
                 onClick={() => {
                   const link = document.createElement('a');
                   link.href = fullUrl;
@@ -928,31 +947,31 @@ const UserAssets: React.FC = () => {
           <div style={{ padding: '20px 20px 0' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
               <div style={{ width: 3, height: 14, borderRadius: 2, background: '#1677ff' }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>基础信息</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: mainText }}>基础信息</span>
             </div>
-            <div style={{ borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+            <div style={{ borderRadius: 10, border: panelBorderStrong, overflow: 'hidden' }}>
               <div style={infoRowStyle}>
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>资产 ID</Text>
-                <Text copyable={a.asset_id ? { text: a.asset_id } : undefined} style={{ color: a.asset_id ? '#fff' : 'rgba(255,255,255,0.35)', fontSize: 13 }}>{a.asset_id || '未生成'}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>资产 ID</Text>
+                <Text copyable={a.asset_id ? { text: a.asset_id } : undefined} style={{ color: a.asset_id ? mainText : dimText, fontSize: 13 }}>{a.asset_id || '未生成'}</Text>
               </div>
               <div style={infoRowStyle}>
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>类型</Text>
-                <Text style={{ color: '#fff', fontSize: 13 }}>{typeLabel}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>类型</Text>
+                <Text style={{ color: mainText, fontSize: 13 }}>{typeLabel}</Text>
               </div>
               <div style={infoRowStyle}>
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>大小</Text>
-                <Text style={{ color: '#fff', fontSize: 13 }}>{sizeStr}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>大小</Text>
+                <Text style={{ color: mainText, fontSize: 13 }}>{sizeStr}</Text>
               </div>
               {mediaInfo?.width && mediaInfo?.height && (
                 <div style={infoRowStyle}>
-                  <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>分辨率</Text>
-                  <Text style={{ color: '#fff', fontSize: 13 }}>{mediaInfo.width} x {mediaInfo.height}</Text>
+                  <Text style={{ color: subText, fontSize: 13 }}>分辨率</Text>
+                  <Text style={{ color: mainText, fontSize: 13 }}>{mediaInfo.width} x {mediaInfo.height}</Text>
                 </div>
               )}
               {mediaInfo?.duration != null && (
                 <div style={infoRowStyle}>
-                  <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>持续时间</Text>
-                  <Text style={{ color: '#fff', fontSize: 13 }}>
+                  <Text style={{ color: subText, fontSize: 13 }}>持续时间</Text>
+                  <Text style={{ color: mainText, fontSize: 13 }}>
                     {mediaInfo.duration >= 3600
                       ? `${Math.floor(mediaInfo.duration / 3600)}:${String(Math.floor((mediaInfo.duration % 3600) / 60)).padStart(2, '0')}:${String(Math.floor(mediaInfo.duration % 60)).padStart(2, '0')}`
                       : `${Math.floor(mediaInfo.duration / 60)}:${String(Math.floor(mediaInfo.duration % 60)).padStart(2, '0')}`
@@ -961,12 +980,12 @@ const UserAssets: React.FC = () => {
                 </div>
               )}
               <div style={infoRowStyle}>
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>创建时间</Text>
-                <Text style={{ color: '#fff', fontSize: 13 }}>{createdDate}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>创建时间</Text>
+                <Text style={{ color: mainText, fontSize: 13 }}>{createdDate}</Text>
               </div>
               <div style={{ ...infoRowStyle, borderBottom: 'none' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>修改时间</Text>
-                <Text style={{ color: '#fff', fontSize: 13 }}>{updatedDate}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>修改时间</Text>
+                <Text style={{ color: mainText, fontSize: 13 }}>{updatedDate}</Text>
               </div>
             </div>
           </div>
@@ -975,16 +994,16 @@ const UserAssets: React.FC = () => {
           <div style={{ padding: '20px 20px 24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
               <div style={{ width: 3, height: 14, borderRadius: 2, background: '#faad14' }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>标签</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: mainText }}>标签</span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {tags.map((tag, idx) => (
                 <Tag key={idx} style={{
                   borderRadius: 16,
                   padding: '2px 12px',
-                  background: idx === 0 ? 'rgba(22,119,255,0.15)' : 'rgba(255,255,255,0.06)',
-                  border: idx === 0 ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.1)',
-                  color: idx === 0 ? '#1677ff' : 'rgba(255,255,255,0.75)',
+                  background: idx === 0 ? 'rgba(22,119,255,0.15)' : tagBg,
+                  border: idx === 0 ? '1px solid rgba(22,119,255,0.3)' : tagBorder,
+                  color: idx === 0 ? '#1677ff' : tagText,
                   fontSize: 13,
                   whiteSpace: 'normal',
                   wordBreak: 'break-all',

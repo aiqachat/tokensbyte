@@ -7,6 +7,7 @@ import request from '../../utils/request';
 import type { User } from '../../types';
 import useAuthStore from '../../store/auth';
 import useSettingsStore from '../../store/settings';
+import { useThemeStore } from '../../store/theme';
 import WechatQR from '../../components/WechatQR';
 
 const { Title, Text } = Typography;
@@ -20,6 +21,15 @@ const Profile: React.FC = () => {
   const [form] = Form.useForm();
   const { setUser } = useAuthStore();
   const { settings } = useSettingsStore();
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
+  const cardBg = isLight ? '#fff' : '#141414';
+  const cardBorder = isLight ? '1px solid #e8e8e8' : '1px solid #303030';
+  const listBorder = isLight ? '1px solid #f0f0f0' : '1px solid #303030';
+  const mainText = isLight ? '#1f2937' : '#fff';
+  const subText = isLight ? '#6b7280' : '#8c8c8c';
+  const avatarBg = isLight ? '#e8e8e8' : '#303030';
+  const avatarBorder = isLight ? '2px solid #d9d9d9' : '2px solid #505050';
   const [countdowns, setCountdowns] = useState<Record<string, number>>({});
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -344,17 +354,17 @@ const Profile: React.FC = () => {
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
       {/* Profile Header */}
-      <Card style={{ marginBottom: 24, borderRadius: 16, background: '#141414', border: '1px solid #303030' }}
+      <Card style={{ marginBottom: 24, borderRadius: 16, background: cardBg, border: cardBorder }}
         styles={{ body: { padding: '32px' } }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ position: 'relative' }}>
-            <Avatar size={80} icon={<UserOutlined />} style={{ background: '#303030', border: '2px solid #505050' }} />
+            <Avatar size={80} icon={<UserOutlined />} style={{ background: avatarBg, border: avatarBorder }} />
             <Button shape="circle" size="small" icon={<CameraOutlined style={{ fontSize: 10 }} />}
               style={{ position: 'absolute', bottom: 0, right: 0, background: '#1677ff', border: 'none', color: '#fff' }} />
           </div>
           <div style={{ marginLeft: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <Title level={3} style={{ margin: 0, color: '#fff' }}>
+              <Title level={3} style={{ margin: 0, color: mainText }}>
                 {profile?.nickname || profile?.username || t('profile.nickname')}
               </Title>
               {(profile?.level_name || profile?.user_group) && (
@@ -370,35 +380,35 @@ const Profile: React.FC = () => {
                 </div>
               )}
             </div>
-            <Text type="secondary" style={{ color: '#8c8c8c' }}>UID: {profile?.uid}</Text>
+            <Text type="secondary" style={{ color: subText }}>UID: {profile?.uid}</Text>
           </div>
         </div>
       </Card>
 
       {/* Basic Info */}
-      <Card style={{ marginBottom: 24, borderRadius: 16, background: '#141414', border: '1px solid #303030' }}>
+      <Card style={{ marginBottom: 24, borderRadius: 16, background: cardBg, border: cardBorder }}>
         <List itemLayout="horizontal"
           dataSource={[
             { label: t('profile.account'), value: profile?.username },
             { label: t('profile.nickname'), value: profile?.nickname },
           ]}
           renderItem={(item) => (
-            <List.Item style={{ borderBottom: '1px solid #303030', padding: '16px 24px' }}
+            <List.Item style={{ borderBottom: listBorder, padding: '16px 24px' }}
               extra={item.label === t('profile.nickname') && (
                 <Button type="link" onClick={() => handleAction('nickname')}>{t('profile.edit')}</Button>
               )}>
-              <div style={{ width: 120 }}><Text style={{ color: '#8c8c8c' }}>{item.label}</Text></div>
-              <div style={{ flex: 1 }}><Text style={{ color: '#fff' }}>{item.value || t('profile.not_set')}</Text></div>
+              <div style={{ width: 120 }}><Text style={{ color: subText }}>{item.label}</Text></div>
+              <div style={{ flex: 1 }}><Text style={{ color: mainText }}>{item.value || t('profile.not_set')}</Text></div>
             </List.Item>
           )}
         />
       </Card>
 
       {/* Security */}
-      <Card style={{ borderRadius: 16, background: '#141414', border: '1px solid #303030' }}>
+      <Card style={{ borderRadius: 16, background: cardBg, border: cardBorder }}>
         <List itemLayout="horizontal" dataSource={securityItems}
           renderItem={(item) => (
-            <List.Item style={{ borderBottom: '1px solid #303030', padding: '16px 24px' }}
+            <List.Item style={{ borderBottom: listBorder, padding: '16px 24px' }}
               extra={
                 <Space>
                   <Button type="link" onClick={item.handler}>{item.action}</Button>
@@ -417,10 +427,10 @@ const Profile: React.FC = () => {
                 </Space>
               }>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 120 }}>
-                <span style={{ color: '#8c8c8c' }}>{item.icon}</span>
-                <Text style={{ color: '#8c8c8c' }}>{item.label}</Text>
+                <span style={{ color: subText }}>{item.icon}</span>
+                <Text style={{ color: subText }}>{item.label}</Text>
               </div>
-              <div style={{ flex: 1 }}><Text style={{ color: '#fff' }}>{item.value}</Text></div>
+              <div style={{ flex: 1 }}><Text style={{ color: mainText }}>{item.value}</Text></div>
             </List.Item>
           )}
         />
