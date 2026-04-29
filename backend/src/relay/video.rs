@@ -301,75 +301,84 @@ pub async fn video_generations_status(
             
             let apply_balance = cost - pre_deduction;
 
-            // 1. 更新日志（无论 cost 是否为 0，都要写入计费明细以解除冻结状态）
-            let _ = sqlx::query(&state.db.format_query(
-                "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-            )).bind(usage.prompt).bind(usage.completion).bind(0_i32).bind(cost).bind(detail).bind(log_id)
-            .execute(&state.db.pool).await;
+            match state.db.pool.begin().await {
+                Ok(mut tx) => {
+                    // 1. 更新日志（无论 cost 是否为 0，都要写入计费明细以解除冻结状态）
+                    let _ = sqlx::query(&state.db.format_query(
+                        "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+                    )).bind(usage.prompt).bind(usage.completion).bind(0_i32).bind(cost).bind(detail).bind(log_id)
+                    .execute(&mut *tx).await;
 
-            // 2. 余额与配额结算
-            if cost > 0.0 || pre_deduction > 0.0 {
-                let mut tx = state.db.pool.begin().await.unwrap();
+                    // 2. 余额与配额结算
+                    if cost > 0.0 || pre_deduction > 0.0 {
+                        // 更新用户余额与配额
+                        let _ = sqlx::query(&state.db.format_query(
+                            "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(apply_balance).bind(apply_balance).bind(&token.user_id)
+                        .execute(&mut *tx).await;
 
-                // 更新用户余额与配额
-                let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                )).bind(apply_balance).bind(apply_balance).bind(&token.user_id)
-                .execute(&mut *tx).await;
+                        // 更新 Token 配额
+                        let _ = sqlx::query(&state.db.format_query(
+                            "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(apply_balance).bind(token.id)
+                        .execute(&mut *tx).await;
 
-                // 更新 Token 配额
-                let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                )).bind(apply_balance).bind(token.id)
-                .execute(&mut *tx).await;
+                        // 更新渠道配额 (修复遗留问题)
+                        let _ = sqlx::query(&state.db.format_query(
+                            "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(apply_balance).bind(channel.id)
+                        .execute(&mut *tx).await;
+                    }
 
-                // 更新渠道配额 (修复遗留问题)
-                let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                )).bind(apply_balance).bind(channel.id)
-                .execute(&mut *tx).await;
+                    let _ = tx.commit().await;
 
-                let _ = tx.commit().await;
-
-                tracing::info!("[Video Success Billing] log_id={}, model={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}", 
-                    log_id, model_name, cost, pre_deduction, apply_balance);
+                    tracing::info!("[Video Success Billing] log_id={}, model={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}", 
+                        log_id, model_name, cost, pre_deduction, apply_balance);
+                }
+                Err(e) => {
+                    tracing::error!("[Video Billing] 启动事务失败: {:?}", e);
+                }
             }
         } else if task_status == "failed" && !already_billed {
             // 任务失败：退回预扣费并标记
             let pre_deduction: f64 = sqlx::query_scalar(&state.db.format_query("SELECT cost FROM logs WHERE id = ?"))
                 .bind(log_id).fetch_one(&state.db.pool).await.unwrap_or(0.0);
 
-            if pre_deduction > 0.0 {
-                let mut tx = state.db.pool.begin().await.unwrap();
-
-                // 退回用户余额与配额
-                let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE users SET balance = balance + ?, used_quota = used_quota - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                )).bind(pre_deduction).bind(pre_deduction).bind(&token.user_id)
-                .execute(&mut *tx).await;
-
-                // 退回 Token 配额
-                let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE api_tokens SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                )).bind(pre_deduction).bind(token.id)
-                .execute(&mut *tx).await;
-
-                // 退回渠道配额 (修复遗漏)
-                let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE channels SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                )).bind(pre_deduction).bind(channel.id)
-                .execute(&mut *tx).await;
-
-                let _ = tx.commit().await;
-            }
-
             let detail = if pre_deduction > 0.0 { "任务失败，预扣费已退回" } else { "任务失败，该请求无冻结费用" };
-            let _ = sqlx::query(&state.db.format_query(
-                "UPDATE logs SET cost = 0, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-            )).bind(detail).bind(log_id)
-            .execute(&state.db.pool).await;
+            match state.db.pool.begin().await {
+                Ok(mut tx) => {
+                    if pre_deduction > 0.0 {
+                        // 退回用户余额与配额
+                        let _ = sqlx::query(&state.db.format_query(
+                            "UPDATE users SET balance = balance + ?, used_quota = used_quota - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(pre_deduction).bind(pre_deduction).bind(&token.user_id)
+                        .execute(&mut *tx).await;
 
-            tracing::info!("[Video Failure Billing] log_id={} failed, refunded pre_deduction={:.6}", log_id, pre_deduction);
+                        // 退回 Token 配额
+                        let _ = sqlx::query(&state.db.format_query(
+                            "UPDATE api_tokens SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(pre_deduction).bind(token.id)
+                        .execute(&mut *tx).await;
+
+                        // 退回渠道配额 (修复遗漏)
+                        let _ = sqlx::query(&state.db.format_query(
+                            "UPDATE channels SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(pre_deduction).bind(channel.id)
+                        .execute(&mut *tx).await;
+                    }
+
+                    let _ = sqlx::query(&state.db.format_query(
+                        "UPDATE logs SET cost = 0, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+                    )).bind(detail).bind(log_id)
+                    .execute(&mut *tx).await;
+
+                    let _ = tx.commit().await;
+                    tracing::info!("[Video Failure Billing] log_id={} failed, refunded pre_deduction={:.6}", log_id, pre_deduction);
+                }
+                Err(e) => {
+                    tracing::error!("[Video Failure Billing] 启动事务失败: {:?}", e);
+                }
+            }
         }
     }
 

@@ -253,10 +253,10 @@ async fn convert_base64_resource(
 /// 下载 URL 资源并计算 SHA-256 内容哈希。
 /// 采用流式增量计算：边下载边更新哈希摘要，避免将整个文件加载到内存中，
 /// 对大体积视频文件友好。超时按素材类型动态调整：
-///   Image: 30s, Audio: 60s, Video: 120s
+///   Image: 30s, Audio: 60s, Video: 180s
 async fn fetch_content_hash(http_client: &reqwest::Client, url: &str, asset_type: &str) -> Option<String> {
     let timeout_secs = match asset_type {
-        "Video" => 120,
+        "Video" => 180,
         "Audio" => 60,
         _ => 30,
     };
