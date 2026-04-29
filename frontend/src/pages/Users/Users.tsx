@@ -559,7 +559,7 @@ const Users: React.FC = () => {
                     </div>
                     <div>
                       <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>关联记录 (流转记录):</Typography.Text>
-                      <div style={{ padding: '16px 16px 0', background: 'rgba(0,0,0,0.02)', borderRadius: 8, minHeight: 100, border: '1px solid #f0f0f0' }}>
+                      <div style={{ padding: '16px 16px 0', background: 'var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))', borderRadius: 8, minHeight: 100, border: '1px solid var(--ant-color-border-secondary, #f0f0f0)' }}>
                         {editingUser.referral_history ? (
                           <Timeline 
                             items={editingUser.referral_history.split('\n').filter(line => line.trim()).map(line => {
@@ -569,13 +569,13 @@ const Users: React.FC = () => {
                                   color: 'blue',
                                   children: (
                                     <>
-                                      <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>{match[1]}</div>
-                                      <div style={{ marginTop: 2 }}>{match[2]}</div>
+                                      <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>{match[1]}</Typography.Text>
+                                      <Typography.Text style={{ marginTop: 2, display: 'block' }}>{match[2]}</Typography.Text>
                                     </>
                                   )
                                 };
                               }
-                              return { children: line };
+                              return { children: <Typography.Text>{line}</Typography.Text> };
                             }).reverse()}
                           />
                         ) : (
