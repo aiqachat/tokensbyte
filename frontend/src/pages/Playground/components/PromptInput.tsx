@@ -169,12 +169,12 @@ const PromptInput: React.FC = React.memo(() => {
         background: 'rgba(22, 23, 26, 0.92)',
         backdropFilter: 'blur(20px)',
         borderRadius: 20,
-        border: `1px solid ${isFocused ? 'rgba(162, 193, 255, 0.25)' : 'rgba(255,255,255,0.08)'}`,
+        border: `1px solid ${isFocused ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255,255,255,0.08)'}`,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
         boxShadow: isFocused
-          ? '0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(162, 193, 255, 0.08)'
+          ? '0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255, 255, 255, 0.08)'
           : '0 24px 60px rgba(0,0,0,0.5)',
         zIndex: 1000,
         transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
@@ -340,12 +340,12 @@ const PromptInput: React.FC = React.memo(() => {
                 alignItems: 'center',
                 gap: 5,
                 padding: '5px 12px',
-                background: 'rgba(162, 193, 255, 0.1)',
-                border: '1px solid rgba(162, 193, 255, 0.2)',
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: 8,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                color: '#A2C1FF',
+                color: '#fff',
                 fontSize: 13,
                 fontWeight: 500,
                 whiteSpace: 'nowrap',
@@ -354,12 +354,12 @@ const PromptInput: React.FC = React.memo(() => {
                 textOverflow: 'ellipsis',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(162, 193, 255, 0.18)';
-                e.currentTarget.style.borderColor = 'rgba(162, 193, 255, 0.35)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(162, 193, 255, 0.1)';
-                e.currentTarget.style.borderColor = 'rgba(162, 193, 255, 0.2)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
               }}
             >
               <AppstoreOutlined style={{ fontSize: 13, flexShrink: 0 }} />

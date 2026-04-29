@@ -100,7 +100,7 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       // 性能优化：直接更新 DOM
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
-        const transformLayer = canvasRef.current?.firstElementChild as HTMLElement | null;
+        const transformLayer = canvasRef.current?.querySelector('.transform-layer') as HTMLElement | null;
         if (transformLayer) {
           transformLayer.style.transform = `translate(${newX}px, ${newY}px) scale(${newScale})`;
         }
@@ -131,7 +131,7 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       // 使用 RAF 立即更新 DOM
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
-        const transformLayer = canvasRef.current?.firstElementChild as HTMLElement | null;
+        const transformLayer = canvasRef.current?.querySelector('.transform-layer') as HTMLElement | null;
         if (transformLayer) {
           transformLayer.style.transform = `translate(${newX}px, ${newY}px) scale(${ct.scale})`;
         }
@@ -187,7 +187,7 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
         // 直接操作画布内的 transform 层 DOM
-        const transformLayer = canvasRef.current?.firstElementChild as HTMLElement | null;
+        const transformLayer = canvasRef.current?.querySelector('.transform-layer') as HTMLElement | null;
         if (transformLayer) {
           transformLayer.style.transform = `translate(${newX}px, ${newY}px) scale(${transformRef.current.scale})`;
         }

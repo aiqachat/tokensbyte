@@ -45,7 +45,7 @@ const FloatingHeader: React.FC = React.memo(() => {
           style={{
             width: 36, height: 36,
             color: isGenLogVisible ? '#000' : 'rgba(255,255,255,0.7)',
-            background: isGenLogVisible ? '#A2C1FF' : 'rgba(255,255,255,0.08)',
+            background: isGenLogVisible ? '#fff' : 'rgba(255,255,255,0.08)',
             border: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
