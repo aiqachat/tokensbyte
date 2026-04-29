@@ -68,7 +68,7 @@ const UserLevels: React.FC = () => {
             <TrophyOutlined style={{ color: '#faad14' }} />
             <Text strong>{text}</Text>
             <Tag bordered={false} style={{ margin: 0, background: 'rgba(22,119,255,0.1)', color: '#1677ff', borderRadius: 4 }}>
-              ID: {record.id.toString().padStart(4, '0')}
+              ULID: {record.id.toString().padStart(4, '0')}
             </Tag>
             {record.is_default === 1 && <Tag color="green">默认注册</Tag>}
           </Space>
@@ -160,7 +160,7 @@ const UserLevels: React.FC = () => {
                       <TrophyOutlined style={{ color: '#faad14' }} />
                       <Text strong>{record.name}</Text>
                       <Tag bordered={false} style={{ margin: 0, background: 'rgba(22,119,255,0.1)', color: '#1677ff', borderRadius: 4 }}>
-                        ID: {record.id.toString().padStart(4, '0')}
+                        ULID: {record.id.toString().padStart(4, '0')}
                       </Tag>
                       {record.is_default === 1 && <Tag color="green">默认注册</Tag>}
                     </Space>

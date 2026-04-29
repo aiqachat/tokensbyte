@@ -720,7 +720,7 @@ const PluginConfigInner: React.FC = () => {
                       <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>
                         {lv.name}
                         <span style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, marginLeft: 6 }}>
-                          (ID: {lvIdStr.padStart(4, '0')})
+                          (ULID: {lvIdStr.padStart(4, '0')})
                         </span>
                       </Text>
                     </div>
@@ -830,7 +830,7 @@ const PluginConfigInner: React.FC = () => {
                     <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>
                       {lv.name}
                       <span style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, marginLeft: 6 }}>
-                        (ID: {lv.id.toString().padStart(4, '0')})
+                        (ULID: {lv.id.toString().padStart(4, '0')})
                       </span>
                     </Text>
                   </div>
