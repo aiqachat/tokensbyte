@@ -209,30 +209,34 @@ const PlaygroundHome: React.FC = () => {
           width: 320,
           margin: '16px 0 16px 16px',
           borderRadius: 24,
-          background: 'transparent',
-          border: '1px solid #27272a',
+          background: themeMode === 'dark' ? 'rgba(24, 24, 27, 0.65)' : 'rgba(255, 255, 255, 0.65)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: themeMode === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+          boxShadow: themeMode === 'dark' ? '0 8px 32px rgba(0,0,0,0.2)' : '0 8px 32px rgba(0,0,0,0.05)',
           display: 'flex', flexDirection: 'column',
           zIndex: 10,
         }}>
           {/* Logo 区 */}
           <div style={{ padding: '24px 24px 16px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => navigate('/')}>
-            <span style={{ color: '#fff', fontSize: '24px', fontWeight: 600, letterSpacing: '-0.5px' }}>{siteName || 'Stitch'}</span>
-            <span style={{ fontSize: 10, border: '1px solid rgba(255,255,255,0.4)', color: 'rgba(255,255,255,0.8)', padding: '2px 6px', borderRadius: 10, letterSpacing: '0.5px' }}>BETA</span>
+            <span style={{ color: themeMode === 'dark' ? '#fff' : '#000', fontSize: '24px', fontWeight: 600, letterSpacing: '-0.5px' }}>{siteName || 'Stitch'}</span>
+            <span style={{ fontSize: 10, border: themeMode === 'dark' ? '1px solid rgba(255,255,255,0.4)' : '1px solid rgba(0,0,0,0.4)', color: themeMode === 'dark' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)', padding: '2px 6px', borderRadius: 10, letterSpacing: '0.5px' }}>BETA</span>
           </div>
 
           {/* 顶部按钮区 */}
           <div style={{ padding: '0 24px 16px', display: 'flex', gap: 12, alignItems: 'center' }}>
             <div style={{
-              display: 'flex', background: '#18181b', borderRadius: 24, flex: 1, padding: 4,
-              border: '1px solid #27272a'
+              display: 'flex', background: themeMode === 'dark' ? '#18181b' : 'rgba(0,0,0,0.04)', borderRadius: 24, flex: 1, padding: 4,
+              border: themeMode === 'dark' ? '1px solid #27272a' : '1px solid rgba(0,0,0,0.05)'
             }}>
               <div
                 onClick={() => setActiveTab('my')}
                 style={{
                   flex: 1, padding: '8px 0', borderRadius: 20, fontSize: 13, fontWeight: 500,
                   cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  background: activeTab === 'my' ? '#3f3f46' : 'transparent',
-                  color: activeTab === 'my' ? '#fff' : '#a1a1aa'
+                  background: activeTab === 'my' ? (themeMode === 'dark' ? '#3f3f46' : '#fff') : 'transparent',
+                  color: activeTab === 'my' ? (themeMode === 'dark' ? '#fff' : '#000') : (themeMode === 'dark' ? '#a1a1aa' : '#666'),
+                  boxShadow: activeTab === 'my' && themeMode === 'light' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
                 }}
               >
                 <AppstoreOutlined /> 我的项目
@@ -242,8 +246,9 @@ const PlaygroundHome: React.FC = () => {
                 style={{
                   flex: 1, padding: '8px 0', borderRadius: 20, fontSize: 13, fontWeight: 500,
                   cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  background: activeTab === 'shared' ? '#3f3f46' : 'transparent',
-                  color: activeTab === 'shared' ? '#fff' : '#a1a1aa'
+                  background: activeTab === 'shared' ? (themeMode === 'dark' ? '#3f3f46' : '#fff') : 'transparent',
+                  color: activeTab === 'shared' ? (themeMode === 'dark' ? '#fff' : '#000') : (themeMode === 'dark' ? '#a1a1aa' : '#666'),
+                  boxShadow: activeTab === 'shared' && themeMode === 'light' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
                 }}
               >
                 <TeamOutlined /> 与我共享
@@ -254,14 +259,14 @@ const PlaygroundHome: React.FC = () => {
           {/* 搜索 */}
           <div style={{ padding: '0 24px 20px', display: 'flex', gap: 10 }}>
             <Input
-              prefix={<SearchOutlined style={{ color: '#a1a1aa', marginRight: 6 }} />}
+              prefix={<SearchOutlined style={{ color: themeMode === 'dark' ? '#a1a1aa' : '#999', marginRight: 6 }} />}
               placeholder="搜索项目"
               variant="borderless"
               value={searchKeyword}
               onChange={e => setSearchKeyword(e.target.value)}
               style={{
-                background: '#27272a', borderRadius: 20,
-                height: 40, fontSize: 14, color: '#fff',
+                background: themeMode === 'dark' ? '#27272a' : 'rgba(0,0,0,0.04)', borderRadius: 20,
+                height: 40, fontSize: 14, color: themeMode === 'dark' ? '#fff' : '#000',
                 flex: 1
               }}
             />
@@ -271,11 +276,11 @@ const PlaygroundHome: React.FC = () => {
                 style={{
                   width: 40, height: 40, borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: '#27272a',
-                  color: '#fff', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0
+                  background: themeMode === 'dark' ? '#27272a' : 'rgba(0,0,0,0.04)',
+                  color: themeMode === 'dark' ? '#fff' : '#000', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = '#3f3f46'}
-                onMouseLeave={e => e.currentTarget.style.background = '#27272a'}
+                onMouseEnter={e => e.currentTarget.style.background = themeMode === 'dark' ? '#3f3f46' : 'rgba(0,0,0,0.08)'}
+                onMouseLeave={e => e.currentTarget.style.background = themeMode === 'dark' ? '#27272a' : 'rgba(0,0,0,0.04)'}
               >
                 <PlusOutlined style={{ fontSize: 16 }} />
               </div>
@@ -287,7 +292,7 @@ const PlaygroundHome: React.FC = () => {
             {groupedProjects.map((group, idx) => (
               <div key={idx} style={{ marginBottom: 24 }}>
                 <div style={{
-                  fontSize: 16, fontWeight: 500, color: '#e4e4e7',
+                  fontSize: 16, fontWeight: 500, color: themeMode === 'dark' ? '#e4e4e7' : '#333',
                   padding: '0 8px', marginBottom: 12,
                 }}>
                   {group.group}
@@ -307,14 +312,15 @@ const PlaygroundHome: React.FC = () => {
                       padding: '10px', borderRadius: 8, cursor: 'pointer',
                       transition: 'all 0.2s ease',
                       background: selectedProject?.id === project.id
-                        ? '#27272a' 
-                        : hoveredId === project.id ? '#18181b' : 'transparent',
+                        ? (themeMode === 'dark' ? '#27272a' : 'rgba(0,0,0,0.08)')
+                        : hoveredId === project.id ? (themeMode === 'dark' ? '#18181b' : 'rgba(0,0,0,0.04)') : 'transparent',
                     }}
                   >
                     {/* 小缩略图 */}
                     <div style={{
                       width: 40, height: 40, borderRadius: 6, flexShrink: 0,
-                      background: '#18181b', border: '1px solid #27272a',
+                      background: themeMode === 'dark' ? '#18181b' : 'rgba(0,0,0,0.04)', 
+                      border: themeMode === 'dark' ? '1px solid #27272a' : '1px solid rgba(0,0,0,0.08)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       overflow: 'hidden',
                     }}>
@@ -348,13 +354,13 @@ const PlaygroundHome: React.FC = () => {
                           <div
                             onClick={(e) => { e.stopPropagation(); handleOpenProject(project.id); }}
                             style={{
-                              fontSize: 14, fontWeight: 600, color: '#fff',
+                              fontSize: 14, fontWeight: 600, color: themeMode === 'dark' ? '#fff' : '#000',
                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                             }}
                           >
                             {project.name}
                           </div>
-                          <div style={{ fontSize: 12, color: '#a1a1aa', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ fontSize: 12, color: themeMode === 'dark' ? '#a1a1aa' : '#666', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                             <DesktopOutlined /> 
                             {new Date(project.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </div>
