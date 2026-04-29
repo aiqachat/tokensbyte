@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal, Input, Spin, Empty, Typography, Pagination, Tooltip } from 'antd';
 import { SearchOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
+import { useThemeStore } from '../../store/theme';
 
 const { Text } = Typography;
 
@@ -26,6 +27,8 @@ interface IconPickerProps {
 }
 
 const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = '选择图标', disabled }) => {
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
   const [open, setOpen] = useState(false);
   const [icons, setIcons] = useState<SiteIconItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -86,15 +89,15 @@ const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = 
           gap: 8,
           padding: '6px 12px',
           borderRadius: 6,
-          border: '1px solid rgba(255,255,255,0.15)',
-          background: '#1f1f1f',
+          border: isLight ? '1px solid #d9d9d9' : '1px solid rgba(255,255,255,0.15)',
+          background: isLight ? '#fff' : '#1f1f1f',
           cursor: disabled ? 'not-allowed' : 'pointer',
           minWidth: 160,
           transition: 'border-color 0.2s',
           opacity: disabled ? 0.5 : 1,
         }}
         onMouseEnter={e => { if (!disabled) e.currentTarget.style.borderColor = 'rgba(22,119,255,0.5)'; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = isLight ? '#d9d9d9' : 'rgba(255,255,255,0.15)'; }}
       >
         {value ? (
           <>
@@ -104,14 +107,14 @@ const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = 
               style={{ width: 20, height: 20, objectFit: 'contain' }}
               onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
             />
-            <Text style={{ color: '#fff', fontSize: 13, flex: 1 }}>{selectedIcon?.title || value}</Text>
+            <Text style={{ color: isLight ? '#1f2937' : '#fff', fontSize: 13, flex: 1 }}>{selectedIcon?.title || value}</Text>
             <CloseCircleOutlined
-              style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}
+              style={{ color: isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}
               onClick={handleClear}
             />
           </>
         ) : (
-          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13 }}>{placeholder}</Text>
+          <Text style={{ color: isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 13 }}>{placeholder}</Text>
         )}
       </div>
 
@@ -125,12 +128,12 @@ const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = 
         destroyOnClose
       >
         <Input
-          prefix={<SearchOutlined style={{ color: 'rgba(255,255,255,0.25)' }} />}
+          prefix={<SearchOutlined style={{ color: isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)' }} />}
           placeholder="搜索图标名称..."
           value={keyword}
           onChange={e => handleSearch(e.target.value)}
           allowClear
-          style={{ marginBottom: 16, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+          style={{ marginBottom: 16 }}
         />
 
         {loading && icons.length === 0 ? (
@@ -161,8 +164,8 @@ const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = 
                         borderRadius: 6,
                         border: isSelected
                           ? '2px solid #1677ff'
-                          : '1px solid rgba(255,255,255,0.08)',
-                        background: isSelected ? 'rgba(22,119,255,0.08)' : '#141414',
+                          : isLight ? '1px solid #e8e8e8' : '1px solid rgba(255,255,255,0.08)',
+                        background: isSelected ? 'rgba(22,119,255,0.08)' : (isLight ? '#fafafa' : '#141414'),
                         cursor: 'pointer',
                         transition: 'all 0.15s',
                       }}
@@ -174,8 +177,8 @@ const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = 
                       }}
                       onMouseLeave={e => {
                         if (!isSelected) {
-                          e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
-                          e.currentTarget.style.background = '#141414';
+                          e.currentTarget.style.borderColor = isLight ? '#e8e8e8' : 'rgba(255,255,255,0.08)';
+                          e.currentTarget.style.background = isLight ? '#fafafa' : '#141414';
                         }
                       }}
                     >
@@ -186,7 +189,7 @@ const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = 
                         onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
                       <Text style={{
-                        color: 'rgba(255,255,255,0.55)', fontSize: 10,
+                        color: isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)', fontSize: 10,
                         textAlign: 'center', overflow: 'hidden',
                         textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         width: '100%',
