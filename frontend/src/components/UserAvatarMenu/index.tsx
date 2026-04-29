@@ -4,6 +4,7 @@ import { DashboardOutlined, WalletOutlined, LogoutOutlined } from '@ant-design/i
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/auth';
+import { useThemeStore } from '../../store/theme';
 
 interface UserAvatarMenuProps {
   isUserEnd?: boolean;
@@ -14,6 +15,8 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
 
   const showAgreement = (type: 'tos' | 'privacy') => {
     const isEn = i18n.language && i18n.language.startsWith('en');
@@ -54,6 +57,27 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
   const userInitial = user?.nickname?.charAt(0)?.toUpperCase() || user?.username?.charAt(0)?.toUpperCase() || '?';
   const displayName = user?.nickname || user?.username || 'User';
 
+  // Theme-aware colors
+  const tc = {
+    text: isLight ? '#1f2937' : '#e5e5e5',
+    textSub: isLight ? '#6b7280' : 'rgba(255,255,255,0.45)',
+    textMuted: isLight ? '#9ca3af' : 'rgba(255,255,255,0.2)',
+    btnBg: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.04)',
+    btnBorder: isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)',
+    btnText: isLight ? '#374151' : '#e5e5e5',
+    btnHoverBg: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)',
+    btnHoverBorder: isLight ? '#d1d5db' : 'rgba(255,255,255,0.2)',
+    btnHoverText: isLight ? '#111827' : '#fff',
+    popBg: isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(30, 30, 30, 0.45)',
+    popBorder: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)',
+    popShadow: isLight
+      ? 'inset 0 1px 1px rgba(255,255,255,0.6), 0 24px 48px rgba(0,0,0,0.12)'
+      : 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
+    avatarHoverBg: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)',
+    levelBg: isLight ? 'rgba(22, 119, 255, 0.08)' : 'rgba(22, 119, 255, 0.15)',
+    levelBorder: isLight ? 'rgba(22, 119, 255, 0.2)' : 'rgba(22, 119, 255, 0.3)',
+  };
+
   const profileContent = (
     <div style={{ width: 300, padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{ marginTop: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16, width: '100%', padding: '0 8px' }}>
@@ -65,20 +89,20 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
           {userInitial}
         </Avatar>
         <div style={{ overflow: 'hidden', flex: 1 }}>
-          <div style={{ fontWeight: 500, fontSize: 16, color: '#e5e5e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ fontWeight: 500, fontSize: 16, color: tc.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</span>
             {user?.level_name && (
               <span style={{ 
-                fontSize: 11, padding: '0 6px', background: 'rgba(22, 119, 255, 0.15)', 
+                fontSize: 11, padding: '0 6px', background: tc.levelBg, 
                 color: '#1677ff', borderRadius: 4, fontWeight: 'normal', flexShrink: 0,
-                border: '1px solid rgba(22, 119, 255, 0.3)', lineHeight: '18px',
+                border: `1px solid ${tc.levelBorder}`, lineHeight: '18px',
                 userSelect: 'none'
               }}>
                 {user.level_name}
               </span>
             )}
           </div>
-          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
+          <div style={{ fontSize: 14, color: tc.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
             用户 UID:{user?.uid || '-'}
           </div>
         </div>
@@ -90,7 +114,7 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
             type="default"
             style={{ 
               height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
+              background: tc.btnBg, borderColor: tc.btnBorder, color: tc.btnText, fontSize: 15,
               transition: 'all 0.2s'
             }}
             className="hover-bright-btn"
@@ -106,7 +130,7 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
             type="default"
             style={{ 
               height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
+              background: tc.btnBg, borderColor: tc.btnBorder, color: tc.btnText, fontSize: 15,
               transition: 'all 0.2s'
             }}
             className="hover-bright-btn"
@@ -121,7 +145,7 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
           type="default"
           style={{ 
             height: 48, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.1)', color: '#e5e5e5', fontSize: 15,
+            background: tc.btnBg, borderColor: tc.btnBorder, color: tc.btnText, fontSize: 15,
             transition: 'all 0.2s'
           }}
           className="hover-bright-btn"
@@ -133,9 +157,9 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
       </div>
 
       <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center', gap: 24, width: '100%' }}>
-        <Button type="link" onClick={() => showAgreement('privacy')} style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, padding: 0 }}>{t('common.privacy_policy', '隐私政策')}</Button>
-        <span style={{ color: 'rgba(255,255,255,0.2)' }}>•</span>
-        <Button type="link" onClick={() => showAgreement('tos')} style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, padding: 0 }}>{t('common.terms_of_service', '服务条款')}</Button>
+        <Button type="link" onClick={() => showAgreement('privacy')} style={{ color: tc.textSub, fontSize: 12, padding: 0 }}>{t('common.privacy_policy', '隐私政策')}</Button>
+        <span style={{ color: tc.textMuted }}>•</span>
+        <Button type="link" onClick={() => showAgreement('tos')} style={{ color: tc.textSub, fontSize: 12, padding: 0 }}>{t('common.terms_of_service', '服务条款')}</Button>
       </div>
     </div>
   );
@@ -145,12 +169,12 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
       <style>
         {`
           .hover-bright-btn:hover {
-            background: rgba(255,255,255,0.1) !important;
-            border-color: rgba(255,255,255,0.2) !important;
-            color: #fff !important;
+            background: ${tc.btnHoverBg} !important;
+            border-color: ${tc.btnHoverBorder} !important;
+            color: ${tc.btnHoverText} !important;
           }
           .header-avatar-btn:hover {
-            background: rgba(255,255,255,0.08);
+            background: ${tc.avatarHoverBg};
           }
           .custom-premium-popover {
             transform-origin: 50% 50% !important;
@@ -191,11 +215,11 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
         overlayInnerStyle={{ 
           padding: 0, 
           borderRadius: 20, 
-          background: 'rgba(30, 30, 30, 0.45)',
+          background: tc.popBg,
           backdropFilter: 'blur(30px) saturate(200%)',
           WebkitBackdropFilter: 'blur(30px) saturate(200%)',
-          border: '1px solid rgba(255,255,255,0.15)', 
-          boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
+          border: `1px solid ${tc.popBorder}`, 
+          boxShadow: tc.popShadow,
           transform: 'translateZ(0)',
         }}
         arrow={false}

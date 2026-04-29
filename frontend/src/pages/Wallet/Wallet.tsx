@@ -4,6 +4,7 @@ import { SwapOutlined, HistoryOutlined, CopyOutlined, TeamOutlined, GiftOutlined
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
+import { useThemeStore } from '../../store/theme';
 import useAuthStore from '../../store/auth';
 import type { WalletStats, RechargeRecord } from '../../types';
 import dayjs from 'dayjs';
@@ -15,9 +16,23 @@ const { Title, Text } = Typography;
 const Wallet: React.FC = () => {
   const { t } = useTranslation();
   const { settings } = useSettingsStore();
+  const { themeMode } = useThemeStore();
   const { user } = useAuthStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const currencyUnit = settings?.currency?.currency_unit || '元';
+  const isLight = themeMode === 'light';
+  // 主题适配变量
+  const cardBg = isLight ? '#fff' : '#1d1d1d';
+  const cardBorder = isLight ? '1px solid #e8e8e8' : '1px solid #303030';
+  const headBorder = isLight ? '1px solid #e8e8e8' : '1px solid #303030';
+  const subText = isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
+  const descText = isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)';
+  const mainText = isLight ? '#1f2937' : '#fff';
+  const subtleBg = isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)';
+  const subtleBorder = isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)';
+  const linkBoxBg = isLight ? '#f5f5f5' : '#000';
+  const linkBoxBorder = isLight ? '1px dashed #d9d9d9' : '1px dashed #434343';
+  const dividerColor = isLight ? '#e8e8e8' : '#303030';
   const [rechargeModalVisible, setRechargeModalVisible] = useState(false);
   const [stats, setStats] = useState<WalletStats | null>(null);
   const [records, setRecords] = useState<RechargeRecord[]>([]);
@@ -205,14 +220,14 @@ const Wallet: React.FC = () => {
             style={{ 
               marginBottom: 24, 
               borderRadius: 16, 
-              background: '#1d1d1d', 
-              border: '1px solid #303030',
+              background: cardBg, 
+              border: cardBorder,
               height: 'calc(100% - 24px)'
             }}
-            headStyle={{ borderBottom: '1px solid #303030', color: '#fff' }}
+            headStyle={{ borderBottom: headBorder, color: mainText }}
           >
             <div style={{ marginBottom: 16 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.65)' }}>
+              <Text style={{ color: descText }}>
                 分享您的专属链接，被邀请用户充值后，您将获得对应比例的奖励金余额。
               </Text>
             </div>
@@ -224,24 +239,24 @@ const Wallet: React.FC = () => {
               gap: 12,
               marginBottom: 16,
               padding: '14px 16px',
-              background: 'rgba(255,255,255,0.03)',
+              background: subtleBg,
               borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.06)',
+              border: subtleBorder,
             }}>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, marginBottom: 4 }}>返利比例</div>
+                <div style={{ color: subText, fontSize: 12, marginBottom: 4 }}>返利比例</div>
                 <div style={{ color: '#faad14', fontSize: 20, fontWeight: 700 }}>
                   {Math.round((stats?.commission_ratio || 0) * 100)}%
                 </div>
               </div>
-              <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
-                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, marginBottom: 4 }}>邀请人奖励</div>
+              <div style={{ textAlign: 'center', borderLeft: subtleBorder, borderRight: subtleBorder }}>
+                <div style={{ color: subText, fontSize: 12, marginBottom: 4 }}>邀请人奖励</div>
                 <div style={{ color: '#52c41a', fontSize: 20, fontWeight: 700 }}>
                   {currencySymbol}{stats?.invite_reward_inviter || 0}
                 </div>
               </div>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, marginBottom: 4 }}>新用户奖励</div>
+                <div style={{ color: subText, fontSize: 12, marginBottom: 4 }}>新用户奖励</div>
                 <div style={{ color: '#1677ff', fontSize: 20, fontWeight: 700 }}>
                   {currencySymbol}{stats?.invite_reward_invitee || 0}
                 </div>
@@ -249,15 +264,15 @@ const Wallet: React.FC = () => {
             </div>
 
             <div style={{ 
-              background: '#000', 
+              background: linkBoxBg, 
               padding: '12px 16px', 
               borderRadius: 8, 
               display: 'flex', 
               justifyContent: 'space-between', 
               alignItems: 'center',
-              border: '1px dashed #434343'
+              border: linkBoxBorder
             }}>
-              <Text ellipsis style={{ color: '#fff', width: '80%' }}>
+              <Text ellipsis style={{ color: mainText, width: '80%' }}>
                 {window.location.origin}/register?aff={user?.uid}
               </Text>
               <Tooltip title="复制链接">
@@ -278,10 +293,10 @@ const Wallet: React.FC = () => {
         title={<Space><HistoryOutlined /><span>{t('wallet.recharge_records')}</span></Space>}
         style={{ 
           borderRadius: 16, 
-          background: '#141414', 
-          border: '1px solid #303030' 
+          background: cardBg, 
+          border: cardBorder 
         }}
-        headStyle={{ borderBottom: '1px solid #303030', color: '#fff' }}
+        headStyle={{ borderBottom: headBorder, color: mainText }}
       >
         <Table
           dataSource={records}
@@ -308,7 +323,7 @@ const Wallet: React.FC = () => {
 };
 
 const Divider = ({ style }: { style?: React.CSSProperties }) => (
-  <div style={{ height: '1px', width: '100%', borderTop: '1px solid #303030', margin: '16px 0', ...style }} />
+  <div style={{ height: '1px', width: '100%', borderTop: '1px solid currentColor', opacity: 0.1, margin: '16px 0', ...style }} />
 );
 
 export default Wallet;

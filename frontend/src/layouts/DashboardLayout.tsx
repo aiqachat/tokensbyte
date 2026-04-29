@@ -62,6 +62,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const [unreadCount, setUnreadCount] = useState(0);
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
   const [enableMultilingual, setEnableMultilingual] = useState(true);
+  const [enableThemeToggle, setEnableThemeToggle] = useState(true);
   const [agreement, setAgreement] = useState<any>(null);
 
 
@@ -110,6 +111,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       }
       if (site.enable_multilingual !== undefined) {
         setEnableMultilingual(site.enable_multilingual);
+      }
+      if (site.enable_theme_toggle !== undefined) {
+        setEnableThemeToggle(site.enable_theme_toggle);
       }
       if (agreementData) {
         setAgreement(agreementData);
@@ -739,6 +743,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 </Button>
               )}
 
+              {(enableThemeToggle || !isUserEnd) && (
               <Tooltip title={themeMode === 'light' ? '切换暗色模式' : '切换亮色模式'} placement="bottom" color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
                 <Button 
                   type="text" 
@@ -752,6 +757,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                   style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', width: 42, height: 42 }} 
                 />
               </Tooltip>
+              )}
 
               {enableMultilingual && (
                 <Dropdown menu={{ items: langItems }} placement="bottomRight">

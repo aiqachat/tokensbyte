@@ -6,10 +6,13 @@ import useSettingsStore from '../../store/settings';
 import useAuthStore from '../../store/auth';
 import type { ReferralUser, ReferralRecharge } from '../../types';
 import dayjs from 'dayjs';
+import { useThemeStore } from '../../store/theme';
 
 const { Title, Text } = Typography;
 
 const AdvancedMarketing: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const { settings } = useSettingsStore();
   const { user } = useAuthStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
@@ -221,7 +224,7 @@ const AdvancedMarketing: React.FC = () => {
       key: 'username',
       render: (username: string, record: ReferralUser) => (
         <div>
-          <Text strong style={{ color: '#fff', display: 'block', lineHeight: 1.3 }}>{username}</Text>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', display: 'block', lineHeight: 1.3 }}>{username}</Text>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
             <Text style={{ fontSize: 12, color: record.remark ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.25)' }}>
               {record.remark || '暂无备注'}
@@ -247,7 +250,7 @@ const AdvancedMarketing: React.FC = () => {
       render: (email: string, record: ReferralUser) => (
         <div>
           <Text style={{ fontSize: 13, display: 'block' }}>{email}</Text>
-          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>UID: {record.uid}</Text>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11 }}>UID: {record.uid}</Text>
         </div>
       ),
     },
@@ -291,12 +294,12 @@ const AdvancedMarketing: React.FC = () => {
               display: 'flex', alignItems: 'center', gap: 4,
               marginBottom: 4,
             }}>
-              <DollarOutlined style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }} />
-              <Text style={{ color: '#fff', fontSize: 12, fontWeight: 500 }}>
+              <DollarOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }} />
+              <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 12, fontWeight: 500 }}>
                 {currencySymbol}{balance.toFixed(2)}
               </Text>
-              <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>/</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>/</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }}>
                 {currencySymbol}{total.toFixed(2)}
               </Text>
             </div>
@@ -401,8 +404,8 @@ const AdvancedMarketing: React.FC = () => {
             <TeamOutlined style={{ fontSize: 20 }} />
           </div>
           <div>
-            <Title level={4} style={{ margin: 0, color: '#fff', lineHeight: 1.3 }}>高级营销</Title>
-            <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>查看我的推荐用户和推广数据</Text>
+            <Title level={4} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff', lineHeight: 1.3 }}>高级营销</Title>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>查看我的推荐用户和推广数据</Text>
           </div>
         </div>
         <Button icon={<ReloadOutlined />} onClick={() => { fetchReferrals(); fetchTeamOverview(); fetchMyTeam(); }} loading={loading}>
@@ -421,14 +424,14 @@ const AdvancedMarketing: React.FC = () => {
           style={{
             marginBottom: 0,
             borderRadius: 12,
-            background: '#141414',
+            background: _isLight ? '#fff' : '#141414',
             border: '1px solid rgba(22,119,255,0.2)',
             height: '100%',
           }}
                     title={
             <Space>
               <TeamOutlined style={{ color: '#1677ff' }} />
-              <span style={{ color: '#fff' }}>我加入的团队</span>
+              <span style={{ color: _isLight ? '#1f2937' : '#fff' }}>我加入的团队</span>
             </Space>
           }
           headStyle={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
@@ -438,9 +441,9 @@ const AdvancedMarketing: React.FC = () => {
             <div key={team.id} style={{
               display: 'flex', alignItems: 'center', gap: 12,
               padding: '8px 12px', marginBottom: 4,
-              background: 'rgba(255,255,255,0.02)',
+              background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
               borderRadius: 8,
-              border: '1px solid rgba(255,255,255,0.06)',
+              border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
             }}>
               <div style={{
                 width: 36, height: 36, borderRadius: 8,
@@ -450,9 +453,9 @@ const AdvancedMarketing: React.FC = () => {
                 <TeamOutlined style={{ color: '#1677ff', fontSize: 18 }} />
               </div>
               <div style={{ flex: 1 }}>
-                <Text strong style={{ color: '#fff', display: 'block', lineHeight: 1.3 }}>{team.name}</Text>
+                <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', display: 'block', lineHeight: 1.3 }}>{team.name}</Text>
                 {team.description && (
-                  <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>{team.description}</Text>
+                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>{team.description}</Text>
                 )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -490,11 +493,11 @@ const AdvancedMarketing: React.FC = () => {
                 justifyContent: 'center'
               }}>
                 <Statistic
-                  title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>活跃 / 推荐用户</span>}
+                  title={<span style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>活跃 / 推荐用户</span>}
                   value={activeReferrals}
                   styles={{ content: { color: '#1677ff', fontSize: 22, fontWeight: 'bold' } }}
                   prefix={<TeamOutlined />}
-                  suffix={<span style={{ fontSize: 14, color: 'rgba(255,255,255,0.35)' }}>/ {totalReferrals}</span>}
+                  suffix={<span style={{ fontSize: 14, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>/ {totalReferrals}</span>}
                 />
               </Card>
             </Col>
@@ -509,7 +512,7 @@ const AdvancedMarketing: React.FC = () => {
                 justifyContent: 'center'
               }}>
                 <Statistic
-                  title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>累计充值</span>}
+                  title={<span style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>累计充值</span>}
                   value={totalRecharge}
                   precision={2}
                   prefix={currencySymbol}
@@ -525,7 +528,7 @@ const AdvancedMarketing: React.FC = () => {
       <Row gutter={[24, 24]}>
         <Col xs={24} lg={24}>
           <Card
-            style={{ borderRadius: 12, background: '#141414', border: '1px solid rgba(255,255,255,0.08)' }}
+            style={{ borderRadius: 12, background: _isLight ? '#fff' : '#141414', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)' }}
             bodyStyle={{ padding: '0 16px 16px' }}
           >
             <Tabs 
@@ -547,8 +550,8 @@ const AdvancedMarketing: React.FC = () => {
           borderRadius: 8,
         }}>
           <LinkOutlined style={{ color: '#52c41a', fontSize: 14 }} />
-          <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>专属推广链接：</Text>
-          <Text ellipsis style={{ color: '#fff', fontSize: 12, flex: 1, fontFamily: 'monospace' }}>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 12 }}>专属推广链接：</Text>
+          <Text ellipsis style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 12, flex: 1, fontFamily: 'monospace' }}>
             {window.location.origin}/register?aff={user?.uid}
           </Text>
           <Tooltip title="复制邀请链接">
@@ -567,16 +570,16 @@ const AdvancedMarketing: React.FC = () => {
             pagination={{ pageSize: 10 }}
             locale={{ emptyText: '暂无推荐用户' }}
             renderItem={record => (
-              <Card size="small" style={{ marginBottom: 12, borderRadius: 8, background: '#141414', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <Card size="small" style={{ marginBottom: 12, borderRadius: 8, background: _isLight ? '#fff' : '#141414', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <Text strong style={{ fontSize: 15, color: '#fff' }}>{record.username}</Text>
+                  <Text strong style={{ fontSize: 15, color: _isLight ? '#1f2937' : '#fff' }}>{record.username}</Text>
                   {record.is_active === 1 ? <Tag color="success" style={{ margin: 0 }}>活跃</Tag> : <Tag color="default" style={{ margin: 0 }}>停用</Tag>}
                 </div>
                 <div style={{ marginBottom: 12 }}>
-                  <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.65)', display: 'block' }}>{record.email}</Text>
-                  <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>UID: {record.uid}</Text>
+                  <Text style={{ fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', display: 'block' }}>{record.email}</Text>
+                  <Text style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>UID: {record.uid}</Text>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12, padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12, padding: '8px', background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
                   <Text style={{ fontSize: 12, color: record.remark ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.35)', flex: 1 }}>
                     {record.remark || '暂无备注'}
                   </Text>
@@ -585,8 +588,8 @@ const AdvancedMarketing: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <Tag color="blue" style={{ margin: 0 }}>{record.level_name || record.user_group}</Tag>
                   <div style={{ textAlign: 'right' }}>
-                    <Text style={{ fontSize: 12, display: 'block', color: 'rgba(255,255,255,0.65)' }}>余额: <span style={{ color: '#fff', fontWeight: 500 }}>{currencySymbol}{(record.balance || 0).toFixed(2)}</span></Text>
-                    <Text style={{ fontSize: 12, display: 'block', color: 'rgba(255,255,255,0.65)' }}>总充值: <span style={{ color: '#52c41a', fontWeight: 500 }}>{currencySymbol}{(record.total_recharge || 0).toFixed(2)}</span></Text>
+                    <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>余额: <span style={{ color: _isLight ? '#1f2937' : '#fff', fontWeight: 500 }}>{currencySymbol}{(record.balance || 0).toFixed(2)}</span></Text>
+                    <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>总充值: <span style={{ color: '#52c41a', fontWeight: 500 }}>{currencySymbol}{(record.total_recharge || 0).toFixed(2)}</span></Text>
                   </div>
                 </div>
                 
@@ -661,7 +664,7 @@ const AdvancedMarketing: React.FC = () => {
               }
 
               return (
-                <div style={{ padding: '8px 16px', background: '#1a1a1a', borderRadius: 8 }}>
+                <div style={{ padding: '8px 16px', background: _isLight ? '#fafafa' : '#1a1a1a', borderRadius: 8 }}>
                   <Text strong style={{ color: '#1677ff', display: 'block', marginBottom: 12, fontSize: 13 }}>
                     <DollarOutlined style={{ marginRight: 4 }} />
                     {record.username} 的充值明细（共 {recharges.length} 条）
@@ -698,9 +701,9 @@ const AdvancedMarketing: React.FC = () => {
           {teamData.teams.map((team: any) => (
             <div key={team.id} style={{ marginBottom: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <Text strong style={{ color: '#fff', fontSize: 15 }}>{team.name}</Text>
+                <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 15 }}>{team.name}</Text>
                 {team.description && (
-                  <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>— {team.description}</Text>
+                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>— {team.description}</Text>
                 )}
                 <Tag style={{
                   margin: 0, borderRadius: 10, marginLeft: 'auto',
@@ -720,8 +723,8 @@ const AdvancedMarketing: React.FC = () => {
                   borderRadius: 8,
                 }}>
                   <LinkOutlined style={{ color: '#52c41a', fontSize: 14 }} />
-                  <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>团队邀请链接：</Text>
-                  <Text ellipsis style={{ color: '#fff', fontSize: 12, flex: 1, fontFamily: 'monospace' }}>
+                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 12 }}>团队邀请链接：</Text>
+                  <Text ellipsis style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 12, flex: 1, fontFamily: 'monospace' }}>
                     {window.location.origin}/register?aff={user?.uid}&team={team.invite_code}
                   </Text>
                   <Tooltip title="复制邀请链接">
@@ -741,24 +744,24 @@ const AdvancedMarketing: React.FC = () => {
                   pagination={false}
                   locale={{ emptyText: '暂无团队成员' }}
                   renderItem={(record: any) => (
-                    <Card size="small" style={{ marginBottom: 12, borderRadius: 8, background: '#141414', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <Card size="small" style={{ marginBottom: 12, borderRadius: 8, background: _isLight ? '#fff' : '#141414', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <Text strong style={{ fontSize: 15, color: '#fff' }}>{record.username}</Text>
+                        <Text strong style={{ fontSize: 15, color: _isLight ? '#1f2937' : '#fff' }}>{record.username}</Text>
                         <Tag style={{ margin: 0, borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
                           {record.level_name || record.user_group || 'default'}
                         </Tag>
                       </div>
                       <div style={{ marginBottom: 12 }}>
-                        <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>UID: {record.uid}</Text>
+                        <Text style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>UID: {record.uid}</Text>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                         <div>
-                          <Text style={{ fontSize: 12, display: 'block', color: 'rgba(255,255,255,0.65)' }}>推荐人数: <span style={{ color: '#fff', fontWeight: 500 }}>{record.referred_count}</span></Text>
-                          <Text style={{ fontSize: 12, display: 'block', color: 'rgba(255,255,255,0.65)' }}>推荐充值: <span style={{ color: '#52c41a', fontWeight: 500 }}>{currencySymbol}{(record.total_recharge_from_referrals || 0).toFixed(2)}</span></Text>
+                          <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>推荐人数: <span style={{ color: _isLight ? '#1f2937' : '#fff', fontWeight: 500 }}>{record.referred_count}</span></Text>
+                          <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>推荐充值: <span style={{ color: '#52c41a', fontWeight: 500 }}>{currencySymbol}{(record.total_recharge_from_referrals || 0).toFixed(2)}</span></Text>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <Text style={{ fontSize: 12, display: 'block', color: 'rgba(255,255,255,0.65)' }}>余额: <span style={{ color: '#fff', fontWeight: 500 }}>{currencySymbol}{(record.balance || 0).toFixed(2)}</span></Text>
-                          <Text style={{ fontSize: 12, display: 'block', color: 'rgba(255,255,255,0.65)' }}>总充值: <span style={{ color: '#52c41a', fontWeight: 500 }}>{currencySymbol}{(record.total_recharge || 0).toFixed(2)}</span></Text>
+                          <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>余额: <span style={{ color: _isLight ? '#1f2937' : '#fff', fontWeight: 500 }}>{currencySymbol}{(record.balance || 0).toFixed(2)}</span></Text>
+                          <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>总充值: <span style={{ color: '#52c41a', fontWeight: 500 }}>{currencySymbol}{(record.total_recharge || 0).toFixed(2)}</span></Text>
                         </div>
                       </div>
                       {allowedMemberLevels.length > 0 && (
@@ -790,8 +793,8 @@ const AdvancedMarketing: React.FC = () => {
                     key: 'username',
                     render: (name: string, record: any) => (
                       <div>
-                        <Text strong style={{ color: '#fff' }}>{name}</Text>
-                        <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, marginLeft: 8 }}>
+                        <Text strong style={{ color: _isLight ? '#1f2937' : '#fff' }}>{name}</Text>
+                        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 11, marginLeft: 8 }}>
                           {record.uid}
                         </Text>
                       </div>
@@ -834,12 +837,12 @@ const AdvancedMarketing: React.FC = () => {
                             display: 'flex', alignItems: 'center', gap: 4,
                             marginBottom: 4,
                           }}>
-                            <DollarOutlined style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }} />
-                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: 500 }}>
+                            <DollarOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }} />
+                            <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 12, fontWeight: 500 }}>
                               {currencySymbol}{balance.toFixed(2)}
                             </Text>
-                            <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>/</Text>
-                            <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
+                            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>/</Text>
+                            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }}>
                               {currencySymbol}{total.toFixed(2)}
                             </Text>
                           </div>
@@ -951,22 +954,22 @@ const AdvancedMarketing: React.FC = () => {
           <div style={{ marginTop: 16 }}>
             <div style={{
               padding: '12px 16px', marginBottom: 16,
-              background: 'rgba(255,255,255,0.04)',
+              background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)',
               borderRadius: 8,
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
             }}>
-              <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
-                目标用户：<Text strong style={{ color: '#fff' }}>{levelTargetUser.username}</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>UID: {levelTargetUser.uid}</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13 }}>
+                目标用户：<Text strong style={{ color: _isLight ? '#1f2937' : '#fff' }}>{levelTargetUser.username}</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>UID: {levelTargetUser.uid}</Text>
               </Text>
               <br />
-              <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }}>
                 当前等级：<Tag style={{ margin: '0 0 0 4px', borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
                   {levelTargetUser.level_name || levelTargetUser.user_group}
                 </Tag>
               </Text>
             </div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 8 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 8 }}>
               选择新等级：
             </Text>
             <Select
@@ -1011,22 +1014,22 @@ const AdvancedMarketing: React.FC = () => {
           <div style={{ marginTop: 16 }}>
             <div style={{
               padding: '12px 16px', marginBottom: 16,
-              background: 'rgba(255,255,255,0.04)',
+              background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)',
               borderRadius: 8,
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
             }}>
-              <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>
-                团队成员：<Text strong style={{ color: '#fff' }}>{memberLevelTarget.username}</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>UID: {memberLevelTarget.uid}</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13 }}>
+                团队成员：<Text strong style={{ color: _isLight ? '#1f2937' : '#fff' }}>{memberLevelTarget.username}</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>UID: {memberLevelTarget.uid}</Text>
               </Text>
               <br />
-              <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }}>
                 当前等级：<Tag style={{ margin: '0 0 0 4px', borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
                   {memberLevelTarget.user_group || 'default'}
                 </Tag>
               </Text>
             </div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 8 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 8 }}>
               选择新等级：
             </Text>
             <Select

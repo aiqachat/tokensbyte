@@ -104,7 +104,7 @@ code,
   font-family: var(--mono);
   display: inline-flex;
   border-radius: 4px;
-  color: #fff;
+  color: var(--text-h);
 }
 
 code {
@@ -117,7 +117,7 @@ code {
 /* 全局优雅滚动条 */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.12) transparent;
+  scrollbar-color: rgba(0,0,0,0.15) transparent;
 }
 *::-webkit-scrollbar {
   width: 5px;
@@ -127,15 +127,25 @@ code {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.1);
+  background: rgba(0,0,0,0.12);
   border-radius: 10px;
   transition: background 0.3s;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.25);
+  background: rgba(0,0,0,0.25);
 }
 *::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+body[data-theme='dark'] * {
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
+}
+body[data-theme='dark'] *::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+}
+body[data-theme='dark'] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.25);
 }
 
 /* 修复 Ant Design Sider 内部 children 容器不撑满高度导致底部空白 */
@@ -144,4 +154,11 @@ code {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 修复亮色模式下 Radio.Button 选中状态文字不可见 */
+body[data-theme='light'] .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  color: #1677ff !important;
+  background: #e6f4ff !important;
+  border-color: #1677ff !important;
 }

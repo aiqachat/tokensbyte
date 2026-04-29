@@ -115,7 +115,7 @@ const SettingsWidget: React.FC = React.memo(() => {
         }}
       >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <AppstoreOutlined style={{ color: '#A2C1FF', fontSize: 16 }} />
+          <AppstoreOutlined style={{ color: '#fff', fontSize: 16 }} />
           <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500, userSelect: 'none' }}>模型选择器</Text>
         </div>
         <Tooltip title="关闭">
@@ -149,7 +149,7 @@ const SettingsWidget: React.FC = React.memo(() => {
                 onClick={() => handleCategoryChange(cat)}
                 style={{
                   flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: 12, cursor: 'pointer',
-                  background: isActive ? '#A2C1FF' : 'transparent',
+                  background: isActive ? '#fff' : 'transparent',
                   color: isActive ? '#000' : 'rgba(255,255,255,0.6)',
                   fontSize: 13, fontWeight: 500, transition: 'all 0.2s',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6

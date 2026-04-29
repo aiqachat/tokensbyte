@@ -106,7 +106,7 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
         }}
       >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <FolderOpenOutlined style={{ color: '#A2C1FF', fontSize: 16 }} />
+          <FolderOpenOutlined style={{ color: '#fff', fontSize: 16 }} />
           <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>资源管理器</Text>
         </div>
         <Tooltip title="关闭">

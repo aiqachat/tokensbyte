@@ -3,6 +3,7 @@ import { Typography, Button, Table, Tag, Tabs, Modal, Form, Input, InputNumber, 
 import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, ApiOutlined, CloudServerOutlined, CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import dayjs from 'dayjs';
+import { useThemeStore } from '../../../store/theme';
 
 const { Text } = Typography;
 
@@ -60,6 +61,8 @@ const statusConfig: Record<string, { color: string; icon: React.ReactNode; label
 };
 
 const PoolManager: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [pools, setPools] = useState<Pool[]>([]);
   const [selectedPool, setSelectedPool] = useState<Pool | null>(null);
   const [accounts, setAccounts] = useState<PoolAccount[]>([]);
@@ -277,15 +280,15 @@ const PoolManager: React.FC = () => {
 
   // ── 渲染 ─────────────────────────────────────────────────
   const quotaBar = (used: number, quota: number) => {
-    if (quota <= 0) return <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>不限</Text>;
+    if (quota <= 0) return <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>不限</Text>;
     const pct = Math.min(100, (used / quota) * 100);
     const color = pct >= 90 ? '#ff4d4f' : pct >= 60 ? '#faad14' : '#52c41a';
     return (
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', marginBottom: 2 }}>
           <span>{used.toFixed(0)}</span><span>{quota.toFixed(0)}</span>
         </div>
-        <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 2, height: 4 }}>
+        <div style={{ background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)', borderRadius: 2, height: 4 }}>
           <div style={{ width: `${pct}%`, background: color, borderRadius: 2, height: 4, transition: 'width 0.3s' }} />
         </div>
       </div>
@@ -345,7 +348,7 @@ const PoolManager: React.FC = () => {
   const poolTab = (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>管理所有卡池，每个卡池固定一种模型，可分配多个账号并设置独立配额</Text>
+        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 13 }}>管理所有卡池，每个卡池固定一种模型，可分配多个账号并设置独立配额</Text>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchPools} loading={loading}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openPoolModal()}>新建卡池</Button>
@@ -373,7 +376,7 @@ const PoolManager: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <Space>
                     <CloudServerOutlined style={{ color: typeInfo.color, fontSize: 18 }} />
-                    <Text strong style={{ color: '#fff', fontSize: 14 }}>{pool.name}</Text>
+                    <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>{pool.name}</Text>
                     <Tag color={typeInfo.color} style={{ fontSize: 11 }}>{typeInfo.label}</Tag>
                   </Space>
                   <Tag color={pool.is_active ? 'success' : 'default'}>{pool.is_active ? '启用' : '禁用'}</Tag>
@@ -382,9 +385,9 @@ const PoolManager: React.FC = () => {
                    <Text type="secondary" style={{ fontSize: 12 }}>绑定的模型: {pool.model_id || '未配置'}</Text>
                 </div>
                 <Row gutter={16}>
-                  <Col span={8}><Statistic title="账号" value={pool.total_accounts} valueStyle={{ fontSize: 16, color: '#fff' }} /></Col>
+                  <Col span={8}><Statistic title="账号" value={pool.total_accounts} valueStyle={{ fontSize: 16, color: _isLight ? '#1f2937' : '#fff' }} /></Col>
                   <Col span={8}><Statistic title="在线" value={pool.active_accounts} valueStyle={{ fontSize: 16, color: '#52c41a' }} /></Col>
-                  <Col span={8}><Statistic title="策略" value={pool.strategy === 'random' ? '随机' : '顺序'} valueStyle={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }} /></Col>
+                  <Col span={8}><Statistic title="策略" value={pool.strategy === 'random' ? '随机' : '顺序'} valueStyle={{ fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }} /></Col>
                 </Row>
                 <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
                   <Button size="small" icon={<EditOutlined />} onClick={e => { e.stopPropagation(); openPoolModal(pool); }}>编辑</Button>
@@ -397,7 +400,7 @@ const PoolManager: React.FC = () => {
           );
         })}
         {pools.length === 0 && !loading && (
-          <Col span={24}><div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.3)' }}>暂无卡池，点击「新建卡池」开始</div></Col>
+          <Col span={24}><div style={{ textAlign: 'center', padding: 40, color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }}>暂无卡池，点击「新建卡池」开始</div></Col>
         )}
       </Row>
     </div>
@@ -407,14 +410,14 @@ const PoolManager: React.FC = () => {
   const accountTab = (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>独立账号池，配置基础账号认证信息，用于分配给各个卡池</Text>
+        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 13 }}>独立账号池，配置基础账号认证信息，用于分配给各个卡池</Text>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => fetchAccounts()}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openAccountModal()}>添加账号</Button>
         </Space>
       </div>
       <Table dataSource={accounts} columns={baseAccountColumns} rowKey="id" size="small" pagination={{ pageSize: 20 }}
-        style={{ background: '#141414' }} />
+        style={{ background: _isLight ? '#fff' : '#141414' }} />
     </div>
   );
 
@@ -503,7 +506,7 @@ const PoolManager: React.FC = () => {
                   </Button>
                 </div>
                 {fields.map(({ key, name, ...restField }) => (
-                  <Card key={key} size="small" style={{ marginBottom: 16, background: '#141414', border: '1px solid #303030' }}>
+                  <Card key={key} size="small" style={{ marginBottom: 16, background: _isLight ? '#fff' : '#141414', border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
                     <div style={{ position: 'absolute', right: 16, top: 12 }}>
                       <MinusCircleOutlined style={{ color: '#ff4d4f', fontSize: 18, cursor: 'pointer' }} onClick={() => remove(name)} />
                     </div>
@@ -657,7 +660,7 @@ const PoolManager: React.FC = () => {
               size="small"
               pagination={false}
               scroll={{ x: 1000 }}
-              style={{ background: '#141414' }}
+              style={{ background: _isLight ? '#fff' : '#141414' }}
             />
           </div>
         )}

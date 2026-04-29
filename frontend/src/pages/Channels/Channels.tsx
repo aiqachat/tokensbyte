@@ -7,12 +7,15 @@ import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import type { Channel } from '../../types';
+import { useThemeStore } from '../../store/theme';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
 const { useBreakpoint } = Grid;
 
 const Channels: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const { t } = useTranslation();
   const { settings } = useSettingsStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
@@ -443,7 +446,7 @@ const Channels: React.FC = () => {
               const selectedModels = form.getFieldValue('models') || [];
               if (selectedModels.length === 0) return null;
               return (
-                <div style={{ marginBottom: 24, padding: 16, background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={{ marginBottom: 24, padding: 16, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', borderRadius: 8, border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showMapping ? 12 : 0 }}>
                     <div>
                       <Text strong style={{ display: 'block', marginBottom: 2 }}>模型别名映射 (Model Mapping)</Text>

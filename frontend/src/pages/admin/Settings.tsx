@@ -65,6 +65,8 @@ const Settings: React.FC = () => {
           favicon: values.favicon || '', login_title: values.login_title || '',
           login_subtitle: values.login_subtitle || '',
           enable_multilingual: values.enable_multilingual !== false,
+          enable_theme_toggle: values.enable_theme_toggle !== false,
+          default_theme: values.default_theme || 'dark',
         };
         payload.login = values.login || {};
         payload.registration = values.registration || {};
@@ -103,6 +105,15 @@ const Settings: React.FC = () => {
       <Form.Item label={t('settings.site_description')} name="description"><Input.TextArea rows={4} placeholder="Description..." /></Form.Item>
       <Form.Item label="站点多语言" name="enable_multilingual" valuePropName="checked" extra={<Text type="secondary">开启后，页面右上角将显示中英文语言切换按钮</Text>}>
         <Switch />
+      </Form.Item>
+      <Form.Item label="允许主题切换" name="enable_theme_toggle" valuePropName="checked" extra={<Text type="secondary">开启后，用户可在页面右上角切换亮色/暗色模式；关闭后则始终使用默认主题</Text>}>
+        <Switch />
+      </Form.Item>
+      <Form.Item label="站点默认主题" name="default_theme" extra={<Text type="secondary">新用户首次访问时使用的主题，已手动切换过的用户不受影响</Text>}>
+        <Radio.Group>
+          <Radio.Button value="dark">🌙 暗色模式</Radio.Button>
+          <Radio.Button value="light">☀️ 亮色模式</Radio.Button>
+        </Radio.Group>
       </Form.Item>
     </div>
   );

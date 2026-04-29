@@ -1,5 +1,6 @@
 import React from 'react';
 import { Card, Spin, Pagination, Empty, Space, Button, Tag, Typography } from 'antd';
+import { useThemeStore } from '../store/theme';
 
 const { Text } = Typography;
 
@@ -98,36 +99,44 @@ export const CardRow: React.FC<{ label: string; children: React.ReactNode; style
   </div>
 );
 
-export const CardActions: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div style={{ 
-    borderTop: '1px solid #303030', 
-    marginTop: 8, 
-    paddingTop: 8, 
-    display: 'flex', 
-    justifyContent: 'flex-end', 
-    gap: 8 
-  }}>
-    {children}
-  </div>
-);
+export const CardActions: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
+  return (
+    <div style={{ 
+      borderTop: isLight ? '1px solid #e8e8e8' : '1px solid #303030', 
+      marginTop: 8, 
+      paddingTop: 8, 
+      display: 'flex', 
+      justifyContent: 'flex-end', 
+      gap: 8 
+    }}>
+      {children}
+    </div>
+  );
+};
 
 export const MobileCard: React.FC<{ 
   title: React.ReactNode; 
   extra?: React.ReactNode; 
   children: React.ReactNode 
-}> = ({ title, extra, children }) => (
-  <div style={{
-    background: '#1d1d1d',
-    border: '1px solid #303030',
-    borderRadius: 12,
-    padding: '14px 16px',
-  }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
-      {extra && <div>{extra}</div>}
+}> = ({ title, extra, children }) => {
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
+  return (
+    <div style={{
+      background: isLight ? '#fff' : '#1d1d1d',
+      border: isLight ? '1px solid #e8e8e8' : '1px solid #303030',
+      borderRadius: 12,
+      padding: '14px 16px',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
+        {extra && <div>{extra}</div>}
+      </div>
+      {children}
     </div>
-    {children}
-  </div>
-);
+  );
+};
 
 export default MobileCardList;

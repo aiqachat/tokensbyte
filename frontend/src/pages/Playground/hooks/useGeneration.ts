@@ -228,12 +228,16 @@ export const useGeneration = () => {
         }
       }).then(r => r.data);
 
+      // 检测异步任务响应：视频端点 或 图片端点返回了 task_id (如 GPT Image 2)
       const isVideoEndpoint = endpoint.includes('video') || endpoint.includes('contents/generations');
-      if (isVideoEndpoint && (res?.id || res?.data?.task_id)) {
-        const taskId = res?.id || res?.data?.task_id;
-        setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, taskData: { ...(n.taskData || {}), task_id: taskId, ...res } } : n));
+      const asyncTaskId = res?.id || res?.data?.task_id || (Array.isArray(res?.data) && res.data[0]?.task_id);
+      if (asyncTaskId && (isVideoEndpoint || (Array.isArray(res?.data) && res.data[0]?.task_id))) {
+        const taskId = asyncTaskId;
+        // 为图片异步任务自动构造轮询端点
+        const pollEndpoint = currentModel.poll_endpoint || `/v1/tasks/${taskId}`;
+        setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, taskData: { ...(n.taskData || {}), task_id: taskId, poll_endpoint: pollEndpoint, ...res } } : n));
         setTaskPollingNodes(prev => [...prev, newNodeId]);
-        pollTaskStatus(newNodeId, taskId, currentModel.model_id, currentModel.poll_endpoint);
+        pollTaskStatus(newNodeId, taskId, currentModel.model_id, pollEndpoint);
       } else {
           let completedNodesToPersist: CanvasNode[] = [];
           setNodes(prev => {
@@ -275,12 +279,13 @@ export const useGeneration = () => {
     }
   }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets]);
 
-  /** 轮询视频任务状态 */
+  /** 轮询异步任务状态（视频/图片） */
   const pollTaskStatus = useCallback((nodeId: string, taskId: string, modelId: string, pollEndpointTemplate?: string) => {
     let attempts = 0;
     const maxAttempts = 120;
 
     const buildPollUrl = () => {
+      if (pollEndpointTemplate && !pollEndpointTemplate.includes('{task_id}')) return pollEndpointTemplate;
       if (pollEndpointTemplate) return pollEndpointTemplate.replace('{task_id}', taskId);
       return `/v1/video/generations/${taskId}?model=${modelId}`;
     };
@@ -299,17 +304,31 @@ export const useGeneration = () => {
           headers: { 'Authorization': `Bearer ${selectedTokenKey}` }
         }).then(r => r.data);
 
-        const status = res?.status || res?.final_result?.status || '';
+        // 兼容多种异步响应格式：
+        // 视频: { status: 'succeeded', content: { video_url } }
+        // GPT Image /v1/tasks: { data: { status: 'completed', result: { images: [{ url: [...] }] } } }
+        const taskStatus = res?.status || res?.data?.status || res?.final_result?.status || (Array.isArray(res?.data) && res.data[0]?.status) || '';
+        const isCompleted = taskStatus === 'succeeded' || taskStatus === 'completed';
 
-        if (status === 'succeeded') {
+        if (isCompleted) {
+          // 标准化结果：将 GPT Image tasks 响应转换为 ImageNodeContent 可识别的格式
+          let normalizedResult = res;
+          const taskResult = res?.data?.result || res?.result;
+          if (taskResult?.images && Array.isArray(taskResult.images)) {
+            // GPT Image: result.images[0].url 是数组
+            const imageUrls = taskResult.images.flatMap((img: any) => Array.isArray(img.url) ? img.url : [img.url]).filter(Boolean);
+            if (imageUrls.length > 0) {
+              normalizedResult = { ...res, data: imageUrls.map((u: string) => ({ url: u })) };
+            }
+          }
           let nodeToPersist: CanvasNode | undefined;
           setNodes(prev => {
-            const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: res } : n);
+            const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: normalizedResult } : n);
             nodeToPersist = updated.find(n => n.id === nodeId);
             return updated;
           });
           if (nodeToPersist) {
-            persistAsset(nodeToPersist, res, currentModel);
+            persistAsset(nodeToPersist, normalizedResult, currentModel);
           }
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
           setGenerating(false);

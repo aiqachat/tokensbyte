@@ -7,13 +7,14 @@
 export interface SchemeParam {
   key: string;
   label: string;
-  type: 'radio' | 'select' | 'switch' | 'number' | 'input';
+  type: 'radio' | 'select' | 'switch' | 'number' | 'input' | 'slider';
   options?: (string | number)[];
   default: any;
   unit?: string;
   hint?: string;
   min?: number;
   max?: number;
+  step?: number;
   placeholder?: string;
 }
 
@@ -34,7 +35,7 @@ export interface PlaygroundModel {
 /** 画布节点定义 */
 export interface CanvasNode {
   id: string;
-  type: 'video' | 'image' | 'text';
+  type: 'video' | 'image' | 'text' | 'audio';
   status: 'loading' | 'completed' | 'error';
   taskData: any;
   resultData: any;

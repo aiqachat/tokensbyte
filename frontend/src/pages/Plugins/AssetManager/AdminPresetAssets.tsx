@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Table, Button, Space, message, Typography, Upload, Popconfirm, Tag, Modal, Input, Form, Select, Tooltip, Segmented } from 'antd';
 import { UploadOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, CloudOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
+import { useThemeStore } from '../../../store/theme';
 import type { PluginAsset } from '../../../types';
 
 const { Text } = Typography;
 
 const AdminPresetAssets: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [assets, setAssets] = useState<PluginAsset[]>([]);
   const [loading, setLoading] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -318,8 +321,8 @@ const AdminPresetAssets: React.FC = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
-          <Text strong style={{ color: '#fff', fontSize: 14 }}>预设素材管理</Text><br />
-          <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>您可以上传系统级预设素材，为其指定专属用户及分类，此信息同时写入对象存储(TOS)标签。点击 ↑↓ 按钮可调整排列顺序。</Text>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>预设素材管理</Text><br />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 13 }}>您可以上传系统级预设素材，为其指定专属用户及分类，此信息同时写入对象存储(TOS)标签。点击 ↑↓ 按钮可调整排列顺序。</Text>
           {adminStorage && (
             <div style={{
               marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 12, fontSize: 13,
