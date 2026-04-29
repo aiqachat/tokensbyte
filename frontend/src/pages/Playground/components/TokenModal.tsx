@@ -23,7 +23,7 @@ const TokenModal: React.FC = React.memo(() => {
       width={720}
       styles={{
         body: { backgroundColor: '#1E1F22', padding: '24px 32px' },
-        content: { backgroundColor: '#1E1F22', borderRadius: 12, padding: 0, overflow: 'hidden' },
+        wrapper: { backgroundColor: '#1E1F22', borderRadius: 12, padding: 0, overflow: 'hidden' },
       }}
       closeIcon={<CloseOutlined style={{ color: 'rgba(255,255,255,0.45)' }} />}
     >
