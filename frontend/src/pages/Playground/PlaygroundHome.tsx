@@ -8,7 +8,7 @@ import {
   SearchOutlined, PlusOutlined, DeleteOutlined, EditOutlined,
   AppstoreOutlined, TeamOutlined, AudioOutlined, ArrowUpOutlined,
   ThunderboltOutlined, FileTextOutlined, MobileOutlined, DesktopOutlined, RocketOutlined,
-  DashboardOutlined, WalletOutlined, LogoutOutlined,
+  DashboardOutlined, WalletOutlined, LogoutOutlined, SunOutlined, MoonOutlined, CheckOutlined
 } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useThemeStore } from '../../store/theme';
@@ -63,8 +63,10 @@ const PlaygroundHome: React.FC = () => {
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [newPrompt, setNewPrompt] = useState('');
   const [activeTab, setActiveTab] = useState<'my' | 'shared'>('my');
+  const [themePref, setThemePref] = useState<'light' | 'dark' | 'system'>('system');
   const [platform, setPlatform] = useState<'app' | 'web'>('app');
   const isCreatingRef = useRef(false);
+  const { setTheme } = useThemeStore();
 
   const loadProjects = useCallback(async () => {
     try {
@@ -451,6 +453,94 @@ const PlaygroundHome: React.FC = () => {
               </div>
             </div>
           ) : null}
+
+          {/* 右下角：主题切换按钮 */}
+          <div style={{ position: 'absolute', bottom: 24, right: 40, zIndex: 50 }}>
+            <Popover
+              placement="topRight"
+              trigger="click"
+              overlayInnerStyle={{ padding: 8, background: '#232326', border: '1px solid #3f3f46', borderRadius: 16 }}
+              arrow={false}
+              content={
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: 140 }}>
+                  <div
+                    onClick={() => { setThemePref('light'); setTheme('light'); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                      background: themePref === 'light' ? 'rgba(255,255,255,0.06)' : 'transparent',
+                      color: themePref === 'light' ? '#fff' : '#e4e4e7', transition: 'all 0.2s',
+                    }}
+                    onMouseEnter={e => { if (themePref !== 'light') e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                    onMouseLeave={e => { if (themePref !== 'light') e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <SunOutlined style={{ fontSize: 15 }} />
+                      <span style={{ fontSize: 14 }}>浅色</span>
+                    </div>
+                    {themePref === 'light' && <CheckOutlined style={{ fontSize: 13 }} />}
+                  </div>
+                  
+                  <div
+                    onClick={() => {
+                      setThemePref('system');
+                      const isSysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                      setTheme(isSysDark ? 'dark' : 'light');
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                      background: themePref === 'system' ? 'rgba(255,255,255,0.06)' : 'transparent',
+                      color: themePref === 'system' ? '#fff' : '#e4e4e7', transition: 'all 0.2s',
+                    }}
+                    onMouseEnter={e => { if (themePref !== 'system') e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                    onMouseLeave={e => { if (themePref !== 'system') e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <DesktopOutlined style={{ fontSize: 15 }} />
+                      <span style={{ fontSize: 14 }}>系统</span>
+                    </div>
+                    {themePref === 'system' && <CheckOutlined style={{ fontSize: 13 }} />}
+                  </div>
+
+                  <div
+                    onClick={() => { setThemePref('dark'); setTheme('dark'); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                      background: themePref === 'dark' ? 'rgba(255,255,255,0.06)' : 'transparent',
+                      color: themePref === 'dark' ? '#fff' : '#e4e4e7', transition: 'all 0.2s',
+                    }}
+                    onMouseEnter={e => { if (themePref !== 'dark') e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                    onMouseLeave={e => { if (themePref !== 'dark') e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <MoonOutlined style={{ fontSize: 15 }} />
+                      <span style={{ fontSize: 14 }}>深色</span>
+                    </div>
+                    {themePref === 'dark' && <CheckOutlined style={{ fontSize: 13 }} />}
+                  </div>
+                </div>
+              }
+            >
+              <div
+                style={{
+                  width: 38, height: 38, borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  backdropFilter: 'blur(10px)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+              >
+                {themePref === 'light' ? <SunOutlined style={{ fontSize: 16 }} /> : themePref === 'dark' ? <MoonOutlined style={{ fontSize: 16 }} /> : <DesktopOutlined style={{ fontSize: 16 }} />}
+              </div>
+            </Popover>
+          </div>
         </div>
 
         <style>{`
