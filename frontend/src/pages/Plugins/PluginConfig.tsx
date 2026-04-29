@@ -975,6 +975,20 @@ const PluginConfigInner: React.FC = () => {
     </div>
   );
 
+  const handleToggleReviewEnabled = async (checked: boolean) => {
+    setReviewEnabled(checked);
+    try {
+      const values = moderationForm.getFieldsValue();
+      await request.post(`/plugins/${name}/moderation-config`, { ...values, review_enabled: checked });
+      message.success(checked ? '素材审核功能已开启' : '素材审核功能已关闭');
+    } catch (error: any) {
+      console.error(error);
+      const rawMsg = error?.response?.data?.error?.message || '';
+      message.error(rawMsg || '切换失败');
+      setReviewEnabled(!checked);
+    }
+  };
+
   // ====== 审核配置 Tab ======
   const moderationTab = (
     <div>
@@ -994,11 +1008,11 @@ const PluginConfigInner: React.FC = () => {
           </Text>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Tag color={reviewEnabled ? 'success' : 'default'} style={{ margin: 0 }}>{reviewEnabled ? '已开启' : '已关闭'}</Tag>
+          <Tag color={reviewEnabled ? 'success' : 'default'} style={{ margin: 0, background: reviewEnabled ? 'rgba(82,196,26,0.1)' : 'rgba(255,255,255,0.04)', border: 'none' }}>{reviewEnabled ? '已开启' : '已关闭'}</Tag>
           <Switch
             checked={reviewEnabled}
             disabled={!moderationConfig?.is_configured}
-            onChange={setReviewEnabled}
+            onChange={handleToggleReviewEnabled}
           />
         </div>
       </div>

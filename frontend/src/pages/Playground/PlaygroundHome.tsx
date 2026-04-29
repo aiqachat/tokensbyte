@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ConfigProvider, theme, Input, Tooltip, message, Popover, Avatar, Button } from 'antd';
+import { ConfigProvider, theme, Input, Tooltip, message, Popover, Avatar, Button, Modal } from 'antd';
 import {
   SearchOutlined, PlusOutlined, DeleteOutlined, EditOutlined,
   AppstoreOutlined, TeamOutlined, AudioOutlined, ArrowUpOutlined,
@@ -28,7 +28,6 @@ interface ProjectItem {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const getFullUrl = (url: string) => {
-  const { themeMode } = useThemeStore();
   if (!url) return '';
   if (!url.startsWith('http') && !url.startsWith('/')) return `https://${url}`;
   if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
@@ -130,16 +129,32 @@ const PlaygroundHome: React.FC = () => {
     navigate(`/playground/${projectId}`);
   }, [navigate]);
 
-  const handleDeleteProject = useCallback(async (e: React.MouseEvent, projectId: number) => {
+  const handleDeleteProject = useCallback((e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
-    try {
-      await request.delete(`/playground/projects/${projectId}`);
-      message.success('项目已删除');
-      await loadProjects();
-    } catch {
-      message.error('删除失败');
+    
+    if (projects.length <= 1) {
+      message.info('由于这是您的最后一个项目，建议直接编辑或重命名使用。');
+      return;
     }
-  }, [loadProjects]);
+
+    Modal.confirm({
+      title: '确定要删除该项目吗？',
+      content: '删除后，该项目下的所有对话记录和画布内容都将无法找回。',
+      okText: '确定删除',
+      okType: 'danger',
+      cancelText: '取消',
+      centered: true,
+      async onOk() {
+        try {
+          await request.delete(`/playground/projects/${projectId}`);
+          message.success('项目已删除');
+          await loadProjects();
+        } catch {
+          message.error('删除失败');
+        }
+      },
+    });
+  }, [loadProjects, projects.length]);
 
   const handleRename = useCallback(async (projectId: number) => {
     if (!editingName.trim()) { setEditingId(null); return; }
@@ -272,7 +287,8 @@ const PlaygroundHome: React.FC = () => {
                 }}>
                   {group.group}
                 </div>
-                {group.items.map(project => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {group.items.map(project => (
                   <div
                     key={project.id}
                     onClick={() => {
@@ -284,12 +300,20 @@ const PlaygroundHome: React.FC = () => {
                     onMouseEnter={() => setHoveredId(project.id)}
                     onMouseLeave={() => setHoveredId(null)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '8px 12px', borderRadius: 12, cursor: 'pointer',
-                      transition: 'all 0.15s',
+                      display: 'flex', alignItems: 'center', gap: 14,
+                      padding: '14px', borderRadius: 16, cursor: 'pointer',
+                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                       background: selectedProject?.id === project.id
-                        ? '#282a2c'
-                        : hoveredId === project.id ? 'rgba(255,255,255,0.04)' : 'transparent',
+                        ? 'rgba(162, 193, 255, 0.12)' 
+                        : hoveredId === project.id ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+                      border: '1px solid',
+                      borderColor: selectedProject?.id === project.id 
+                        ? 'rgba(162, 193, 255, 0.3)' 
+                        : 'transparent',
+                      boxShadow: selectedProject?.id === project.id 
+                        ? '0 8px 24px rgba(0, 0, 0, 0.2)' 
+                        : 'none',
+                      transform: hoveredId === project.id && selectedProject?.id !== project.id ? 'translateY(-1px)' : 'none',
                     }}
                   >
                     {/* 小缩略图 */}
@@ -350,18 +374,21 @@ const PlaygroundHome: React.FC = () => {
                         >
                           <EditOutlined style={{ fontSize: 14 }} />
                         </div>
-                        <div
-                          onClick={e => handleDeleteProject(e, project.id)}
-                          style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,77,79,0.7)', cursor: 'pointer', transition: 'all 0.15s' }}
-                          onMouseEnter={e => { e.currentTarget.style.color = '#ff4d4f'; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,77,79,0.7)'; }}
-                        >
-                          <DeleteOutlined style={{ fontSize: 14 }} />
-                        </div>
+                        {projects.length > 1 && (
+                          <div
+                            onClick={e => handleDeleteProject(e, project.id)}
+                            style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,77,79,0.7)', cursor: 'pointer', transition: 'all 0.15s' }}
+                            onMouseEnter={e => { e.currentTarget.style.color = '#ff4d4f'; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,77,79,0.7)'; }}
+                          >
+                            <DeleteOutlined style={{ fontSize: 14 }} />
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
 

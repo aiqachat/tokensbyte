@@ -65,3 +65,18 @@
 .ant-radio-button-wrapper::before {
     display: none !important; /* 隐藏单选按钮间的默认竖线 */
 }
+
+/* Prompt Assets Scrollbar */
+.prompt-assets-scroll::-webkit-scrollbar {
+    height: 6px;
+}
+.prompt-assets-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+.prompt-assets-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+.prompt-assets-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}

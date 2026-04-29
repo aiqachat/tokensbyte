@@ -125,26 +125,62 @@ const GenerationLogWidget: React.FC = React.memo(() => {
             <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 10 }}>参考素材</Text>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {selectedNode.taskData?.attached_urls ? (
-                selectedNode.taskData.attached_urls.map((url: string, i: number) => (
-                  <img
-                    key={i}
-                    src={url}
-                    alt={`参考素材 ${i + 1}`}
-                    style={{
-                      width: 56, height: 56, borderRadius: 10, objectFit: 'cover',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                    }}
-                  />
-                ))
+                selectedNode.taskData.attached_urls.map((url: string, i: number) => {
+                  const isVideoUrl = url.match(/\.(mp4|mov|webm|avi|mkv)$/i) || selectedNode.type === 'video' && i === 0 && url.includes('video');
+                  if (isVideoUrl) {
+                    return (
+                      <video
+                        key={i}
+                        src={url}
+                        style={{
+                          width: 56, height: 56, borderRadius: 10, objectFit: 'cover',
+                          border: '1px solid rgba(255,255,255,0.1)', background: '#000'
+                        }}
+                        muted
+                        preload="metadata"
+                      />
+                    );
+                  }
+                  return (
+                    <img
+                      key={i}
+                      src={url}
+                      alt={`参考素材 ${i + 1}`}
+                      style={{
+                        width: 56, height: 56, borderRadius: 10, objectFit: 'cover',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                      }}
+                    />
+                  );
+                })
               ) : (
-                <img
-                  src={selectedNode.taskData.attached_url}
-                  alt="参考素材"
-                  style={{
-                    width: 56, height: 56, borderRadius: 10, objectFit: 'cover',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                  }}
-                />
+                (() => {
+                  const singleUrl = selectedNode.taskData.attached_url;
+                  const isVideoUrl = singleUrl.match(/\.(mp4|mov|webm|avi|mkv)$/i) || selectedNode.type === 'video' && singleUrl.includes('video');
+                  if (isVideoUrl) {
+                    return (
+                      <video
+                        src={singleUrl}
+                        style={{
+                          width: 56, height: 56, borderRadius: 10, objectFit: 'cover',
+                          border: '1px solid rgba(255,255,255,0.1)', background: '#000'
+                        }}
+                        muted
+                        preload="metadata"
+                      />
+                    );
+                  }
+                  return (
+                    <img
+                      src={singleUrl}
+                      alt="参考素材"
+                      style={{
+                        width: 56, height: 56, borderRadius: 10, objectFit: 'cover',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                      }}
+                    />
+                  );
+                })()
               )}
             </div>
             <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 10, display: 'block' }}>
@@ -196,6 +232,28 @@ const GenerationLogWidget: React.FC = React.memo(() => {
           </div>
         </div>
 
+
+        {/* 生成尾帧区块 */}
+        {(() => {
+          const lastFrameUrl = selectedNode.resultData?.last_frame_url || selectedNode.resultData?.final_result?.last_frame_url || selectedNode.resultData?.content?.last_frame_url;
+          if (!lastFrameUrl) return null;
+          return (
+            <div style={{
+              background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: '12px 14px',
+              marginBottom: 16, border: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 10 }}>生成尾帧</Text>
+              <img
+                src={lastFrameUrl}
+                alt="生成尾帧"
+                style={{
+                  width: '100%', borderRadius: 8, objectFit: 'contain',
+                  background: '#000', border: '1px solid rgba(255,255,255,0.1)'
+                }}
+              />
+            </div>
+          );
+        })()}
 
         {/* 失败信息 */}
         {selectedNode.status === 'error' && selectedNode.resultData?.message && (

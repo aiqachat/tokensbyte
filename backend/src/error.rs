@@ -34,7 +34,7 @@ pub enum AppError {
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 
-    #[error(transparent)]
+    #[error("HTTP client error: {0:?}")]
     Reqwest(#[from] reqwest::Error),
 
     #[error(transparent)]

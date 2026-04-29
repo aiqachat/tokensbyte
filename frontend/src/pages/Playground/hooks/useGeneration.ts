@@ -2,7 +2,7 @@
  * 生成与轮询 Hook
  * 封装 API 调用、节点创建、异步轮询逻辑
  */
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { message } from 'antd';
 import axios from 'axios';
 import type { CanvasNode } from '../types';
@@ -14,8 +14,8 @@ export const useGeneration = () => {
   const {
     currentModel, prompt, paramValues,
     selectedTokenKey, generating, setGenerating,
-    setTaskPollingNodes, currentProjectId,
-    attachedAssets, setAttachedAssets,
+    taskPollingNodes, setTaskPollingNodes, currentProjectId,
+    attachedAssets, setAttachedAssets, models,
   } = usePlayground();
 
   // 保持 currentProjectId 的最新引用（避免闭包过期问题）
@@ -117,9 +117,10 @@ export const useGeneration = () => {
           if (currentProjectId) formData.append('project_id', currentProjectId.toString());
           
           try {
-            const res = await axios.post('/playground/assets/upload', formData, {
-              headers: { 'Content-Type': 'multipart/form-data', 'Authorization': `Bearer ${selectedTokenKey}` }
-            }).then(r => r.data);
+            const { default: requestUtil } = await import('../../../utils/request');
+            const res = await requestUtil.post('/playground/assets/upload', formData, {
+              headers: { 'Content-Type': 'multipart/form-data' }
+            }) as any;
             
             if (res.url) {
               return { ...item, fullUrl: res.url, isUploaded: true };
@@ -167,26 +168,39 @@ export const useGeneration = () => {
         ...paramValues,
       };
 
+      // Map web_search toggle to tools array
+      if (body.web_search) {
+        body.tools = [{ type: 'web_search' }];
+      }
+      delete body.web_search;
+
       let endpoint = '';
       if (schemeType === 'video' || currentModel.type_name.includes('视频')) {
         endpoint = currentModel.endpoint || '/v1/video/generations';
-        const firstImage = resolvedAssetsForAI.find(a => a.type === 'image')?.url || paramValues.image_url;
+        const imageAssets = resolvedAssetsForAI.filter(a => a.type === 'image');
+        const videoAssets = resolvedAssetsForAI.filter(a => a.type === 'video');
+        const audioAssets = resolvedAssetsForAI.filter(a => a.type === 'audio');
 
-        if (currentModel.endpoint) {
+        if (currentModel.endpoint || true) { // Default to full multi-modal payload format for all video endpoints
           const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
-          if (firstImage) {
-            contentArr.push({ type: 'image_url', image_url: { url: firstImage } });
+          
+          imageAssets.forEach(img => {
+            contentArr.push({ type: 'image_url', image_url: { url: img.url }, role: 'reference_image' });
+          });
+          videoAssets.forEach(vid => {
+            contentArr.push({ type: 'video_url', video_url: { url: vid.url }, role: 'reference_video' });
+          });
+          audioAssets.forEach(aud => {
+            contentArr.push({ type: 'audio_url', audio_url: { url: aud.url }, role: 'reference_audio' });
+          });
+
+          // Fallback for single image param
+          if (imageAssets.length === 0 && paramValues.image_url) {
+            contentArr.push({ type: 'image_url', image_url: { url: paramValues.image_url }, role: 'reference_image' });
           }
+
           body.content = contentArr;
           delete body.prompt;
-        } else {
-          if (firstImage) {
-            body.content = [
-              { type: 'text', text: prompt.trim() },
-              { type: 'image_url', image_url: { url: firstImage } }
-            ];
-            delete body.prompt;
-          }
         }
         delete body.image_url;
       } else if (schemeType === 'image' || currentModel.type_name.includes('图片')) {
@@ -313,7 +327,20 @@ export const useGeneration = () => {
     };
 
     setTimeout(poll, 3000);
-  }, [selectedTokenKey, setNodes, setTaskPollingNodes, setGenerating]);
+  }, [selectedTokenKey, setNodes, setTaskPollingNodes, setGenerating, currentModel, persistAsset]);
+
+  // 自动恢复对处在 loading 状态但尚未轮询的节点进行轮询
+  useEffect(() => {
+    nodes.forEach(n => {
+      if (n.status === 'loading' && n.taskData?.task_id && !taskPollingNodes.includes(n.id)) {
+        const m = models.find(mod => mod.model_id === n.taskData?.model_id);
+        if (m) {
+          setTaskPollingNodes(prev => [...prev, n.id]);
+          pollTaskStatus(n.id, n.taskData.task_id, m.model_id, m.poll_endpoint);
+        }
+      }
+    });
+  }, [nodes, models, taskPollingNodes, setTaskPollingNodes, pollTaskStatus]);
 
   return { handleGenerate };
 };
