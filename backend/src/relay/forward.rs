@@ -67,8 +67,6 @@ pub async fn resolve_forward_rule(
     let rule_ids_str = model.forward_rule_ids.as_deref().unwrap_or("[]");
     let rule_ids: Vec<i64> = serde_json::from_str(rule_ids_str).unwrap_or_default();
 
-    tracing::info!("[Forward] 模型 '{}' 绑定规则 IDs: {:?}, 类别: {}, 入口: {}", model_id, rule_ids, category, request_path);
-
     // 2. 查所有关联的转发规则
     let mut rules: Vec<crate::models::ForwardRule> = Vec::new();
     if !rule_ids.is_empty() {
@@ -280,7 +278,11 @@ pub fn transform_request_body(
         // 火山方舟图片/视频（/api/v3/contents/generations/tasks）: prompt → content 格式
         // 参考火山引擎 Seedance 2.0 官方 API：https://www.volcengine.com/docs/82379/1520757
         "volcengine" if category == "图片" || category == "视频" => {
-            build_volcengine_content_body(model, body)
+            let mut fwd = build_volcengine_content_body(model, body);
+            if category == "视频" && fwd.get("resolution").is_none() {
+                fwd["resolution"] = serde_json::json!("720p");
+            }
+            fwd
         }
 
         // 火山方舟聊天：保持 OpenAI 格式（火山完全兼容 OpenAI）

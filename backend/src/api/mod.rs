@@ -167,11 +167,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .layer(axum_middleware::from_fn(crate::relay::native::normalize_google_auth))
         .with_state(state.clone());
 
-    // 5. Volcengine Native Relay
+    // 5. Volcengine Native Relay (Routed to Unified Handlers)
     let volcengine_native_routes: Router<Arc<AppState>> = Router::new()
-        .route("/api/v3/contents/generations/tasks", post(crate::relay::native::volcengine_submit))
-        .route("/api/v3/contents/generations/tasks/{task_id}", get(crate::relay::native::volcengine_status))
-        .route("/api/v3/images/generations", post(crate::relay::native::volcengine_images))
+        .route("/api/v3/chat/completions", post(crate::relay::chat_completions))
+        .route("/api/v3/contents/generations/tasks", post(crate::relay::video::video_generations))
+        .route("/api/v3/contents/generations/tasks/{task_id}", get(crate::relay::video::video_generations_status))
+        .route("/api/v3/images/generations", post(crate::relay::image::image_generations))
         .route("/api", post(crate::relay::native::ark_asset_proxy))
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());

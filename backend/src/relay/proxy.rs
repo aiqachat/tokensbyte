@@ -96,33 +96,6 @@ pub async fn select_channel_for_model(
     }
 }
 
-// ── Cost Lookup ─────────────────────────────────────────────────
-
-pub async fn get_model_cost(state: &Arc<AppState>, model: &str, discount: f64) -> f64 {
-    let m: Option<crate::models::Model> = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-    )
-    .bind(model)
-    .fetch_optional(&state.db.pool)
-    .await
-    .unwrap_or(None);
-    
-    let db_rule: Option<crate::models::BillingRule> = if let Some(ref md) = m {
-        if let Some(rule_id) = md.billing_rule_id {
-            sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
-                .bind(rule_id)
-                .fetch_optional(&state.db.pool)
-                .await
-                .unwrap_or(None)
-        } else { None }
-    } else { None };
-
-    match db_rule {
-        Some(r) => r.fixed_rate * discount,
-        None => 0.0,
-    }
-}
-
 // ── Record Usage & Billing ──────────────────────────────────────
 
 use super::url_utils::join_url;
