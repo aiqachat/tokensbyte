@@ -205,10 +205,9 @@ const PlaygroundHome: React.FC = () => {
           width: 320,
           margin: '16px 0 16px 16px',
           borderRadius: 24,
-          background: '#1e1f20', // Dark grey panel
-          border: '1px solid rgba(255,255,255,0.05)',
+          background: 'transparent',
+          border: '1px solid #27272a',
           display: 'flex', flexDirection: 'column',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
           zIndex: 10,
         }}>
           {/* Logo 区 */}
@@ -220,16 +219,16 @@ const PlaygroundHome: React.FC = () => {
           {/* 顶部按钮区 */}
           <div style={{ padding: '0 24px 16px', display: 'flex', gap: 12, alignItems: 'center' }}>
             <div style={{
-              display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 24, flex: 1, padding: 4,
-              border: '1px solid rgba(255,255,255,0.05)'
+              display: 'flex', background: '#18181b', borderRadius: 24, flex: 1, padding: 4,
+              border: '1px solid #27272a'
             }}>
               <div
                 onClick={() => setActiveTab('my')}
                 style={{
-                  flex: 1, padding: '6px 0', borderRadius: 20, fontSize: 13, fontWeight: 500,
+                  flex: 1, padding: '8px 0', borderRadius: 20, fontSize: 13, fontWeight: 500,
                   cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  background: activeTab === 'my' ? 'rgba(255,255,255,0.1)' : 'transparent',
-                  color: activeTab === 'my' ? '#fff' : 'rgba(255,255,255,0.5)'
+                  background: activeTab === 'my' ? '#3f3f46' : 'transparent',
+                  color: activeTab === 'my' ? '#fff' : '#a1a1aa'
                 }}
               >
                 <AppstoreOutlined /> 我的项目
@@ -237,10 +236,10 @@ const PlaygroundHome: React.FC = () => {
               <div
                 onClick={() => setActiveTab('shared')}
                 style={{
-                  flex: 1, padding: '6px 0', borderRadius: 20, fontSize: 13, fontWeight: 500,
+                  flex: 1, padding: '8px 0', borderRadius: 20, fontSize: 13, fontWeight: 500,
                   cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  background: activeTab === 'shared' ? 'rgba(255,255,255,0.1)' : 'transparent',
-                  color: activeTab === 'shared' ? '#fff' : 'rgba(255,255,255,0.5)'
+                  background: activeTab === 'shared' ? '#3f3f46' : 'transparent',
+                  color: activeTab === 'shared' ? '#fff' : '#a1a1aa'
                 }}
               >
                 <TeamOutlined /> 与我共享
@@ -251,28 +250,28 @@ const PlaygroundHome: React.FC = () => {
           {/* 搜索 */}
           <div style={{ padding: '0 24px 20px', display: 'flex', gap: 10 }}>
             <Input
-              prefix={<SearchOutlined style={{ color: 'rgba(255,255,255,0.3)', marginRight: 6 }} />}
+              prefix={<SearchOutlined style={{ color: '#a1a1aa', marginRight: 6 }} />}
               placeholder="搜索项目"
               variant="borderless"
               value={searchKeyword}
               onChange={e => setSearchKeyword(e.target.value)}
               style={{
-                background: 'rgba(255,255,255,0.04)', borderRadius: 20,
-                height: 36, fontSize: 13, color: '#fff',
-                border: '1px solid rgba(255,255,255,0.05)', flex: 1
+                background: '#27272a', borderRadius: 20,
+                height: 40, fontSize: 14, color: '#fff',
+                flex: 1
               }}
             />
             <Tooltip title="新建项目">
               <div
                 onClick={() => handleCreateProject()}
                 style={{
-                  width: 36, height: 36, borderRadius: '50%',
+                  width: 40, height: 40, borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.05)',
+                  background: '#27272a',
                   color: '#fff', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                onMouseEnter={e => e.currentTarget.style.background = '#3f3f46'}
+                onMouseLeave={e => e.currentTarget.style.background = '#27272a'}
               >
                 <PlusOutlined style={{ fontSize: 16 }} />
               </div>
@@ -284,7 +283,7 @@ const PlaygroundHome: React.FC = () => {
             {groupedProjects.map((group, idx) => (
               <div key={idx} style={{ marginBottom: 24 }}>
                 <div style={{
-                  fontSize: 15, fontWeight: 500, color: '#fff',
+                  fontSize: 16, fontWeight: 500, color: '#e4e4e7',
                   padding: '0 8px', marginBottom: 12,
                 }}>
                   {group.group}
@@ -301,17 +300,17 @@ const PlaygroundHome: React.FC = () => {
                     onMouseLeave={() => setHoveredId(null)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 14,
-                      padding: '8px', borderRadius: 12, cursor: 'pointer',
+                      padding: '10px', borderRadius: 8, cursor: 'pointer',
                       transition: 'all 0.2s ease',
                       background: selectedProject?.id === project.id
-                        ? 'rgba(255, 255, 255, 0.08)' 
-                        : hoveredId === project.id ? 'rgba(255, 255, 255, 0.04)' : 'transparent',
+                        ? '#27272a' 
+                        : hoveredId === project.id ? '#18181b' : 'transparent',
                     }}
                   >
                     {/* 小缩略图 */}
                     <div style={{
-                      width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-                      background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)',
+                      width: 40, height: 40, borderRadius: 6, flexShrink: 0,
+                      background: '#18181b', border: '1px solid #27272a',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       overflow: 'hidden',
                     }}>
@@ -351,7 +350,7 @@ const PlaygroundHome: React.FC = () => {
                           >
                             {project.name}
                           </div>
-                          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ fontSize: 12, color: '#a1a1aa', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                             <DesktopOutlined /> 
                             {new Date(project.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </div>
