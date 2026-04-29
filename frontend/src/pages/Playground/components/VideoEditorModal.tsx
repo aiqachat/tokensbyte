@@ -334,10 +334,10 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
       destroyOnClose
       title={null}
       closable={false}
+      style={{ borderRadius: 16, overflow: 'hidden', background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.08)' }}
       styles={{
         body: { padding: 0, background: '#0a0a0a' },
         mask: { backdropFilter: 'blur(8px)' },
-        content: { borderRadius: 16, overflow: 'hidden', background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.08)' },
       }}
     >
       {/* 顶部操作栏 */}
