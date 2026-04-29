@@ -114,11 +114,11 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
         .send().await
     {
         Ok(r) => r,
-        Err(e) => return Err(anyhow::anyhow!("请求渠道失败: {}", e)),
+        Err(e) => return Err(anyhow::anyhow!("请求渠道失败: {} (url: {})", e, url)),
     };
 
     if !resp.status().is_success() {
-        return Err(anyhow::anyhow!("渠道返回错误状态码: {}", resp.status()));
+        return Err(anyhow::anyhow!("渠道返回错误状态码: {} (url: {})", resp.status(), url));
     }
 
     let body = resp.text().await.unwrap_or_default();

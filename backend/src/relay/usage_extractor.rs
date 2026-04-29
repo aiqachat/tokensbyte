@@ -178,27 +178,58 @@ pub fn count_response_images(response: &str) -> Option<i32> {
     }
 
     // SSE 流式缓冲回落：逐行解析 data: {...} 中的图片数量
-    let mut total = 0i32;
+    let mut accumulated_from_arrays = 0i32;
+    let mut usage_total: Option<i32> = None;
+
     for line in response.lines() {
         let line = line.trim();
+        if line.is_empty() || line.ends_with("[DONE]") { continue; }
         let json_str = if line.starts_with("data: ") {
-            let s = &line[6..];
-            if s == "[DONE]" { continue; }
-            s
+            &line[6..]
         } else {
             line
         };
+        
         if let Ok(v) = serde_json::from_str::<Value>(json_str) {
-            if let Some(count) = count_images_from_value(&v) {
-                total += count;
+            // 优先检查流中是否包含官方明确的总计数量字段（如火山方舟/阿里百炼）
+            if let Some(usage) = v.get("usage") {
+                if let Some(c) = usage.get("generated_images").and_then(|c| c.as_i64()) {
+                    usage_total = Some(c as i32);
+                } else if let Some(c) = usage.get("image_count").and_then(|c| c.as_i64()) {
+                    usage_total = Some(c as i32);
+                }
+            }
+            
+            // 累加数组中的实体数
+            if let Some(count) = count_images_from_arrays(&v) {
+                accumulated_from_arrays += count;
             }
         }
     }
-    if total > 0 { Some(total) } else { None }
+    
+    // 如果流式数据中包含 usage 统计总数，则优先使用该总数（通常流的最后一条包含准确总计）
+    if usage_total.is_some() {
+        return usage_total;
+    }
+    
+    if accumulated_from_arrays > 0 { Some(accumulated_from_arrays) } else { None }
 }
 
-/// 从单个 JSON Value 中提取图片数量（内部辅助函数）
+/// 从单个 JSON Value 中提取图片数量
 fn count_images_from_value(v: &Value) -> Option<i32> {
+    // 首先尝试从官方明确的 usage 字段获取总数
+    if let Some(usage) = v.get("usage") {
+        if let Some(c) = usage.get("generated_images").and_then(|c| c.as_i64()) {
+            return Some(c as i32);
+        } else if let Some(c) = usage.get("image_count").and_then(|c| c.as_i64()) {
+            return Some(c as i32);
+        }
+    }
+    count_images_from_arrays(v)
+}
+
+/// 内部辅助函数：深度遍历各种嵌套的 data/results 数组结构提取数量
+fn count_images_from_arrays(v: &Value) -> Option<i32> {
     let mut total_count = 0i32;
 
     // 1. 处理标准的 OpenAI / 火山方舟格式: { "data": [{"url": "..."}, ...] }
@@ -264,13 +295,6 @@ fn count_images_from_value(v: &Value) -> Option<i32> {
             if let Some(results) = output.get("results").and_then(|r| r.as_array()) {
                 total_count = results.len() as i32;
             }
-        }
-    }
-
-    // 5. DashScope 多模态格式 (usage.image_count)
-    if total_count == 0 {
-        if let Some(count) = v.get("usage").and_then(|u| u.get("image_count")).and_then(|c| c.as_i64()) {
-            total_count = count as i32;
         }
     }
 

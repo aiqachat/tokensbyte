@@ -37,7 +37,7 @@ pub async fn video_generations(
         None => {
             if forward::model_has_forward_rules(&state, model).await {
                 return Err(AppError::BadRequest(format!(
-                    "模型 '{}' 不支持当前接口，请检查模型对应的 API 调用方式", model
+                    "模型 '{}' 不支持当前接口，请检查模型对应的转发规则", model
                 )));
             }
             forward::infer_forward_from_base_url(&channel.base_url, "视频")
