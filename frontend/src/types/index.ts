@@ -20,8 +20,10 @@ export interface User {
   is_active: boolean;
   level_name?: string;
   created_at: string;
+  updated_at: string;
   register_ip?: string;
   admin_remark?: string;
+  referral_history?: string;
   referred_by?: string;
 }
 

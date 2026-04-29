@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress, Grid, Radio } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress, Grid, Radio, Tabs } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined, DollarOutlined, LoginOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -450,6 +450,14 @@ const Users: React.FC = () => {
         onOk={() => form.submit()}
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
+          <Tabs
+            defaultActiveKey="1"
+            items={[
+              {
+                key: '1',
+                label: '用户基本信息',
+                children: (
+                  <>
           <Form.Item name="username" label={t('users.username')} rules={[{ required: true }]}>
             <Input placeholder={t('users.username')} />
           </Form.Item>
@@ -458,9 +466,6 @@ const Users: React.FC = () => {
           </Form.Item>
           <Form.Item name="admin_remark" label="用户备注 (管理员可见)">
             <Input.TextArea placeholder="写入简便备注例如: vip客户" rows={3} autoSize={{ minRows: 2, maxRows: 6 }} />
-          </Form.Item>
-          <Form.Item name="referral_history" label="关联记录 (流转记录)">
-            <Input.TextArea placeholder="详细记录该客户的推荐流转情况..." rows={3} autoSize={{ minRows: 2, maxRows: 6 }} />
           </Form.Item>
           <Form.Item name="referred_by" label="上级推荐人 (UID / User ID)">
             <Select
@@ -532,6 +537,37 @@ const Users: React.FC = () => {
               <Option value={false}>{t('common.disabled')}</Option>
             </Select>
           </Form.Item>
+                  </>
+                )
+              },
+              ...(editingUser ? [{
+                key: '2',
+                label: '用户详细',
+                children: (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 8 }}>
+                    <div>
+                      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>注册时间:</Typography.Text>
+                      <Typography.Text>{editingUser.created_at ? dayjs(editingUser.created_at).format('YYYY-MM-DD HH:mm:ss') : '未知'}</Typography.Text>
+                    </div>
+                    <div>
+                      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>最后活跃时间:</Typography.Text>
+                      <Typography.Text>{editingUser.updated_at ? dayjs(editingUser.updated_at).format('YYYY-MM-DD HH:mm:ss') : '未知'}</Typography.Text>
+                    </div>
+                    <div>
+                      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>注册 IP:</Typography.Text>
+                      <Typography.Text>{editingUser.register_ip || '未知'}</Typography.Text>
+                    </div>
+                    <div>
+                      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>关联记录 (流转记录):</Typography.Text>
+                      <div style={{ padding: 12, background: 'rgba(0,0,0,0.02)', borderRadius: 8, minHeight: 100, whiteSpace: 'pre-wrap', border: '1px solid #f0f0f0' }}>
+                        {editingUser.referral_history || '暂无流转记录'}
+                      </div>
+                    </div>
+                  </div>
+                )
+              }] : [])
+            ]}
+          />
         </Form>
       </Modal>
 

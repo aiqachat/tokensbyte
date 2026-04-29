@@ -1208,6 +1208,10 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await.ok();
     sqlx::query("COMMENT ON COLUMN users.remark IS '推广用户备注'").execute(pool).await.ok();
 
+    // ─── users 表增加 referral_history 字段 ───
+    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_history TEXT DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN users.referral_history IS '关联流转记录'").execute(pool).await.ok();
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};
