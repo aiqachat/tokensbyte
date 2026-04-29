@@ -6,19 +6,20 @@ use crate::error::{AppError, AppResult};
 use rand::Rng;
 
 /// Select the best channel for a given model based on priority and load balancing
-pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str) -> AppResult<Channel> {
-    // 1. Fetch available channels that support this model and user group
+pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str, level_id: &str) -> AppResult<Channel> {
+    // 1. Fetch available channels that support this model and user group (checking BOTH group_key and ULID)
     // Filter by priority (desc) first.
     let channels: Vec<Channel> = sqlx::query_as(
         &state.db.format_query(r#"SELECT * FROM channels 
            WHERE status = 1 
            AND (quota_limit < 0 OR quota_used < quota_limit)
            AND (models LIKE ? OR models = '[]')
-           AND (user_groups LIKE ? OR user_groups = '[]')
+           AND (user_groups LIKE ? OR user_groups LIKE ? OR user_groups = '[]')
            ORDER BY priority DESC"#)
     )
     .bind(format!("%{:?}%", model))
     .bind(format!("%\"{}\"%" , user_group))
+    .bind(format!("%\"{}\"%" , level_id))
     .fetch_all(&state.db.pool)
     .await?;
 

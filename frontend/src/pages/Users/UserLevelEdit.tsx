@@ -22,21 +22,17 @@ const UserLevelEdit: React.FC = () => {
   // 根据名称自动生成分组标识
   const generateGroupKey = (name: string): string => {
     if (!name.trim()) return '';
-    // 判断是否包含中文字符
     const hasChinese = /[\u4e00-\u9fa5]/.test(name);
     if (hasChinese) {
-      // 中文：取每个字的拼音首字母
       const py = pinyin(name, { pattern: 'first', toneType: 'none', type: 'array' });
       return py.join('').toLowerCase().replace(/[^a-z0-9]/g, '');
     } else {
-      // 英文：直接用名称小写，去除非字母数字
       return name.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
     }
   };
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const name = e.target.value;
-    // 新建模式下且未手动编辑过分组标识，自动生成
     if (isAdd && !groupKeyManuallyEdited) {
       form.setFieldValue('group_key', generateGroupKey(name));
     }
@@ -144,18 +140,18 @@ const UserLevelEdit: React.FC = () => {
             <Form.Item name="name" label={t('user_levels.name')} rules={[{ required: true }]}>
               <Input placeholder="输入等级呈现的中文名称" onChange={handleNameChange} />
             </Form.Item>
-            {!isAdd && (
-              <Form.Item 
-                name="group_key" 
-                label={t('user_levels.group_key')} 
-                rules={[{ required: true }]}
-              >
-                <Input 
-                  placeholder="e.g. vip, primary" 
-                  disabled={groupKey === 'default'}
-                />
-              </Form.Item>
-            )}
+            <Form.Item 
+              name="group_key" 
+              label={t('user_levels.group_key', '等级标志ID (Group Key)')} 
+              rules={[{ required: true }]}
+              extra="辅助的英文字母等级标识符（如 vip1）。系统底层已拥有永久不可变的【4位数字用户等级ID】作为安全兜底，您可以在需要的时候安全地修改本标识而不用担心数据解绑。"
+            >
+              <Input 
+                placeholder="e.g. vip, primary" 
+                disabled={!isAdd}
+                onChange={() => { if(isAdd) setGroupKeyManuallyEdited(true); }}
+              />
+            </Form.Item>
             <Form.Item 
               name="discount" 
               label={t('user_levels.discount', '计费倍率 (Discount/Multiplier)')} 

@@ -73,7 +73,7 @@ pub async fn task_status(
     let (channel, _) = if let Some(ch) = channel_opt {
         (ch, "".to_string())
     } else {
-        proxy::select_channel_for_model(&state, &token, &model_name, &ctx.user_group, "/v1/tasks/{task_id}").await?
+        proxy::select_channel_for_model(&state, &token, &model_name, &ctx.user_group, &ctx.level_id, "/v1/tasks/{task_id}").await?
     };
 
     // 查询模型类别以推断 forward rule

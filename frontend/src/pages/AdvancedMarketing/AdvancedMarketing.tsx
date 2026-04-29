@@ -226,7 +226,7 @@ const AdvancedMarketing: React.FC = () => {
         <div>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', display: 'block', lineHeight: 1.3 }}>{username}</Text>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
-            <Text style={{ fontSize: 12, color: record.remark ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.25)' }}>
+            <Text style={{ fontSize: 12, color: record.remark ? (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)') : (_isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)') }}>
               {record.remark || '暂无备注'}
             </Text>
             <Tooltip title="修改备注">
@@ -316,11 +316,16 @@ const AdvancedMarketing: React.FC = () => {
       },
     },
     {
-      title: '注册时间',
+      title: '时间信息',
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 160,
-      render: (t: string) => <Text style={{ fontSize: 12 }}>{dayjs(t).format('YYYY/MM/DD HH:mm')}</Text>,
+      width: 180,
+      render: (t: string, record: ReferralUser) => (
+        <div>
+          <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>注册时间: {dayjs(t).format('YYYY/MM/DD HH:mm')}</Text>
+          <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>关联时间: {dayjs(record.updated_at).format('YYYY/MM/DD HH:mm')}</Text>
+        </div>
+      ),
     },
     // 团队负责人专属：设置等级操作列
     ...(isLeader && allowedLevels.length > 0 ? [{
@@ -550,7 +555,7 @@ const AdvancedMarketing: React.FC = () => {
           borderRadius: 8,
         }}>
           <LinkOutlined style={{ color: '#52c41a', fontSize: 14 }} />
-          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 12 }}>专属推广链接：</Text>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 12 }}>专属客户邀请链接：</Text>
           <Text ellipsis style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 12, flex: 1, fontFamily: 'monospace' }}>
             {window.location.origin}/register?aff={user?.uid}
           </Text>
@@ -580,7 +585,7 @@ const AdvancedMarketing: React.FC = () => {
                   <Text style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>UID: {record.uid}</Text>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12, padding: '8px', background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
-                  <Text style={{ fontSize: 12, color: record.remark ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.35)', flex: 1 }}>
+                  <Text style={{ fontSize: 12, color: record.remark ? (_isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)') : (_isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'), flex: 1 }}>
                     {record.remark || '暂无备注'}
                   </Text>
                   <Button type="text" size="small" icon={<EditOutlined style={{ color: '#1677ff' }} />} onClick={() => openRemarkModal(record)} />
@@ -723,7 +728,7 @@ const AdvancedMarketing: React.FC = () => {
                   borderRadius: 8,
                 }}>
                   <LinkOutlined style={{ color: '#52c41a', fontSize: 14 }} />
-                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 12 }}>团队邀请链接：</Text>
+                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 12 }}>团队成员邀请链接：</Text>
                   <Text ellipsis style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 12, flex: 1, fontFamily: 'monospace' }}>
                     {window.location.origin}/register?aff={user?.uid}&team={team.invite_code}
                   </Text>
@@ -982,7 +987,7 @@ const AdvancedMarketing: React.FC = () => {
                     <TrophyOutlined style={{ color: '#faad14' }} />
                     <span>{l.name}</span>
                     <Tag style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
-                      {l.group_key}
+                      ULID: {l.id?.toString().padStart(4, '0') || l.group_key}
                     </Tag>
                   </Space>
                 ),
@@ -1042,7 +1047,7 @@ const AdvancedMarketing: React.FC = () => {
                     <TrophyOutlined style={{ color: '#1677ff' }} />
                     <span>{l.name}</span>
                     <Tag style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
-                      {l.group_key}
+                      ULID: {l.id?.toString().padStart(4, '0') || l.group_key}
                     </Tag>
                   </Space>
                 ),

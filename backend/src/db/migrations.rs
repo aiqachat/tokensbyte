@@ -25,6 +25,7 @@ macro_rules! pg_migration_blocks {
             config TEXT, referred_by TEXT, commission_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
             register_ip TEXT DEFAULT '',
             admin_remark TEXT DEFAULT '',
+            referral_history TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#

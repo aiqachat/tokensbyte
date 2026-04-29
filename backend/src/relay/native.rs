@@ -72,7 +72,7 @@ pub async fn gemini_proxy(
 
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, action).await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, action).await?;
 
     // Build upstream query: replace key with channel's real key, keep other params (e.g. alt=sse)
     let mut qs = format!("key={}", channel.api_key);
@@ -183,7 +183,7 @@ pub async fn volcengine_submit(
     let model = body["model"].as_str().unwrap_or("volcengine-gen");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/api/v3/contents/generations/tasks").await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, "/api/v3/contents/generations/tasks").await?;
 
     let url = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
     let mut fwd = body.clone();
@@ -306,7 +306,7 @@ pub async fn volcengine_status(
     let (channel, _) = if let Some(ch) = channel_opt {
         (ch, "".to_string())
     } else {
-        proxy::select_channel_for_model(&state, &token, &model_name, &ctx.user_group, "/api/v3/contents/generations/tasks/{task_id}").await?
+        proxy::select_channel_for_model(&state, &token, &model_name, &ctx.user_group, &ctx.level_id, "/api/v3/contents/generations/tasks/{task_id}").await?
     };
 
     let url = join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id));
@@ -458,7 +458,7 @@ pub async fn volcengine_images(
     let model = body["model"].as_str().unwrap_or("volcengine-image");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/api/v3/images/generations").await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, "/api/v3/images/generations").await?;
 
     let url = join_url(&channel.base_url, "/api/v3/images/generations");
     let mut fwd = body.clone();
@@ -596,7 +596,7 @@ pub async fn ark_asset_proxy(
     }
 
     // 3. 用户及插件等级权限检查
-    let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name, ul.id as level_id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&token.user_id)
         .fetch_optional(&state.db.pool)
         .await?
@@ -616,7 +616,8 @@ pub async fn ark_asset_proxy(
             }
             if allowed_levels != "all" {
                 let allowed: Vec<&str> = allowed_levels.split(',').collect();
-                if !allowed.contains(&user.user_group.as_str()) {
+                let level_id_str = user.level_id.unwrap_or(0).to_string();
+                if !allowed.contains(&user.user_group.as_str()) && !allowed.contains(&level_id_str.as_str()) {
                     return Err(AppError::Forbidden("您当前的用户等级无权使用素材资产管理功能".to_string()));
                 }
             }

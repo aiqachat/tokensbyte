@@ -82,8 +82,7 @@ const RelayConvertAssets: React.FC = () => {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
-      width: 60,
-    },
+      width: 60 },
     {
       title: '原始 URL',
       dataIndex: 'file_url',
@@ -94,8 +93,7 @@ const RelayConvertAssets: React.FC = () => {
           <LinkOutlined style={{ marginRight: 4, color: '#1677ff' }} />
           {url.length > 60 ? url.slice(0, 60) + '...' : url}
         </Text>
-      ),
-    },
+      ) },
     {
       title: '素材 ID',
       dataIndex: 'asset_id',
@@ -103,22 +101,19 @@ const RelayConvertAssets: React.FC = () => {
       width: 220,
       render: (aid: string | null) => aid
         ? <Text code copyable style={{ fontSize: 11 }}>{aid}</Text>
-        : <Text type="secondary">-</Text>,
-    },
+        : <Text type="secondary">-</Text> },
     {
       title: '类型',
       dataIndex: 'asset_type',
       key: 'asset_type',
       width: 80,
-      render: (t: string) => <Tag color={typeColorMap[t] || 'default'}>{typeLabelMap[t] || t}</Tag>,
-    },
+      render: (t: string) => <Tag color={typeColorMap[t] || 'default'}>{typeLabelMap[t] || t}</Tag> },
     {
       title: '关联用户',
       dataIndex: 'user_id',
       key: 'user_id',
       width: 140,
-      render: (uid: string) => <Text style={{ fontSize: 12 }}>{uid?.slice(0, 12)}...</Text>,
-    },
+      render: (uid: string) => <Text style={{ fontSize: 12 }}>{uid?.slice(0, 12)}...</Text> },
     {
       title: '状态',
       dataIndex: 'status',
@@ -128,15 +123,13 @@ const RelayConvertAssets: React.FC = () => {
         if (s === 'approved') return <Tag color="success">有效</Tag>;
         if (s === 'processing') return <Tag color="processing">处理中</Tag>;
         return <Tag>{s}</Tag>;
-      },
-    },
+      } },
     {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
       width: 160,
-      render: (t: string) => t ? <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> : '-',
-    },
+      render: (t: string) => t ? <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> : '-' },
     {
       title: '操作',
       key: 'action',
@@ -152,8 +145,7 @@ const RelayConvertAssets: React.FC = () => {
         >
           <Button type="text" size="small" danger icon={<DeleteOutlined />} />
         </Popconfirm>
-      ),
-    },
+      ) },
   ];
 
   return (
@@ -210,16 +202,14 @@ const RelayConvertAssets: React.FC = () => {
         locale={{ emptyText: <Empty description="暂无转换素材记录" /> }}
         rowSelection={{
           selectedRowKeys: selectedIds,
-          onChange: (keys) => setSelectedIds(keys as number[]),
-        }}
+          onChange: (keys) => setSelectedIds(keys as number[]) }}
         pagination={{
           current: page,
           total,
           pageSize,
           showSizeChanger: false,
           showTotal: (t) => `共 ${t} 条`,
-          onChange: (p) => setPage(p),
-        }}
+          onChange: (p) => setPage(p) }}
       />
     </div>
   );
