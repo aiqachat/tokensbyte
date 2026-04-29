@@ -14,6 +14,7 @@ import request from '../../utils/request';
 import { useThemeStore } from '../../store/theme';
 import useAuthStore from '../../store/auth';
 import UserAvatarMenu from '../../components/UserAvatarMenu';
+import CanvasParticles from './components/CanvasParticles';
 
 interface ProjectItem {
   id: number;
@@ -197,9 +198,10 @@ const PlaygroundHome: React.FC = () => {
         background: '#131314', // Very dark background like Stitch
         color: themeMode === 'light' ? '#1f2937' : '#fff',
         overflow: 'hidden',
-        backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)',
-        backgroundSize: '24px 24px',
+        position: 'relative',
       }}>
+        <CanvasParticles />
+        
         {/* ===== 左侧浮动面板：项目列表 ===== */}
         <div style={{
           width: 320,
