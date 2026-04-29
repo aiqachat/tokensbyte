@@ -230,9 +230,9 @@ const Channels: React.FC = () => {
         if (!groups || groups.length === 0) return <Tag color="green">全部允许</Tag>;
         return (
           <Space size={[0, 4]} wrap>
-            {groups.map(groupKey => {
-              const level = availableUserLevels.find(l => l.group_key === groupKey);
-              return <Tag color="blue" key={groupKey}>{level ? level.name : groupKey}</Tag>;
+            {groups.map(idStr => {
+              const level = availableUserLevels.find(l => l.id.toString() === idStr || l.group_key === idStr);
+              return <Tag color="blue" key={idStr}>{level ? level.name : idStr}</Tag>;
             })}
           </Space>
         );
@@ -312,9 +312,9 @@ const Channels: React.FC = () => {
                 <CardRow label="支持等级">
                   {(!groups || groups.length === 0)
                     ? <Tag color="green">全部允许</Tag>
-                    : <Space size={[0, 4]} wrap>{groups.map((gk: string) => {
-                        const lv = availableUserLevels.find((l: any) => l.group_key === gk);
-                        return <Tag color="blue" key={gk}>{lv ? lv.name : gk}</Tag>;
+                    : <Space size={[0, 4]} wrap>{groups.map((idStr: string) => {
+                        const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
+                        return <Tag color="blue" key={idStr}>{lv ? lv.name : idStr}</Tag>;
                       })}</Space>
                   }
                 </CardRow>
@@ -479,7 +479,7 @@ const Channels: React.FC = () => {
           <Form.Item name="user_groups" label="支持用户等级" extra="默认不选则表示允许所有等级的用户使用该渠道">
             <Select mode="multiple" placeholder="选择开放该渠道的特定 VIP 等级（留空允许所有）" allowClear>
                 {availableUserLevels.map((l) => (
-                    <Option key={l.group_key} value={l.group_key}>{l.name} ({l.group_key})</Option>
+                    <Option key={l.id.toString()} value={l.id.toString()}>{l.name} (ULID: {l.id.toString().padStart(4, '0')})</Option>
                 ))}
             </Select>
           </Form.Item>

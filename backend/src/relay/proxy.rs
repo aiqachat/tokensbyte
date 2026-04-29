@@ -13,14 +13,15 @@ use crate::models::Channel;
 
 pub struct UserContext {
     pub user_group: String,
+    pub level_id: String,
     pub balance: f64,
     pub discount: f64,
 }
 
 pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult<UserContext> {
-    let (g, b, d): (String, f64, f64) = sqlx::query_as(
+    let (g, l_id, b, d): (String, i64, f64, f64) = sqlx::query_as(
         &state.db.format_query(
-            "SELECT u.user_group, u.balance, COALESCE(ul.discount, 1.0) \
+            "SELECT u.user_group, COALESCE(ul.id, 0), u.balance, COALESCE(ul.discount, 1.0) \
              FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key \
              WHERE u.id = ?"
         )
@@ -28,7 +29,7 @@ pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult
     .bind(user_id)
     .fetch_one(&state.db.pool)
     .await?;
-    Ok(UserContext { user_group: g, balance: b, discount: d })
+    Ok(UserContext { user_group: g, level_id: l_id.to_string(), balance: b, discount: d })
 }
 
 /// 统一折扣优先级：模型全站折扣（启用时）> 用户等级折扣
@@ -80,9 +81,9 @@ pub async fn check_access(state: &Arc<AppState>, token: &ApiToken, model: &str, 
 // ── Channel Selection ───────────────────────────────────────────
 
 pub async fn select_channel_for_model(
-    state: &Arc<AppState>, token: &ApiToken, model: &str, user_group: &str, endpoint: &str,
+    state: &Arc<AppState>, token: &ApiToken, model: &str, user_group: &str, level_id: &str, endpoint: &str,
 ) -> AppResult<(Channel, String)> {
-    match router::select_channel(state, model, user_group).await {
+    match router::select_channel(state, model, user_group, level_id).await {
         Ok(ch) => {
             let resolved = ch.resolve_model(model);
             Ok((ch, resolved))
