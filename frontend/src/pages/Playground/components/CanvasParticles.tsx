@@ -18,7 +18,7 @@ interface Props {
 }
 
 /** 网格间距（基础像素） */
-const GRID_GAP = 24;
+const GRID_GAP = 12;
 /** 鼠标影响半径（像素） */
 const INFLUENCE_RADIUS = 140;
 /** 粒子基础亮度 */
