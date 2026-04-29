@@ -46,8 +46,7 @@ interface StorageInfo {
 
 // 我的素材固定二级分类
 const MY_ASSET_SUBCATEGORIES = [
-  { key: 'my_virtual_portrait', label: '虚拟人像', icon: <UserOutlined />, filter: { category: '虚拟人像' } },
-  { key: 'my_real_portrait', label: '真人人像', icon: <UserAddOutlined />, filter: { category: '真人人像' } },
+  { key: 'my_virtual_portrait', label: '虚拟素材库', icon: <UserOutlined />, filter: { category: '虚拟人像' } },
 ];
 
 const UserAssets: React.FC = () => {
@@ -1280,7 +1279,6 @@ const UserAssets: React.FC = () => {
                           </Button>
                         </Dropdown>
                         
-                        {selectedKey !== 'my_real_portrait' && (
                         <Button 
                           type="primary"
                           className="asset-btn-primary" 
@@ -1292,13 +1290,12 @@ const UserAssets: React.FC = () => {
                             }
                             setIsUploadModalOpen(true);
                             setTimeout(() => {
-                              uploadForm.setFieldsValue({ category: selectedKey === 'my_virtual_portrait' ? '虚拟人像' : '真人人像' });
+                              uploadForm.setFieldsValue({ category: '虚拟人像' });
                             }, 50);
                           }}
                         >
                           上传素材
                         </Button>
-                        )}
 
                         {selectedKey === 'my_virtual_portrait' && (
                           <Button className="asset-btn-secondary" icon={<FolderOutlined />} onClick={() => setIsGroupModalOpen(true)}>
@@ -1820,8 +1817,7 @@ const UserAssets: React.FC = () => {
           </Form.Item>
           <Form.Item label="素材分类" name="category" rules={[{ required: true, message: '请选择分类' }]}>
             <Select placeholder="请选择分类" disabled>
-              <Select.Option value="真人人像">真人人像</Select.Option>
-              <Select.Option value="虚拟人像">虚拟人像</Select.Option>
+              <Select.Option value="虚拟人像">虚拟素材库</Select.Option>
             </Select>
           </Form.Item>
         </Form>

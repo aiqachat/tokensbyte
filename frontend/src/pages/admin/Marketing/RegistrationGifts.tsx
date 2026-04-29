@@ -124,11 +124,9 @@ const RegistrationGifts: React.FC = () => {
                   label={t('marketing.gift_mode')}
                   rules={[{ required: true }]}
                 >
-                  <Radio.Group onChange={(e) => setGiftMode(e.target.value)}>
-                    <Space>
-                      <Radio.Button value="fixed">{t('marketing.mode_fixed')}</Radio.Button>
-                      <Radio.Button value="random">{t('marketing.mode_random')}</Radio.Button>
-                    </Space>
+                  <Radio.Group onChange={(e) => setGiftMode(e.target.value)} buttonStyle="solid">
+                    <Radio.Button value="fixed">{t('marketing.mode_fixed')}</Radio.Button>
+                    <Radio.Button value="random">{t('marketing.mode_random')}</Radio.Button>
                   </Radio.Group>
                 </Form.Item>
 

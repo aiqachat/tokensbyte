@@ -106,10 +106,12 @@ const Users: React.FC = () => {
   const handleSave = async (values: { [key: string]: unknown }) => {
     try {
       if (editingUser) {
-        // 编辑时如果密码为空则不发送，避免意外重置密码
         const payload = { ...values };
         if (!payload.password || (payload.password as string).trim() === '') {
           delete payload.password;
+        }
+        if (payload.referred_by === undefined) {
+          payload.referred_by = "";
         }
         await request.put(`/users/${editingUser.id}`, payload);
         message.success(t('common.success'));
@@ -456,6 +458,9 @@ const Users: React.FC = () => {
           </Form.Item>
           <Form.Item name="admin_remark" label="用户备注 (管理员可见)">
             <Input.TextArea placeholder="写入简便备注例如: vip客户" rows={3} autoSize={{ minRows: 2, maxRows: 6 }} />
+          </Form.Item>
+          <Form.Item name="referral_history" label="关联记录 (流转记录)">
+            <Input.TextArea placeholder="详细记录该客户的推荐流转情况..." rows={3} autoSize={{ minRows: 2, maxRows: 6 }} />
           </Form.Item>
           <Form.Item name="referred_by" label="上级推荐人 (UID / User ID)">
             <Select

@@ -40,6 +40,8 @@ pub struct User {
     pub register_ip: Option<String>,
     #[sqlx(default)]
     pub admin_remark: Option<String>,
+    #[sqlx(default)]
+    pub referral_history: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,6 +76,7 @@ pub struct UpdateUserRequest {
     pub is_active: Option<i64>,
     pub commission_balance: Option<f64>,
     pub admin_remark: Option<String>,
+    pub referral_history: Option<String>,
     pub referred_by: Option<String>,
 }
 
