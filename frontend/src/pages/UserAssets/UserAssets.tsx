@@ -1032,15 +1032,15 @@ const UserAssets: React.FC = () => {
                   border: '1px solid rgba(22,119,255,0.2)',
                   borderRadius: 30,
                   padding: '6px 16px',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.15), inset 0 1px 1px rgba(255,255,255,0.05)',
-                  color: 'rgba(255,255,255,0.7)',
+                  boxShadow: isLight ? '0 4px 16px rgba(0,0,0,0.05)' : '0 4px 16px rgba(0,0,0,0.15), inset 0 1px 1px rgba(255,255,255,0.05)',
+                  color: isLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)',
                 }}>
                   <div className="hide-on-mobile" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <CloudOutlined style={{ color: '#1677ff' }} />
                     <span>文件夹: <Text style={{ color: '#1677ff', fontWeight: 600 }}>{storage.folder || '未初始化'}</Text></span>
                   </div>
 
-                  <div className="hide-on-mobile" style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+                  <div className="hide-on-mobile" style={{ width: 1, height: 12, background: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }} />
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span>已用: <Text style={{ color: progressColor, fontWeight: 600, textShadow: `0 0 10px ${progressColor}40` }}>{usedMB.toFixed(1)} <span style={{ fontSize: 11 }}>MB</span></Text></span>
@@ -1068,10 +1068,10 @@ const UserAssets: React.FC = () => {
                     )}
                   </div>
 
-                  <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+                  <div style={{ width: 1, height: 12, background: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }} />
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>文件数量: <Text style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{storage.file_count || 0}</Text></span>
+                    <span>文件数量: <Text style={{ color: isLight ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{storage.file_count || 0}</Text></span>
                   </div>
                 </div>
               )}
@@ -1102,7 +1102,7 @@ const UserAssets: React.FC = () => {
                 ) : (
                   <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />
                 )}
-                <Text style={{ color: '#fff', fontSize: 14, fontWeight: 500 }}>
+                <Text style={{ color: isLight ? '#1f2937' : '#fff', fontSize: 14, fontWeight: 500 }}>
                   {batchProgress.done < batchProgress.total
                     ? `正在${batchProgress.action === 'upload' ? '上传' : batchProgress.action === 'submit' ? '提交' : '删除'}... (${batchProgress.done}/${batchProgress.total})`
                     : `${batchProgress.action === 'upload' ? '上传' : batchProgress.action === 'submit' ? '提交' : '删除'}完成 (${batchProgress.done}/${batchProgress.total})`
@@ -1113,13 +1113,13 @@ const UserAssets: React.FC = () => {
                 <Tag color="red" style={{ margin: 0 }}>{batchProgress.failed} 个失败</Tag>
               )}
               {batchProgress.done >= batchProgress.total && (
-                <Button type="text" size="small" onClick={() => setBatchProgress(null)} style={{ color: 'rgba(255,255,255,0.45)' }}>关闭</Button>
+                <Button type="text" size="small" onClick={() => setBatchProgress(null)} style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>关闭</Button>
               )}
             </div>
             <Progress
               percent={Math.round((batchProgress.done / batchProgress.total) * 100)}
               strokeColor={batchProgress.action === 'delete' ? { from: '#ff4d4f', to: '#ff7875' } : { from: '#1677ff', to: '#52c41a' }}
-              trailColor="rgba(255,255,255,0.06)"
+              trailColor={isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)"}
               size="small"
               status={batchProgress.done < batchProgress.total ? 'active' : batchProgress.failed > 0 ? 'exception' : 'success'}
             />
@@ -1136,11 +1136,23 @@ const UserAssets: React.FC = () => {
               backdrop-filter: blur(10px) !important;
               transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
             }
+            body[data-theme='light'] .asset-btn-secondary {
+              background: #fff !important;
+              border: 1px solid #d9d9d9 !important;
+              color: rgba(0, 0, 0, 0.85) !important;
+              box-shadow: 0 2px 0 rgba(0, 0, 0, 0.02) !important;
+            }
             .asset-btn-secondary:hover {
               background: linear-gradient(145deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 100%) !important;
               border-color: rgba(255,255,255,0.3) !important;
               box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 10px rgba(255,255,255,0.05) !important;
               transform: translateY(-1px) !important;
+            }
+            body[data-theme='light'] .asset-btn-secondary:hover {
+              border-color: #1677ff !important;
+              color: #1677ff !important;
+              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+              background: #fff !important;
             }
             .asset-btn-secondary:active {
               transform: translateY(1px) !important;
@@ -1214,7 +1226,7 @@ const UserAssets: React.FC = () => {
             {/* 上方横向分类导航 */}
             <div style={{
               display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 20px',
-              background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)'
+              background: tagBg, borderRadius: 8, border: tagBorder
             }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* 一级分类：预设分类 + 我的素材 */}
@@ -1327,7 +1339,7 @@ const UserAssets: React.FC = () => {
                 <div style={{ marginBottom: 32 }}>
                   <div style={{ marginBottom: 16 }}>
                     <span style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>素材资产文件夹列表</span>
-                    <Text style={{ marginLeft: 10, color: 'rgba(255,255,255,0.45)', fontSize: 13, wordBreak: 'break-all' }}>
+                    <Text style={{ marginLeft: 10, color: hintText, fontSize: 13, wordBreak: 'break-all' }}>
                       （已创建 {groups.length} 个素材组
                       {storage?.virtual_portrait_quota !== undefined && (
                         <> / 可创建素材组 {storage.virtual_portrait_quota} 个</>
@@ -1351,22 +1363,22 @@ const UserAssets: React.FC = () => {
                           style={{ 
                             width: '100%', 
                             borderRadius: 12, 
-                            background: isSelected ? 'rgba(255,255,255,0.1)' : '#262626', 
+                            background: isSelected ? (isLight ? 'rgba(22,119,255,0.1)' : 'rgba(255,255,255,0.1)') : (isLight ? '#fafafa' : '#262626'), 
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                             padding: '10px 14px',
                             gap: 12,
-                            border: isSelected ? '1px solid rgba(255,255,255,0.15)' : '1px solid transparent',
+                            border: isSelected ? (isLight ? '1px solid #1677ff' : '1px solid rgba(255,255,255,0.15)') : '1px solid transparent',
                             transition: 'all 0.2s ease',
                           }}
                         >
-                          <div style={{ width: 44, height: 44, borderRadius: 8, background: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <div style={{ width: 44, height: 44, borderRadius: 8, background: isLight ? '#f0f0f0' : '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             <FolderFilled style={{ fontSize: 24, color: '#91caff' }} />
                           </div>
                           <div style={{ overflow: 'hidden' }}>
-                            <div style={{ color: '#fff', fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</div>
-                            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2 }}>{groupAssetsCount} 项</div>
+                            <div style={{ color: isLight ? '#1f2937' : '#fff', fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</div>
+                            <div style={{ color: hintText, fontSize: 13, marginTop: 2 }}>{groupAssetsCount} 项</div>
                           </div>
                         </div>
                       );
@@ -1388,9 +1400,9 @@ const UserAssets: React.FC = () => {
                   gap: 12,
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <div style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>
+                    <div style={{ fontSize: 16, fontWeight: 500, color: isLight ? '#1f2937' : '#fff' }}>
                       {currentGroup ? currentGroup.name : currentCategoryName}
-                      <Text style={{ marginLeft: 12, color: 'rgba(255,255,255,0.35)', fontSize: 13, fontWeight: 'normal' }}>
+                      <Text style={{ marginLeft: 12, color: dimText, fontSize: 13, fontWeight: 'normal' }}>
                         共 {currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id).length : assets.length} 项
                       </Text>
                     </div>
@@ -1443,11 +1455,11 @@ const UserAssets: React.FC = () => {
                         }
                       }}
                     >
-                      <span style={{ color: 'rgba(255,255,255,0.65)' }}>全选</span>
+                      <span style={{ color: descText }}>全选</span>
                     </Checkbox>
                     {selectedAssetIds.size > 0 && (
                       <>
-                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>已选 {selectedAssetIds.size} 项</Text>
+                        <Text style={{ color: hintText, fontSize: 13 }}>已选 {selectedAssetIds.size} 项</Text>
                         {reviewEnabled && (
                         <Button
                           type="primary"
@@ -1474,7 +1486,7 @@ const UserAssets: React.FC = () => {
                           type="text"
                           size="small"
                           onClick={() => setSelectedAssetIds(new Set())}
-                          style={{ color: 'rgba(255,255,255,0.45)' }}
+                          style={{ color: hintText }}
                         >
                           取消选择
                         </Button>
@@ -1528,7 +1540,7 @@ const UserAssets: React.FC = () => {
                           width: '100%',
                           aspectRatio: '1/1',
                           borderRadius: 8,
-                          background: '#1a1a1a',
+                          background: isLight ? '#f0f0f0' : '#1a1a1a',
                           border: isChecked ? '2px solid #1677ff' : isSelected ? '2px solid #91caff' : '2px solid transparent',
                           overflow: 'hidden',
                           display: 'flex',
@@ -1567,7 +1579,7 @@ const UserAssets: React.FC = () => {
                               top: 8,
                               right: 8,
                               zIndex: 10,
-                              background: asset.status === 'processing' ? 'rgba(22,119,255,0.8)' : asset.status === 'rejected' ? 'rgba(255,77,79,0.8)' : 'rgba(255,255,255,0.2)',
+                              background: asset.status === 'processing' ? 'rgba(22,119,255,0.8)' : asset.status === 'rejected' ? 'rgba(255,77,79,0.8)' : (isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.2)'),
                               padding: '2px 6px',
                               borderRadius: 4,
                               fontSize: 10,
@@ -1581,16 +1593,16 @@ const UserAssets: React.FC = () => {
                           {isImage ? (
                             <img src={fullUrl} alt={asset.file_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.45)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: hintText }}>
                               <FileOutlined style={{ fontSize: 48 }} />
                               <div style={{
                                 position: 'absolute',
                                 bottom: 12,
                                 right: 12,
-                                background: 'rgba(255,255,255,0.2)',
+                                background: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.2)',
                                 padding: '2px 8px',
                                 borderRadius: 4,
-                                color: '#fff',
+                                color: isLight ? '#1f2937' : '#fff',
                                 fontSize: 12,
                                 fontWeight: 600
                               }}>{ext}</div>
@@ -1600,7 +1612,7 @@ const UserAssets: React.FC = () => {
                         
                         <div style={{ marginTop: 12 }}>
                           <div style={{
-                            color: '#fff',
+                            color: isLight ? '#1f2937' : '#fff',
                             fontSize: 14,
                             fontWeight: 500,
                             whiteSpace: 'nowrap',
@@ -1613,7 +1625,7 @@ const UserAssets: React.FC = () => {
                           <div style={{
                             display: 'flex',
                             justifyContent: 'space-between',
-                            color: 'rgba(255,255,255,0.55)',
+                            color: subText,
                             fontSize: 12
                           }}>
                             <span>{ext} • {sizeMB}</span>
@@ -1646,12 +1658,12 @@ const UserAssets: React.FC = () => {
       >
         <Form form={groupForm} layout="vertical">
           <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}
-            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>名称最多 64 个字符，建议使用简短易识别的名称</span>}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>名称最多 64 个字符，建议使用简短易识别的名称</span>}
           >
             <Input placeholder="输入素材资产组合名称..." maxLength={64} showCount />
           </Form.Item>
           <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}
-            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>描述最多 300 个字符</span>}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>描述最多 300 个字符</span>}
           >
             <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} showCount />
           </Form.Item>
@@ -1733,7 +1745,7 @@ const UserAssets: React.FC = () => {
             >
               <Button icon={<UploadOutlined />}>选择文件（可多选）</Button>
             </Upload>
-            <div style={{ marginTop: 12, color: 'rgba(255,255,255,0.45)', fontSize: 12, lineHeight: '20px' }}>
+            <div style={{ marginTop: 12, color: hintText, fontSize: 12, lineHeight: '20px' }}>
               <div>• 图像：jpeg、png、webp、bmp、tiff、gif、heic/heif（≤ 30 MB，宽高 300-6000px）</div>
               <div>• 视频：mp4、mov、webm、avi、mkv（≤ 300 MB）</div>
               <div>• 音频：mp3、wav、aac、flac、ogg、m4a（≤ 100 MB）</div>
@@ -1778,12 +1790,12 @@ const UserAssets: React.FC = () => {
       >
         <Form form={editGroupForm} layout="vertical">
           <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}
-            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>名称最多 64 个字符</span>}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>名称最多 64 个字符</span>}
           >
             <Input placeholder="输入素材资产组合名称..." maxLength={64} showCount />
           </Form.Item>
           <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}
-            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>描述最多 300 个字符</span>}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>描述最多 300 个字符</span>}
           >
             <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} showCount />
           </Form.Item>
@@ -1802,7 +1814,7 @@ const UserAssets: React.FC = () => {
       >
         <Form form={editForm} layout="vertical">
           <Form.Item label="素材名称" name="file_name" rules={[{ required: true, message: '请输入素材名称' }]}
-            extra={<span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>名称最多 64 个字符</span>}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>名称最多 64 个字符</span>}
           >
             <Input placeholder="输入新的素材名称" maxLength={64} showCount />
           </Form.Item>
