@@ -183,42 +183,68 @@ pub async fn volcengine_submit(
     let model = body["model"].as_str().unwrap_or("volcengine-gen");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/api/v3/contents/generations/tasks").await?;
+    
+    let max_retries = 3;
+    let mut current_try = 0;
 
-    let url = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
-    let mut fwd = body.clone();
-    fwd["model"] = serde_json::json!(resolved_model);
-    // 视频模型默认分辨率 720p（确保上游数据与计费一致）
-    if fwd.get("resolution").is_none() {
-        fwd["resolution"] = serde_json::json!("720p");
-    }
+    let (channel, resolved_model, resp, is_stream, asset_convert_log, fwd) = loop {
+        current_try += 1;
+        let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/api/v3/contents/generations/tasks").await?;
 
-    // 素材转换：查询模型转发规则是否启用 asset_convert
-    let mut asset_convert_log: Option<String> = None;
-    let resolved = super::forward::resolve_forward_rule(&state, model, "视频", "/api/v3/contents/generations/tasks").await;
-    if resolved.as_ref().map(|r| r.asset_convert).unwrap_or(false) {
-        let convert_logs = super::asset_convert::convert_content_urls(&state, &token.user_id, &mut fwd).await;
-        if !convert_logs.is_empty() {
-            asset_convert_log = Some(format!("素材转换: {}", convert_logs.join(" | ")));
+        let url = join_url(&channel.base_url, "/api/v3/contents/generations/tasks");
+        let mut fwd = body.clone();
+        fwd["model"] = serde_json::json!(resolved_model);
+        // 视频模型默认分辨率 720p（确保上游数据与计费一致）
+        if fwd.get("resolution").is_none() {
+            fwd["resolution"] = serde_json::json!("720p");
         }
-    }
 
-    let resp = state.http_client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", channel.api_key))
-        .json(&fwd)
-        .send()
-        .await?;
+        // 素材转换：查询模型转发规则是否启用 asset_convert
+        let mut asset_convert_log: Option<String> = None;
+        let resolved = super::forward::resolve_forward_rule(&state, model, "视频", "/api/v3/contents/generations/tasks").await;
+        if resolved.as_ref().map(|r| r.asset_convert).unwrap_or(false) {
+            let convert_logs = super::asset_convert::convert_content_urls(&state, &token.user_id, &mut fwd).await;
+            if !convert_logs.is_empty() {
+                asset_convert_log = Some(format!("素材转换: {}", convert_logs.join(" | ")));
+            }
+        }
 
-    let is_stream = if body["stream"].as_bool().unwrap_or(false) { 1 } else { 0 };
+        let is_stream = if body["stream"].as_bool().unwrap_or(false) { 1 } else { 0 };
 
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        let err = resp.text().await?;
-        let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, status, "/api/v3/contents/generations/tasks", Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string()), asset_convert_log.clone()).await;
-        return Err(AppError::UpstreamError(err));
-    }
+        match state.http_client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", channel.api_key))
+            .json(&fwd)
+            .send()
+            .await 
+        {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    break (channel, resolved_model, resp, is_stream, asset_convert_log, fwd);
+                } else {
+                    let status = resp.status().as_u16();
+                    let err = resp.text().await.unwrap_or_default();
+                    let latency_ms = start_time.elapsed().as_millis() as u32;
+                    proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, status, "/api/v3/contents/generations/tasks", Some(&err), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string()), asset_convert_log.clone()).await;
+                    
+                    if current_try >= max_retries {
+                        return Err(AppError::UpstreamError(err));
+                    }
+                }
+            },
+            Err(e) => {
+                let err_msg = e.to_string();
+                let latency_ms = start_time.elapsed().as_millis() as u32;
+                proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, 500, "/api/v3/contents/generations/tasks", Some(&err_msg), latency_ms, is_stream, Some(request_content_str.clone()), None, Some(fwd.to_string()), asset_convert_log.clone()).await;
+                
+                if current_try >= max_retries {
+                    return Err(AppError::UpstreamError(err_msg));
+                }
+            }
+        }
+        
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    };
 
     // 预扣费逻辑（异步任务 POST 阶段）
     if pre_deduction > 0.0 {
@@ -458,41 +484,69 @@ pub async fn volcengine_images(
     let model = body["model"].as_str().unwrap_or("volcengine-image");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/api/v3/images/generations").await?;
+    
+    let max_retries = 3;
+    let mut current_try = 0;
 
-    let url = join_url(&channel.base_url, "/api/v3/images/generations");
-    let mut fwd = body.clone();
-    fwd["model"] = serde_json::json!(resolved_model);
+    let (channel, resolved_model, resp, is_stream, fwd) = loop {
+        current_try += 1;
+        let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/api/v3/images/generations").await?;
 
-    // n > 1 → 启用组图（与 forward.rs volcengine_image 分支逻辑一致）
-    let n = body.get("n").and_then(|v| v.as_i64()).unwrap_or(1);
-    if n > 1 {
-        fwd["sequential_image_generation"] = serde_json::json!("auto");
-        fwd["sequential_image_generation_options"] = serde_json::json!({
-            "max_images": n
-        });
-    }
-    // n 已转换为官方参数，删除避免冗余传到上游
-    if let Some(obj) = fwd.as_object_mut() { obj.remove("n"); }
+        let url = join_url(&channel.base_url, "/api/v3/images/generations");
+        let mut fwd = body.clone();
+        fwd["model"] = serde_json::json!(resolved_model);
 
-    let resp = state.http_client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", channel.api_key))
-        .json(&fwd)
-        .send()
-        .await?;
+        // n > 1 → 启用组图（与 forward.rs volcengine_image 分支逻辑一致）
+        let n = body.get("n").and_then(|v| v.as_i64()).unwrap_or(1);
+        if n > 1 {
+            fwd["sequential_image_generation"] = serde_json::json!("auto");
+            fwd["sequential_image_generation_options"] = serde_json::json!({
+                "max_images": n
+            });
+        }
+        // n 已转换为官方参数，删除避免冗余传到上游
+        if let Some(obj) = fwd.as_object_mut() { obj.remove("n"); }
 
-    let is_stream = if body["stream"].as_bool().unwrap_or(false) { 1 } else { 0 };
+        let is_stream = if body["stream"].as_bool().unwrap_or(false) { 1 } else { 0 };
 
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        let err = resp.text().await?;
-        let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, status,
-            "/api/v3/images/generations", Some(&err), latency_ms, is_stream,
-            Some(request_content_str.clone()), None, Some(fwd.to_string()), None).await;
-        return Err(AppError::UpstreamError(err));
-    }
+        match state.http_client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", channel.api_key))
+            .json(&fwd)
+            .send()
+            .await 
+        {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    break (channel, resolved_model, resp, is_stream, fwd);
+                } else {
+                    let status = resp.status().as_u16();
+                    let err = resp.text().await.unwrap_or_default();
+                    let latency_ms = start_time.elapsed().as_millis() as u32;
+                    proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, status,
+                        "/api/v3/images/generations", Some(&err), latency_ms, is_stream,
+                        Some(request_content_str.clone()), None, Some(fwd.to_string()), None).await;
+                    
+                    if current_try >= max_retries {
+                        return Err(AppError::UpstreamError(err));
+                    }
+                }
+            },
+            Err(e) => {
+                let err_msg = e.to_string();
+                let latency_ms = start_time.elapsed().as_millis() as u32;
+                proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, 500,
+                    "/api/v3/images/generations", Some(&err_msg), latency_ms, is_stream,
+                    Some(request_content_str.clone()), None, Some(fwd.to_string()), None).await;
+                
+                if current_try >= max_retries {
+                    return Err(AppError::UpstreamError(err_msg));
+                }
+            }
+        }
+        
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    };
 
     let _cost = proxy::get_model_cost(&state, model, ctx.discount).await;
     
