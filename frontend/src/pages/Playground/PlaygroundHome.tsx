@@ -357,6 +357,7 @@ const PlaygroundHome: React.FC = () => {
                         </>
                       )}
                     </div>
+                  </div>
                   ))}
                 </div>
               </div>
