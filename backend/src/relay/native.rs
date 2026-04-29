@@ -596,7 +596,7 @@ pub async fn ark_asset_proxy(
     }
 
     // 3. 用户及插件等级权限检查
-    let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+    let user: crate::models::User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name, ul.id as level_id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&token.user_id)
         .fetch_optional(&state.db.pool)
         .await?
@@ -616,7 +616,8 @@ pub async fn ark_asset_proxy(
             }
             if allowed_levels != "all" {
                 let allowed: Vec<&str> = allowed_levels.split(',').collect();
-                if !allowed.contains(&user.user_group.as_str()) {
+                let level_id_str = user.level_id.unwrap_or(0).to_string();
+                if !allowed.contains(&user.user_group.as_str()) && !allowed.contains(&level_id_str.as_str()) {
                     return Err(AppError::Forbidden("您当前的用户等级无权使用素材资产管理功能".to_string()));
                 }
             }

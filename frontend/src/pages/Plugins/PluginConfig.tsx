@@ -705,7 +705,8 @@ const PluginConfigInner: React.FC = () => {
           <div style={{ marginTop: 14 }}>
             <Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedLevels.length} 个等级</Text>
             {levels.map(lv => {
-              const isSelected = selectedLevels.includes(lv.group_key);
+              const lvIdStr = lv.id.toString();
+              const isSelected = selectedLevels.includes(lvIdStr) || selectedLevels.includes(lv.group_key);
               const showLimits = name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace';
               return (
                 <div key={lv.group_key}
@@ -713,11 +714,11 @@ const PluginConfigInner: React.FC = () => {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: 1 }}
-                      onClick={() => setSelectedLevels(prev => prev.includes(lv.group_key) ? prev.filter(k => k !== lv.group_key) : [...prev, lv.group_key])}
+                      onClick={() => setSelectedLevels(prev => prev.includes(lvIdStr) || prev.includes(lv.group_key) ? prev.filter(k => k !== lvIdStr && k !== lv.group_key) : [...prev, lvIdStr])}
                     >
                       <Checkbox checked={isSelected} />
                       <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{lv.name}</Text>
-                      <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{lv.group_key}</Tag>
+                      <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>ID: {lvIdStr.padStart(4, '0')}</Tag>
                     </div>
                   </div>
                   {showLimits && (

@@ -62,13 +62,20 @@ const UserLevels: React.FC = () => {
       title: t('user_levels.name'),
       dataIndex: 'name',
       key: 'name',
-      render: (text: string, record: UserLevel) => <Space><TrophyOutlined style={{ color: '#faad14' }} /><Text strong>{text}</Text>{record.is_default === 1 && <Tag color="green">默认注册</Tag>}</Space>,
+      render: (text: string, record: UserLevel) => (
+        <div>
+          <Space><TrophyOutlined style={{ color: '#faad14' }} /><Text strong>{text}</Text>{record.is_default === 1 && <Tag color="green">默认注册</Tag>}</Space>
+          <div style={{ marginTop: 4 }}>
+            <Tag color="blue">{record.group_key}</Tag>
+          </div>
+        </div>
+      ),
     },
     {
-      title: t('user_levels.group_key'),
-      dataIndex: 'group_key',
-      key: 'group_key',
-      render: (key: string) => <Tag color="blue">{key}</Tag>,
+      title: '用户等级ID',
+      dataIndex: 'id',
+      key: 'id',
+      render: (id: number) => <Text code>{id.toString().padStart(4, '0')}</Text>,
     },
     {
       title: t('user_levels.discount'),
@@ -146,8 +153,15 @@ const UserLevels: React.FC = () => {
             const commPercent = Math.round((record.commission_ratio || 0) * 100);
             return (
               <MobileCard
-                title={<Space><TrophyOutlined style={{ color: '#faad14' }} /><Text strong>{record.name}</Text>{record.is_default === 1 && <Tag color="green">默认注册</Tag>}</Space>}
-                extra={<Tag color="blue">{record.group_key}</Tag>}
+                title={
+                  <div>
+                    <Space><TrophyOutlined style={{ color: '#faad14' }} /><Text strong>{record.name}</Text>{record.is_default === 1 && <Tag color="green">默认注册</Tag>}</Space>
+                    <div style={{ marginTop: 4 }}>
+                      <Tag color="blue">{record.group_key}</Tag>
+                    </div>
+                  </div>
+                }
+                extra={<Text code>ID: {record.id.toString().padStart(4, '0')}</Text>}
               >
                 <CardRow label="折扣倍率">
                   <Space>

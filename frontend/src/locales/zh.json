@@ -289,7 +289,7 @@
     "add_level": "添加等级",
     "edit_level": "编辑等级",
     "name": "等级名称",
-    "group_key": "分组标识",
+    "group_key": "等级标志ID",
     "discount": "折扣倍率",
     "discount_hint": "折扣倍率 (如 0.8 表示 8 折)",
     "description": "说明",
