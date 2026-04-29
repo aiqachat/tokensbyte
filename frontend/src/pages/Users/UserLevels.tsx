@@ -64,18 +64,19 @@ const UserLevels: React.FC = () => {
       key: 'name',
       render: (text: string, record: UserLevel) => (
         <div>
-          <Space><TrophyOutlined style={{ color: '#faad14' }} /><Text strong>{text}</Text>{record.is_default === 1 && <Tag color="green">默认注册</Tag>}</Space>
+          <Space align="center" size={8}>
+            <TrophyOutlined style={{ color: '#faad14' }} />
+            <Text strong>{text}</Text>
+            <Tag bordered={false} style={{ margin: 0, background: 'rgba(22,119,255,0.1)', color: '#1677ff', borderRadius: 4 }}>
+              ID: {record.id.toString().padStart(4, '0')}
+            </Tag>
+            {record.is_default === 1 && <Tag color="green">默认注册</Tag>}
+          </Space>
           <div style={{ marginTop: 4 }}>
-            <Tag color="blue">{record.group_key}</Tag>
+            <Text type="secondary" style={{ fontSize: 12 }}>标志: {record.group_key}</Text>
           </div>
         </div>
       ),
-    },
-    {
-      title: '用户等级ID',
-      dataIndex: 'id',
-      key: 'id',
-      render: (id: number) => <Text code>{id.toString().padStart(4, '0')}</Text>,
     },
     {
       title: t('user_levels.discount'),
@@ -155,13 +156,20 @@ const UserLevels: React.FC = () => {
               <MobileCard
                 title={
                   <div>
-                    <Space><TrophyOutlined style={{ color: '#faad14' }} /><Text strong>{record.name}</Text>{record.is_default === 1 && <Tag color="green">默认注册</Tag>}</Space>
+                    <Space align="center" size={8} wrap>
+                      <TrophyOutlined style={{ color: '#faad14' }} />
+                      <Text strong>{record.name}</Text>
+                      <Tag bordered={false} style={{ margin: 0, background: 'rgba(22,119,255,0.1)', color: '#1677ff', borderRadius: 4 }}>
+                        ID: {record.id.toString().padStart(4, '0')}
+                      </Tag>
+                      {record.is_default === 1 && <Tag color="green">默认注册</Tag>}
+                    </Space>
                     <div style={{ marginTop: 4 }}>
-                      <Tag color="blue">{record.group_key}</Tag>
+                      <Text type="secondary" style={{ fontSize: 12 }}>标志: {record.group_key}</Text>
                     </div>
                   </div>
                 }
-                extra={<Text code>ID: {record.id.toString().padStart(4, '0')}</Text>}
+                extra={null}
               >
                 <CardRow label="折扣倍率">
                   <Space>

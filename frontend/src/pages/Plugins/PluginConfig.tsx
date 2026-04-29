@@ -698,7 +698,7 @@ const PluginConfigInner: React.FC = () => {
           style={{ padding: '12px 16px', borderRadius: 6, border: !isAllLevels ? '1px solid rgba(22,119,255,0.4)' : '1px solid rgba(255,255,255,0.08)', background: !isAllLevels ? 'rgba(22,119,255,0.06)' : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}
           onClick={() => setIsAllLevels(false)}
         >
-          <Checkbox checked={!isAllLevels}><Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>仅对指定用户等级开放</Text></Checkbox>
+          <Checkbox checked={!isAllLevels}><Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>按等级单独设置（覆盖全局默认值）</Text></Checkbox>
         </div>
 
         {!isAllLevels && (
@@ -717,8 +717,12 @@ const PluginConfigInner: React.FC = () => {
                       onClick={() => setSelectedLevels(prev => prev.includes(lvIdStr) || prev.includes(lv.group_key) ? prev.filter(k => k !== lvIdStr && k !== lv.group_key) : [...prev, lvIdStr])}
                     >
                       <Checkbox checked={isSelected} />
-                      <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{lv.name}</Text>
-                      <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>ID: {lvIdStr.padStart(4, '0')}</Tag>
+                      <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>
+                        {lv.name}
+                        <span style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, marginLeft: 6 }}>
+                          (ID: {lvIdStr.padStart(4, '0')})
+                        </span>
+                      </Text>
                     </div>
                   </div>
                   {showLimits && (
