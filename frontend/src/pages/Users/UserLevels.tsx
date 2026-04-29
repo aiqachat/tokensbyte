@@ -62,13 +62,21 @@ const UserLevels: React.FC = () => {
       title: t('user_levels.name'),
       dataIndex: 'name',
       key: 'name',
-      render: (text: string, record: UserLevel) => <Space><TrophyOutlined style={{ color: '#faad14' }} /><Text strong>{text}</Text>{record.is_default === 1 && <Tag color="green">默认注册</Tag>}</Space>,
-    },
-    {
-      title: t('user_levels.group_key'),
-      dataIndex: 'group_key',
-      key: 'group_key',
-      render: (key: string) => <Tag color="blue">{key}</Tag>,
+      render: (text: string, record: UserLevel) => (
+        <div>
+          <Space align="center" size={8}>
+            <TrophyOutlined style={{ color: '#faad14' }} />
+            <Text strong>{text}</Text>
+            <Tag bordered={false} style={{ margin: 0, background: 'rgba(22,119,255,0.1)', color: '#1677ff', borderRadius: 4 }}>
+              ULID: {record.id.toString().padStart(4, '0')}
+            </Tag>
+            {record.is_default === 1 && <Tag color="green">默认注册</Tag>}
+          </Space>
+          <div style={{ marginTop: 4 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>标志: {record.group_key}</Text>
+          </div>
+        </div>
+      ),
     },
     {
       title: t('user_levels.discount'),
@@ -146,8 +154,22 @@ const UserLevels: React.FC = () => {
             const commPercent = Math.round((record.commission_ratio || 0) * 100);
             return (
               <MobileCard
-                title={<Space><TrophyOutlined style={{ color: '#faad14' }} /><Text strong>{record.name}</Text>{record.is_default === 1 && <Tag color="green">默认注册</Tag>}</Space>}
-                extra={<Tag color="blue">{record.group_key}</Tag>}
+                title={
+                  <div>
+                    <Space align="center" size={8} wrap>
+                      <TrophyOutlined style={{ color: '#faad14' }} />
+                      <Text strong>{record.name}</Text>
+                      <Tag bordered={false} style={{ margin: 0, background: 'rgba(22,119,255,0.1)', color: '#1677ff', borderRadius: 4 }}>
+                        ULID: {record.id.toString().padStart(4, '0')}
+                      </Tag>
+                      {record.is_default === 1 && <Tag color="green">默认注册</Tag>}
+                    </Space>
+                    <div style={{ marginTop: 4 }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>标志: {record.group_key}</Text>
+                    </div>
+                  </div>
+                }
+                extra={null}
               >
                 <CardRow label="折扣倍率">
                   <Space>

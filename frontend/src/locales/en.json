@@ -290,7 +290,7 @@
     "add_level": "Add Level",
     "edit_level": "Edit Level",
     "name": "Level Name",
-    "group_key": "Group Key",
+    "group_key": "Level Flag ID",
     "discount": "Discount Multiplier",
     "discount_hint": "e.g. 0.8 for 20% off",
     "description": "Description",

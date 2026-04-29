@@ -109,13 +109,16 @@ pub async fn update_user(
     if let Some(referred_by) = request.referred_by { 
         user.referred_by = if referred_by.trim().is_empty() { None } else { Some(referred_by) }; 
     }
+    if let Some(referral_history) = request.referral_history {
+        user.referral_history = Some(referral_history);
+    }
 
     let mut tx = state.db.pool.begin().await?;
 
     sqlx::query(
         &state.db.format_query(r#"UPDATE users SET username = ?, email = ?, password_hash = ?, 
            nickname = ?, mobile = ?, wechat_id = ?,
-           role = ?, balance = ?, user_group = ?, is_active = ?, admin_remark = ?, referred_by = ?, updated_at = CURRENT_TIMESTAMP
+           role = ?, balance = ?, user_group = ?, is_active = ?, admin_remark = ?, referred_by = ?, referral_history = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&user.username)
@@ -130,6 +133,7 @@ pub async fn update_user(
     .bind(user.is_active)
     .bind(&user.admin_remark)
     .bind(&user.referred_by)
+    .bind(&user.referral_history)
     .bind(&id)
     .execute(&mut *tx)
     .await?;

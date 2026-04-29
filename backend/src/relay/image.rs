@@ -19,7 +19,7 @@ pub async fn image_generations(
     let model = body["model"].as_str().unwrap_or("dall-e-3");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, request_path).await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, request_path).await?;
     let is_stream = body["stream"].as_bool().unwrap_or(false);
     
     // 解析转发规则，未绑定规则时根据域名智能推断

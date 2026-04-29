@@ -19,8 +19,24 @@ const Register: React.FC = () => {
   const { setToken, setUser } = useAuthStore();
   const { settings, fetchSettings } = useSettingsStore();
   const [searchParams] = useSearchParams();
-  const aff = searchParams.get('aff') || '';
-  const team = searchParams.get('team') || '';
+  
+  const getStoredValue = (key: string) => {
+    const stored = localStorage.getItem(key);
+    if (!stored) return '';
+    try {
+      const data = JSON.parse(stored);
+      if (Date.now() > data.expiry) {
+        localStorage.removeItem(key);
+        return '';
+      }
+      return data.value;
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const aff = searchParams.get('aff') || getStoredValue('tokensbyte_affiliate_code');
+  const team = searchParams.get('team') || getStoredValue('tokensbyte_team_invite');
 
   useEffect(() => { if (!settings) fetchSettings(); }, []);
   useEffect(() => {

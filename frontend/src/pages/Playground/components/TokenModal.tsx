@@ -24,7 +24,7 @@ const TokenModal: React.FC = React.memo(() => {
       styles={{
         body: { backgroundColor: '#1E1F22', padding: '24px 32px' },
         wrapper: { backgroundColor: '#1E1F22', borderRadius: 12, padding: 0, overflow: 'hidden' },
-      }}
+      }},
       closeIcon={<CloseOutlined style={{ color: 'rgba(255,255,255,0.45)' }} />}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>

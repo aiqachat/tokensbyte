@@ -161,6 +161,16 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     fetchAnnouncements();
   }, []);
 
+  // 插件菜单：检查用户等级是否在插件允许范围内
+  const isPluginVisibleForUser = (pluginName: string) => {
+    const plugin = activePlugins.find((p: any) => p.name === pluginName);
+    if (!plugin) return false;
+    if (plugin.allowed_levels === 'all') return true;
+    if (!isUserEnd) return true; // 管理员端始终显示
+    const userGroup = user?.user_group || 'default';
+    return plugin.allowed_levels.split(',').includes(userGroup);
+  };
+
   const menuItems: MenuProps['items'] = [];
 
   menuItems.push({
@@ -168,6 +178,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     icon: <DashboardOutlined style={{ fontSize: '18px' }} />,
     label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{isUserEnd ? '控制面板' : t('menu.dashboard')}</Link>,
   });
+
+  if (isUserEnd && isPluginVisibleForUser('playground')) {
+    menuItems.push({
+      key: '/playground',
+      icon: <ExperimentOutlined style={{ fontSize: '18px' }} />,
+      label: <Link to="/playground" target="_blank">{t('menu.playground')}</Link>,
+    });
+  }
 
   // 2. Relay API
   menuItems.push({
@@ -228,15 +246,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
      menuItems.push(...filteredInitial);
   }
 
-  // 插件菜单：检查用户等级是否在插件允许范围内
-  const isPluginVisibleForUser = (pluginName: string) => {
-    const plugin = activePlugins.find((p: any) => p.name === pluginName);
-    if (!plugin) return false;
-    if (plugin.allowed_levels === 'all') return true;
-    if (!isUserEnd) return true; // 管理员端始终显示
-    const userGroup = user?.user_group || 'default';
-    return plugin.allowed_levels.split(',').includes(userGroup);
-  };
+
 
 
 
@@ -260,14 +270,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       });
     }
 
-    // 插件菜单：模型体验中心
-    if (isPluginVisibleForUser('playground')) {
-      menuItems.push({
-        key: '/playground',
-        icon: <ExperimentOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/playground" target="_blank">{t('menu.playground')}</Link>,
-      });
-    }
+
 
     menuItems.push(
       {
@@ -485,7 +488,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     else if (location.pathname === '/wallet') pageName = t('menu.wallet', '我的钱包') as string;
     else if (location.pathname === '/assets') pageName = t('menu.assets', '素材资产管理') as string;
     else if (location.pathname === '/advanced-marketing') pageName = t('menu.advanced_marketing', '团队营销管理') as string;
-    else if (location.pathname === '/playground') pageName = t('menu.playground', '模型体验中心') as string;
+    else if (location.pathname === '/playground') pageName = t('menu.playground', '创作中心') as string;
   }
 
   useEffect(() => {

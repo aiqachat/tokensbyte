@@ -51,14 +51,12 @@ const poolTypeLabels: Record<string, { label: string; color: string }> = {
   chat: { label: '聊天', color: '#1677ff' },
   image: { label: '图片', color: '#52c41a' },
   video: { label: '视频', color: '#fa8c16' },
-  custom: { label: '自定义', color: '#722ed1' },
-};
+  custom: { label: '自定义', color: '#722ed1' } };
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
   active: { color: 'success', icon: <CheckCircleOutlined />, label: '可用' },
   disabled: { color: 'error', icon: <CloseCircleOutlined />, label: '故障禁用' },
-  exhausted: { color: 'warning', icon: <ExclamationCircleOutlined />, label: '配额耗尽' },
-};
+  exhausted: { color: 'warning', icon: <ExclamationCircleOutlined />, label: '配额耗尽' } };
 
 const PoolManager: React.FC = () => {
   const { themeMode } = useThemeStore();
@@ -173,14 +171,12 @@ const PoolManager: React.FC = () => {
           daily_quota: acc.daily_quota || 0,
           hourly_quota: acc.hourly_quota || 0,
           period_quota: acc.period_quota || 0,
-          priority: acc.priority || 0,
-        };
+          priority: acc.priority || 0 };
       });
 
       const payload: any = {
         name: values.name, pool_type: values.pool_type, strategy: values.strategy,
-        remark: values.remark || '', model_id: modelValue || '', accounts: formattedAccounts,
-      };
+        remark: values.remark || '', model_id: modelValue || '', accounts: formattedAccounts };
       if (editingPool) {
         payload.is_active = values.is_active;
         await request.put(`/plugins/volcengine_pool/pools/${editingPool.id}`, payload);
@@ -204,8 +200,7 @@ const PoolManager: React.FC = () => {
       const formattedAccounts = (pool.accounts || []).map(acc => ({
         ...acc,
         _resetTime: dayjs().hour(acc.daily_reset_hour).minute(acc.daily_reset_minute),
-        _periodRange: acc.period_start && acc.period_end ? [dayjs(acc.period_start, 'HH:mm'), dayjs(acc.period_end, 'HH:mm')] : undefined,
-      }));
+        _periodRange: acc.period_start && acc.period_end ? [dayjs(acc.period_start, 'HH:mm'), dayjs(acc.period_end, 'HH:mm')] : undefined }));
 
       poolForm.setFieldsValue({ ...pool, model_id: mid || undefined, accounts: formattedAccounts });
     }
@@ -234,8 +229,7 @@ const PoolManager: React.FC = () => {
         account_id: values.account_id,
         access_key: values.access_key,
         secret_key: values.secret_key,
-        models: values.models,
-      };
+        models: values.models };
       if (editingAccount) {
         payload.status = values.status;
         await request.put(`/plugins/volcengine_pool/accounts/${editingAccount.id}`, payload);
@@ -368,9 +362,8 @@ const PoolManager: React.FC = () => {
                 }}
                 style={{
                   background: isSelected ? 'rgba(250,140,22,0.06)' : '#1a1a1a',
-                  border: isSelected ? '1px solid rgba(250,140,22,0.4)' : '1px solid rgba(255,255,255,0.08)',
-                  cursor: 'pointer',
-                }}
+                  border: isSelected ? '1px solid rgba(250,140,22,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'),
+                  cursor: 'pointer' }}
                 styles={{ body: { padding: '14px 16px' } }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>

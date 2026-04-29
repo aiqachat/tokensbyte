@@ -96,6 +96,7 @@ pub struct ReferralUser {
     pub balance: f64,
     pub is_active: i64,
     pub created_at: String,
+    pub updated_at: String,
     pub remark: Option<String>,
 }
 
@@ -553,7 +554,7 @@ async fn my_referrals(
     let referrals: Vec<ReferralUser> = sqlx::query_as(
         &state.db.format_query(
             r#"SELECT u.id, u.uid, u.username, u.email, u.user_group, ul.name as level_name,
-                      u.balance, u.is_active, u.created_at, u.remark
+                      u.balance, u.is_active, u.created_at, u.updated_at, u.remark
                FROM users u
                LEFT JOIN user_levels ul ON u.user_group = ul.group_key
                WHERE u.referred_by = ? OR u.referred_by = ?
@@ -586,6 +587,7 @@ async fn my_referrals(
             "balance": r.balance,
             "is_active": r.is_active,
             "created_at": r.created_at,
+            "updated_at": r.updated_at,
             "remark": r.remark,
             "total_recharge": total_recharge,
         }));

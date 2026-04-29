@@ -38,7 +38,7 @@ pub async fn chat_completions(
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
 
     // 3. 选择渠道
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/v1/chat/completions").await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, "/v1/chat/completions").await?;
 
     // 4. 解析转发规则，未绑定规则时根据域名智能推断
     let resolved = match forward::resolve_forward_rule(&state, model, "聊天", "/v1/chat/completions").await {
