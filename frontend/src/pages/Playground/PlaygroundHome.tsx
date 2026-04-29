@@ -357,35 +357,6 @@ const PlaygroundHome: React.FC = () => {
                         </>
                       )}
                     </div>
-
-                    {/* 操作 (Hover显示或选中状态) */}
-                    {(selectedProject?.id === project.id || hoveredId === project.id) && editingId !== project.id && (
-                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                        <Tooltip title="重命名">
-                          <div
-                            onClick={e => { e.stopPropagation(); setEditingId(project.id); setEditingName(project.name); }}
-                            style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'all 0.15s' }}
-                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff'; }}
-                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}
-                          >
-                            <EditOutlined style={{ fontSize: 14 }} />
-                          </div>
-                        </Tooltip>
-                        {projects.length > 1 && (
-                          <Tooltip title="删除">
-                            <div
-                              onClick={e => handleDeleteProject(e, project.id)}
-                              style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,77,79,0.7)', cursor: 'pointer', transition: 'all 0.15s' }}
-                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,77,79,0.1)'; e.currentTarget.style.color = '#ff4d4f'; }}
-                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,77,79,0.7)'; }}
-                            >
-                              <DeleteOutlined style={{ fontSize: 14 }} />
-                            </div>
-                          </Tooltip>
-                        )}
-                      </div>
-                    )}
-                    </div>
                   ))}
                 </div>
               </div>
