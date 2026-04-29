@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress, Grid, Radio, Tabs } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress, Grid, Radio, Tabs, Timeline } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined, DollarOutlined, LoginOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -558,9 +558,29 @@ const Users: React.FC = () => {
                       <Typography.Text>{editingUser.register_ip || '未知'}</Typography.Text>
                     </div>
                     <div>
-                      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>关联记录 (流转记录):</Typography.Text>
-                      <div style={{ padding: 12, background: 'rgba(0,0,0,0.02)', borderRadius: 8, minHeight: 100, whiteSpace: 'pre-wrap', border: '1px solid #f0f0f0' }}>
-                        {editingUser.referral_history || '暂无流转记录'}
+                      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>关联记录 (流转记录):</Typography.Text>
+                      <div style={{ padding: '16px 16px 0', background: 'rgba(0,0,0,0.02)', borderRadius: 8, minHeight: 100, border: '1px solid #f0f0f0' }}>
+                        {editingUser.referral_history ? (
+                          <Timeline 
+                            items={editingUser.referral_history.split('\n').filter(line => line.trim()).map(line => {
+                              const match = line.match(/^\[(.*?)\]\s*(.*)$/);
+                              if (match) {
+                                return {
+                                  color: 'blue',
+                                  children: (
+                                    <>
+                                      <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>{match[1]}</div>
+                                      <div style={{ marginTop: 2 }}>{match[2]}</div>
+                                    </>
+                                  )
+                                };
+                              }
+                              return { children: line };
+                            }).reverse()}
+                          />
+                        ) : (
+                          <Typography.Text type="secondary">暂无流转记录</Typography.Text>
+                        )}
                       </div>
                     </div>
                   </div>

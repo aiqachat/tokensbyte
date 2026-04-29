@@ -2346,4 +2346,211 @@
 [36m[Rust][0m [2m2026-04-29T09:16:37.161891Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m constraint "models_model_id_key" of relation "models" does not exist, skipping
 [36m[Rust][0m [2m2026-04-29T09:16:37.163357Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "site_icons" already exists, skipping
 [36m[Rust][0m [2m2026-04-29T09:16:37.167481Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "site_icon_sync_logs" already exists, skipping
-[36m[Rust][0m [2m2026-04-29T09:16:37.168441Z[0m [32m IN
+[36m[Rust][0m [2m2026-04-29T09:16:37.168441Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "logo" of relation "models" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:16:37.168988Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "logo" of relation "model_providers" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:16:37.169466Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "logo" of relation "model_types" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:16:37.169912Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "cached_tokens" of relation "logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:16:37.170810Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "remark" of relation "users" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:16:37.171348Z[0m [32m INFO[0m [2mtokensbyte_server::db::migrations[0m[2m:[0m PostgreSQL AnyPool migrations completed successfully
+[36m[Rust][0m ✅ Database migrations completed.
+[36m[Rust][0m [2m2026-04-29T09:16:37.175327Z[0m [32m INFO[0m [2mtokensbyte_server[0m[2m:[0m 📝 Registration settings synced: username=true, email=true, mobile=false, password_recovery=true
+[36m[Rust][0m ⚙️ Binding server to 0.0.0.0:3000
+[36m[Rust][0m [2m2026-04-29T09:16:37.183476Z[0m [32m INFO[0m [2mtokensbyte_server[0m[2m:[0m 🚀 TokensByte server running at http://0.0.0.0:3000
+[36m[Rust][0m ✅ TokensByte server is now completely online at http://0.0.0.0:3000 !
+[36m[Rust][0m [Running 'cargo run']
+[36m[Rust][0m    Compiling tokensbyte-server v0.1.0 (/Volumes/D/aiwwwroot/tokensbyte/backend)
+[36m[Rust][0m     Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.07s
+[36m[Rust][0m      Running `target/debug/tokensbyte-server`
+[36m[Rust][0m ⚠️ [WARNING] Using default JWT_SECRET. Please change it in .env for security!
+[36m[Rust][0m ⚠️ [WARNING] Using default ENCRYPTION_KEY. Please change it in .env for security!
+[36m[Rust][0m ⏳ Attempting database connection (attempt 0)...
+[36m[Rust][0m ✅ Database connection established.
+[36m[Rust][0m 🚀 Starting database migrations...
+[36m[Rust][0m [2m2026-04-29T09:18:48.599331Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "users" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.637881Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "recharge_records" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.639366Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "channels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.641013Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "api_tokens" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.642440Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.643810Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "redemptions" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.645014Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "settings" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.646623Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "orders" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.647620Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m table "task_logs" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.649009Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "plugin_api_logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.650814Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "user_levels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.652110Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "verification_codes" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.653371Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "model_providers" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.654335Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "model_types" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.655054Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "models" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.657484Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "admin_groups" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.658344Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "admin_group_id" of relation "users" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.660816Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "commission_ratio" of relation "user_levels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.661566Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "invite_reward_inviter" of relation "user_levels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.662333Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "invite_reward_invitee" of relation "user_levels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.663049Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "daily_invite_limit" of relation "user_levels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.663615Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "marketing_enabled" of relation "user_levels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.664131Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "is_default" of relation "user_levels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.664695Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "max_token_count" of relation "user_levels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.666182Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "commissions" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.666729Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "enable_log_content" of relation "models" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.667386Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "is_stream" of relation "logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.667998Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "request_content" of relation "logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.668549Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "response_content" of relation "logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.669096Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "upstream_url" of relation "logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.669665Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "upstream_req_content" of relation "logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.670291Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "user_groups" of relation "channels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.670807Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "quota_limit" of relation "channels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.671274Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "quota_used" of relation "channels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.671788Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "forward_rules" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.672209Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "category" of relation "forward_rules" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.672734Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "forward_rule_ids" of relation "models" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.675376Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "billing_rules" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.676094Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "billing_rule_id" of relation "models" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.676835Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "pre_deduction" of relation "models" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.677468Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "billing_type" of relation "models" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.678059Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "prompt_rate" of relation "models" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.678560Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "completion_rate" of relation "models" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.679050Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "fixed_rate" of relation "models" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.679523Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "duration_rate" of relation "models" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.679990Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "billing_rule" of relation "models" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.680571Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "billing_unit" of relation "models" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.681011Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "pricing_tiers" of relation "models" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.681571Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "extended_config" of relation "billing_rules" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.682062Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "is_system" of relation "forward_rules" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.682553Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "is_system" of relation "billing_rules" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.683059Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "cached_rate" of relation "billing_rules" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.685565Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "register_ip" of relation "users" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.686214Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "admin_remark" of relation "users" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.686670Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "billing_detail" of relation "logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.687179Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "channel_configs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.687542Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "preset_id" of relation "channels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.688016Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "remark" of relation "channel_configs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.688509Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "remark" of relation "model_providers" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.689031Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "upstreams" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.689457Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "upstream_type" of relation "upstreams" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.690057Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "config" of relation "upstreams" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.690517Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "plugins" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.691030Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "allowed_levels" of relation "plugins" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.691541Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "plugin_asset_groups" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.692008Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "plugin_assets" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.692429Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "category" of relation "plugin_assets" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.693454Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "asset_id" of relation "plugin_assets" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.694423Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "sort_order" of relation "plugin_assets" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.695324Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "remark" of relation "plugin_assets" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.696260Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "group_id" of relation "plugin_assets" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.697127Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "content_hash" of relation "plugin_assets" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.697987Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_plugin_assets_content_hash" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.698384Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "source" of relation "plugin_api_logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.701169Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "marketing_teams" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.701555Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "invite_code" of relation "marketing_teams" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.702068Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "max_members" of relation "marketing_teams" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.702547Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "members_can_set_level" of relation "marketing_teams" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.703633Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "marketing_team_leaders" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.704014Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "marketing_team_members" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.704410Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "plugin_configs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.704764Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "google_id" of relation "users" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.705231Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "wechat_name" of relation "users" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.705632Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "google_name" of relation "users" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.706071Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "phone" of relation "verification_codes" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.706477Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "is_system" of relation "model_providers" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.706907Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "is_system" of relation "model_types" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.708526Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "mid" of relation "models" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.708901Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "site_discount" of relation "models" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.709286Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "site_discount_enabled" of relation "models" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.709671Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "playground_projects" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.710060Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_pg_projects_user" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.710504Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_pg_projects_uid" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.710859Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "announcements" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.711223Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "playground_assets" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.711661Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_pg_assets_project" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.712010Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_pg_assets_user" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.712312Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "idx_pg_assets_type" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.712635Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "kid" of relation "api_tokens" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.713738Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "category" of relation "plugins" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.715255Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "volcengine_pools" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.716600Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "quota_unit" of relation "volcengine_pools" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.716981Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "daily_reset_hour" of relation "volcengine_pools" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.717361Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "daily_reset_minute" of relation "volcengine_pools" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.717714Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "period_start" of relation "volcengine_pools" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.718070Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "period_end" of relation "volcengine_pools" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.718449Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "default_daily_quota" of relation "volcengine_pools" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.718789Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "default_hourly_quota" of relation "volcengine_pools" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.719173Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "default_period_quota" of relation "volcengine_pools" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.719696Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.720054Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "pool_id" of relation "volcengine_pool_accounts" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.720448Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "base_url" of relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.720819Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "models" of relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.721177Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "account_id" of relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.721540Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "access_key" of relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.721907Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "secret_key" of relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.722294Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "quota_unit" of relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.722658Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "daily_reset_hour" of relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.723030Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "daily_reset_minute" of relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.723402Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "period_start" of relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.723761Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "period_end" of relation "volcengine_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.727167Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.727583Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "status" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.728008Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "quota_unit" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.728386Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "daily_reset_hour" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.728731Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "daily_reset_minute" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.729114Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "period_start" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.729455Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "period_end" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.729818Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "daily_quota" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.730198Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "hourly_quota" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.730563Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "period_quota" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.730954Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "daily_used" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.731313Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "hourly_used" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.731920Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "period_used" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.732346Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "last_daily_reset" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.732838Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "last_hourly_reset" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.733228Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "last_period_reset" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.733642Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "priority" of relation "volcengine_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.734452Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "volcengine_pool_logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.735200Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "pool_id" of relation "channels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.735901Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "allowed_level_ids" of relation "marketing_teams" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.736580Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "allowed_member_level_ids" of relation "marketing_teams" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.737649Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "gptimage_pools" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.739151Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "gptimage_pool_accounts" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.742282Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "gptimage_pool_account_mapping" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.743027Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "gptimage_pool_logs" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.743763Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m column "gptimage_pool_id" of relation "channels" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.744589Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m constraint "models_name_key" of relation "models" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.745051Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m constraint "models_model_id_key" of relation "models" does not exist, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.746278Z[0m [32m INFO[0m [2msqlx::postgres::notice[0m[2m:[0m relation "site_icons" already exists, skipping
+[36m[Rust][0m [2m2026-04-29T09:18:48.749543 at async loadAndTransform (file:///Volumes/D/aiwwwroot/tokensbyte/frontend/node_modules/vite/dist/node/chunks/node.js:24512:26)
+[34m[Vite][0m       at async viteTransformMiddleware (file:///Volumes/D/aiwwwroot/tokensbyte/frontend/node_modules/vite/dist/node/chunks/node.js:24306:20)
+[34m[Vite][0m 5:14:53 PM [vite] (client) [console.error] [vite] Failed to reload /src/pages/Users/Users.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
+[34m[Vite][0m 5:14:53 PM [vite] Internal server error: Transform failed with 2 errors:
+[34m[Vite][0m 
+[34m[Vite][0m [31m[PARSE_ERROR] Error:[0m Unterminated regular expression
+[34m[Vite][0m      [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/pages/Users/Users.tsx:544:8 [38;5;246m][0m
+[34m[Vite][0m      [38;5;246m│[0m
+[34m[Vite][0m  [38;5;246m544 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m<[0m/Modal>
+[34m[Vite][0m  [38;5;240m    │[0m        ────┬───  
+[34m[Vite][0m  [38;5;240m    │[0m            ╰───── 
+[34m[Vite][0m [38;5;246m─────╯[0m
+[34m[Vite][0m 
+[34m[Vite][0m [31m[PARSE_ERROR] Error:[0m Expected corresponding closing tag for JSX fragment.
+[34m[Vite][0m      [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/pages/Users/Users.tsx:543:11 [38;5;246m][0m
+[34m[Vite][0m      [38;5;246m│[0m
+[34m[Vite][0m  [38;5;246m460 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m<>
+[34m[Vite][0m  [38;5;240m    │[0m                   ─┬  
+[34m[Vite][0m  [38;5;240m    │[0m                    ╰── Opened here
+[34m[Vite][0m  [38;5;240m    │[0m 
+[34m[Vite][0m  [38;5;246m543 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m<[0m[38;5;249m/[0mForm[38;5;249m>[0m
+[34m[Vite][0m  [38;5;240m    │[0m           ──┬─  
+[34m[Vite][0m  [38;5;240m    │[0m             ╰─── Expected `</>`
+[34m[Vite][0m [38;5;246m─────╯[0m
+[34m[Vite][0m 
+[34m[Vite][0m   Plugin: vite:oxc
+[34m[Vite][0m   File: /Volumes/D/aiwwwroot/tokensbyte/frontend/src/pages/Users/Users.tsx
+[34m[Vite][0m       at transformWithOxc (file:///Volumes/D/aiwwwroot/tokensbyte/frontend/node_modules/vite/dist/node/chunks/node.js:3343:19)
+[34m[Vite][0m       at TransformPluginContext.transform (file:///Volumes/D/aiwwwroot/tokensbyte/frontend/node_modules/vite/dist/node/chunks/node.js:3411:26)
+[34m[Vite][0m       at EnvironmentPluginContainer.transform (file:///Volumes/D/aiwwwroot/tokensbyte/frontend/node_modules/vite/dist/node/chunks/node.js:30164:51)
+[34m[Vite][0m       at async loadAndTransform (file:///Volumes/D/aiwwwroot/tokensbyte/frontend/node_modules/vite/dist/node/chunks/node.js:24512:26)
+[34m[Vite][0m       at async viteTransformMiddleware (file:///Volumes/D/aiwwwroot/tokensbyte/frontend/node_modules/vite/dist/node/chunks/node.js:24306:20)
+[34m[Vite][0m 5:14:53 PM [vite] (client) [console.error] [vite] Failed to reload /src/pages/Users/Users.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
+[34m[Vite][0m 5:15:31 PM [vite] (client) hmr update /src/pages/Users/Users.tsx
+[34m[Vite][0m 5:17:32 PM [vite] (client) [console.error] Warning: Instance created by `useForm` is not connected to any Form element. Forget to pass `form` prop?
+[34m[Vite][0m 5:17:32 PM [vite] (client) [console.error] Warning: [antd: Tag] `bordered={false}` is deprecated. Please use `variant="filled"` instead.
+[34m[Vite][0m 5:39:03 PM [vite] (client) hmr update /src/pages/Users/Users.tsx
+[34m[Vite][0m 5:39:03 PM [vite] (client) [console.error] Warning: [antd: Timeline] `items.child
