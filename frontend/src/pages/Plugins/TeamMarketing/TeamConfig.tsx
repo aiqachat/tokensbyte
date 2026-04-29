@@ -3,6 +3,7 @@ import { Typography, Button, Table, Modal, Input, InputNumber, Select, Space, Ta
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, TeamOutlined, CrownOutlined, CopyOutlined, LinkOutlined, TrophyOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import type { MarketingTeam, TeamMember, UserLevel } from '../../../types';
+import { useThemeStore } from '../../../store/theme';
 
 const { Text } = Typography;
 
@@ -13,6 +14,8 @@ interface UserOption {
 }
 
 const TeamConfig: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [teams, setTeams] = useState<MarketingTeam[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -179,7 +182,7 @@ const TeamConfig: React.FC = () => {
       title: '团队名称',
       dataIndex: 'name',
       key: 'name',
-      render: (name: string) => <Text strong style={{ color: '#fff' }}>{name}</Text>,
+      render: (name: string) => <Text strong style={{ color: _isLight ? '#1f2937' : '#fff' }}>{name}</Text>,
     },
     {
       title: '负责人',
@@ -208,7 +211,7 @@ const TeamConfig: React.FC = () => {
             </Tag>
           ))}
           {members.length > 3 && <Tag style={{ margin: 0, borderRadius: 4 }}>+{members.length - 3}</Tag>}
-          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11 }}>
             {members.length}/{record.max_members || 10}
           </Text>
         </Space>
@@ -278,7 +281,7 @@ const TeamConfig: React.FC = () => {
   return (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
+        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 13 }}>
           共 {teams.length} 个推广团队
         </Text>
         <Space>
@@ -311,7 +314,7 @@ const TeamConfig: React.FC = () => {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               团队名称 <span style={{ color: '#ff4d4f' }}>*</span>
             </Text>
             <Input
@@ -323,7 +326,7 @@ const TeamConfig: React.FC = () => {
           </div>
 
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               团队描述
             </Text>
             <Input.TextArea
@@ -336,10 +339,10 @@ const TeamConfig: React.FC = () => {
           </div>
 
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               <TeamOutlined style={{ color: '#52c41a', marginRight: 4 }} />
               团队人数上限
-              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>通过邀请链接加入的成员总数限制</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>通过邀请链接加入的成员总数限制</Text>
             </Text>
             <InputNumber
               value={maxMembers}
@@ -353,10 +356,10 @@ const TeamConfig: React.FC = () => {
 
           {/* 团队负责人 */}
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               <CrownOutlined style={{ color: '#faad14', marginRight: 4 }} />
               团队负责人 <span style={{ color: '#ff4d4f' }}>*</span>
-              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可以查看团队成员的推广详细数据</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可以查看团队成员的推广详细数据</Text>
             </Text>
             <Select
               mode="multiple"
@@ -376,10 +379,10 @@ const TeamConfig: React.FC = () => {
 
           {/* 团队成员授权等级 */}
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               <TrophyOutlined style={{ color: '#1677ff', marginRight: 4 }} />
               团队成员授权等级
-              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可将团队成员设置为以下等级</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可将团队成员设置为以下等级</Text>
             </Text>
             <Select
               mode="multiple"
@@ -398,10 +401,10 @@ const TeamConfig: React.FC = () => {
 
           {/* 团队成员 */}
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               <TeamOutlined style={{ color: '#1677ff', marginRight: 4 }} />
               团队成员
-              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>选择此团队的推广人员</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>选择此团队的推广人员</Text>
             </Text>
             <Select
               mode="multiple"
@@ -422,13 +425,13 @@ const TeamConfig: React.FC = () => {
           {/* 授权用户等级（推荐用户） */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block' }}>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block' }}>
                 <TrophyOutlined style={{ color: '#52c41a', marginRight: 4 }} />
                 授权用户等级
-                <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可将推荐用户设置为以下等级</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可将推荐用户设置为以下等级</Text>
               </Text>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>成员也可设置</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>成员也可设置</Text>
                 <Switch 
                   size="small" 
                   checked={membersCanSetLevel === 1} 
