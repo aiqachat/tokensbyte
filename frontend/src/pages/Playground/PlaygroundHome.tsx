@@ -39,9 +39,10 @@ const formatDateGroup = (dateStr: string): string => {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) return '今天';
-  if (diffDays === 1) return '昨天';
+  if (diffDays <= 3) return '最近';
+  if (diffDays <= 7) return '过去 7 天';
   if (diffDays <= 30) return '过去 30 天';
+  if (date.getFullYear() === now.getFullYear()) return '今年';
   return '更早';
 };
 
@@ -211,24 +212,24 @@ const PlaygroundHome: React.FC = () => {
           zIndex: 10,
         }}>
           {/* Logo 区 */}
-          <div style={{ padding: '24px 20px 0', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => navigate('/')}>
-            {siteLogo && <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />}
-            <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: '18px', fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{siteName || 'TokensByte'}</span>
+          <div style={{ padding: '24px 24px 16px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => navigate('/')}>
+            <span style={{ color: '#fff', fontSize: '24px', fontWeight: 600, letterSpacing: '-0.5px' }}>{siteName || 'Stitch'}</span>
+            <span style={{ fontSize: 10, border: '1px solid rgba(255,255,255,0.4)', color: 'rgba(255,255,255,0.8)', padding: '2px 6px', borderRadius: 10, letterSpacing: '0.5px' }}>BETA</span>
           </div>
 
           {/* 顶部按钮区 */}
-          <div style={{ padding: '20px 20px 16px', display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ padding: '0 24px 16px', display: 'flex', gap: 12, alignItems: 'center' }}>
             <div style={{
-              display: 'flex', background: 'transparent', borderRadius: 20, flex: 1,
-              gap: 4
+              display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 24, flex: 1, padding: 4,
+              border: '1px solid rgba(255,255,255,0.05)'
             }}>
               <div
                 onClick={() => setActiveTab('my')}
                 style={{
-                  padding: '8px 16px', borderRadius: 20, fontSize: 14, fontWeight: 500,
-                  cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 6,
-                  background: activeTab === 'my' ? '#282a2c' : 'transparent',
-                  color: activeTab === 'my' ? '#fff' : 'rgba(255,255,255,0.6)'
+                  flex: 1, padding: '6px 0', borderRadius: 20, fontSize: 13, fontWeight: 500,
+                  cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  background: activeTab === 'my' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                  color: activeTab === 'my' ? '#fff' : 'rgba(255,255,255,0.5)'
                 }}
               >
                 <AppstoreOutlined /> 我的项目
@@ -236,90 +237,81 @@ const PlaygroundHome: React.FC = () => {
               <div
                 onClick={() => setActiveTab('shared')}
                 style={{
-                  padding: '8px 16px', borderRadius: 20, fontSize: 14, fontWeight: 500,
-                  cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 6,
-                  background: activeTab === 'shared' ? '#282a2c' : 'transparent',
-                  color: activeTab === 'shared' ? '#fff' : 'rgba(255,255,255,0.6)'
+                  flex: 1, padding: '6px 0', borderRadius: 20, fontSize: 13, fontWeight: 500,
+                  cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  background: activeTab === 'shared' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                  color: activeTab === 'shared' ? '#fff' : 'rgba(255,255,255,0.5)'
                 }}
               >
                 <TeamOutlined /> 与我共享
               </div>
             </div>
-            <Tooltip title="新建项目">
-              <div
-                onClick={() => handleCreateProject()}
-                style={{
-                  width: 40, height: 40, borderRadius: 14,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: '#0a2e6b', color: '#a8c7fa', // Stitch blue
-                  cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = '#0d3b8a'}
-                onMouseLeave={e => e.currentTarget.style.background = '#0a2e6b'}
-              >
-                <PlusOutlined style={{ fontSize: 18 }} />
-              </div>
-            </Tooltip>
           </div>
 
           {/* 搜索 */}
-          <div style={{ padding: '0 20px 16px' }}>
+          <div style={{ padding: '0 24px 20px', display: 'flex', gap: 10 }}>
             <Input
-              prefix={<SearchOutlined style={{ color: 'rgba(255,255,255,0.4)', marginRight: 6 }} />}
+              prefix={<SearchOutlined style={{ color: 'rgba(255,255,255,0.3)', marginRight: 6 }} />}
               placeholder="搜索项目"
               variant="borderless"
               value={searchKeyword}
               onChange={e => setSearchKeyword(e.target.value)}
               style={{
-                background: '#282a2c', borderRadius: 20,
-                height: 40, fontSize: 14, color: themeMode === 'light' ? '#1f2937' : '#fff',
+                background: 'rgba(255,255,255,0.04)', borderRadius: 20,
+                height: 36, fontSize: 13, color: '#fff',
+                border: '1px solid rgba(255,255,255,0.05)', flex: 1
               }}
             />
+            <Tooltip title="新建项目">
+              <div
+                onClick={() => handleCreateProject()}
+                style={{
+                  width: 36, height: 36, borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.05)',
+                  color: '#fff', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+              >
+                <PlusOutlined style={{ fontSize: 16 }} />
+              </div>
+            </Tooltip>
           </div>
 
           {/* 项目列表 */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 20px' }} className="pg-scroll">
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 20px' }} className="pg-scroll">
             {groupedProjects.map((group, idx) => (
               <div key={idx} style={{ marginBottom: 24 }}>
                 <div style={{
-                  fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.5)',
-                  padding: '0 12px', marginBottom: 8,
+                  fontSize: 15, fontWeight: 500, color: '#fff',
+                  padding: '0 8px', marginBottom: 12,
                 }}>
                   {group.group}
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {group.items.map(project => (
                   <div
                     key={project.id}
                     onClick={() => {
-                      if (editingId !== project.id) {
-                        setSelectedProject(project);
-                      }
+                      if (editingId !== project.id) setSelectedProject(project);
                     }}
                     onDoubleClick={() => handleOpenProject(project.id)}
                     onMouseEnter={() => setHoveredId(project.id)}
                     onMouseLeave={() => setHoveredId(null)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 14,
-                      padding: '14px', borderRadius: 16, cursor: 'pointer',
-                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      padding: '8px', borderRadius: 12, cursor: 'pointer',
+                      transition: 'all 0.2s ease',
                       background: selectedProject?.id === project.id
-                        ? 'rgba(162, 193, 255, 0.12)' 
-                        : hoveredId === project.id ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
-                      border: '1px solid',
-                      borderColor: selectedProject?.id === project.id 
-                        ? 'rgba(162, 193, 255, 0.3)' 
-                        : 'transparent',
-                      boxShadow: selectedProject?.id === project.id 
-                        ? '0 8px 24px rgba(0, 0, 0, 0.2)' 
-                        : 'none',
-                      transform: hoveredId === project.id && selectedProject?.id !== project.id ? 'translateY(-1px)' : 'none',
+                        ? 'rgba(255, 255, 255, 0.08)' 
+                        : hoveredId === project.id ? 'rgba(255, 255, 255, 0.04)' : 'transparent',
                     }}
                   >
                     {/* 小缩略图 */}
                     <div style={{
-                      width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                      background: '#131314',
+                      width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+                      background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       overflow: 'hidden',
                     }}>
@@ -330,7 +322,7 @@ const PlaygroundHome: React.FC = () => {
                           <img src={getFullUrl(project.cover_url)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
                         )
                       ) : (
-                        <AppstoreOutlined style={{ fontSize: 16, color: 'rgba(255,255,255,0.2)' }} />
+                        <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, rgba(22,119,255,0.1) 0%, rgba(22,119,255,0.02) 100%)' }} />
                       )}
                     </div>
 
@@ -344,8 +336,8 @@ const PlaygroundHome: React.FC = () => {
                           onBlur={() => handleRename(project.id)}
                           onClick={e => e.stopPropagation()}
                           style={{
-                            background: '#131314', border: '1px solid #4a4a4a',
-                            color: themeMode === 'light' ? '#1f2937' : '#fff', borderRadius: 6, height: 26, fontSize: 13,
+                            background: '#131314', border: '1px solid rgba(255,255,255,0.2)',
+                            color: '#fff', borderRadius: 6, height: 26, fontSize: 13,
                           }}
                         />
                       ) : (
@@ -353,17 +345,15 @@ const PlaygroundHome: React.FC = () => {
                           <div
                             onClick={(e) => { e.stopPropagation(); handleOpenProject(project.id); }}
                             style={{
-                              fontSize: 14, fontWeight: 500, color: '#e3e3e3',
+                              fontSize: 14, fontWeight: 600, color: '#fff',
                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                              cursor: 'pointer',
                             }}
-                            onMouseEnter={(e) => { e.currentTarget.style.color = '#A2C1FF'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.color = '#e3e3e3'; }}
                           >
                             {project.name}
                           </div>
-                          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                            ID: {project.id}
+                          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <DesktopOutlined /> 
+                            {new Date(project.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </div>
                         </>
                       )}
@@ -372,23 +362,27 @@ const PlaygroundHome: React.FC = () => {
                     {/* 操作 (Hover显示或选中状态) */}
                     {(selectedProject?.id === project.id || hoveredId === project.id) && editingId !== project.id && (
                       <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                        <div
-                          onClick={e => { e.stopPropagation(); setEditingId(project.id); setEditingName(project.name); }}
-                          style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', transition: 'all 0.15s' }}
-                          onMouseEnter={e => { e.currentTarget.style.color = '#fff'; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.5)'; }}
-                        >
-                          <EditOutlined style={{ fontSize: 14 }} />
-                        </div>
-                        {projects.length > 1 && (
+                        <Tooltip title="重命名">
                           <div
-                            onClick={e => handleDeleteProject(e, project.id)}
-                            style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,77,79,0.7)', cursor: 'pointer', transition: 'all 0.15s' }}
-                            onMouseEnter={e => { e.currentTarget.style.color = '#ff4d4f'; }}
-                            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,77,79,0.7)'; }}
+                            onClick={e => { e.stopPropagation(); setEditingId(project.id); setEditingName(project.name); }}
+                            style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'all 0.15s' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}
                           >
-                            <DeleteOutlined style={{ fontSize: 14 }} />
+                            <EditOutlined style={{ fontSize: 14 }} />
                           </div>
+                        </Tooltip>
+                        {projects.length > 1 && (
+                          <Tooltip title="删除">
+                            <div
+                              onClick={e => handleDeleteProject(e, project.id)}
+                              style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,77,79,0.7)', cursor: 'pointer', transition: 'all 0.15s' }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,77,79,0.1)'; e.currentTarget.style.color = '#ff4d4f'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,77,79,0.7)'; }}
+                            >
+                              <DeleteOutlined style={{ fontSize: 14 }} />
+                            </div>
+                          </Tooltip>
                         )}
                       </div>
                     )}
