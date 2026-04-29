@@ -2,8 +2,8 @@
  * 左侧浮动工具胶囊栏
  * 指针/抓手/画笔/重置视图等工具按钮
  */
-import React from 'react';
-import { Button, Tooltip } from 'antd';
+import React, { useRef } from 'react';
+import { Button, Tooltip, message } from 'antd';
 import {
   EditOutlined, PictureOutlined, BgColorsOutlined,
   StarOutlined, AppstoreOutlined, FolderOpenOutlined
@@ -11,11 +11,61 @@ import {
 import { useCanvas, usePlayground } from '../context/PlaygroundContext';
 
 const FloatingToolbar: React.FC = React.memo(() => {
-  const { activeTool, setActiveTool } = useCanvas();
+  const { activeTool, setActiveTool, canvasTransform, setNodes, maxZIndex, setMaxZIndex } = useCanvas();
   const { 
     isResourceWidgetVisible, setIsResourceWidgetVisible,
     isSettingsWidgetVisible, setIsSettingsWidgetVisible
   } = usePlayground();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      message.error(`${file.name} 大小超过 50MB，已跳过`);
+      e.target.value = '';
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    const isVideo = file.type.startsWith('video');
+    const isAudio = file.type.startsWith('audio');
+    const assetType = isVideo ? 'video' : isAudio ? 'audio' : 'image';
+
+    // Calculate center of screen in canvas coordinates
+    const rect = document.body.getBoundingClientRect();
+    const viewCenterX = rect.width / 2;
+    const viewCenterY = rect.height / 2;
+    const nodeX = (viewCenterX - canvasTransform.x) / canvasTransform.scale;
+    const nodeY = (viewCenterY - canvasTransform.y) / canvasTransform.scale;
+
+    const newZIndex = maxZIndex + 1;
+    setMaxZIndex(newZIndex);
+
+    const newNode: any = {
+      id: `local-asset-${Date.now()}-${Math.random()}`,
+      type: assetType,
+      status: 'completed',
+      taskData: { prompt: file.name },
+      resultData: assetType === 'image' 
+        ? { data: [{ url }] } 
+        : { content: { video_url: url } }, // works for both video and audio node content rendering
+      x: nodeX - 160,
+      y: nodeY - (assetType === 'audio' ? 40 : 160),
+      width: 320,
+      height: assetType === 'audio' ? 80 : 320,
+      zIndex: newZIndex
+    };
+
+    setNodes(prev => [...prev, newNode]);
+    message.success('已插入本地素材');
+
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
 
   return (
     <div style={{
@@ -81,9 +131,10 @@ const FloatingToolbar: React.FC = React.memo(() => {
         />
       </Tooltip>
 
-      <Tooltip title="插入外部图像 - 即将开放" placement="left">
+      <Tooltip title="插入图片/视频/声音" placement="left">
         <Button shape="circle" type="text" icon={<PictureOutlined style={{ fontSize: 16 }} />}
-          style={{ width: 32, height: 32, minWidth: 32, color: 'rgba(255,255,255,0.3)', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => fileInputRef.current?.click()}
+          style={{ width: 32, height: 32, minWidth: 32, color: 'rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         />
       </Tooltip>
 
@@ -122,6 +173,14 @@ const FloatingToolbar: React.FC = React.memo(() => {
           }}
         />
       </Tooltip>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        onChange={handleFileChange}
+        accept="image/*,video/*,audio/*"
+      />
     </div>
   );
 });

@@ -1470,13 +1470,18 @@ const PluginConfigInner: React.FC = () => {
             为模型 <Text strong style={{ color: '#1677ff' }}>{pgModels.find(m => m.id === pgCurrentId)?.name}</Text> 选择一个体验方案
           </Text>
         </div>
-        <Radio.Group
-          value={pgSelectedSchemeId}
-          onChange={e => setPgSelectedSchemeId(e.target.value)}
-          style={{ width: '100%' }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {pgSchemes.map(scheme => (
+        {(() => {
+          const currentModelType = pgModels.find(m => m.id === pgCurrentId)?.type_name || '';
+          const modelSchemeType = currentModelType.includes('视频') ? 'video' : currentModelType.includes('图片') ? 'image' : '';
+          const filteredSchemes = modelSchemeType ? pgSchemes.filter(s => s.type === modelSchemeType) : pgSchemes;
+          return (
+            <Radio.Group
+              value={pgSelectedSchemeId}
+              onChange={e => setPgSelectedSchemeId(e.target.value)}
+              style={{ width: '100%' }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {filteredSchemes.map(scheme => (
               <div
                 key={scheme.id}
                 style={{
@@ -1495,15 +1500,20 @@ const PluginConfigInner: React.FC = () => {
                   <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {scheme.params?.map((p: any) => (
                       <Tag key={p.key} style={{ fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
-                        {p.label}: {Array.isArray(p.options) ? p.options.join('/') : String(p.default)}
+                        {p.label}: {Array.isArray(p.options) ? (p.options.length > 4 ? p.options.slice(0, 4).join('/') + `/...+${p.options.length - 4}` : p.options.join('/')) : String(p.default)}
                       </Tag>
                     ))}
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </Radio.Group>
+                ))}
+                {filteredSchemes.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '30px 0', color: 'rgba(255,255,255,0.3)' }}>暂无匹配类型的方案</div>
+                )}
+              </div>
+            </Radio.Group>
+          );
+        })()}
       </Drawer>
     </div>
   );
@@ -1522,39 +1532,59 @@ const PluginConfigInner: React.FC = () => {
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAddScheme}>新增方案</Button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {schemeList.map((scheme, idx) => (
-            <div key={scheme.id} style={{
-              padding: '16px 20px', borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.06)', background: '#1a1a1a',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <Text strong style={{ color: '#fff', fontSize: 14 }}>{scheme.name}</Text>
-                  {scheme.is_system && <Tag color="gold" style={{ fontSize: 10, borderRadius: 8, lineHeight: '18px' }}>内置</Tag>}
-                  <Tag style={{ fontSize: 10, borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>{scheme.type}</Tag>
-                </div>
-                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 8 }}>{scheme.description}</Text>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {scheme.params?.map((p: any) => (
-                    <Tag key={p.key} style={{ fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)' }}>
-                      {p.label}: {Array.isArray(p.options) ? p.options.join('/') : String(p.default)}{p.unit ? ` ${p.unit}` : ''}
-                    </Tag>
-                  ))}
-                </div>
-                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace', display: 'block', marginTop: 6 }}>ID: {scheme.id}</Text>
+        {(() => {
+          const typeGroups: Record<string, { label: string; icon: React.ReactNode; color: string; schemes: { scheme: any; idx: number }[] }> = {
+            video: { label: '视频生成方案', icon: <VideoCameraOutlined />, color: '#1677ff', schemes: [] },
+            image: { label: '图片生成方案', icon: <PictureOutlined />, color: '#52c41a', schemes: [] },
+            other: { label: '其他方案', icon: <AppstoreOutlined />, color: '#faad14', schemes: [] },
+          };
+          schemeList.forEach((scheme, idx) => {
+            const key = scheme.type === 'video' ? 'video' : scheme.type === 'image' ? 'image' : 'other';
+            typeGroups[key].schemes.push({ scheme, idx });
+          });
+          const activeGroups = Object.entries(typeGroups).filter(([, g]) => g.schemes.length > 0);
+          if (activeGroups.length === 0) {
+            return <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.3)' }}>暂无方案，点击「新增方案」创建</div>;
+          }
+          return activeGroups.map(([key, group]) => (
+            <div key={key} style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${group.color}22` }}>
+                <span style={{ color: group.color, fontSize: 16 }}>{group.icon}</span>
+                <Text strong style={{ color: group.color, fontSize: 14 }}>{group.label}</Text>
+                <Tag style={{ fontSize: 11, borderRadius: 10, background: `${group.color}15`, border: `1px solid ${group.color}30`, color: group.color }}>{group.schemes.length} 个</Tag>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <Button type="text" icon={<EditOutlined />} onClick={() => handleEditScheme(scheme, idx)} style={{ color: '#1677ff' }}>编辑</Button>
-                <Button type="text" icon={<DeleteOutlined />} onClick={() => handleDeleteScheme(idx)} danger disabled={!!scheme.is_system}>删除</Button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {group.schemes.map(({ scheme, idx }) => (
+                  <div key={scheme.id} style={{
+                    padding: '14px 18px', borderRadius: 10,
+                    border: '1px solid rgba(255,255,255,0.06)', background: '#1a1a1a',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <Text strong style={{ color: '#fff', fontSize: 14 }}>{scheme.name}</Text>
+                        {scheme.is_system && <Tag color="gold" style={{ fontSize: 10, borderRadius: 8, lineHeight: '18px' }}>内置</Tag>}
+                      </div>
+                      <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 8 }}>{scheme.description}</Text>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {scheme.params?.map((p: any) => (
+                          <Tag key={p.key} style={{ fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)' }}>
+                            {p.label}: {Array.isArray(p.options) ? (p.options.length > 4 ? p.options.slice(0, 4).join('/') + `/...+${p.options.length - 4}` : p.options.join('/')) : String(p.default)}{p.unit ? ` ${p.unit}` : ''}
+                          </Tag>
+                        ))}
+                      </div>
+                      <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace', display: 'block', marginTop: 6 }}>ID: {scheme.id}</Text>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                      <Button type="text" icon={<EditOutlined />} onClick={() => handleEditScheme(scheme, idx)} style={{ color: '#1677ff' }}>编辑</Button>
+                      <Button type="text" icon={<DeleteOutlined />} onClick={() => handleDeleteScheme(idx)} danger disabled={!!scheme.is_system}>删除</Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-          {schemeList.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.3)' }}>暂无方案，点击「新增方案」创建</div>
-          )}
-        </div>
+          ));
+        })()}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
           <Button type="primary" loading={savingSchemes} onClick={handleSaveAllSchemes} icon={<SaveOutlined />}>
@@ -1623,14 +1653,14 @@ const PluginConfigInner: React.FC = () => {
                     <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>显示标签</Text>
                     <Input size="small" value={param.label} onChange={e => handleEditingSchemeParamChange(pIdx, 'label', e.target.value)} />
                   </div>
-                  <div style={{ width: 120 }}>
+                  <div style={{ width: 140 }}>
                     <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>控件类型</Text>
                     <Select size="small" value={param.type} onChange={v => handleEditingSchemeParamChange(pIdx, 'type', v)} style={{ width: '100%' }}
-                      options={[{ label: 'Radio 单选', value: 'radio' }, { label: 'Select 下拉', value: 'select' }, { label: 'Switch 开关', value: 'switch' }]}
+                      options={[{ label: 'Radio 单选', value: 'radio' }, { label: 'Select 下拉', value: 'select' }, { label: 'Switch 开关', value: 'switch' }, { label: 'Slider 滑块', value: 'slider' }]}
                     />
                   </div>
                 </div>
-                {param.type !== 'switch' && (
+                {param.type !== 'switch' && param.type !== 'slider' && (
                   <div style={{ marginBottom: 8 }}>
                     <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>选项列表（用英文逗号分隔）</Text>
                     <Input size="small" value={Array.isArray(param.options) ? param.options.join(',') : ''}
@@ -1639,11 +1669,39 @@ const PluginConfigInner: React.FC = () => {
                     />
                   </div>
                 )}
+                {param.type === 'slider' && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>最小值</Text>
+                      <InputNumber size="small" style={{ width: '100%' }} value={param.min ?? 0}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'min', v ?? 0)}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>最大值</Text>
+                      <InputNumber size="small" style={{ width: '100%' }} value={param.max ?? 100}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'max', v ?? 100)}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>步长</Text>
+                      <InputNumber size="small" style={{ width: '100%' }} value={param.step ?? 1} min={0.001}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'step', v ?? 1)}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <div style={{ flex: 1 }}>
                     <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>默认值</Text>
                     {param.type === 'switch' ? (
                       <Switch checked={!!param.default} onChange={v => handleEditingSchemeParamChange(pIdx, 'default', v)} />
+                    ) : param.type === 'slider' ? (
+                      <InputNumber size="small" style={{ width: '100%' }}
+                        value={typeof param.default === 'number' ? param.default : Number(param.default) || 0}
+                        min={param.min ?? 0} max={param.max ?? 100} step={param.step ?? 1}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'default', v ?? 0)}
+                      />
                     ) : (
                       <Input size="small" value={String(param.default ?? '')} onChange={e => handleEditingSchemeParamChange(pIdx, 'default', e.target.value)} />
                     )}

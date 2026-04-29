@@ -4,7 +4,7 @@
  * - 上层：干净的文本输入区域
  * - 下层：功能芯片栏（模型选择、API 密钥、附加功能按钮）+ 运行按钮
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Input, Tooltip, message, Dropdown, Modal, Switch } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -19,6 +19,7 @@ import { useGeneration } from '../hooks/useGeneration';
 import { getCategoryLabel } from '../constants';
 import AssetPickerModal from './AssetPickerModal';
 import ImageEditorModal from './ImageEditorModal';
+import VideoEditorModal from './VideoEditorModal';
 import type { PluginAsset } from '../../../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -52,6 +53,29 @@ const PromptInput: React.FC = React.memo(() => {
   const [editingAssetIndex, setEditingAssetIndex] = useState<number | null>(null);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /** 语音输入 - 聚焦输入框并提示使用系统听写 */
+  const handleVoiceInput = useCallback(() => {
+    // 聚焦到输入框，让系统听写可以直接输入
+    const textarea = document.querySelector('.prompt-textarea textarea') as HTMLTextAreaElement;
+    if (textarea) {
+      textarea.focus();
+    }
+
+    const isMacOS = /Mac|iPod|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+    if (isMacOS) {
+      message.info({
+        content: '请按两次 Fn 键或点击键盘上的 🎙️ 键启动系统听写',
+        duration: 4,
+      });
+    } else {
+      message.info({
+        content: '请按 Win + H 启动系统语音输入',
+        duration: 4,
+      });
+    }
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -271,6 +295,7 @@ const PromptInput: React.FC = React.memo(() => {
 
       {/* 输入区域 */}
       <TextArea
+        className="prompt-textarea"
         value={prompt}
         onChange={e => setPrompt(e.target.value)}
         placeholder={
@@ -420,10 +445,10 @@ const PromptInput: React.FC = React.memo(() => {
           {/* 分隔符 */}
           <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.06)', margin: '0 2px', flexShrink: 0 }} />
 
-          {/* 附加功能占位按钮 */}
-          <Tooltip title="语音输入 — 即将开放">
+          {/* 语音输入按钮 */}
+          <Tooltip title="语音输入">
             <div
-              onClick={() => message.info('语音输入功能即将开放')}
+              onClick={handleVoiceInput}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -555,6 +580,10 @@ const PromptInput: React.FC = React.memo(() => {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
         }
+        @keyframes voicePulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(255,77,79,0.3); }
+          50% { box-shadow: 0 0 0 6px rgba(255,77,79,0); }
+        }
       `}</style>
 
       {/* 资产库选择弹窗 */}
@@ -609,29 +638,38 @@ const PromptInput: React.FC = React.memo(() => {
         />
       )}
 
-      {/* 视频预览弹窗 */}
-      <Modal
-        open={isVideoPreviewOpen}
-        title="视频预览"
-        footer={null}
-        onCancel={() => {
-          setIsVideoPreviewOpen(false);
-          setEditingAssetIndex(null);
-        }}
-        width={800}
-        centered
-        styles={{ body: { padding: 0, background: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center' } }}
-        destroyOnClose
-      >
-        {editingAssetIndex !== null && (attachedAssets[editingAssetIndex]?.asset.asset_type === 'video' || attachedAssets[editingAssetIndex]?.asset.file_name?.match(/\.(mp4|mov|webm|avi|mkv)$/i)) && (
-          <video
-            src={attachedAssets[editingAssetIndex].fullUrl}
-            style={{ width: '100%', maxHeight: '75vh', display: 'block' }}
-            controls
-            autoPlay
-          />
-        )}
-      </Modal>
+      {/* 视频编辑弹窗 */}
+      {editingAssetIndex !== null && (attachedAssets[editingAssetIndex]?.asset.asset_type === 'video' || attachedAssets[editingAssetIndex]?.asset.file_name?.match(/\.(mp4|mov|webm|avi|mkv)$/i)) && (
+        <VideoEditorModal
+          open={isVideoPreviewOpen}
+          videoUrl={attachedAssets[editingAssetIndex].fullUrl}
+          onCancel={() => {
+            setIsVideoPreviewOpen(false);
+            setEditingAssetIndex(null);
+          }}
+          onSave={(newUrl, file) => {
+            const index = editingAssetIndex;
+            setAttachedAssets(prev => {
+              const updated = [...prev];
+              updated[index] = {
+                ...updated[index],
+                asset: {
+                  ...updated[index].asset,
+                  file_name: file.name,
+                  size: file.size,
+                  file_url: newUrl,
+                },
+                fullUrl: newUrl,
+                file: file,
+              };
+              return updated;
+            });
+            setIsVideoPreviewOpen(false);
+            setEditingAssetIndex(null);
+            message.success('视频编辑已保存');
+          }}
+        />
+      )}
 
       {/* 隐藏的本地文件上传 */}
       <input

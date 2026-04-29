@@ -17,6 +17,20 @@ pub struct SiteSettings {
     pub login_subtitle: String,
     #[serde(default = "default_enable_multilingual")]
     pub enable_multilingual: bool,
+    /// 是否允许用户切换亮色/暗色主题（关闭后用户端不显示切换按钮）
+    #[serde(default = "default_true_theme")]
+    pub enable_theme_toggle: bool,
+    /// 站点默认主题："dark" 或 "light"
+    #[serde(default = "default_theme_mode")]
+    pub default_theme: String,
+}
+
+fn default_true_theme() -> bool {
+    true
+}
+
+fn default_theme_mode() -> String {
+    "dark".to_string()
 }
 
 fn default_enable_multilingual() -> bool {

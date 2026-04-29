@@ -247,6 +247,8 @@ export interface SiteSettings {
   login_title?: string;
   login_subtitle?: string;
   enable_multilingual?: boolean;
+  enable_theme_toggle?: boolean;
+  default_theme?: 'light' | 'dark';
 }
 
 export interface CurrencySettings {
