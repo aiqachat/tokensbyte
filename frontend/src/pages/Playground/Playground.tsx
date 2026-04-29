@@ -69,7 +69,7 @@ const Playground: React.FC = () => {
     <ConfigProvider theme={{
       
       token: {
-        colorPrimary: '#A2C1FF',
+        colorPrimary: '#fff',
         borderRadius: 12,
         colorBgContainer: '#1E1F22',
         colorBorder: 'rgba(255,255,255,0.08)'

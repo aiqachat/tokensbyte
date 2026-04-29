@@ -212,7 +212,7 @@ const PlaygroundHome: React.FC = () => {
           background: themeMode === 'dark' ? 'rgba(24, 24, 27, 0.65)' : 'rgba(255, 255, 255, 0.65)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          border: themeMode === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+          border: themeMode === 'dark' ? '1px solid rgba(255,255,255,0.18)' : '1px solid rgba(0,0,0,0.15)',
           boxShadow: themeMode === 'dark' ? '0 8px 32px rgba(0,0,0,0.2)' : '0 8px 32px rgba(0,0,0,0.05)',
           display: 'flex', flexDirection: 'column',
           zIndex: 10,
@@ -302,27 +302,31 @@ const PlaygroundHome: React.FC = () => {
                   <div
                     key={project.id}
                     onClick={() => {
-                      if (editingId !== project.id) setSelectedProject(project);
+                      if (editingId !== project.id) {
+                        setSelectedProject(project);
+                      }
                     }}
-                    onDoubleClick={() => handleOpenProject(project.id)}
                     onMouseEnter={() => setHoveredId(project.id)}
                     onMouseLeave={() => setHoveredId(null)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 14,
-                      padding: '10px', borderRadius: 8, cursor: 'pointer',
+                      padding: '10px', borderRadius: 12, cursor: 'pointer',
                       transition: 'all 0.2s ease',
                       background: selectedProject?.id === project.id
-                        ? (themeMode === 'dark' ? '#27272a' : 'rgba(0,0,0,0.08)')
-                        : hoveredId === project.id ? (themeMode === 'dark' ? '#18181b' : 'rgba(0,0,0,0.04)') : 'transparent',
+                        ? (themeMode === 'dark' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.12)')
+                        : hoveredId === project.id ? (themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)') : 'transparent',
                     }}
                   >
                     {/* 小缩略图 */}
-                    <div style={{
+                    <div
+                      onClick={(e) => { e.stopPropagation(); handleOpenProject(project.id); }}
+                      style={{
                       width: 40, height: 40, borderRadius: 6, flexShrink: 0,
                       background: themeMode === 'dark' ? '#18181b' : 'rgba(0,0,0,0.04)', 
                       border: themeMode === 'dark' ? '1px solid #27272a' : '1px solid rgba(0,0,0,0.08)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       overflow: 'hidden',
+                      cursor: 'pointer'
                     }}>
                       {project.cover_url ? (
                         /\.(mp4|webm|mov)(\?|$)/i.test(project.cover_url) ? (
@@ -331,7 +335,13 @@ const PlaygroundHome: React.FC = () => {
                           <img src={getFullUrl(project.cover_url)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
                         )
                       ) : (
-                        <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, rgba(22,119,255,0.1) 0%, rgba(22,119,255,0.02) 100%)' }} />
+                        <div style={{ 
+                          width: '100%', height: '100%', 
+                          background: themeMode === 'dark' ? '#232326' : '#f4f4f5',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>
+                          <FileTextOutlined style={{ color: themeMode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)', fontSize: 16 }} />
+                        </div>
                       )}
                     </div>
 
@@ -400,22 +410,22 @@ const PlaygroundHome: React.FC = () => {
                 onClick={() => handleOpenProject(selectedProject.id)}
                 style={{
                   width: 320, height: 200, borderRadius: 20, margin: '0 auto 32px',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: themeMode === 'dark' ? '#232326' : '#f4f4f5',
+                  border: themeMode === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   overflow: 'hidden', cursor: 'pointer',
                   transition: 'all 0.3s',
-                  boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                  boxShadow: themeMode === 'dark' ? '0 20px 60px rgba(0,0,0,0.3)' : '0 20px 60px rgba(0,0,0,0.05)',
                 }}
                 onMouseEnter={e => {
                   e.currentTarget.style.transform = 'scale(1.02)';
-                  e.currentTarget.style.boxShadow = '0 24px 64px rgba(162,193,255,0.15)';
-                  e.currentTarget.style.borderColor = 'rgba(162,193,255,0.25)';
+                  e.currentTarget.style.boxShadow = themeMode === 'dark' ? '0 24px 64px rgba(0,0,0,0.4)' : '0 24px 64px rgba(0,0,0,0.1)';
+                  e.currentTarget.style.borderColor = themeMode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
                 }}
                 onMouseLeave={e => {
                   e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.boxShadow = '0 20px 60px rgba(0,0,0,0.3)';
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                  e.currentTarget.style.boxShadow = themeMode === 'dark' ? '0 20px 60px rgba(0,0,0,0.3)' : '0 20px 60px rgba(0,0,0,0.05)';
+                  e.currentTarget.style.borderColor = themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
                 }}
               >
                 {selectedProject.cover_url ? (
@@ -425,7 +435,7 @@ const PlaygroundHome: React.FC = () => {
                     <img src={getFullUrl(selectedProject.cover_url)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
                   )
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, color: 'rgba(255,255,255,0.15)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, color: themeMode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)' }}>
                     <AppstoreOutlined style={{ fontSize: 48 }} />
                     <span style={{ fontSize: 14 }}>暂无封面</span>
                   </div>
@@ -435,7 +445,7 @@ const PlaygroundHome: React.FC = () => {
               <h2 style={{ fontSize: 24, fontWeight: 700, color: themeMode === 'light' ? '#1f2937' : '#fff', margin: '0 0 8px' }}>
                 {selectedProject.name}
               </h2>
-              <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', margin: '0 0 32px' }}>
+              <p style={{ fontSize: 14, color: themeMode === 'dark' ? '#a1a1aa' : '#666', margin: '0 0 32px' }}>
                 创建于 {new Date(selectedProject.created_at).toLocaleDateString('zh-CN')}
                 {' · '}
                 最近更新 {new Date(selectedProject.updated_at).toLocaleDateString('zh-CN')}
@@ -445,14 +455,21 @@ const PlaygroundHome: React.FC = () => {
                 onClick={() => handleOpenProject(selectedProject.id)}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 10,
-                  padding: '12px 32px', borderRadius: 14,
-                  background: 'linear-gradient(135deg, #A2C1FF 0%, #6C8EFF 100%)',
-                  color: '#0a0b0d', fontSize: 15, fontWeight: 600,
-                  cursor: 'pointer', transition: 'all 0.2s',
-                  boxShadow: '0 8px 24px rgba(162,193,255,0.2)',
+                  padding: '10px 28px', borderRadius: 12,
+                  background: themeMode === 'dark' ? '#f4f4f5' : '#18181b',
+                  color: themeMode === 'dark' ? '#18181b' : '#fff', 
+                  fontSize: 15, fontWeight: 500,
+                  cursor: 'pointer', transition: 'all 0.2s ease',
+                  boxShadow: themeMode === 'dark' ? '0 4px 12px rgba(255,255,255,0.05)' : '0 4px 12px rgba(0,0,0,0.1)',
                 }}
-                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.opacity = '0.9';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.opacity = '1';
+                }}
               >
                 <RocketOutlined />
                 进入工作台

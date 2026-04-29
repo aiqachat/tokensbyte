@@ -83,7 +83,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
         inset: 0,
         overflow: 'hidden',
         cursor: activeTool === 'hand' || isSpaceDown ? (isDraggingCanvas ? 'grabbing' : 'grab') : 'default',
-        background: '#1E1E20',
+        background: '#222225',
       }}
       onMouseDown={handleCanvasMouseDownWithDeselect}
       onMouseMove={handleCanvasMouseMove}
@@ -94,7 +94,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
       <CanvasParticles ref={particlesRef} />
 
       {/* 变换层 */}
-      <div style={{
+      <div className="transform-layer" style={{
         position: 'absolute',
         transformOrigin: '0 0',
         transform: `translate(${canvasTransform.x}px, ${canvasTransform.y}px) scale(${canvasTransform.scale})`

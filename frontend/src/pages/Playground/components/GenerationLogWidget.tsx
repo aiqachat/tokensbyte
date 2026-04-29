@@ -227,7 +227,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
 
   const statusInfo = () => {
     if (selectedNode.status === 'completed') return { icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />, label: '生成完成', color: '#52c41a' };
-    if (selectedNode.status === 'loading') return { icon: <LoadingOutlined style={{ color: '#A2C1FF' }} />, label: '正在生成...', color: '#A2C1FF' };
+    if (selectedNode.status === 'loading') return { icon: <LoadingOutlined style={{ color: '#fff' }} />, label: '正在生成...', color: '#fff' };
     return { icon: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />, label: '生成失败', color: '#ff4d4f' };
   };
 
@@ -235,10 +235,10 @@ const GenerationLogWidget: React.FC = React.memo(() => {
 
   const typeLabel = selectedNode.type === 'video' ? 'AI 视频' : selectedNode.type === 'image' ? 'AI 图像' : '文本生成';
   const typeIcon = selectedNode.type === 'video'
-    ? <VideoCameraOutlined style={{ fontSize: 16, color: '#A2C1FF' }} />
+    ? <VideoCameraOutlined style={{ fontSize: 16, color: '#fff' }} />
     : selectedNode.type === 'image'
-    ? <PictureOutlined style={{ fontSize: 16, color: '#A2C1FF' }} />
-    : <FileTextOutlined style={{ fontSize: 16, color: '#A2C1FF' }} />;
+    ? <PictureOutlined style={{ fontSize: 16, color: '#fff' }} />
+    : <FileTextOutlined style={{ fontSize: 16, color: '#fff' }} />;
 
   const handleClose = () => {
     setIsGenLogVisible(false);
@@ -286,7 +286,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
         userSelect: 'none',
       }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <MessageCircle size={16} style={{ color: '#A2C1FF' }} />
+          <MessageCircle size={16} style={{ color: '#fff' }} />
           <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>创作日志</Text>
         </div>
         <Tooltip title="关闭">
@@ -331,7 +331,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                   border: '1px solid rgba(255,255,255,0.06)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <LoadingOutlined style={{ fontSize: 18, color: '#A2C1FF' }} />
+                  <LoadingOutlined style={{ fontSize: 18, color: '#fff' }} />
                 </div>
                 <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>正在生成中...</Text>
               </div>
