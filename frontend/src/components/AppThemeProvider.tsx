@@ -57,7 +57,12 @@ export const AppThemeProvider = ({ children }: { children: React.ReactNode }) =>
           },
           Card: {
             colorBorderSecondary: themeMode === 'light' ? '#e5e7eb' : '#303030',
-          }
+          },
+          Radio: {
+            // solid 模式选中文字
+            buttonSolidCheckedColor: '#fff',
+            buttonSolidCheckedBg: '#1677ff',
+          },
         }
       }}
     >

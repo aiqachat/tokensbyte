@@ -25,13 +25,14 @@ const AudioNodeContent: React.FC<Props> = React.memo(({ resultData }) => {
         width: 48,
         height: 48,
         borderRadius: '50%',
-        background: 'rgba(162, 193, 255, 0.1)',
+        background: 'rgba(255, 255, 255, 0.1)',
+        backdropFilter: 'blur(8px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        border: '1px solid rgba(162, 193, 255, 0.2)'
+        border: '1px solid rgba(255, 255, 255, 0.2)'
       }}>
-        <AudioOutlined style={{ fontSize: 24, color: '#A2C1FF' }} />
+        <AudioOutlined style={{ fontSize: 24, color: '#fff' }} />
       </div>
       
       {audioUrl ? (

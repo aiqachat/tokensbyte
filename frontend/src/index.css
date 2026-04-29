@@ -155,3 +155,10 @@ body[data-theme='dark'] *::-webkit-scrollbar-thumb:hover {
   flex-direction: column;
   overflow: hidden;
 }
+
+/* 修复亮色模式下 Radio.Button 选中状态文字不可见 */
+body[data-theme='light'] .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  color: #1677ff !important;
+  background: #e6f4ff !important;
+  border-color: #1677ff !important;
+}

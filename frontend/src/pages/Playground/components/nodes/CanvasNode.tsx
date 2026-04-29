@@ -50,7 +50,7 @@ const ResizeHandle: React.FC<{
         height: size,
         borderRadius: '50%',
         background: '#fff',
-        border: '2px solid #A2C1FF',
+        border: '2px solid #fff',
         cursor: RESIZE_CURSORS[direction],
         zIndex: 10,
         boxShadow: '0 0 4px rgba(0,0,0,0.3)',
@@ -99,11 +99,11 @@ const CanvasNode: React.FC<Props> = React.memo(({
         zIndex: node.zIndex,
         background: '#1A1B1E',
         borderRadius: 12,
-        border: `${isSelected ? '2px' : '1px'} solid ${isSelected ? '#A2C1FF' : isDragging ? 'rgba(162,193,255,0.5)' : 'rgba(255,255,255,0.08)'}`,
+        border: `${isSelected ? '2px' : '1px'} solid ${isSelected ? '#fff' : isDragging ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.08)'}`,
         boxShadow: isSelected
-          ? '0 0 0 1px rgba(162,193,255,0.3), 0 8px 32px rgba(162,193,255,0.15)'
+          ? '0 0 0 1px rgba(255,255,255,0.3), 0 8px 32px rgba(255,255,255,0.15)'
           : isDragging
-          ? '0 8px 32px rgba(162,193,255,0.2)'
+          ? '0 8px 32px rgba(255,255,255,0.2)'
           : '0 4px 20px rgba(0,0,0,0.4)',
         overflow: isSelected ? 'visible' : 'hidden',
         transition: isDragging ? 'none' : 'box-shadow 0.2s, border-color 0.2s',
@@ -168,7 +168,7 @@ const CanvasNode: React.FC<Props> = React.memo(({
       }}>
         {node.status === 'loading' && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-            <LoadingOutlined style={{ fontSize: 32, color: '#A2C1FF' }} />
+            <LoadingOutlined style={{ fontSize: 32, color: '#fff' }} />
             <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
               {node.taskData?.task_id ? '生成中...' : '排队中...'}
             </Text>

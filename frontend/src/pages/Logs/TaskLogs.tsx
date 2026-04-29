@@ -6,6 +6,7 @@ import request from '../../utils/request';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/auth';
+import { useThemeStore } from '../../store/theme';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
@@ -121,6 +122,13 @@ const TaskLogs: React.FC = () => {
   const { t } = useTranslation();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
+  const panelBg = isLight ? '#fafafa' : '#141414';
+  const labelBg = isLight ? '#f5f5f5' : '#1a1a1a';
+  const labelColor = isLight ? '#6b7280' : '#8c8c8c';
+  const contentBg = isLight ? '#fff' : '#141414';
+  const timeBadgeBg = isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)';
   const [data, setData] = useState<TaskLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -168,8 +176,8 @@ const TaskLogs: React.FC = () => {
   const expandedRowRender = (record: TaskLog) => (
     <div style={{ padding: '8px 0' }}>
       <Descriptions size="small" column={1} bordered
-        labelStyle={{ width: 120, color: '#8c8c8c', background: '#1a1a1a' }}
-        contentStyle={{ background: '#141414', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12, maxHeight: 300, overflow: 'auto' }}
+        labelStyle={{ width: 120, color: labelColor, background: labelBg }}
+        contentStyle={{ background: contentBg, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12, maxHeight: 300, overflow: 'auto' }}
       >
         <Descriptions.Item label="Token 用量">
           输入 {record.prompt_tokens} / 输出 {record.completion_tokens}{(record.cached_tokens ?? 0) > 0 ? ` / 缓存(输入内) ${record.cached_tokens}` : ''}
@@ -229,12 +237,12 @@ const TaskLogs: React.FC = () => {
           const ts = getAsyncCompletedTs(r);
           if (ts) {
             const totalSec = ts - dayjs(r.created_at).unix();
-            if (totalSec >= 60) return <Text type="secondary" style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: 4 }}>🕗 {(totalSec / 60).toFixed(1)}m</Text>;
-            return <Text type="secondary" style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: 4 }}>🕗 {totalSec.toFixed(1)}s</Text>;
+            if (totalSec >= 60) return <Text type="secondary" style={{ background: timeBadgeBg, padding: '2px 8px', borderRadius: 4 }}>🕗 {(totalSec / 60).toFixed(1)}m</Text>;
+            return <Text type="secondary" style={{ background: timeBadgeBg, padding: '2px 8px', borderRadius: 4 }}>🕗 {totalSec.toFixed(1)}s</Text>;
           }
         }
         return (
-          <Text type="secondary" style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: 4 }}>
+          <Text type="secondary" style={{ background: timeBadgeBg, padding: '2px 8px', borderRadius: 4 }}>
             🕗 {(r.latency_ms / 1000).toFixed(1)}s
           </Text>
         );
@@ -321,7 +329,7 @@ const TaskLogs: React.FC = () => {
 
   // ── 筛选栏 ───────────────────────────────────────────────────
   const filterBar = (
-    <div style={{ padding: 16, background: '#141414', borderRadius: 8, marginBottom: 16 }}>
+    <div style={{ padding: 16, background: panelBg, borderRadius: 8, marginBottom: 16 }}>
       <Form form={form} layout="inline" onFinish={() => fetchLogs(1, pageSize)}>
         <Form.Item name="action_type" style={{ marginBottom: 8 }}>
           <Select placeholder="全部类型" allowClear style={{ width: 120 }}

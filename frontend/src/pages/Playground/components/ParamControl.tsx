@@ -20,31 +20,47 @@ const SliderControl: React.FC<{
   const max = param.max ?? 100;
   const step = param.step ?? 1;
 
-  const toNum = (v: any) => (typeof v === 'number' ? v : Number(v) || min);
-  const [localValue, setLocalValue] = useState(() => toNum(value));
+  const precision = step.toString().split('.')[1]?.length || 0;
+  const roundToStep = useCallback((v: number) => {
+    return Number((Math.round(v / step) * step).toFixed(precision));
+  }, [step, precision]);
+
+  const toNum = useCallback((v: any) => (typeof v === 'number' ? v : Number(v) || min), [min]);
+
+  const [localValue, setLocalValue] = useState(() => roundToStep(toNum(value)));
+  const [sliderValue, setSliderValue] = useState(() => roundToStep(toNum(value)));
   const dragging = useRef(false);
 
   // 外部值变化时同步到本地（非拖拽状态下）
   useEffect(() => {
-    if (!dragging.current) setLocalValue(toNum(value));
-  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!dragging.current) {
+      const val = roundToStep(toNum(value));
+      setLocalValue(val);
+      setSliderValue(val);
+    }
+  }, [value, roundToStep]);
 
   const handleSliderChange = useCallback((v: number) => {
     dragging.current = true;
-    setLocalValue(v);
-  }, []);
+    setSliderValue(v); // 丝滑拖拽，不断档
+    setLocalValue(roundToStep(v)); // 数字框显示按 step 吸附的值
+  }, [roundToStep]);
 
   const handleSliderComplete = useCallback((v: number) => {
     dragging.current = false;
-    setLocalValue(v);
-    onChange(v);
-  }, [onChange]);
+    const rounded = roundToStep(v);
+    setSliderValue(rounded); // 松手时吸附到准确位置
+    setLocalValue(rounded);
+    onChange(rounded);
+  }, [onChange, roundToStep]);
 
   const handleInputChange = useCallback((v: number | null) => {
     if (v === null) return;
-    setLocalValue(v);
-    onChange(v);
-  }, [onChange]);
+    const rounded = roundToStep(v);
+    setLocalValue(rounded);
+    setSliderValue(rounded);
+    onChange(rounded);
+  }, [onChange, roundToStep]);
 
   return (
     <div>
@@ -54,11 +70,11 @@ const SliderControl: React.FC<{
           style={{ flex: 1 }}
           min={min}
           max={max}
-          step={step}
-          value={localValue}
+          step={(max - min) / 1000} // 设置极小的 step 保证视觉极度丝滑
+          value={sliderValue}
           onChange={handleSliderChange}
           onChangeComplete={handleSliderComplete}
-          tooltip={{ formatter: (v) => `${v}${param.unit ? ' ' + param.unit : ''}` }}
+          tooltip={{ formatter: null }} // 隐藏默认气泡，因为右侧已经有输入框
         />
         <InputNumber
           size="small"

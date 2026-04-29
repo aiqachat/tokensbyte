@@ -109,15 +109,20 @@ pub async fn resolve_forward_rule(
             {
                 let old_path_clean = old_path.trim_start_matches('/');
                 let entry_path_clean = entry_path.trim_start_matches('/');
-                if old_path_clean == entry_path_clean || entry_path_clean.ends_with(old_path_clean) {
+                if old_path_clean.is_empty() || old_path_clean == entry_path_clean || entry_path_clean.ends_with(old_path_clean) {
                     best = Some(rule);
                     break;
                 }
+            } else {
+                // 如果没有配置 path_rewrite 或者 old 为空，则作为通配符命中
+                best = Some(rule);
+                break;
             }
         }
     }
-    // 未找到与入口路径匹配的规则时直接返回 None，不回落到不匹配的规则
-    let rule = best?;
+    // 未找到与入口路径匹配的规则时，如果在 candidates 里有该模型的规则，则兜底回落到第一条，
+    // 保证在 Native 路由（如 /api/v3/...）中也能顺利继承模型上配置的 asset_convert 等扩展属性。
+    let rule = best.or_else(|| candidates.first().copied())?;
 
     // 5. 解析 config_json
     let config: serde_json::Value =
