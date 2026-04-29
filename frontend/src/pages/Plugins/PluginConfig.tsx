@@ -8,6 +8,7 @@ import AdminPresetAssets from './AssetManager/AdminPresetAssets';
 import RelayConvertAssets from './AssetManager/RelayConvertAssets';
 import JsonView from '@uiw/react-json-view';
 import { darkTheme } from '@uiw/react-json-view/dark';
+import { lightTheme } from '@uiw/react-json-view/light';
 import { useThemeStore } from '../../store/theme';
 
 // ── 插件组件动态加载（删除插件源文件不影响系统运行） ──
@@ -74,8 +75,7 @@ const pluginIcons: Record<string, React.ReactNode> = {
   volcengine_pool: <CloudServerOutlined style={{ fontSize: 20 }} />,
   gptimage_pool: <PictureOutlined style={{ fontSize: 20 }} />,
   model_marketplace: <ShopOutlined style={{ fontSize: 20 }} />,
-  site_icons: <AppstoreOutlined style={{ fontSize: 20 }} />,
-};
+  site_icons: <AppstoreOutlined style={{ fontSize: 20 }} /> };
 
 const PluginConfigInner: React.FC = () => {
   const { themeMode } = useThemeStore();
@@ -174,8 +174,7 @@ const PluginConfigInner: React.FC = () => {
           id: m.id,
           enabled: m.mp_enabled,
           sort_order: m.mp_sort_order || 0,
-          description: m.mp_description || '',
-        }))
+          description: m.mp_description || '' }))
       };
       await request.post(`/plugins/${name}/marketplace-models`, payload);
       message.success('模型广场配置保存成功');
@@ -222,8 +221,7 @@ const PluginConfigInner: React.FC = () => {
           id: m.id,
           mid: m.mid || '',
           enabled: m.pg_enabled,
-          scheme_id: m.pg_scheme_id || null,
-        }))
+          scheme_id: m.pg_scheme_id || null }))
       };
       await request.post(`/plugins/${name}/playground-config`, payload);
       message.success('体验配置保存成功');
@@ -431,21 +429,36 @@ const PluginConfigInner: React.FC = () => {
 
       if (storageRes) {
         setStorageConfig(storageRes);
-        // 加载等级配额
+        // 加载等级配额 (统一转换为 ULID key)
         if (storageRes.level_quotas) {
-          setLevelQuotas(storageRes.level_quotas);
+          const lq: Record<string, number> = {};
+          allLevels.forEach((lv: any) => {
+            const lvIdStr = lv.id.toString();
+            lq[lvIdStr] = storageRes.level_quotas[lvIdStr] ?? storageRes.level_quotas[lv.group_key];
+          });
+          setLevelQuotas(lq);
         }
         if (storageRes.default_quota != null) {
           setDefaultQuota(storageRes.default_quota);
         }
         if (storageRes.level_max_folders) {
-          setLevelMaxFolders(storageRes.level_max_folders);
+          const lmf: Record<string, number> = {};
+          allLevels.forEach((lv: any) => {
+            const lvIdStr = lv.id.toString();
+            lmf[lvIdStr] = storageRes.level_max_folders[lvIdStr] ?? storageRes.level_max_folders[lv.group_key];
+          });
+          setLevelMaxFolders(lmf);
         }
         if (storageRes.default_max_folders != null) {
           setDefaultMaxFolders(storageRes.default_max_folders);
         }
         if (storageRes.level_max_files_per_folder) {
-          setLevelMaxFilesPerFolder(storageRes.level_max_files_per_folder);
+          const lmfpf: Record<string, number> = {};
+          allLevels.forEach((lv: any) => {
+            const lvIdStr = lv.id.toString();
+            lmfpf[lvIdStr] = storageRes.level_max_files_per_folder[lvIdStr] ?? storageRes.level_max_files_per_folder[lv.group_key];
+          });
+          setLevelMaxFilesPerFolder(lmfpf);
         }
         if (storageRes.default_max_files_per_folder != null) {
           setDefaultMaxFilesPerFolder(storageRes.default_max_files_per_folder);
@@ -458,7 +471,8 @@ const PluginConfigInner: React.FC = () => {
         const apiDefault = storageRes.default_api_enabled ?? true;
         const initialApiEnabled: Record<string, boolean> = {};
         allLevels.forEach((lv: any) => {
-          initialApiEnabled[lv.group_key] = savedApiEnabled[lv.group_key] ?? apiDefault;
+          const lvIdStr = lv.id.toString();
+          initialApiEnabled[lvIdStr] = savedApiEnabled[lvIdStr] ?? savedApiEnabled[lv.group_key] ?? apiDefault;
         });
         setLevelApiEnabled(initialApiEnabled);
         // 延迟设置表单值，等待 Tabs 内的 Form 组件渲染完毕
@@ -470,8 +484,7 @@ const PluginConfigInner: React.FC = () => {
             tos_region: storageRes.tos_region || '',
             tos_bucket: storageRes.tos_bucket || '',
             tos_path_prefix: storageRes.tos_path_prefix || '',
-            tos_custom_domain: storageRes.tos_custom_domain || '',
-          });
+            tos_custom_domain: storageRes.tos_custom_domain || '' });
         }, 0);
       }
 
@@ -483,8 +496,7 @@ const PluginConfigInner: React.FC = () => {
             volc_secret_key: moderationRes.volc_secret_key || '',
             volc_app_id: moderationRes.volc_app_id || '',
             volc_project_name: moderationRes.volc_project_name || 'default',
-            volc_group_id: moderationRes.volc_group_id || '',
-          });
+            volc_group_id: moderationRes.volc_group_id || '' });
         }, 0);
       }
     } catch (error) {
@@ -533,8 +545,7 @@ const PluginConfigInner: React.FC = () => {
         level_max_files_per_folder: levelMaxFilesPerFolder,
         default_max_files_per_folder: defaultMaxFilesPerFolder,
         level_api_enabled: levelApiEnabled,
-        default_api_enabled: defaultApiEnabled,
-      });
+        default_api_enabled: defaultApiEnabled });
       message.success('配置已保存');
     } catch (error) {
       message.error('保存失败');
@@ -615,8 +626,7 @@ const PluginConfigInner: React.FC = () => {
         background: _isLight ? '#fff' : '#141414', borderRadius: 8,
         border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
         padding: '16px 20px', marginBottom: 16,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>启用状态</Text><br />
           <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>
@@ -633,21 +643,20 @@ const PluginConfigInner: React.FC = () => {
       {isSystemPlugin ? (
         <div style={{
           background: _isLight ? '#fff' : '#141414', borderRadius: 8,
-          border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
-        }}>
+          border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16 }}>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>管理员分组权限</Text><br />
           <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置哪些管理员分组可以在管理后台看到并管理此插件</Text>
           <Divider style={{ borderColor: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
 
           <div
-            style={{ padding: '12px 16px', borderRadius: 6, border: isAllAdminGroups ? '1px solid rgba(250,140,22,0.4)' : '1px solid rgba(255,255,255,0.08)', background: isAllAdminGroups ? 'rgba(250,140,22,0.06)' : 'transparent', cursor: 'pointer', marginBottom: 8, transition: 'all 0.15s' }}
+            style={{ padding: '12px 16px', borderRadius: 6, border: isAllAdminGroups ? '1px solid rgba(250,140,22,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'), background: isAllAdminGroups ? 'rgba(250,140,22,0.06)' : 'transparent', cursor: 'pointer', marginBottom: 8, transition: 'all 0.15s' }}
             onClick={() => { setIsAllAdminGroups(true); setSelectedAdminGroups([]); }}
           >
             <Checkbox checked={isAllAdminGroups}><Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>所有管理员分组可见</Text></Checkbox>
             <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12, display: 'block', marginLeft: 24, marginTop: 2 }}>所有管理员分组均可管理此插件</Text>
           </div>
           <div
-            style={{ padding: '12px 16px', borderRadius: 6, border: !isAllAdminGroups ? '1px solid rgba(250,140,22,0.4)' : '1px solid rgba(255,255,255,0.08)', background: !isAllAdminGroups ? 'rgba(250,140,22,0.06)' : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}
+            style={{ padding: '12px 16px', borderRadius: 6, border: !isAllAdminGroups ? '1px solid rgba(250,140,22,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'), background: !isAllAdminGroups ? 'rgba(250,140,22,0.06)' : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}
             onClick={() => setIsAllAdminGroups(false)}
           >
             <Checkbox checked={!isAllAdminGroups}><Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>仅指定管理员分组可见</Text></Checkbox>
@@ -660,7 +669,7 @@ const PluginConfigInner: React.FC = () => {
                 const isSelected = selectedAdminGroups.includes(ag.id);
                 return (
                   <div key={ag.id}
-                    style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(250,140,22,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(250,140,22,0.04)' : 'transparent', marginBottom: 6, cursor: 'pointer', transition: 'all 0.15s' }}
+                    style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(250,140,22,0.3)' : (_isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)'), background: isSelected ? 'rgba(250,140,22,0.04)' : 'transparent', marginBottom: 6, cursor: 'pointer', transition: 'all 0.15s' }}
                     onClick={() => setSelectedAdminGroups(prev => prev.includes(ag.id) ? prev.filter(id => id !== ag.id) : [...prev, ag.id])}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -681,21 +690,20 @@ const PluginConfigInner: React.FC = () => {
       {/* 用户增强插件：用户等级 */}
       <div style={{
         background: _isLight ? '#fff' : '#141414', borderRadius: 8,
-        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
-      }}>
+        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16 }}>
         <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>开放用户等级</Text><br />
         <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置哪些用户等级可以使用此插件功能</Text>
         <Divider style={{ borderColor: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
 
         <div
-          style={{ padding: '12px 16px', borderRadius: 6, border: isAllLevels ? '1px solid rgba(22,119,255,0.4)' : '1px solid rgba(255,255,255,0.08)', background: isAllLevels ? 'rgba(22,119,255,0.06)' : 'transparent', cursor: 'pointer', marginBottom: 8, transition: 'all 0.15s' }}
+          style={{ padding: '12px 16px', borderRadius: 6, border: isAllLevels ? '1px solid rgba(22,119,255,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'), background: isAllLevels ? 'rgba(22,119,255,0.06)' : 'transparent', cursor: 'pointer', marginBottom: 8, transition: 'all 0.15s' }}
           onClick={() => { setIsAllLevels(true); setSelectedLevels([]); }}
         >
           <Checkbox checked={isAllLevels}><Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>对所有用户等级开放</Text></Checkbox>
           <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12, display: 'block', marginLeft: 24, marginTop: 2 }}>包含当前及以后新增的所有用户等级</Text>
         </div>
         <div
-          style={{ padding: '12px 16px', borderRadius: 6, border: !isAllLevels ? '1px solid rgba(22,119,255,0.4)' : '1px solid rgba(255,255,255,0.08)', background: !isAllLevels ? 'rgba(22,119,255,0.06)' : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}
+          style={{ padding: '12px 16px', borderRadius: 6, border: !isAllLevels ? '1px solid rgba(22,119,255,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'), background: !isAllLevels ? 'rgba(22,119,255,0.06)' : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}
           onClick={() => setIsAllLevels(false)}
         >
           <Checkbox checked={!isAllLevels}><Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>按等级单独设置（覆盖全局默认值）</Text></Checkbox>
@@ -710,7 +718,7 @@ const PluginConfigInner: React.FC = () => {
               const showLimits = name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace';
               return (
                 <div key={lv.group_key}
-                  style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, transition: 'all 0.15s' }}
+                  style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : (_isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)'), background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, transition: 'all 0.15s' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: 1 }}
@@ -732,7 +740,7 @@ const PluginConfigInner: React.FC = () => {
                         <InputNumber size="small" min={1} max={10240}
                           value={levelQuotas[lv.group_key] ?? 100}
                           onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.group_key]: val ?? 100 }))}
-                          style={{ width: 72, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                          style={{ width: 72 }}
                           addonAfter="MB"
                         />
                       </div>
@@ -742,7 +750,7 @@ const PluginConfigInner: React.FC = () => {
                         <InputNumber size="small" min={1} max={1000}
                           value={levelMaxFolders[lv.group_key] ?? 20}
                           onChange={(val) => setLevelMaxFolders(prev => ({ ...prev, [lv.group_key]: val ?? 20 }))}
-                          style={{ width: 68, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                          style={{ width: 68 }}
                           addonAfter="个"
                         />
                       </div>
@@ -752,7 +760,7 @@ const PluginConfigInner: React.FC = () => {
                         <InputNumber size="small" min={1} max={10000}
                           value={levelMaxFilesPerFolder[lv.group_key] ?? 100}
                           onChange={(val) => setLevelMaxFilesPerFolder(prev => ({ ...prev, [lv.group_key]: val ?? 100 }))}
-                          style={{ width: 72, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                          style={{ width: 72 }}
                           addonAfter="个"
                         />
                       </div>
@@ -777,8 +785,7 @@ const PluginConfigInner: React.FC = () => {
       {isAllLevels && (name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace') && (
         <div style={{
           background: _isLight ? '#fff' : '#141414', borderRadius: 8,
-          border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
-        }}>
+          border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16 }}>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>资源配额管理</Text><br />
           <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置每位用户的存储空间、文件夹数量、每文件夹文件数上限，可按等级单独覆盖</Text>
           <Divider style={{ borderColor: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
@@ -800,17 +807,17 @@ const PluginConfigInner: React.FC = () => {
             </div>
             <InputNumber size="small" min={1} max={10240}
               value={defaultQuota} onChange={(val) => setDefaultQuota(val ?? 100)}
-              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              style={{ width: '100%' }}
               addonAfter="MB"
             />
             <InputNumber size="small" min={1} max={1000}
               value={defaultMaxFolders} onChange={(val) => setDefaultMaxFolders(val ?? 20)}
-              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              style={{ width: '100%' }}
               addonAfter="个"
             />
             <InputNumber size="small" min={1} max={10000}
               value={defaultMaxFilesPerFolder} onChange={(val) => setDefaultMaxFilesPerFolder(val ?? 100)}
-              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              style={{ width: '100%' }}
               addonAfter="个"
             />
             <div style={{ textAlign: 'center' }}>
@@ -823,7 +830,7 @@ const PluginConfigInner: React.FC = () => {
             <>
               <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', margin: '12px 0 8px' }}>按等级单独设置（覆盖全局默认值）</Text>
               {levels.map(lv => (
-                <div key={lv.group_key}
+                <div key={lv.id.toString()}
                   style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px) 100px', gap: 8, padding: '8px 14px', borderRadius: 6, border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, alignItems: 'center' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -835,27 +842,27 @@ const PluginConfigInner: React.FC = () => {
                     </Text>
                   </div>
                   <InputNumber size="small" min={1} max={10240}
-                    value={levelQuotas[lv.group_key] ?? defaultQuota}
-                    onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.group_key]: val ?? defaultQuota }))}
-                    style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                    value={levelQuotas[lv.id.toString()] ?? levelQuotas[lv.group_key] ?? defaultQuota}
+                    onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultQuota }))}
+                    style={{ width: '100%' }}
                     addonAfter="MB"
                   />
                   <InputNumber size="small" min={1} max={1000}
-                    value={levelMaxFolders[lv.group_key] ?? defaultMaxFolders}
-                    onChange={(val) => setLevelMaxFolders(prev => ({ ...prev, [lv.group_key]: val ?? defaultMaxFolders }))}
-                    style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                    value={levelMaxFolders[lv.id.toString()] ?? defaultMaxFolders}
+                    onChange={(val) => setLevelMaxFolders(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultMaxFolders }))}
+                    style={{ width: '100%' }}
                     addonAfter="个"
                   />
                   <InputNumber size="small" min={1} max={10000}
-                    value={levelMaxFilesPerFolder[lv.group_key] ?? defaultMaxFilesPerFolder}
-                    onChange={(val) => setLevelMaxFilesPerFolder(prev => ({ ...prev, [lv.group_key]: val ?? defaultMaxFilesPerFolder }))}
-                    style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                    value={levelMaxFilesPerFolder[lv.id.toString()] ?? defaultMaxFilesPerFolder}
+                    onChange={(val) => setLevelMaxFilesPerFolder(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultMaxFilesPerFolder }))}
+                    style={{ width: '100%' }}
                     addonAfter="个"
                   />
                   <div style={{ textAlign: 'center' }}>
                     <Switch size="small"
-                      checked={levelApiEnabled[lv.group_key] ?? true}
-                      onChange={(checked) => setLevelApiEnabled(prev => ({ ...prev, [lv.group_key]: checked }))}
+                      checked={levelApiEnabled[lv.id.toString()] ?? true}
+                      onChange={(checked) => setLevelApiEnabled(prev => ({ ...prev, [lv.id.toString()]: checked }))}
                     />
                   </div>
                 </div>
@@ -874,7 +881,7 @@ const PluginConfigInner: React.FC = () => {
   );
 
   // ====== 存储配置 Tab ======
-  const inputStyle = { background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' };
+  const inputStyle = { };
   const storageTab = (
     <div>
       {/* 状态提示 */}
@@ -903,8 +910,7 @@ const PluginConfigInner: React.FC = () => {
 
       <div style={{
         background: _isLight ? '#fff' : '#141414', borderRadius: 8,
-        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px',
-      }}>
+        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           <CloudServerOutlined style={{ color: '#1677ff', fontSize: 16 }} />
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>火山引擎 TOS 对象存储</Text>
@@ -942,8 +948,7 @@ const PluginConfigInner: React.FC = () => {
                     <span>{r.label}</span>
                     <span style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>{r.region}</span>
                   </div>
-                ),
-              }))}
+                ) }))}
             />
           </Form.Item>
           <Form.Item label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>Endpoint</Text>} name="tos_endpoint" rules={[{ required: true, message: '请选择地域后自动填充' }]}
@@ -1009,8 +1014,7 @@ const PluginConfigInner: React.FC = () => {
         background: _isLight ? '#fff' : '#141414', borderRadius: 8,
         border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
         padding: '16px 20px', marginBottom: 16,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>素材审核功能</Text><br />
           <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>
@@ -1055,8 +1059,7 @@ const PluginConfigInner: React.FC = () => {
 
       <div style={{
         background: _isLight ? '#fff' : '#141414', borderRadius: 8,
-        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px',
-      }}>
+        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <ApiOutlined style={{ color: '#1677ff', fontSize: 16 }} />
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>私域虚拟人像素材资产库配置</Text>
@@ -1138,14 +1141,12 @@ const PluginConfigInner: React.FC = () => {
             <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>{info.username}</div>
           </span>
         ) : <Text style={{ fontSize: 12 }}>{userId?.slice(0, 8)}...</Text>;
-      },
-    },
+      } },
     {
       title: '文件名',
       dataIndex: 'file_name',
       key: 'file_name',
-      ellipsis: true,
-    },
+      ellipsis: true },
     {
       title: '预览',
       key: 'preview',
@@ -1164,8 +1165,7 @@ const PluginConfigInner: React.FC = () => {
       dataIndex: 'asset_id',
       key: 'asset_id',
       width: 160,
-      render: (aid: string) => aid ? <Text code style={{ fontSize: 11 }}>{aid.slice(0, 20)}...</Text> : <Text type="secondary">暂无</Text>,
-    },
+      render: (aid: string) => aid ? <Text code style={{ fontSize: 11 }}>{aid.slice(0, 20)}...</Text> : <Text type="secondary">暂无</Text> },
     {
       title: '状态',
       dataIndex: 'status',
@@ -1190,8 +1190,7 @@ const PluginConfigInner: React.FC = () => {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 160,
-      render: (t: string) => t ? <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> : '-',
-    },
+      render: (t: string) => t ? <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> : '-' },
   ];
 
 
@@ -1247,8 +1246,7 @@ const PluginConfigInner: React.FC = () => {
           },
           onExpand: (expanded, record) => {
             if (expanded && record.asset_id) fetchAssetInfo(record.asset_id);
-          },
-        }}
+          } }}
       />
     </div>
   );
@@ -1257,8 +1255,7 @@ const PluginConfigInner: React.FC = () => {
   const SOURCE_MAP: Record<string, { label: string; color: string }> = {
     api_proxy: { label: 'API 接口调用', color: 'blue' },
     page: { label: '页面操作', color: 'green' },
-    relay_convert: { label: '转发规则替换', color: 'orange' },
-  };
+    relay_convert: { label: '转发规则替换', color: 'orange' } };
 
   const apiLogColumns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
@@ -1272,8 +1269,7 @@ const PluginConfigInner: React.FC = () => {
       render: (s: string) => {
         const info = SOURCE_MAP[s] || { label: s, color: 'default' };
         return <Tag color={info.color}>{info.label}</Tag>;
-      },
-    },
+      } },
     { 
       title: '状态', 
       dataIndex: 'status_code', 
@@ -1338,19 +1334,18 @@ const PluginConfigInner: React.FC = () => {
                 <div style={{ marginBottom: 16 }}>
                   <Text strong style={{ color: '#1677ff', display: 'block', marginBottom: 8 }}>📤 Request Payload</Text>
                   <div style={{ background: _isLight ? '#fff' : '#141414', padding: '16px', borderRadius: '8px', maxHeight: '500px', overflow: 'auto', border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
-                    <JsonView value={safeParse(record.request_payload)} style={darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
+                    <JsonView value={safeParse(record.request_payload)} style={_isLight ? lightTheme : darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
                   </div>
                 </div>
                 <div>
                   <Text strong style={{ color: '#faad14', display: 'block', marginBottom: 8 }}>📥 Response Payload</Text>
                   <div style={{ background: _isLight ? '#fff' : '#141414', padding: '16px', borderRadius: '8px', maxHeight: '600px', overflow: 'auto', border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
-                    <JsonView value={safeParse(record.response_payload)} style={darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
+                    <JsonView value={safeParse(record.response_payload)} style={_isLight ? lightTheme : darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
                   </div>
                 </div>
               </div>
             );
-          },
-        }}
+          } }}
       />
     </div>
   );
@@ -1372,8 +1367,7 @@ const PluginConfigInner: React.FC = () => {
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{name}</Text>
           <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
         </div>
-      ),
-    },
+      ) },
     {
       title: '类型',
       dataIndex: 'type_name',
@@ -1384,8 +1378,7 @@ const PluginConfigInner: React.FC = () => {
           {t.includes('视频') ? <VideoCameraOutlined style={{ marginRight: 4 }} /> : t.includes('图片') ? <PictureOutlined style={{ marginRight: 4 }} /> : null}
           {t}
         </Tag>
-      ) : <Text type="secondary">-</Text>,
-    },
+      ) : <Text type="secondary">-</Text> },
     {
       title: '体验开关',
       key: 'pg_enabled',
@@ -1397,8 +1390,7 @@ const PluginConfigInner: React.FC = () => {
           checkedChildren="开启"
           unCheckedChildren="关闭"
         />
-      ),
-    },
+      ) },
     {
       title: '绑定方案',
       key: 'pg_scheme_id',
@@ -1410,8 +1402,7 @@ const PluginConfigInner: React.FC = () => {
         ) : (
           <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>未绑定</Text>
         );
-      },
-    },
+      } },
     {
       title: '操作',
       key: 'action',
@@ -1425,8 +1416,7 @@ const PluginConfigInner: React.FC = () => {
         >
           配置
         </Button>
-      ),
-    },
+      ) },
   ];
 
   const playgroundModelTab = (
@@ -1443,7 +1433,7 @@ const PluginConfigInner: React.FC = () => {
             placeholder="搜索模型..."
             value={pgSearchKeyword}
             onChange={e => setPgSearchKeyword(e.target.value)}
-            style={{ width: 220, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+            style={{ width: 220 }}
             allowClear
           />
         </div>
@@ -1498,10 +1488,9 @@ const PluginConfigInner: React.FC = () => {
                 key={scheme.id}
                 style={{
                   padding: '16px', borderRadius: 8,
-                  border: pgSelectedSchemeId === scheme.id ? '1px solid rgba(22,119,255,0.5)' : '1px solid rgba(255,255,255,0.08)',
-                  background: pgSelectedSchemeId === scheme.id ? 'rgba(22,119,255,0.06)' : '#141414',
-                  cursor: 'pointer', transition: 'all 0.2s',
-                }}
+                  border: pgSelectedSchemeId === scheme.id ? '1px solid rgba(22,119,255,0.5)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'),
+                  background: pgSelectedSchemeId === scheme.id ? 'rgba(22,119,255,0.06)' : (_isLight ? '#fff' : '#141414'),
+                  cursor: 'pointer', transition: 'all 0.2s' }}
                 onClick={() => setPgSelectedSchemeId(scheme.id)}
               >
                 <Radio value={scheme.id}>
@@ -1548,8 +1537,7 @@ const PluginConfigInner: React.FC = () => {
           const typeGroups: Record<string, { label: string; icon: React.ReactNode; color: string; schemes: { scheme: any; idx: number }[] }> = {
             video: { label: '视频生成方案', icon: <VideoCameraOutlined />, color: '#1677ff', schemes: [] },
             image: { label: '图片生成方案', icon: <PictureOutlined />, color: '#52c41a', schemes: [] },
-            other: { label: '其他方案', icon: <AppstoreOutlined />, color: '#faad14', schemes: [] },
-          };
+            other: { label: '其他方案', icon: <AppstoreOutlined />, color: '#faad14', schemes: [] } };
           schemeList.forEach((scheme, idx) => {
             const key = scheme.type === 'video' ? 'video' : scheme.type === 'image' ? 'image' : 'other';
             typeGroups[key].schemes.push({ scheme, idx });
@@ -1748,8 +1736,7 @@ const PluginConfigInner: React.FC = () => {
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{nameVal}</Text>
           <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
         </div>
-      ),
-    },
+      ) },
     {
       title: '供应商',
       dataIndex: 'provider_name',
@@ -1757,8 +1744,7 @@ const PluginConfigInner: React.FC = () => {
       width: 100,
       render: (p: string) => p ? (
         <Tag style={{ borderRadius: 4, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>{p}</Tag>
-      ) : <Text type="secondary">-</Text>,
-    },
+      ) : <Text type="secondary">-</Text> },
     {
       title: '类型',
       dataIndex: 'type_name',
@@ -1769,8 +1755,7 @@ const PluginConfigInner: React.FC = () => {
           {t.includes('视频') ? <VideoCameraOutlined style={{ marginRight: 4 }} /> : t.includes('图片') ? <PictureOutlined style={{ marginRight: 4 }} /> : null}
           {t}
         </Tag>
-      ) : <Text type="secondary">-</Text>,
-    },
+      ) : <Text type="secondary">-</Text> },
     {
       title: '广场展示',
       key: 'mp_enabled',
@@ -1782,8 +1767,7 @@ const PluginConfigInner: React.FC = () => {
           checkedChildren="展示"
           unCheckedChildren="隐藏"
         />
-      ),
-    },
+      ) },
     {
       title: '排序权重',
       key: 'mp_sort_order',
@@ -1795,10 +1779,9 @@ const PluginConfigInner: React.FC = () => {
           max={9999}
           value={record.mp_sort_order || 0}
           onChange={(val) => handleMpSortChange(record.id, val ?? 0)}
-          style={{ width: 80, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+          style={{ width: 80 }}
         />
-      ),
-    },
+      ) },
     {
       title: '广场描述',
       key: 'mp_description',
@@ -1809,10 +1792,9 @@ const PluginConfigInner: React.FC = () => {
           value={record.mp_description || ''}
           onChange={(e) => handleMpDescChange(record.id, e.target.value)}
           placeholder="简短描述..."
-          style={{ background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+          
         />
-      ),
-    },
+      ) },
   ];
 
   const marketplaceModelTab = (
@@ -1829,7 +1811,7 @@ const PluginConfigInner: React.FC = () => {
             placeholder="搜索模型..."
             value={mpSearchKeyword}
             onChange={e => setMpSearchKeyword(e.target.value)}
-            style={{ width: 220, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+            style={{ width: 220 }}
             allowClear
           />
         </div>
@@ -1859,14 +1841,12 @@ const PluginConfigInner: React.FC = () => {
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         marginBottom: 20, paddingBottom: 16,
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-      }}>
+        borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin0755/plugins')} style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', padding: '4px 8px' }} />
           <div style={{
             width: 36, height: 36, borderRadius: 8, background: 'rgba(22,119,255,0.1)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1677ff',
-          }}>
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1677ff' }}>
             {pluginIcons[plugin.name] || <AppstoreOutlined style={{ fontSize: 20 }} />}
           </div>
           <div>

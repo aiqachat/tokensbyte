@@ -137,8 +137,7 @@ const TeamConfig: React.FC = () => {
         max_members: maxMembers,
         members_can_set_level: membersCanSetLevel,
         allowed_level_ids: selectedLevels,
-        allowed_member_level_ids: selectedMemberLevels,
-      };
+        allowed_member_level_ids: selectedMemberLevels };
 
       if (editingTeam) {
         await request.put(`/team-marketing/teams/${editingTeam.id}`, payload);
@@ -174,16 +173,14 @@ const TeamConfig: React.FC = () => {
 
   const selectOptions = userOptions.map(u => ({
     value: u.user_id,
-    label: `${u.username} (${u.uid})`,
-  }));
+    label: `${u.username} (${u.uid})` }));
 
   const columns = [
     {
       title: '团队名称',
       dataIndex: 'name',
       key: 'name',
-      render: (name: string) => <Text strong style={{ color: _isLight ? '#1f2937' : '#fff' }}>{name}</Text>,
-    },
+      render: (name: string) => <Text strong style={{ color: _isLight ? '#1f2937' : '#fff' }}>{name}</Text> },
     {
       title: '负责人',
       dataIndex: 'leaders',
@@ -197,8 +194,7 @@ const TeamConfig: React.FC = () => {
           ))}
           {leaders.length === 0 && <Text type="secondary">未设置</Text>}
         </Space>
-      ),
-    },
+      ) },
     {
       title: '成员',
       dataIndex: 'members',
@@ -215,8 +211,7 @@ const TeamConfig: React.FC = () => {
             {members.length}/{record.max_members || 10}
           </Text>
         </Space>
-      ),
-    },
+      ) },
     {
       title: '邀请链接',
       dataIndex: 'invite_code',
@@ -233,8 +228,7 @@ const TeamConfig: React.FC = () => {
               border: '1px solid rgba(82,196,26,0.2)',
               color: '#52c41a',
               fontFamily: 'monospace',
-              fontSize: 12,
-            }}
+              fontSize: 12 }}
           >
             {code}
           </Tag>
@@ -248,15 +242,13 @@ const TeamConfig: React.FC = () => {
             />
           </Tooltip>
         </Space>
-      ),
-    },
+      ) },
     {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
       width: 160,
-      render: (t: string) => <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text>,
-    },
+      render: (t: string) => <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> },
     {
       title: '操作',
       key: 'action',
@@ -274,8 +266,7 @@ const TeamConfig: React.FC = () => {
             <Button type="text" size="small" icon={<DeleteOutlined />} danger />
           </Popconfirm>
         </Space>
-      ),
-    },
+      ) },
   ];
 
   return (
@@ -321,7 +312,7 @@ const TeamConfig: React.FC = () => {
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
               placeholder="输入团队名称"
-              style={{ background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              
             />
           </div>
 
@@ -334,7 +325,7 @@ const TeamConfig: React.FC = () => {
               onChange={(e) => setTeamDesc(e.target.value)}
               placeholder="简要描述团队用途（可选）"
               rows={2}
-              style={{ background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              
             />
           </div>
 
@@ -349,7 +340,7 @@ const TeamConfig: React.FC = () => {
               onChange={(v) => setMaxMembers(v || 10)}
               min={1}
               max={10000}
-              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              style={{ width: '100%' }}
               placeholder="默认 10"
             />
           </div>
@@ -390,8 +381,7 @@ const TeamConfig: React.FC = () => {
               onChange={setSelectedMemberLevels}
               options={allLevels.map(l => ({
                 value: l.id,
-                label: `${l.name} (${l.group_key})`,
-              }))}
+                label: `${l.name} (ULID: ${l.id.toString().padStart(4, '0')})` }))}
               placeholder="选择可分配给团队成员的用户等级..."
               style={{ width: '100%' }}
               optionFilterProp="label"
@@ -445,8 +435,7 @@ const TeamConfig: React.FC = () => {
               onChange={setSelectedLevels}
               options={allLevels.map(l => ({
                 value: l.id,
-                label: `${l.name} (${l.group_key})`,
-              }))}
+                label: `${l.name} (ULID: ${l.id.toString().padStart(4, '0')})` }))}
               placeholder="选择可分配的用户等级..."
               style={{ width: '100%' }}
               optionFilterProp="label"

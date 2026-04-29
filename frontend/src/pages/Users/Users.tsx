@@ -458,7 +458,20 @@ const Users: React.FC = () => {
             <Input.TextArea placeholder="写入简便备注例如: vip客户" rows={3} autoSize={{ minRows: 2, maxRows: 6 }} />
           </Form.Item>
           <Form.Item name="referred_by" label="上级推荐人 (UID / User ID)">
-            <Input placeholder="输入推荐人的内部 ID" />
+            <Select
+              showSearch
+              allowClear
+              placeholder="输入用户名、UID 或邮箱快速搜索"
+              filterOption={(input, option) => {
+                if (!option) return false;
+                const searchStr = String(option.label || '').toLowerCase();
+                return searchStr.includes(input.toLowerCase());
+              }}
+              options={allUsers.map(u => ({
+                value: u.uid || String(u.id),
+                label: `${u.username} ${u.nickname ? `(${u.nickname})` : ''} - UID: ${u.uid || u.id} ${u.email ? `(${u.email})` : ''}`
+              }))}
+            />
           </Form.Item>
           <Form.Item name="email" label={t('users.email')} rules={[{ required: true, type: 'email' }]}>
             <Input placeholder="email@example.com" />

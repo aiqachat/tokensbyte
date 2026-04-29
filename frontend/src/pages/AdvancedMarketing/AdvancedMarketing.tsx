@@ -982,7 +982,7 @@ const AdvancedMarketing: React.FC = () => {
                     <TrophyOutlined style={{ color: '#faad14' }} />
                     <span>{l.name}</span>
                     <Tag style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
-                      {l.group_key}
+                      ULID: {l.id?.toString().padStart(4, '0') || l.group_key}
                     </Tag>
                   </Space>
                 ),
@@ -1042,7 +1042,7 @@ const AdvancedMarketing: React.FC = () => {
                     <TrophyOutlined style={{ color: '#1677ff' }} />
                     <span>{l.name}</span>
                     <Tag style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
-                      {l.group_key}
+                      ULID: {l.id?.toString().padStart(4, '0') || l.group_key}
                     </Tag>
                   </Space>
                 ),

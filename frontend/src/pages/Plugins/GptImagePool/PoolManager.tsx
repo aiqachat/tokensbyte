@@ -31,14 +31,12 @@ interface PoolLog {
 
 const poolTypeLabels: Record<string, { label: string; color: string }> = {
   image: { label: '图片', color: '#52c41a' },
-  custom: { label: '自定义', color: '#722ed1' },
-};
+  custom: { label: '自定义', color: '#722ed1' } };
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
   active: { color: 'success', icon: <CheckCircleOutlined />, label: '可用' },
   disabled: { color: 'error', icon: <CloseCircleOutlined />, label: '故障禁用' },
-  exhausted: { color: 'warning', icon: <ExclamationCircleOutlined />, label: '配额耗尽' },
-};
+  exhausted: { color: 'warning', icon: <ExclamationCircleOutlined />, label: '配额耗尽' } };
 
 const GptImagePoolManager: React.FC = () => {
   const { themeMode } = useThemeStore();
@@ -129,8 +127,7 @@ const GptImagePoolManager: React.FC = () => {
       const values = await poolForm.validateFields();
       const payload: any = {
         name: values.name, pool_type: values.pool_type, strategy: values.strategy,
-        remark: values.remark || '', account_ids: values.account_ids || [],
-      };
+        remark: values.remark || '', account_ids: values.account_ids || [] };
       if (editingPool) {
         payload.is_active = values.is_active;
         await request.put(`/plugins/gptimage_pool/pools/${editingPool.id}`, payload);
@@ -186,8 +183,7 @@ const GptImagePoolManager: React.FC = () => {
         daily_quota: values.daily_quota || 0,
         hourly_quota: values.hourly_quota || 0,
         period_quota: values.period_quota || 0,
-        priority: values.priority || 0,
-      };
+        priority: values.priority || 0 };
       if (editingAccount) {
         payload.status = values.status;
         await request.put(`/plugins/gptimage_pool/accounts/${editingAccount.id}`, payload);
@@ -215,8 +211,7 @@ const GptImagePoolManager: React.FC = () => {
         models: modelsAsMids,
         _resetTime: dayjs().hour(account.daily_reset_hour).minute(account.daily_reset_minute),
         _periodRange: account.period_start && account.period_end
-          ? [dayjs(account.period_start, 'HH:mm'), dayjs(account.period_end, 'HH:mm')] : undefined,
-      });
+          ? [dayjs(account.period_start, 'HH:mm'), dayjs(account.period_end, 'HH:mm')] : undefined });
     }
     setAccountModalVisible(true);
   };
@@ -322,9 +317,8 @@ const GptImagePoolManager: React.FC = () => {
                 }}
                 style={{
                   background: isSelected ? 'rgba(82,196,26,0.06)' : '#1a1a1a',
-                  border: isSelected ? '1px solid rgba(82,196,26,0.4)' : '1px solid rgba(255,255,255,0.08)',
-                  cursor: 'pointer',
-                }}
+                  border: isSelected ? '1px solid rgba(82,196,26,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'),
+                  cursor: 'pointer' }}
                 styles={{ body: { padding: '14px 16px' } }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>

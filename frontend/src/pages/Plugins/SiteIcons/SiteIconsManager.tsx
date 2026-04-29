@@ -167,15 +167,13 @@ const SiteIconsManager: React.FC = () => {
         <div style={{
           marginBottom: 16, borderRadius: 8, overflow: 'hidden',
           border: syncFinished ? '1px solid rgba(82,196,26,0.3)' : '1px solid rgba(22,119,255,0.3)',
-          background: '#0d0d0d',
-        }}>
+          background: '#0d0d0d' }}>
           {/* 头部 */}
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '10px 16px',
             background: syncFinished ? 'rgba(82,196,26,0.06)' : 'rgba(22,119,255,0.06)',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-          }}>
+            borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {syncing && <Spin size="small" />}
               <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13, fontWeight: 500 }}>
@@ -202,14 +200,12 @@ const SiteIconsManager: React.FC = () => {
           <div ref={logPanelRef} style={{
             maxHeight: 240, overflow: 'auto', padding: '8px 16px 12px',
             fontFamily: 'Menlo, Monaco, Consolas, monospace', fontSize: 12,
-            lineHeight: 1.7, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)',
-          }}>
+            lineHeight: 1.7, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>
             {syncLogs.map((log, i) => (
               <div key={i} style={{
                 color: log.startsWith('❌') ? '#ff4d4f' : log.startsWith('⚠️') ? '#faad14'
                   : log.startsWith('✅') ? 'rgba(82,196,26,0.8)' : log.startsWith('🎉') ? '#52c41a'
-                  : log.startsWith('⏭️') ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.55)',
-              }}>
+                  : log.startsWith('⏭️') ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.55)' }}>
                 {log}
               </div>
             ))}
@@ -225,7 +221,7 @@ const SiteIconsManager: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <Input prefix={<SearchOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)' }} />} placeholder="搜索图标名称..."
             value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)}
-            style={{ width: 240, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }} allowClear />
+            style={{ width: 240 }} allowClear />
           <Select placeholder="分类" value={filterCategory || undefined} onChange={v => setFilterCategory(v || '')} allowClear
             style={{ width: 130 }} options={[{ label: 'AI品牌', value: 'AI品牌' }, { label: '自定义', value: '自定义' }]} />
           <Select placeholder="来源" value={filterSource || undefined} onChange={v => setFilterSource(v || '')} allowClear
@@ -256,8 +252,7 @@ const SiteIconsManager: React.FC = () => {
               <div key={icon.id} style={{
                 background: _isLight ? '#fff' : '#141414', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', borderRadius: 8,
                 padding: '14px 10px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center',
-                cursor: 'pointer', transition: 'border-color 0.2s, box-shadow 0.2s', position: 'relative',
-              }}
+                cursor: 'pointer', transition: 'border-color 0.2s, box-shadow 0.2s', position: 'relative' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = icon.source === 'custom' ? 'rgba(82,196,26,0.5)' : 'rgba(22,119,255,0.5)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(22,119,255,0.08)'; const a = e.currentTarget.querySelector('.icon-actions') as HTMLElement; if (a) a.style.opacity = '1'; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.boxShadow = 'none'; const a = e.currentTarget.querySelector('.icon-actions') as HTMLElement; if (a) a.style.opacity = '0'; }}
                 onClick={() => setPreviewIcon(icon)}
