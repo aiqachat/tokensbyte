@@ -195,7 +195,7 @@ const PlaygroundHome: React.FC = () => {
     }}>
       <div style={{
         height: '100vh', width: '100vw', display: 'flex',
-        background: '#131314', // Very dark background like Stitch
+        background: '#1E1E20',
         color: themeMode === 'light' ? '#1f2937' : '#fff',
         overflow: 'hidden',
         position: 'relative',

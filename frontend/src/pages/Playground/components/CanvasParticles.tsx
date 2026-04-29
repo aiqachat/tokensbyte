@@ -18,19 +18,19 @@ interface Props {
 }
 
 /** 网格间距（基础像素） */
-const GRID_GAP = 16;
+const GRID_GAP = 24;
 /** 鼠标影响半径（像素） */
-const INFLUENCE_RADIUS = 120;
+const INFLUENCE_RADIUS = 140;
 /** 粒子基础亮度 */
-const BASE_ALPHA = 0.50;
+const BASE_ALPHA = 0.20;
 /** 粒子高亮亮度 */
-const HIGHLIGHT_ALPHA = 0.45;
+const HIGHLIGHT_ALPHA = 0.40;
 /** 高亮衰减速度 */
 const DECAY_RATE = 0.93;
 /** 粒子基础半径 */
-const BASE_RADIUS = 0.6;
+const BASE_RADIUS = 1.2;
 /** 粒子高亮半径 */
-const HIGHLIGHT_RADIUS = 1.2;
+const HIGHLIGHT_RADIUS = 2.0;
 /** 最小绘制间距（像素），低于此值则跳步绘制 */
 const MIN_DRAW_GAP = 6;
 /** 最大绘制间距（像素），高于此值仍正常绘制 */
