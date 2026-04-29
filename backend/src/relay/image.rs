@@ -19,50 +19,83 @@ pub async fn image_generations(
     let model = body["model"].as_str().unwrap_or("dall-e-3");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, request_path).await?;
     let is_stream = body["stream"].as_bool().unwrap_or(false);
     
-    // 解析转发规则，未绑定规则时根据域名智能推断
-    let resolved = match forward::resolve_forward_rule(&state, model, "图片", request_path).await {
-        Some(r) => r,
-        None => {
-            if forward::model_has_forward_rules(&state, model).await {
-                return Err(AppError::BadRequest(format!(
-                    "模型 '{}' 不支持当前接口，请检查模型对应的 API 调用方式", model
-                )));
+    let max_retries = 3;
+    let mut current_try = 0;
+
+    let (channel, resolved_model, upstream_resp, resolved, upstream_body) = loop {
+        current_try += 1;
+        let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, request_path).await?;
+        
+        // 解析转发规则，未绑定规则时根据域名智能推断
+        let resolved = match forward::resolve_forward_rule(&state, model, "图片", request_path).await {
+            Some(r) => r,
+            None => {
+                if forward::model_has_forward_rules(&state, model).await {
+                    return Err(AppError::BadRequest(format!(
+                        "模型 '{}' 不支持当前接口，请检查模型对应的 API 调用方式", model
+                    )));
+                }
+                forward::infer_forward_from_base_url(&channel.base_url, "图片")
             }
-            forward::infer_forward_from_base_url(&channel.base_url, "图片")
+        };
+
+        let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "图片");
+        let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
+        let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
+
+        tracing::info!("[Image] model={}, target_type={}, url={} (Attempt {}/{})", model, resolved.target_type, url, current_try, max_retries);
+
+        // 构建并发送上游请求
+        let mut builder = state.http_client.post(&url)
+            .header("Content-Type", "application/json");
+        for (k, v) in &auth_headers {
+            builder = builder.header(k, v);
         }
+        
+        match builder.json(&upstream_body).send().await {
+            Ok(upstream_resp) => {
+                if upstream_resp.status().is_success() {
+                    break (channel, resolved_model, upstream_resp, resolved, upstream_body);
+                } else {
+                    let status = upstream_resp.status().as_u16();
+                    let err = upstream_resp.text().await.unwrap_or_default();
+                    let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
+                    let latency_ms = start_time.elapsed().as_millis() as u32;
+                    let ep = format!("{}|{}", request_path, resolved.upstream_path.replace("${model}", &resolved_model));
+                    proxy::record_and_bill(
+                        &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
+                        &ep, Some(&display_err), latency_ms, 0,
+                        Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
+                        None
+                    ).await;
+
+                    if current_try >= max_retries {
+                        return Err(AppError::UpstreamError(display_err));
+                    }
+                }
+            },
+            Err(e) => {
+                let err_msg = e.to_string();
+                let latency_ms = start_time.elapsed().as_millis() as u32;
+                let ep = format!("{}|{}", request_path, resolved.upstream_path.replace("${model}", &resolved_model));
+                proxy::record_and_bill(
+                    &state, &token, channel.id, model, 0, 0, 0, 0.0, 500,
+                    &ep, Some(&err_msg), latency_ms, 0,
+                    Some(request_content_str.clone()), Some(err_msg.clone()), Some(upstream_body.to_string()),
+                    None
+                ).await;
+
+                if current_try >= max_retries {
+                    return Err(AppError::UpstreamError(err_msg));
+                }
+            }
+        }
+        
+        // Wait a bit before retrying so the async mark_failed can update the DB
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     };
-
-    let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "图片");
-    let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
-    let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
-
-    tracing::info!("[Image] model={}, target_type={}, url={}", model, resolved.target_type, url);
-
-    // 构建并发送上游请求
-    let mut builder = state.http_client.post(&url)
-        .header("Content-Type", "application/json");
-    for (k, v) in &auth_headers {
-        builder = builder.header(k, v);
-    }
-    let upstream_resp = builder.json(&upstream_body).send().await?;
-
-    let status = upstream_resp.status().as_u16();
-    if !upstream_resp.status().is_success() {
-        let err = upstream_resp.text().await?;
-        let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
-        let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("{}|{}", request_path, resolved.upstream_path.replace("${model}", &resolved_model));
-            proxy::record_and_bill(
-                &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
-                &ep, Some(&display_err), latency_ms, 0,
-                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
-                None
-            ).await;
-        return Err(AppError::UpstreamError(display_err));
-    }
 
     let db_model: Option<crate::models::Model> = sqlx::query_as(
         &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
