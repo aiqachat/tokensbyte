@@ -7,13 +7,14 @@
 export interface SchemeParam {
   key: string;
   label: string;
-  type: 'radio' | 'select' | 'switch' | 'number' | 'input';
+  type: 'radio' | 'select' | 'switch' | 'number' | 'input' | 'slider';
   options?: (string | number)[];
   default: any;
   unit?: string;
   hint?: string;
   min?: number;
   max?: number;
+  step?: number;
   placeholder?: string;
 }
 

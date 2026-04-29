@@ -3,7 +3,7 @@
  * 根据 SchemeParam.type 渲染对应的表单控件
  */
 import React from 'react';
-import { Typography, Select, Input, InputNumber, Switch } from 'antd';
+import { Typography, Select, Input, InputNumber, Switch, Slider } from 'antd';
 import type { SchemeParam } from '../types';
 import { RESOLUTION_MAP } from '../constants';
 import { usePlayground } from '../context/PlaygroundContext';
@@ -122,6 +122,47 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
           checked={!!value}
           onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))}
         />
+      </div>
+    );
+  }
+
+  if (param.type === 'slider') {
+    const min = param.min ?? 0;
+    const max = param.max ?? 100;
+    const step = param.step ?? 1;
+    return (
+      <div key={param.key}>
+        <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Slider
+            style={{ flex: 1 }}
+            min={min}
+            max={max}
+            step={step}
+            value={typeof value === 'number' ? value : Number(value) || min}
+            onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))}
+            tooltip={{ formatter: (v) => `${v}${param.unit ? ' ' + param.unit : ''}` }}
+          />
+          <InputNumber
+            size="small"
+            min={min}
+            max={max}
+            step={step}
+            value={typeof value === 'number' ? value : Number(value) || min}
+            onChange={(v) => v !== null && setParamValues(prev => ({ ...prev, [param.key]: v }))}
+            style={{
+              width: 68,
+              background: '#222',
+              borderRadius: 8,
+              borderColor: 'rgba(255,255,255,0.12)',
+              textAlign: 'center',
+              fontFamily: 'monospace',
+              fontSize: 13,
+            }}
+            controls={false}
+          />
+        </div>
+        {param.hint && <Text style={{ display: 'block', marginTop: 4, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{param.hint}</Text>}
       </div>
     );
   }

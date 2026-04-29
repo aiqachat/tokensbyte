@@ -1653,14 +1653,14 @@ const PluginConfigInner: React.FC = () => {
                     <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>显示标签</Text>
                     <Input size="small" value={param.label} onChange={e => handleEditingSchemeParamChange(pIdx, 'label', e.target.value)} />
                   </div>
-                  <div style={{ width: 120 }}>
+                  <div style={{ width: 140 }}>
                     <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>控件类型</Text>
                     <Select size="small" value={param.type} onChange={v => handleEditingSchemeParamChange(pIdx, 'type', v)} style={{ width: '100%' }}
-                      options={[{ label: 'Radio 单选', value: 'radio' }, { label: 'Select 下拉', value: 'select' }, { label: 'Switch 开关', value: 'switch' }]}
+                      options={[{ label: 'Radio 单选', value: 'radio' }, { label: 'Select 下拉', value: 'select' }, { label: 'Switch 开关', value: 'switch' }, { label: 'Slider 滑块', value: 'slider' }]}
                     />
                   </div>
                 </div>
-                {param.type !== 'switch' && (
+                {param.type !== 'switch' && param.type !== 'slider' && (
                   <div style={{ marginBottom: 8 }}>
                     <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>选项列表（用英文逗号分隔）</Text>
                     <Input size="small" value={Array.isArray(param.options) ? param.options.join(',') : ''}
@@ -1669,11 +1669,39 @@ const PluginConfigInner: React.FC = () => {
                     />
                   </div>
                 )}
+                {param.type === 'slider' && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>最小值</Text>
+                      <InputNumber size="small" style={{ width: '100%' }} value={param.min ?? 0}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'min', v ?? 0)}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>最大值</Text>
+                      <InputNumber size="small" style={{ width: '100%' }} value={param.max ?? 100}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'max', v ?? 100)}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>步长</Text>
+                      <InputNumber size="small" style={{ width: '100%' }} value={param.step ?? 1} min={0.001}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'step', v ?? 1)}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <div style={{ flex: 1 }}>
                     <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>默认值</Text>
                     {param.type === 'switch' ? (
                       <Switch checked={!!param.default} onChange={v => handleEditingSchemeParamChange(pIdx, 'default', v)} />
+                    ) : param.type === 'slider' ? (
+                      <InputNumber size="small" style={{ width: '100%' }}
+                        value={typeof param.default === 'number' ? param.default : Number(param.default) || 0}
+                        min={param.min ?? 0} max={param.max ?? 100} step={param.step ?? 1}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'default', v ?? 0)}
+                      />
                     ) : (
                       <Input size="small" value={String(param.default ?? '')} onChange={e => handleEditingSchemeParamChange(pIdx, 'default', e.target.value)} />
                     )}
