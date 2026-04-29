@@ -1916,10 +1916,10 @@ const PluginConfigInner: React.FC = () => {
                 { key: 'icon_library', label: '图标库管理', children: <PluginModule><SiteIconsManager /></PluginModule> },
               ]
             : [
-                { key: 'audit_log', label: '审核日志', children: auditLogTab },
                 { key: 'basic', label: '基本配置', children: basicTab },
                 { key: 'storage', label: '存储配置', children: storageTab },
                 { key: 'moderation', label: '审核配置', children: moderationTab },
+                { key: 'audit_log', label: '审核日志', children: auditLogTab },
                 { key: 'preset', label: '预设素材', children: <AdminPresetAssets /> },
                 { key: 'relay_convert', label: '转换素材', children: <RelayConvertAssets /> },
                 { key: 'api_log', label: '接口日志', children: apiLogTab },
