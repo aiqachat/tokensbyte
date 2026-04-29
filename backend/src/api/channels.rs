@@ -203,6 +203,16 @@ pub async fn test_channel(
         if !models.is_empty() { models[0].clone() } else { "gpt-3.5-turbo".to_string() }
     });
 
+    // ── 处理卡池逻辑 ──
+    if let Some(pool_id) = channel.pool_id {
+        if let Some(account) = crate::services::volcengine_pool::select_account(&state, pool_id, &test_model).await {
+            channel.api_key = account.api_key;
+            channel.base_url = account.base_url;
+        } else {
+            return Err(crate::error::AppError::BadRequest("该渠道绑定了火山卡池，但当前无可用的卡池账号用于测试".to_string()));
+        }
+    }
+
     let start = std::time::Instant::now();
 
     // ── 解析转发规则 ──
