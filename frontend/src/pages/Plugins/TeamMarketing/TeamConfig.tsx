@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Input, InputNumber, Select, Space, Tag, message, Popconfirm, Spin, Tooltip } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, TeamOutlined, CrownOutlined, CopyOutlined, LinkOutlined } from '@ant-design/icons';
+import { Typography, Button, Table, Modal, Input, InputNumber, Select, Space, Tag, message, Popconfirm, Spin, Tooltip, Switch } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, TeamOutlined, CrownOutlined, CopyOutlined, LinkOutlined, TrophyOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
-import type { MarketingTeam, TeamMember } from '../../../types';
+import type { MarketingTeam, TeamMember, UserLevel } from '../../../types';
+import { useThemeStore } from '../../../store/theme';
 
 const { Text } = Typography;
 
@@ -13,6 +14,8 @@ interface UserOption {
 }
 
 const TeamConfig: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [teams, setTeams] = useState<MarketingTeam[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -23,14 +26,28 @@ const TeamConfig: React.FC = () => {
   const [teamName, setTeamName] = useState('');
   const [teamDesc, setTeamDesc] = useState('');
   const [maxMembers, setMaxMembers] = useState(10);
+  const [membersCanSetLevel, setMembersCanSetLevel] = useState(0);
   const [selectedLeaders, setSelectedLeaders] = useState<string[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [selectedLevels, setSelectedLevels] = useState<number[]>([]);
+  const [selectedMemberLevels, setSelectedMemberLevels] = useState<number[]>([]);
+  const [allLevels, setAllLevels] = useState<UserLevel[]>([]);
 
   useEffect(() => {
     fetchTeams();
+    fetchAllLevels();
   }, []);
+
+  const fetchAllLevels = async () => {
+    try {
+      const resp = await (request.get('/user_levels') as unknown as Promise<{ data: UserLevel[] }>);
+      setAllLevels(resp.data || []);
+    } catch (e) {
+      console.error('获取用户等级列表失败', e);
+    }
+  };
 
   const fetchTeams = async () => {
     try {
@@ -58,12 +75,18 @@ const TeamConfig: React.FC = () => {
   };
 
   const openCreateModal = () => {
+    const defaultLevel = allLevels.find(l => l.is_default === 1);
+    const defaultLevelIds = defaultLevel ? [defaultLevel.id] : [];
+
     setEditingTeam(null);
     setTeamName('');
     setTeamDesc('');
     setMaxMembers(10);
+    setMembersCanSetLevel(0);
     setSelectedLeaders([]);
     setSelectedMembers([]);
+    setSelectedLevels(defaultLevelIds);
+    setSelectedMemberLevels(defaultLevelIds);
     setUserOptions([]);
     setModalVisible(true);
   };
@@ -73,6 +96,7 @@ const TeamConfig: React.FC = () => {
     setTeamName(team.name);
     setTeamDesc(team.description || '');
     setMaxMembers(team.max_members || 10);
+    setMembersCanSetLevel((team as any).members_can_set_level || 0);
     setSelectedLeaders(team.leaders.map(l => l.user_id));
     setSelectedMembers(team.members.map(m => m.user_id));
     // Pre-populate user options with existing leaders and members
@@ -88,6 +112,8 @@ const TeamConfig: React.FC = () => {
       return true;
     });
     setUserOptions(deduped);
+    setSelectedLevels(team.allowed_level_ids || []);
+    setSelectedMemberLevels(team.allowed_member_level_ids || []);
     setModalVisible(true);
   };
 
@@ -109,7 +135,9 @@ const TeamConfig: React.FC = () => {
         leader_ids: selectedLeaders,
         member_ids: selectedMembers,
         max_members: maxMembers,
-      };
+        members_can_set_level: membersCanSetLevel,
+        allowed_level_ids: selectedLevels,
+        allowed_member_level_ids: selectedMemberLevels };
 
       if (editingTeam) {
         await request.put(`/team-marketing/teams/${editingTeam.id}`, payload);
@@ -145,16 +173,14 @@ const TeamConfig: React.FC = () => {
 
   const selectOptions = userOptions.map(u => ({
     value: u.user_id,
-    label: `${u.username} (${u.uid})`,
-  }));
+    label: `${u.username} (${u.uid})` }));
 
   const columns = [
     {
       title: '团队名称',
       dataIndex: 'name',
       key: 'name',
-      render: (name: string) => <Text strong style={{ color: '#fff' }}>{name}</Text>,
-    },
+      render: (name: string) => <Text strong style={{ color: _isLight ? '#1f2937' : '#fff' }}>{name}</Text> },
     {
       title: '负责人',
       dataIndex: 'leaders',
@@ -168,8 +194,7 @@ const TeamConfig: React.FC = () => {
           ))}
           {leaders.length === 0 && <Text type="secondary">未设置</Text>}
         </Space>
-      ),
-    },
+      ) },
     {
       title: '成员',
       dataIndex: 'members',
@@ -182,12 +207,11 @@ const TeamConfig: React.FC = () => {
             </Tag>
           ))}
           {members.length > 3 && <Tag style={{ margin: 0, borderRadius: 4 }}>+{members.length - 3}</Tag>}
-          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11 }}>
             {members.length}/{record.max_members || 10}
           </Text>
         </Space>
-      ),
-    },
+      ) },
     {
       title: '邀请链接',
       dataIndex: 'invite_code',
@@ -204,8 +228,7 @@ const TeamConfig: React.FC = () => {
               border: '1px solid rgba(82,196,26,0.2)',
               color: '#52c41a',
               fontFamily: 'monospace',
-              fontSize: 12,
-            }}
+              fontSize: 12 }}
           >
             {code}
           </Tag>
@@ -219,15 +242,13 @@ const TeamConfig: React.FC = () => {
             />
           </Tooltip>
         </Space>
-      ),
-    },
+      ) },
     {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
       width: 160,
-      render: (t: string) => <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text>,
-    },
+      render: (t: string) => <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> },
     {
       title: '操作',
       key: 'action',
@@ -245,14 +266,13 @@ const TeamConfig: React.FC = () => {
             <Button type="text" size="small" icon={<DeleteOutlined />} danger />
           </Popconfirm>
         </Space>
-      ),
-    },
+      ) },
   ];
 
   return (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
+        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 13 }}>
           共 {teams.length} 个推广团队
         </Text>
         <Space>
@@ -285,19 +305,19 @@ const TeamConfig: React.FC = () => {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               团队名称 <span style={{ color: '#ff4d4f' }}>*</span>
             </Text>
             <Input
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
               placeholder="输入团队名称"
-              style={{ background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              
             />
           </div>
 
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               团队描述
             </Text>
             <Input.TextArea
@@ -305,31 +325,32 @@ const TeamConfig: React.FC = () => {
               onChange={(e) => setTeamDesc(e.target.value)}
               placeholder="简要描述团队用途（可选）"
               rows={2}
-              style={{ background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              
             />
           </div>
 
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               <TeamOutlined style={{ color: '#52c41a', marginRight: 4 }} />
               团队人数上限
-              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>通过邀请链接加入的成员总数限制</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>通过邀请链接加入的成员总数限制</Text>
             </Text>
             <InputNumber
               value={maxMembers}
               onChange={(v) => setMaxMembers(v || 10)}
               min={1}
               max={10000}
-              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              style={{ width: '100%' }}
               placeholder="默认 10"
             />
           </div>
 
+          {/* 团队负责人 */}
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               <CrownOutlined style={{ color: '#faad14', marginRight: 4 }} />
               团队负责人 <span style={{ color: '#ff4d4f' }}>*</span>
-              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可以查看团队成员的推广详细数据</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可以查看团队成员的推广详细数据</Text>
             </Text>
             <Select
               mode="multiple"
@@ -347,11 +368,33 @@ const TeamConfig: React.FC = () => {
             />
           </div>
 
+          {/* 团队成员授权等级 */}
           <div>
-            <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
+              <TrophyOutlined style={{ color: '#1677ff', marginRight: 4 }} />
+              团队成员授权等级
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可将团队成员设置为以下等级</Text>
+            </Text>
+            <Select
+              mode="multiple"
+              value={selectedMemberLevels}
+              onChange={setSelectedMemberLevels}
+              options={allLevels.map(l => ({
+                value: l.id,
+                label: `${l.name} (ULID: ${l.id.toString().padStart(4, '0')})` }))}
+              placeholder="选择可分配给团队成员的用户等级..."
+              style={{ width: '100%' }}
+              optionFilterProp="label"
+              notFoundContent="暂无可用等级"
+            />
+          </div>
+
+          {/* 团队成员 */}
+          <div>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 6 }}>
               <TeamOutlined style={{ color: '#1677ff', marginRight: 4 }} />
               团队成员
-              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>选择此团队的推广人员</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>选择此团队的推广人员</Text>
             </Text>
             <Select
               mode="multiple"
@@ -366,6 +409,37 @@ const TeamConfig: React.FC = () => {
               notFoundContent={searchLoading ? <Spin size="small" /> : '输入关键词搜索用户'}
               style={{ width: '100%' }}
               suffixIcon={<SearchOutlined />}
+            />
+          </div>
+
+          {/* 授权用户等级（推荐用户） */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block' }}>
+                <TrophyOutlined style={{ color: '#52c41a', marginRight: 4 }} />
+                授权用户等级
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>负责人可将推荐用户设置为以下等级</Text>
+              </Text>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>成员也可设置</Text>
+                <Switch 
+                  size="small" 
+                  checked={membersCanSetLevel === 1} 
+                  onChange={(c) => setMembersCanSetLevel(c ? 1 : 0)} 
+                />
+              </div>
+            </div>
+            <Select
+              mode="multiple"
+              value={selectedLevels}
+              onChange={setSelectedLevels}
+              options={allLevels.map(l => ({
+                value: l.id,
+                label: `${l.name} (ULID: ${l.id.toString().padStart(4, '0')})` }))}
+              placeholder="选择可分配的用户等级..."
+              style={{ width: '100%' }}
+              optionFilterProp="label"
+              notFoundContent="暂无可用等级"
             />
           </div>
         </div>

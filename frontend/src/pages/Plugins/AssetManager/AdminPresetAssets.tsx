@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Table, Button, Space, message, Typography, Upload, Popconfirm, Tag, Modal, Input, Form, Select, Tooltip, Segmented } from 'antd';
 import { UploadOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined, CloudOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
+import { useThemeStore } from '../../../store/theme';
 import type { PluginAsset } from '../../../types';
 
 const { Text } = Typography;
 
 const AdminPresetAssets: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [assets, setAssets] = useState<PluginAsset[]>([]);
   const [loading, setLoading] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -65,8 +68,7 @@ const AdminPresetAssets: React.FC = () => {
       file_name: record.file_name || '',
       category: record.category || '图片',
       userid: record.user_id || '',
-      assetid: record.asset_id || '',
-    });
+      assetid: record.asset_id || '' });
     
     // Optionally fetch live tags from TOS
     try {
@@ -75,8 +77,7 @@ const AdminPresetAssets: React.FC = () => {
         form.setFieldsValue({
           category: res.tags.category || record.category || '图片',
           userid: res.tags.userid || record.user_id || '',
-          assetid: res.tags.assetid || record.asset_id || '',
-        });
+          assetid: res.tags.assetid || record.asset_id || '' });
       }
     } catch (e) {
       console.error('Failed to fetch tags', e);
@@ -93,8 +94,7 @@ const AdminPresetAssets: React.FC = () => {
         file_name: values.file_name,
         category: values.category,
         userid: (!values.userid || values.userid === '000000') ? '' : values.userid,
-        assetid: values.assetid,
-      });
+        assetid: values.assetid });
       message.success('标签更新成功');
       setIsEditModalOpen(false);
       fetchAssets();
@@ -141,8 +141,7 @@ const AdminPresetAssets: React.FC = () => {
     try {
       setReordering(true);
       await request.post('/assets/admin/reorder', {
-        ids: orderedAssets.map((a) => a.id),
-      });
+        ids: orderedAssets.map((a) => a.id) });
       message.success('排序已保存');
     } catch (error) {
       console.error(error);
@@ -172,9 +171,7 @@ const AdminPresetAssets: React.FC = () => {
 
       await request.post('/assets/upload', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+          'Content-Type': 'multipart/form-data' } });
 
       message.success('预设素材上传成功');
       setIsUploadModalOpen(false);
@@ -238,8 +235,7 @@ const AdminPresetAssets: React.FC = () => {
     {
       title: '文件名',
       dataIndex: 'file_name',
-      key: 'file_name',
-    },
+      key: 'file_name' },
     {
       title: '分类 (Category)',
       dataIndex: 'category',
@@ -310,16 +306,15 @@ const AdminPresetAssets: React.FC = () => {
             </Tooltip>
           </Popconfirm>
         </Space>
-      ),
-    },
+      ) },
   ];
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
-          <Text strong style={{ color: '#fff', fontSize: 14 }}>预设素材管理</Text><br />
-          <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>您可以上传系统级预设素材，为其指定专属用户及分类，此信息同时写入对象存储(TOS)标签。点击 ↑↓ 按钮可调整排列顺序。</Text>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>预设素材管理</Text><br />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 13 }}>您可以上传系统级预设素材，为其指定专属用户及分类，此信息同时写入对象存储(TOS)标签。点击 ↑↓ 按钮可调整排列顺序。</Text>
           {adminStorage && (
             <div style={{
               marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 12, fontSize: 13,
@@ -328,14 +323,13 @@ const AdminPresetAssets: React.FC = () => {
               borderRadius: 30,
               padding: '6px 16px',
               boxShadow: '0 4px 16px rgba(0,0,0,0.15), inset 0 1px 1px rgba(255,255,255,0.05)',
-              color: 'rgba(255,255,255,0.7)',
-            }}>
+              color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.7)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <CloudOutlined style={{ color: '#1677ff' }} />
                 <span>文件夹: <Text style={{ color: '#1677ff', fontWeight: 600 }}>{adminStorage.folder || '未初始化'}</Text></span>
               </div>
 
-              <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+              <div style={{ width: 1, height: 12, background: _isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)' }} />
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span>已用空间: <Text style={{ color: '#1677ff', fontWeight: 600, textShadow: '0 0 10px rgba(22,119,255,0.4)' }}>{adminStorage.used_mb} <span style={{ fontSize: 11 }}>MB</span></Text></span>
@@ -357,10 +351,10 @@ const AdminPresetAssets: React.FC = () => {
                 <span>限额: <Text style={{ color: '#52c41a', fontWeight: 600 }}>无限制</Text></span>
               </div>
 
-              <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+              <div style={{ width: 1, height: 12, background: _isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)' }} />
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>文件数量: <Text style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{adminStorage.file_count || 0}</Text></span>
+                <span>文件数量: <Text style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{adminStorage.file_count || 0}</Text></span>
               </div>
             </div>
           )}

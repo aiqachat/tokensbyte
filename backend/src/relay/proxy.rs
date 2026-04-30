@@ -13,14 +13,15 @@ use crate::models::Channel;
 
 pub struct UserContext {
     pub user_group: String,
+    pub level_id: String,
     pub balance: f64,
     pub discount: f64,
 }
 
 pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult<UserContext> {
-    let (g, b, d): (String, f64, f64) = sqlx::query_as(
+    let (g, l_id, b, d): (String, i64, f64, f64) = sqlx::query_as(
         &state.db.format_query(
-            "SELECT u.user_group, u.balance, COALESCE(ul.discount, 1.0) \
+            "SELECT u.user_group, COALESCE(ul.id, 0), u.balance, COALESCE(ul.discount, 1.0) \
              FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key \
              WHERE u.id = ?"
         )
@@ -28,7 +29,7 @@ pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult
     .bind(user_id)
     .fetch_one(&state.db.pool)
     .await?;
-    Ok(UserContext { user_group: g, balance: b, discount: d })
+    Ok(UserContext { user_group: g, level_id: l_id.to_string(), balance: b, discount: d })
 }
 
 /// 统一折扣优先级：模型全站折扣（启用时）> 用户等级折扣
@@ -80,9 +81,9 @@ pub async fn check_access(state: &Arc<AppState>, token: &ApiToken, model: &str, 
 // ── Channel Selection ───────────────────────────────────────────
 
 pub async fn select_channel_for_model(
-    state: &Arc<AppState>, token: &ApiToken, model: &str, user_group: &str, endpoint: &str,
+    state: &Arc<AppState>, token: &ApiToken, model: &str, user_group: &str, level_id: &str, endpoint: &str,
 ) -> AppResult<(Channel, String)> {
-    match router::select_channel(state, model, user_group).await {
+    match router::select_channel(state, model, user_group, level_id).await {
         Ok(ch) => {
             let resolved = ch.resolve_model(model);
             Ok((ch, resolved))
@@ -92,33 +93,6 @@ pub async fn select_channel_for_model(
             record_error_log(state, &token.user_id, None, model, 404, endpoint, &msg).await;
             Err(e)
         }
-    }
-}
-
-// ── Cost Lookup ─────────────────────────────────────────────────
-
-pub async fn get_model_cost(state: &Arc<AppState>, model: &str, discount: f64) -> f64 {
-    let m: Option<crate::models::Model> = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-    )
-    .bind(model)
-    .fetch_optional(&state.db.pool)
-    .await
-    .unwrap_or(None);
-    
-    let db_rule: Option<crate::models::BillingRule> = if let Some(ref md) = m {
-        if let Some(rule_id) = md.billing_rule_id {
-            sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
-                .bind(rule_id)
-                .fetch_optional(&state.db.pool)
-                .await
-                .unwrap_or(None)
-        } else { None }
-    } else { None };
-
-    match db_rule {
-        Some(r) => r.fixed_rate * discount,
-        None => 0.0,
     }
 }
 
@@ -169,12 +143,12 @@ pub async fn record_error_log(
 
 pub async fn record_and_bill(
     state: &Arc<AppState>, token: &ApiToken, channel_id: i64, model_name: &str,
-    prompt_tokens: i32, completion_tokens: i32, cost: f64, status_code: u16,
+    prompt_tokens: i32, completion_tokens: i32, cached_tokens: i32, cost: f64, status_code: u16,
     endpoint: &str, error_msg: Option<&str>, latency_ms: u32, is_stream: i32,
     request_content: Option<String>, response_content: Option<String>, upstream_req_content: Option<String>,
     billing_detail: Option<String>,
 ) {
-    record_and_bill_with_prededuction(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cost, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail).await;
+    record_and_bill_with_prededuction(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail).await;
 }
 
 pub async fn record_and_bill_with_prededuction(
@@ -184,8 +158,9 @@ pub async fn record_and_bill_with_prededuction(
     model_name: &str,
     prompt_tokens: i32,
     completion_tokens: i32,
+    cached_tokens: i32,
     cost: f64,
-    pre_deducted: f64, // 新增参数，已预扣的金额
+    pre_deducted: f64,
     status_code: u16,
     endpoint: &str,
     error_msg: Option<&str>,
@@ -330,8 +305,8 @@ pub async fn record_and_bill_with_prededuction(
             }
         }
         sqlx::query(&state.db.format_query(
-            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ))
         .bind(&token.user_id)
         .bind(channel_id)
@@ -339,6 +314,7 @@ pub async fn record_and_bill_with_prededuction(
         .bind(model_name)
         .bind(prompt_tokens)
         .bind(completion_tokens)
+        .bind(cached_tokens)
         .bind(cost)
         .bind(status_code as i32)
         .bind(system_endpoint)

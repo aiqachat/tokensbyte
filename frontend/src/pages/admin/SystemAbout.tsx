@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, Typography, Spin, message, Tag, Timeline, Badge, Button } from 'antd';
 import { GitlabOutlined, UserOutlined, CalendarOutlined, TagOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
+import { useThemeStore } from '../../store/theme';
 
 const { Title, Text } = Typography;
 
@@ -17,6 +18,8 @@ interface Commit {
 }
 
 const SystemAbout: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [loading, setLoading] = useState(true);
   const [commits, setCommits] = useState<Commit[]>([]);
   const [current, setCurrent] = useState<Commit | null>(null);
@@ -63,7 +66,7 @@ const SystemAbout: React.FC = () => {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                <Title level={4} style={{ margin: 0, color: '#fff' }}>当前版本</Title>
+                <Title level={4} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff' }}>当前版本</Title>
                 <Badge
                   count="LATEST"
                   style={{ backgroundColor: '#1677ff', fontSize: 11, fontWeight: 600, borderRadius: 4 }}
@@ -79,10 +82,10 @@ const SystemAbout: React.FC = () => {
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: 500, marginBottom: 4 }}>
+              <div style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: 500, marginBottom: 4 }}>
                 {current.message}
               </div>
-              <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
+              <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 13 }}>
                 <UserOutlined style={{ marginRight: 5 }} />{current.author}
                 <CalendarOutlined style={{ marginLeft: 12, marginRight: 5 }} />{current.date}
               </div>
@@ -171,7 +174,7 @@ const SystemAbout: React.FC = () => {
                 <Button 
                   type="dashed" 
                   ghost
-                  style={{ borderRadius: 20, padding: '0 24px', borderColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.65)' }}
+                  style={{ borderRadius: 20, padding: '0 24px', borderColor: 'rgba(255,255,255,0.15)', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}
                   icon={expanded ? <UpOutlined /> : <DownOutlined />} 
                   onClick={() => setExpanded(!expanded)}
                 >

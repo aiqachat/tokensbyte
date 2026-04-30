@@ -1,5 +1,5 @@
-﻿# TokensByte Docker 镜像导出脚本 (Windows PowerShell)
-# 在本地构建并导出镜像，用于上传到云服务器
+﻿# TokensByte Docker Image Export Script (Windows PowerShell)
+# Build and export images locally for uploading to cloud server
 
 $ErrorActionPreference = "Stop"
 
@@ -29,35 +29,10 @@ if (-Not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir | Out-Null
 }
 
-# 询问构建模式
-Write-Host "请选择构建模式:" -ForegroundColor Cyan
-Write-Host "  1) 开发环境 (使用 docker-compose.yml)" -ForegroundColor White
-Write-Host "  2) 生产环境 (构建后导出，用于配合 docker-compose.prod.yml 部署)" -ForegroundColor White
-Write-Host ""
-$mode = Read-Host "请输入选项 (1/2)"
-
-switch ($mode) {
-    "1" {
-        $ComposeFile = "docker-compose.yml"
-        $EnvName = "development"
-    }
-    "2" {
-        # 生产模式也用 docker-compose.yml 构建（因为 prod.yml 是 image 模式，不含 build 指令）
-        $ComposeFile = "docker-compose.yml"
-        $EnvName = "production"
-    }
-    default {
-        Write-Host "❌ 无效选项" -ForegroundColor Red
-        pause
-        exit 1
-    }
-}
-
-Write-Host ""
-Write-Host "📦 开始构建 Docker 镜像 ($EnvName)..." -ForegroundColor Cyan
+Write-Host "📦 开始构建 Docker 镜像..." -ForegroundColor Cyan
 Write-Host ""
 
-# 构建镜像（统一使用 docker-compose.yml 构建）
+# 构建镜像
 docker compose build
 
 # 检查构建结果
@@ -75,7 +50,7 @@ Write-Host ""
 Write-Host "📋 镜像信息:" -ForegroundColor Cyan
 docker compose images
 
-# 使用固定镜像名（docker-compose.yml 构建出的镜像名）
+# 使用固定镜像名
 $BackendImage = "tokensbyte-backend:latest"
 $FrontendImage = "tokensbyte-frontend:latest"
 
@@ -181,10 +156,10 @@ echo "========================================="
 echo "  后续步骤"
 echo "========================================="
 echo ""
-echo "1. 上传 docker-compose.prod.yml 到服务器"
+echo "1. 上传 docker-compose.yml 到服务器"
 echo "2. 创建 .env 配置文件 (运行 deploy.sh 会自动引导配置)"
 echo "3. 启动服务:"
-echo "   docker compose -f docker-compose.prod.yml up -d"
+echo "   docker compose up -d"
 echo ""
 echo "或者直接使用部署脚本:"
 echo "   chmod +x deploy.sh"
@@ -246,13 +221,14 @@ Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "  后续步骤" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "1. 上传 docker-compose.prod.yml 到服务器"
-Write-Host "2. 创建 .env 配置文件 (运行 deploy.ps1 会自动引导配置)"
+Write-Host "1. 上传 docker-compose.yml 到服务器"
+Write-Host "2. 创建 .env 配置文件 (参考 .env.example 或运行 deploy.sh 引导配置)"
 Write-Host "3. 启动服务:"
-Write-Host "   docker compose -f docker-compose.prod.yml up -d"
+Write-Host "   docker compose up -d"
 Write-Host ""
 Write-Host "或者直接使用部署脚本:"
-Write-Host "   .\deploy.ps1"
+Write-Host "   chmod +x deploy.sh"
+Write-Host "   ./deploy.sh"
 Write-Host ""
 "@
 
@@ -267,12 +243,12 @@ $UploadGuide = @"
 ========================================
 
 📦 导出时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-🔧 构建模式: $EnvName
 
 📁 需要上传的文件:
 $(Get-ChildItem "$OutputDir\*$Timestamp.tar" | ForEach-Object { $_.Name })
 - import-images.ps1 (导入脚本)
-- docker-compose.prod.yml (如果使用生产模式)
+- docker-compose.yml (部署配置)
+- .env.example (环境变量模板)
 
 📊 总大小: $([math]::Round($TotalSize / 1MB, 2)) MB
 
@@ -287,7 +263,8 @@ $(Get-ChildItem "$OutputDir\*$Timestamp.tar" | ForEach-Object { $_.Name })
 3. 上传以下文件到服务器目录 (如 /opt/tokensbyte/):
    - 所有 .tar 文件
    - import-images.ps1
-   - docker-compose.prod.yml
+   - docker-compose.yml
+   - .env.example
 
 
 方法二: 使用 scp (如果有 OpenSSH)
@@ -295,12 +272,14 @@ $(Get-ChildItem "$OutputDir\*$Timestamp.tar" | ForEach-Object { $_.Name })
 # 在 PowerShell 中执行
 scp .\docker-images\*.tar your-user@your-server:/path/to/deploy/
 scp .\docker-images\import-images.ps1 your-user@your-server:/path/to/deploy/
-scp docker-compose.prod.yml your-user@your-server:/path/to/deploy/
+scp docker-compose.yml your-user@your-server:/path/to/deploy/
+scp .env.example your-user@your-server:/path/to/deploy/
 
 示例:
 scp .\docker-images\*.tar root@192.168.1.100:/opt/tokensbyte/
 scp .\docker-images\import-images.ps1 root@192.168.1.100:/opt/tokensbyte/
-scp docker-compose.prod.yml root@192.168.1.100:/opt/tokensbyte/
+scp docker-compose.yml root@192.168.1.100:/opt/tokensbyte/
+scp .env.example root@192.168.1.100:/opt/tokensbyte/
 
 
 方法三: 使用云存储 (大文件推荐)
@@ -335,11 +314,22 @@ scp docker-compose.prod.yml root@192.168.1.100:/opt/tokensbyte/
    nano .env  # 编辑配置
 
 5. 启动服务:
-   docker compose -f docker-compose.prod.yml up -d
+   docker compose up -d
 
 6. 查看状态:
-   docker compose -f docker-compose.prod.yml ps
-   docker compose -f docker-compose.prod.yml logs -f
+   docker compose ps
+   docker compose logs -f
+
+========================================
+  使用外部数据库
+========================================
+
+如需使用外部 PostgreSQL (RDS/云数据库):
+1. 修改 .env 中的 DATABASE_URL 指向外部数据库
+   例: DATABASE_URL=postgres://user:pass@db.example.com:5432/tokensbyte
+2. 注释掉 docker-compose.yml 中的 postgres 服务
+3. 删除 backend 的 depends_on: postgres
+4. 启动: docker compose up -d
 
 ========================================
   注意事项
@@ -371,7 +361,7 @@ Write-Host "📤 下一步:" -ForegroundColor Cyan
 Write-Host "   1. 查看上传指南: Get-Content $OutputDir\UPLOAD-GUIDE.txt"
 Write-Host "   2. 上传文件到服务器 (参考 UPLOAD-GUIDE.txt)"
 Write-Host "   3. 在服务器运行: ./import-images.sh"
-Write-Host "   4. 启动服务: docker compose -f docker-compose.prod.yml up -d"
+Write-Host "   4. 启动服务: docker compose up -d"
 Write-Host ""
 Write-Host "💡 提示: 可以使用压缩减小传输体积" -ForegroundColor Yellow
 Write-Host "   Compress-Archive -Path .\docker-images\*.tar -DestinationPath .\docker-images\tokensbyte-images.zip"

@@ -260,9 +260,16 @@ pub async fn register(
         .await?
         .unwrap_or_else(|| "default".to_string());
 
+        let referral_history = if let Some(ref inviter) = referred_by {
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+        } else {
+            None
+        };
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group, referral_history)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?, ?)"#)
         )
         .bind(&user_id)
         .bind(&uid)
@@ -273,6 +280,7 @@ pub async fn register(
         .bind(&referred_by)
         .bind(&raw_ip)
         .bind(&default_group)
+        .bind(&referral_history)
         .execute(&mut *tx)
         .await?;
 
@@ -425,8 +433,6 @@ pub async fn register_email(
         let user_id = uuid::Uuid::new_v4().to_string();
         let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
         let username = generate_unique_username(&state, &request.email).await?;
-        // 自动生成的用户名也做保留词校验
-        validate_username(&username)?;
         let password_hash = auth::hash_password(&request.password)?;
 
         let mut tx = state.db.pool.begin().await?;
@@ -457,13 +463,20 @@ pub async fn register_email(
         .await?
         .unwrap_or_else(|| "default".to_string());
 
+        let referral_history = if let Some(ref inviter) = referred_by {
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+        } else {
+            None
+        };
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group, referral_history)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?, ?)"#)
         )
         .bind(&user_id).bind(&uid).bind(&username).bind(&request.email)
         .bind(&password_hash).bind(initial_balance).bind(&referred_by).bind(&raw_ip)
-        .bind(&default_group)
+        .bind(&default_group).bind(&referral_history)
         .execute(&mut *tx)
         .await?;
 
@@ -530,11 +543,9 @@ pub async fn register_mobile(
 
         let user_id = uuid::Uuid::new_v4().to_string();
         let uid = state.db.generate_unique_uid().await.map_err(AppError::from)?;
-        let username = format!("m_{}", &request.mobile[request.mobile.len().saturating_sub(4)..]);
+        let base_username = format!("m_{}", &request.mobile[request.mobile.len().saturating_sub(4)..]);
         // 确保用户名唯一
-        let username = ensure_unique_username(&state, &username).await?;
-        // 自动生成的用户名也做保留词校验
-        validate_username(&username)?;
+        let username = ensure_unique_username(&state, &base_username).await?;
         let password_hash = auth::hash_password(&request.password)?;
         let placeholder_email = format!("m_{}@tokensbyte.local", &uid);
 
@@ -566,14 +577,21 @@ pub async fn register_mobile(
         .await?
         .unwrap_or_else(|| "default".to_string());
 
+        let referral_history = if let Some(ref inviter) = referred_by {
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+        } else {
+            None
+        };
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, mobile, password_hash, role, balance, is_active, referred_by, register_ip, user_group)
-               VALUES (?, ?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, mobile, password_hash, role, balance, is_active, referred_by, register_ip, user_group, referral_history)
+               VALUES (?, ?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?, ?)"#)
         )
         .bind(&user_id).bind(&uid).bind(&username).bind(&placeholder_email)
         .bind(&request.mobile).bind(&password_hash).bind(initial_balance)
         .bind(&referred_by).bind(&raw_ip)
-        .bind(&default_group)
+        .bind(&default_group).bind(&referral_history)
         .execute(&mut *tx).await?;
 
         if gift_amount > 0.0 {
@@ -858,37 +876,48 @@ async fn get_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> {
     crate::api::settings::load_all_settings(state).await
 }
 
-/// 用户名合规校验：禁止系统保留词 + 最少4字符
+/// 用户名合规校验：仅限英文字母和数字，至少6个字符，并且包含敏感词过滤
 fn validate_username(username: &str) -> AppResult<()> {
     let name = username.trim();
 
-    if name.len() < 4 {
-        return Err(AppError::BadRequest("用户名长度不能少于4个字符".to_string()));
+    if name.len() < 6 {
+        return Err(AppError::BadRequest("用户名长度不能少于 6 个字符".to_string()));
     }
 
-    // 常见系统保留用户名（全部小写比对）
-    const RESERVED: &[&str] = &[
-        "admin", "administrator", "root", "system", "sys",
-        "superadmin", "super", "master", "operator",
-        "moderator", "mod", "staff", "support", "help",
-        "service", "official", "test", "tester", "testing",
-        "demo", "guest", "anonymous", "nobody", "null",
-        "undefined", "api", "www", "mail", "ftp",
-        "smtp", "pop", "imap", "dns", "ns",
-        "server", "database", "db", "mysql", "postgres",
-        "redis", "mongo", "nginx", "apache", "proxy",
-        "bot", "robot", "crawler", "spider",
-        "postmaster", "webmaster", "hostmaster", "abuse",
-        "security", "info", "noreply", "no-reply",
-        "ceo", "cto", "cfo", "coo",
-        "token", "tokens", "tokensbyte", "tokenbyte",
-        "管理员", "系统", "官方", "客服", "运营",
+    // 只允许英文字母、数字和下划线，禁止中文、特殊字符（防止数据库注入及特殊符号）
+    for c in name.chars() {
+        if !c.is_ascii_alphanumeric() && c != '_' {
+            return Err(AppError::BadRequest("用户名只能包含英文字母、数字和下划线，不能使用特殊字符或其他语言".to_string()));
+        }
+    }
+
+    // 包含即拒绝的敏感词/保留字（模糊匹配）
+    const CONTAINS_RESERVED: &[&str] = &[
+        "admin", "root", "system", "superadmin", "moderator", "support", 
+        "official", "anonymous", "tokensbyte", "security", "noreply",
+        "select", "update", "delete", "insert", "drop", "database"
+    ];
+
+    // 精确匹配的保留字（较短的词，防止模糊匹配误伤正常单词）
+    const EXACT_RESERVED: &[&str] = &[
+        "sys", "super", "master", "operator", "mod", "staff", "help", "service", 
+        "test", "tester", "testing", "demo", "guest", "nobody", "null", "undefined",
+        "api", "www", "mail", "ftp", "smtp", "pop", "imap", "dns", "ns", "server", 
+        "db", "mysql", "postgres", "redis", "mongo", "nginx", "apache", "proxy",
+        "bot", "robot", "crawler", "spider", "info", "ceo", "cto", "cfo", "coo", "token"
     ];
 
     let lower = name.to_lowercase();
-    for &word in RESERVED {
+    
+    for &word in CONTAINS_RESERVED {
+        if lower.contains(word) {
+            return Err(AppError::BadRequest("此用户名不能注册".to_string()));
+        }
+    }
+
+    for &word in EXACT_RESERVED {
         if lower == word {
-            return Err(AppError::BadRequest(format!("用户名 '{}' 为系统保留名称，请换一个", name)));
+            return Err(AppError::BadRequest("此用户名不能注册".to_string()));
         }
     }
 
@@ -1027,17 +1056,30 @@ fn calc_gift_amount(marketing: &crate::models::MarketingSettings) -> f64 {
 
 /// 从邮箱前缀生成唯一用户名
 async fn generate_unique_username(state: &Arc<AppState>, email: &str) -> AppResult<String> {
-    let base = email.split('@').next().unwrap_or("user").to_string();
+    let mut base = email.split('@').next().unwrap_or("user").to_string();
+    // 过滤掉非字母数字和下划线的字符，确保合规
+    base.retain(|c| c.is_ascii_alphanumeric() || c == '_');
+    if base.is_empty() {
+        base = "user".to_string();
+    }
+    // 保证至少6位
+    while base.len() < 6 {
+        base.push_str(&rand::thread_rng().gen_range(0..10).to_string());
+    }
     ensure_unique_username(state, &base).await
 }
 
 /// 确保用户名唯一（存在则追加随机后缀）
 async fn ensure_unique_username(state: &Arc<AppState>, base: &str) -> AppResult<String> {
-    let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)"))
-        .bind(base).fetch_one(&state.db.pool).await?;
-    if !exists {
-        return Ok(base.to_string());
+    let mut current = base.to_string();
+    loop {
+        let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)"))
+            .bind(&current).fetch_one(&state.db.pool).await?;
+        if !exists {
+            return Ok(current);
+        }
+        let suffix: String = (0..4).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
+        // 恢复下划线拼接
+        current = format!("{}_{}", base, suffix);
     }
-    let suffix: String = (0..4).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
-    Ok(format!("{}_{}", base, suffix))
 }

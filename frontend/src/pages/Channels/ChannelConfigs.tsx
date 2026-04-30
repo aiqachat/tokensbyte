@@ -15,6 +15,7 @@ const ChannelConfigs: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ChannelConfig | null>(null);
   const [upstreams, setUpstreams] = useState<{id: number, name: string}[]>([]);
+  const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
   const fetchConfigs = async () => {
@@ -51,10 +52,8 @@ const ChannelConfigs: React.FC = () => {
 
   const handleEdit = (record: ChannelConfig) => {
     setEditingConfig(record);
-    // 编辑时不预填 api_key —— 避免旧密钥被原样回传导致以为更新了实际没变
-    const { api_key: _removed, ...rest } = record as any;
     form.resetFields();
-    form.setFieldsValue(rest);
+    form.setFieldsValue(record);
     setIsModalVisible(true);
   };
 
@@ -69,6 +68,8 @@ const ChannelConfigs: React.FC = () => {
   };
 
   const handleSave = async (values: any) => {
+    if (submitting) return;
+    setSubmitting(true);
     try {
       if (editingConfig) {
         if (!values.api_key) delete values.api_key;
@@ -82,6 +83,8 @@ const ChannelConfigs: React.FC = () => {
       fetchConfigs();
     } catch (e) {
       console.error(e);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -155,6 +158,7 @@ const ChannelConfigs: React.FC = () => {
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         onOk={() => form.submit()}
+        confirmLoading={submitting}
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="name" label="配置名称" rules={[{ required: true }]}>
@@ -170,7 +174,17 @@ const ChannelConfigs: React.FC = () => {
             />
           </Form.Item>
           <Form.Item name="base_url" label="端点基础地址 (Base URL)" rules={[{ required: true }]}>
-            <Input placeholder="https://api.openai.com" />
+            <AutoComplete
+              options={[
+                { value: 'https://api.openai.com', label: 'OpenAI 官方 (https://api.openai.com)' },
+                { value: 'https://ark.cn-beijing.volces.com/api/v3', label: '火山方舟 (https://ark.cn-beijing.volces.com/api/v3)' }
+              ]}
+              placeholder="可直接选择预设地址或自由输入"
+              filterOption={(inputValue, option) =>
+                String(option?.label || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1 ||
+                String(option?.value || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+              }
+            />
           </Form.Item>
           <Form.Item 
             name="api_key" 

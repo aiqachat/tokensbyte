@@ -61,7 +61,7 @@ const Logs: React.FC = () => {
     fetchLogs();
   }, [fetchLogs]);
 
-  const columns = [
+  const columns = ([
     {
       title: t('logs.time'),
       dataIndex: 'created_at',
@@ -82,12 +82,16 @@ const Logs: React.FC = () => {
     },
     {
       title: '令牌',
-      dataIndex: 'token_name',
       key: 'token_name',
       width: 120,
-      render: (text: string) => <Tag color="cyan">{text || '-'}</Tag>,
+      render: (_: any, record: RequestLog) => (
+        <Space direction="vertical" size={0}>
+          <Tag color="cyan">{record.token_name || '-'}</Tag>
+          {record.token_kid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>KID: {record.token_kid}</Text>}
+        </Space>
+      ),
     },
-    {
+    user?.role === 'admin' ? {
       title: '用户',
       key: 'user',
       width: 150,
@@ -97,11 +101,14 @@ const Logs: React.FC = () => {
         return (
           <Space size={6}>
             <Avatar size="small" style={{ backgroundColor: themeToken.colorPrimary, fontSize: 12 }}>{initial}</Avatar>
-            <Text style={{ fontSize: 12 }}>{name}</Text>
+            <Space direction="vertical" size={0}>
+              <Text style={{ fontSize: 12 }}>{name}</Text>
+              {record.user_uid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>UID: {record.user_uid}</Text>}
+            </Space>
           </Space>
         );
       },
-    },
+    } : null,
     {
       title: '渠道AID',
       dataIndex: 'channel_group_aid',
@@ -117,6 +124,7 @@ const Logs: React.FC = () => {
         <Space direction="vertical" size={0}>
           <Text type="secondary" style={{ fontSize: 11 }}>输入: {record.prompt_tokens}</Text>
           <Text type="secondary" style={{ fontSize: 11 }}>输出: {record.completion_tokens}</Text>
+          {(record.cached_tokens ?? 0) > 0 && <Text type="secondary" style={{ fontSize: 11, color: '#52c41a' }}>缓存(输入内): {record.cached_tokens}</Text>}
         </Space>
       ),
     },
@@ -125,10 +133,17 @@ const Logs: React.FC = () => {
       dataIndex: 'cost',
       key: 'cost',
       width: 90,
-      render: (val: number) =>
-        val === 0
-          ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
-          : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{val.toFixed(4)}</Text>,
+      render: (val: number, record: RequestLog) => (
+        <Space direction="vertical" size={0}>
+          {val === 0
+            ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
+            : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{val.toFixed(4)}</Text>
+          }
+          {record.billing_detail?.includes('退回') && (
+            <Tag color="orange" style={{ margin: 0, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}>已退费</Tag>
+          )}
+        </Space>
+      ),
     },
     {
       title: t('logs.latency'),
@@ -151,7 +166,7 @@ const Logs: React.FC = () => {
       width: 60,
       render: (code: number) => <Tag color={code === 200 ? 'success' : 'error'}>{code}</Tag>,
     },
-  ];
+  ].filter(Boolean)) as any[];
 
   const expandedRowRender = (record: RequestLog) => {
     let reqJson = record.request_content;
@@ -215,7 +230,8 @@ const Logs: React.FC = () => {
                 <Text type="secondary" style={{ fontSize: 12 }}>{costFormula}</Text>
               )}
               <br />
-              <Text strong style={{ fontSize: 13 }}>实际扣费: {currencySymbol}{record.cost.toFixed(6)}</Text>
+              <Text strong style={{ fontSize: 13, textDecoration: record.billing_detail?.includes('退回') ? 'line-through' : 'none' }}>实际扣费: {currencySymbol}{record.cost.toFixed(6)}</Text>
+              {record.billing_detail?.includes('退回') && <Text type="danger" style={{ fontSize: 13, marginLeft: 8 }}>已全额退回</Text>}
               <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>（优先扣令牌配额，不足扣用户余额）</Text>
             </div>
           </Descriptions.Item>
@@ -347,20 +363,40 @@ const Logs: React.FC = () => {
                 extra={<Tag color={record.status_code === 200 ? 'success' : 'error'}>{record.status_code}</Tag>}
               >
                 <CardRow label="时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm:ss')}</Text></CardRow>
-                <CardRow label="用户">
-                  <Space size={4}>
-                    <Avatar size={18} style={{ backgroundColor: themeToken.colorPrimary, fontSize: 10 }}>{userName[0]?.toUpperCase()}</Avatar>
-                    <Text style={{ fontSize: 12 }}>{userName}</Text>
+                {user?.role === 'admin' && (
+                  <CardRow label="用户">
+                    <Space size={4}>
+                      <Avatar size={18} style={{ backgroundColor: themeToken.colorPrimary, fontSize: 10 }}>{userName[0]?.toUpperCase()}</Avatar>
+                      <Space direction="vertical" size={0}>
+                        <Text style={{ fontSize: 12 }}>{userName}</Text>
+                        {record.user_uid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>UID: {record.user_uid}</Text>}
+                      </Space>
+                    </Space>
+                  </CardRow>
+                )}
+                <CardRow label="令牌">
+                  <Space direction="vertical" size={0} align="end">
+                    <Tag color="cyan" style={{ fontSize: 11, margin: 0 }}>{record.token_name || '-'}</Tag>
+                    {record.token_kid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>KID: {record.token_kid}</Text>}
                   </Space>
                 </CardRow>
-                <CardRow label="令牌"><Tag color="cyan" style={{ fontSize: 11 }}>{record.token_name || '-'}</Tag></CardRow>
                 {user?.role === 'admin' && record.channel_name && <CardRow label="渠道"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_name}</Text></CardRow>}
-                <CardRow label="用量"><Text type="secondary" style={{ fontSize: 12 }}>输入:{record.prompt_tokens} / 输出:{record.completion_tokens}</Text></CardRow>
+                <CardRow label="用量">
+                  <Space direction="vertical" size={0} align="end">
+                    <Text type="secondary" style={{ fontSize: 12 }}>输入:{record.prompt_tokens} / 输出:{record.completion_tokens}</Text>
+                    {(record.cached_tokens ?? 0) > 0 && <Text type="secondary" style={{ fontSize: 11, color: '#52c41a' }}>缓存(输入内):{record.cached_tokens}</Text>}
+                  </Space>
+                </CardRow>
                 <CardRow label="费用">
-                  {record.cost === 0
-                    ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
-                    : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{record.cost.toFixed(4)}</Text>
-                  }
+                  <Space direction="vertical" size={0} align="end">
+                    {record.cost === 0
+                      ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
+                      : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{record.cost.toFixed(4)}</Text>
+                    }
+                    {record.billing_detail?.includes('退回') && (
+                      <Tag color="orange" style={{ margin: 0, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}>已退费</Tag>
+                    )}
+                  </Space>
                 </CardRow>
                 <CardRow label="延迟"><Text style={{ fontSize: 12 }}>{(record.latency_ms / 1000).toFixed(3)}s</Text></CardRow>
                 <CardRow label="类型"><Tag color={record.is_stream === 1 ? 'geekblue' : 'default'}>{record.is_stream === 1 ? '流' : '非流'}</Tag></CardRow>

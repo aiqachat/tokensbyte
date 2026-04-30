@@ -27,6 +27,7 @@ pub mod forward_rules;
 pub mod billing_rules;
 pub mod task_logs;
 pub mod upstreams;
+pub mod announcements;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     // 1. Management APIs (Admin/User UI)
@@ -34,6 +35,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/users", get(users::list_users).post(users::create_user))
         .route("/users/{id}", put(users::update_user).delete(users::delete_user))
         .route("/users/{id}/recharge", post(users::recharge_user))
+        .route("/users/{id}/impersonate", post(users::impersonate_user))
         .route("/channels", post(channels::create_channel))
         .route("/channels/{id}", put(channels::update_channel).delete(channels::delete_channel))
         .route("/channels/{id}/test", post(channels::test_channel))
@@ -69,6 +71,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/forward-rules/{id}", put(forward_rules::update_rule).delete(forward_rules::delete_rule))
         .route("/billing-rules", get(billing_rules::list_rules).post(billing_rules::create_rule))
         .route("/billing-rules/{id}", put(billing_rules::update_rule).delete(billing_rules::delete_rule))
+        .route("/announcements", get(announcements::list_admin_announcements).post(announcements::create_announcement))
+        .route("/announcements/{id}", put(announcements::update_announcement).delete(announcements::delete_announcement))
         .layer(axum_middleware::from_fn(admin_middleware))
         .with_state(state.clone());
 
@@ -93,12 +97,17 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/user/bind/google", get(user::bind_google))
         .route("/user/unbind/{bind_type}", post(user::unbind_third_party))
         .route("/task_logs", get(task_logs::list_task_logs))
+        .route("/task_logs/{id}/sync", post(task_logs::sync_task_log))
         .route("/finance/pay/create", post(pay::create_order))
         .route("/finance/pay/status/{out_trade_no}", get(pay::check_status))
         .route("/system/about", get(settings::system_about))
 
         .merge(admin_routes)
+        .nest("/plugins/volcengine_pool", volcengine_pool::router())
+        .nest("/plugins/gptimage_pool", gptimage_pool::router())
+        .nest("/plugins/site-icons", site_icons::router())
         .nest("/plugins", plugins::router())
+        .route("/marketplace/public", get(plugins::get_marketplace_public))
         .nest("/assets", assets::router())
         .nest("/team-marketing", team_marketing::router())
         .nest("/playground", playground::router())
@@ -127,6 +136,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     let public_v1_routes: Router<Arc<AppState>> = Router::new()
         .route("/settings", get(settings::get_settings))
+        .route("/announcements/public", get(announcements::get_public_announcements))
         .route("/plugins/active", get(plugins::get_active_plugins_public))
         // OAuth 绑定回调（浏览器重定向，无 JWT，通过 state 参数识别用户）
         .route("/user/bind/wechat/callback", get(user::bind_wechat_callback))
@@ -138,8 +148,15 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let relay_routes: Router<Arc<AppState>> = Router::new()
         .route("/chat/completions", post(crate::relay::chat_completions))
         .route("/images/generations", post(crate::relay::image::image_generations))
+        .route("/videos/generations", post(crate::relay::video::video_generations))
         .route("/video/generations", post(crate::relay::video::video_generations))
         .route("/video/generations/{task_id}", get(crate::relay::video::video_generations_status))
+        // 阿里百炼 DashScope 视频生成 API 原生路径
+        .route("/v1/services/aigc/video-generation/video-synthesis", post(crate::relay::video::video_generations))
+        // 阿里百炼 DashScope 图像生成 API 原生路径 (多模态)
+        .route("/v1/services/aigc/multimodal-generation/generation", post(crate::relay::image::image_generations))
+        .route("/v1/tasks/{task_id}", get(crate::relay::video::video_generations_status))
+        .route("/tasks/{task_id}", get(crate::relay::task::task_status))
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());
 
@@ -150,11 +167,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .layer(axum_middleware::from_fn(crate::relay::native::normalize_google_auth))
         .with_state(state.clone());
 
-    // 5. Volcengine Native Relay
+    // 5. Volcengine Native Relay (Routed to Unified Handlers)
     let volcengine_native_routes: Router<Arc<AppState>> = Router::new()
-        .route("/api/v3/contents/generations/tasks", post(crate::relay::native::volcengine_submit))
-        .route("/api/v3/contents/generations/tasks/{task_id}", get(crate::relay::native::volcengine_status))
-        .route("/api/v3/images/generations", post(crate::relay::native::volcengine_images))
+        .route("/api/v3/chat/completions", post(crate::relay::chat_completions))
+        .route("/api/v3/contents/generations/tasks", post(crate::relay::video::video_generations))
+        .route("/api/v3/contents/generations/tasks/{task_id}", get(crate::relay::video::video_generations_status))
+        .route("/api/v3/images/generations", post(crate::relay::image::image_generations))
         .route("/api", post(crate::relay::native::ark_asset_proxy))
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());
@@ -174,9 +192,13 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(volcengine_native_routes)
         .with_state(state)
         .layer(tower_http::cors::CorsLayer::permissive())
+        .layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024))
 }
 
 pub mod plugins;
 pub mod assets;
 pub mod team_marketing;
 pub mod playground;
+pub mod volcengine_pool;
+pub mod gptimage_pool;
+pub mod site_icons;

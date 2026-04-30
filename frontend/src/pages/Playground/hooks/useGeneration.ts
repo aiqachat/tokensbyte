@@ -2,7 +2,7 @@
  * 生成与轮询 Hook
  * 封装 API 调用、节点创建、异步轮询逻辑
  */
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { message } from 'antd';
 import axios from 'axios';
 import type { CanvasNode } from '../types';
@@ -14,7 +14,8 @@ export const useGeneration = () => {
   const {
     currentModel, prompt, paramValues,
     selectedTokenKey, generating, setGenerating,
-    setTaskPollingNodes, currentProjectId,
+    taskPollingNodes, setTaskPollingNodes, currentProjectId,
+    attachedAssets, setAttachedAssets, models,
   } = usePlayground();
 
   // 保持 currentProjectId 的最新引用（避免闭包过期问题）
@@ -66,6 +67,7 @@ export const useGeneration = () => {
 
   /** 发送生成请求 */
   const handleGenerate = useCallback(async () => {
+    if (generating) return;
     if (!currentModel || !prompt.trim()) return;
     if (!selectedTokenKey) {
       message.warning('请先选择一个 API 密钥');
@@ -74,7 +76,7 @@ export const useGeneration = () => {
 
     setGenerating(true);
 
-    const newNodeId = Date.now().toString();
+    const newNodeId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
     const centerX = -canvasTransform.x / canvasTransform.scale + window.innerWidth / 2 - 250;
     const centerY = -canvasTransform.y / canvasTransform.scale + window.innerHeight / 2 - 200;
     const offsetX = (Math.random() - 0.5) * 100;
@@ -89,7 +91,13 @@ export const useGeneration = () => {
         : currentModel.type_name.includes('图片') || currentModel.scheme_type === 'image' ? 'image'
         : 'text',
       status: 'loading',
-      taskData: { prompt: prompt.trim() },
+      taskData: {
+        prompt: prompt.trim(),
+        model_name: currentModel.name,
+        model_id: currentModel.model_id,
+        attached_urls: attachedAssets.map(a => a.fullUrl),
+        created_at: new Date().toISOString(),
+      },
       resultData: null,
       x: centerX + offsetX,
       y: centerY + offsetY,
@@ -101,6 +109,58 @@ export const useGeneration = () => {
     setNodes(prev => [...prev, initialNode]);
 
     try {
+      // 1. 预处理：将本地附件上传到永久存储，确保日志记录的是永久 URL 而非临时的 blob
+      const uploadedAssets = await Promise.all(attachedAssets.map(async (item) => {
+        if (item.file) {
+          const formData = new FormData();
+          formData.append('file', item.file);
+          if (currentProjectId) formData.append('project_id', currentProjectId.toString());
+          
+          try {
+            const { default: requestUtil } = await import('../../../utils/request');
+            const res = await requestUtil.post('/playground/assets/upload', formData, {
+              headers: { 'Content-Type': 'multipart/form-data' }
+            }) as any;
+            
+            if (res.url) {
+              return { ...item, fullUrl: res.url, isUploaded: true };
+            }
+          } catch (e) {
+            console.error('附件上传失败', e);
+          }
+        }
+        return item;
+      }));
+
+      // 更新全局状态，这样如果生成失败，下次点 Run 也不用重新上传
+      setAttachedAssets(uploadedAssets);
+
+      // 准备 taskData (包含永久 URL)
+      const finalAttachedUrls = uploadedAssets.map(a => a.fullUrl);
+      setNodes(prev => prev.map(n => n.id === newNodeId ? {
+        ...n,
+        taskData: {
+          ...n.taskData,
+          attached_url: finalAttachedUrls[0] || '',
+          attached_urls: finalAttachedUrls,
+        }
+      } : n));
+
+      // 2. 收集用于 AI 接口的 base64 或 URL
+      const resolvedAssetsForAI = await Promise.all(uploadedAssets.map(async (item) => {
+        // 如果已经上传到永久存储且模型支持 URL，可以直接传 URL。
+        // 但为了最大限度保证成功率，本地新上传的建议还是传 base64 (部分 AI 模型不直接抓取动态 URL)
+        if (item.file) {
+          const b64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(item.file!);
+          });
+          return { url: b64, type: item.asset.asset_type };
+        }
+        return { url: item.fullUrl, type: item.asset.asset_type };
+      }));
+
       const schemeType = currentModel.scheme_type || '';
       const body: any = {
         model: currentModel.model_id,
@@ -108,34 +168,56 @@ export const useGeneration = () => {
         ...paramValues,
       };
 
+      // Map web_search toggle to tools array
+      if (body.web_search) {
+        body.tools = [{ type: 'web_search' }];
+      }
+      delete body.web_search;
+
       let endpoint = '';
       if (schemeType === 'video' || currentModel.type_name.includes('视频')) {
         endpoint = currentModel.endpoint || '/v1/video/generations';
+        const imageAssets = resolvedAssetsForAI.filter(a => a.type === 'image');
+        const videoAssets = resolvedAssetsForAI.filter(a => a.type === 'video');
+        const audioAssets = resolvedAssetsForAI.filter(a => a.type === 'audio');
 
-        if (currentModel.endpoint) {
+        if (currentModel.endpoint || true) { // Default to full multi-modal payload format for all video endpoints
           const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
-          const imageUrl = paramValues.image_url;
-          if (imageUrl && String(imageUrl).trim()) {
-            contentArr.push({ type: 'image_url', image_url: { url: String(imageUrl).trim() } });
+          
+          imageAssets.forEach(img => {
+            contentArr.push({ type: 'image_url', image_url: { url: img.url }, role: 'reference_image' });
+          });
+          videoAssets.forEach(vid => {
+            contentArr.push({ type: 'video_url', video_url: { url: vid.url }, role: 'reference_video' });
+          });
+          audioAssets.forEach(aud => {
+            contentArr.push({ type: 'audio_url', audio_url: { url: aud.url }, role: 'reference_audio' });
+          });
+
+          // Fallback for single image param
+          if (imageAssets.length === 0 && paramValues.image_url) {
+            contentArr.push({ type: 'image_url', image_url: { url: paramValues.image_url }, role: 'reference_image' });
           }
+
           body.content = contentArr;
           delete body.prompt;
-        } else {
-          const imageUrl = paramValues.image_url;
-          if (imageUrl && String(imageUrl).trim()) {
-            body.content = [
-              { type: 'text', text: prompt.trim() },
-              { type: 'image_url', image_url: { url: String(imageUrl).trim() } }
-            ];
-            delete body.prompt;
-          }
         }
         delete body.image_url;
       } else if (schemeType === 'image' || currentModel.type_name.includes('图片')) {
         endpoint = '/v1/images/generations';
+        const firstImage = resolvedAssetsForAI.find(a => a.type === 'image')?.url || paramValues.image_url;
+        if (firstImage) {
+           body.image = firstImage;
+           body.image_url = firstImage;
+        }
       } else {
         endpoint = '/v1/chat/completions';
-        body.messages = [{ role: 'user', content: prompt.trim() }];
+        const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
+        // 对对话模型，支持多个图片输入
+        resolvedAssetsForAI.filter(a => a.type === 'image').forEach(img => {
+          contentArr.push({ type: 'image_url', image_url: { url: img.url } });
+        });
+        body.messages = [{ role: 'user', content: contentArr }];
         delete body.prompt;
       }
 
@@ -146,35 +228,64 @@ export const useGeneration = () => {
         }
       }).then(r => r.data);
 
+      // 检测异步任务响应：视频端点 或 图片端点返回了 task_id (如 GPT Image 2)
       const isVideoEndpoint = endpoint.includes('video') || endpoint.includes('contents/generations');
-      if (isVideoEndpoint && (res?.id || res?.data?.task_id)) {
-        const taskId = res?.id || res?.data?.task_id;
-        setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, taskData: { ...(n.taskData || {}), task_id: taskId, ...res } } : n));
+      const asyncTaskId = res?.id || res?.data?.task_id || (Array.isArray(res?.data) && res.data[0]?.task_id);
+      if (asyncTaskId && (isVideoEndpoint || (Array.isArray(res?.data) && res.data[0]?.task_id))) {
+        const taskId = asyncTaskId;
+        // 为图片异步任务自动构造轮询端点
+        const pollEndpoint = currentModel.poll_endpoint || `/v1/tasks/${taskId}`;
+        setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, taskData: { ...(n.taskData || {}), task_id: taskId, poll_endpoint: pollEndpoint, ...res } } : n));
         setTaskPollingNodes(prev => [...prev, newNodeId]);
-        pollTaskStatus(newNodeId, taskId, currentModel.model_id, currentModel.poll_endpoint);
+        pollTaskStatus(newNodeId, taskId, currentModel.model_id, pollEndpoint);
       } else {
-        setNodes(prev => {
-          const updated = prev.map(n => n.id === newNodeId ? { ...n, status: 'completed' as const, resultData: res } : n);
-          const completedNode = updated.find(n => n.id === newNodeId);
-          if (completedNode) persistAsset(completedNode, res, currentModel);
-          return updated;
-        });
-        setGenerating(false);
-      }
+          let completedNodesToPersist: CanvasNode[] = [];
+          setNodes(prev => {
+            let updated = [...prev];
+            const mainNodeIndex = updated.findIndex(n => n.id === newNodeId);
+            if (mainNodeIndex >= 0) {
+              updated[mainNodeIndex] = { ...updated[mainNodeIndex], status: 'completed' as const, resultData: res };
+              
+              // 如果返回了多张图 (如 Seedream n>1)，裂变出额外的节点
+              if (res.data && Array.isArray(res.data) && res.data.length > 1) {
+                const extraNodes = res.data.slice(1).map((imgObj: any, idx: number) => {
+                  return {
+                    ...updated[mainNodeIndex],
+                    id: `${newNodeId}-ext-${idx}`,
+                    x: updated[mainNodeIndex].x + 40 * (idx + 1),
+                    y: updated[mainNodeIndex].y + 40 * (idx + 1),
+                    zIndex: updated[mainNodeIndex].zIndex + idx + 1,
+                    resultData: { ...res, data: [imgObj] }
+                  };
+                });
+                updated.push(...extraNodes);
+              }
+            }
+            
+            completedNodesToPersist = updated.filter(n => n.id === newNodeId || n.id.startsWith(`${newNodeId}-ext-`));
+            return updated;
+          });
+          
+          for (const node of completedNodesToPersist) {
+             persistAsset(node, node.resultData, currentModel);
+          }
+          setGenerating(false);
+        }
     } catch (e: any) {
       const errMsg = e?.response?.data?.error?.message || e?.message || '生成失败';
       message.error(errMsg);
       setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, status: 'error', resultData: { message: errMsg } } : n));
       setGenerating(false);
     }
-  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes]);
+  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets]);
 
-  /** 轮询视频任务状态 */
+  /** 轮询异步任务状态（视频/图片） */
   const pollTaskStatus = useCallback((nodeId: string, taskId: string, modelId: string, pollEndpointTemplate?: string) => {
     let attempts = 0;
     const maxAttempts = 120;
 
     const buildPollUrl = () => {
+      if (pollEndpointTemplate && !pollEndpointTemplate.includes('{task_id}')) return pollEndpointTemplate;
       if (pollEndpointTemplate) return pollEndpointTemplate.replace('{task_id}', taskId);
       return `/v1/video/generations/${taskId}?model=${modelId}`;
     };
@@ -193,15 +304,32 @@ export const useGeneration = () => {
           headers: { 'Authorization': `Bearer ${selectedTokenKey}` }
         }).then(r => r.data);
 
-        const status = res?.status || res?.final_result?.status || '';
+        // 兼容多种异步响应格式：
+        // 视频: { status: 'succeeded', content: { video_url } }
+        // GPT Image /v1/tasks: { data: { status: 'completed', result: { images: [{ url: [...] }] } } }
+        const taskStatus = res?.status || res?.data?.status || res?.final_result?.status || (Array.isArray(res?.data) && res.data[0]?.status) || '';
+        const isCompleted = taskStatus === 'succeeded' || taskStatus === 'completed';
 
-        if (status === 'succeeded') {
+        if (isCompleted) {
+          // 标准化结果：将 GPT Image tasks 响应转换为 ImageNodeContent 可识别的格式
+          let normalizedResult = res;
+          const taskResult = res?.data?.result || res?.result;
+          if (taskResult?.images && Array.isArray(taskResult.images)) {
+            // GPT Image: result.images[0].url 是数组
+            const imageUrls = taskResult.images.flatMap((img: any) => Array.isArray(img.url) ? img.url : [img.url]).filter(Boolean);
+            if (imageUrls.length > 0) {
+              normalizedResult = { ...res, data: imageUrls.map((u: string) => ({ url: u })) };
+            }
+          }
+          let nodeToPersist: CanvasNode | undefined;
           setNodes(prev => {
-            const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: res } : n);
-            const completedNode = updated.find(n => n.id === nodeId);
-            if (completedNode) persistAsset(completedNode, res, currentModel);
+            const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: normalizedResult } : n);
+            nodeToPersist = updated.find(n => n.id === nodeId);
             return updated;
           });
+          if (nodeToPersist) {
+            persistAsset(nodeToPersist, normalizedResult, currentModel);
+          }
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
           setGenerating(false);
           return;
@@ -218,7 +346,20 @@ export const useGeneration = () => {
     };
 
     setTimeout(poll, 3000);
-  }, [selectedTokenKey, setNodes, setTaskPollingNodes, setGenerating]);
+  }, [selectedTokenKey, setNodes, setTaskPollingNodes, setGenerating, currentModel, persistAsset]);
+
+  // 自动恢复对处在 loading 状态但尚未轮询的节点进行轮询
+  useEffect(() => {
+    nodes.forEach(n => {
+      if (n.status === 'loading' && n.taskData?.task_id && !taskPollingNodes.includes(n.id)) {
+        const m = models.find(mod => mod.model_id === n.taskData?.model_id);
+        if (m) {
+          setTaskPollingNodes(prev => [...prev, n.id]);
+          pollTaskStatus(n.id, n.taskData.task_id, m.model_id, m.poll_endpoint);
+        }
+      }
+    });
+  }, [nodes, models, taskPollingNodes, setTaskPollingNodes, pollTaskStatus]);
 
   return { handleGenerate };
 };

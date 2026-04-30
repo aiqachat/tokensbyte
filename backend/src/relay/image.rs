@@ -10,20 +10,30 @@ use super::{proxy, forward};
 pub async fn image_generations(
     State(state): State<Arc<AppState>>,
     Extension(token): Extension<ApiToken>,
+    axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     Json(body): Json<serde_json::Value>,
 ) -> AppResult<Response> {
+    let request_path = uri.path();
     let start_time = std::time::Instant::now();
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
     let model = body["model"].as_str().unwrap_or("dall-e-3");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/v1/images/generations").await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, request_path).await?;
     let is_stream = body["stream"].as_bool().unwrap_or(false);
-
+    
     // 解析转发规则，未绑定规则时根据域名智能推断
-    let resolved = forward::resolve_forward_rule(&state, model, "图片", "/v1/images/generations")
-        .await
-        .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, "图片"));
+    let resolved = match forward::resolve_forward_rule(&state, model, "图片", request_path).await {
+        Some(r) => r,
+        None => {
+            if forward::model_has_forward_rules(&state, model).await {
+                return Err(AppError::BadRequest(format!(
+                    "模型 '{}' 不支持当前接口，请检查模型对应的转发规则", model
+                )));
+            }
+            forward::infer_forward_from_base_url(&channel.base_url, "图片")
+        }
+    };
 
     let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "图片");
     let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
@@ -44,9 +54,9 @@ pub async fn image_generations(
         let err = upstream_resp.text().await?;
         let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+        let ep = format!("{}|{}", request_path, resolved.upstream_path.replace("${model}", &resolved_model));
             proxy::record_and_bill(
-                &state, &token, channel.id, model, 0, 0, 0.0, status,
+                &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
                 &ep, Some(&display_err), latency_ms, 0,
                 Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
                 None
@@ -96,29 +106,49 @@ pub async fn image_generations(
     } else {
         let data = upstream_resp.bytes().await?;
         let response_content_str = String::from_utf8_lossy(&data).to_string();
-        let usage_tokens = crate::relay::usage_extractor::parse_usage(&response_content_str);
-        let p_tokens = usage_tokens.prompt;
-        let c_tokens = usage_tokens.completion;
-
-        tracing::info!("[Image] model={}, path=SYNC, prompt={}, completion={}, total={}", model, p_tokens, c_tokens, usage_tokens.total);
-
-        let mut features = crate::relay::usage_extractor::extract_request_features(&body);
-        // 用响应中的实际图片数量覆盖请求体的 n 值（按张计费的最终依据）
-        if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
-            features.image_count = Some(resp_count);
-        }
-        let (final_discount, discount_source) = proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-        let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, final_discount, &features);
-        detail.push_str(&format!(" | {}", discount_source));
-        if model != resolved_model {
-            detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
-        }
+        let resp_json: serde_json::Value = serde_json::from_str(&response_content_str).unwrap_or(serde_json::json!({}));
+        
+        // 健壮的异步任务判定：支持根节点、data 对象、以及 data 数组格式
+        let is_async = resp_json.get("task_id").is_some() 
+            || resp_json.get("data").and_then(|d| d.get("task_id")).is_some()
+            || resp_json.get("data").and_then(|d| d.as_array()).and_then(|a| a.first()).and_then(|f| f.get("task_id")).is_some();
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("/v1/images/generations|{}", resolved.upstream_path.replace("${model}", &resolved_model));
-        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, p_tokens, c_tokens, cost, pre_deduction, 200,
-            &ep, None, latency_ms, 0,
-            Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(detail)).await;
+        let ep = format!("{}|{}", request_path, resolved.upstream_path.replace("${model}", &resolved_model));
+
+        if is_async {
+            tracing::info!("[Image] model={}, path=ASYNC_SUBMIT, pre_deduction={}", model, pre_deduction);
+            let billing_detail = if pre_deduction > 0.0 {
+                "异步任务预扣费冻结".to_string()
+            } else {
+                "异步任务处理中(冻结)".to_string()
+            };
+            proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200,
+                &ep, None, latency_ms, 0,
+                Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail)).await;
+        } else {
+            let usage_tokens = crate::relay::usage_extractor::parse_usage(&response_content_str);
+            let p_tokens = usage_tokens.prompt;
+            let c_tokens = usage_tokens.completion;
+
+            tracing::info!("[Image] model={}, path=SYNC, prompt={}, completion={}, total={}", model, p_tokens, c_tokens, usage_tokens.total);
+
+            let mut features = crate::relay::usage_extractor::extract_request_features(&body);
+            // 用响应中的实际图片数量覆盖请求体的 n 值（按张计费的最终依据）
+            if let Some(resp_count) = crate::relay::usage_extractor::count_response_images(&response_content_str) {
+                features.image_count = Some(resp_count);
+            }
+            let (final_discount, discount_source) = proxy::resolve_discount(db_model.as_ref(), ctx.discount);
+            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, 0, final_discount, &features);
+            detail.push_str(&format!(" | {}", discount_source));
+            if model != resolved_model {
+                detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
+            }
+
+            proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, p_tokens, c_tokens, 0, cost, pre_deduction, 200,
+                &ep, None, latency_ms, 0,
+                Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(detail)).await;
+        }
 
         Ok(Response::builder()
             .header("Content-Type", "application/json")

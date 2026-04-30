@@ -18,6 +18,8 @@ pub struct ResolvedForward {
     pub auth_type: String,
     /// 是否启用素材 URL→素材ID 自动转换（火山方舟视频素材专用）
     pub asset_convert: bool,
+    /// 异步任务轮询路径 (可选)，如果规则里配置了则优先使用
+    pub poll_path: Option<String>,
 }
 
 // ── 转发规则解析 ──────────────────────────────────────────────
@@ -33,8 +35,15 @@ pub async fn resolve_forward_rule(
     state: &AppState,
     model_id: &str,
     category: &str,
-    entry_path: &str,
+    request_path: &str,
 ) -> Option<ResolvedForward> {
+    // 根据模型类别定义标准的 OpenAI 基准路径
+    let openai_path = match category {
+        "图片" => "/v1/images/generations",
+        "视频" => "/v1/video/generations",
+        _ => "/v1/chat/completions",
+    };
+
     // 1. 查模型获取 forward_rule_ids
     let model_result = sqlx::query_as::<_, crate::models::Model>(
         &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
@@ -57,32 +66,27 @@ pub async fn resolve_forward_rule(
 
     let rule_ids_str = model.forward_rule_ids.as_deref().unwrap_or("[]");
     let rule_ids: Vec<i64> = serde_json::from_str(rule_ids_str).unwrap_or_default();
-    if rule_ids.is_empty() {
-        tracing::debug!("[Forward] 模型 '{}' 未绑定转发规则 (forward_rule_ids={})", model_id, rule_ids_str);
-        return None;
-    }
-
-    tracing::info!("[Forward] 模型 '{}' 绑定规则 IDs: {:?}, 类别: {}, 入口: {}", model_id, rule_ids, category, entry_path);
 
     // 2. 查所有关联的转发规则
-    let placeholders: Vec<String> = rule_ids.iter().map(|_| "?".to_string()).collect();
-    let query_str = format!(
-        "SELECT * FROM forward_rules WHERE id IN ({}) AND is_active = 1",
-        placeholders.join(",")
-    );
-    let formatted = state.db.format_query(&query_str);
-    let mut q = sqlx::query_as::<_, crate::models::ForwardRule>(&formatted);
-    for id in &rule_ids {
-        q = q.bind(id);
-    }
-    let rules: Vec<crate::models::ForwardRule> = q
-        .fetch_all(&state.db.pool)
-        .await
-        .unwrap_or_default();
-
-    if rules.is_empty() {
-        tracing::warn!("[Forward] 规则 IDs {:?} 在 forward_rules 表中未找到(或 is_active!=1)", rule_ids);
-        return None;
+    let mut rules: Vec<crate::models::ForwardRule> = Vec::new();
+    if !rule_ids.is_empty() {
+        tracing::info!("[Forward] 模型 '{}' 绑定规则 IDs: {:?}, 类别: {}, 入口: {}", model_id, rule_ids, category, request_path);
+        let placeholders: Vec<String> = rule_ids.iter().map(|_| "?".to_string()).collect();
+        let query_str = format!(
+            "SELECT * FROM forward_rules WHERE id IN ({}) AND is_active = 1",
+            placeholders.join(",")
+        );
+        let formatted = state.db.format_query(&query_str);
+        let mut q = sqlx::query_as::<_, crate::models::ForwardRule>(&formatted);
+        for id in &rule_ids {
+            q = q.bind(id);
+        }
+        rules = q.fetch_all(&state.db.pool).await.unwrap_or_default();
+        if rules.is_empty() {
+            tracing::warn!("[Forward] 规则 IDs {:?} 在 forward_rules 表中未找到(或 is_active!=1)", rule_ids);
+        }
+    } else {
+        tracing::debug!("[Forward] 模型 '{}' 未明确绑定规则，将尝试按渠道协议回退", model_id);
     }
 
     // 3. 按 category 筛选
@@ -97,25 +101,35 @@ pub async fn resolve_forward_rule(
         category_matched
     };
 
-    // 4. 智能匹配：从 config_json.path_rewrite.old 匹配入口路径
+    // 4. 严格匹配：兼容 OpenAI 默认路径与厂商官方原生路径
     let mut best: Option<&crate::models::ForwardRule> = None;
     for rule in &candidates {
         if let Ok(config) = serde_json::from_str::<serde_json::Value>(&rule.config_json) {
-            if let Some(old_path) = config
-                .get("path_rewrite")
-                .and_then(|pr| pr.get("old"))
-                .and_then(|v| v.as_str())
-            {
-                let old_path_clean = old_path.trim_start_matches('/');
-                let entry_path_clean = entry_path.trim_start_matches('/');
-                if old_path_clean == entry_path_clean || entry_path_clean.ends_with(old_path_clean) {
-                    best = Some(rule);
-                    break;
-                }
+            let pr = config.get("path_rewrite");
+            let old_path = pr.and_then(|v| v.get("old")).and_then(|v| v.as_str()).unwrap_or("");
+            let new_path = pr.and_then(|v| v.get("new")).and_then(|v| v.as_str()).unwrap_or("");
+            
+            let old_clean = old_path.trim_start_matches('/');
+            let new_clean = new_path.trim_start_matches('/');
+            let req_clean = request_path.trim_start_matches('/');
+            let openai_clean = openai_path.trim_start_matches('/');
+
+            // 1. 如果用户是通过标准 OpenAI 接口发起请求，验证规则是否兼容该接口
+            let is_openai_req = req_clean == openai_clean || req_clean.ends_with(openai_clean);
+            let rule_supports_openai = old_clean.is_empty() || old_clean == openai_clean || openai_clean.ends_with(old_clean);
+
+            // 2. 如果用户是通过厂商官方接口 (原生路径) 发起请求，依次验证 path_rewrite.new 和 path_rewrite.old
+            let match_new = !new_clean.is_empty() && (req_clean == new_clean || req_clean.ends_with(new_clean));
+            let match_old = !old_clean.is_empty() && (req_clean == old_clean || req_clean.ends_with(old_clean));
+
+            if (is_openai_req && rule_supports_openai) || match_new || match_old {
+                best = Some(rule);
+                break;
             }
         }
     }
-    let rule = best.unwrap_or(candidates.first()?);
+    // 如果未找到与请求路径严格匹配的规则，则拒绝匹配（不再兜底回落到第一条规则）
+    let rule = best?;
 
     // 5. 解析 config_json
     let config: serde_json::Value =
@@ -131,15 +145,17 @@ pub async fn resolve_forward_rule(
         let old = pr.get("old").and_then(|v| v.as_str()).unwrap_or("");
         let new = pr.get("new").and_then(|v| v.as_str()).unwrap_or("");
         
-        if !old.is_empty() && entry_path.contains(old) {
-            entry_path.replace(old, new)
+        // 始终以基准 openai_path 作为模板进行替换，保证不管真实入口是什么，
+        // 向上游转发的 URL 都是遵循规则替换后的绝对地址
+        if !old.is_empty() && openai_path.contains(old) {
+            openai_path.replace(old, new)
         } else if !new.is_empty() {
             new.to_string()
         } else {
-            entry_path.to_string()
+            openai_path.to_string()
         }
     } else {
-        entry_path.to_string()
+        openai_path.to_string()
     };
 
     let auth_type = config
@@ -153,14 +169,42 @@ pub async fn resolve_forward_rule(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    tracing::info!("[Forward] 命中规则 '{}': target_type={}, upstream_path={}, auth_type={}, asset_convert={}", rule.name, target_type, upstream_path, auth_type, asset_convert);
+    let poll_path = config
+        .get("poll_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    tracing::info!("[Forward] 命中规则 '{}': target_type={}, upstream_path={}, auth_type={}, asset_convert={}, poll_path={:?}", 
+        rule.name, target_type, upstream_path, auth_type, asset_convert, poll_path);
 
     Some(ResolvedForward {
         target_type,
         upstream_path,
         auth_type,
         asset_convert,
+        poll_path,
     })
+}
+
+/// 快速检查模型是否绑定了转发规则（不做路径匹配）。
+/// 配合 resolve_forward_rule 使用：当 resolve 返回 None 时，
+/// 若此函数返回 true 说明模型绑定了规则但入口路径不匹配，应拒绝请求。
+pub async fn model_has_forward_rules(state: &AppState, model_id: &str) -> bool {
+    let ids: Option<String> = sqlx::query_scalar(
+        &state.db.format_query("SELECT forward_rule_ids FROM models WHERE model_id = ? AND is_active = 1"),
+    )
+    .bind(model_id)
+    .fetch_optional(&state.db.pool)
+    .await
+    .unwrap_or(None);
+
+    match ids {
+        Some(s) => {
+            let arr: Vec<i64> = serde_json::from_str(&s).unwrap_or_default();
+            !arr.is_empty()
+        }
+        None => false,
+    }
 }
 
 // ── URL 构建 ──────────────────────────────────────────────────
@@ -187,6 +231,7 @@ pub fn build_upstream_url(
 /// 将 OpenAI 格式请求体转换为目标上游格式。
 ///
 /// 数据驱动映射：
+/// - dashscope（视频）: prompt → input.prompt + parameters 格式
 /// - volcengine（图片/视频）: prompt → content[{type:"text",text:...}]
 /// - volcengine_chat / volcengine（聊天）: 保持 OpenAI 格式（火山兼容）
 /// - gemini / gemini_image: messages/prompt → contents[{parts:[{text:...}]}]
@@ -199,6 +244,12 @@ pub fn transform_request_body(
     category: &str,
 ) -> serde_json::Value {
     let mut result = match resolved.target_type.as_str() {
+        // 阿里百炼 DashScope 视频：OpenAI → input/parameters 格式
+        // 参考文档：https://help.aliyun.com/zh/model-studio/text-to-video-api-reference
+        "dashscope" if category == "视频" => {
+            build_dashscope_video_body(model, body)
+        }
+
         // 火山方舟图片（/api/v3/images/generations）: 保持 OpenAI 兼容格式
         // 参考 Seedream 5.0 API: https://www.volcengine.com/docs/82379/1541523
         "volcengine_image" => {
@@ -219,10 +270,19 @@ pub fn transform_request_body(
             fwd
         }
 
+        // 阿里百炼图像生成: prompt → input.prompt
+        "dashscope_image" if category == "图片" => {
+            build_dashscope_image_body(model, body)
+        }
+
         // 火山方舟图片/视频（/api/v3/contents/generations/tasks）: prompt → content 格式
         // 参考火山引擎 Seedance 2.0 官方 API：https://www.volcengine.com/docs/82379/1520757
         "volcengine" if category == "图片" || category == "视频" => {
-            build_volcengine_content_body(model, body)
+            let mut fwd = build_volcengine_content_body(model, body);
+            if category == "视频" && fwd.get("resolution").is_none() {
+                fwd["resolution"] = serde_json::json!("720p");
+            }
+            fwd
         }
 
         // 火山方舟聊天：保持 OpenAI 格式（火山完全兼容 OpenAI）
@@ -381,9 +441,29 @@ pub fn transform_request_body(
         }
     };
 
-    // 视频模型默认分辨率 720p（确保上游数据与计费一致）
-    if category == "视频" && result.get("resolution").is_none() {
-        result["resolution"] = serde_json::json!("720p");
+    // 视频模型默认参数兜底（确保上游数据与计费一致）
+    if category == "视频" {
+        if resolved.target_type == "dashscope" {
+            // DashScope 的 resolution/duration 在 parameters 内部
+            if result.get("parameters").is_none() {
+                result["parameters"] = serde_json::json!({});
+            }
+            if let Some(params) = result.get_mut("parameters").and_then(|p| p.as_object_mut()) {
+                if !params.contains_key("resolution") {
+                    params.insert("resolution".to_string(), serde_json::json!("720P"));
+                }
+                if !params.contains_key("duration") {
+                    params.insert("duration".to_string(), serde_json::json!(5));
+                }
+            }
+        } else {
+            if result.get("resolution").is_none() {
+                result["resolution"] = serde_json::json!("720p");
+            }
+            if result.get("duration").is_none() {
+                result["duration"] = serde_json::json!(5);
+            }
+        }
     }
 
     // 统一后处理：web_search 联网搜索参数转换
@@ -412,7 +492,7 @@ fn convert_web_search(result: &mut serde_json::Value, original: &serde_json::Val
 
 /// 根据 auth_type 构建请求 Headers
 pub fn build_auth_headers(resolved: &ResolvedForward, api_key: &str) -> Vec<(String, String)> {
-    match resolved.auth_type.as_str() {
+    let mut headers = match resolved.auth_type.as_str() {
         "x-api-key" => vec![
             ("x-api-key".to_string(), api_key.to_string()),
             ("anthropic-version".to_string(), "2023-06-01".to_string()),
@@ -422,7 +502,16 @@ pub fn build_auth_headers(resolved: &ResolvedForward, api_key: &str) -> Vec<(Str
             "Authorization".to_string(),
             format!("Bearer {}", api_key),
         )],
+    };
+    // DashScope 异步视频任务需要 X-DashScope-Async: enable
+    if resolved.target_type == "dashscope" || resolved.target_type == "dashscope_image" {
+        // 注：DashScope 图片目前主要是同步，但加上这个头通常不影响
+        // 如果明确是同步接口且阿里要求不能带此头，则在此根据路径或 target_type 进一步区分
+        if resolved.target_type == "dashscope" {
+            headers.push(("X-DashScope-Async".to_string(), "enable".to_string()));
+        }
     }
+    headers
 }
 
 // ── 默认转发配置（无规则时的 OpenAI 透传）─────────────────────
@@ -434,6 +523,7 @@ pub fn default_openai_forward(entry_path: &str) -> ResolvedForward {
         upstream_path: entry_path.to_string(),
         auth_type: "bearer".to_string(),
         asset_convert: false,
+        poll_path: None,
     }
 }
 
@@ -445,6 +535,31 @@ pub fn default_openai_forward(entry_path: &str) -> ResolvedForward {
 pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedForward {
     let url_lower = base_url.to_lowercase();
 
+    // 阿里百炼 DashScope
+    if url_lower.contains("dashscope") {
+        return match category {
+            "视频" => ResolvedForward {
+                target_type: "dashscope".to_string(),
+                upstream_path: "/api/v1/services/aigc/video-generation/video-synthesis".to_string(),
+                auth_type: "bearer".to_string(),
+                asset_convert: false,
+                poll_path: Some("/api/v1/tasks/${task_id}".to_string()),
+            },
+            "图片" => ResolvedForward {
+                target_type: "dashscope_image".to_string(),
+                upstream_path: "/api/v1/services/aigc/multimodal-generation/generation".to_string(),
+                auth_type: "bearer".to_string(),
+                asset_convert: false,
+                poll_path: None,
+            },
+            _ => default_openai_forward(match category {
+                "聊天" => "/v1/chat/completions",
+                "图片" => "/v1/images/generations",
+                _ => "/v1/chat/completions",
+            }),
+        };
+    }
+
     if url_lower.contains("volces.com") || url_lower.contains("volcengine") {
         match category {
             "图片" => ResolvedForward {
@@ -452,18 +567,21 @@ pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedFo
                 upstream_path: "/api/v3/images/generations".to_string(),
                 auth_type: "bearer".to_string(),
                 asset_convert: false,
+                poll_path: None,
             },
             "视频" => ResolvedForward {
                 target_type: "volcengine".to_string(),
                 upstream_path: "/api/v3/contents/generations/tasks".to_string(),
                 auth_type: "bearer".to_string(),
                 asset_convert: false,
+                poll_path: None,
             },
             _ => ResolvedForward {
                 target_type: "volcengine_chat".to_string(),
                 upstream_path: "/api/v3/chat/completions".to_string(),
                 auth_type: "bearer".to_string(),
                 asset_convert: false,
+                poll_path: None,
             },
         }
     } else if url_lower.contains("googleapis.com") || url_lower.contains("generativelanguage") {
@@ -473,12 +591,14 @@ pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedFo
                 upstream_path: "/v1beta/models/${model}:generateContent".to_string(),
                 auth_type: "query_key".to_string(),
                 asset_convert: false,
+                poll_path: None,
             },
             _ => ResolvedForward {
                 target_type: "gemini".to_string(),
                 upstream_path: "/v1beta/models/${model}:generateContent".to_string(),
                 auth_type: "query_key".to_string(),
                 asset_convert: false,
+                poll_path: None,
             },
         }
     } else if url_lower.contains("anthropic.com") {
@@ -487,6 +607,7 @@ pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedFo
             upstream_path: "/v1/messages".to_string(),
             auth_type: "x-api-key".to_string(),
             asset_convert: false,
+            poll_path: None,
         }
     } else {
         default_openai_forward(match category {
@@ -546,6 +667,260 @@ fn create_openai_chunk(text: &str, model: &str) -> serde_json::Value {
             "finish_reason": null
         }]
     })
+}
+
+
+// ── 阿里百炼 DashScope 图像请求体构建器 ─────────────────────────
+//
+// 将 OpenAI 风格的参数转换为 DashScope /api/v1/services/aigc/text2image/image-synthesis 格式。
+// 参考文档：https://help.aliyun.com/zh/model-studio/user-guide/wanx-v2-text-to-image-api-reference
+
+fn build_dashscope_image_body(model: &str, body: &serde_json::Value) -> serde_json::Value {
+    // ── 直通模式 ──
+    if body.get("input").is_some() {
+        let mut fwd = body.clone();
+        fwd["model"] = serde_json::json!(model);
+        return fwd;
+    }
+
+    // ── 转换模式 ──
+    let mut input = serde_json::Map::new();
+
+    // 优先处理 messages (支持多模态及万相 2.7/千问 2.0 格式)
+    if let Some(msgs) = body.get("messages").and_then(|m| m.as_array()) {
+        let mut dashscope_msgs = Vec::new();
+        for msg in msgs {
+            let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
+            let mut dash_content = Vec::new();
+            
+            if let Some(content) = msg.get("content") {
+                if let Some(text) = content.as_str() {
+                    dash_content.push(serde_json::json!({ "text": text }));
+                } else if let Some(arr) = content.as_array() {
+                    for item in arr {
+                        if let Some(t) = item.get("type").and_then(|v| v.as_str()) {
+                            if t == "text" {
+                                if let Some(txt) = item.get("text").and_then(|v| v.as_str()) {
+                                    dash_content.push(serde_json::json!({ "text": txt }));
+                                }
+                            } else if t == "image_url" {
+                                if let Some(url) = item.get("image_url").and_then(|v| v.get("url")).and_then(|v| v.as_str()) {
+                                    dash_content.push(serde_json::json!({ "image": url }));
+                                }
+                            }
+                        } else if let Some(_url) = item.get("image").and_then(|v| v.as_str()) {
+                            // 兼容阿里原生传入的 {"image": "..."}
+                            dash_content.push(item.clone());
+                        } else if let Some(_txt) = item.get("text").and_then(|v| v.as_str()) {
+                            dash_content.push(item.clone());
+                        }
+                    }
+                }
+            }
+            dashscope_msgs.push(serde_json::json!({
+                "role": role,
+                "content": dash_content
+            }));
+        }
+        input.insert("messages".to_string(), serde_json::json!(dashscope_msgs));
+    } else {
+        // 强制包装为 messages 结构，不使用快捷 prompt 字段
+        let prompt = body.get("prompt").and_then(|v| v.as_str()).unwrap_or("Generate an image");
+        let mut dash_content = Vec::new();
+        
+        // 支持顶层 image 参数 (OpenAI 扩展支持，兼容字符串或数组)
+        // 确保图片先于文本内容
+        if let Some(img_val) = body.get("image") {
+            if let Some(url) = img_val.as_str() {
+                dash_content.push(serde_json::json!({ "image": url }));
+            } else if let Some(arr) = img_val.as_array() {
+                for item in arr {
+                    if let Some(url) = item.as_str() {
+                        dash_content.push(serde_json::json!({ "image": url }));
+                    }
+                }
+            }
+        }
+        
+        dash_content.push(serde_json::json!({ "text": prompt }));
+
+        input.insert("messages".to_string(), serde_json::json!([
+            {
+                "role": "user",
+                "content": dash_content
+            }
+        ]));
+    }
+
+    let mut params = serde_json::Map::new();
+    
+    // negative_prompt 移入 parameters
+    if let Some(np) = body.get("negative_prompt").and_then(|v| v.as_str()) {
+        params.insert("negative_prompt".to_string(), serde_json::json!(np));
+    }
+    
+    // n -> n
+    if let Some(n) = body.get("n").and_then(|v| v.as_i64()) {
+        params.insert("n".to_string(), serde_json::json!(n));
+    }
+
+    // size -> size (1024x1024 -> 1024*1024)
+    if let Some(size) = body.get("size").and_then(|v| v.as_str()) {
+        params.insert("size".to_string(), serde_json::json!(size.replace("x", "*")));
+    }
+
+    // style/quality/prompt_extend
+    let passthrough = ["style", "quality", "prompt_extend", "seed"];
+    for &key in &passthrough {
+        if let Some(val) = body.get(key) {
+            params.insert(key.to_string(), val.clone());
+        }
+    }
+
+    serde_json::json!({
+        "model": model,
+        "input": input,
+        "parameters": params
+    })
+}
+
+// ── 阿里百炼 DashScope 视频请求体构建器 ─────────────────────────
+//
+// 将 OpenAI 风格的扁平参数转换为 DashScope /api/v1/services/aigc/video-generation/video-synthesis 格式。
+// 参考文档：https://help.aliyun.com/zh/model-studio/text-to-video-api-reference
+//
+// DashScope 请求格式：
+//   { "model": "...", "input": { "prompt": "...", "media": [...] }, "parameters": { "resolution": "720P", ... } }
+// 其中 media 数组元素 type 区分：first_frame（图生视频首帧）、reference_image（参考图）、video（视频编辑）
+
+/// DashScope parameters 内的合法参数白名单
+const DASHSCOPE_PARAM_KEYS: &[&str] = &[
+    "resolution", "ratio", "duration", "prompt_extend", "watermark", "seed",
+];
+
+/// 构建阿里百炼 DashScope 视频生成请求体
+fn build_dashscope_video_body(model: &str, body: &serde_json::Value) -> serde_json::Value {
+    // ── 直通模式：body 中已有 input 对象 → 原样使用，仅替换 model ──
+    if body.get("input").is_some() {
+        let mut fwd = body.clone();
+        fwd["model"] = serde_json::json!(model);
+        return fwd;
+    }
+
+    // ── 转换模式：从 OpenAI 风格提取参数 ──
+    // prompt: 优先取 body.prompt，其次从 messages[-1].content 提取
+    let prompt = body.get("prompt")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            body.get("messages")
+                .and_then(|m| m.as_array())
+                .and_then(|arr| arr.last())
+                .and_then(|msg| msg.get("content"))
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "Generate a video".to_string());
+
+    let mut input = serde_json::json!({ "prompt": prompt });
+
+    // negative_prompt 透传
+    if let Some(np) = body.get("negative_prompt").and_then(|v| v.as_str()) {
+        input["negative_prompt"] = serde_json::json!(np);
+    }
+
+    // audio_url 透传
+    if let Some(au) = body.get("audio_url").and_then(|v| v.as_str()) {
+        input["audio_url"] = serde_json::json!(au);
+    }
+
+    // ── media 数组构建 ──
+    // 支持两种传入方式：
+    //   1) body.media 已是 DashScope 格式数组 → 直接透传
+    //   2) body.images / body.image_url / body.videos → 自动构建 media
+    if let Some(media) = body.get("media").filter(|v| v.is_array()) {
+        input["media"] = media.clone();
+    } else {
+        let mut media = Vec::new();
+
+        // 单图快捷字段 image_url → first_frame
+        if let Some(url) = body.get("image_url").and_then(|v| v.as_str()) {
+            media.push(serde_json::json!({ "type": "first_frame", "url": url }));
+        }
+
+        // images 数组：按数量智能推断 type
+        //   1 张 → first_frame，2 张 → first_frame + last_frame，3+ 张 → reference_image
+        if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
+            let defaults = infer_image_default_roles(arr.len());
+            for (i, item) in arr.iter().enumerate() {
+                let default_type = defaults.get(i).copied().unwrap_or("reference_image");
+                match item {
+                    serde_json::Value::String(url) => {
+                        media.push(serde_json::json!({ "type": default_type, "url": url }));
+                    }
+                    serde_json::Value::Object(obj) => {
+                        let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                        let t = obj.get("type").and_then(|v| v.as_str())
+                            .or_else(|| obj.get("role").and_then(|v| v.as_str()))
+                            .unwrap_or(default_type);
+                        if !url.is_empty() {
+                            media.push(serde_json::json!({ "type": t, "url": url }));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // videos 数组 → type: "video"
+        if let Some(arr) = body.get("videos").and_then(|v| v.as_array()) {
+            for item in arr {
+                match item {
+                    serde_json::Value::String(url) => {
+                        media.push(serde_json::json!({ "type": "video", "url": url }));
+                    }
+                    serde_json::Value::Object(obj) => {
+                        let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                        let t = obj.get("type").and_then(|v| v.as_str()).unwrap_or("video");
+                        if !url.is_empty() {
+                            media.push(serde_json::json!({ "type": t, "url": url }));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if !media.is_empty() {
+            input["media"] = serde_json::json!(media);
+        }
+    }
+
+    // ── parameters 构建 ──
+    let mut params = serde_json::Map::new();
+    for key in DASHSCOPE_PARAM_KEYS {
+        if let Some(v) = body.get(*key) {
+            params.insert(key.to_string(), v.clone());
+        }
+    }
+    // size → resolution 映射（兼容 OpenAI 的 size 字段）
+    // DashScope API 接受大写的 720P 和 1080P，如果用户传小写，需转成大写
+    if !params.contains_key("resolution") {
+        if let Some(size) = body.get("size").and_then(|v| v.as_str()) {
+            params.insert("resolution".to_string(), serde_json::json!(size.to_uppercase()));
+        }
+    } else if let Some(res) = params.get("resolution").and_then(|v| v.as_str()) {
+        params.insert("resolution".to_string(), serde_json::json!(res.to_uppercase()));
+    }
+
+    let mut result = serde_json::json!({
+        "model": model,
+        "input": input,
+    });
+    if !params.is_empty() {
+        result["parameters"] = serde_json::Value::Object(params);
+    }
+    result
 }
 
 // ── 火山方舟视频/图片请求体构建器 ──────────────────────────────
@@ -719,10 +1094,15 @@ pub fn mask_key_in_string(text: &str, api_key: &str) -> String {
     if api_key.is_empty() || !text.contains(api_key) {
         return text.to_string();
     }
-    let masked = if api_key.len() > 8 {
-        format!("{}******{}", &api_key[..4], &api_key[api_key.len()-4..])
-    } else {
-        "******".to_string()
+    let masked = {
+        let cc = api_key.chars().count();
+        if cc > 8 {
+            let p: String = api_key.chars().take(4).collect();
+            let s: String = api_key.chars().skip(cc - 4).collect();
+            format!("{}******{}", p, s)
+        } else {
+            "******".to_string()
+        }
     };
     text.replace(api_key, &masked)
 }

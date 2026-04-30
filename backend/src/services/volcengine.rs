@@ -44,6 +44,7 @@ impl VolcConfig {
     }
 }
 
+#[derive(Clone)]
 pub struct VolcClient {
     config: VolcConfig,
     client: Client,
@@ -354,6 +355,10 @@ pub struct GetAssetResponse {
     pub id: String,
     #[serde(rename = "Status")]
     pub status: String, // "Active" / "Processing" / "Failed"
+    #[serde(rename = "FailCode", default)]
+    pub fail_code: Option<String>,
+    #[serde(rename = "FailReason", default)]
+    pub fail_reason: Option<String>,
     #[serde(rename = "GroupId")]
     pub group_id: Option<String>,
     #[serde(rename = "AssetType")]

@@ -10,6 +10,9 @@ pub struct RequestLog {
     pub model: String,
     pub prompt_tokens: i32,
     pub completion_tokens: i32,
+    /// 缓存命中的 Token 数量（属于输入的子集）
+    #[sqlx(default)]
+    pub cached_tokens: i32,
     pub cost: f64,
     pub latency_ms: i32,
     pub status_code: i32,
@@ -30,9 +33,13 @@ pub struct RequestLog {
     #[sqlx(default)]
     pub token_name: Option<String>,
     #[sqlx(default)]
+    pub token_kid: Option<String>,
+    #[sqlx(default)]
     pub user_nickname: Option<String>,
     #[sqlx(default)]
     pub user_group: Option<String>,
+    #[sqlx(default)]
+    pub user_uid: Option<String>,
     #[sqlx(default)]
     pub channel_name: Option<String>,
     #[sqlx(default)]

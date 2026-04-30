@@ -15,6 +15,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const getFullUrl = (url: string) => {
   if (!url) return '';
+  if (url.startsWith('blob:') || url.startsWith('data:')) return url;
   if (!url.startsWith('http') && !url.startsWith('/')) return `https://${url}`;
   if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
   return url;
@@ -31,11 +32,9 @@ const VideoNodeContent: React.FC<Props> = React.memo(({ resultData }) => {
             src={videoUrl}
             controls
             loop
+            disablePictureInPicture
+            controlsList="nopictureinpicture"
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            onMouseDown={(e) => {
-              // 允许用户拖拽视频文件本身或点击进度条，不冒泡到画布
-              e.stopPropagation();
-            }}
           />
         </div>
       )

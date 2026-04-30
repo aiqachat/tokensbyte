@@ -1,6 +1,8 @@
 import { Card, Typography, Space, ConfigProvider, theme, Divider, Tooltip, Button, Dropdown } from 'antd';
-import { RocketOutlined, GlobalOutlined } from '@ant-design/icons';
+import { RocketOutlined, GlobalOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { useThemeStore } from '../store/theme';
+import useSettingsStore from '../store/settings';
 
 const { Title, Text } = Typography;
 
@@ -39,13 +41,16 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
   onMethodChange,
 }) => {
   const { i18n, t } = useTranslation();
+  const { themeMode, toggleTheme } = useThemeStore();
+  const { settings } = useSettingsStore();
+  const enableThemeToggle = settings?.site?.enable_theme_toggle !== false;
   const renderIconBtn = (method: AuthMethodOption) => {
     const isActive = activeMethod === method.key;
     const { brandColor } = method;
     const activeColor = brandColor || '#1677ff';
     
     return (
-      <Tooltip key={method.key} title={method.label}>
+      <Tooltip key={method.key} title={method.label} color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
         <div
           onClick={method.onClick ? method.onClick : () => onMethodChange?.(method.key)}
           style={{
@@ -56,8 +61,8 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
             height: 44,
             borderRadius: '50%',
             cursor: 'pointer',
-            background: isActive ? activeColor : 'rgba(255, 255, 255, 0.04)',
-            border: `1px solid ${isActive ? activeColor : 'rgba(255, 255, 255, 0.1)'}`,
+            background: isActive ? activeColor : (themeMode === 'light' ? 'rgba(0, 0, 0, 0.03)' : 'rgba(255, 255, 255, 0.04)'),
+            border: `1px solid ${isActive ? activeColor : (themeMode === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)')}`,
             color: isActive ? '#fff' : (brandColor || '#8c8c8c'),
             fontSize: 20,
             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -73,7 +78,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
           }}
           onMouseLeave={(e) => {
             if (!isActive) {
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+              e.currentTarget.style.borderColor = themeMode === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)';
               e.currentTarget.style.color = brandColor || '#8c8c8c';
               e.currentTarget.style.boxShadow = 'none';
               e.currentTarget.style.transform = 'none';
@@ -87,13 +92,30 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
   };
 
   return (
-    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
+    <ConfigProvider theme={{  }}>
       <div style={{
         minHeight: '100vh', padding: '40px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: '#000', backgroundImage: 'radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
+        background: themeMode === 'light'
+          ? '#f0f4f9 radial-gradient(circle at 50% 50%, #1677ff15 0%, #f0f4f9 100%)'
+          : '#000 radial-gradient(circle at 50% 50%, #1677ff22 0%, #000 100%)',
         position: 'relative',
       }}>
-        <div style={{ position: 'absolute', top: 24, right: 24 }}>
+        <div style={{ position: 'absolute', top: 24, right: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {enableThemeToggle && (
+          <Tooltip title={themeMode === 'light' ? '切换暗色模式' : '切换亮色模式'} placement="bottom" color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
+            <Button 
+              type="text" 
+              shape="circle" 
+              onClick={toggleTheme}
+              icon={
+                themeMode === 'light' 
+                ? <MoonOutlined style={{ fontSize: 18 }} /> 
+                : <SunOutlined style={{ fontSize: 18 }} />
+              } 
+              style={{ color: themeMode === 'light' ? '#1f2937' : 'rgba(255,255,255,0.65)' }} 
+            />
+          </Tooltip>
+          )}
           <Dropdown
             menu={{
               items: [
@@ -103,15 +125,16 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
             }}
             placement="bottomRight"
           >
-            <Button type="text" icon={<GlobalOutlined />} style={{ color: 'rgba(255,255,255,0.65)' }}>
+            <Button type="text" icon={<GlobalOutlined />} style={{ color: themeMode === 'light' ? '#1f2937' : 'rgba(255,255,255,0.65)' }}>
               {i18n.language === 'zh' ? '中文' : 'EN'}
             </Button>
           </Dropdown>
         </div>
 
         <Card style={{
-          width: 'min(420px, 92vw)', borderRadius: 16, background: '#141414',
-          border: '1px solid #303030', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
+          width: 'min(420px, 92vw)', borderRadius: 16, background: themeMode === 'light' ? '#ffffff' : '#141414',
+          border: themeMode === 'light' ? '1px solid #e5e7eb' : '1px solid #303030',
+          boxShadow: themeMode === 'light' ? '0 8px 32px 0 rgba(0, 0, 0, 0.08)' : '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
         }}>
           <div style={{ textAlign: 'center', marginBottom: 24 }}>
             <Space direction="vertical" size={4}>
@@ -142,9 +165,9 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
               {methods && methods.length > 0 && (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', margin: '24px 0 16px' }}>
-                    <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15))' }} />
-                    <span style={{ padding: '0 12px', color: '#777', fontSize: 13, letterSpacing: 1 }}>{methodsLabel || t('auth.switch_method')}</span>
-                    <div style={{ flex: 1, height: 1, background: 'linear-gradient(270deg, transparent, rgba(255,255,255,0.15))' }} />
+                    <div style={{ flex: 1, height: 1, background: themeMode === 'light' ? 'linear-gradient(90deg, transparent, rgba(0,0,0,0.1))' : 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15))' }} />
+                    <span style={{ padding: '0 12px', color: themeMode === 'light' ? '#999' : '#777', fontSize: 13, letterSpacing: 1 }}>{methodsLabel || t('auth.switch_method')}</span>
+                    <div style={{ flex: 1, height: 1, background: themeMode === 'light' ? 'linear-gradient(270deg, transparent, rgba(0,0,0,0.1))' : 'linear-gradient(270deg, transparent, rgba(255,255,255,0.15))' }} />
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap' }}>
                     {methods.map(renderIconBtn)}

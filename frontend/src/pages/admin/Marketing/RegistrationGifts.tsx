@@ -5,10 +5,13 @@ import { SaveOutlined, GiftOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import useSettingsStore from '../../../store/settings';
 import type { MarketingSettings } from '../../../types';
+import { useThemeStore } from '../../../store/theme';
 
 const { Title, Text } = Typography;
 
 const RegistrationGifts: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const { t } = useTranslation();
   const [form] = Form.useForm();
   const { fetchSettings } = useSettingsStore();
@@ -110,7 +113,7 @@ const RegistrationGifts: React.FC = () => {
 
             return (
               <div style={{ 
-                background: 'rgba(255,255,255,0.02)', 
+                background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', 
                 padding: '24px', 
                 borderRadius: '8px',
                 border: '1px solid rgba(255,255,255,0.05)',
@@ -121,11 +124,9 @@ const RegistrationGifts: React.FC = () => {
                   label={t('marketing.gift_mode')}
                   rules={[{ required: true }]}
                 >
-                  <Radio.Group onChange={(e) => setGiftMode(e.target.value)}>
-                    <Space>
-                      <Radio.Button value="fixed">{t('marketing.mode_fixed')}</Radio.Button>
-                      <Radio.Button value="random">{t('marketing.mode_random')}</Radio.Button>
-                    </Space>
+                  <Radio.Group onChange={(e) => setGiftMode(e.target.value)} buttonStyle="solid">
+                    <Radio.Button value="fixed">{t('marketing.mode_fixed')}</Radio.Button>
+                    <Radio.Button value="random">{t('marketing.mode_random')}</Radio.Button>
                   </Radio.Group>
                 </Form.Item>
 

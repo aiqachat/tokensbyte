@@ -3,6 +3,7 @@ import { Space, Tag, Typography, Button, Tooltip } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { type ModelProvider, type ModelType, type ClassificationCount } from '../../types';
+import { useThemeStore } from '../../store/theme';
 
 const { Text } = Typography;
 
@@ -30,6 +31,8 @@ const ClassificationFilter: React.FC<ClassificationFilterProps> = ({
   totalModels,
 }) => {
   const { t } = useTranslation();
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
 
   const renderFilterRow = (
     label: string,
@@ -41,36 +44,48 @@ const ClassificationFilter: React.FC<ClassificationFilterProps> = ({
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, padding: '4px 0' }}>
       <Text type="secondary" style={{ width: 80, flexShrink: 0 }}>{label}</Text>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, flexGrow: 1 }}>
-        <Tag.CheckableTag
-          checked={selectedValue === null}
-          onChange={() => onSelect(null)}
+        <div
+          onClick={() => onSelect(null)}
           style={{ 
             padding: '4px 12px', 
             borderRadius: 16,
             fontSize: '14px',
-            backgroundColor: selectedValue === null ? '#1677ff' : '#1d1d1d',
-            color: selectedValue === null ? '#fff' : 'rgba(255, 255, 255, 0.65)',
-            border: '1px solid #303030'
+            backgroundColor: selectedValue === null ? '#1677ff' : (isLight ? '#f0f0f0' : '#1d1d1d'),
+            color: selectedValue === null ? '#fff' : (isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255, 255, 255, 0.65)'),
+            border: isLight ? '1px solid #d9d9d9' : '1px solid #303030',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            transition: 'all 0.2s',
           }}
         >
           {t('common.all')} <span style={{ opacity: 0.6, marginLeft: 4 }}>{totalModels}</span>
-        </Tag.CheckableTag>
+        </div>
         {items.map(item => (
-          <Tag.CheckableTag
+          <div
             key={item.id}
-            checked={selectedValue === item.id}
-            onChange={() => onSelect(item.id)}
+            onClick={() => onSelect(item.id)}
             style={{ 
               padding: '4px 12px', 
               borderRadius: 16,
               fontSize: '14px',
-              backgroundColor: selectedValue === item.id ? '#1677ff' : '#1d1d1d',
-              color: selectedValue === item.id ? '#fff' : 'rgba(255, 255, 255, 0.65)',
-              border: '1px solid #303030'
+              backgroundColor: selectedValue === item.id ? '#1677ff' : (isLight ? '#f0f0f0' : '#1d1d1d'),
+              color: selectedValue === item.id ? '#fff' : (isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255, 255, 255, 0.65)'),
+              border: isLight ? '1px solid #d9d9d9' : '1px solid #303030',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              transition: 'all 0.2s',
             }}
           >
-            {item.name} <span style={{ opacity: 0.6, marginLeft: 4 }}>{item.count}</span>
-          </Tag.CheckableTag>
+            {item.logo && (
+              <img src={`/assets/icons/lobe/${item.logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain', display: 'block' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            )}
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              {item.name} <span style={{ opacity: 0.6, marginLeft: 4 }}>{item.count}</span>
+            </div>
+          </div>
         ))}
         <Tooltip title={t('common.manage')}>
           <Button 
@@ -87,11 +102,11 @@ const ClassificationFilter: React.FC<ClassificationFilterProps> = ({
 
   return (
     <div style={{ 
-      backgroundColor: '#141414', 
+      backgroundColor: isLight ? '#fafafa' : '#141414', 
       padding: '20px 24px', 
       borderRadius: 12, 
       marginBottom: 24,
-      border: '1px solid #303030'
+      border: isLight ? '1px solid #e8e8e8' : '1px solid #303030'
     }}>
       {renderFilterRow(t('models.provider'), providers, selectedProvider, onProviderChange, onManageProviders)}
       {renderFilterRow(t('models.type'), types, selectedType, onTypeChange, onManageTypes)}

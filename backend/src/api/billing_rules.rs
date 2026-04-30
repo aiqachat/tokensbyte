@@ -42,13 +42,14 @@ pub async fn create_rule(
 
     let id_i32 = sqlx::query(
         &state.db.format_query(r#"INSERT INTO billing_rules 
-            (name, billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule, pricing_tiers, extended_config, is_active) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"#)
+            (name, billing_type, prompt_rate, completion_rate, cached_rate, fixed_rate, duration_rate, billing_rule, pricing_tiers, extended_config, is_active) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"#)
     )
     .bind(&req.name)
     .bind(&req.billing_type)
     .bind(req.prompt_rate)
     .bind(req.completion_rate)
+    .bind(req.cached_rate)
     .bind(req.fixed_rate)
     .bind(req.duration_rate)
     .bind(&req.billing_rule)
@@ -97,6 +98,9 @@ pub async fn update_rule(
     if let Some(val) = req.completion_rate {
         sqlx::query(&state.db.format_query("UPDATE billing_rules SET completion_rate = ? WHERE id = ?")).bind(val).bind(id).execute(&state.db.pool).await?;
     }
+    if let Some(val) = req.cached_rate {
+        sqlx::query(&state.db.format_query("UPDATE billing_rules SET cached_rate = ? WHERE id = ?")).bind(val).bind(id).execute(&state.db.pool).await?;
+    }
     if let Some(val) = req.fixed_rate {
         sqlx::query(&state.db.format_query("UPDATE billing_rules SET fixed_rate = ? WHERE id = ?")).bind(val).bind(id).execute(&state.db.pool).await?;
     }
@@ -132,6 +136,17 @@ pub async fn delete_rule(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i32>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let rule: Option<BillingRule> = sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ?"))
+        .bind(id)
+        .fetch_optional(&state.db.pool)
+        .await?;
+
+    if let Some(r) = rule {
+        if r.is_system == 1 {
+            return Err(crate::error::AppError::Forbidden("系统内置计费规则不允许删除".to_string()));
+        }
+    }
+
     sqlx::query(&state.db.format_query("DELETE FROM billing_rules WHERE id = ?"))
         .bind(id)
         .execute(&state.db.pool)

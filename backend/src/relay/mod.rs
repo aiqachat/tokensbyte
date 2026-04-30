@@ -3,6 +3,7 @@ pub mod stream;
 pub mod proxy;
 pub mod image;
 pub mod video;
+pub mod task;
 pub mod native;
 pub mod url_utils;
 pub mod forward;
@@ -37,12 +38,22 @@ pub async fn chat_completions(
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
 
     // 3. 选择渠道
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/v1/chat/completions").await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, "/v1/chat/completions").await?;
 
     // 4. 解析转发规则，未绑定规则时根据域名智能推断
-    let resolved = forward::resolve_forward_rule(&state, model, "聊天", "/v1/chat/completions")
-        .await
-        .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, "聊天"));
+    let resolved = match forward::resolve_forward_rule(&state, model, "聊天", "/v1/chat/completions").await {
+        Some(r) => r,
+        None => {
+            // 模型绑定了转发规则但入口路径不匹配 → 拒绝请求
+            if forward::model_has_forward_rules(&state, model).await {
+                return Err(AppError::BadRequest(format!(
+                    "模型 '{}' 不支持当前接口，请检查模型对应的转发规则", model
+                )));
+            }
+            // 模型未绑定转发规则 → 根据渠道域名智能推断
+            forward::infer_forward_from_base_url(&channel.base_url, "聊天")
+        }
+    };
 
     let target_type = resolved.target_type.clone();
     let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "聊天");
@@ -96,7 +107,7 @@ pub async fn chat_completions(
             let latency_ms = start_time.elapsed().as_millis() as u32;
             let ep = format!("/v1/chat/completions|{}", final_upstream_path);
             proxy::record_and_bill(
-                &state, &token, channel.id, model, 0, 0, 0.0, status,
+                &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
                 &ep, Some(&display_err), latency_ms, 1,
                 Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
                 None
@@ -130,7 +141,7 @@ pub async fn chat_completions(
             let latency_ms = start_time.elapsed().as_millis() as u32;
             let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
             proxy::record_and_bill(
-                &state, &token, channel.id, model, 0, 0, 0.0, status,
+                &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
                 &ep, Some(&display_err), latency_ms, 0,
                 Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
                 None
@@ -145,6 +156,7 @@ pub async fn chat_completions(
         let usage_tokens = usage_extractor::parse_usage(&response_content_str);
         let prompt_tokens = usage_tokens.prompt;
         let completion_tokens = usage_tokens.completion;
+        let cached_tokens = usage_tokens.cached;
 
         // 提取请求参数特征用于进阶计费
         let features = usage_extractor::extract_request_features(&body);
@@ -173,7 +185,7 @@ pub async fn chat_completions(
 
         let (final_discount, discount_source) = proxy::resolve_discount(db_model.as_ref(), ctx.discount);
 
-        let (quota_used, mut detail) = compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, final_discount, &features);
+        let (quota_used, mut detail) = compute_cost(db_model.as_ref(), db_rule.as_ref(), prompt_tokens, completion_tokens, cached_tokens, final_discount, &features);
         detail.push_str(&format!(" | {}", discount_source));
         if model != resolved_model {
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
@@ -182,7 +194,7 @@ pub async fn chat_completions(
         let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
 
         proxy::record_and_bill_with_prededuction(
-            &state, &token, channel.id, model, prompt_tokens, completion_tokens,
+            &state, &token, channel.id, model, prompt_tokens, completion_tokens, cached_tokens,
             quota_used, pre_deduction, 200, &ep, None, latency_ms, 0,
             Some(request_content_str), Some(response_content_str.clone()), Some(upstream_body.to_string()),
             Some(detail)
@@ -275,7 +287,8 @@ pub fn compute_cost(
     _db_model: Option<&crate::models::Model>, 
     db_rule: Option<&crate::models::BillingRule>, 
     prompt_tokens: i32, 
-    completion_tokens: i32, 
+    completion_tokens: i32,
+    cached_tokens: i32,
     discount: f64,
     features: &usage_extractor::ExtractedFeatures
 ) -> (f64, String) {
@@ -313,6 +326,16 @@ pub fn compute_cost(
                     }
                 };
                 detail_desc = "按张返回计费".to_string();
+                
+                // 兼容阿里百炼 prompt_extend 计费调整（如果配置了倍率）
+                if features.prompt_extend {
+                    if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                        if let Some(m) = ext.get("prompt_extend_multiplier").and_then(|v| v.as_f64()) {
+                            rate *= m;
+                            detail_desc.push_str(&format!(" [提示词扩写 x{}]", m));
+                        }
+                    }
+                }
             } else if rule.billing_rule == "image_resolution" {
                 count = features.image_count.map(|c| c.max(1) as f64).unwrap_or(1.0);
                 detail_desc = format!("分辨率匹配计费(默认单价: {})", rate);
@@ -321,15 +344,25 @@ pub fn compute_cost(
                         for tier in tiers {
                             if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
                                 rate = tier.rate; 
-                                detail_desc = format!("命中分辨率阶梯 {} 单价: {}", res, rate);
+                                detail_desc = format!("命中分辨率阶梯 {} 单价: {:.6}", res, rate);
                                 break;
                             }
                         }
                     }
                 }
+                
+                // 提示词扩写倍率支持
+                if features.prompt_extend {
+                    if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                        if let Some(m) = ext.get("prompt_extend_multiplier").and_then(|v| v.as_f64()) {
+                            rate *= m;
+                            detail_desc.push_str(&format!(" [提示词扩写 x{}]", m));
+                        }
+                    }
+                }
             }
             let cost = count * rate * discount;
-            (cost, format!("{} -> ({}量 * {}单价 * {:.2}倍率)", detail_desc, count, rate, discount))
+            (cost, format!("{} -> ({}量 * {:.6}单价 * {:.2}倍率)", detail_desc, count, rate, discount))
         },
         "duration" => {
             let dur = features.duration_seconds.unwrap_or(0.0);
@@ -414,7 +447,11 @@ pub fn compute_cost(
                 }
             }
 
-            // 移除此处提前处理的 Flex 兜底逻辑，移到判定阶梯之后
+            let mut is_cached_rate_set = false;
+            let mut cached_r = rule.cached_rate;
+            if cached_r > 0.0 {
+                is_cached_rate_set = true;
+            }
 
             if !is_overridden && rule.billing_rule == "tiered" {
                 let mut tiers: Vec<crate::models::PricingTier> = serde_json::from_str(&rule.pricing_tiers).unwrap_or_default();
@@ -436,6 +473,14 @@ pub fn compute_cost(
                     if prompt_ok && completion_ok {
                         p_rate = tier.prompt_rate;
                         c_rate = tier.completion_rate;
+                        // 提取阶梯独立的缓存费率
+                        if tier.cached_rate > 0.0 {
+                            cached_r = tier.cached_rate;
+                            is_cached_rate_set = true;
+                        } else {
+                            // 阶梯未设置缓存费率时，不继承全局规则的缓存费率
+                            is_cached_rate_set = false; 
+                        }
                         detail_desc = match tier.max_completion_tokens {
                             Some(mc) => format!("阶梯计费(命中<={}K_P|<={}K_C)", tier.max_prompt_tokens, mc),
                             None => format!("阶梯计费(命中<={}K_P)", tier.max_prompt_tokens),
@@ -449,6 +494,12 @@ pub fn compute_cost(
                     if let Some(last) = tiers.last() {
                         p_rate = last.prompt_rate;
                         c_rate = last.completion_rate;
+                        if last.cached_rate > 0.0 {
+                            cached_r = last.cached_rate;
+                            is_cached_rate_set = true;
+                        } else {
+                            is_cached_rate_set = false;
+                        }
                         detail_desc = format!("阶梯计费(超出上限,按最高档{}K_P/{}K_C费率)",
                             last.max_prompt_tokens, last.max_completion_tokens.map(|c| c.to_string()).unwrap_or("-".to_string()));
                     }
@@ -466,11 +517,31 @@ pub fn compute_cost(
                 };
                 p_rate *= off_discount;
                 c_rate *= off_discount;
+                if is_cached_rate_set { cached_r *= off_discount; }
                 detail_desc = format!("{} [叠加Flex离线折扣: {}倍]", detail_desc, off_discount);
             }
 
-            let cost = ((prompt_tokens as f64 * p_rate + completion_tokens as f64 * c_rate) / 1_000_000.0) * discount;
-            (cost, format!("{} -> ({:.6}P*{} + {:.6}C*{})/1M * {:.2}倍率", detail_desc, prompt_tokens, p_rate, completion_tokens, c_rate, discount))
+            // 缓存 token 属于输入的子集，需从 prompt 中拆分独立计价
+            let effective_prompt = if cached_tokens > 0 { (prompt_tokens - cached_tokens).max(0) } else { prompt_tokens };
+
+            let (cost, detail_str) = if cached_tokens > 0 && is_cached_rate_set {
+                // 有独立缓存费率：prompt 拆分为 (effective_prompt + cached)
+                let cost = ((effective_prompt as f64 * p_rate + completion_tokens as f64 * c_rate + cached_tokens as f64 * cached_r) / 1_000_000.0) * discount;
+                let d = format!("{} -> ({:.0}P*{} + {:.0}C*{} + {:.0}Cache*{})/1M * {:.2}倍率",
+                    detail_desc, effective_prompt, p_rate, completion_tokens, c_rate, cached_tokens, cached_r, discount);
+                (cost, d)
+            } else if cached_tokens > 0 {
+                // 无独立缓存费率：缓存按 p_rate 计价（不拆分），明细中标注缓存数量
+                let cost = ((prompt_tokens as f64 * p_rate + completion_tokens as f64 * c_rate) / 1_000_000.0) * discount;
+                let d = format!("{} -> ({:.0}P*{} + {:.0}C*{})/1M * {:.2}倍率 [含{:.0}缓存(输入内)]",
+                    detail_desc, prompt_tokens, p_rate, completion_tokens, c_rate, discount, cached_tokens);
+                (cost, d)
+            } else {
+                let cost = ((prompt_tokens as f64 * p_rate + completion_tokens as f64 * c_rate) / 1_000_000.0) * discount;
+                let d = format!("{} -> ({:.0}P*{} + {:.0}C*{})/1M * {:.2}倍率", detail_desc, prompt_tokens, p_rate, completion_tokens, c_rate, discount);
+                (cost, d)
+            };
+            (cost, detail_str)
         }
     }
 }

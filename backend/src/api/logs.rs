@@ -21,7 +21,9 @@ pub async fn list_logs(
         c.group_aid as channel_group_aid, c.name as channel_name, \
         COALESCE(u.nickname, u.username) as user_nickname, \
         u.user_group, \
-        t.name as token_name \
+        u.uid as user_uid, \
+        t.name as token_name, \
+        t.kid as token_kid \
         FROM logs l \
         LEFT JOIN channels c ON l.channel_id = c.id \
         LEFT JOIN users u ON l.user_id = u.id \

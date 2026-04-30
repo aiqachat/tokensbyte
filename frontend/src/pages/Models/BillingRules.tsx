@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Radio, InputNumber, Row, Col, Typography, Grid } from 'antd';
+import { Card, Table, Button, Space, Form, Input, Switch, message, Popconfirm, Modal, Tag, Radio, InputNumber, Row, Col, Typography, Grid, Tooltip } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, DeleteTwoTone } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import RateDisplay from './RateDisplay';
+import { useThemeStore } from '../../store/theme';
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -22,10 +23,13 @@ interface BillingRuleData {
   pricing_tiers: string;
   extended_config: string;
   is_active: number;
+  is_system: number;
   created_at: string;
 }
 
 const BillingRules: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const { t } = useTranslation();
   const { settings } = useSettingsStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
@@ -76,6 +80,7 @@ const BillingRules: React.FC = () => {
       volc_audio_rate: 0, volc_base_rate: 0,
       volc_offline_discount: 0.5,
       s1_online_rate: 0, s1_offline_rate: 0,
+      prompt_extend_multiplier: 1,
     });
     setIsModalVisible(true);
   };
@@ -111,6 +116,7 @@ const BillingRules: React.FC = () => {
       volc_offline_discount: ext.offline_discount ?? 0.5,
       s1_online_rate: ext.online_rate || 0,
       s1_offline_rate: ext.offline_rate || 0,
+      prompt_extend_multiplier: ext.prompt_extend_multiplier || 1,
       is_active: item.is_active === 1,
     });
     setIsModalVisible(true);
@@ -159,6 +165,11 @@ const BillingRules: React.FC = () => {
           offline_rate: values.s1_offline_rate || 0,
         };
       }
+      
+      // 图像模型特有：提示词扩写倍率
+      if (values.billing_rule === 'per_image' || values.billing_rule === 'image_resolution') {
+        extConfig = { ...extConfig, prompt_extend_multiplier: values.prompt_extend_multiplier || 1 };
+      }
 
       // 清除表单中不应提交的临时字段
       delete values.sd2_480p_video; delete values.sd2_480p_base; delete values.sd2_480p_enabled;
@@ -166,6 +177,7 @@ const BillingRules: React.FC = () => {
       delete values.sd2_1080p_video; delete values.sd2_1080p_base; delete values.sd2_1080p_enabled;
       delete values.volc_audio_rate; delete values.volc_base_rate; delete values.volc_offline_discount;
       delete values.s1_online_rate; delete values.s1_offline_rate;
+      delete values.prompt_extend_multiplier;
 
       const payload = {
         prompt_rate: 0,
@@ -173,6 +185,11 @@ const BillingRules: React.FC = () => {
         fixed_rate: 0,
         duration_rate: 0,
         ...values,
+        cached_rate: values.cached_rate || 0,
+        pricing_tiers: values.pricing_tiers?.map((tier: any) => ({
+          ...tier,
+          cached_rate: tier.cached_rate || 0,
+        })) || [],
         extended_config: extConfig,
         is_active: values.is_active ? 1 : 0,
       };
@@ -235,9 +252,15 @@ const BillingRules: React.FC = () => {
       render: (_: any, record: BillingRuleData) => (
         <Space>
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />
-          <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-            <Button icon={<DeleteOutlined />} danger size="small" />
-          </Popconfirm>
+          {record.is_system === 1 ? (
+            <Tooltip title="系统内置规则，不可删除">
+              <Button icon={<DeleteOutlined />} disabled size="small" />
+            </Tooltip>
+          ) : (
+            <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+              <Button icon={<DeleteOutlined />} danger size="small" />
+            </Popconfirm>
+          )}
         </Space>
       ),
       width: 120,
@@ -269,9 +292,15 @@ const BillingRules: React.FC = () => {
                   <CardRow label="费率"><RateDisplay rule={record} currencySymbol={currencySymbol} /></CardRow>
                   <CardActions>
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-                    <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-                      <Button size="small" icon={<DeleteOutlined />} danger />
-                    </Popconfirm>
+                    {record.is_system === 1 ? (
+                      <Tooltip title="系统内置规则，不可删除">
+                        <Button size="small" icon={<DeleteOutlined />} disabled />
+                      </Tooltip>
+                    ) : (
+                      <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                        <Button size="small" icon={<DeleteOutlined />} danger />
+                      </Popconfirm>
+                    )}
                   </CardActions>
                 </MobileCard>
               );
@@ -336,13 +365,18 @@ const BillingRules: React.FC = () => {
                   if (rule === 'standard') {
                     return (
                       <Row gutter={16}>
-                        <Col span={12}>
+                        <Col span={8}>
                           <Form.Item name="prompt_rate" label={unitLabel} rules={[{ required: true }]}>
                             <InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" />
                           </Form.Item>
                         </Col>
-                        <Col span={12}>
+                        <Col span={8}>
                           <Form.Item name="completion_rate" label={unitLabelComp} rules={[{ required: true }]}>
+                            <InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                          <Form.Item name="cached_rate" label="缓存费率(选填)">
                             <InputNumber style={{ width: '100%' }} precision={6} addonAfter="/ 1M" />
                           </Form.Item>
                         </Col>
@@ -350,12 +384,12 @@ const BillingRules: React.FC = () => {
                     );
                   } else if (rule === 'seedance2.0') {
                     return (
-                      <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', marginBottom: 24, border: '1px solid #303030' }}>
+                      <div style={{ background: _isLight ? '#fff' : '#141414', padding: '20px', borderRadius: '12px', marginBottom: 24, border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
                         <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 16 }}>
                           Seedance 2.0 — 指定具体支持的视频分辨率及是否包含视频输入的定价 (可分级管控)
                         </Text>
                         {['480p', '720p', '1080p'].map(r => (
-                          <div key={r} style={{ marginBottom: 16, padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px' }}>
+                          <div key={r} style={{ marginBottom: 16, padding: '12px', background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', borderRadius: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                               <Text strong style={{ fontSize: '13px' }}>{r} 分辨率矩阵计费</Text>
                               <Form.Item name={`sd2_${r}_enabled`} valuePropName="checked" style={{ margin: 0 }}>
@@ -386,7 +420,7 @@ const BillingRules: React.FC = () => {
                     );
                   } else if (rule === 'seedance1.5pro') {
                     return (
-                      <div style={{ background: '#141414', padding: '16px', borderRadius: '12px', marginBottom: 24, border: '1px solid #303030' }}>
+                      <div style={{ background: _isLight ? '#fff' : '#141414', padding: '16px', borderRadius: '12px', marginBottom: 24, border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
                         <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 16 }}>
                           如需支持离线推理(flex)降价，请在此配置乘以的折扣倍率
                         </Text>
@@ -399,7 +433,7 @@ const BillingRules: React.FC = () => {
                     );
                   } else if (rule === 'seedance1.0') {
                     return (
-                      <div style={{ background: '#141414', padding: '16px', borderRadius: '12px', marginBottom: 24, border: '1px solid #303030' }}>
+                      <div style={{ background: _isLight ? '#fff' : '#141414', padding: '16px', borderRadius: '12px', marginBottom: 24, border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
                         <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 16 }}>
                           Seedance 1.0 — 支持在线与离线的双轨计费
                         </Text>
@@ -412,16 +446,16 @@ const BillingRules: React.FC = () => {
                   } else {
                     return (
                       <div style={{ 
-                        background: '#141414', 
+                        background: _isLight ? '#fff' : '#141414', 
                         padding: '20px', 
                         borderRadius: '12px', 
                         marginBottom: '24px',
-                        border: '1px solid #303030'
+                        border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030'
                       }}>
                         <div style={{ marginBottom: 16 }}>
-                          <Title level={5} style={{ marginBottom: 6, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>{t('models.pricing_tiers')}</Title>
+                          <Title level={5} style={{ marginBottom: 6, fontSize: '14px', color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>{t('models.pricing_tiers')}</Title>
                           <Text type="secondary" style={{ fontSize: '12px' }}>
-                            界定说明：输入界限与输出上限填写的数值单位是以“千(K)”为步长判定的（例如输入 128 即为 128K Token）。命中落区后，最终费用将结合后面配置的费率采用 1M (一百万) 定标结算。
+                            界定说明：输入上限与输出上限填写的数值单位是以"千(K)"为步长判定的。例如输入 128 即表示 ≤128K Token 命中此阶梯；输出上限不填则表示不限制输出。缓存费率用于对命中输入缓存的 Token 独立定价（属于输入的子集），未填写则缓存按输入费率计。命中落区后，最终费用将结合配置的费率采用 1M (一百万) 定标结算。
                           </Text>
                         </div>
                         <Form.List name="pricing_tiers" initialValue={[]}>
@@ -429,27 +463,32 @@ const BillingRules: React.FC = () => {
                             <>
                               {fields.map(({ key, name, ...restField }) => (
                                 <Row key={key} gutter={12} align="middle" style={{ marginBottom: 12 }}>
-                                  <Col span={9}>
+                                  <Col span={7}>
                                     <Space.Compact style={{ width: '100%' }}>
                                       <Form.Item {...restField} name={[name, 'max_prompt_tokens']} rules={[{ required: true, message: '' }]} noStyle>
-                                        <InputNumber placeholder="输入界限(千Token)" style={{ width: '50%' }} />
+                                        <InputNumber placeholder="输入上限(如:128)" style={{ width: '50%' }} />
                                       </Form.Item>
                                       <Form.Item {...restField} name={[name, 'max_completion_tokens']} noStyle>
-                                        <InputNumber placeholder="输出上限(千Token/选填)" style={{ width: '50%' }} />
+                                        <InputNumber placeholder="输出上限(如:16)" style={{ width: '50%' }} />
                                       </Form.Item>
                                     </Space.Compact>
                                   </Col>
-                                  <Col span={6}>
+                                  <Col span={5}>
                                     <Form.Item {...restField} name={[name, 'prompt_rate']} rules={[{ required: true }]} noStyle>
                                       <InputNumber placeholder={t('models.input_rate')} style={{ width: '100%' }} precision={6} />
                                     </Form.Item>
                                   </Col>
-                                  <Col span={6}>
+                                  <Col span={5}>
                                     <Form.Item {...restField} name={[name, 'completion_rate']} rules={[{ required: true }]} noStyle>
                                       <InputNumber placeholder={t('models.output_rate')} style={{ width: '100%' }} precision={6} />
                                     </Form.Item>
                                   </Col>
-                                  <Col span={3} style={{ textAlign: 'right' }}>
+                                  <Col span={5}>
+                                    <Form.Item {...restField} name={[name, 'cached_rate']} noStyle>
+                                      <InputNumber placeholder="缓存费率(选填)" style={{ width: '100%' }} precision={6} />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={2} style={{ textAlign: 'right' }}>
                                     <Button type="text" danger icon={<DeleteTwoTone />} onClick={() => remove(name)} />
                                   </Col>
                                 </Row>
@@ -492,9 +531,9 @@ const BillingRules: React.FC = () => {
                   if (rule === 'image_resolution') {
                     return (
                       <div style={{ 
-                        background: '#141414', padding: '20px', borderRadius: '12px', marginBottom: '24px', border: '1px solid #303030'
+                        background: _isLight ? '#fff' : '#141414', padding: '20px', borderRadius: '12px', marginBottom: '24px', border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030'
                       }}>
-                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>图片分辨率计费配置</Title>
+                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>图片分辨率计费配置</Title>
                         <Form.List name="pricing_tiers" initialValue={[]}>
                           {(fields, { add, remove }) => (
                             <>
@@ -536,12 +575,34 @@ const BillingRules: React.FC = () => {
                     );
                   } else {
                     return (
-                      <Form.Item name="fixed_rate" label={t('models.fixed_rate')} rules={[{ required: true }]}>
-                        <InputNumber style={{ width: '100%' }} precision={6} addonAfter={rule === 'per_image' ? "/ 张" : "/ Request"} />
-                      </Form.Item>
+                      <Row gutter={16}>
+                        <Col span={12}>
+                          <Form.Item name="fixed_rate" label={t('models.fixed_rate')} rules={[{ required: true }]}>
+                            <InputNumber style={{ width: '100%' }} precision={6} addonAfter={rule === 'per_image' ? "/ 张" : "/ Request"} />
+                          </Form.Item>
+                        </Col>
+                        {rule === 'per_image' && (
+                          <Col span={12}>
+                            <Form.Item name="prompt_extend_multiplier" label="提示词扩写倍率" tooltip="当请求开启 prompt_extend 时，单价将乘以该倍率 (默认 1.0)">
+                              <InputNumber style={{ width: '100%' }} precision={2} step={0.1} min={0} />
+                            </Form.Item>
+                          </Col>
+                        )}
+                      </Row>
                     );
                   }
                 }}
+              </Form.Item>
+              
+              {/* 分辨率计费模式下的扩写倍率支持 */}
+              <Form.Item noStyle shouldUpdate={(prev, curr) => prev.billing_rule !== curr.billing_rule}>
+                {({ getFieldValue }) => getFieldValue('billing_rule') === 'image_resolution' && (
+                  <div style={{ marginBottom: 24 }}>
+                    <Form.Item name="prompt_extend_multiplier" label="提示词扩写倍率" tooltip="当请求开启 prompt_extend 时，分辨率阶梯单价将乘以该倍率 (默认 1.0)">
+                      <InputNumber style={{ width: '200px' }} precision={2} step={0.1} min={0} />
+                    </Form.Item>
+                  </div>
+                )}
               </Form.Item>
             </>
           )}
@@ -561,8 +622,8 @@ const BillingRules: React.FC = () => {
                   
                   if (rule === 'video_resolution') {
                     return (
-                      <div style={{ background: '#141414', padding: '20px', borderRadius: '12px', marginBottom: '24px', border: '1px solid #303030' }}>
-                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>视频分辨率计费组合包</Title>
+                      <div style={{ background: _isLight ? '#fff' : '#141414', padding: '20px', borderRadius: '12px', marginBottom: '24px', border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
+                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>视频分辨率计费组合包</Title>
                         <Form.List name="pricing_tiers" initialValue={[]}>
                           {(fields, { add, remove }) => (
                             <>

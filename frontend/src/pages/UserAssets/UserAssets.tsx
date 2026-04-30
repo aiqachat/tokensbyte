@@ -8,6 +8,7 @@ import {
   CheckCircleFilled, DownloadOutlined, DeleteOutlined, FilterOutlined, LoginOutlined
 } from '@ant-design/icons';
 import request from '../../utils/request';
+import { useThemeStore } from '../../store/theme';
 import type { PluginAsset } from '../../types';
 import type { MenuProps } from 'antd';
 
@@ -40,15 +41,33 @@ interface StorageInfo {
   is_admin: boolean;
   virtual_portrait_count?: number;
   virtual_portrait_quota?: number;
+  review_enabled?: boolean;
 }
 
 // 我的素材固定二级分类
 const MY_ASSET_SUBCATEGORIES = [
-  { key: 'my_virtual_portrait', label: '虚拟人像', icon: <UserOutlined />, filter: { category: '虚拟人像' } },
-  { key: 'my_real_portrait', label: '真人人像', icon: <UserAddOutlined />, filter: { category: '真人人像' } },
+  { key: 'my_virtual_portrait', label: '虚拟素材库', icon: <UserOutlined />, filter: { category: '虚拟人像' } },
 ];
 
 const UserAssets: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
+  // 主题适配变量
+  const panelBg = isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)';
+  const panelBorder = isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)';
+  const panelBorderStrong = isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)';
+  const mainText = isLight ? '#1f2937' : '#fff';
+  const subText = isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)';
+  const descText = isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)';
+  const hintText = isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
+  const dimText = isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
+  const btnBg = isLight ? '#f0f0f0' : '#262626';
+  const btnText = isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)';
+  const tagBg = isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)';
+  const tagBorder = isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.1)';
+  const tagText = isLight ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.75)';
+  const actionBtnBg = isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)';
+  const actionBtnBorder = isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)';
   const [assets, setAssets] = useState<PluginAsset[]>([]);
   const [loading, setLoading] = useState(false);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
@@ -408,13 +427,23 @@ const UserAssets: React.FC = () => {
           continue;
         }
         try {
-          const formData = new FormData();
-          formData.append('file', fileItem.originFileObj as any);
-          formData.append('category', category);
+          const rawFile = fileItem.originFileObj as File;
           const ext = fileItem.name?.split('.').pop()?.toLowerCase() || '';
           const videoExts = ['mp4', 'mov', 'webm', 'avi', 'mkv'];
           const audioExts = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'];
           const detectedType = videoExts.includes(ext) ? 'video' : audioExts.includes(ext) ? 'audio' : 'image';
+          // 文件名超过64字符时自动截断（保留扩展名）
+          let uploadFile: File = rawFile;
+          if (rawFile.name.length > 64) {
+            const dotIdx = rawFile.name.lastIndexOf('.');
+            const fileExt = dotIdx >= 0 ? rawFile.name.slice(dotIdx) : '';
+            const baseName = dotIdx >= 0 ? rawFile.name.slice(0, dotIdx) : rawFile.name;
+            const truncatedName = baseName.slice(0, 64 - fileExt.length) + fileExt;
+            uploadFile = new File([rawFile], truncatedName, { type: rawFile.type });
+          }
+          const formData = new FormData();
+          formData.append('file', uploadFile);
+          formData.append('category', category);
           formData.append('asset_type', detectedType);
           if (category === '虚拟人像' && groupId) { formData.append('group_id', groupId); }
           await request.post(api, formData, { headers: { 'Content-Type': 'multipart/form-data' }, skipErrorHandler: true } as any);
@@ -434,7 +463,7 @@ const UserAssets: React.FC = () => {
 
       // 上传完毕 — 统一提示
       if (failCount === 0) {
-        message.success(`全部 ${doneCount} 个文件上传成功，请提交审核`);
+        message.success(reviewEnabled ? `全部 ${doneCount} 个文件上传成功，请提交审核` : `全部 ${doneCount} 个文件上传成功`);
       } else if (doneCount === 0) {
         message.error(Array.from(errorMessages).join('；'));
       } else {
@@ -469,10 +498,10 @@ const UserAssets: React.FC = () => {
 
   // 批量提交审核
   const handleBatchSubmitReview = async () => {
-    // 找出选中的素材中需要提交审核的（过滤掉已通过、审核中的）
+    // 找出选中的素材中需要提交审核的（过滤掉已通过且有 asset_id 的、审核中的）
     const needReviewIds = Array.from(selectedAssetIds).filter(id => {
       const asset = assets.find(a => a.id === id);
-      return asset && asset.source === 'user' && asset.status === 'uploaded';
+      return asset && asset.source === 'user' && (asset.status === 'uploaded' || (asset.status === 'approved' && !asset.asset_id));
     });
     if (needReviewIds.length === 0) {
       message.info('选中的素材中没有需要提交审核的项目');
@@ -543,6 +572,7 @@ const UserAssets: React.FC = () => {
   const usedMB = storage ? parseFloat(storage.total_size_mb) : 0;
   const quotaMB = storage?.quota_mb ?? 100;
   const isAdmin = storage?.is_admin ?? false;
+  const reviewEnabled = storage?.review_enabled !== false; // 默认开启
   const remainMB = isAdmin ? 0 : Math.max(0, quotaMB - usedMB);
   const usagePercent = (!isAdmin && quotaMB > 0) ? Math.min(100, (usedMB / quotaMB) * 100) : 0;
   const progressColor = usagePercent > 90 ? '#ff4d4f' : usagePercent > 70 ? '#faad14' : '#52c41a';
@@ -611,12 +641,12 @@ const UserAssets: React.FC = () => {
         return `${(record.size / 1024 / 1024).toFixed(2)} MB`;
       }
     },
-    {
+    ...(reviewEnabled ? [{
       title: '审核状态',
       key: 'status',
       render: (_: any, record: PluginAsset) => {
         if (record.source === 'builtin') return <Tag color="gold">预设</Tag>;
-        if (record.status === 'uploaded') return <Tag color="blue" icon={<SendOutlined />}>待提交审核</Tag>;
+        if (record.status === 'uploaded' || (record.status === 'approved' && !record.asset_id)) return <Tag color="blue" icon={<SendOutlined />}>待提交审核</Tag>;
         if (record.status === 'processing') return <Tag color="processing" icon={<LoadingOutlined spin />}>审核中</Tag>;
         if (record.status === 'approved') return <Tag color="success" icon={<CheckCircleOutlined />}>已通过</Tag>;
         if (record.status === 'rejected') return (
@@ -630,13 +660,20 @@ const UserAssets: React.FC = () => {
         if (record.status === 'pending') return <Tag color="warning">审核中</Tag>;
         return <Tag>{record.status}</Tag>;
       }
-    },
+    }] : [{
+      title: '状态',
+      key: 'status',
+      render: (_: any, record: PluginAsset) => {
+        if (record.source === 'builtin') return <Tag color="gold">预设</Tag>;
+        return <Tag color="success" icon={<CheckCircleOutlined />}>可用</Tag>;
+      }
+    }]),
     {
       title: '操作',
       key: 'action',
       render: (_: any, record: PluginAsset) => (
         <Space size="middle">
-          {record.source === 'user' && record.status === 'uploaded' && (
+          {reviewEnabled && record.source === 'user' && (record.status === 'uploaded' || (record.status === 'approved' && !record.asset_id)) && (
             <Button
               type="primary"
               size="small"
@@ -669,8 +706,8 @@ const UserAssets: React.FC = () => {
   const renderRightPanel = () => {
     if (!selectedRecord) {
       return (
-        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
-          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)' }}>
+        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: panelBg, borderRadius: 12, border: panelBorder, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+          <div style={{ textAlign: 'center', color: hintText }}>
             <AppstoreOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }} />
             <div style={{ fontSize: 16 }}>请选择一个项目以查看详情</div>
             <div style={{ fontSize: 12, marginTop: 8 }}>支持点击文件夹或素材文件</div>
@@ -683,36 +720,36 @@ const UserAssets: React.FC = () => {
       const g = selectedRecord.data as AssetGroup;
       const groupAssets = assets.filter(a => a.group_id === g.group_id);
       return (
-        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'linear-gradient(180deg, rgba(22,119,255,0.05) 0%, rgba(255,255,255,0.02) 100%)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '32px 24px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: isLight ? 'linear-gradient(180deg, rgba(22,119,255,0.05) 0%, rgba(0,0,0,0.01) 100%)' : 'linear-gradient(180deg, rgba(22,119,255,0.05) 0%, rgba(255,255,255,0.02) 100%)', borderRadius: 12, border: panelBorderStrong, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '32px 24px', textAlign: 'center', borderBottom: panelBorder }}>
             <FolderOutlined style={{ fontSize: 64, color: '#1677ff', marginBottom: 16 }} />
-            <Title level={4} style={{ margin: 0, color: '#fff' }}>{g.name}</Title>
-            <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>{g.description || '暂无描述'}</Text>
+            <Title level={4} style={{ margin: 0, color: mainText, wordBreak: 'break-all' }}>{g.name}</Title>
+            <Text type="secondary" style={{ display: 'block', marginTop: 8, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{g.description || '暂无描述'}</Text>
           </div>
           <div style={{ padding: 24, flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <Text type="secondary">Group ID</Text>
-              <Text copyable={{ text: g.group_id }} style={{ color: 'rgba(255,255,255,0.65)' }}>{g.group_id.substring(0, 16)}...</Text>
+              <Text copyable={{ text: g.group_id }} style={{ color: descText }}>{g.group_id.substring(0, 16)}...</Text>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <Text type="secondary">包含素材</Text>
-              <Text style={{ color: '#fff', fontWeight: 500 }}>{groupAssets.length} 项</Text>
+              <Text style={{ color: mainText, fontWeight: 500 }}>{groupAssets.length} 项</Text>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <Text type="secondary">创建时间</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.65)' }}>{new Date(g.created_at).toLocaleString()}</Text>
+              <Text style={{ color: descText }}>{new Date(g.created_at).toLocaleString()}</Text>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <Text type="secondary">最近更新</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.65)' }}>{g.updated_at ? new Date(g.updated_at).toLocaleString() : new Date(g.created_at).toLocaleString()}</Text>
+              <Text style={{ color: descText }}>{g.updated_at ? new Date(g.updated_at).toLocaleString() : new Date(g.created_at).toLocaleString()}</Text>
             </div>
             <div style={{ flex: 1 }} />
             {/* 操作按钮组 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', gap: 12 }}>
                 <Button 
-                  icon={<EditOutlined style={{ color: 'rgba(255,255,255,0.85)' }} />} 
-                  style={{ flex: 1, background: '#262626', border: 'none', color: 'rgba(255,255,255,0.85)', height: 40, borderRadius: 8, fontSize: 14 }} 
+                  icon={<EditOutlined style={{ color: btnText }} />} 
+                  style={{ flex: 1, background: btnBg, border: 'none', color: btnText, height: 40, borderRadius: 8, fontSize: 14 }} 
                   onClick={() => {
                     setEditingGroup(g);
                     editGroupForm.setFieldsValue({ name: g.name, description: g.description || '' });
@@ -722,7 +759,7 @@ const UserAssets: React.FC = () => {
                 </Button>
                 <Button 
                   icon={<DeleteOutlined style={{ color: '#ff7875' }} />} 
-                  style={{ flex: 1, background: '#262626', border: 'none', color: '#ff7875', height: 40, borderRadius: 8, fontSize: 14 }} 
+                  style={{ flex: 1, background: btnBg, border: 'none', color: '#ff7875', height: 40, borderRadius: 8, fontSize: 14 }} 
                   onClick={() => {
                     Modal.confirm({
                       title: '确认删除文件夹',
@@ -786,13 +823,13 @@ const UserAssets: React.FC = () => {
       const infoRowStyle: React.CSSProperties = {
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '10px 16px',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: panelBorder,
       };
 
       return (
-        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: 'rgba(255,255,255,0.02)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+        <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: panelBg, borderRadius: 12, border: panelBorderStrong, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
           {/* 顶部标题 */}
-          <div style={{ padding: '16px 20px 0', fontSize: 16, fontWeight: 600, color: '#fff' }}>详情</div>
+          <div style={{ padding: '16px 20px 0', fontSize: 16, fontWeight: 600, color: mainText }}>详情</div>
 
           {/* 预览区 */}
           <div style={{ margin: '16px 20px 0', borderRadius: 10, overflow: 'hidden', background: '#111', flexShrink: 0 }}>
@@ -807,13 +844,13 @@ const UserAssets: React.FC = () => {
               </div>
             ) : (
               <div style={{ padding: 40, textAlign: 'center' }}>
-                <FileOutlined style={{ fontSize: 56, color: 'rgba(255,255,255,0.3)' }} />
+                <FileOutlined style={{ fontSize: 56, color: hintText }} />
               </div>
             )}
           </div>
 
           {/* 文件名 */}
-          <div style={{ padding: '16px 20px 0', fontSize: 17, fontWeight: 600, color: '#fff', wordBreak: 'break-all', lineHeight: 1.4 }}>
+          <div style={{ padding: '16px 20px 0', fontSize: 17, fontWeight: 600, color: mainText, wordBreak: 'break-all', lineHeight: 1.4 }}>
             {a.file_name}
           </div>
 
@@ -834,10 +871,10 @@ const UserAssets: React.FC = () => {
                   编辑
                 </Button>
               )}
-              {a.source === 'user' && a.status === 'uploaded' && (
+              {reviewEnabled && a.source === 'user' && (a.status === 'uploaded' || (a.status === 'approved' && !a.asset_id)) && (
                 <Button
                   icon={<SendOutlined />}
-                  style={{ flex: 1, borderRadius: 8, height: 38, fontWeight: 500, background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)', color: '#fff' }}
+                  style={{ flex: 1, borderRadius: 8, height: 38, fontWeight: 500, background: actionBtnBg, borderColor: actionBtnBorder, color: mainText }}
                   loading={submittingReview === a.id}
                   onClick={() => handleSubmitReview(a.id)}
                 >
@@ -848,7 +885,7 @@ const UserAssets: React.FC = () => {
             <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
               <Button
                 icon={<DownloadOutlined />}
-                style={{ flex: 1, borderRadius: 8, height: 38, background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}
+                style={{ flex: 1, borderRadius: 8, height: 38, background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', borderColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)', color: tagText }}
                 onClick={() => {
                   const link = document.createElement('a');
                   link.href = fullUrl;
@@ -888,10 +925,10 @@ const UserAssets: React.FC = () => {
           </div>
 
           {/* 审核状态 */}
-          {a.source === 'user' && (
+          {reviewEnabled && a.source === 'user' && (
             <div style={{ padding: '12px 20px 0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {a.status === 'uploaded' ? <Tag color="blue">待提交审核</Tag> :
+                {(a.status === 'uploaded' || (a.status === 'approved' && !a.asset_id)) ? <Tag color="blue">待提交审核</Tag> :
                  a.status === 'processing' ? <Tag color="processing" icon={<LoadingOutlined spin />}>审核中</Tag> :
                  a.status === 'approved' ? <Tag color="success" icon={<CheckCircleOutlined />}>已通过</Tag> :
                  a.status === 'rejected' ? <Tag color="error" icon={<CloseCircleOutlined />}>已驳回</Tag> :
@@ -909,31 +946,31 @@ const UserAssets: React.FC = () => {
           <div style={{ padding: '20px 20px 0' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
               <div style={{ width: 3, height: 14, borderRadius: 2, background: '#1677ff' }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>基础信息</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: mainText }}>基础信息</span>
             </div>
-            <div style={{ borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+            <div style={{ borderRadius: 10, border: panelBorderStrong, overflow: 'hidden' }}>
               <div style={infoRowStyle}>
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>资产 ID</Text>
-                <Text copyable={a.asset_id ? { text: a.asset_id } : undefined} style={{ color: a.asset_id ? '#fff' : 'rgba(255,255,255,0.35)', fontSize: 13 }}>{a.asset_id || '未生成'}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>资产 ID</Text>
+                <Text copyable={a.asset_id ? { text: a.asset_id } : undefined} style={{ color: a.asset_id ? mainText : dimText, fontSize: 13 }}>{a.asset_id || '未生成'}</Text>
               </div>
               <div style={infoRowStyle}>
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>类型</Text>
-                <Text style={{ color: '#fff', fontSize: 13 }}>{typeLabel}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>类型</Text>
+                <Text style={{ color: mainText, fontSize: 13 }}>{typeLabel}</Text>
               </div>
               <div style={infoRowStyle}>
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>大小</Text>
-                <Text style={{ color: '#fff', fontSize: 13 }}>{sizeStr}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>大小</Text>
+                <Text style={{ color: mainText, fontSize: 13 }}>{sizeStr}</Text>
               </div>
               {mediaInfo?.width && mediaInfo?.height && (
                 <div style={infoRowStyle}>
-                  <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>分辨率</Text>
-                  <Text style={{ color: '#fff', fontSize: 13 }}>{mediaInfo.width} x {mediaInfo.height}</Text>
+                  <Text style={{ color: subText, fontSize: 13 }}>分辨率</Text>
+                  <Text style={{ color: mainText, fontSize: 13 }}>{mediaInfo.width} x {mediaInfo.height}</Text>
                 </div>
               )}
               {mediaInfo?.duration != null && (
                 <div style={infoRowStyle}>
-                  <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>持续时间</Text>
-                  <Text style={{ color: '#fff', fontSize: 13 }}>
+                  <Text style={{ color: subText, fontSize: 13 }}>持续时间</Text>
+                  <Text style={{ color: mainText, fontSize: 13 }}>
                     {mediaInfo.duration >= 3600
                       ? `${Math.floor(mediaInfo.duration / 3600)}:${String(Math.floor((mediaInfo.duration % 3600) / 60)).padStart(2, '0')}:${String(Math.floor(mediaInfo.duration % 60)).padStart(2, '0')}`
                       : `${Math.floor(mediaInfo.duration / 60)}:${String(Math.floor(mediaInfo.duration % 60)).padStart(2, '0')}`
@@ -942,12 +979,12 @@ const UserAssets: React.FC = () => {
                 </div>
               )}
               <div style={infoRowStyle}>
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>创建时间</Text>
-                <Text style={{ color: '#fff', fontSize: 13 }}>{createdDate}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>创建时间</Text>
+                <Text style={{ color: mainText, fontSize: 13 }}>{createdDate}</Text>
               </div>
               <div style={{ ...infoRowStyle, borderBottom: 'none' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>修改时间</Text>
-                <Text style={{ color: '#fff', fontSize: 13 }}>{updatedDate}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>修改时间</Text>
+                <Text style={{ color: mainText, fontSize: 13 }}>{updatedDate}</Text>
               </div>
             </div>
           </div>
@@ -956,17 +993,20 @@ const UserAssets: React.FC = () => {
           <div style={{ padding: '20px 20px 24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
               <div style={{ width: 3, height: 14, borderRadius: 2, background: '#faad14' }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>标签</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: mainText }}>标签</span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {tags.map((tag, idx) => (
                 <Tag key={idx} style={{
                   borderRadius: 16,
                   padding: '2px 12px',
-                  background: idx === 0 ? 'rgba(22,119,255,0.15)' : 'rgba(255,255,255,0.06)',
-                  border: idx === 0 ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.1)',
-                  color: idx === 0 ? '#1677ff' : 'rgba(255,255,255,0.75)',
+                  background: idx === 0 ? 'rgba(22,119,255,0.15)' : tagBg,
+                  border: idx === 0 ? '1px solid rgba(22,119,255,0.3)' : tagBorder,
+                  color: idx === 0 ? '#1677ff' : tagText,
                   fontSize: 13,
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-all',
+                  height: 'auto',
                 }}>{tag}</Tag>
               ))}
             </div>
@@ -991,15 +1031,15 @@ const UserAssets: React.FC = () => {
                   border: '1px solid rgba(22,119,255,0.2)',
                   borderRadius: 30,
                   padding: '6px 16px',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.15), inset 0 1px 1px rgba(255,255,255,0.05)',
-                  color: 'rgba(255,255,255,0.7)',
+                  boxShadow: isLight ? '0 4px 16px rgba(0,0,0,0.05)' : '0 4px 16px rgba(0,0,0,0.15), inset 0 1px 1px rgba(255,255,255,0.05)',
+                  color: isLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)',
                 }}>
                   <div className="hide-on-mobile" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <CloudOutlined style={{ color: '#1677ff' }} />
                     <span>文件夹: <Text style={{ color: '#1677ff', fontWeight: 600 }}>{storage.folder || '未初始化'}</Text></span>
                   </div>
 
-                  <div className="hide-on-mobile" style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+                  <div className="hide-on-mobile" style={{ width: 1, height: 12, background: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }} />
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span>已用: <Text style={{ color: progressColor, fontWeight: 600, textShadow: `0 0 10px ${progressColor}40` }}>{usedMB.toFixed(1)} <span style={{ fontSize: 11 }}>MB</span></Text></span>
@@ -1027,10 +1067,10 @@ const UserAssets: React.FC = () => {
                     )}
                   </div>
 
-                  <div style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.15)' }} />
+                  <div style={{ width: 1, height: 12, background: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }} />
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>文件数量: <Text style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{storage.file_count || 0}</Text></span>
+                    <span>文件数量: <Text style={{ color: isLight ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{storage.file_count || 0}</Text></span>
                   </div>
                 </div>
               )}
@@ -1061,7 +1101,7 @@ const UserAssets: React.FC = () => {
                 ) : (
                   <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />
                 )}
-                <Text style={{ color: '#fff', fontSize: 14, fontWeight: 500 }}>
+                <Text style={{ color: isLight ? '#1f2937' : '#fff', fontSize: 14, fontWeight: 500 }}>
                   {batchProgress.done < batchProgress.total
                     ? `正在${batchProgress.action === 'upload' ? '上传' : batchProgress.action === 'submit' ? '提交' : '删除'}... (${batchProgress.done}/${batchProgress.total})`
                     : `${batchProgress.action === 'upload' ? '上传' : batchProgress.action === 'submit' ? '提交' : '删除'}完成 (${batchProgress.done}/${batchProgress.total})`
@@ -1072,13 +1112,13 @@ const UserAssets: React.FC = () => {
                 <Tag color="red" style={{ margin: 0 }}>{batchProgress.failed} 个失败</Tag>
               )}
               {batchProgress.done >= batchProgress.total && (
-                <Button type="text" size="small" onClick={() => setBatchProgress(null)} style={{ color: 'rgba(255,255,255,0.45)' }}>关闭</Button>
+                <Button type="text" size="small" onClick={() => setBatchProgress(null)} style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>关闭</Button>
               )}
             </div>
             <Progress
               percent={Math.round((batchProgress.done / batchProgress.total) * 100)}
               strokeColor={batchProgress.action === 'delete' ? { from: '#ff4d4f', to: '#ff7875' } : { from: '#1677ff', to: '#52c41a' }}
-              trailColor="rgba(255,255,255,0.06)"
+              trailColor={isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)"}
               size="small"
               status={batchProgress.done < batchProgress.total ? 'active' : batchProgress.failed > 0 ? 'exception' : 'success'}
             />
@@ -1095,11 +1135,23 @@ const UserAssets: React.FC = () => {
               backdrop-filter: blur(10px) !important;
               transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
             }
+            body[data-theme='light'] .asset-btn-secondary {
+              background: #fff !important;
+              border: 1px solid #d9d9d9 !important;
+              color: rgba(0, 0, 0, 0.85) !important;
+              box-shadow: 0 2px 0 rgba(0, 0, 0, 0.02) !important;
+            }
             .asset-btn-secondary:hover {
               background: linear-gradient(145deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 100%) !important;
               border-color: rgba(255,255,255,0.3) !important;
               box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 10px rgba(255,255,255,0.05) !important;
               transform: translateY(-1px) !important;
+            }
+            body[data-theme='light'] .asset-btn-secondary:hover {
+              border-color: #1677ff !important;
+              color: #1677ff !important;
+              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+              background: #fff !important;
             }
             .asset-btn-secondary:active {
               transform: translateY(1px) !important;
@@ -1173,7 +1225,7 @@ const UserAssets: React.FC = () => {
             {/* 上方横向分类导航 */}
             <div style={{
               display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 20px',
-              background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)'
+              background: tagBg, borderRadius: 8, border: tagBorder
             }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* 一级分类：预设分类 + 我的素材 */}
@@ -1227,7 +1279,6 @@ const UserAssets: React.FC = () => {
                           </Button>
                         </Dropdown>
                         
-                        {selectedKey !== 'my_real_portrait' && (
                         <Button 
                           type="primary"
                           className="asset-btn-primary" 
@@ -1239,13 +1290,12 @@ const UserAssets: React.FC = () => {
                             }
                             setIsUploadModalOpen(true);
                             setTimeout(() => {
-                              uploadForm.setFieldsValue({ category: selectedKey === 'my_virtual_portrait' ? '虚拟人像' : '真人人像' });
+                              uploadForm.setFieldsValue({ category: '虚拟人像' });
                             }, 50);
                           }}
                         >
                           上传素材
                         </Button>
-                        )}
 
                         {selectedKey === 'my_virtual_portrait' && (
                           <Button className="asset-btn-secondary" icon={<FolderOutlined />} onClick={() => setIsGroupModalOpen(true)}>
@@ -1286,7 +1336,7 @@ const UserAssets: React.FC = () => {
                 <div style={{ marginBottom: 32 }}>
                   <div style={{ marginBottom: 16 }}>
                     <span style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>素材资产文件夹列表</span>
-                    <Text style={{ marginLeft: 10, color: 'rgba(255,255,255,0.45)', fontSize: 13, wordBreak: 'break-all' }}>
+                    <Text style={{ marginLeft: 10, color: hintText, fontSize: 13, wordBreak: 'break-all' }}>
                       （已创建 {groups.length} 个素材组
                       {storage?.virtual_portrait_quota !== undefined && (
                         <> / 可创建素材组 {storage.virtual_portrait_quota} 个</>
@@ -1310,22 +1360,22 @@ const UserAssets: React.FC = () => {
                           style={{ 
                             width: '100%', 
                             borderRadius: 12, 
-                            background: isSelected ? 'rgba(255,255,255,0.1)' : '#262626', 
+                            background: isSelected ? (isLight ? 'rgba(22,119,255,0.1)' : 'rgba(255,255,255,0.1)') : (isLight ? '#fafafa' : '#262626'), 
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                             padding: '10px 14px',
                             gap: 12,
-                            border: isSelected ? '1px solid rgba(255,255,255,0.15)' : '1px solid transparent',
+                            border: isSelected ? (isLight ? '1px solid #1677ff' : '1px solid rgba(255,255,255,0.15)') : '1px solid transparent',
                             transition: 'all 0.2s ease',
                           }}
                         >
-                          <div style={{ width: 44, height: 44, borderRadius: 8, background: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <div style={{ width: 44, height: 44, borderRadius: 8, background: isLight ? '#f0f0f0' : '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             <FolderFilled style={{ fontSize: 24, color: '#91caff' }} />
                           </div>
                           <div style={{ overflow: 'hidden' }}>
-                            <div style={{ color: '#fff', fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</div>
-                            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, marginTop: 2 }}>{groupAssetsCount} 项</div>
+                            <div style={{ color: isLight ? '#1f2937' : '#fff', fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</div>
+                            <div style={{ color: hintText, fontSize: 13, marginTop: 2 }}>{groupAssetsCount} 项</div>
                           </div>
                         </div>
                       );
@@ -1347,9 +1397,9 @@ const UserAssets: React.FC = () => {
                   gap: 12,
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <div style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>
+                    <div style={{ fontSize: 16, fontWeight: 500, color: isLight ? '#1f2937' : '#fff' }}>
                       {currentGroup ? currentGroup.name : currentCategoryName}
-                      <Text style={{ marginLeft: 12, color: 'rgba(255,255,255,0.35)', fontSize: 13, fontWeight: 'normal' }}>
+                      <Text style={{ marginLeft: 12, color: dimText, fontSize: 13, fontWeight: 'normal' }}>
                         共 {currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id).length : assets.length} 项
                       </Text>
                     </div>
@@ -1402,11 +1452,12 @@ const UserAssets: React.FC = () => {
                         }
                       }}
                     >
-                      <span style={{ color: 'rgba(255,255,255,0.65)' }}>全选</span>
+                      <span style={{ color: descText }}>全选</span>
                     </Checkbox>
                     {selectedAssetIds.size > 0 && (
                       <>
-                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>已选 {selectedAssetIds.size} 项</Text>
+                        <Text style={{ color: hintText, fontSize: 13 }}>已选 {selectedAssetIds.size} 项</Text>
+                        {reviewEnabled && (
                         <Button
                           type="primary"
                           size="small"
@@ -1417,6 +1468,7 @@ const UserAssets: React.FC = () => {
                         >
                           批量提交
                         </Button>
+                        )}
                         <Button
                           danger
                           size="small"
@@ -1431,7 +1483,7 @@ const UserAssets: React.FC = () => {
                           type="text"
                           size="small"
                           onClick={() => setSelectedAssetIds(new Set())}
-                          style={{ color: 'rgba(255,255,255,0.45)' }}
+                          style={{ color: hintText }}
                         >
                           取消选择
                         </Button>
@@ -1485,7 +1537,7 @@ const UserAssets: React.FC = () => {
                           width: '100%',
                           aspectRatio: '1/1',
                           borderRadius: 8,
-                          background: '#1a1a1a',
+                          background: isLight ? '#f0f0f0' : '#1a1a1a',
                           border: isChecked ? '2px solid #1677ff' : isSelected ? '2px solid #91caff' : '2px solid transparent',
                           overflow: 'hidden',
                           display: 'flex',
@@ -1518,36 +1570,36 @@ const UserAssets: React.FC = () => {
                           </div>
                           
                           {/* 待审核标记 */}
-                          {asset.status !== 'approved' && asset.source === 'user' && (
+                          {(asset.status !== 'approved' || !asset.asset_id) && asset.source === 'user' && (
                             <div style={{
                               position: 'absolute',
                               top: 8,
                               right: 8,
                               zIndex: 10,
-                              background: asset.status === 'processing' ? 'rgba(22,119,255,0.8)' : asset.status === 'rejected' ? 'rgba(255,77,79,0.8)' : 'rgba(255,255,255,0.2)',
+                              background: asset.status === 'processing' ? 'rgba(22,119,255,0.8)' : asset.status === 'rejected' ? 'rgba(255,77,79,0.8)' : (isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.2)'),
                               padding: '2px 6px',
                               borderRadius: 4,
                               fontSize: 10,
                               color: '#fff',
                               backdropFilter: 'blur(4px)'
                             }}>
-                              {asset.status === 'uploaded' ? '待审核' : asset.status === 'processing' ? '审核中' : asset.status === 'rejected' ? '已驳回' : asset.status}
+                              {(asset.status === 'uploaded' || (asset.status === 'approved' && !asset.asset_id)) ? '待审核' : asset.status === 'processing' ? '审核中' : asset.status === 'rejected' ? '已驳回' : asset.status}
                             </div>
                           )}
                           
                           {isImage ? (
                             <img src={fullUrl} alt={asset.file_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.45)' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: hintText }}>
                               <FileOutlined style={{ fontSize: 48 }} />
                               <div style={{
                                 position: 'absolute',
                                 bottom: 12,
                                 right: 12,
-                                background: 'rgba(255,255,255,0.2)',
+                                background: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.2)',
                                 padding: '2px 8px',
                                 borderRadius: 4,
-                                color: '#fff',
+                                color: isLight ? '#1f2937' : '#fff',
                                 fontSize: 12,
                                 fontWeight: 600
                               }}>{ext}</div>
@@ -1557,7 +1609,7 @@ const UserAssets: React.FC = () => {
                         
                         <div style={{ marginTop: 12 }}>
                           <div style={{
-                            color: '#fff',
+                            color: isLight ? '#1f2937' : '#fff',
                             fontSize: 14,
                             fontWeight: 500,
                             whiteSpace: 'nowrap',
@@ -1570,7 +1622,7 @@ const UserAssets: React.FC = () => {
                           <div style={{
                             display: 'flex',
                             justifyContent: 'space-between',
-                            color: 'rgba(255,255,255,0.55)',
+                            color: subText,
                             fontSize: 12
                           }}>
                             <span>{ext} • {sizeMB}</span>
@@ -1602,11 +1654,15 @@ const UserAssets: React.FC = () => {
         cancelText="取消"
       >
         <Form form={groupForm} layout="vertical">
-          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}>
-            <Input placeholder="输入素材资产组合名称..." maxLength={64} />
+          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>名称最多 64 个字符，建议使用简短易识别的名称</span>}
+          >
+            <Input placeholder="输入素材资产组合名称..." maxLength={64} showCount />
           </Form.Item>
-          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}>
-            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} />
+          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>描述最多 300 个字符</span>}
+          >
+            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} showCount />
           </Form.Item>
         </Form>
       </Modal>
@@ -1686,11 +1742,12 @@ const UserAssets: React.FC = () => {
             >
               <Button icon={<UploadOutlined />}>选择文件（可多选）</Button>
             </Upload>
-            <div style={{ marginTop: 12, color: 'rgba(255,255,255,0.45)', fontSize: 12, lineHeight: '20px' }}>
+            <div style={{ marginTop: 12, color: hintText, fontSize: 12, lineHeight: '20px' }}>
               <div>• 图像：jpeg、png、webp、bmp、tiff、gif、heic/heif（≤ 30 MB，宽高 300-6000px）</div>
               <div>• 视频：mp4、mov、webm、avi、mkv（≤ 300 MB）</div>
               <div>• 音频：mp3、wav、aac、flac、ogg、m4a（≤ 100 MB）</div>
-              <div>• 支持混合选择多种类型文件，上传后需提交审核</div>
+              <div>• 支持混合选择多种类型文件{reviewEnabled ? '，上传后需提交审核' : ''}</div>
+              <div>• 文件名最多 64 个字符，超出部分将自动截取</div>
             </div>
           </Form.Item>
           <Form.Item name="category" hidden>
@@ -1729,11 +1786,15 @@ const UserAssets: React.FC = () => {
         }}
       >
         <Form form={editGroupForm} layout="vertical">
-          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}>
-            <Input placeholder="输入素材资产组合名称..." maxLength={64} />
+          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>名称最多 64 个字符</span>}
+          >
+            <Input placeholder="输入素材资产组合名称..." maxLength={64} showCount />
           </Form.Item>
-          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}>
-            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} />
+          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>描述最多 300 个字符</span>}
+          >
+            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} showCount />
           </Form.Item>
         </Form>
       </Modal>
@@ -1749,13 +1810,14 @@ const UserAssets: React.FC = () => {
         cancelText="取消"
       >
         <Form form={editForm} layout="vertical">
-          <Form.Item label="素材名称" name="file_name" rules={[{ required: true, message: '请输入素材名称' }]}>
-            <Input placeholder="输入新的素材名称" />
+          <Form.Item label="素材名称" name="file_name" rules={[{ required: true, message: '请输入素材名称' }]}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>名称最多 64 个字符</span>}
+          >
+            <Input placeholder="输入新的素材名称" maxLength={64} showCount />
           </Form.Item>
           <Form.Item label="素材分类" name="category" rules={[{ required: true, message: '请选择分类' }]}>
             <Select placeholder="请选择分类" disabled>
-              <Select.Option value="真人人像">真人人像</Select.Option>
-              <Select.Option value="虚拟人像">虚拟人像</Select.Option>
+              <Select.Option value="虚拟人像">虚拟素材库</Select.Option>
             </Select>
           </Form.Item>
         </Form>

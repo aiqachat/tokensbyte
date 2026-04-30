@@ -52,20 +52,13 @@ pub struct ChannelConfigSafe {
 
 impl From<ChannelConfig> for ChannelConfigSafe {
     fn from(c: ChannelConfig) -> Self {
-        let masked_key = if c.api_key.len() > 8 {
-            format!("{}******{}", &c.api_key[..4], &c.api_key[c.api_key.len()-4..])
-        } else if c.api_key.is_empty() {
-            String::new()
-        } else {
-            "******".to_string()
-        };
         ChannelConfigSafe {
             id: c.id,
             name: c.name,
             provider_type: c.provider_type,
             base_url: c.base_url,
-            api_key: masked_key,
             has_api_key: !c.api_key.is_empty(),
+            api_key: c.api_key,
             remark: c.remark,
             created_at: c.created_at,
             updated_at: c.updated_at,

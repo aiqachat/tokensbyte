@@ -1,14 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
 import AdminPresetAssets from './AssetManager/AdminPresetAssets';
 import RelayConvertAssets from './AssetManager/RelayConvertAssets';
-import TeamConfig from './TeamMarketing/TeamConfig';
 import JsonView from '@uiw/react-json-view';
 import { darkTheme } from '@uiw/react-json-view/dark';
+import { lightTheme } from '@uiw/react-json-view/light';
+import { useThemeStore } from '../../store/theme';
+
+// ── 插件组件动态加载（删除插件源文件不影响系统运行） ──
+const safeLazy = (loader: () => Promise<any>) =>
+  React.lazy(() =>
+    loader().catch(() => ({ default: () => <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>该插件模块暂未安装</div> }))
+  );
+
+const TeamConfig = safeLazy(() => import('./TeamMarketing/TeamConfig'));
+const PoolManager = safeLazy(() => import('./VolcenginePool/PoolManager'));
+const GptImagePoolManager = safeLazy(() => import('./GptImagePool/PoolManager'));
+const SiteIconsManager = safeLazy(() => import('./SiteIcons/SiteIconsManager'));
+
+/** 插件组件包装器：Suspense + 降级 */
+const PluginModule: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' }}><Spin /></div>}>{children}</Suspense>
+);
 
 const { Title, Text } = Typography;
 
@@ -38,6 +55,7 @@ interface ModerationConfig {
   volc_project_name: string;
   volc_group_id: string;
   is_configured: boolean;
+  review_enabled: boolean;
 }
 
 // 火山引擎 TOS 地域及访问域名（来自官方文档）
@@ -54,9 +72,14 @@ const pluginIcons: Record<string, React.ReactNode> = {
   asset_manager: <PictureOutlined style={{ fontSize: 20 }} />,
   team_marketing: <TeamOutlined style={{ fontSize: 20 }} />,
   playground: <ExperimentOutlined style={{ fontSize: 20 }} />,
-};
+  volcengine_pool: <CloudServerOutlined style={{ fontSize: 20 }} />,
+  gptimage_pool: <PictureOutlined style={{ fontSize: 20 }} />,
+  model_marketplace: <ShopOutlined style={{ fontSize: 20 }} />,
+  site_icons: <AppstoreOutlined style={{ fontSize: 20 }} /> };
 
 const PluginConfigInner: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const { message } = App.useApp();
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
@@ -75,6 +98,11 @@ const PluginConfigInner: React.FC = () => {
   const [levelApiEnabled, setLevelApiEnabled] = useState<Record<string, boolean>>({});
   const [defaultApiEnabled, setDefaultApiEnabled] = useState<boolean>(true);
 
+  // 管理员分组（系统增强插件使用）
+  const [adminGroups, setAdminGroups] = useState<{id: number; name: string; description?: string}[]>([]);
+  const [selectedAdminGroups, setSelectedAdminGroups] = useState<number[]>([]);
+  const [isAllAdminGroups, setIsAllAdminGroups] = useState(true);
+
   // 存储配置
   const [storageConfig, setStorageConfig] = useState<StorageConfig | null>(null);
   const [storageForm] = Form.useForm();
@@ -83,7 +111,7 @@ const PluginConfigInner: React.FC = () => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [activeTabKey, setActiveTabKey] = useState(() => {
     const hash = window.location.hash.replace('#', '');
-    if (['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log', 'team_config', 'pg_storage'].includes(hash)) return hash;
+    if (['audit_log', 'basic', 'storage', 'moderation', 'preset', 'api_log', 'team_config', 'pg_storage', 'marketplace_models'].includes(hash)) return hash;
     return 'basic'; // default to basic, will be adjusted when plugin loads
   });
   const handleTabChange = (key: string) => {
@@ -118,6 +146,57 @@ const PluginConfigInner: React.FC = () => {
   const [pgCurrentId, setPgCurrentId] = useState<number | null>(null);
   const [pgSelectedSchemeId, setPgSelectedSchemeId] = useState<string>('');
 
+  // ====== 模型广场管理 (Model Marketplace) 配置 ======
+  const [mpModels, setMpModels] = useState<any[]>([]);
+  const [savingMarketplace, setSavingMarketplace] = useState(false);
+  const [mpSearchKeyword, setMpSearchKeyword] = useState('');
+
+  const fetchMarketplaceConfig = async () => {
+    try {
+      const res = await (request.get(`/plugins/${name}/marketplace-models`) as Promise<any>);
+      if (res.models) setMpModels(res.models);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    if (name === 'model_marketplace') {
+      fetchMarketplaceConfig();
+    }
+  }, [name]);
+
+  const handleSaveMarketplaceConfig = async () => {
+    try {
+      setSavingMarketplace(true);
+      const payload = {
+        models: mpModels.map(m => ({
+          id: m.id,
+          enabled: m.mp_enabled,
+          sort_order: m.mp_sort_order || 0,
+          description: m.mp_description || '' }))
+      };
+      await request.post(`/plugins/${name}/marketplace-models`, payload);
+      message.success('模型广场配置保存成功');
+    } catch (e) {
+      message.error('保存失败');
+    } finally {
+      setSavingMarketplace(false);
+    }
+  };
+
+  const handleMpToggle = (id: number, enabled: boolean) => {
+    setMpModels(prev => prev.map(m => m.id === id ? { ...m, mp_enabled: enabled } : m));
+  };
+
+  const handleMpSortChange = (id: number, sort: number) => {
+    setMpModels(prev => prev.map(m => m.id === id ? { ...m, mp_sort_order: sort } : m));
+  };
+
+  const handleMpDescChange = (id: number, desc: string) => {
+    setMpModels(prev => prev.map(m => m.id === id ? { ...m, mp_description: desc } : m));
+  };
+
   const fetchPlaygroundConfigBase = async () => {
     try {
       const res = await (request.get(`/plugins/${name}/playground-config`) as Promise<any>);
@@ -142,8 +221,7 @@ const PluginConfigInner: React.FC = () => {
           id: m.id,
           mid: m.mid || '',
           enabled: m.pg_enabled,
-          scheme_id: m.pg_scheme_id || null,
-        }))
+          scheme_id: m.pg_scheme_id || null }))
       };
       await request.post(`/plugins/${name}/playground-config`, payload);
       message.success('体验配置保存成功');
@@ -319,35 +397,68 @@ const PluginConfigInner: React.FC = () => {
       const found = pluginRes.plugins?.find((p: Plugin) => p.name === name);
       if (found) {
         setPlugin(found);
-        if (found.allowed_levels === 'all') {
-          setIsAllLevels(true);
-          setSelectedLevels([]);
+        if (found.category === 'system') {
+          // 系统增强插件：解析管理员分组权限
+          if (found.allowed_levels === 'all') {
+            setIsAllAdminGroups(true);
+            setSelectedAdminGroups([]);
+          } else {
+            setIsAllAdminGroups(false);
+            setSelectedAdminGroups(found.allowed_levels.split(',').filter(Boolean).map(Number).filter((n: number) => !isNaN(n)));
+          }
         } else {
-          setIsAllLevels(false);
-          setSelectedLevels(found.allowed_levels.split(',').filter(Boolean));
+          if (found.allowed_levels === 'all') {
+            setIsAllLevels(true);
+            setSelectedLevels([]);
+          } else {
+            setIsAllLevels(false);
+            setSelectedLevels(found.allowed_levels.split(',').filter(Boolean));
+          }
         }
       }
 
       const allLevels = Array.isArray(levelRes) ? levelRes : (levelRes.data || levelRes.levels || []);
       setLevels(allLevels);
 
+      // 系统增强插件：加载管理员分组
+      try {
+        const agRes = await (request.get('/admin_groups') as any);
+        const groups = agRes?.data || agRes || [];
+        if (Array.isArray(groups)) setAdminGroups(groups);
+      } catch { /* 忽略 */ }
+
       if (storageRes) {
         setStorageConfig(storageRes);
-        // 加载等级配额
+        // 加载等级配额 (统一转换为 ULID key)
         if (storageRes.level_quotas) {
-          setLevelQuotas(storageRes.level_quotas);
+          const lq: Record<string, number> = {};
+          allLevels.forEach((lv: any) => {
+            const lvIdStr = lv.id.toString();
+            lq[lvIdStr] = storageRes.level_quotas[lvIdStr] ?? storageRes.level_quotas[lv.group_key];
+          });
+          setLevelQuotas(lq);
         }
         if (storageRes.default_quota != null) {
           setDefaultQuota(storageRes.default_quota);
         }
         if (storageRes.level_max_folders) {
-          setLevelMaxFolders(storageRes.level_max_folders);
+          const lmf: Record<string, number> = {};
+          allLevels.forEach((lv: any) => {
+            const lvIdStr = lv.id.toString();
+            lmf[lvIdStr] = storageRes.level_max_folders[lvIdStr] ?? storageRes.level_max_folders[lv.group_key];
+          });
+          setLevelMaxFolders(lmf);
         }
         if (storageRes.default_max_folders != null) {
           setDefaultMaxFolders(storageRes.default_max_folders);
         }
         if (storageRes.level_max_files_per_folder) {
-          setLevelMaxFilesPerFolder(storageRes.level_max_files_per_folder);
+          const lmfpf: Record<string, number> = {};
+          allLevels.forEach((lv: any) => {
+            const lvIdStr = lv.id.toString();
+            lmfpf[lvIdStr] = storageRes.level_max_files_per_folder[lvIdStr] ?? storageRes.level_max_files_per_folder[lv.group_key];
+          });
+          setLevelMaxFilesPerFolder(lmfpf);
         }
         if (storageRes.default_max_files_per_folder != null) {
           setDefaultMaxFilesPerFolder(storageRes.default_max_files_per_folder);
@@ -360,20 +471,20 @@ const PluginConfigInner: React.FC = () => {
         const apiDefault = storageRes.default_api_enabled ?? true;
         const initialApiEnabled: Record<string, boolean> = {};
         allLevels.forEach((lv: any) => {
-          initialApiEnabled[lv.group_key] = savedApiEnabled[lv.group_key] ?? apiDefault;
+          const lvIdStr = lv.id.toString();
+          initialApiEnabled[lvIdStr] = savedApiEnabled[lvIdStr] ?? savedApiEnabled[lv.group_key] ?? apiDefault;
         });
         setLevelApiEnabled(initialApiEnabled);
         // 延迟设置表单值，等待 Tabs 内的 Form 组件渲染完毕
         setTimeout(() => {
           storageForm.setFieldsValue({
             tos_access_key: storageRes.tos_access_key || '',
-            tos_secret_key: '',
+            tos_secret_key: storageRes.tos_secret_key || '',
             tos_endpoint: storageRes.tos_endpoint || '',
             tos_region: storageRes.tos_region || '',
             tos_bucket: storageRes.tos_bucket || '',
             tos_path_prefix: storageRes.tos_path_prefix || '',
-            tos_custom_domain: storageRes.tos_custom_domain || '',
-          });
+            tos_custom_domain: storageRes.tos_custom_domain || '' });
         }, 0);
       }
 
@@ -382,11 +493,10 @@ const PluginConfigInner: React.FC = () => {
         setTimeout(() => {
           moderationForm.setFieldsValue({
             volc_access_key: moderationRes.volc_access_key || '',
-            volc_secret_key: '',
+            volc_secret_key: moderationRes.volc_secret_key || '',
             volc_app_id: moderationRes.volc_app_id || '',
             volc_project_name: moderationRes.volc_project_name || 'default',
-            volc_group_id: moderationRes.volc_group_id || '',
-          });
+            volc_group_id: moderationRes.volc_group_id || '' });
         }, 0);
       }
     } catch (error) {
@@ -409,10 +519,20 @@ const PluginConfigInner: React.FC = () => {
 
   const handleSaveBasic = async () => {
     if (!plugin) return;
-    const allowed = isAllLevels ? 'all' : selectedLevels.join(',');
-    if (!isAllLevels && selectedLevels.length === 0) {
-      message.warning('请至少选择一个用户等级');
-      return;
+    let allowed: string;
+    if (plugin.category === 'system') {
+      // 系统增强插件：保存管理员分组 ID
+      allowed = isAllAdminGroups ? 'all' : selectedAdminGroups.join(',');
+      if (!isAllAdminGroups && selectedAdminGroups.length === 0) {
+        message.warning('请至少选择一个管理员分组');
+        return;
+      }
+    } else {
+      allowed = isAllLevels ? 'all' : selectedLevels.join(',');
+      if (!isAllLevels && selectedLevels.length === 0) {
+        message.warning('请至少选择一个用户等级');
+        return;
+      }
     }
     try {
       setSaving(true);
@@ -425,8 +545,7 @@ const PluginConfigInner: React.FC = () => {
         level_max_files_per_folder: levelMaxFilesPerFolder,
         default_max_files_per_folder: defaultMaxFilesPerFolder,
         level_api_enabled: levelApiEnabled,
-        default_api_enabled: defaultApiEnabled,
-      });
+        default_api_enabled: defaultApiEnabled });
       message.success('配置已保存');
     } catch (error) {
       message.error('保存失败');
@@ -463,11 +582,21 @@ const PluginConfigInner: React.FC = () => {
     }
   };
 
+  // 审核开关状态
+  const [reviewEnabled, setReviewEnabled] = useState(false);
+
+  // 同步服务端的 review_enabled 状态
+  useEffect(() => {
+    if (moderationConfig) {
+      setReviewEnabled(moderationConfig.review_enabled === true);
+    }
+  }, [moderationConfig]);
+
   const handleSaveModeration = async () => {
     try {
       const values = await moderationForm.validateFields();
       setSavingModeration(true);
-      await request.post(`/plugins/${name}/moderation-config`, values);
+      await request.post(`/plugins/${name}/moderation-config`, { ...values, review_enabled: reviewEnabled });
       message.success('审核配置已保存');
     } catch (error: any) {
       if (error?.errorFields) return; // 表单验证失败
@@ -486,6 +615,7 @@ const PluginConfigInner: React.FC = () => {
     return <div style={{ textAlign: 'center', padding: 80 }}><Text type="secondary">插件不存在</Text></div>;
   }
 
+  const isSystemPlugin = plugin.category === 'system';
   const isEnabled = plugin.is_enabled === 1;
 
   // ====== 基本配置 Tab ======
@@ -493,14 +623,15 @@ const PluginConfigInner: React.FC = () => {
     <div>
       {/* 启用状态 */}
       <div style={{
-        background: '#141414', borderRadius: 8,
-        border: '1px solid rgba(255,255,255,0.08)',
+        background: _isLight ? '#fff' : '#141414', borderRadius: 8,
+        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
         padding: '16px 20px', marginBottom: 16,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <Text strong style={{ color: '#fff', fontSize: 14 }}>启用状态</Text><br />
-          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>开启后，符合等级要求的用户将在菜单中看到此功能</Text>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>启用状态</Text><br />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>
+            {isSystemPlugin ? '开启后，有权限的管理员将在管理后台看到此插件' : '开启后，符合等级要求的用户将在菜单中看到此功能'}
+          </Text>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Tag color={isEnabled ? 'success' : 'default'} style={{ margin: 0 }}>{isEnabled ? '运行中' : '已停用'}</Tag>
@@ -508,82 +639,134 @@ const PluginConfigInner: React.FC = () => {
         </div>
       </div>
 
-      {/* 用户等级 */}
+      {/* 系统增强插件：管理员分组权限 */}
+      {isSystemPlugin ? (
+        <div style={{
+          background: _isLight ? '#fff' : '#141414', borderRadius: 8,
+          border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16 }}>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>管理员分组权限</Text><br />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置哪些管理员分组可以在管理后台看到并管理此插件</Text>
+          <Divider style={{ borderColor: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
+
+          <div
+            style={{ padding: '12px 16px', borderRadius: 6, border: isAllAdminGroups ? '1px solid rgba(250,140,22,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'), background: isAllAdminGroups ? 'rgba(250,140,22,0.06)' : 'transparent', cursor: 'pointer', marginBottom: 8, transition: 'all 0.15s' }}
+            onClick={() => { setIsAllAdminGroups(true); setSelectedAdminGroups([]); }}
+          >
+            <Checkbox checked={isAllAdminGroups}><Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>所有管理员分组可见</Text></Checkbox>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12, display: 'block', marginLeft: 24, marginTop: 2 }}>所有管理员分组均可管理此插件</Text>
+          </div>
+          <div
+            style={{ padding: '12px 16px', borderRadius: 6, border: !isAllAdminGroups ? '1px solid rgba(250,140,22,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'), background: !isAllAdminGroups ? 'rgba(250,140,22,0.06)' : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}
+            onClick={() => setIsAllAdminGroups(false)}
+          >
+            <Checkbox checked={!isAllAdminGroups}><Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>仅指定管理员分组可见</Text></Checkbox>
+          </div>
+
+          {!isAllAdminGroups && (
+            <div style={{ marginTop: 14 }}>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedAdminGroups.length} 个分组</Text>
+              {adminGroups.map(ag => {
+                const isSelected = selectedAdminGroups.includes(ag.id);
+                return (
+                  <div key={ag.id}
+                    style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(250,140,22,0.3)' : (_isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)'), background: isSelected ? 'rgba(250,140,22,0.04)' : 'transparent', marginBottom: 6, cursor: 'pointer', transition: 'all 0.15s' }}
+                    onClick={() => setSelectedAdminGroups(prev => prev.includes(ag.id) ? prev.filter(id => id !== ag.id) : [...prev, ag.id])}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Checkbox checked={isSelected} />
+                      <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{ag.name}</Text>
+                      {ag.description && <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>({ag.description})</Text>}
+                    </div>
+                  </div>
+                );
+              })}
+              {adminGroups.length === 0 && <Text style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', display: 'block', textAlign: 'center', padding: 16, fontSize: 13 }}>暂无管理员分组，请先在「站点设置 → 管理员分组」中创建</Text>}
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
+
+      {/* 用户增强插件：用户等级 */}
       <div style={{
-        background: '#141414', borderRadius: 8,
-        border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
-      }}>
-        <Text strong style={{ color: '#fff', fontSize: 14 }}>开放用户等级</Text><br />
-        <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置哪些用户等级可以使用此插件功能</Text>
-        <Divider style={{ borderColor: 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
+        background: _isLight ? '#fff' : '#141414', borderRadius: 8,
+        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16 }}>
+        <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>开放用户等级</Text><br />
+        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置哪些用户等级可以使用此插件功能</Text>
+        <Divider style={{ borderColor: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
 
         <div
-          style={{ padding: '12px 16px', borderRadius: 6, border: isAllLevels ? '1px solid rgba(22,119,255,0.4)' : '1px solid rgba(255,255,255,0.08)', background: isAllLevels ? 'rgba(22,119,255,0.06)' : 'transparent', cursor: 'pointer', marginBottom: 8, transition: 'all 0.15s' }}
+          style={{ padding: '12px 16px', borderRadius: 6, border: isAllLevels ? '1px solid rgba(22,119,255,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'), background: isAllLevels ? 'rgba(22,119,255,0.06)' : 'transparent', cursor: 'pointer', marginBottom: 8, transition: 'all 0.15s' }}
           onClick={() => { setIsAllLevels(true); setSelectedLevels([]); }}
         >
-          <Checkbox checked={isAllLevels}><Text style={{ color: '#fff', fontSize: 13 }}>对所有用户等级开放</Text></Checkbox>
-          <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, display: 'block', marginLeft: 24, marginTop: 2 }}>包含当前及以后新增的所有用户等级</Text>
+          <Checkbox checked={isAllLevels}><Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>对所有用户等级开放</Text></Checkbox>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12, display: 'block', marginLeft: 24, marginTop: 2 }}>包含当前及以后新增的所有用户等级</Text>
         </div>
         <div
-          style={{ padding: '12px 16px', borderRadius: 6, border: !isAllLevels ? '1px solid rgba(22,119,255,0.4)' : '1px solid rgba(255,255,255,0.08)', background: !isAllLevels ? 'rgba(22,119,255,0.06)' : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}
+          style={{ padding: '12px 16px', borderRadius: 6, border: !isAllLevels ? '1px solid rgba(22,119,255,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'), background: !isAllLevels ? 'rgba(22,119,255,0.06)' : 'transparent', cursor: 'pointer', transition: 'all 0.15s' }}
           onClick={() => setIsAllLevels(false)}
         >
-          <Checkbox checked={!isAllLevels}><Text style={{ color: '#fff', fontSize: 13 }}>仅对指定用户等级开放</Text></Checkbox>
+          <Checkbox checked={!isAllLevels}><Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>按等级单独设置（覆盖全局默认值）</Text></Checkbox>
         </div>
 
         {!isAllLevels && (
           <div style={{ marginTop: 14 }}>
-            <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedLevels.length} 个等级</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 10 }}>已选择 {selectedLevels.length} 个等级</Text>
             {levels.map(lv => {
-              const isSelected = selectedLevels.includes(lv.group_key);
-              const showLimits = name !== 'team_marketing' && name !== 'playground';
+              const lvIdStr = lv.id.toString();
+              const isSelected = selectedLevels.includes(lvIdStr) || selectedLevels.includes(lv.group_key);
+              const showLimits = name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace';
               return (
                 <div key={lv.group_key}
-                  style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255,255,255,0.06)', background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, transition: 'all 0.15s' }}
+                  style={{ padding: '10px 14px', borderRadius: 6, border: isSelected ? '1px solid rgba(22,119,255,0.3)' : (_isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)'), background: isSelected ? 'rgba(22,119,255,0.04)' : 'transparent', marginBottom: 6, transition: 'all 0.15s' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: 1 }}
-                      onClick={() => setSelectedLevels(prev => prev.includes(lv.group_key) ? prev.filter(k => k !== lv.group_key) : [...prev, lv.group_key])}
+                      onClick={() => setSelectedLevels(prev => prev.includes(lvIdStr) || prev.includes(lv.group_key) ? prev.filter(k => k !== lvIdStr && k !== lv.group_key) : [...prev, lvIdStr])}
                     >
                       <Checkbox checked={isSelected} />
-                      <Text style={{ color: '#fff', fontSize: 13 }}>{lv.name}</Text>
-                      <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>{lv.group_key}</Tag>
+                      <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>
+                        {lv.name}
+                        <span style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, marginLeft: 6 }}>
+                          (ULID: {lvIdStr.padStart(4, '0')})
+                        </span>
+                      </Text>
                     </div>
                   </div>
                   {showLimits && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, marginLeft: 24, flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>存储空间</Text>
+                        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>存储空间</Text>
                         <InputNumber size="small" min={1} max={10240}
                           value={levelQuotas[lv.group_key] ?? 100}
                           onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.group_key]: val ?? 100 }))}
-                          style={{ width: 72, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                          style={{ width: 72 }}
                           addonAfter="MB"
                         />
                       </div>
-                      <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.08)' }} />
+                      <div style={{ width: 1, height: 16, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)' }} />
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>文件夹</Text>
+                        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>文件夹</Text>
                         <InputNumber size="small" min={1} max={1000}
                           value={levelMaxFolders[lv.group_key] ?? 20}
                           onChange={(val) => setLevelMaxFolders(prev => ({ ...prev, [lv.group_key]: val ?? 20 }))}
-                          style={{ width: 68, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                          style={{ width: 68 }}
                           addonAfter="个"
                         />
                       </div>
-                      <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.08)' }} />
+                      <div style={{ width: 1, height: 16, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)' }} />
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>每夹文件</Text>
+                        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>每夹文件</Text>
                         <InputNumber size="small" min={1} max={10000}
                           value={levelMaxFilesPerFolder[lv.group_key] ?? 100}
                           onChange={(val) => setLevelMaxFilesPerFolder(prev => ({ ...prev, [lv.group_key]: val ?? 100 }))}
-                          style={{ width: 72, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                          style={{ width: 72 }}
                           addonAfter="个"
                         />
                       </div>
-                      <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.08)' }} />
+                      <div style={{ width: 1, height: 16, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)' }} />
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>API 接口调用</Text>
+                        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>API 接口调用</Text>
                         <Switch size="small"
                           checked={levelApiEnabled[lv.group_key] ?? true}
                           onChange={(checked) => setLevelApiEnabled(prev => ({ ...prev, [lv.group_key]: checked }))}
@@ -594,48 +777,47 @@ const PluginConfigInner: React.FC = () => {
                 </div>
               );
             })}
-            {levels.length === 0 && <Text style={{ color: 'rgba(255,255,255,0.25)', display: 'block', textAlign: 'center', padding: 16, fontSize: 13 }}>暂无用户等级，请先在「用户管理 → 用户等级」中创建</Text>}
+            {levels.length === 0 && <Text style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', display: 'block', textAlign: 'center', padding: 16, fontSize: 13 }}>暂无用户等级，请先在「用户管理 → 用户等级」中创建</Text>}
           </div>
         )}
       </div>
 
-      {isAllLevels && (name !== 'team_marketing' && name !== 'playground') && (
+      {isAllLevels && (name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace') && (
         <div style={{
-          background: '#141414', borderRadius: 8,
-          border: '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16,
-        }}>
-          <Text strong style={{ color: '#fff', fontSize: 14 }}>资源配额管理</Text><br />
-          <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置每位用户的存储空间、文件夹数量、每文件夹文件数上限，可按等级单独覆盖</Text>
-          <Divider style={{ borderColor: 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
+          background: _isLight ? '#fff' : '#141414', borderRadius: 8,
+          border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16 }}>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>资源配额管理</Text><br />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>设置每位用户的存储空间、文件夹数量、每文件夹文件数上限，可按等级单独覆盖</Text>
+          <Divider style={{ borderColor: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
 
           {/* 表头 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px) 100px', gap: 8, padding: '0 14px 8px', alignItems: 'center' }}>
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>等级</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>存储空间</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>文件夹上限</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>每夹文件上限</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>API 接口</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11 }}>等级</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>存储空间</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>文件夹上限</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>每夹文件上限</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>API 接口</Text>
           </div>
 
           {/* 全局默认行 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px) 100px', gap: 8, padding: '10px 14px', borderRadius: 6, border: '1px solid rgba(22,119,255,0.3)', background: 'rgba(22,119,255,0.04)', marginBottom: 8, alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Text style={{ color: '#fff', fontSize: 13, fontWeight: 500 }}>全局默认</Text>
+              <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13, fontWeight: 500 }}>全局默认</Text>
               <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>默认值</Tag>
             </div>
             <InputNumber size="small" min={1} max={10240}
               value={defaultQuota} onChange={(val) => setDefaultQuota(val ?? 100)}
-              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              style={{ width: '100%' }}
               addonAfter="MB"
             />
             <InputNumber size="small" min={1} max={1000}
               value={defaultMaxFolders} onChange={(val) => setDefaultMaxFolders(val ?? 20)}
-              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              style={{ width: '100%' }}
               addonAfter="个"
             />
             <InputNumber size="small" min={1} max={10000}
               value={defaultMaxFilesPerFolder} onChange={(val) => setDefaultMaxFilesPerFolder(val ?? 100)}
-              style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+              style={{ width: '100%' }}
               addonAfter="个"
             />
             <div style={{ textAlign: 'center' }}>
@@ -646,37 +828,41 @@ const PluginConfigInner: React.FC = () => {
           {/* 按等级覆盖 */}
           {levels.length > 0 && (
             <>
-              <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', margin: '12px 0 8px' }}>按等级单独设置（覆盖全局默认值）</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', margin: '12px 0 8px' }}>按等级单独设置（覆盖全局默认值）</Text>
               {levels.map(lv => (
-                <div key={lv.group_key}
-                  style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px) 100px', gap: 8, padding: '8px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, alignItems: 'center' }}
+                <div key={lv.id.toString()}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px) 100px', gap: 8, padding: '8px 14px', borderRadius: 6, border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, alignItems: 'center' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ color: '#fff', fontSize: 13 }}>{lv.name}</Text>
-                    <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>{lv.group_key}</Tag>
+                    <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>
+                      {lv.name}
+                      <span style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, marginLeft: 6 }}>
+                        (ULID: {lv.id.toString().padStart(4, '0')})
+                      </span>
+                    </Text>
                   </div>
                   <InputNumber size="small" min={1} max={10240}
-                    value={levelQuotas[lv.group_key] ?? defaultQuota}
-                    onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.group_key]: val ?? defaultQuota }))}
-                    style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                    value={levelQuotas[lv.id.toString()] ?? levelQuotas[lv.group_key] ?? defaultQuota}
+                    onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultQuota }))}
+                    style={{ width: '100%' }}
                     addonAfter="MB"
                   />
                   <InputNumber size="small" min={1} max={1000}
-                    value={levelMaxFolders[lv.group_key] ?? defaultMaxFolders}
-                    onChange={(val) => setLevelMaxFolders(prev => ({ ...prev, [lv.group_key]: val ?? defaultMaxFolders }))}
-                    style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                    value={levelMaxFolders[lv.id.toString()] ?? defaultMaxFolders}
+                    onChange={(val) => setLevelMaxFolders(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultMaxFolders }))}
+                    style={{ width: '100%' }}
                     addonAfter="个"
                   />
                   <InputNumber size="small" min={1} max={10000}
-                    value={levelMaxFilesPerFolder[lv.group_key] ?? defaultMaxFilesPerFolder}
-                    onChange={(val) => setLevelMaxFilesPerFolder(prev => ({ ...prev, [lv.group_key]: val ?? defaultMaxFilesPerFolder }))}
-                    style={{ width: '100%', background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+                    value={levelMaxFilesPerFolder[lv.id.toString()] ?? defaultMaxFilesPerFolder}
+                    onChange={(val) => setLevelMaxFilesPerFolder(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultMaxFilesPerFolder }))}
+                    style={{ width: '100%' }}
                     addonAfter="个"
                   />
                   <div style={{ textAlign: 'center' }}>
                     <Switch size="small"
-                      checked={levelApiEnabled[lv.group_key] ?? true}
-                      onChange={(checked) => setLevelApiEnabled(prev => ({ ...prev, [lv.group_key]: checked }))}
+                      checked={levelApiEnabled[lv.id.toString()] ?? true}
+                      onChange={(checked) => setLevelApiEnabled(prev => ({ ...prev, [lv.id.toString()]: checked }))}
                     />
                   </div>
                 </div>
@@ -684,6 +870,8 @@ const PluginConfigInner: React.FC = () => {
             </>
           )}
         </div>
+      )}
+      </>
       )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -693,7 +881,7 @@ const PluginConfigInner: React.FC = () => {
   );
 
   // ====== 存储配置 Tab ======
-  const inputStyle = { background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' };
+  const inputStyle = { };
   const storageTab = (
     <div>
       {/* 状态提示 */}
@@ -721,29 +909,28 @@ const PluginConfigInner: React.FC = () => {
       )}
 
       <div style={{
-        background: '#141414', borderRadius: 8,
-        border: '1px solid rgba(255,255,255,0.08)', padding: '20px',
-      }}>
+        background: _isLight ? '#fff' : '#141414', borderRadius: 8,
+        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           <CloudServerOutlined style={{ color: '#1677ff', fontSize: 16 }} />
-          <Text strong style={{ color: '#fff', fontSize: 14 }}>火山引擎 TOS 对象存储</Text>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>火山引擎 TOS 对象存储</Text>
         </div>
 
         <Form form={storageForm} layout="vertical" requiredMark={false}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Access Key</Text>} name="tos_access_key" rules={[{ required: true, message: '请输入 Access Key' }]}>
+            <Form.Item label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>Access Key</Text>} name="tos_access_key" rules={[{ required: true, message: '请输入 Access Key' }]}>
               <Input placeholder="火山引擎 Access Key" style={inputStyle} />
             </Form.Item>
             <Form.Item
-              label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Secret Key</Text>}
+              label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>Secret Key</Text>}
               name="tos_secret_key"
-              extra={storageConfig?.tos_secret_key_masked ? <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>当前: {storageConfig.tos_secret_key_masked}（留空则不修改）</Text> : undefined}
+              extra={storageConfig?.tos_secret_key_masked ? <Text style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', fontSize: 11 }}>当前: {storageConfig.tos_secret_key_masked}（留空则不修改）</Text> : undefined}
             >
               <Input.Password placeholder="火山引擎 Secret Key" style={inputStyle} />
             </Form.Item>
           </div>
 
-          <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>数据地域</Text>} name="tos_region" rules={[{ required: true, message: '请选择数据地域' }]}>
+          <Form.Item label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>数据地域</Text>} name="tos_region" rules={[{ required: true, message: '请选择数据地域' }]}>
             <Select
               placeholder="选择数据地域"
               style={{ width: '100%' }}
@@ -759,27 +946,26 @@ const PluginConfigInner: React.FC = () => {
                 label: (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>{r.label}</span>
-                    <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>{r.region}</span>
+                    <span style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>{r.region}</span>
                   </div>
-                ),
-              }))}
+                ) }))}
             />
           </Form.Item>
-          <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Endpoint</Text>} name="tos_endpoint" rules={[{ required: true, message: '请选择地域后自动填充' }]}
-            extra={<Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>选择地域后自动填充，如使用内网请手动修改</Text>}
+          <Form.Item label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>Endpoint</Text>} name="tos_endpoint" rules={[{ required: true, message: '请选择地域后自动填充' }]}
+            extra={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', fontSize: 11 }}>选择地域后自动填充，如使用内网请手动修改</Text>}
           >
             <Input placeholder="选择地域后自动填充" style={inputStyle} />
           </Form.Item>
 
-          <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Bucket</Text>} name="tos_bucket" rules={[{ required: true, message: '请输入 Bucket 名称' }]}>
+          <Form.Item label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>Bucket</Text>} name="tos_bucket" rules={[{ required: true, message: '请输入 Bucket 名称' }]}>
             <Input placeholder="对象存储桶名称" style={inputStyle} />
           </Form.Item>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>路径前缀</Text>} name="tos_path_prefix" extra={<Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>选填，如 assets/upload</Text>}>
+            <Form.Item label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>路径前缀</Text>} name="tos_path_prefix" extra={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', fontSize: 11 }}>选填，如 assets/upload</Text>}>
               <Input placeholder="如 assets/" style={inputStyle} />
             </Form.Item>
-            <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>自定义域名</Text>} name="tos_custom_domain" extra={<Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>选填，CDN 加速域名</Text>}>
+            <Form.Item label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>自定义域名</Text>} name="tos_custom_domain" extra={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', fontSize: 11 }}>选填，CDN 加速域名</Text>}>
               <Input placeholder="如 https://cdn.example.com" style={inputStyle} />
             </Form.Item>
           </div>
@@ -806,9 +992,47 @@ const PluginConfigInner: React.FC = () => {
     </div>
   );
 
+  const handleToggleReviewEnabled = async (checked: boolean) => {
+    setReviewEnabled(checked);
+    try {
+      const values = moderationForm.getFieldsValue();
+      await request.post(`/plugins/${name}/moderation-config`, { ...values, review_enabled: checked });
+      message.success(checked ? '素材审核功能已开启' : '素材审核功能已关闭');
+    } catch (error: any) {
+      console.error(error);
+      const rawMsg = error?.response?.data?.error?.message || '';
+      message.error(rawMsg || '切换失败');
+      setReviewEnabled(!checked);
+    }
+  };
+
   // ====== 审核配置 Tab ======
   const moderationTab = (
     <div>
+      {/* 审核功能开关 */}
+      <div style={{
+        background: _isLight ? '#fff' : '#141414', borderRadius: 8,
+        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
+        padding: '16px 20px', marginBottom: 16,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>素材审核功能</Text><br />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>
+            {moderationConfig?.is_configured
+              ? '开启后用户上传的素材需要通过火山引擎审核才能使用；关闭后素材上传即可用，无需审核流程。'
+              : '请先完成下方私域虚拟人像素材资产库配置（Access Key / Secret Key）后才可开启审核功能。'}
+          </Text>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Tag color={reviewEnabled ? 'success' : 'default'} style={{ margin: 0, background: reviewEnabled ? 'rgba(82,196,26,0.1)' : 'rgba(255,255,255,0.04)', border: 'none' }}>{reviewEnabled ? '已开启' : '已关闭'}</Tag>
+          <Switch
+            checked={reviewEnabled}
+            disabled={!moderationConfig?.is_configured}
+            onChange={handleToggleReviewEnabled}
+          />
+        </div>
+      </div>
+
       {/* 状态提示 */}
       {moderationConfig && (
         <div style={{ marginBottom: 16 }}>
@@ -834,45 +1058,44 @@ const PluginConfigInner: React.FC = () => {
       )}
 
       <div style={{
-        background: '#141414', borderRadius: 8,
-        border: '1px solid rgba(255,255,255,0.08)', padding: '20px',
-      }}>
+        background: _isLight ? '#fff' : '#141414', borderRadius: 8,
+        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <ApiOutlined style={{ color: '#1677ff', fontSize: 16 }} />
-          <Text strong style={{ color: '#fff', fontSize: 14 }}>私域虚拟人像素材资产库配置</Text>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>私域虚拟人像素材资产库配置</Text>
         </div>
-        <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginBottom: 16 }}>
+        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginBottom: 16 }}>
           请前往火山引擎控制台 → 头像下拉菜单 →「API访问密钥」页面，创建并获取 Access Key ID 和 Secret Access Key
         </Text>
 
         <Form form={moderationForm} layout="vertical" requiredMark={false}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <Form.Item label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Access Key ID</Text>} name="volc_access_key" rules={[{ required: true, message: '请输入 Access Key ID' }]}>
+            <Form.Item label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>Access Key ID</Text>} name="volc_access_key" rules={[{ required: true, message: '请输入 Access Key ID' }]}>
               <Input placeholder="Access Key ID" style={inputStyle} />
             </Form.Item>
             <Form.Item
-              label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Secret Access Key</Text>}
+              label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>Secret Access Key</Text>}
               name="volc_secret_key"
               rules={[{ required: !moderationConfig?.is_configured, message: '请输入 Secret Access Key' }]}
-              extra={moderationConfig?.volc_secret_key_masked ? <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>当前: {moderationConfig.volc_secret_key_masked}（留空则不修改）</Text> : undefined}
+              extra={moderationConfig?.volc_secret_key_masked ? <Text style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', fontSize: 11 }}>当前: {moderationConfig.volc_secret_key_masked}（留空则不修改）</Text> : undefined}
             >
               <Input.Password placeholder="Secret Access Key" style={inputStyle} />
             </Form.Item>
           </div>
           <Form.Item
-            label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>使用项目名称 (ProjectName)</Text>}
+            label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>使用项目名称 (ProjectName)</Text>}
             name="volc_project_name"
-            extra={<Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>接口调用时使用的项目名称，留空则默认为 default</Text>}
+            extra={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', fontSize: 11 }}>接口调用时使用的项目名称，留空则默认为 default</Text>}
           >
             <Input placeholder="default" style={inputStyle} />
           </Form.Item>
           {name === 'asset_manager' && (
             <Form.Item
-              label={<Text style={{ color: 'rgba(255,255,255,0.65)' }}>Ark 转换素材组 ID (GroupID)</Text>}
+              label={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>Ark 转换素材组 ID (GroupID)</Text>}
               name="volc_group_id"
-              extra={<Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 11 }}>若留空，系统将在首次转换素材时自动向方舟申请并绑定专属群组 ID。您也可以手动填入在方舟控制台申请的已有组标识如: g-xxx</Text>}
+              extra={<Text style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', fontSize: 11 }}>系统将在首次转换素材时自动向方舟申请并绑定专属群组 ID，自动管理无需干预</Text>}
             >
-              <Input placeholder="留空交由系统自动为您生成管理，或输入火山引擎资产库 Group ID" style={inputStyle} />
+              <Input disabled placeholder="留空交由系统自动为您生成管理" style={{ ...inputStyle, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }} />
             </Form.Item>
           )}
         </Form>
@@ -915,17 +1138,15 @@ const PluginConfigInner: React.FC = () => {
         return info ? (
           <span>
             <Text copyable style={{ fontSize: 12 }}>{info.uid}</Text>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{info.username}</div>
+            <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>{info.username}</div>
           </span>
         ) : <Text style={{ fontSize: 12 }}>{userId?.slice(0, 8)}...</Text>;
-      },
-    },
+      } },
     {
       title: '文件名',
       dataIndex: 'file_name',
       key: 'file_name',
-      ellipsis: true,
-    },
+      ellipsis: true },
     {
       title: '预览',
       key: 'preview',
@@ -944,8 +1165,7 @@ const PluginConfigInner: React.FC = () => {
       dataIndex: 'asset_id',
       key: 'asset_id',
       width: 160,
-      render: (aid: string) => aid ? <Text code style={{ fontSize: 11 }}>{aid.slice(0, 20)}...</Text> : <Text type="secondary">暂无</Text>,
-    },
+      render: (aid: string) => aid ? <Text code style={{ fontSize: 11 }}>{aid.slice(0, 20)}...</Text> : <Text type="secondary">暂无</Text> },
     {
       title: '状态',
       dataIndex: 'status',
@@ -970,8 +1190,7 @@ const PluginConfigInner: React.FC = () => {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 160,
-      render: (t: string) => t ? <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> : '-',
-    },
+      render: (t: string) => t ? <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> : '-' },
   ];
 
 
@@ -991,7 +1210,7 @@ const PluginConfigInner: React.FC = () => {
   const auditLogTab = (
     <div>
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>共 {auditLogs.length} 条虚拟人像上传记录</Text>
+        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 13 }}>共 {auditLogs.length} 条虚拟人像上传记录</Text>
         <Button size="small" onClick={fetchAuditLogs} loading={auditLoading}>刷新</Button>
       </div>
       <Table
@@ -1011,24 +1230,23 @@ const PluginConfigInner: React.FC = () => {
             if (info?.error) return <Text type="danger">查询失败: {info.error}</Text>;
             if (!info) return <Spin size="small" />;
             return (
-              <div style={{ padding: 16, background: '#1a1a1a', borderRadius: 8 }}>
+              <div style={{ padding: 16, background: _isLight ? '#fafafa' : '#1a1a1a', borderRadius: 8 }}>
                 <Text strong style={{ color: '#1677ff', display: 'block', marginBottom: 12, fontSize: 14 }}>📄 火山引擎素材详情 (GetAsset)</Text>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 24px' }}>
-                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Asset ID</Text><br/><Text copyable style={{ fontSize: 13, fontFamily: 'monospace' }}>{info.Id}</Text></div>
-                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Group ID</Text><br/><Text copyable style={{ fontSize: 13, fontFamily: 'monospace' }}>{info.GroupId}</Text></div>
-                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>状态 (Status)</Text><br/><Tag color={info.Status === 'Active' ? 'success' : info.Status === 'Failed' ? 'error' : 'processing'}>{info.Status}</Tag></div>
-                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>素材类型 (AssetType)</Text><br/><Text style={{ fontSize: 13 }}>{info.AssetType}</Text></div>
-                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>项目名称 (ProjectName)</Text><br/><Text style={{ fontSize: 13 }}>{info.ProjectName}</Text></div>
-                  <div><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>创建时间 (CreateTime)</Text><br/><Text style={{ fontSize: 13 }}>{info.CreateTime ? new Date(info.CreateTime).toLocaleString('zh-CN') : '-'}</Text></div>
-                  <div style={{ gridColumn: '1 / -1' }}><Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>URL</Text><br/><Text copyable style={{ fontSize: 12, fontFamily: 'monospace', wordBreak: 'break-all' }}>{info.URL}</Text></div>
+                  <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>Asset ID</Text><br/><Text copyable style={{ fontSize: 13, fontFamily: 'monospace' }}>{info.Id}</Text></div>
+                  <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>Group ID</Text><br/><Text copyable style={{ fontSize: 13, fontFamily: 'monospace' }}>{info.GroupId}</Text></div>
+                  <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>状态 (Status)</Text><br/><Tag color={info.Status === 'Active' ? 'success' : info.Status === 'Failed' ? 'error' : 'processing'}>{info.Status}</Tag></div>
+                  <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>素材类型 (AssetType)</Text><br/><Text style={{ fontSize: 13 }}>{info.AssetType}</Text></div>
+                  <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>项目名称 (ProjectName)</Text><br/><Text style={{ fontSize: 13 }}>{info.ProjectName}</Text></div>
+                  <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>创建时间 (CreateTime)</Text><br/><Text style={{ fontSize: 13 }}>{info.CreateTime ? new Date(info.CreateTime).toLocaleString('zh-CN') : '-'}</Text></div>
+                  <div style={{ gridColumn: '1 / -1' }}><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>URL</Text><br/><Text copyable style={{ fontSize: 12, fontFamily: 'monospace', wordBreak: 'break-all' }}>{info.URL}</Text></div>
                 </div>
               </div>
             );
           },
           onExpand: (expanded, record) => {
             if (expanded && record.asset_id) fetchAssetInfo(record.asset_id);
-          },
-        }}
+          } }}
       />
     </div>
   );
@@ -1037,8 +1255,7 @@ const PluginConfigInner: React.FC = () => {
   const SOURCE_MAP: Record<string, { label: string; color: string }> = {
     api_proxy: { label: 'API 接口调用', color: 'blue' },
     page: { label: '页面操作', color: 'green' },
-    relay_convert: { label: '转发规则替换', color: 'orange' },
-  };
+    relay_convert: { label: '转发规则替换', color: 'orange' } };
 
   const apiLogColumns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
@@ -1052,8 +1269,7 @@ const PluginConfigInner: React.FC = () => {
       render: (s: string) => {
         const info = SOURCE_MAP[s] || { label: s, color: 'default' };
         return <Tag color={info.color}>{info.label}</Tag>;
-      },
-    },
+      } },
     { 
       title: '状态', 
       dataIndex: 'status_code', 
@@ -1092,7 +1308,7 @@ const PluginConfigInner: React.FC = () => {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>共 {apiLogsTotal} 条记录</Text>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 13 }}>共 {apiLogsTotal} 条记录</Text>
           <Button size="small" onClick={() => fetchApiLogs(apiLogsPage)} loading={apiLogsLoading}>刷新</Button>
         </div>
       </div>
@@ -1117,20 +1333,19 @@ const PluginConfigInner: React.FC = () => {
               <div style={{ margin: 0, padding: 16, background: '#1e1e1e', borderRadius: 8 }}>
                 <div style={{ marginBottom: 16 }}>
                   <Text strong style={{ color: '#1677ff', display: 'block', marginBottom: 8 }}>📤 Request Payload</Text>
-                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '500px', overflow: 'auto', border: '1px solid #303030' }}>
-                    <JsonView value={safeParse(record.request_payload)} style={darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
+                  <div style={{ background: _isLight ? '#fff' : '#141414', padding: '16px', borderRadius: '8px', maxHeight: '500px', overflow: 'auto', border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
+                    <JsonView value={safeParse(record.request_payload)} style={_isLight ? lightTheme : darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
                   </div>
                 </div>
                 <div>
                   <Text strong style={{ color: '#faad14', display: 'block', marginBottom: 8 }}>📥 Response Payload</Text>
-                  <div style={{ background: '#141414', padding: '16px', borderRadius: '8px', maxHeight: '600px', overflow: 'auto', border: '1px solid #303030' }}>
-                    <JsonView value={safeParse(record.response_payload)} style={darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
+                  <div style={{ background: _isLight ? '#fff' : '#141414', padding: '16px', borderRadius: '8px', maxHeight: '600px', overflow: 'auto', border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
+                    <JsonView value={safeParse(record.response_payload)} style={_isLight ? lightTheme : darkTheme} collapsed={false} shortenTextAfterLength={0} displayDataTypes={false} displayObjectSize={false} />
                   </div>
                 </div>
               </div>
             );
-          },
-        }}
+          } }}
       />
     </div>
   );
@@ -1149,23 +1364,21 @@ const PluginConfigInner: React.FC = () => {
       key: 'name',
       render: (name: string, record: any) => (
         <div>
-          <Text strong style={{ color: '#fff', fontSize: 13 }}>{name}</Text>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{name}</Text>
+          <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
         </div>
-      ),
-    },
+      ) },
     {
       title: '类型',
       dataIndex: 'type_name',
       key: 'type_name',
       width: 100,
       render: (t: string) => t ? (
-        <Tag style={{ borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>
+        <Tag style={{ borderRadius: 4, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>
           {t.includes('视频') ? <VideoCameraOutlined style={{ marginRight: 4 }} /> : t.includes('图片') ? <PictureOutlined style={{ marginRight: 4 }} /> : null}
           {t}
         </Tag>
-      ) : <Text type="secondary">-</Text>,
-    },
+      ) : <Text type="secondary">-</Text> },
     {
       title: '体验开关',
       key: 'pg_enabled',
@@ -1177,8 +1390,7 @@ const PluginConfigInner: React.FC = () => {
           checkedChildren="开启"
           unCheckedChildren="关闭"
         />
-      ),
-    },
+      ) },
     {
       title: '绑定方案',
       key: 'pg_scheme_id',
@@ -1188,10 +1400,9 @@ const PluginConfigInner: React.FC = () => {
         return scheme ? (
           <Tag color="blue" style={{ borderRadius: 12, fontSize: 12 }}>{scheme.name}</Tag>
         ) : (
-          <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>未绑定</Text>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>未绑定</Text>
         );
-      },
-    },
+      } },
     {
       title: '操作',
       key: 'action',
@@ -1205,17 +1416,16 @@ const PluginConfigInner: React.FC = () => {
         >
           配置
         </Button>
-      ),
-    },
+      ) },
   ];
 
   const playgroundModelTab = (
     <div>
-      <div style={{ background: '#141414', borderRadius: 8, padding: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div style={{ background: _isLight ? '#fff' : '#141414', borderRadius: 8, padding: '20px', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div>
-            <Text strong style={{ color: '#fff', fontSize: 14 }}>可体验模型列表</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
+            <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>可体验模型列表</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
               开启体验开关并绑定方案后，用户即可在体验中心使用该模型。已开启 {pgModels.filter(m => m.pg_enabled).length} / {pgModels.length} 个模型
             </Text>
           </div>
@@ -1223,7 +1433,7 @@ const PluginConfigInner: React.FC = () => {
             placeholder="搜索模型..."
             value={pgSearchKeyword}
             onChange={e => setPgSearchKeyword(e.target.value)}
-            style={{ width: 220, background: '#1f1f1f', borderColor: 'rgba(255,255,255,0.1)' }}
+            style={{ width: 220 }}
             allowClear
           />
         </div>
@@ -1258,44 +1468,53 @@ const PluginConfigInner: React.FC = () => {
         }
       >
         <div style={{ marginBottom: 16 }}>
-          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 13 }}>
             为模型 <Text strong style={{ color: '#1677ff' }}>{pgModels.find(m => m.id === pgCurrentId)?.name}</Text> 选择一个体验方案
           </Text>
         </div>
-        <Radio.Group
-          value={pgSelectedSchemeId}
-          onChange={e => setPgSelectedSchemeId(e.target.value)}
-          style={{ width: '100%' }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {pgSchemes.map(scheme => (
+        {(() => {
+          const currentModelType = pgModels.find(m => m.id === pgCurrentId)?.type_name || '';
+          const modelSchemeType = currentModelType.includes('视频') ? 'video' : currentModelType.includes('图片') ? 'image' : '';
+          const filteredSchemes = modelSchemeType ? pgSchemes.filter(s => s.type === modelSchemeType) : pgSchemes;
+          return (
+            <Radio.Group
+              value={pgSelectedSchemeId}
+              onChange={e => setPgSelectedSchemeId(e.target.value)}
+              style={{ width: '100%' }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {filteredSchemes.map(scheme => (
               <div
                 key={scheme.id}
                 style={{
                   padding: '16px', borderRadius: 8,
-                  border: pgSelectedSchemeId === scheme.id ? '1px solid rgba(22,119,255,0.5)' : '1px solid rgba(255,255,255,0.08)',
-                  background: pgSelectedSchemeId === scheme.id ? 'rgba(22,119,255,0.06)' : '#141414',
-                  cursor: 'pointer', transition: 'all 0.2s',
-                }}
+                  border: pgSelectedSchemeId === scheme.id ? '1px solid rgba(22,119,255,0.5)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'),
+                  background: pgSelectedSchemeId === scheme.id ? 'rgba(22,119,255,0.06)' : (_isLight ? '#fff' : '#141414'),
+                  cursor: 'pointer', transition: 'all 0.2s' }}
                 onClick={() => setPgSelectedSchemeId(scheme.id)}
               >
                 <Radio value={scheme.id}>
-                  <Text strong style={{ color: '#fff', fontSize: 14 }}>{scheme.name}</Text>
+                  <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>{scheme.name}</Text>
                 </Radio>
                 <div style={{ marginTop: 8, marginLeft: 24 }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>{scheme.description}</Text>
+                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>{scheme.description}</Text>
                   <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {scheme.params?.map((p: any) => (
-                      <Tag key={p.key} style={{ fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
-                        {p.label}: {Array.isArray(p.options) ? p.options.join('/') : String(p.default)}
+                      <Tag key={p.key} style={{ fontSize: 11, borderRadius: 4, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}>
+                        {p.label}: {Array.isArray(p.options) ? (p.options.length > 4 ? p.options.slice(0, 4).join('/') + `/...+${p.options.length - 4}` : p.options.join('/')) : String(p.default)}
                       </Tag>
                     ))}
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </Radio.Group>
+                ))}
+                {filteredSchemes.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '30px 0', color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }}>暂无匹配类型的方案</div>
+                )}
+              </div>
+            </Radio.Group>
+          );
+        })()}
       </Drawer>
     </div>
   );
@@ -1303,50 +1522,69 @@ const PluginConfigInner: React.FC = () => {
   // ====== 体验方案配置 Tab ======
   const playgroundSchemeTab = (
     <div>
-      <div style={{ background: '#141414', borderRadius: 8, padding: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div style={{ background: _isLight ? '#fff' : '#141414', borderRadius: 8, padding: '20px', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
-            <Text strong style={{ color: '#fff', fontSize: 14 }}>体验方案列表</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
+            <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>体验方案列表</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
               管理内置和自定义的体验方案。每个方案定义了可配置的参数模板，绑定到模型后用户侧会动态展示。
             </Text>
           </div>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAddScheme}>新增方案</Button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {schemeList.map((scheme, idx) => (
-            <div key={scheme.id} style={{
-              padding: '16px 20px', borderRadius: 10,
-              border: '1px solid rgba(255,255,255,0.06)', background: '#1a1a1a',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <Text strong style={{ color: '#fff', fontSize: 14 }}>{scheme.name}</Text>
-                  {scheme.is_system && <Tag color="gold" style={{ fontSize: 10, borderRadius: 8, lineHeight: '18px' }}>内置</Tag>}
-                  <Tag style={{ fontSize: 10, borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>{scheme.type}</Tag>
-                </div>
-                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 8 }}>{scheme.description}</Text>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {scheme.params?.map((p: any) => (
-                    <Tag key={p.key} style={{ fontSize: 11, borderRadius: 4, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)' }}>
-                      {p.label}: {Array.isArray(p.options) ? p.options.join('/') : String(p.default)}{p.unit ? ` ${p.unit}` : ''}
-                    </Tag>
-                  ))}
-                </div>
-                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace', display: 'block', marginTop: 6 }}>ID: {scheme.id}</Text>
+        {(() => {
+          const typeGroups: Record<string, { label: string; icon: React.ReactNode; color: string; schemes: { scheme: any; idx: number }[] }> = {
+            video: { label: '视频生成方案', icon: <VideoCameraOutlined />, color: '#1677ff', schemes: [] },
+            image: { label: '图片生成方案', icon: <PictureOutlined />, color: '#52c41a', schemes: [] },
+            other: { label: '其他方案', icon: <AppstoreOutlined />, color: '#faad14', schemes: [] } };
+          schemeList.forEach((scheme, idx) => {
+            const key = scheme.type === 'video' ? 'video' : scheme.type === 'image' ? 'image' : 'other';
+            typeGroups[key].schemes.push({ scheme, idx });
+          });
+          const activeGroups = Object.entries(typeGroups).filter(([, g]) => g.schemes.length > 0);
+          if (activeGroups.length === 0) {
+            return <div style={{ textAlign: 'center', padding: '40px 0', color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }}>暂无方案，点击「新增方案」创建</div>;
+          }
+          return activeGroups.map(([key, group]) => (
+            <div key={key} style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, paddingBottom: 8, borderBottom: `1px solid ${group.color}22` }}>
+                <span style={{ color: group.color, fontSize: 16 }}>{group.icon}</span>
+                <Text strong style={{ color: group.color, fontSize: 14 }}>{group.label}</Text>
+                <Tag style={{ fontSize: 11, borderRadius: 10, background: `${group.color}15`, border: `1px solid ${group.color}30`, color: group.color }}>{group.schemes.length} 个</Tag>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <Button type="text" icon={<EditOutlined />} onClick={() => handleEditScheme(scheme, idx)} style={{ color: '#1677ff' }}>编辑</Button>
-                <Button type="text" icon={<DeleteOutlined />} onClick={() => handleDeleteScheme(idx)} danger disabled={!!scheme.is_system}>删除</Button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {group.schemes.map(({ scheme, idx }) => (
+                  <div key={scheme.id} style={{
+                    padding: '14px 18px', borderRadius: 10,
+                    border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)', background: _isLight ? '#fafafa' : '#1a1a1a',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>{scheme.name}</Text>
+                        {scheme.is_system && <Tag color="gold" style={{ fontSize: 10, borderRadius: 8, lineHeight: '18px' }}>内置</Tag>}
+                      </div>
+                      <Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12, display: 'block', marginBottom: 8 }}>{scheme.description}</Text>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {scheme.params?.map((p: any) => (
+                          <Tag key={p.key} style={{ fontSize: 11, borderRadius: 4, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)', border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
+                            {p.label}: {Array.isArray(p.options) ? (p.options.length > 4 ? p.options.slice(0, 4).join('/') + `/...+${p.options.length - 4}` : p.options.join('/')) : String(p.default)}{p.unit ? ` ${p.unit}` : ''}
+                          </Tag>
+                        ))}
+                      </div>
+                      <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace', display: 'block', marginTop: 6 }}>ID: {scheme.id}</Text>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                      <Button type="text" icon={<EditOutlined />} onClick={() => handleEditScheme(scheme, idx)} style={{ color: '#1677ff' }}>编辑</Button>
+                      <Button type="text" icon={<DeleteOutlined />} onClick={() => handleDeleteScheme(idx)} danger disabled={!!scheme.is_system}>删除</Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-          {schemeList.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.3)' }}>暂无方案，点击「新增方案」创建</div>
-          )}
-        </div>
+          ));
+        })()}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
           <Button type="primary" loading={savingSchemes} onClick={handleSaveAllSchemes} icon={<SaveOutlined />}>
@@ -1372,76 +1610,104 @@ const PluginConfigInner: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* 基本信息 */}
             <div>
-              <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>方案名称</Text>
+              <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>方案名称</Text>
               <Input value={editingScheme.name} onChange={e => setEditingScheme({...editingScheme, name: e.target.value})} />
             </div>
             <div style={{ display: 'flex', gap: 12 }}>
               <div style={{ flex: 1 }}>
-                <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>方案 ID</Text>
+                <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>方案 ID</Text>
                 <Input value={editingScheme.id} onChange={e => setEditingScheme({...editingScheme, id: e.target.value})} disabled={!!editingScheme.is_system} />
               </div>
               <div style={{ flex: 1 }}>
-                <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>类型</Text>
+                <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>类型</Text>
                 <Select value={editingScheme.type} onChange={v => setEditingScheme({...editingScheme, type: v})} style={{ width: '100%' }}
                   options={[{ label: '视频 (video)', value: 'video' }, { label: '图片 (image)', value: 'image' }, { label: '聊天 (chat)', value: 'chat' }]}
                 />
               </div>
             </div>
             <div>
-              <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>描述</Text>
+              <Text style={{ display: 'block', marginBottom: 6, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>描述</Text>
               <Input.TextArea value={editingScheme.description} onChange={e => setEditingScheme({...editingScheme, description: e.target.value})} autoSize={{ minRows: 2, maxRows: 4 }} />
             </div>
 
-            <Divider style={{ margin: '8px 0', borderColor: 'rgba(255,255,255,0.06)' }} />
+            <Divider style={{ margin: '8px 0', borderColor: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }} />
 
             {/* 参数列表 */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text strong style={{ color: '#fff', fontSize: 14 }}>参数配置</Text>
+              <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>参数配置</Text>
               <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={handleAddParam}>添加参数</Button>
             </div>
 
             {editingScheme.params?.map((param: any, pIdx: number) => (
-              <div key={pIdx} style={{ background: '#1a1a1a', borderRadius: 8, padding: 14, border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div key={pIdx} style={{ background: _isLight ? '#fafafa' : '#1a1a1a', borderRadius: 8, padding: 14, border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>参数 #{pIdx + 1}</Text>
+                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>参数 #{pIdx + 1}</Text>
                   <Button type="text" size="small" icon={<DeleteOutlined />} danger onClick={() => handleRemoveParam(pIdx)} />
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                   <div style={{ flex: 1 }}>
-                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Key</Text>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>Key</Text>
                     <Input size="small" value={param.key} onChange={e => handleEditingSchemeParamChange(pIdx, 'key', e.target.value)} />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>显示标签</Text>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>显示标签</Text>
                     <Input size="small" value={param.label} onChange={e => handleEditingSchemeParamChange(pIdx, 'label', e.target.value)} />
                   </div>
-                  <div style={{ width: 120 }}>
-                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>控件类型</Text>
+                  <div style={{ width: 140 }}>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>控件类型</Text>
                     <Select size="small" value={param.type} onChange={v => handleEditingSchemeParamChange(pIdx, 'type', v)} style={{ width: '100%' }}
-                      options={[{ label: 'Radio 单选', value: 'radio' }, { label: 'Select 下拉', value: 'select' }, { label: 'Switch 开关', value: 'switch' }]}
+                      options={[{ label: 'Radio 单选', value: 'radio' }, { label: 'Select 下拉', value: 'select' }, { label: 'Switch 开关', value: 'switch' }, { label: 'Slider 滑块', value: 'slider' }]}
                     />
                   </div>
                 </div>
-                {param.type !== 'switch' && (
+                {param.type !== 'switch' && param.type !== 'slider' && (
                   <div style={{ marginBottom: 8 }}>
-                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>选项列表（用英文逗号分隔）</Text>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>选项列表（用英文逗号分隔）</Text>
                     <Input size="small" value={Array.isArray(param.options) ? param.options.join(',') : ''}
                       onChange={e => handleEditingSchemeParamChange(pIdx, 'options', e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean))}
                       placeholder="例如: 16:9,9:16,1:1 或 480p,720p,1080p"
                     />
                   </div>
                 )}
+                {param.type === 'slider' && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>最小值</Text>
+                      <InputNumber size="small" style={{ width: '100%' }} value={param.min ?? 0}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'min', v ?? 0)}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>最大值</Text>
+                      <InputNumber size="small" style={{ width: '100%' }} value={param.max ?? 100}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'max', v ?? 100)}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>步长</Text>
+                      <InputNumber size="small" style={{ width: '100%' }} value={param.step ?? 1} min={0.001}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'step', v ?? 1)}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <div style={{ flex: 1 }}>
-                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>默认值</Text>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>默认值</Text>
                     {param.type === 'switch' ? (
                       <Switch checked={!!param.default} onChange={v => handleEditingSchemeParamChange(pIdx, 'default', v)} />
+                    ) : param.type === 'slider' ? (
+                      <InputNumber size="small" style={{ width: '100%' }}
+                        value={typeof param.default === 'number' ? param.default : Number(param.default) || 0}
+                        min={param.min ?? 0} max={param.max ?? 100} step={param.step ?? 1}
+                        onChange={v => handleEditingSchemeParamChange(pIdx, 'default', v ?? 0)}
+                      />
                     ) : (
                       <Input size="small" value={String(param.default ?? '')} onChange={e => handleEditingSchemeParamChange(pIdx, 'default', e.target.value)} />
                     )}
                   </div>
                   <div style={{ width: 100 }}>
-                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>单位</Text>
+                    <Text style={{ display: 'block', marginBottom: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>单位</Text>
                     <Input size="small" value={param.unit || ''} onChange={e => handleEditingSchemeParamChange(pIdx, 'unit', e.target.value)} placeholder="可选" />
                   </div>
                 </div>
@@ -1453,6 +1719,121 @@ const PluginConfigInner: React.FC = () => {
     </div>
   );
 
+  // ====== 模型广场管理 模型列表 Tab ======
+  const filteredMpModels = mpModels.filter(m => {
+    if (!mpSearchKeyword) return true;
+    const kw = mpSearchKeyword.toLowerCase();
+    return m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid?.toLowerCase()?.includes(kw) || m.provider_name?.toLowerCase()?.includes(kw);
+  });
+
+  const mpModelColumns = [
+    {
+      title: '模型名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (nameVal: string, record: any) => (
+        <div>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{nameVal}</Text>
+          <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
+        </div>
+      ) },
+    {
+      title: '供应商',
+      dataIndex: 'provider_name',
+      key: 'provider_name',
+      width: 100,
+      render: (p: string) => p ? (
+        <Tag style={{ borderRadius: 4, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>{p}</Tag>
+      ) : <Text type="secondary">-</Text> },
+    {
+      title: '类型',
+      dataIndex: 'type_name',
+      key: 'type_name',
+      width: 100,
+      render: (t: string) => t ? (
+        <Tag style={{ borderRadius: 4, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>
+          {t.includes('视频') ? <VideoCameraOutlined style={{ marginRight: 4 }} /> : t.includes('图片') ? <PictureOutlined style={{ marginRight: 4 }} /> : null}
+          {t}
+        </Tag>
+      ) : <Text type="secondary">-</Text> },
+    {
+      title: '广场展示',
+      key: 'mp_enabled',
+      width: 100,
+      render: (_: any, record: any) => (
+        <Switch
+          checked={record.mp_enabled}
+          onChange={(val) => handleMpToggle(record.id, val)}
+          checkedChildren="展示"
+          unCheckedChildren="隐藏"
+        />
+      ) },
+    {
+      title: '排序权重',
+      key: 'mp_sort_order',
+      width: 120,
+      render: (_: any, record: any) => (
+        <InputNumber
+          size="small"
+          min={0}
+          max={9999}
+          value={record.mp_sort_order || 0}
+          onChange={(val) => handleMpSortChange(record.id, val ?? 0)}
+          style={{ width: 80 }}
+        />
+      ) },
+    {
+      title: '广场描述',
+      key: 'mp_description',
+      width: 240,
+      render: (_: any, record: any) => (
+        <Input
+          size="small"
+          value={record.mp_description || ''}
+          onChange={(e) => handleMpDescChange(record.id, e.target.value)}
+          placeholder="简短描述..."
+          
+        />
+      ) },
+  ];
+
+  const marketplaceModelTab = (
+    <div>
+      <div style={{ background: _isLight ? '#fff' : '#141414', borderRadius: 8, padding: '20px', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>模型广场模型列表</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
+              开启展示开关后，该模型将在用户端模型广场中可见。数字越大排序越靠前。已展示 {mpModels.filter(m => m.mp_enabled).length} / {mpModels.length} 个模型
+            </Text>
+          </div>
+          <Input
+            placeholder="搜索模型..."
+            value={mpSearchKeyword}
+            onChange={e => setMpSearchKeyword(e.target.value)}
+            style={{ width: 220 }}
+            allowClear
+          />
+        </div>
+
+        <Table
+          dataSource={filteredMpModels}
+          columns={mpModelColumns}
+          rowKey="id"
+          size="small"
+          pagination={{ pageSize: 20 }}
+          style={{ marginBottom: 16 }}
+        />
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button type="primary" loading={savingMarketplace} onClick={handleSaveMarketplaceConfig} icon={<SaveOutlined />}>
+            保存全部配置
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
 
     <div>
@@ -1460,19 +1841,17 @@ const PluginConfigInner: React.FC = () => {
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         marginBottom: 20, paddingBottom: 16,
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-      }}>
+        borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin0755/plugins')} style={{ color: 'rgba(255,255,255,0.65)', padding: '4px 8px' }} />
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin0755/plugins')} style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', padding: '4px 8px' }} />
           <div style={{
             width: 36, height: 36, borderRadius: 8, background: 'rgba(22,119,255,0.1)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1677ff',
-          }}>
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1677ff' }}>
             {pluginIcons[plugin.name] || <AppstoreOutlined style={{ fontSize: 20 }} />}
           </div>
           <div>
-            <Title level={4} style={{ margin: 0, color: '#fff', lineHeight: 1.3 }}>{plugin.title}</Title>
-            <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>{plugin.name}</Text>
+            <Title level={4} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff', lineHeight: 1.3 }}>{plugin.title}</Title>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>{plugin.name}</Text>
           </div>
         </div>
       </div>
@@ -1487,7 +1866,7 @@ const PluginConfigInner: React.FC = () => {
           plugin.name === 'team_marketing'
             ? [
                 { key: 'basic', label: '基本配置', children: basicTab },
-                { key: 'team_config', label: '团队配置', children: <TeamConfig /> },
+                { key: 'team_config', label: '团队配置', children: <PluginModule><TeamConfig /></PluginModule> },
               ]
             : plugin.name === 'playground'
             ? [
@@ -1496,11 +1875,31 @@ const PluginConfigInner: React.FC = () => {
                 { key: 'playground_models', label: '体验模型管理', children: playgroundModelTab },
                 { key: 'playground_schemes', label: '体验方案配置', children: playgroundSchemeTab },
               ]
+            : plugin.name === 'volcengine_pool'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'pool_manager', label: '卡池管理', children: <PluginModule><PoolManager /></PluginModule> },
+              ]
+            : plugin.name === 'gptimage_pool'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'pool_manager', label: '卡池管理', children: <PluginModule><GptImagePoolManager /></PluginModule> },
+              ]
+            : plugin.name === 'model_marketplace'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'marketplace_models', label: '模型列表', children: marketplaceModelTab },
+              ]
+            : plugin.name === 'site_icons'
+            ? [
+                { key: 'basic', label: '基本配置', children: basicTab },
+                { key: 'icon_library', label: '图标库管理', children: <PluginModule><SiteIconsManager /></PluginModule> },
+              ]
             : [
-                { key: 'audit_log', label: '审核日志', children: auditLogTab },
                 { key: 'basic', label: '基本配置', children: basicTab },
                 { key: 'storage', label: '存储配置', children: storageTab },
                 { key: 'moderation', label: '审核配置', children: moderationTab },
+                { key: 'audit_log', label: '审核日志', children: auditLogTab },
                 { key: 'preset', label: '预设素材', children: <AdminPresetAssets /> },
                 { key: 'relay_convert', label: '转换素材', children: <RelayConvertAssets /> },
                 { key: 'api_log', label: '接口日志', children: apiLogTab },

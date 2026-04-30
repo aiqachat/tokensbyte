@@ -8,6 +8,7 @@ import useSettingsStore from '../../store/settings';
 import { type ModelModel, type ClassificationsResponse, type ModelProvider, type ModelType, type ClassificationCount } from '../../types';
 import ClassificationFilter from '../../components/Models/ClassificationFilter';
 import ClassificationManager from '../../components/Models/ClassificationManager';
+import IconPicker from '../../components/IconPicker';
 import RateDisplay from './RateDisplay';
 
 const { Title, Text } = Typography;
@@ -111,6 +112,7 @@ const Models: React.FC = () => {
       enable_log_content: record.enable_log_content === 1,
       site_discount_enabled: record.site_discount_enabled === 1,
       site_discount: record.site_discount ?? 1.0,
+      logo: record.logo || undefined,
     });
     setIsModalVisible(true);
   };
@@ -161,30 +163,35 @@ const Models: React.FC = () => {
 
   const columns = [
     {
-      title: t('models.model_name'),
-      dataIndex: 'name',
-      key: 'name',
-      render: (text: string, record: ModelModel) => (
-        <Space direction="vertical" size={0}>
-          <Text strong>{text}</Text>
-          <Space size={4}>
-            {record.provider_id && <Tag color="default" style={{ fontSize: '10px' }}>{getProviderName(record.provider_id)}</Tag>}
-            {record.type_id && <Tag color="blue" style={{ fontSize: '10px' }}>{getTypeName(record.type_id)}</Tag>}
-            {(() => {
-              const br = allBillingRules.find(b => b.id === record.billing_rule_id);
-              if (br) return <Tag color="gold" style={{ fontSize: '10px' }}>{br.name}</Tag>;
-              return null;
-            })()}
-          </Space>
-        </Space>
-      ),
-    },
-    {
       title: 'MID',
       dataIndex: 'mid',
       key: 'mid',
       render: (text: string) => (
         <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: 12 }}>{text || '-'}</Tag>
+      ),
+    },
+    {
+      title: t('models.model_name'),
+      dataIndex: 'name',
+      key: 'name',
+      render: (text: string, record: ModelModel) => (
+        <Space size={8} align="start">
+          {record.logo && (
+            <img
+              src={`/assets/icons/lobe/${record.logo}.svg`}
+              alt=""
+              style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, flexShrink: 0, marginTop: 2 }}
+              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+          )}
+          <Space direction="vertical" size={0}>
+            <Text strong>{text}</Text>
+            <Space size={4}>
+              {record.provider_id && <Tag color="default" style={{ fontSize: '10px' }}>{getProviderName(record.provider_id)}</Tag>}
+              {record.type_id && <Tag color="blue" style={{ fontSize: '10px' }}>{getTypeName(record.type_id)}</Tag>}
+            </Space>
+          </Space>
+        </Space>
       ),
     },
     {
@@ -200,7 +207,12 @@ const Models: React.FC = () => {
         const br = allBillingRules.find(b => b.id === record.billing_rule_id);
         const type = br ? br.billing_type : 'tokens';
         const colors: Record<string, string> = { tokens: 'cyan', requests: 'orange', duration: 'purple' };
-        return <Tag color={colors[type]}>{t(`models.type_${type}`)}</Tag>;
+        return (
+          <Space direction="vertical" size={4}>
+            <Tag color={colors[type]} style={{ margin: 0 }}>{t(`models.type_${type}`)}</Tag>
+            {br && <Text type="secondary" style={{ fontSize: '11px' }}>{br.name}</Text>}
+          </Space>
+        );
       },
     },
     {
@@ -213,6 +225,11 @@ const Models: React.FC = () => {
           <Space direction="vertical" size={0}>
             <RateDisplay rule={br} currencySymbol={currencySymbol} />
             {(record.pre_deduction ?? 0) > 0 && <Text style={{ fontSize: '11px', color: '#faad14' }}>预扣: {currencySymbol}{record.pre_deduction}</Text>}
+            {record.site_discount_enabled === 1 && (
+              <Tag color="volcano" bordered={false} style={{ fontSize: '10px', marginTop: 2, padding: '0 4px', lineHeight: '16px' }}>
+                {Number(record.site_discount || 1).toFixed(2) === '1.00' ? '全站 1.00 倍率(不打折)' : `全站 ${Number(record.site_discount || 1).toFixed(2)} 倍率`}
+              </Tag>
+            )}
           </Space>
         );
       }
@@ -262,8 +279,14 @@ const Models: React.FC = () => {
         </div>
 
       <ClassificationFilter
-        providers={classStats.providers}
-        types={classStats.types}
+        providers={classStats.providers.map(p => ({
+          ...p,
+          logo: allProviders.find(ap => ap.id === p.id)?.logo
+        }))}
+        types={classStats.types.map(t => ({
+          ...t,
+          logo: allTypes.find(at => at.id === t.id)?.logo
+        }))}
         selectedProvider={selectedProvider}
         selectedType={selectedType}
         onProviderChange={setSelectedProvider}
@@ -286,11 +309,16 @@ const Models: React.FC = () => {
             return (
               <MobileCard
                 title={
-                  <div>
-                    <Text strong>{record.name}</Text>
-                    <div style={{ marginTop: 4 }}>
-                      {record.provider_id && <Tag color="default" style={{ fontSize: 10 }}>{getProviderName(record.provider_id)}</Tag>}
-                      {record.type_id && <Tag color="blue" style={{ fontSize: 10 }}>{getTypeName(record.type_id)}</Tag>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {record.logo && (
+                      <img src={`/assets/icons/lobe/${record.logo}.svg`} alt="" style={{ width: 24, height: 24, objectFit: 'contain', borderRadius: 4 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    )}
+                    <div>
+                      <Text strong>{record.name}</Text>
+                      <div style={{ marginTop: 4 }}>
+                        {record.provider_id && <Tag color="default" style={{ fontSize: 10 }}>{getProviderName(record.provider_id)}</Tag>}
+                        {record.type_id && <Tag color="blue" style={{ fontSize: 10 }}>{getTypeName(record.type_id)}</Tag>}
+                      </div>
                     </div>
                   </div>
                 }
@@ -300,9 +328,23 @@ const Models: React.FC = () => {
                   <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: 11 }}>{record.mid || '-'}</Tag>
                 </CardRow>
                 <CardRow label="模型ID"><Tag color="blue" style={{ fontSize: 11 }}>{record.model_id}</Tag></CardRow>
-                <CardRow label="计费类型"><Tag color={colors[billingTypeVal]}>{t(`models.type_${billingTypeVal}`)}</Tag></CardRow>
+                <CardRow label="计费类型">
+                  <Space size={4}>
+                    <Tag color={colors[billingTypeVal]} style={{ margin: 0 }}>{t(`models.type_${billingTypeVal}`)}</Tag>
+                    {br && <Text type="secondary" style={{ fontSize: 11 }}>{br.name}</Text>}
+                  </Space>
+                </CardRow>
                 <CardRow label="费率">
-                  {br ? <RateDisplay rule={br} currencySymbol={currencySymbol} /> : <Text type="secondary" italic>未挂载</Text>}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {br ? <RateDisplay rule={br} currencySymbol={currencySymbol} /> : <Text type="secondary" italic>未挂载</Text>}
+                    {record.site_discount_enabled === 1 && (
+                      <div>
+                        <Tag color="volcano" bordered={false} style={{ fontSize: '10px', margin: 0, padding: '0 4px', lineHeight: '16px' }}>
+                          {Number(record.site_discount || 1).toFixed(2) === '1.00' ? '全站 1.00 倍率(不打折)' : `全站 ${Number(record.site_discount || 1).toFixed(2)} 倍率`}
+                        </Tag>
+                      </div>
+                    )}
+                  </div>
                 </CardRow>
                 {(record.pre_deduction ?? 0) > 0 && (
                   <CardRow label="预扣"><Text style={{ fontSize: 11, color: '#faad14' }}>{currencySymbol}{record.pre_deduction}</Text></CardRow>
@@ -348,6 +390,14 @@ const Models: React.FC = () => {
               </Form.Item>
             </Col>
           </Row>
+
+          <Form.Item name="logo" label="模型 Logo">
+            <IconPicker
+              value={form.getFieldValue('logo')}
+              onChange={(icon) => form.setFieldsValue({ logo: icon?.name || undefined })}
+              placeholder="选择模型图标"
+            />
+          </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>

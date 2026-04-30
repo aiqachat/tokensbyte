@@ -13,10 +13,18 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Custom Nginx configuration for React router support
 RUN echo 'server { \
     listen 80; \
+    client_max_body_size 512m; \
     location / { \
         root /usr/share/nginx/html; \
         index index.html index.htm; \
         try_files $uri $uri/ /index.html; \
+    } \
+    location /assets/icons/ { \
+        proxy_pass http://backend:3000; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $scheme; \
     } \
     location /api/v1 { \
         proxy_pass http://backend:3000; \

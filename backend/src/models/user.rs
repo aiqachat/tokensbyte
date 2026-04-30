@@ -24,6 +24,8 @@ pub struct User {
     #[sqlx(default)]
     pub level_name: Option<String>,
     #[sqlx(default)]
+    pub level_id: Option<i64>,
+    #[sqlx(default)]
     pub admin_group_id: Option<i64>,
     #[serde(skip_deserializing)]
     #[sqlx(skip)]
@@ -38,6 +40,8 @@ pub struct User {
     pub register_ip: Option<String>,
     #[sqlx(default)]
     pub admin_remark: Option<String>,
+    #[sqlx(default)]
+    pub referral_history: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,6 +76,7 @@ pub struct UpdateUserRequest {
     pub is_active: Option<i64>,
     pub commission_balance: Option<f64>,
     pub admin_remark: Option<String>,
+    pub referral_history: Option<String>,
     pub referred_by: Option<String>,
 }
 

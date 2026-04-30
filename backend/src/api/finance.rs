@@ -37,6 +37,7 @@ pub struct FinanceRechargeRecord {
 pub struct FinanceRechargeResponse {
     pub data: Vec<FinanceRechargeRecord>,
     pub total: i64,
+    pub total_amount: f64,
 }
 
 pub async fn list_recharges(
@@ -97,7 +98,15 @@ pub async fn list_recharges(
         e
     })?;
 
-    Ok(Json(FinanceRechargeResponse { data, total }))
+    let total_amount_sql = format!("SELECT COALESCE(SUM(rr.amount), 0.0) FROM recharge_records rr JOIN users u ON rr.user_id = u.id{}", where_clause);
+    let total_amount_query_str = state.db.format_query(&total_amount_sql);
+    let mut amount_q = sqlx::query_scalar::<_, f64>(&total_amount_query_str);
+    for val in &binds {
+        amount_q = amount_q.bind(val);
+    }
+    let total_amount = amount_q.fetch_one(&state.db.pool).await.unwrap_or(0.0);
+
+    Ok(Json(FinanceRechargeResponse { data, total, total_amount }))
 }
 
 // ========== 支付订单（orders 表）==========
@@ -121,6 +130,7 @@ pub struct FinanceOrderRecord {
 pub struct FinanceOrderResponse {
     pub data: Vec<FinanceOrderRecord>,
     pub total: i64,
+    pub total_amount: f64,
 }
 
 pub async fn list_orders(
@@ -186,7 +196,15 @@ pub async fn list_orders(
         e
     })?;
 
-    Ok(Json(FinanceOrderResponse { data, total }))
+    let total_amount_sql = format!("SELECT COALESCE(SUM(o.amount), 0.0) FROM orders o JOIN users u ON o.user_id = u.id{} AND o.status = 'paid'", where_clause);
+    let total_amount_query_str = state.db.format_query(&total_amount_sql);
+    let mut amount_q = sqlx::query_scalar::<_, f64>(&total_amount_query_str);
+    for val in &binds {
+        amount_q = amount_q.bind(val);
+    }
+    let total_amount = amount_q.fetch_one(&state.db.pool).await.unwrap_or(0.0);
+
+    Ok(Json(FinanceOrderResponse { data, total, total_amount }))
 }
 
 pub async fn list_recharge_types(

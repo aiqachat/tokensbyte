@@ -78,30 +78,24 @@ pub async fn convert_content_urls(
     // 预加载 TOS 配置（base64 场景需要）
     let tos_config = crate::api::plugins::get_tos_config(state, "asset_manager").await;
 
-    for item in content_arr.iter_mut() {
+    // 收集需要转换的素材任务：(索引, url_key, asset_type, url_val, url_short)
+    let mut tasks: Vec<(usize, String, String, String, String)> = Vec::new();
+    for (idx, item) in content_arr.iter().enumerate() {
         let item_type = match item.get("type").and_then(|t| t.as_str()) {
             Some(t) => t.to_string(),
             None => continue,
         };
-
-        // 匹配 URL 类型
         let (url_key, asset_type) = match URL_TYPE_MAP.iter().find(|(t, _, _)| *t == item_type) {
-            Some((_, uk, at)) => (*uk, *at),
+            Some((_, uk, at)) => (uk.to_string(), at.to_string()),
             None => continue,
         };
-
-        // 提取 URL 值
-        let url_val = match item.get(url_key).and_then(|u| u.get("url")).and_then(|u| u.as_str()) {
+        let url_val = match item.get(&url_key).and_then(|u| u.get("url")).and_then(|u| u.as_str()) {
             Some(u) => u.to_string(),
             None => continue,
         };
-
-        // 跳过已转换的 asset:// 引用
         if url_val.starts_with("asset://") {
             continue;
         }
-
-        // 截取 URL 简短标识用于日志（避免过长）
         let url_short = if url_val.starts_with("data:") {
             "base64数据".to_string()
         } else if url_val.len() > 80 {
@@ -109,28 +103,51 @@ pub async fn convert_content_urls(
         } else {
             url_val.clone()
         };
+        tasks.push((idx, url_key, asset_type, url_val, url_short));
+    }
 
-        // 根据 URL 类型分发处理
-        let asset_id = if url_val.starts_with("http://") || url_val.starts_with("https://") {
-            convert_url_resource(state, &client, &volc_config, user_id, &url_val, asset_type).await
-        } else if url_val.starts_with("data:") {
-            convert_base64_resource(state, &client, &volc_config, &tos_config, user_id, &url_val, asset_type).await
-        } else {
-            logs.push(format!("[{}] 跳过: 不支持的格式", url_short));
-            continue;
+    if tasks.is_empty() {
+        return logs;
+    }
+
+    // 并发处理所有素材转换任务，大幅缩短多资源场景总耗时
+    let mut futures = Vec::new();
+    for (idx, url_key, asset_type, url_val, url_short) in tasks {
+        let state_clone = state;
+        let client_clone = client.clone();
+        let mut volc_config_clone = volc_config.clone();
+        let tos_config_clone = tos_config.clone();
+        let user_id_owned = user_id.to_string();
+
+        let fut = async move {
+            let asset_result = if url_val.starts_with("http://") || url_val.starts_with("https://") {
+                convert_url_resource(state_clone, &client_clone, &mut volc_config_clone, &user_id_owned, &url_val, &asset_type).await
+            } else if url_val.starts_with("data:") {
+                convert_base64_resource(state_clone, &client_clone, &mut volc_config_clone, &tos_config_clone, &user_id_owned, &url_val, &asset_type).await
+            } else {
+                Err("不支持的格式".to_string())
+            };
+            (idx, url_key, asset_type, url_short, asset_result)
         };
+        futures.push(fut);
+    }
 
-        // 替换 URL 为 asset://<ASSET_ID> 格式
-        match asset_id {
-            Some(aid) => {
+    // 收集并发结果
+    let results = futures::future::join_all(futures).await;
+    for (idx, url_key, asset_type, url_short, asset_result) in results {
+        match asset_result {
+            Ok(aid) => {
                 let asset_ref = format!("asset://{}", aid);
-                if let Some(url_obj) = item.get_mut(url_key).and_then(|u| u.as_object_mut()) {
+                if let Some(url_obj) = content_arr.get_mut(idx)
+                    .and_then(|item| item.get_mut(&url_key))
+                    .and_then(|u| u.as_object_mut())
+                {
                     url_obj.insert("url".to_string(), serde_json::json!(asset_ref));
                 }
                 logs.push(format!("[{}] {} ✓ {}", asset_type, url_short, asset_ref));
             }
-            None => {
-                logs.push(format!("[{}] {} ✗ 转换失败，保持原始URL", asset_type, url_short));
+            Err(reason) => {
+                logs.push(format!("[{}] {} ✗ 转换失败，保持原始URL: {}", asset_type, url_short, reason));
             }
         }
     }
@@ -141,17 +158,16 @@ pub async fn convert_content_urls(
 async fn convert_url_resource(
     state: &AppState,
     client: &crate::services::volcengine::VolcClient,
-    volc_config: &crate::services::volcengine::VolcConfig,
+    volc_config: &mut crate::services::volcengine::VolcConfig,
     user_id: &str,
     url: &str,
     asset_type: &str,
-) -> Option<String> {
-    // 下载资源并计算内容哈希
-    let content_hash = match fetch_content_hash(&state.http_client, url).await {
+) -> Result<String, String> {
+    // 下载资源并计算内容哈希（按素材类型动态调整超时）
+    let content_hash = match fetch_content_hash(&state.http_client, url, asset_type).await {
         Some(h) => h,
         None => {
             tracing::warn!("[AssetConvert] 无法下载资源计算哈希，回退 URL 去重: {}", url);
-            // 回退：使用 URL 字符串去重（兼容网络异常场景）
             return convert_with_url_fallback(state, client, volc_config, user_id, url, asset_type).await;
         }
     };
@@ -159,19 +175,19 @@ async fn convert_url_resource(
     // 基于内容哈希精确去重
     if let Some(aid) = query_by_hash(state, &content_hash).await {
         tracing::info!("[AssetConvert] 哈希命中，复用素材: hash={:.16}... -> {}", content_hash, aid);
-        return Some(aid);
+        return Ok(aid);
     }
 
     // 调用 CreateAsset API 注册新素材
-    match create_asset(client, volc_config, url, asset_type).await {
-        Some(aid) => {
+    match create_asset(state, client, volc_config, url, asset_type).await {
+        Ok(aid) => {
             insert_asset_record(state, user_id, asset_type, url, &aid, &content_hash).await;
             tracing::info!("[AssetConvert] 新素材注册成功: hash={:.16}... -> {}", content_hash, aid);
-            Some(aid)
+            Ok(aid)
         }
-        None => {
-            tracing::warn!("[AssetConvert] 素材注册失败，保持原始 URL: {}", url);
-            None
+        Err(reason) => {
+            tracing::warn!("[AssetConvert] 素材注册失败: {} - URL: {}", reason, url);
+            Err(reason)
         }
     }
 }
@@ -180,74 +196,48 @@ async fn convert_url_resource(
 async fn convert_base64_resource(
     state: &AppState,
     client: &crate::services::volcengine::VolcClient,
-    volc_config: &crate::services::volcengine::VolcConfig,
+    volc_config: &mut crate::services::volcengine::VolcConfig,
     tos_config: &Option<crate::services::tos::TosConfig>,
     user_id: &str,
     data_uri: &str,
     asset_type: &str,
-) -> Option<String> {
-    // 解码 base64 数据
-    let (bytes, ext) = match decode_base64_data(data_uri) {
-        Some(result) => result,
-        None => {
-            tracing::warn!("[AssetConvert] base64 数据解码失败，跳过");
-            return None;
-        }
-    };
+) -> Result<String, String> {
+    let (bytes, ext) = decode_base64_data(data_uri)
+        .ok_or_else(|| "base64 数据解码失败".to_string())?;
 
-    // 计算内容哈希
     let content_hash = hex::encode(Sha256::digest(&bytes));
 
-    // 基于内容哈希精确去重
     if let Some(aid) = query_by_hash(state, &content_hash).await {
         tracing::info!("[AssetConvert] base64 哈希命中，复用素材: hash={:.16}... -> {}", content_hash, aid);
-        return Some(aid);
+        return Ok(aid);
     }
 
-    // 需要 TOS 配置来上传临时文件
-    let tos_cfg = match tos_config {
-        Some(cfg) => cfg,
-        None => {
-            tracing::warn!("[AssetConvert] base64 转换需要 TOS 配置，但未配置存储，跳过");
-            return None;
-        }
-    };
+    let tos_cfg = tos_config.as_ref()
+        .ok_or_else(|| "base64 转换需要 TOS 配置，但未配置存储".to_string())?;
 
-    // 上传到 TOS 临时路径
     let tmp_filename = format!("{}.{}", &content_hash[..16], ext);
     let tmp_object_key = tos_cfg.full_key(&format!("_tmp_asset_convert/{}", tmp_filename));
 
-    let tmp_url = match crate::services::tos::upload_file(
+    let tmp_url = crate::services::tos::upload_file(
         tos_cfg, &tmp_object_key, bytes, &format!("{}/{}", asset_type.to_lowercase(), ext), None,
-    ).await {
-        Ok(url) => url,
-        Err(e) => {
-            tracing::error!("[AssetConvert] base64 临时文件上传 TOS 失败: {}", e);
-            return None;
-        }
-    };
+    ).await.map_err(|e| format!("TOS 临时文件上传失败: {}", e))?;
 
     tracing::info!("[AssetConvert] base64 临时文件已上传: {}", tmp_url);
 
-    // 调用 CreateAsset API
-    let result = match create_asset(client, volc_config, &tmp_url, asset_type).await {
-        Some(aid) => {
+    let result = match create_asset(state, client, volc_config, &tmp_url, asset_type).await {
+        Ok(aid) => {
             let fname = format!("base64_{}.{}", &content_hash[..8], ext);
             insert_asset_record(state, user_id, asset_type, &tmp_url, &aid, &content_hash).await;
             tracing::info!("[AssetConvert] base64 素材注册成功: {} -> {}", fname, aid);
-            Some(aid)
+            Ok(aid)
         }
-        None => {
-            tracing::warn!("[AssetConvert] base64 素材注册失败");
-            None
-        }
+        Err(reason) => Err(reason),
     };
 
     // 异步删除 TOS 临时文件，不阻塞主流程
     let tos_cfg_clone = tos_cfg.clone();
     let tmp_key_clone = tmp_object_key.clone();
     tokio::spawn(async move {
-        // 延迟 3 秒再删除，给 CreateAsset API 足够时间拉取文件
         tokio::time::sleep(Duration::from_secs(3)).await;
         match crate::services::tos::delete_file(&tos_cfg_clone, &tmp_key_clone).await {
             Ok(_) => tracing::info!("[AssetConvert] TOS 临时文件已清理: {}", tmp_key_clone),
@@ -260,11 +250,20 @@ async fn convert_base64_resource(
 
 // ========== 内部工具函数 ==========
 
-/// 下载 URL 资源并计算 SHA-256 内容哈希（不保留字节，节省内存）
-async fn fetch_content_hash(http_client: &reqwest::Client, url: &str) -> Option<String> {
+/// 下载 URL 资源并计算 SHA-256 内容哈希。
+/// 采用流式增量计算：边下载边更新哈希摘要，避免将整个文件加载到内存中，
+/// 对大体积视频文件友好。超时按素材类型动态调整：
+///   Image: 30s, Audio: 60s, Video: 180s
+async fn fetch_content_hash(http_client: &reqwest::Client, url: &str, asset_type: &str) -> Option<String> {
+    let timeout_secs = match asset_type {
+        "Video" => 180,
+        "Audio" => 60,
+        _ => 30,
+    };
+
     let resp = http_client
         .get(url)
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(timeout_secs))
         .send()
         .await
         .ok()?;
@@ -273,8 +272,20 @@ async fn fetch_content_hash(http_client: &reqwest::Client, url: &str) -> Option<
         return None;
     }
 
-    let bytes = resp.bytes().await.ok()?;
-    Some(hex::encode(Sha256::digest(&bytes)))
+    // 流式增量哈希：逐块读取并更新 SHA-256 摘要，无需一次性缓存全部字节
+    let mut hasher = Sha256::new();
+    let mut stream = resp.bytes_stream();
+    use futures::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(bytes) => hasher.update(&bytes),
+            Err(e) => {
+                tracing::warn!("[AssetConvert] 流式下载中断: {} - {}", url, e);
+                return None;
+            }
+        }
+    }
+    Some(hex::encode(hasher.finalize()))
 }
 
 /// 解码 base64 data URI，返回 (原始字节, 文件扩展名)
@@ -323,12 +334,11 @@ async fn query_by_hash(state: &AppState, content_hash: &str) -> Option<String> {
 async fn convert_with_url_fallback(
     state: &AppState,
     client: &crate::services::volcengine::VolcClient,
-    volc_config: &crate::services::volcengine::VolcConfig,
+    volc_config: &mut crate::services::volcengine::VolcConfig,
     user_id: &str,
     url: &str,
     asset_type: &str,
-) -> Option<String> {
-    // 使用 URL 字符串去重
+) -> Result<String, String> {
     let existing: Option<String> = sqlx::query_as::<_, (String,)>(
         &state.db.format_query(
             "SELECT asset_id FROM plugin_assets WHERE file_url = ? AND source = 'relay_convert' AND asset_id IS NOT NULL LIMIT 1"
@@ -343,19 +353,18 @@ async fn convert_with_url_fallback(
 
     if let Some(aid) = existing {
         tracing::info!("[AssetConvert] URL 回退去重命中: {} -> {}", url, aid);
-        return Some(aid);
+        return Ok(aid);
     }
 
-    match create_asset(client, volc_config, url, asset_type).await {
-        Some(aid) => {
-            // 回退模式下 content_hash 留空
+    match create_asset(state, client, volc_config, url, asset_type).await {
+        Ok(aid) => {
             insert_asset_record_raw(state, user_id, asset_type, url, &aid, None).await;
             tracing::info!("[AssetConvert] 回退模式注册成功: {} -> {}", url, aid);
-            Some(aid)
+            Ok(aid)
         }
-        None => {
-            tracing::warn!("[AssetConvert] 素材注册失败，保持原始 URL: {}", url);
-            None
+        Err(reason) => {
+            tracing::warn!("[AssetConvert] 素材注册失败: {} - URL: {}", reason, url);
+            Err(reason)
         }
     }
 }
@@ -400,36 +409,75 @@ async fn insert_asset_record_raw(
 }
 
 /// 调用 CreateAsset API 注册素材，并轮询等待素材处理完成（Active 状态）
+/// 视频资源处理时间较长，自动根据素材类型调整超时（Image: 30s, Video/Audio: 60s）
 async fn create_asset(
+    state: &AppState,
     client: &crate::services::volcengine::VolcClient,
-    volc_config: &crate::services::volcengine::VolcConfig,
+    volc_config: &mut crate::services::volcengine::VolcConfig,
     url: &str,
     asset_type: &str,
-) -> Option<String> {
+) -> Result<String, String> {
     let group_id = volc_config.group_id.clone().unwrap_or_default();
 
-    let req = crate::services::volcengine::CreateAssetRequest {
-        group_id,
+    let mut req = crate::services::volcengine::CreateAssetRequest {
+        group_id: group_id.clone(),
         url: url.to_string(),
         asset_type: asset_type.to_string(),
         name: None,
         project_name: Some(volc_config.project_name.clone()),
     };
 
-    let asset_id = match client.call_api::<_, crate::services::volcengine::CreateAssetResponse>(
-        "ark", "cn-beijing", "CreateAsset", "2024-01-01", req
-    ).await {
-        Ok(res) => res.id,
-        Err(e) => {
-            tracing::error!("[AssetConvert] CreateAsset 调用失败: {}", e);
-            return None;
+    let mut asset_id_res = client.call_api::<_, crate::services::volcengine::CreateAssetResponse>(
+        "ark", "cn-beijing", "CreateAsset", "2024-01-01", crate::services::volcengine::CreateAssetRequest {
+            group_id: req.group_id.clone(),
+            url: req.url.clone(),
+            asset_type: req.asset_type.clone(),
+            name: req.name.clone(),
+            project_name: req.project_name.clone(),
         }
-    };
+    ).await;
 
-    // 轮询等待素材处理完成（最多 30 秒，每 2 秒查一次）
-    const MAX_WAIT_SECS: u64 = 30;
-    const POLL_INTERVAL_SECS: u64 = 2;
-    let max_attempts = MAX_WAIT_SECS / POLL_INTERVAL_SECS;
+    // 错误处理：如果是无效的素材组（比如换了 Access Key），尝试重新生成一次
+    if let Err(e) = &asset_id_res {
+        let e_lower = e.to_string().to_lowercase();
+        // 启发式判断：如果错误提示与 group、权限有关，则尝试重置 GroupID
+        // 避免因为单纯的图片 URL 无效或网络超时导致滥建素材组
+        if e_lower.contains("group") || e_lower.contains("auth") {
+            tracing::warn!("[AssetConvert] CreateAsset 失败，可能由于 AccessKey 变更导致原 GroupID 无效，准备重试。原错误: {}", e);
+            
+            // 防止高并发下产生多个冗余 Group，先从数据库重新拉取一次最新配置，判断是否已被其他并发请求刷新
+            if let Some(latest_cfg) = crate::api::plugins::get_volc_config(state, "asset_manager").await {
+                if latest_cfg.group_id.is_some() && latest_cfg.group_id != Some(group_id.clone()) {
+                    tracing::info!("[AssetConvert] 发现其他并发请求已更新素材组 ID，直接复用: {:?}", latest_cfg.group_id);
+                    volc_config.group_id = latest_cfg.group_id;
+                } else {
+                    // 数据库里的配置未变，说明确实需要当前请求去申请一个新的
+                    volc_config.group_id = None;
+                    ensure_group_id(state, client, volc_config).await;
+                }
+            } else {
+                volc_config.group_id = None;
+                ensure_group_id(state, client, volc_config).await;
+            }
+
+            req.group_id = volc_config.group_id.clone().unwrap_or_default();
+            asset_id_res = client.call_api::<_, crate::services::volcengine::CreateAssetResponse>(
+                "ark", "cn-beijing", "CreateAsset", "2024-01-01", req
+            ).await;
+        }
+    }
+
+    let asset_id = asset_id_res.map_err(|e| format!("CreateAsset API 调用失败: {}", e))?.id;
+
+    // 视频/音频资源处理时间较长，动态调整轮询超时
+    // Image: 60s, Audio: 120s, Video: 180s（视频文件体积大，火山端处理更耗时）
+    let max_wait_secs: u64 = match asset_type {
+        "Image" => 60,
+        "Audio" => 120,
+        _ => 180,
+    };
+    const POLL_INTERVAL_SECS: u64 = 3;
+    let max_attempts = max_wait_secs / POLL_INTERVAL_SECS;
 
     for attempt in 0..max_attempts {
         tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
@@ -446,11 +494,19 @@ async fn create_asset(
                 match res.status.as_str() {
                     "Active" => {
                         tracing::info!("[AssetConvert] 素材就绪: {} (等待 {}s)", asset_id, (attempt + 1) * POLL_INTERVAL_SECS);
-                        return Some(asset_id);
+                        return Ok(asset_id);
                     }
                     "Failed" => {
-                        tracing::error!("[AssetConvert] 素材处理失败: {}", asset_id);
-                        return None;
+                        let fail_code = res.fail_code.as_deref().unwrap_or("");
+                        let fail_reason = res.fail_reason.as_deref().unwrap_or("");
+                        let reason = match (fail_code.is_empty(), fail_reason.is_empty()) {
+                            (false, false) => format!("[{}] {}", fail_code, fail_reason),
+                            (false, true)  => format!("[{}]", fail_code),
+                            (true, false)  => fail_reason.to_string(),
+                            (true, true)   => format!("完整响应: {:?}", res),
+                        };
+                        tracing::error!("[AssetConvert] 素材处理失败: {} - {}", asset_id, reason);
+                        return Err(format!("素材处理失败({}): {}", asset_id, reason));
                     }
                     status => {
                         tracing::debug!("[AssetConvert] 素材处理中: {} status={} (第{}/{}次)", asset_id, status, attempt + 1, max_attempts);
@@ -463,8 +519,7 @@ async fn create_asset(
         }
     }
 
-    tracing::warn!("[AssetConvert] 素材处理超时({}s)，跳过使用: {}", MAX_WAIT_SECS, asset_id);
-    None
+    Err(format!("素材处理超时({}s): {}", max_wait_secs, asset_id))
 }
 
 /// 自动保证 Group ID 存在，未设置时调用 API 自动生成并持久化

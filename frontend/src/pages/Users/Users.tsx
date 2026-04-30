@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress, Grid, Radio } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Progress, Grid, Radio, Tabs, Timeline } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined, DollarOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, SyncOutlined, WalletOutlined, DollarOutlined, LoginOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
+import useAuthStore from '../../store/auth';
 import type { User } from '../../types';
 import dayjs from 'dayjs';
 
@@ -105,10 +106,12 @@ const Users: React.FC = () => {
   const handleSave = async (values: { [key: string]: unknown }) => {
     try {
       if (editingUser) {
-        // 编辑时如果密码为空则不发送，避免意外重置密码
         const payload = { ...values };
         if (!payload.password || (payload.password as string).trim() === '') {
           delete payload.password;
+        }
+        if (payload.referred_by === undefined) {
+          payload.referred_by = "";
         }
         await request.put(`/users/${editingUser.id}`, payload);
         message.success(t('common.success'));
@@ -151,6 +154,27 @@ const Users: React.FC = () => {
       fetchUsers();
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleImpersonate = async (record: User) => {
+    try {
+      const resp = await (request.post(`/users/${record.id}/impersonate`) as unknown as Promise<{ token: string; user: User }>);
+      const { token, user } = resp;
+      
+      let baseUrl = window.location.origin;
+      // 严谨判断：如果处于本地开发环境，并且不是在5173端口，强制向5173发起用户端请求
+      if (baseUrl.includes('localhost') && !baseUrl.includes('5173')) {
+        baseUrl = 'http://localhost:5173';
+      }
+      
+      message.success(`正在打开用户端: ${user.username}`);
+      
+      // 添加一个特定标记，便于 Login.tsx 处理特殊情况
+      window.open(`${baseUrl}/login?token=${token}&impersonate=1`, '_blank');
+    } catch (e) {
+      console.error(e);
+      message.error('切换用户失败');
     }
   };
 
@@ -302,11 +326,20 @@ const Users: React.FC = () => {
       render: (_: unknown, record: User) => (
         <Space>
           {!isAdminPage && (
-            <Button 
-              icon={<WalletOutlined />} 
-              style={{ color: '#52c41a', borderColor: '#52c41a' }}
-              onClick={() => handleRechargeClick(record)} 
-            />
+            <>
+              <Button 
+                icon={<WalletOutlined />} 
+                style={{ color: '#52c41a', borderColor: '#52c41a' }}
+                onClick={() => handleRechargeClick(record)} 
+                title="充值"
+              />
+              <Button 
+                icon={<LoginOutlined />} 
+                style={{ color: '#1677ff', borderColor: '#1677ff' }}
+                onClick={() => handleImpersonate(record)}
+                title="登录此用户"
+              />
+            </>
           )}
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
@@ -380,7 +413,10 @@ const Users: React.FC = () => {
                 <CardRow label="加入时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm')}</Text></CardRow>
                 <CardActions>
                   {!isAdminPage && (
-                    <Button size="small" icon={<WalletOutlined />} style={{ color: '#52c41a', borderColor: '#52c41a' }} onClick={() => handleRechargeClick(record)} />
+                    <>
+                      <Button size="small" icon={<WalletOutlined />} style={{ color: '#52c41a', borderColor: '#52c41a' }} onClick={() => handleRechargeClick(record)} title="充值" />
+                      <Button size="small" icon={<LoginOutlined />} style={{ color: '#1677ff', borderColor: '#1677ff' }} onClick={() => handleImpersonate(record)} title="登录此用户" />
+                    </>
                   )}
                   <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
                   <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
@@ -414,6 +450,14 @@ const Users: React.FC = () => {
         onOk={() => form.submit()}
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
+          <Tabs
+            defaultActiveKey="1"
+            items={[
+              {
+                key: '1',
+                label: '用户基本信息',
+                children: (
+                  <>
           <Form.Item name="username" label={t('users.username')} rules={[{ required: true }]}>
             <Input placeholder={t('users.username')} />
           </Form.Item>
@@ -424,7 +468,20 @@ const Users: React.FC = () => {
             <Input.TextArea placeholder="写入简便备注例如: vip客户" rows={3} autoSize={{ minRows: 2, maxRows: 6 }} />
           </Form.Item>
           <Form.Item name="referred_by" label="上级推荐人 (UID / User ID)">
-            <Input placeholder="输入推荐人的内部 ID" />
+            <Select
+              showSearch
+              allowClear
+              placeholder="输入用户名、UID 或邮箱快速搜索"
+              filterOption={(input, option) => {
+                if (!option) return false;
+                const searchStr = String(option.label || '').toLowerCase();
+                return searchStr.includes(input.toLowerCase());
+              }}
+              options={allUsers.map(u => ({
+                value: u.uid || String(u.id),
+                label: `${u.username} ${u.nickname ? `(${u.nickname})` : ''} - UID: ${u.uid || u.id} ${u.email ? `(${u.email})` : ''}`
+              }))}
+            />
           </Form.Item>
           <Form.Item name="email" label={t('users.email')} rules={[{ required: true, type: 'email' }]}>
             <Input placeholder="email@example.com" />
@@ -480,6 +537,57 @@ const Users: React.FC = () => {
               <Option value={false}>{t('common.disabled')}</Option>
             </Select>
           </Form.Item>
+                  </>
+                )
+              },
+              ...(editingUser ? [{
+                key: '2',
+                label: '用户详细',
+                children: (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 8 }}>
+                    <div>
+                      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>注册时间:</Typography.Text>
+                      <Typography.Text>{editingUser.created_at ? dayjs(editingUser.created_at).format('YYYY-MM-DD HH:mm:ss') : '未知'}</Typography.Text>
+                    </div>
+                    <div>
+                      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>最后活跃时间:</Typography.Text>
+                      <Typography.Text>{editingUser.updated_at ? dayjs(editingUser.updated_at).format('YYYY-MM-DD HH:mm:ss') : '未知'}</Typography.Text>
+                    </div>
+                    <div>
+                      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>注册 IP:</Typography.Text>
+                      <Typography.Text>{editingUser.register_ip || '未知'}</Typography.Text>
+                    </div>
+                    <div>
+                      <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>关联记录 (流转记录):</Typography.Text>
+                      <div style={{ padding: '16px 16px 0', background: 'var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))', borderRadius: 8, minHeight: 100, border: '1px solid var(--ant-color-border-secondary, #f0f0f0)' }}>
+                        {editingUser.referral_history ? (
+                          <Timeline 
+                            items={editingUser.referral_history.split('\n').filter(line => line.trim()).map(line => {
+                              const match = line.match(/^\[(.*?)\]\s*(.*)$/);
+                              if (match) {
+                                return {
+                                  color: 'blue',
+                                  children: (
+                                    <>
+                                      <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block' }}>{match[1]}</Typography.Text>
+                                      <Typography.Text style={{ marginTop: 2, display: 'block' }}>{match[2]}</Typography.Text>
+                                    </>
+                                  )
+                                };
+                              }
+                              return { children: <Typography.Text>{line}</Typography.Text> };
+                            }).reverse()}
+                          />
+                        ) : (
+                          <Typography.Text type="secondary">暂无流转记录</Typography.Text>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              }] : [])
+            ]}
+          />
         </Form>
       </Modal>
 

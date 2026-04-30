@@ -17,8 +17,8 @@
 }
 
 /* TextArea focus */
-.ant-input:focus,
-.ant-input-focused {
+.playground-root .ant-input:focus,
+.playground-root .ant-input-focused {
     border-color: transparent !important;
     box-shadow: none !important;
 }
@@ -54,14 +54,29 @@
 }
 
 /* 隐藏自带的边框颜色，接管自定义的高级光效设计 */
-.ant-radio-button-wrapper {
+.playground-root .ant-radio-button-wrapper {
     color: rgba(255,255,255,0.4) !important;
     transition: all 0.2s !important;
 }
-.ant-radio-button-wrapper-checked {
+.playground-root .ant-radio-button-wrapper-checked {
     color: #fff !important;
 }
 
-.ant-radio-button-wrapper::before {
+.playground-root .ant-radio-button-wrapper::before {
     display: none !important; /* 隐藏单选按钮间的默认竖线 */
+}
+
+/* Prompt Assets Scrollbar */
+.prompt-assets-scroll::-webkit-scrollbar {
+    height: 6px;
+}
+.prompt-assets-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+.prompt-assets-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+.prompt-assets-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
 }

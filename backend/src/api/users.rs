@@ -4,7 +4,7 @@ use axum::{
 };
 use std::sync::Arc;
 use crate::AppState;
-use crate::models::{User, CreateUserRequest, UpdateUserRequest, UserListResponse, RechargeRequest};
+use crate::models::{User, CreateUserRequest, UpdateUserRequest, UserListResponse, RechargeRequest, LoginResponse};
 use crate::error::{AppError, AppResult};
 use crate::auth;
 use sqlx::Any;
@@ -54,9 +54,16 @@ pub async fn create_user(
     let admin_group_id = request.admin_group_id;
     let referred_by = request.referred_by.clone().or(request.aff.clone());
 
+    let referral_history = if let Some(ref inviter) = referred_by {
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+    } else {
+        None
+    };
+
     sqlx::query(
-        &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, user_group, admin_group_id, balance, is_active, referred_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 1, ?)"#)
+        &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, user_group, admin_group_id, balance, is_active, referred_by, referral_history)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 1, ?, ?)"#)
     )
     .bind(&user_id)
     .bind(&uid)
@@ -67,6 +74,7 @@ pub async fn create_user(
     .bind(user_group)
     .bind(admin_group_id)
     .bind(&referred_by)
+    .bind(&referral_history)
     .execute(&state.db.pool)
     .await?;
 
@@ -106,8 +114,20 @@ pub async fn update_user(
     if let Some(user_group) = request.user_group { user.user_group = user_group; }
     if let Some(is_active) = request.is_active { user.is_active = is_active; }
     if let Some(admin_remark) = request.admin_remark { user.admin_remark = Some(admin_remark); }
+    let old_referred_by = user.referred_by.clone();
+
     if let Some(referred_by) = request.referred_by { 
-        user.referred_by = if referred_by.trim().is_empty() { None } else { Some(referred_by) }; 
+        let new_ref = if referred_by.trim().is_empty() { None } else { Some(referred_by.clone()) }; 
+        if old_referred_by != new_ref {
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let old_str = old_referred_by.unwrap_or_else(|| "无".to_string());
+            let new_str = new_ref.clone().unwrap_or_else(|| "无".to_string());
+            let msg = format!("[{}] 推荐人从 {} 变更为 {}\n", now, old_str, new_str);
+            let mut hist = user.referral_history.clone().unwrap_or_default();
+            hist.push_str(&msg);
+            user.referral_history = Some(hist);
+        }
+        user.referred_by = new_ref;
     }
 
     let mut tx = state.db.pool.begin().await?;
@@ -115,7 +135,7 @@ pub async fn update_user(
     sqlx::query(
         &state.db.format_query(r#"UPDATE users SET username = ?, email = ?, password_hash = ?, 
            nickname = ?, mobile = ?, wechat_id = ?,
-           role = ?, balance = ?, user_group = ?, is_active = ?, admin_remark = ?, referred_by = ?, updated_at = CURRENT_TIMESTAMP
+           role = ?, balance = ?, user_group = ?, is_active = ?, admin_remark = ?, referred_by = ?, referral_history = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&user.username)
@@ -130,6 +150,7 @@ pub async fn update_user(
     .bind(user.is_active)
     .bind(&user.admin_remark)
     .bind(&user.referred_by)
+    .bind(&user.referral_history)
     .bind(&id)
     .execute(&mut *tx)
     .await?;
@@ -154,9 +175,56 @@ pub async fn update_user(
 pub async fn delete_user(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
+    axum::extract::Extension(claims): axum::extract::Extension<crate::auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
-    // Prevent self-deletion if needed (optional)
-    sqlx::query(&state.db.format_query("DELETE FROM users WHERE id = ?")).bind(id).execute(&state.db.pool).await?;
+    // 防止管理员删除自己
+    if claims.sub == id {
+        return Err(AppError::BadRequest("不能删除当前登录的管理员账户".to_string()));
+    }
+
+    // 使用事务，按外键依赖顺序逐层清理关联数据
+    let mut tx = state.db.pool.begin().await?;
+
+    // 1. commissions 引用 recharge_records(id) 和 users(id)，必须最先删
+    sqlx::query(&state.db.format_query("DELETE FROM commissions WHERE user_id = ? OR from_user_id = ?"))
+        .bind(&id).bind(&id).execute(&mut *tx).await?;
+
+    // 2. recharge_records 引用 users(id)
+    sqlx::query(&state.db.format_query("DELETE FROM recharge_records WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 3. api_tokens 引用 users(id)
+    sqlx::query(&state.db.format_query("DELETE FROM api_tokens WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 4. orders 引用 users(id)
+    sqlx::query(&state.db.format_query("DELETE FROM orders WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 5. plugin_assets 引用 users(id)
+    sqlx::query(&state.db.format_query("DELETE FROM plugin_assets WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 6. plugin_asset_groups 引用 users(id)
+    sqlx::query(&state.db.format_query("DELETE FROM plugin_asset_groups WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 7. 无外键但需清理的业务数据
+    sqlx::query(&state.db.format_query("DELETE FROM logs WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+    sqlx::query(&state.db.format_query("DELETE FROM plugin_api_logs WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+    // marketing 关联（无外键但需清理）
+    sqlx::query(&state.db.format_query("DELETE FROM marketing_team_leaders WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+    sqlx::query(&state.db.format_query("DELETE FROM marketing_team_members WHERE user_id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    // 8. 最终删除用户主记录（playground_projects / playground_assets 已有 ON DELETE CASCADE）
+    sqlx::query(&state.db.format_query("DELETE FROM users WHERE id = ?"))
+        .bind(&id).execute(&mut *tx).await?;
+
+    tx.commit().await?;
 
     Ok(Json(serde_json::json!({ "success": true })))
 }
@@ -206,4 +274,29 @@ pub async fn recharge_user(
     .await?;
 
     Ok(Json(updated_user))
+}
+
+pub async fn impersonate_user(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> AppResult<Json<LoginResponse>> {
+    let user: User = sqlx::query_as(&state.db.format_query(
+        "SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"
+    ))
+    .bind(&id)
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    if user.role != "user" {
+        return Err(AppError::Forbidden("Only normal users can be impersonated".to_string()));
+    }
+
+    if user.is_active == 0 {
+        return Err(AppError::Forbidden("Account disabled".to_string()));
+    }
+
+    let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
+
+    Ok(Json(LoginResponse { token, user }))
 }

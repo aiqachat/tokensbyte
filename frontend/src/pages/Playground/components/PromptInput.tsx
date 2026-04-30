@@ -4,18 +4,22 @@
  * - 上层：干净的文本输入区域
  * - 下层：功能芯片栏（模型选择、API 密钥、附加功能按钮）+ 运行按钮
  */
-import React, { useState } from 'react';
-import { Input, Tooltip, message } from 'antd';
+import React, { useState, useRef, useCallback } from 'react';
+import { Input, Tooltip, message, Dropdown, Modal, Switch } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   KeyOutlined, PlayCircleOutlined, AppstoreOutlined,
   LinkOutlined, PlusOutlined, AudioOutlined,
   CloseOutlined, ThunderboltOutlined,
   PaperClipOutlined, PictureOutlined, VideoCameraOutlined,
+  CloudOutlined, UploadOutlined, GlobalOutlined,
 } from '@ant-design/icons';
 import { usePlayground } from '../context/PlaygroundContext';
 import { useGeneration } from '../hooks/useGeneration';
 import { getCategoryLabel } from '../constants';
 import AssetPickerModal from './AssetPickerModal';
+import ImageEditorModal from './ImageEditorModal';
+import VideoEditorModal from './VideoEditorModal';
 import type { PluginAsset } from '../../../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -38,11 +42,104 @@ const PromptInput: React.FC = React.memo(() => {
     generating,
     setIsTokenModalVisible,
     setIsModelDrawerVisible,
+    attachedAssets, setAttachedAssets,
+    paramValues, setParamValues,
   } = usePlayground();
   const { handleGenerate } = useGeneration();
   const [isFocused, setIsFocused] = useState(false);
   const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false);
-  const [attachedAsset, setAttachedAsset] = useState<{ asset: PluginAsset; fullUrl: string } | null>(null);
+  const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
+  const [isVideoPreviewOpen, setIsVideoPreviewOpen] = useState(false);
+  const [editingAssetIndex, setEditingAssetIndex] = useState<number | null>(null);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /** 语音输入 - 聚焦输入框并提示使用系统听写 */
+  const handleVoiceInput = useCallback(() => {
+    // 聚焦到输入框，让系统听写可以直接输入
+    const textarea = document.querySelector('.prompt-textarea textarea') as HTMLTextAreaElement;
+    if (textarea) {
+      textarea.focus();
+    }
+
+    const isMacOS = /Mac|iPod|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+    if (isMacOS) {
+      message.info({
+        content: '请按两次 Fn 键或点击键盘上的 🎙️ 键启动系统听写',
+        duration: 4,
+      });
+    } else {
+      message.info({
+        content: '请按 Win + H 启动系统语音输入',
+        duration: 4,
+      });
+    }
+  }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    if (attachedAssets.length + files.length > 10) {
+      message.error('最多只能附加 10 个附件');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const newAssets = files.map(file => {
+      if (file.size > 10 * 1024 * 1024) {
+        message.error(`${file.name} 大小超过 10MB，已跳过`);
+        return null;
+      }
+      const url = URL.createObjectURL(file);
+      const isVideo = file.type.startsWith('video');
+      const isAudio = file.type.startsWith('audio');
+      const assetType = isVideo ? 'video' : isAudio ? 'audio' : 'image';
+      const mockAsset = {
+        id: Date.now() + Math.random(),
+        file_name: file.name,
+        asset_type: assetType,
+        size: file.size,
+        file_url: url
+      };
+      return { asset: mockAsset as any, fullUrl: url, file };
+    }).filter(Boolean) as { asset: any; fullUrl: string; file?: File }[];
+
+    setAttachedAssets(prev => [...prev, ...newAssets]);
+    if (newAssets.length > 0) {
+      message.success(`已成功附加 ${newAssets.length} 个文件`);
+    }
+
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
+
+  const handleMenuClick: MenuProps['onClick'] = (e) => {
+    if (e.key === 'asset-library') {
+      setIsAssetPickerOpen(true);
+    } else if (e.key === 'local-upload') {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const removeAsset = (index: number) => {
+    setAttachedAssets(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const dropdownItems: MenuProps['items'] = [
+    {
+      key: 'asset-library',
+      label: '从资产库选择',
+      icon: <CloudOutlined />,
+    },
+    {
+      key: 'local-upload',
+      label: '本地上传文件',
+      icon: <UploadOutlined />,
+    },
+  ];
 
   const modSymbol = isMac() ? '⌘' : 'Ctrl';
   const tokenName = selectedTokenKey
@@ -72,99 +169,133 @@ const PromptInput: React.FC = React.memo(() => {
         background: 'rgba(22, 23, 26, 0.92)',
         backdropFilter: 'blur(20px)',
         borderRadius: 20,
-        border: `1px solid ${isFocused ? 'rgba(162, 193, 255, 0.25)' : 'rgba(255,255,255,0.08)'}`,
+        border: `1px solid ${isFocused ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255,255,255,0.08)'}`,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
         boxShadow: isFocused
-          ? '0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(162, 193, 255, 0.08)'
+          ? '0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255, 255, 255, 0.08)'
           : '0 24px 60px rgba(0,0,0,0.5)',
         zIndex: 1000,
         transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
       }}
       onWheel={(e) => e.stopPropagation()}
     >
-      {/* 已附加的素材预览 */}
-      {attachedAsset && (
-        <div style={{
-          padding: '12px 16px 0 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-        }}>
-          <div style={{
+      {/* 已附加的素材预览列表 */}
+      {attachedAssets.length > 0 && (
+        <div 
+          className="prompt-assets-scroll"
+          onWheel={(e) => {
+            if (e.deltaY !== 0) {
+              e.currentTarget.scrollLeft += e.deltaY;
+            }
+          }}
+          style={{
+            padding: '12px 16px 8px 16px',
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            padding: '6px 10px 6px 6px',
-            background: 'rgba(22, 119, 255, 0.08)',
-            border: '1px solid rgba(22, 119, 255, 0.2)',
-            borderRadius: 10,
-            maxWidth: 360,
-          }}>
-            {/* 缩略图 */}
-            {(() => {
-              const ext = attachedAsset.asset.file_name.split('.').pop()?.toLowerCase() || '';
-              const isVideo = attachedAsset.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
-              const isAudio = attachedAsset.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
-              if (isAudio) {
+            gap: 12,
+            overflowX: 'auto',
+          }}
+        >
+          {attachedAssets.map((assetItem, index) => (
+            <div key={assetItem.asset.id} style={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 64,
+              height: 64,
+              borderRadius: 10,
+              overflow: 'hidden',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+              flexShrink: 0,
+              background: 'rgba(0,0,0,0.2)',
+            }}>
+              {/* 缩略图渲染逻辑 */}
+              {(() => {
+                const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
+                const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
+                const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+                if (isAudio) {
+                  return (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <AudioOutlined style={{ fontSize: 24, color: '#1677ff' }} />
+                    </div>
+                  );
+                }
+                if (isVideo) {
+                  return (
+                    <div 
+                      onClick={() => {
+                        setEditingAssetIndex(index);
+                        setIsVideoPreviewOpen(true);
+                      }}
+                      style={{ width: '100%', height: '100%', position: 'relative', cursor: 'pointer' }}
+                      title="点击预览视频"
+                    >
+                      <video src={assetItem.fullUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" />
+                      <div style={{ position: 'absolute', bottom: 4, left: 4, background: 'rgba(0,0,0,0.5)', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <VideoCameraOutlined style={{ fontSize: 10, color: '#fff' }} />
+                      </div>
+                      <div className="hover-edit-overlay" style={{
+                        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', 
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s'
+                      }}>
+                        <PlayCircleOutlined style={{ fontSize: 20, color: '#fff' }} />
+                      </div>
+                    </div>
+                  );
+                }
                 return (
-                  <div style={{ width: 36, height: 36, borderRadius: 6, background: 'rgba(22,119,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <AudioOutlined style={{ fontSize: 16, color: '#1677ff' }} />
-                  </div>
-                );
-              }
-              if (isVideo) {
-                return (
-                  <div style={{ width: 36, height: 36, borderRadius: 6, overflow: 'hidden', flexShrink: 0, position: 'relative' }}>
-                    <video src={attachedAsset.fullUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
-                      <VideoCameraOutlined style={{ fontSize: 14, color: '#fff' }} />
+                  <div 
+                    onClick={() => {
+                      setEditingAssetIndex(index);
+                      setIsImageEditorOpen(true);
+                    }}
+                    style={{ width: '100%', height: '100%', cursor: 'pointer', position: 'relative' }}
+                    title="点击放大并编辑图片"
+                  >
+                    <img
+                      src={assetItem.fullUrl}
+                      alt=""
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                    <div className="hover-edit-overlay" style={{
+                      position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', 
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s'
+                    }}>
+                      <PictureOutlined style={{ fontSize: 16, color: '#fff' }} />
                     </div>
                   </div>
                 );
-              }
-              return (
-                <img
-                  src={attachedAsset.fullUrl}
-                  alt=""
-                  style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
-                />
-              );
-            })()}
-            {/* 文件名 */}
-            <div style={{ minWidth: 0 }}>
-              <div style={{
-                fontSize: 13, fontWeight: 500, color: '#A2C1FF',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {attachedAsset.asset.file_name}
-              </div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
-                {attachedAsset.asset.asset_type === 'video' ? '视频' : attachedAsset.asset.asset_type === 'audio' ? '音频' : '图片'}
-                {attachedAsset.asset.size ? ` · ${(attachedAsset.asset.size / 1024 / 1024).toFixed(1)} MB` : ''}
+              })()}
+              {/* 删除按钮 */}
+              <div
+                onClick={() => removeAsset(index)}
+                style={{
+                  position: 'absolute', top: 4, right: 4, width: 18, height: 18, borderRadius: '50%',
+                  background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                  transition: 'all 0.2s', color: '#fff', zIndex: 10,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,77,79,0.9)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.5)'; }}
+              >
+                <CloseOutlined style={{ fontSize: 9 }} />
               </div>
             </div>
-            {/* 关闭按钮 */}
-            <div
-              onClick={() => setAttachedAsset(null)}
-              style={{
-                width: 20, height: 20, borderRadius: '50%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', transition: 'all 0.2s',
-                color: 'rgba(255,255,255,0.35)', flexShrink: 0, marginLeft: 4,
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.35)'; }}
-            >
-              <CloseOutlined style={{ fontSize: 10 }} />
-            </div>
-          </div>
+          ))}
+          <style>{`
+            .hover-edit-overlay:hover { opacity: 1 !important; }
+          `}</style>
         </div>
       )}
 
       {/* 输入区域 */}
       <TextArea
+        className="prompt-textarea"
         value={prompt}
         onChange={e => setPrompt(e.target.value)}
         placeholder={
@@ -179,7 +310,7 @@ const PromptInput: React.FC = React.memo(() => {
         style={{
           color: '#E8EAED',
           resize: 'none',
-          padding: attachedAsset ? '8px 20px 8px 20px' : '18px 20px 8px 20px',
+          padding: attachedAssets.length > 0 ? '8px 20px 8px 20px' : '18px 20px 8px 20px',
           fontSize: 15,
           lineHeight: '1.6',
           background: 'transparent',
@@ -209,12 +340,12 @@ const PromptInput: React.FC = React.memo(() => {
                 alignItems: 'center',
                 gap: 5,
                 padding: '5px 12px',
-                background: 'rgba(162, 193, 255, 0.1)',
-                border: '1px solid rgba(162, 193, 255, 0.2)',
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: 8,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                color: '#A2C1FF',
+                color: '#fff',
                 fontSize: 13,
                 fontWeight: 500,
                 whiteSpace: 'nowrap',
@@ -223,12 +354,12 @@ const PromptInput: React.FC = React.memo(() => {
                 textOverflow: 'ellipsis',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(162, 193, 255, 0.18)';
-                e.currentTarget.style.borderColor = 'rgba(162, 193, 255, 0.35)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(162, 193, 255, 0.1)';
-                e.currentTarget.style.borderColor = 'rgba(162, 193, 255, 0.2)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
               }}
             >
               <AppstoreOutlined style={{ fontSize: 13, flexShrink: 0 }} />
@@ -237,6 +368,33 @@ const PromptInput: React.FC = React.memo(() => {
               </span>
             </div>
           </Tooltip>
+
+          {/* 联网搜索开关 */}
+          {currentModel?.params?.some((p: any) => p.key === 'web_search') && (
+            <Tooltip title="开启后允许模型使用联网搜索能力">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '5px 10px',
+                  background: paramValues.web_search ? 'rgba(82, 196, 26, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  border: `1px solid ${paramValues.web_search ? 'rgba(82, 196, 26, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  color: paramValues.web_search ? '#52c41a' : 'rgba(255, 255, 255, 0.45)',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  whiteSpace: 'nowrap',
+                }}
+                onClick={() => setParamValues(prev => ({ ...prev, web_search: !prev.web_search }))}
+              >
+                <GlobalOutlined style={{ fontSize: 13 }} />
+                <span>联网搜索</span>
+              </div>
+            </Tooltip>
+          )}
 
           {/* API 密钥芯片 */}
           <Tooltip title={tokenName ? '点击更换 API 密钥' : '请选择 API 密钥'}>
@@ -287,10 +445,10 @@ const PromptInput: React.FC = React.memo(() => {
           {/* 分隔符 */}
           <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.06)', margin: '0 2px', flexShrink: 0 }} />
 
-          {/* 附加功能占位按钮 */}
-          <Tooltip title="语音输入 — 即将开放">
+          {/* 语音输入按钮 */}
+          <Tooltip title="语音输入">
             <div
-              onClick={() => message.info('语音输入功能即将开放')}
+              onClick={handleVoiceInput}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -315,33 +473,39 @@ const PromptInput: React.FC = React.memo(() => {
             </div>
           </Tooltip>
 
-          <Tooltip title="从资产库添加附件">
-            <div
-              onClick={() => setIsAssetPickerOpen(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 30,
-                height: 30,
-                borderRadius: 8,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                color: attachedAsset ? '#1677ff' : 'rgba(255,255,255,0.3)',
-                background: attachedAsset ? 'rgba(22,119,255,0.1)' : 'transparent',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = attachedAsset ? 'rgba(22,119,255,0.18)' : 'rgba(255,255,255,0.06)';
-                e.currentTarget.style.color = attachedAsset ? '#1677ff' : 'rgba(255,255,255,0.6)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = attachedAsset ? 'rgba(22,119,255,0.1)' : 'transparent';
-                e.currentTarget.style.color = attachedAsset ? '#1677ff' : 'rgba(255,255,255,0.3)';
-              }}
-            >
-              <PlusOutlined style={{ fontSize: 14 }} />
-            </div>
-          </Tooltip>
+          <Dropdown
+            menu={{ items: dropdownItems, onClick: handleMenuClick }}
+            trigger={['click']}
+            placement="topLeft"
+            onOpenChange={setIsAddMenuOpen}
+          >
+            <Tooltip title="添加图片/视频/音频" placement="bottom" open={isAddMenuOpen ? false : undefined}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  color: attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.3)',
+                  background: attachedAssets.length > 0 ? 'rgba(22,119,255,0.1)' : 'transparent',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.18)' : 'rgba(255,255,255,0.06)';
+                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.6)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.1)' : 'transparent';
+                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.3)';
+                }}
+              >
+                <PlusOutlined style={{ fontSize: 14 }} />
+              </div>
+            </Tooltip>
+          </Dropdown>
         </div>
 
         {/* 右侧运行按钮 */}
@@ -416,16 +580,105 @@ const PromptInput: React.FC = React.memo(() => {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
         }
+        @keyframes voicePulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(255,77,79,0.3); }
+          50% { box-shadow: 0 0 0 6px rgba(255,77,79,0); }
+        }
       `}</style>
 
       {/* 资产库选择弹窗 */}
       <AssetPickerModal
         open={isAssetPickerOpen}
         onClose={() => setIsAssetPickerOpen(false)}
-        onSelect={(asset, fullUrl) => {
-          setAttachedAsset({ asset, fullUrl });
-          message.success(`已附加素材: ${asset.file_name}`);
+        onSelect={(items) => {
+          setAttachedAssets(prev => {
+            const newTotal = prev.length + items.length;
+            if (newTotal > 10) {
+              message.error(`最多只能附加 10 个附件，已截断超出部分`);
+              const allowed = 10 - prev.length;
+              const toAdd = items.slice(0, Math.max(0, allowed));
+              return [...prev, ...toAdd];
+            }
+            return [...prev, ...items];
+          });
+          message.success(`已附加 ${items.length} 个素材`);
         }}
+      />
+
+      {/* 图片放大预览与编辑弹窗 */}
+      {editingAssetIndex !== null && attachedAssets[editingAssetIndex]?.asset.asset_type === 'image' && (
+        <ImageEditorModal
+          open={isImageEditorOpen}
+          imageUrl={attachedAssets[editingAssetIndex].fullUrl}
+          onCancel={() => {
+            setIsImageEditorOpen(false);
+            setEditingAssetIndex(null);
+          }}
+          onSave={(newUrl, file) => {
+            const index = editingAssetIndex;
+            setAttachedAssets(prev => {
+              const updated = [...prev];
+              updated[index] = {
+                ...updated[index],
+                asset: {
+                  ...updated[index].asset,
+                  file_name: file.name,
+                  size: file.size,
+                  file_url: newUrl,
+                },
+                fullUrl: newUrl,
+                file: file
+              };
+              return updated;
+            });
+            setIsImageEditorOpen(false);
+            setEditingAssetIndex(null);
+            message.success('图片编辑已保存');
+          }}
+        />
+      )}
+
+      {/* 视频编辑弹窗 */}
+      {editingAssetIndex !== null && (attachedAssets[editingAssetIndex]?.asset.asset_type === 'video' || attachedAssets[editingAssetIndex]?.asset.file_name?.match(/\.(mp4|mov|webm|avi|mkv)$/i)) && (
+        <VideoEditorModal
+          open={isVideoPreviewOpen}
+          videoUrl={attachedAssets[editingAssetIndex].fullUrl}
+          onCancel={() => {
+            setIsVideoPreviewOpen(false);
+            setEditingAssetIndex(null);
+          }}
+          onSave={(newUrl, file) => {
+            const index = editingAssetIndex;
+            setAttachedAssets(prev => {
+              const updated = [...prev];
+              updated[index] = {
+                ...updated[index],
+                asset: {
+                  ...updated[index].asset,
+                  file_name: file.name,
+                  size: file.size,
+                  file_url: newUrl,
+                },
+                fullUrl: newUrl,
+                file: file,
+              };
+              return updated;
+            });
+            setIsVideoPreviewOpen(false);
+            setEditingAssetIndex(null);
+            message.success('视频编辑已保存');
+          }}
+        />
+      )}
+
+      {/* 隐藏的本地文件上传 */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        onChange={handleFileChange}
+        accept="image/*,video/*,audio/*"
+        multiple
       />
     </div>
   );

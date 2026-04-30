@@ -15,11 +15,26 @@ services:
       - cargo-registry:/usr/local/cargo/registry
     environment:
       - CARGO_TARGET_DIR=/usr/src/app/target
+    # 开发模式移除内存限制，避免 Rust 编译 OOM
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '1.0'
+
+  postgres:
+    # 开发模式暴露数据库端口，方便 Navicat 等工具连接
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
+    pull_policy: never
     environment:
       # Docker 容器内代理到后端服务名；本地直接 npm run dev 时 vite.config.ts 回落到 localhost:3000
       - VITE_API_TARGET=http://backend:3000
@@ -28,6 +43,9 @@ services:
       - ./frontend:/app
       # 使用独立命名卷隔离 node_modules，防止宿主机与容器之间出现依赖冗余问题
       - frontend-node-modules:/app/node_modules
+    ports: !override
+      # 开发模式 Vite 运行在 5173 端口，完全覆盖生产模式的 8080:80
+      - "${FRONTEND_PORT:-5173}:5173"
 
 volumes:
   backend-target:

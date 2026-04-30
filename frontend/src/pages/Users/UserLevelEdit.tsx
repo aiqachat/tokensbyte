@@ -3,6 +3,7 @@ import { Card, Form, Input, InputNumber, Button, message, Space, Tabs, Spin, Swi
 import { SaveOutlined, ArrowLeftOutlined, KeyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
+import { pinyin } from 'pinyin-pro';
 import request from '../../utils/request';
 import type { UserLevel } from '../../types';
 
@@ -15,7 +16,27 @@ const UserLevelEdit: React.FC = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [groupKeyManuallyEdited, setGroupKeyManuallyEdited] = useState(false);
   const isAdd = actionId === 'new';
+
+  // 根据名称自动生成分组标识
+  const generateGroupKey = (name: string): string => {
+    if (!name.trim()) return '';
+    const hasChinese = /[\u4e00-\u9fa5]/.test(name);
+    if (hasChinese) {
+      const py = pinyin(name, { pattern: 'first', toneType: 'none', type: 'array' });
+      return py.join('').toLowerCase().replace(/[^a-z0-9]/g, '');
+    } else {
+      return name.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    }
+  };
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const name = e.target.value;
+    if (isAdd && !groupKeyManuallyEdited) {
+      form.setFieldValue('group_key', generateGroupKey(name));
+    }
+  };
 
   useEffect(() => {
     if (isAdd) {
@@ -67,6 +88,15 @@ const UserLevelEdit: React.FC = () => {
       marketing_enabled: values.marketing_enabled ? 1 : 0,
       is_default: values.is_default ? 1 : 0,
     };
+    // 新建时自动生成 group_key
+    if (isAdd && !payload.group_key) {
+      payload.group_key = generateGroupKey(values.name || '');
+    }
+    if (!payload.group_key) {
+      message.error('分组标识不能为空');
+      setSaving(false);
+      return;
+    }
     try {
       if (isAdd) {
         await request.post('/user_levels', payload);
@@ -108,10 +138,19 @@ const UserLevelEdit: React.FC = () => {
         <Tabs defaultActiveKey="1" type="card">
           <TabPane tab="等级基本信息" key="1">
             <Form.Item name="name" label={t('user_levels.name')} rules={[{ required: true }]}>
-              <Input placeholder="输入等级呈现的中文名称" />
+              <Input placeholder="输入等级呈现的中文名称" onChange={handleNameChange} />
             </Form.Item>
-            <Form.Item name="group_key" label={t('user_levels.group_key')} rules={[{ required: true }]}>
-              <Input placeholder="e.g. vip, primary" disabled={groupKey === 'default'} />
+            <Form.Item 
+              name="group_key" 
+              label={t('user_levels.group_key', '等级标志ID (Group Key)')} 
+              rules={[{ required: true }]}
+              extra="辅助的英文字母等级标识符（如 vip1）。系统底层已拥有永久不可变的【4位数字用户等级ID】作为安全兜底，您可以在需要的时候安全地修改本标识而不用担心数据解绑。"
+            >
+              <Input 
+                placeholder="e.g. vip, primary" 
+                disabled={!isAdd}
+                onChange={() => { if(isAdd) setGroupKeyManuallyEdited(true); }}
+              />
             </Form.Item>
             <Form.Item 
               name="discount" 

@@ -19,6 +19,8 @@ pub struct Model {
     pub site_discount: f64,         // 全站折扣倍率（1.0=原价）
     #[sqlx(default)]
     pub site_discount_enabled: i32, // 全站折扣开关（0=关，1=开，开启后优先于等级折扣）
+    #[sqlx(default)]
+    pub logo: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -30,12 +32,15 @@ pub struct BillingRule {
     pub billing_type: String,
     pub prompt_rate: f64,
     pub completion_rate: f64,
+    #[sqlx(default)]
+    pub cached_rate: f64,
     pub fixed_rate: f64,
     pub duration_rate: f64,
     pub billing_rule: String,
     pub pricing_tiers: String,
-    pub extended_config: String, // 新增
+    pub extended_config: String,
     pub is_active: i32,
+    pub is_system: i32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -46,6 +51,8 @@ pub struct CreateBillingRuleRequest {
     pub billing_type: String,
     pub prompt_rate: f64,
     pub completion_rate: f64,
+    #[serde(default)]
+    pub cached_rate: f64,
     pub fixed_rate: f64,
     pub duration_rate: f64,
     pub billing_rule: String,
@@ -61,6 +68,7 @@ pub struct UpdateBillingRuleRequest {
     pub billing_type: Option<String>,
     pub prompt_rate: Option<f64>,
     pub completion_rate: Option<f64>,
+    pub cached_rate: Option<f64>,
     pub fixed_rate: Option<f64>,
     pub duration_rate: Option<f64>,
     pub billing_rule: Option<String>,
@@ -75,6 +83,9 @@ pub struct PricingTier {
     pub max_completion_tokens: Option<i32>,
     pub prompt_rate: f64,
     pub completion_rate: f64,
+    /// 缓存 Token 费率（/1M），属于输入的子集，#[serde(default)] 兼容旧数据
+    #[serde(default)]
+    pub cached_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -123,6 +134,8 @@ pub struct ModelProvider {
     #[serde(default)]
     pub is_system: i32,
     pub remark: Option<String>,
+    #[sqlx(default)]
+    pub logo: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -135,6 +148,8 @@ pub struct ModelType {
     pub is_active: i32,
     #[serde(default)]
     pub is_system: i32,
+    #[sqlx(default)]
+    pub logo: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -179,6 +194,7 @@ pub struct CreateModelRequest {
     pub enable_log_content: Option<i32>,
     pub site_discount: Option<f64>,
     pub site_discount_enabled: Option<i32>,
+    pub logo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -195,6 +211,7 @@ pub struct UpdateModelRequest {
     pub enable_log_content: Option<i32>,
     pub site_discount: Option<f64>,
     pub site_discount_enabled: Option<i32>,
+    pub logo: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -209,4 +226,5 @@ pub struct ClassificationRequest {
     pub sort_order: i32,
     pub is_active: i32,
     pub remark: Option<String>,
+    pub logo: Option<String>,
 }
