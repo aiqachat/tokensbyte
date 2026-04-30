@@ -167,8 +167,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     if (!plugin) return false;
     if (plugin.allowed_levels === 'all') return true;
     if (!isUserEnd) return true; // 管理员端始终显示
-    const userGroup = user?.user_group || 'default';
-    return plugin.allowed_levels.split(',').includes(userGroup);
+    const allowed = plugin.allowed_levels.split(',');
+    const userGroup = user?.user_group || '';
+    const levelId = user?.level_id != null ? String(user.level_id) : '';
+    return allowed.includes(userGroup) || (levelId !== '' && allowed.includes(levelId));
   };
 
   const menuItems: MenuProps['items'] = [];

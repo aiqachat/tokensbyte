@@ -19,6 +19,7 @@ export interface User {
   permissions?: string[];
   is_active: boolean;
   level_name?: string;
+  level_id?: number;
   created_at: string;
   updated_at: string;
   register_ip?: string;
