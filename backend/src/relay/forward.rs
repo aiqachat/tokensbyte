@@ -35,8 +35,15 @@ pub async fn resolve_forward_rule(
     state: &AppState,
     model_id: &str,
     category: &str,
-    entry_path: &str,
+    request_path: &str,
 ) -> Option<ResolvedForward> {
+    // 根据模型类别定义标准的 OpenAI 基准路径
+    let openai_path = match category {
+        "图片" => "/v1/images/generations",
+        "视频" => "/v1/video/generations",
+        _ => "/v1/chat/completions",
+    };
+
     // 1. 查模型获取 forward_rule_ids
     let model_result = sqlx::query_as::<_, crate::models::Model>(
         &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
@@ -60,12 +67,10 @@ pub async fn resolve_forward_rule(
     let rule_ids_str = model.forward_rule_ids.as_deref().unwrap_or("[]");
     let rule_ids: Vec<i64> = serde_json::from_str(rule_ids_str).unwrap_or_default();
 
-    tracing::info!("[Forward] 模型 '{}' 绑定规则 IDs: {:?}, 类别: {}, 入口: {}", model_id, rule_ids, category, entry_path);
-
     // 2. 查所有关联的转发规则
     let mut rules: Vec<crate::models::ForwardRule> = Vec::new();
     if !rule_ids.is_empty() {
-        tracing::info!("[Forward] 模型 '{}' 绑定规则 IDs: {:?}, 类别: {}, 入口: {}", model_id, rule_ids, category, entry_path);
+        tracing::info!("[Forward] 模型 '{}' 绑定规则 IDs: {:?}, 类别: {}, 入口: {}", model_id, rule_ids, category, request_path);
         let placeholders: Vec<String> = rule_ids.iter().map(|_| "?".to_string()).collect();
         let query_str = format!(
             "SELECT * FROM forward_rules WHERE id IN ({}) AND is_active = 1",
@@ -96,33 +101,35 @@ pub async fn resolve_forward_rule(
         category_matched
     };
 
-    // 4. 严格匹配：从 config_json.path_rewrite.old 匹配入口路径
-    //    必须至少有一条规则的 path_rewrite.old 与入口路径一致，否则拒绝匹配，
-    //    防止聊天接口错误地路由到图片/视频模型的转发规则。
+    // 4. 严格匹配：兼容 OpenAI 默认路径与厂商官方原生路径
     let mut best: Option<&crate::models::ForwardRule> = None;
     for rule in &candidates {
         if let Ok(config) = serde_json::from_str::<serde_json::Value>(&rule.config_json) {
-            if let Some(old_path) = config
-                .get("path_rewrite")
-                .and_then(|pr| pr.get("old"))
-                .and_then(|v| v.as_str())
-            {
-                let old_path_clean = old_path.trim_start_matches('/');
-                let entry_path_clean = entry_path.trim_start_matches('/');
-                if old_path_clean.is_empty() || old_path_clean == entry_path_clean || entry_path_clean.ends_with(old_path_clean) {
-                    best = Some(rule);
-                    break;
-                }
-            } else {
-                // 如果没有配置 path_rewrite 或者 old 为空，则作为通配符命中
+            let pr = config.get("path_rewrite");
+            let old_path = pr.and_then(|v| v.get("old")).and_then(|v| v.as_str()).unwrap_or("");
+            let new_path = pr.and_then(|v| v.get("new")).and_then(|v| v.as_str()).unwrap_or("");
+            
+            let old_clean = old_path.trim_start_matches('/');
+            let new_clean = new_path.trim_start_matches('/');
+            let req_clean = request_path.trim_start_matches('/');
+            let openai_clean = openai_path.trim_start_matches('/');
+
+            // 1. 如果用户是通过标准 OpenAI 接口发起请求，验证规则是否兼容该接口
+            let is_openai_req = req_clean == openai_clean || req_clean.ends_with(openai_clean);
+            let rule_supports_openai = old_clean.is_empty() || old_clean == openai_clean || openai_clean.ends_with(old_clean);
+
+            // 2. 如果用户是通过厂商官方接口 (原生路径) 发起请求，依次验证 path_rewrite.new 和 path_rewrite.old
+            let match_new = !new_clean.is_empty() && (req_clean == new_clean || req_clean.ends_with(new_clean));
+            let match_old = !old_clean.is_empty() && (req_clean == old_clean || req_clean.ends_with(old_clean));
+
+            if (is_openai_req && rule_supports_openai) || match_new || match_old {
                 best = Some(rule);
                 break;
             }
         }
     }
-    // 未找到与入口路径匹配的规则时，如果在 candidates 里有该模型的规则，则兜底回落到第一条，
-    // 保证在 Native 路由（如 /api/v3/...）中也能顺利继承模型上配置的 asset_convert 等扩展属性。
-    let rule = best.or_else(|| candidates.first().copied())?;
+    // 如果未找到与请求路径严格匹配的规则，则拒绝匹配（不再兜底回落到第一条规则）
+    let rule = best?;
 
     // 5. 解析 config_json
     let config: serde_json::Value =
@@ -138,15 +145,17 @@ pub async fn resolve_forward_rule(
         let old = pr.get("old").and_then(|v| v.as_str()).unwrap_or("");
         let new = pr.get("new").and_then(|v| v.as_str()).unwrap_or("");
         
-        if !old.is_empty() && entry_path.contains(old) {
-            entry_path.replace(old, new)
+        // 始终以基准 openai_path 作为模板进行替换，保证不管真实入口是什么，
+        // 向上游转发的 URL 都是遵循规则替换后的绝对地址
+        if !old.is_empty() && openai_path.contains(old) {
+            openai_path.replace(old, new)
         } else if !new.is_empty() {
             new.to_string()
         } else {
-            entry_path.to_string()
+            openai_path.to_string()
         }
     } else {
-        entry_path.to_string()
+        openai_path.to_string()
     };
 
     let auth_type = config
@@ -269,7 +278,11 @@ pub fn transform_request_body(
         // 火山方舟图片/视频（/api/v3/contents/generations/tasks）: prompt → content 格式
         // 参考火山引擎 Seedance 2.0 官方 API：https://www.volcengine.com/docs/82379/1520757
         "volcengine" if category == "图片" || category == "视频" => {
-            build_volcengine_content_body(model, body)
+            let mut fwd = build_volcengine_content_body(model, body);
+            if category == "视频" && fwd.get("resolution").is_none() {
+                fwd["resolution"] = serde_json::json!("720p");
+            }
+            fwd
         }
 
         // 火山方舟聊天：保持 OpenAI 格式（火山完全兼容 OpenAI）

@@ -78,30 +78,24 @@ pub async fn convert_content_urls(
     // 预加载 TOS 配置（base64 场景需要）
     let tos_config = crate::api::plugins::get_tos_config(state, "asset_manager").await;
 
-    for item in content_arr.iter_mut() {
+    // 收集需要转换的素材任务：(索引, url_key, asset_type, url_val, url_short)
+    let mut tasks: Vec<(usize, String, String, String, String)> = Vec::new();
+    for (idx, item) in content_arr.iter().enumerate() {
         let item_type = match item.get("type").and_then(|t| t.as_str()) {
             Some(t) => t.to_string(),
             None => continue,
         };
-
-        // 匹配 URL 类型
         let (url_key, asset_type) = match URL_TYPE_MAP.iter().find(|(t, _, _)| *t == item_type) {
-            Some((_, uk, at)) => (*uk, *at),
+            Some((_, uk, at)) => (uk.to_string(), at.to_string()),
             None => continue,
         };
-
-        // 提取 URL 值
-        let url_val = match item.get(url_key).and_then(|u| u.get("url")).and_then(|u| u.as_str()) {
+        let url_val = match item.get(&url_key).and_then(|u| u.get("url")).and_then(|u| u.as_str()) {
             Some(u) => u.to_string(),
             None => continue,
         };
-
-        // 跳过已转换的 asset:// 引用
         if url_val.starts_with("asset://") {
             continue;
         }
-
-        // 截取 URL 简短标识用于日志（避免过长）
         let url_short = if url_val.starts_with("data:") {
             "base64数据".to_string()
         } else if url_val.len() > 80 {
@@ -109,22 +103,45 @@ pub async fn convert_content_urls(
         } else {
             url_val.clone()
         };
+        tasks.push((idx, url_key, asset_type, url_val, url_short));
+    }
 
-        // 根据 URL 类型分发处理
-        let asset_result = if url_val.starts_with("http://") || url_val.starts_with("https://") {
-            convert_url_resource(state, &client, &mut volc_config, user_id, &url_val, asset_type).await
-        } else if url_val.starts_with("data:") {
-            convert_base64_resource(state, &client, &mut volc_config, &tos_config, user_id, &url_val, asset_type).await
-        } else {
-            logs.push(format!("[{}] 跳过: 不支持的格式", url_short));
-            continue;
+    if tasks.is_empty() {
+        return logs;
+    }
+
+    // 并发处理所有素材转换任务，大幅缩短多资源场景总耗时
+    let mut futures = Vec::new();
+    for (idx, url_key, asset_type, url_val, url_short) in tasks {
+        let state_clone = state;
+        let client_clone = client.clone();
+        let mut volc_config_clone = volc_config.clone();
+        let tos_config_clone = tos_config.clone();
+        let user_id_owned = user_id.to_string();
+
+        let fut = async move {
+            let asset_result = if url_val.starts_with("http://") || url_val.starts_with("https://") {
+                convert_url_resource(state_clone, &client_clone, &mut volc_config_clone, &user_id_owned, &url_val, &asset_type).await
+            } else if url_val.starts_with("data:") {
+                convert_base64_resource(state_clone, &client_clone, &mut volc_config_clone, &tos_config_clone, &user_id_owned, &url_val, &asset_type).await
+            } else {
+                Err("不支持的格式".to_string())
+            };
+            (idx, url_key, asset_type, url_short, asset_result)
         };
+        futures.push(fut);
+    }
 
-        // 替换 URL 为 asset://<ASSET_ID> 格式
+    // 收集并发结果
+    let results = futures::future::join_all(futures).await;
+    for (idx, url_key, asset_type, url_short, asset_result) in results {
         match asset_result {
             Ok(aid) => {
                 let asset_ref = format!("asset://{}", aid);
-                if let Some(url_obj) = item.get_mut(url_key).and_then(|u| u.as_object_mut()) {
+                if let Some(url_obj) = content_arr.get_mut(idx)
+                    .and_then(|item| item.get_mut(&url_key))
+                    .and_then(|u| u.as_object_mut())
+                {
                     url_obj.insert("url".to_string(), serde_json::json!(asset_ref));
                 }
                 logs.push(format!("[{}] {} ✓ {}", asset_type, url_short, asset_ref));
@@ -146,8 +163,8 @@ async fn convert_url_resource(
     url: &str,
     asset_type: &str,
 ) -> Result<String, String> {
-    // 下载资源并计算内容哈希
-    let content_hash = match fetch_content_hash(&state.http_client, url).await {
+    // 下载资源并计算内容哈希（按素材类型动态调整超时）
+    let content_hash = match fetch_content_hash(&state.http_client, url, asset_type).await {
         Some(h) => h,
         None => {
             tracing::warn!("[AssetConvert] 无法下载资源计算哈希，回退 URL 去重: {}", url);
@@ -233,11 +250,20 @@ async fn convert_base64_resource(
 
 // ========== 内部工具函数 ==========
 
-/// 下载 URL 资源并计算 SHA-256 内容哈希（不保留字节，节省内存）
-async fn fetch_content_hash(http_client: &reqwest::Client, url: &str) -> Option<String> {
+/// 下载 URL 资源并计算 SHA-256 内容哈希。
+/// 采用流式增量计算：边下载边更新哈希摘要，避免将整个文件加载到内存中，
+/// 对大体积视频文件友好。超时按素材类型动态调整：
+///   Image: 30s, Audio: 60s, Video: 180s
+async fn fetch_content_hash(http_client: &reqwest::Client, url: &str, asset_type: &str) -> Option<String> {
+    let timeout_secs = match asset_type {
+        "Video" => 180,
+        "Audio" => 60,
+        _ => 30,
+    };
+
     let resp = http_client
         .get(url)
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(timeout_secs))
         .send()
         .await
         .ok()?;
@@ -246,8 +272,20 @@ async fn fetch_content_hash(http_client: &reqwest::Client, url: &str) -> Option<
         return None;
     }
 
-    let bytes = resp.bytes().await.ok()?;
-    Some(hex::encode(Sha256::digest(&bytes)))
+    // 流式增量哈希：逐块读取并更新 SHA-256 摘要，无需一次性缓存全部字节
+    let mut hasher = Sha256::new();
+    let mut stream = resp.bytes_stream();
+    use futures::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(bytes) => hasher.update(&bytes),
+            Err(e) => {
+                tracing::warn!("[AssetConvert] 流式下载中断: {} - {}", url, e);
+                return None;
+            }
+        }
+    }
+    Some(hex::encode(hasher.finalize()))
 }
 
 /// 解码 base64 data URI，返回 (原始字节, 文件扩展名)
@@ -432,7 +470,12 @@ async fn create_asset(
     let asset_id = asset_id_res.map_err(|e| format!("CreateAsset API 调用失败: {}", e))?.id;
 
     // 视频/音频资源处理时间较长，动态调整轮询超时
-    let max_wait_secs: u64 = if asset_type == "Image" { 60 } else { 120 };
+    // Image: 60s, Audio: 120s, Video: 180s（视频文件体积大，火山端处理更耗时）
+    let max_wait_secs: u64 = match asset_type {
+        "Image" => 60,
+        "Audio" => 120,
+        _ => 180,
+    };
     const POLL_INTERVAL_SECS: u64 = 3;
     let max_attempts = max_wait_secs / POLL_INTERVAL_SECS;
 

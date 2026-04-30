@@ -54,9 +54,16 @@ pub async fn create_user(
     let admin_group_id = request.admin_group_id;
     let referred_by = request.referred_by.clone().or(request.aff.clone());
 
+    let referral_history = if let Some(ref inviter) = referred_by {
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+    } else {
+        None
+    };
+
     sqlx::query(
-        &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, user_group, admin_group_id, balance, is_active, referred_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 1, ?)"#)
+        &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, user_group, admin_group_id, balance, is_active, referred_by, referral_history)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 1, ?, ?)"#)
     )
     .bind(&user_id)
     .bind(&uid)
@@ -67,6 +74,7 @@ pub async fn create_user(
     .bind(user_group)
     .bind(admin_group_id)
     .bind(&referred_by)
+    .bind(&referral_history)
     .execute(&state.db.pool)
     .await?;
 
@@ -106,11 +114,20 @@ pub async fn update_user(
     if let Some(user_group) = request.user_group { user.user_group = user_group; }
     if let Some(is_active) = request.is_active { user.is_active = is_active; }
     if let Some(admin_remark) = request.admin_remark { user.admin_remark = Some(admin_remark); }
+    let old_referred_by = user.referred_by.clone();
+
     if let Some(referred_by) = request.referred_by { 
-        user.referred_by = if referred_by.trim().is_empty() { None } else { Some(referred_by) }; 
-    }
-    if let Some(referral_history) = request.referral_history {
-        user.referral_history = Some(referral_history);
+        let new_ref = if referred_by.trim().is_empty() { None } else { Some(referred_by.clone()) }; 
+        if old_referred_by != new_ref {
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let old_str = old_referred_by.unwrap_or_else(|| "无".to_string());
+            let new_str = new_ref.clone().unwrap_or_else(|| "无".to_string());
+            let msg = format!("[{}] 推荐人从 {} 变更为 {}\n", now, old_str, new_str);
+            let mut hist = user.referral_history.clone().unwrap_or_default();
+            hist.push_str(&msg);
+            user.referral_history = Some(hist);
+        }
+        user.referred_by = new_ref;
     }
 
     let mut tx = state.db.pool.begin().await?;
