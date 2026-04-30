@@ -71,7 +71,7 @@ pub async fn gemini_proxy(
         .ok_or_else(|| AppError::BadRequest("Invalid path: expected {model}:{action}".into()))?;
 
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
+    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance, None).await?;
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, action).await?;
 
     // Build upstream query: replace key with channel's real key, keep other params (e.g. alt=sse)
@@ -122,7 +122,8 @@ pub async fn gemini_proxy(
     if action.starts_with("streamGenerateContent") || is_stream == 1 {
         Ok(crate::relay::stream::handle_native_stream(
             state, token.clone(), channel.clone(), model.to_string(), resp, ctx.discount,
-            request_content_str.clone(), start_time, endpoint, Some(request_content_str), pre_deduction
+            request_content_str.clone(), start_time, endpoint.clone(), Some(request_content_str), pre_deduction,
+            endpoint
         ).await.into_response())
     } else {
         let data = resp.bytes().await?;
@@ -132,8 +133,7 @@ pub async fn gemini_proxy(
         let usage = crate::relay::usage_extractor::parse_usage(&response_content_str);
 
         // 查询模型与计费规则
-        let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
-            .bind(model).fetch_optional(&state.db.pool).await.unwrap_or(None);
+        let db_model = proxy::find_active_model(&state, model, None).await;
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {
                 sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
@@ -176,7 +176,7 @@ pub async fn ark_asset_proxy(
     State(state): State<Arc<AppState>>,
     Extension(token): Extension<ApiToken>,
     Query(params): Query<HashMap<String, String>>,
-    Json(body): Json<serde_json::Value>,
+    Json(mut body): Json<serde_json::Value>,
 ) -> AppResult<Response> {
     // 1. 获取 Action (兼容 Action/action 和 Version/version)
     let action = params.get("Action").or_else(|| params.get("action")).cloned().unwrap_or_default();
@@ -235,6 +235,15 @@ pub async fn ark_asset_proxy(
     // 4. 获取火山引擎配置
     let volc_config = crate::api::plugins::get_volc_config(&state, "asset_manager").await
         .ok_or_else(|| AppError::BadRequest("系统未配置火山引擎素材管理凭证".to_string()))?;
+
+    // 强制设置 ProjectName 为系统配置项，覆盖用户可能传的值，确保资产数据在系统统一管理下
+    if let Some(obj) = body.as_object_mut() {
+        if !volc_config.project_name.is_empty() {
+            obj.insert("ProjectName".to_string(), serde_json::Value::String(volc_config.project_name.clone()));
+        } else {
+            obj.insert("ProjectName".to_string(), serde_json::Value::String("default".to_string()));
+        }
+    }
 
     let client = crate::services::volcengine::VolcClient::new(volc_config)
         .with_logger(state.db.clone(), token.user_id.clone())

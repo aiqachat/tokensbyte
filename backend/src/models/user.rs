@@ -26,6 +26,8 @@ pub struct User {
     #[sqlx(default)]
     pub level_id: Option<i64>,
     #[sqlx(default)]
+    pub allow_view_log_details: Option<i32>,
+    #[sqlx(default)]
     pub admin_group_id: Option<i64>,
     #[serde(skip_deserializing)]
     #[sqlx(skip)]

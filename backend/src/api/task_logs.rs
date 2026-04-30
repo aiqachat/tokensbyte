@@ -33,18 +33,13 @@ pub async fn list_task_logs(
         binds.push(uid.clone());
     }
 
-    // 按类型筛选（映射到 endpoint 模式）
+    // 按类型精准筛选（历史数据已通过 migration 自动清洗填充了 action_type）
     if let Some(ref at) = query.action_type {
         match at.as_str() {
-            "chat" => where_clause.push_str(
-                " AND (l.endpoint LIKE '%chat/completions%' OR l.endpoint LIKE '%generateContent%')"
-            ),
-            "image" => where_clause.push_str(
-                " AND l.endpoint LIKE '%images/generations%'"
-            ),
-            "video" => where_clause.push_str(
-                " AND (l.endpoint LIKE '%video%/generations%' OR l.endpoint LIKE '%contents/generations%')"
-            ),
+            "chat" => where_clause.push_str(" AND l.action_type = '聊天'"),
+            "image" => where_clause.push_str(" AND l.action_type = '图片'"),
+            "video" => where_clause.push_str(" AND l.action_type = '视频'"),
+            "other" => where_clause.push_str(" AND l.action_type = '其它'"),
             _ => {}
         }
     }
@@ -55,12 +50,14 @@ pub async fn list_task_logs(
     }
 
     if let Some(ref s) = query.start_date {
-        where_clause.push_str(" AND l.created_at >= ?");
-        binds.push(s.clone());
+        where_clause.push_str(" AND l.created_at::timestamptz >= ?::timestamptz");
+        let start_str = if s.contains('T') { s.clone() } else { format!("{} 00:00:00", s) };
+        binds.push(start_str);
     }
     if let Some(ref e) = query.end_date {
-        where_clause.push_str(" AND l.created_at <= ?");
-        binds.push(format!("{} 23:59:59", e));
+        where_clause.push_str(" AND l.created_at::timestamptz <= ?::timestamptz");
+        let end_str = if e.contains('T') { e.clone() } else { format!("{} 23:59:59", e) };
+        binds.push(end_str);
     }
 
     // 总数查询（无需 JOIN，仅依赖 logs 表条件）
@@ -78,7 +75,7 @@ pub async fn list_task_logs(
          l.error_message, l.request_content, l.response_content, l.billing_detail, \
          c.name AS channel_name, c.group_aid AS channel_group_aid, \
          COALESCE(u.nickname, u.username) AS user_nickname, \
-         l.created_at \
+         l.task_id, l.action_type, l.created_at \
          FROM logs l \
          LEFT JOIN channels c ON l.channel_id = c.id \
          LEFT JOIN users u ON l.user_id = u.id \
@@ -87,8 +84,27 @@ pub async fn list_task_logs(
     ));
     let mut dq = sqlx::query_as::<_, TaskLog>(&data_sql);
     for v in &binds { dq = dq.bind(v); }
-    let data = dq.fetch_all(&state.db.pool).await?;
+    let mut data = dq.fetch_all(&state.db.pool).await?;
 
+    // 检查当前登录用户的日志详情查看权限
+    let mut allow_details = true;
+    if claims.role != "admin" {
+        let perm: Option<i32> = sqlx::query_scalar(
+            &state.db.format_query("SELECT ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
+        )
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .flatten();
+        allow_details = perm.unwrap_or(1) == 1;
+    }
+
+    if !allow_details {
+        for log in &mut data {
+            log.request_content = None;
+            log.response_content = None;
+        }
+    }
     Ok(Json(TaskLogListResponse { data, total }))
 }
 

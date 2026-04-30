@@ -42,23 +42,44 @@ pub fn resolve_discount(db_model: Option<&crate::models::Model>, level_discount:
     (level_discount, "等级折扣")
 }
 
+// ── Model Lookup (支持同名模型按类型区分) ────────────────────────
+
+/// 按 model_id 查找活跃模型，可选传入 category 以区分同名但不同类型的模型。
+/// category: Some("图片") / Some("视频") / Some("聊天") / None（不限类型）
+pub async fn find_active_model(state: &AppState, model_id: &str, category: Option<&str>) -> Option<crate::models::Model> {
+    if let Some(cat) = category {
+        let result: Option<crate::models::Model> = sqlx::query_as(
+            &state.db.format_query(
+                "SELECT m.* FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? AND m.is_active = 1 AND t.name = ? LIMIT 1"
+            ),
+        )
+        .bind(model_id)
+        .bind(cat)
+        .fetch_optional(&state.db.pool)
+        .await
+        .unwrap_or(None);
+        // 如果指定类型未命中，回退到不限类型（兼容未配置 type 的旧模型）
+        if result.is_some() { return result; }
+    }
+    sqlx::query_as(
+        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1 LIMIT 1"),
+    )
+    .bind(model_id)
+    .fetch_optional(&state.db.pool)
+    .await
+    .unwrap_or(None)
+}
+
 // ── Access Check ────────────────────────────────────────────────
 
-pub async fn check_access(state: &Arc<AppState>, token: &ApiToken, model: &str, balance: f64) -> AppResult<f64> {
+pub async fn check_access(state: &Arc<AppState>, token: &ApiToken, model: &str, balance: f64, category: Option<&str>) -> AppResult<f64> {
     if !token.is_model_allowed(model) {
         let msg = format!("Model {} not allowed for this token", model);
         record_error_log(state, &token.user_id, None, model, 403, "/v1/chat/completions", &msg).await;
         return Err(AppError::Forbidden(msg));
     }
 
-    let db_model: Option<crate::models::Model> = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1")
-    )
-    .bind(model)
-    .fetch_optional(&state.db.pool)
-    .await
-    .unwrap_or(None);
-
+    let db_model = find_active_model(state, model, category).await;
     let pre_deduction = db_model.map(|m| m.pre_deduction).unwrap_or(0.0);
 
     if pre_deduction > 0.0 {
@@ -148,7 +169,7 @@ pub async fn record_and_bill(
     request_content: Option<String>, response_content: Option<String>, upstream_req_content: Option<String>,
     billing_detail: Option<String>,
 ) {
-    record_and_bill_with_prededuction(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail).await;
+    record_and_bill_inner(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail, None).await;
 }
 
 pub async fn record_and_bill_with_prededuction(
@@ -171,17 +192,55 @@ pub async fn record_and_bill_with_prededuction(
     upstream_req_content: Option<String>,
     billing_detail: Option<String>,
 ) {
+    record_and_bill_inner(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, pre_deducted, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail, None).await;
+}
+
+/// 带 category 参数的计费记录入口（同名模型按类型精准匹配）
+pub async fn record_and_bill_with_category(
+    state: &Arc<AppState>, token: &ApiToken, channel_id: i64, model_name: &str,
+    prompt_tokens: i32, completion_tokens: i32, cached_tokens: i32, cost: f64, pre_deducted: f64,
+    status_code: u16, endpoint: &str, error_msg: Option<&str>, latency_ms: u32, is_stream: i32,
+    request_content: Option<String>, response_content: Option<String>, upstream_req_content: Option<String>,
+    billing_detail: Option<String>, category: Option<&str>,
+) {
+    record_and_bill_inner(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, pre_deducted, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail, category).await;
+}
+
+async fn record_and_bill_inner(
+    state: &Arc<AppState>,
+    token: &ApiToken,
+    channel_id: i64,
+    model_name: &str,
+    prompt_tokens: i32,
+    completion_tokens: i32,
+    cached_tokens: i32,
+    cost: f64,
+    pre_deducted: f64,
+    status_code: u16,
+    endpoint: &str,
+    error_msg: Option<&str>,
+    latency_ms: u32,
+    is_stream: i32,
+    request_content: Option<String>,
+    response_content: Option<String>,
+    upstream_req_content: Option<String>,
+    billing_detail: Option<String>,
+    hint_category: Option<&str>,
+) {
     let mut enable_log: i32 = 0;
     let mut category = String::new();
     
-    // 查询模型同时关联 model_types 获取 category
-    if let Ok(Some(row)) = sqlx::query(
-        &state.db.format_query("SELECT m.enable_log_content, t.name as category_name 
-         FROM models m 
-         LEFT JOIN model_types t ON m.type_id = t.id 
-         WHERE m.model_id = ? AND m.is_active = 1 
-         LIMIT 1")
-    )
+    // 查询模型同时关联 model_types 获取 category（支持同名模型按类型区分）
+    let cat_filter = if let Some(cat) = hint_category {
+        format!(" AND t.name = '{}'", cat)
+    } else {
+        String::new()
+    };
+    let sql = format!(
+        "SELECT m.enable_log_content, t.name as category_name FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? AND m.is_active = 1{} LIMIT 1",
+        cat_filter
+    );
+    if let Ok(Some(row)) = sqlx::query(&state.db.format_query(&sql))
     .bind(model_name)
     .fetch_optional(&state.db.pool)
     .await 
@@ -304,9 +363,41 @@ pub async fn record_and_bill_with_prededuction(
                 .await?;
             }
         }
+        // 从响应体自动提取异步任务 ID（兼容各厂商格式）
+        let task_id = resp_content.as_deref()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| {
+                // 辅助：从 Value 提取字符串（兼容字符串和数字类型的 task_id）
+                let extract = |val: &serde_json::Value| -> Option<String> {
+                    val.as_str().map(|s| s.to_string())
+                        .or_else(|| val.as_i64().map(|n| n.to_string()))
+                };
+                // 1. 根节点 task_id
+                v.get("task_id").and_then(extract)
+                // 2. data.task_id（data 为对象）
+                .or_else(|| v.get("data").and_then(|d| d.get("task_id")).and_then(extract))
+                // 3. data[0].task_id（data 为数组，如火山方舟图片）
+                .or_else(|| v.get("data").and_then(|d| d.as_array()).and_then(|a| a.first()).and_then(|item| item.get("task_id")).and_then(extract))
+                // 4. output.task_id（阿里百炼）
+                .or_else(|| v.get("output").and_then(|o| o.get("task_id")).and_then(extract))
+                // 5. 根节点 id（火山方舟异步），排除聊天同步响应
+                .or_else(|| {
+                    if v.get("choices").is_none() && v.get("candidates").is_none() {
+                        v.get("id").and_then(extract)
+                    } else { None }
+                })
+            })
+            .unwrap_or_default();
+
+        let final_action_type = if !category.is_empty() {
+            category.clone()
+        } else {
+            hint_category.unwrap_or_default().to_string()
+        };
+
         sqlx::query(&state.db.format_query(
-            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ))
         .bind(&token.user_id)
         .bind(channel_id)
@@ -326,6 +417,8 @@ pub async fn record_and_bill_with_prededuction(
         .bind(&final_endpoint)
         .bind(upstream_req)
         .bind(billing_detail)
+        .bind(&task_id)
+        .bind(&final_action_type)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

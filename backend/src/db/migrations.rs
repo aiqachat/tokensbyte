@@ -501,6 +501,40 @@ macro_rules! pg_migration_blocks {
         .execute(pool)
         .await?;
 
+    // 异步任务 ID（非空时表示异步任务，用于轮询状态跟踪）
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS task_id TEXT DEFAULT ''")
+        .execute(pool)
+        .await?;
+    // 为 task_id 添加备注
+    sqlx::query("COMMENT ON COLUMN logs.task_id IS '异步任务ID，非空时表示异步任务，用于轮询状态跟踪'")
+        .execute(pool)
+        .await
+        .ok();
+
+    // 任务类型（聊天、图片、视频等），用于精准筛选，避免基于 endpoint 的路径猜测
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS action_type TEXT DEFAULT ''")
+        .execute(pool)
+        .await?;
+    sqlx::query("COMMENT ON COLUMN logs.action_type IS '任务类型：聊天、图片、视频等，用于精准筛选和显示'")
+        .execute(pool)
+        .await
+        .ok();
+
+    // 数据清洗：为历史数据填充 action_type
+    sqlx::query("UPDATE logs SET action_type = '聊天' WHERE action_type = '' AND (endpoint LIKE '%chat/completions%' OR endpoint LIKE '%generateContent%')").execute(pool).await.ok();
+    sqlx::query("UPDATE logs SET action_type = '图片' WHERE action_type = '' AND endpoint LIKE '%images/%'").execute(pool).await.ok();
+    sqlx::query("UPDATE logs SET action_type = '视频' WHERE action_type = '' AND (endpoint LIKE '%video/%' OR endpoint LIKE '%videos/%' OR endpoint LIKE '%contents/generations%')").execute(pool).await.ok();
+    sqlx::query("UPDATE logs SET action_type = '其它' WHERE action_type = ''").execute(pool).await.ok();
+
+    // user_levels 表新增 allow_view_log_details 控制日志详情查看权限
+    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS allow_view_log_details INTEGER NOT NULL DEFAULT 1")
+        .execute(pool)
+        .await?;
+    sqlx::query("COMMENT ON COLUMN user_levels.allow_view_log_details IS '是否允许查看日志详情，1-允许，0-不允许'")
+        .execute(pool)
+        .await
+        .ok();
+
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS channel_configs (
             id SERIAL PRIMARY KEY,
@@ -1208,6 +1242,38 @@ macro_rules! pg_migration_blocks {
     // ─── users 表增加 referral_history 字段 ───
     sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_history TEXT DEFAULT ''").execute(pool).await.ok();
     sqlx::query("COMMENT ON COLUMN users.referral_history IS '关联流转记录'").execute(pool).await.ok();
+
+    // ══════════════════════════════════════════════════════════════
+    //  可灵 AI (Kling) 厂商 & 转发规则 & 计费规则 种子数据
+    // ══════════════════════════════════════════════════════════════
+
+    // 内置服务商: 可灵 AI
+    sqlx::query(
+        "INSERT INTO model_providers (name, sort_order, is_system) VALUES ('可灵 AI', 4, 1) ON CONFLICT(name) DO UPDATE SET is_system = 1"
+    ).execute(pool).await.ok();
+
+    // 可灵 AI 转发规则模板
+    sqlx::query(r#"
+        INSERT INTO forward_rules (name, rule_type, description, config_json, category, is_system)
+        SELECT t.name, t.rule_type, t.description, t.config_json, t.category, t.is_system
+        FROM (VALUES
+            ('可灵 视频生成 (文/图/多图)', 'kling', '将标准视频生成请求转发到可灵官方 API，系统根据请求体自动分发到 text2video/image2video/multi-image2video', '{"mode":"transform","target_type":"kling","path_rewrite":{"old":"/v1/video/generations","new":"/v1/videos/text2video"},"auth_type":"bearer"}', '视频', 1),
+            ('可灵 Omni 视频 (kling-v3-omni/video-o1)', 'kling', '将视频生成请求转发到可灵 Omni 视频端点', '{"mode":"transform","target_type":"kling","path_rewrite":{"old":"/v1/video/generations","new":"/v1/videos/omni-video"},"auth_type":"bearer"}', '视频', 1),
+            ('可灵 图片生成', 'kling', '将标准图片生成请求转发到可灵官方 API，含多图参考自动分发', '{"mode":"transform","target_type":"kling","path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"},"auth_type":"bearer"}', '图片', 1),
+            ('可灵 Omni 图片 (kling-v3-omni/image-o1)', 'kling', '将图片生成请求转发到可灵 Omni 图片端点', '{"mode":"transform","target_type":"kling","path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/omni-image"},"auth_type":"bearer"}', '图片', 1)
+        ) AS t(name, rule_type, description, config_json, category, is_system)
+        WHERE NOT EXISTS (SELECT 1 FROM forward_rules WHERE name = t.name)
+    "#).execute(pool).await.ok();
+
+    // 可灵视频计费规则（按秒计费 + mode(std/pro/4k) × sound(off/on) 倍率）
+    sqlx::query(r#"
+        INSERT INTO billing_rules (name, billing_type, duration_rate, billing_rule, extended_config, is_system)
+        SELECT t.name, t.billing_type, t.duration_rate, t.billing_rule, t.extended_config, t.is_system
+        FROM (VALUES
+            ('可灵视频官方计费', 'duration', 0.10, 'kling_video', '{"mode_multipliers":{"std":1.0,"pro":1.33,"4k":2.0},"sound_multipliers":{"off":1.0,"on":1.5}}', 1)
+        ) AS t(name, billing_type, duration_rate, billing_rule, extended_config, is_system)
+        WHERE NOT EXISTS (SELECT 1 FROM billing_rules WHERE name = t.name)
+    "#).execute(pool).await.ok();
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())

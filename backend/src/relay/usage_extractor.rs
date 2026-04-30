@@ -4,6 +4,8 @@ use serde_json::Value;
 pub struct ExtractedFeatures {
     pub has_video: bool,
     pub has_audio: bool,
+    /// 请求是否包含参考图（用于区分文生图/图生图计费，如可灵）
+    pub has_image_ref: bool,
     pub duration_seconds: Option<f64>,
     pub resolution: Option<String>,
     /// 图片数量（用于按张计费）：请求阶段取 n，响应阶段取实际返回数量
@@ -12,6 +14,10 @@ pub struct ExtractedFeatures {
     pub service_tier: Option<String>,
     /// 提示词扩写（DashScope 等图片模型，可能影响计费）
     pub prompt_extend: bool,
+    /// 可灵视频生成模式（std/pro/4k），影响计费倍率，默认 std
+    pub mode: Option<String>,
+    /// 可灵视频有声/无声（on/off），影响计费倍率，默认 off
+    pub sound: Option<String>,
 }
 
 pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
@@ -111,6 +117,20 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         prompt_extend = true;
     }
 
+    // 可灵视频参数：mode（生成模式）和 sound（有声/无声）
+    let mode = body.get("mode").and_then(|v| v.as_str()).map(|s| s.to_lowercase());
+    let sound = body.get("sound").and_then(|v| v.as_str()).map(|s| s.to_lowercase());
+
+    // 检测参考图（用于区分文生图/图生图计费）
+    // 支持可灵（image/image_list/subject_image_list/image_reference）和 OpenAI 兼容格式
+    let has_image_ref =
+        body.get("image").map_or(false, |v| {
+            v.as_str().map_or(false, |s| !s.is_empty()) || v.is_object()
+        })
+        || body.get("image_list").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty())
+        || body.get("subject_image_list").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty())
+        || body.get("image_reference").map_or(false, |v| !v.is_null());
+
     // DashScope 格式：从 usage 中提取 duration 和 SR（异步任务结果响应）
     // 注意：usage 代表真实的后台消耗，必须无条件覆盖从 input 或 parameters 提取的可能不精确的值
     if let Some(usage) = body.get("usage") {
@@ -157,11 +177,14 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
     ExtractedFeatures {
         has_video,
         has_audio,
+        has_image_ref,
         duration_seconds,
         resolution,
         image_count,
         service_tier,
         prompt_extend,
+        mode,
+        sound,
     }
 }
 
@@ -249,11 +272,14 @@ fn count_images_from_arrays(v: &Value) -> Option<i32> {
         }
     }
 
-    // 2. 针对异步任务终态结果深度解析 (兼容用户提供的 data.result.images 结构)
+    // 2. 针对异步任务终态结果深度解析
+    // 兼容: data.result.images (通用) / data.task_result.images (可灵) / result.images / images
     if total_count == 0 {
         let images_node = v.get("data").and_then(|d| d.get("result")).and_then(|r| r.get("images"))
+            .or_else(|| v.get("data").and_then(|d| d.get("task_result")).and_then(|r| r.get("images")))
             .or_else(|| v.get("result").and_then(|r| r.get("images")))
-            .or_else(|| v.get("images")); // 各种厂商可能的嵌套结构兜底
+            .or_else(|| v.get("task_result").and_then(|r| r.get("images")))
+            .or_else(|| v.get("images"));
             
         if let Some(images) = images_node.and_then(|i| i.as_array()) {
             for img in images {
@@ -444,4 +470,18 @@ pub fn extract_usage_json_string(response: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// 从可灵视频终态响应中提取实际生成时长（秒）。
+/// 路径: data.task_result.videos[0].duration（字符串，如 "5.1"）
+pub fn extract_kling_video_duration(resp: &Value) -> Option<f64> {
+    resp.get("data")
+        .and_then(|d| d.get("task_result"))
+        .and_then(|r| r.get("videos"))
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| {
+            v.get("duration")
+                .and_then(|d| d.as_str().and_then(|s| s.parse::<f64>().ok()).or_else(|| d.as_f64()))
+        })
 }

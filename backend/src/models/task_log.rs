@@ -29,6 +29,10 @@ pub struct TaskLog {
     pub channel_group_aid: Option<String>,
     #[sqlx(default)]
     pub user_nickname: Option<String>,
+    #[sqlx(default)]
+    pub task_id: Option<String>,
+    #[sqlx(default)]
+    pub action_type: Option<String>,
     pub created_at: String,
 }
 

@@ -20,22 +20,26 @@ pub async fn task_status(
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
 
     // 从日志中查找原始渠道信息
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, ''), billing_detail FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
+    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, ''), billing_detail, COALESCE(endpoint, '') FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
     let mut db_log_id: Option<i64> = None;
     let mut original_request: Option<String> = None;
     let mut already_billed = false;
+    let mut log_endpoint: Option<String> = None;
     // 转义 LIKE 通配符，防止 task_id 中含 % 或 _ 导致误匹配
     let escaped_id = task_id.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
-    let log_row: Option<(i64, i64, String, String, String, Option<String>)> = sqlx::query_as(&log_query)
+    let log_row: Option<(i64, i64, String, String, String, Option<String>, String)> = sqlx::query_as(&log_query)
         .bind(format!("%{}%", escaped_id))
         .fetch_optional(&state.db.pool)
         .await
         .unwrap_or(None);
 
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _, req_content, b_detail)) = log_row {
+    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _, req_content, b_detail, ep)) = log_row {
         db_log_id = Some(l_id);
         if model_name.is_empty() {
             model_name = m_name;
+        }
+        if !ep.is_empty() {
+            log_endpoint = Some(ep);
         }
         if let Some(ref detail) = b_detail {
             if !detail.is_empty() && !detail.contains("冻结") {
@@ -77,14 +81,28 @@ pub async fn task_status(
     };
 
     // 查询模型类别以推断 forward rule
-    let category: String = sqlx::query_scalar(
-        &state.db.format_query(
-            "SELECT COALESCE(t.name, '') FROM models m \
-             LEFT JOIN model_types t ON m.type_id = t.id \
-             WHERE m.model_id = ? LIMIT 1"
-        )
-    ).bind(&model_name).fetch_optional(&state.db.pool).await
-        .unwrap_or(None).unwrap_or_default();
+    let mut category = if let Some(ref ep) = log_endpoint {
+        if ep.contains("/video/") || ep.contains("/videos/") || ep.contains("/v1/video") {
+            "视频".to_string()
+        } else if ep.contains("/image/") || ep.contains("/images/") || ep.contains("/v1/image") {
+            "图片".to_string()
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    if category.is_empty() {
+        category = sqlx::query_scalar(
+            &state.db.format_query(
+                "SELECT COALESCE(t.name, '') FROM models m \
+                 LEFT JOIN model_types t ON m.type_id = t.id \
+                 WHERE m.model_id = ? LIMIT 1"
+            )
+        ).bind(&model_name).fetch_optional(&state.db.pool).await
+            .unwrap_or(None).unwrap_or_default();
+    }
 
     let default_entry = match category.as_str() {
         "视频" => "/v1/video/generations",
@@ -133,14 +151,15 @@ pub async fn task_status(
         let resp_json: serde_json::Value = serde_json::from_str(&get_resp_str).unwrap_or(serde_json::json!({}));
         let raw_status = resp_json.get("status")
             .or_else(|| resp_json.get("data").and_then(|d| d.get("status")))
+            .or_else(|| resp_json.get("data").and_then(|d| d.get("task_status")))
             .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
             .or_else(|| resp_json.get("output").and_then(|o| o.get("task_status")))
             .and_then(|s| s.as_str()).unwrap_or("");
         
         let task_status_str = raw_status.to_lowercase();
-        // 某些上游（如图片异步 API）用 "completed" 表示成功，统一归一化
+        // 某些上游（如图片异步 API）用 "completed" 表示成功，可灵用 "succeed"，统一归一化
         let task_status = match task_status_str.as_str() {
-            "completed" | "succeeded" | "success" => "succeeded",
+            "completed" | "succeeded" | "succeed" | "success" => "succeeded",
             "failed" | "canceled" | "cancelled" | "unknown" => "failed",
             other => other,
         };
@@ -156,9 +175,8 @@ pub async fn task_status(
             let usage = crate::relay::usage_extractor::parse_usage(&get_resp_str);
             let image_count = crate::relay::usage_extractor::count_response_images(&get_resp_str);
 
-            let db_model: Option<crate::models::Model> = sqlx::query_as(
-                &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-            ).bind(&model_name).fetch_optional(&state.db.pool).await.unwrap_or(None);
+            let cat_hint = if category.is_empty() { None } else { Some(category.as_str()) };
+            let db_model = proxy::find_active_model(&state, &model_name, cat_hint).await;
 
             let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
                 if let Some(rule_id) = m.billing_rule_id {
@@ -177,7 +195,13 @@ pub async fn task_status(
                     if req_feat.has_video { features.has_video = true; }
                     if req_feat.has_audio { features.has_audio = true; }
                     if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
+                    if features.mode.is_none() { features.mode = req_feat.mode; }
+                    if features.sound.is_none() { features.sound = req_feat.sound; }
                 }
+            }
+            // 从可灵终态响应提取实际视频时长
+            if let Some(kling_dur) = crate::relay::usage_extractor::extract_kling_video_duration(&resp_json) {
+                features.duration_seconds = Some(kling_dur);
             }
             // 视频 duration 兜底
             if category == "视频" && features.duration_seconds.is_none() {
@@ -232,8 +256,8 @@ pub async fn task_status(
 
                     let _ = tx.commit().await;
 
-                    tracing::info!("[Task Success Billing] log_id={}, model={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}", 
-                        log_id, model_name, cost, pre_deduction, apply_balance);
+                    tracing::info!("[Task Success Billing] log_id={}, model={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}, url={}", 
+                        log_id, model_name, cost, pre_deduction, apply_balance, url);
                 }
                 Err(e) => {
                     tracing::error!("[Task Billing] 启动事务失败: {:?}", e);
@@ -273,7 +297,7 @@ pub async fn task_status(
                     .execute(&mut *tx).await;
 
                     let _ = tx.commit().await;
-                    tracing::info!("[Task Failure Billing] log_id={} failed, refunded pre_deduction={:.6}", log_id, pre_deduction);
+                    tracing::info!("[Task Failure Billing] log_id={} failed, refunded pre_deduction={:.6}, url={}", log_id, pre_deduction, url);
                 }
                 Err(e) => {
                     tracing::error!("[Task Failure Billing] 启动事务失败: {:?}", e);

@@ -25,6 +25,7 @@ export interface User {
   admin_remark?: string;
   referral_history?: string;
   referred_by?: string;
+  allow_view_log_details?: number;
 }
 
 export interface UserLevel {
@@ -39,6 +40,7 @@ export interface UserLevel {
   marketing_enabled: number;
   is_default: number;
   max_token_count: number;
+  allow_view_log_details: number;
   description: string;
   created_at: string;
 }

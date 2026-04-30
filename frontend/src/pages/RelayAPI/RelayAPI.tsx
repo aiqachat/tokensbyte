@@ -26,6 +26,15 @@ const RelayAPI: React.FC = () => {
     { label: '阿里百炼视频 (提交)', path: '/api/v1/services/aigc/video-generation/video-synthesis', method: 'POST', type: 'dashscope' },
     { label: '阿里百炼视频 (查询)', path: '/api/v1/tasks/{task_id}', method: 'GET', type: 'dashscope' },
     { label: '阿里百炼图片 (提交)', path: '/api/v1/services/aigc/multimodal-generation/generation', method: 'POST', type: 'dashscope' },
+    { label: '可灵文生视频 (提交)', path: '/v1/videos/text2video', method: 'POST', type: 'kling' },
+    { label: '可灵图生视频 (提交)', path: '/v1/videos/image2video', method: 'POST', type: 'kling' },
+    { label: '可灵多图生视频 (提交)', path: '/v1/videos/multi-image2video', method: 'POST', type: 'kling' },
+    { label: '可灵 Omni 视频 (提交)', path: '/v1/videos/omni-video', method: 'POST', type: 'kling' },
+    { label: '可灵视频 (查询)', path: '/v1/videos/{endpoint}/{task_id}', method: 'GET', type: 'kling' },
+    { label: '可灵图片 (提交)', path: '/v1/images/generations', method: 'POST', type: 'kling' },
+    { label: '可灵多图生图 (提交)', path: '/v1/images/multi-image2image', method: 'POST', type: 'kling' },
+    { label: '可灵 Omni 图片 (提交)', path: '/v1/images/omni-image', method: 'POST', type: 'kling' },
+    { label: '可灵图片 (查询)', path: '/v1/images/{endpoint}/{task_id}', method: 'GET', type: 'kling' },
   ];
 
   const errorCodes = [
@@ -49,7 +58,7 @@ const RelayAPI: React.FC = () => {
 
       <Alert
         message="统一认证与智能调度计费系统"
-        description="本网关兼容 OpenAI、Google Gemini、火山方舟、Anthropic 等多家厂商原生协议。只需使用您颁发的请求令牌（Token），渠道自动调度、协议自动转换、日志计费等均由平台全权智能处理。"
+        description="本网关兼容 OpenAI、Google Gemini、火山方舟、Anthropic、可灵 AI 等多家厂商原生协议。只需使用您颁发的请求令牌（Token），渠道自动调度、协议自动转换、日志计费等均由平台全权智能处理。"
         type="info"
         showIcon
         style={{ marginBottom: 24, borderRadius: 8 }}
@@ -297,6 +306,80 @@ const RelayAPI: React.FC = () => {
           },
           {
             key: '3',
+            label: '可灵 AI 原生协议',
+            children: (
+              <Card variant="borderless" style={{ background: themeToken.colorBgContainer }}>
+                <Alert message="可灵 AI 支持 OpenAI 兼容协议和原生协议两种调用方式。使用 OpenAI 兼容协议时，系统自动根据请求体内容动态分发到对应的可灵端点。渠道 API Key 请填写 access_key:secret_key 格式，系统自动生成 JWT Token。" type="info" showIcon style={{ marginBottom: 24, borderRadius: 8 }} />
+
+                <Title level={5}>视频生成接口</Title>
+                <Paragraph type="secondary">支持文生视频、图生视频、多图参考生视频、Omni 视频。使用 OpenAI 兼容路径时系统根据请求体自动分发。</Paragraph>
+                <div style={codeStyle}>
+                  <Text code>POST /v1/video/generations</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">OpenAI 兼容入口（自动分发）</Text></span>
+                  <br />
+                  <Text code>POST /v1/videos/text2video</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">文生视频（原生路径）</Text></span>
+                  <br />
+                  <Text code>POST /v1/videos/image2video</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">图生视频（含 image/image_tail 字段）</Text></span>
+                  <br />
+                  <Text code>POST /v1/videos/multi-image2video</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">多图参考生视频（含 image_list 字段）</Text></span>
+                  <br />
+                  <Text code>POST /v1/videos/omni-video</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">Omni 视频（统一文/图/多图/视频参考入口）</Text></span>
+                  <br />
+                  <Text code>GET  /v1/videos/text2video/{'{task_id}'}</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">任务查询（其他路径同理）</Text></span>
+                </div>
+                <Descriptions column={1} bordered size="small" style={{ marginBottom: 24 }}>
+                  <Descriptions.Item label="model (必填)">视频模型名称，如 "kling-v3"、"kling-v2-6"、"kling-v3-omni"、"kling-video-o1"</Descriptions.Item>
+                  <Descriptions.Item label="prompt (必填)">视频生成的提示词描述文本</Descriptions.Item>
+                  <Descriptions.Item label="duration (选填)">视频时长（秒），如 "5"、"10"</Descriptions.Item>
+                  <Descriptions.Item label="mode (选填)">std（标准）/ pro（专业），默认 std。影响计费倍率</Descriptions.Item>
+                  <Descriptions.Item label="sound (选填)">on / off，默认 off。开启后生成有声视频，影响计费倍率</Descriptions.Item>
+                  <Descriptions.Item label="aspect_ratio (选填)">宽高比，如 "16:9"、"9:16"、"1:1"</Descriptions.Item>
+                  <Descriptions.Item label="negative_prompt (选填)">反向提示词，描述不希望出现的内容</Descriptions.Item>
+                  <Descriptions.Item label="image (选填)">参考图片 URL（图生视频时使用）</Descriptions.Item>
+                  <Descriptions.Item label="image_tail (选填)">尾帧参考图 URL</Descriptions.Item>
+                  <Descriptions.Item label="image_list (选填)">多图参考数组（多图生视频时使用）</Descriptions.Item>
+                  <Descriptions.Item label="video_list (选填)">视频参考数组（Omni 视频时支持）</Descriptions.Item>
+                  <Descriptions.Item label="callback_url (选填)">任务完成回调地址</Descriptions.Item>
+                </Descriptions>
+
+                <Divider />
+
+                <Title level={5}>图片生成接口</Title>
+                <Paragraph type="secondary">支持文生图、多图参考生图、Omni 图片。</Paragraph>
+                <div style={codeStyle}>
+                  <Text code>POST /v1/images/generations</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">标准图片生成（OpenAI 兼容 + 可灵原生）</Text></span>
+                  <br />
+                  <Text code>POST /v1/images/multi-image2image</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">多图参考生图（含 subject_image_list）</Text></span>
+                  <br />
+                  <Text code>POST /v1/images/omni-image</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">Omni 图片（统一文/图/多图入口）</Text></span>
+                  <br />
+                  <Text code>GET  /v1/images/generations/{'{task_id}'}</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">任务查询（其他路径同理）</Text></span>
+                </div>
+                <Descriptions column={1} bordered size="small">
+                  <Descriptions.Item label="model (必填)">图片模型名称，如 "kling-v3"、"kling-v2"、"kling-image-o1"</Descriptions.Item>
+                  <Descriptions.Item label="prompt (必填)">图片生成的提示词描述文本</Descriptions.Item>
+                  <Descriptions.Item label="n (选填)">生成数量（默认 1）</Descriptions.Item>
+                  <Descriptions.Item label="resolution (选填)">分辨率，默认 1k</Descriptions.Item>
+                  <Descriptions.Item label="aspect_ratio (选填)">宽高比，如 "1:1"、"16:9"</Descriptions.Item>
+                  <Descriptions.Item label="negative_prompt (选填)">反向提示词</Descriptions.Item>
+                  <Descriptions.Item label="subject_image_list (选填)">多图参考数组（多图生图时使用）</Descriptions.Item>
+                  <Descriptions.Item label="image_fidelity (选填)">图片保真度</Descriptions.Item>
+                  <Descriptions.Item label="callback_url (选填)">任务完成回调地址</Descriptions.Item>
+                </Descriptions>
+              </Card>
+            )
+          },
+          {
+            key: '4',
             label: '错误码说明',
             children: (
               <Card variant="borderless" style={{ background: themeToken.colorBgContainer }}>

@@ -14,7 +14,7 @@ const ChannelConfigs: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ChannelConfig | null>(null);
-  const [upstreams, setUpstreams] = useState<{id: number, name: string}[]>([]);
+  const [upstreams, setUpstreams] = useState<{ id: number, name: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
@@ -166,7 +166,12 @@ const ChannelConfigs: React.FC = () => {
           </Form.Item>
           <Form.Item name="provider_type" label="服务商类型 (输入或快捷选择)" rules={[{ required: true }]}>
             <AutoComplete
-              options={(upstreams || []).map(p => ({ value: p.name, label: p.name.toUpperCase() })).concat([{ value: 'openai', label: 'OPENAI (默认)' }, { value: 'anthropic', label: 'ANTHROPIC' }, { value: 'gemini', label: 'GEMINI' }, { value: 'azure', label: 'AZURE' }])}
+              options={(upstreams || []).map(p => ({ value: p.name, label: p.name.toUpperCase() })).concat([
+                { value: 'openai', label: 'OPENAI (默认)' },
+                { value: 'anthropic', label: 'ANTHROPIC' },
+                { value: 'gemini', label: 'GEMINI' },
+                { value: 'kling', label: 'KLING (可灵 AI)' },
+              ])}
               placeholder="可直选或自由输入 (如: custom)"
               filterOption={(inputValue, option) =>
                 option!.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
@@ -176,8 +181,9 @@ const ChannelConfigs: React.FC = () => {
           <Form.Item name="base_url" label="端点基础地址 (Base URL)" rules={[{ required: true }]}>
             <AutoComplete
               options={[
-                { value: 'https://api.openai.com', label: 'OpenAI 官方 (https://api.openai.com)' },
-                { value: 'https://ark.cn-beijing.volces.com/api/v3', label: '火山方舟 (https://ark.cn-beijing.volces.com/api/v3)' }
+                { value: 'https://ark.cn-beijing.volces.com', label: '火山方舟' },
+                { value: 'https://api-beijing.klingai.com', label: '可灵' },
+                { value: 'https://dashscope.aliyuncs.com', label: '阿里百炼' },
               ]}
               placeholder="可直接选择预设地址或自由输入"
               filterOption={(inputValue, option) =>
@@ -186,13 +192,13 @@ const ChannelConfigs: React.FC = () => {
               }
             />
           </Form.Item>
-          <Form.Item 
-            name="api_key" 
-            label="请求鉴权密钥 (API Key)" 
+          <Form.Item
+            name="api_key"
+            label="请求鉴权密钥 (API Key)"
             rules={[{ required: !editingConfig, message: '请输入 API Key' }]}
-            extra={editingConfig ? '留空则保持原密钥不变，输入新值将覆盖旧密钥' : undefined}
+            extra={editingConfig ? '留空则保持原密钥不变，输入新值将覆盖旧密钥' : '可灵 AI 格式：access_key:secret_key，系统自动生成 JWT Token'}
           >
-            <Input.Password placeholder={editingConfig ? '留空保持不变，输入新值覆盖' : 'sk-...'} />
+            <Input.Password placeholder={editingConfig ? '留空保持不变，输入新值覆盖' : 'sk-... 或 access_key:secret_key'} />
           </Form.Item>
           <Form.Item name="remark" label="备注说明" extra="在这里记录您的渠道归属、适用场景等信息，方便自己查阅">
             <Input.TextArea rows={2} placeholder="例如：这是供图片生成的官方主通道..." />

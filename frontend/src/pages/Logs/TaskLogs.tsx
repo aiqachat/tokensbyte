@@ -31,33 +31,21 @@ interface TaskLog {
   channel_name: string | null;
   channel_group_aid: string | null;
   user_nickname: string | null;
+  task_id: string | null;
+  action_type: string | null;
   created_at: string;
 }
 
-// ── 工具函数：从 endpoint 推断任务类型 ──────────────────────────
-const getTaskType = (ep: string) => {
-  if (ep.includes('chat/completions') || ep.includes('generateContent'))
-    return { label: '聊天', color: 'blue', icon: '💬' };
-  if (ep.includes('images/generations'))
-    return { label: '图片', color: 'purple', icon: '🖼️' };
-  if (ep.includes('video/generations') || ep.includes('contents/generations'))
-    return { label: '视频', color: 'orange', icon: '🎬' };
-  return { label: '其它', color: 'default', icon: '🔧' };
+// ── 工具函数：从记录中获取任务类型（直接读取后端返回的 action_type） ──────────────────────────
+const getTaskType = (r: TaskLog) => {
+  if (r.action_type === '聊天') return { label: '聊天', color: 'blue', icon: '💬' };
+  if (r.action_type === '图片') return { label: '图片', color: 'purple', icon: '🖼️' };
+  if (r.action_type === '视频') return { label: '视频', color: 'orange', icon: '🎬' };
+  return { label: r.action_type || '其它', color: 'default', icon: '🔧' };
 };
 
-// ── 工具函数：判断是否异步提交（视频 POST 或带有 task_id 的图片 POST） ─────────────────────
-const isAsyncPost = (r: TaskLog) => {
-  const ep = r.endpoint || '';
-  if (ep.endsWith('/video/generations') || ep.endsWith('/videos/generations') || ep.endsWith('/generations/tasks')) return true;
-  if (ep.endsWith('/images/generations') && r.response_content) {
-    try {
-      const v = JSON.parse(r.response_content);
-      // 支持根节点、data 对象、data 数组第一项
-      return !!(v.task_id || v.id || v.data?.task_id || v.data?.id || (Array.isArray(v.data) && v.data[0]?.task_id));
-    } catch { return false; }
-  }
-  return false;
-};
+// ── 工具函数：判断是否异步任务（后端 task_id 非空即为异步） ─────────────────
+const isAsyncPost = (r: TaskLog) => !!r.task_id;
 
 // ── 工具函数：获取异步任务终态 ─────────────────────────
 const getAsyncFinalStatus = (r: TaskLog): 'pending' | 'succeeded' | 'failed' => {
@@ -67,8 +55,9 @@ const getAsyncFinalStatus = (r: TaskLog): 'pending' | 'succeeded' | 'failed' => 
   if (r.response_content) {
     try {
       const v = JSON.parse(r.response_content);
-      const status = v.status || v.data?.status || v.final_result?.status || v.output?.status;
-      if (status === 'succeeded' || status === 'SUCCESS' || status === 'completed') return 'succeeded';
+      const status = v.status || v.data?.status || v.data?.task_status
+        || v.final_result?.status || v.output?.status || v.output?.task_status;
+      if (status === 'succeeded' || status === 'succeed' || status === 'SUCCESS' || status === 'completed') return 'succeeded';
       if (status === 'failed' || status === 'FAILED') return 'failed';
     } catch { /* ignore */ }
   }
@@ -76,10 +65,10 @@ const getAsyncFinalStatus = (r: TaskLog): 'pending' | 'succeeded' | 'failed' => 
   // 2. 兜底逻辑：通过计费明细判断（结算后"冻结"字样会被替换）
   if (r.billing_detail) {
     if (r.billing_detail.includes('失败')) return 'failed';
-    if (!r.billing_detail.includes('冻结')) return 'succeeded'; // 计费完成
+    if (!r.billing_detail.includes('冻结')) return 'succeeded';
   }
 
-  return 'pending'; // 尚未结算
+  return 'pending';
 };
 
 // ── 工具函数：从异步响应中提取完成时间戳（秒级 Unix） ─────────
@@ -87,30 +76,20 @@ const getAsyncCompletedTs = (r: TaskLog): number | null => {
   if (!r.response_content) return null;
   try {
     const v = JSON.parse(r.response_content);
-    // 异步任务响应中 updated_at 是任务完成的 Unix 时间戳（秒）
-    // 修复 Bug：此前错误地读取了 v.created_at（创建时间），导致 (结束时间 - 创建时间) 永远接近于 0秒
-    const ts = v.updated_at ?? v.final_result?.updated_at ?? v.output?.updated_at ?? null;
-    return typeof ts === 'number' ? ts : null;
+    let ts = v.updated_at ?? v.data?.updated_at ?? v.final_result?.updated_at ?? v.output?.updated_at ?? null;
+    if (typeof ts === 'number') {
+      // 兼容毫秒级时间戳（如可灵的 1777538309396），如果大于 9999999999 则视为毫秒，需转为秒
+      if (ts > 9999999999) {
+        ts = Math.floor(ts / 1000);
+      }
+      return ts;
+    }
+    return null;
   } catch { return null; }
 };
 
-// ── 工具函数：从 endpoint/response 提取任务 ID ──────────────────
-const getTaskId = (record: TaskLog): string => {
-  const ep = record.endpoint;
-  // 视频 GET：末尾是 task_id
-  if ((ep.includes('video/generations/') || ep.includes('videos/generations/') || ep.includes('generations/tasks/'))
-    && !ep.endsWith('/generations') && !ep.endsWith('/tasks')) {
-    return ep.split('/').pop() || '-';
-  }
-  // 视频 POST / 异步图片：从 response_content 提取
-  if (isAsyncPost(record) && record.response_content) {
-    try {
-      const r = JSON.parse(record.response_content);
-      return r.task_id || r.id || r.data?.task_id || r.data?.id || (Array.isArray(r.data) && r.data[0]?.task_id) || '-';
-    } catch { /* ignore */ }
-  }
-  return '-';
-};
+// ── 工具函数：获取任务 ID ──────────────────
+const getTaskId = (record: TaskLog): string => record.task_id || '-';
 
 // ── 工具函数：格式化 JSON 用于展示 ─────────────────────────────
 const fmtJson = (raw: string | null): string => {
@@ -144,8 +123,8 @@ const TaskLogs: React.FC = () => {
       const params: any = { page: current, per_page: size };
       if (v.action_type) params.action_type = v.action_type;
       if (v.model) params.model = v.model;
-      if (v.dateRange?.[0]) params.start_date = v.dateRange[0].format('YYYY-MM-DD');
-      if (v.dateRange?.[1]) params.end_date = v.dateRange[1].format('YYYY-MM-DD');
+      if (v.dateRange?.[0]) params.start_date = v.dateRange[0].startOf('day').toISOString();
+      if (v.dateRange?.[1]) params.end_date = v.dateRange[1].endOf('day').toISOString();
 
       const res = await (request.get('/task_logs', { params }) as any);
       setData(res.data);
@@ -237,7 +216,6 @@ const TaskLogs: React.FC = () => {
           const ts = getAsyncCompletedTs(r);
           if (ts) {
             const totalSec = ts - dayjs(r.created_at).unix();
-            if (totalSec >= 60) return <Text type="secondary" style={{ background: timeBadgeBg, padding: '2px 8px', borderRadius: 4 }}>🕗 {(totalSec / 60).toFixed(1)}m</Text>;
             return <Text type="secondary" style={{ background: timeBadgeBg, padding: '2px 8px', borderRadius: 4 }}>🕗 {totalSec.toFixed(1)}s</Text>;
           }
         }
@@ -267,7 +245,7 @@ const TaskLogs: React.FC = () => {
       key: 'type',
       width: 80,
       render: (_: any, r: TaskLog) => {
-        const t = getTaskType(r.endpoint);
+        const t = getTaskType(r);
         return <Tag color={t.color}>{t.icon} {t.label}</Tag>;
       },
     },
@@ -337,6 +315,7 @@ const TaskLogs: React.FC = () => {
               { label: '💬 聊天', value: 'chat' },
               { label: '🖼️ 图片', value: 'image' },
               { label: '🎬 视频', value: 'video' },
+              { label: '🔧 其它', value: 'other' },
             ]}
           />
         </Form.Item>
@@ -358,7 +337,7 @@ const TaskLogs: React.FC = () => {
 
   // ── 移动端卡片 ───────────────────────────────────────────────
   const renderMobileCard = (record: TaskLog) => {
-    const tp = getTaskType(record.endpoint);
+    const tp = getTaskType(record);
     const tid = getTaskId(record);
     const status = getAsyncFinalStatus(record);
     return (
@@ -424,7 +403,11 @@ const TaskLogs: React.FC = () => {
           dataSource={data}
           rowKey="id"
           loading={loading}
-          expandable={{ expandedRowRender, expandRowByClick: true }}
+          expandable={
+            (isAdmin || user?.allow_view_log_details !== 0) 
+              ? { expandedRowRender, expandRowByClick: true } 
+              : undefined
+          }
           pagination={{
             current: page,
             pageSize,

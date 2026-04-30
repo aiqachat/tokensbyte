@@ -50,6 +50,7 @@ const UserLevelEdit: React.FC = () => {
         marketing_enabled: false,
         is_default: false,
         max_token_count: 10,
+        allow_view_log_details: true,
       });
       return;
     }
@@ -64,6 +65,7 @@ const UserLevelEdit: React.FC = () => {
             ...level,
             marketing_enabled: level.marketing_enabled === 1,
             is_default: level.is_default === 1,
+            allow_view_log_details: level.allow_view_log_details === undefined ? true : level.allow_view_log_details === 1,
           });
         } else {
           message.error('未找到对应等级记录');
@@ -87,6 +89,7 @@ const UserLevelEdit: React.FC = () => {
       ...values,
       marketing_enabled: values.marketing_enabled ? 1 : 0,
       is_default: values.is_default ? 1 : 0,
+      allow_view_log_details: values.allow_view_log_details ? 1 : 0,
     };
     // 新建时自动生成 group_key
     if (isAdd && !payload.group_key) {
@@ -236,6 +239,17 @@ const UserLevelEdit: React.FC = () => {
               extra="限制该等级用户可以创建的 API 密钥数量上限。设为 0 表示禁止创建密钥。"
             >
               <InputNumber style={{ width: '100%' }} min={0} max={1000} step={1} precision={0} />
+            </Form.Item>
+          </TabPane>
+
+          <TabPane tab="日志配置" key="4">
+            <Form.Item 
+              name="allow_view_log_details" 
+              label="查看日志详情" 
+              valuePropName="checked"
+              extra="设置关闭后，属于当前用户等级的用户在页面的使用日志和任务日志里只能看列表信息，无法点击下拉看详细内容（同时隐藏使用日志的详情文案和任务日志的加号图标），设置开启后才能看。"
+            >
+              <Switch checkedChildren="开启" unCheckedChildren="关闭" />
             </Form.Item>
           </TabPane>
         </Tabs>

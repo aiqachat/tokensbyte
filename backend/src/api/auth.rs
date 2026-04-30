@@ -46,9 +46,9 @@ pub async fn login(
 ) -> Response {
     let result = (async {
         let (query_str, err_msg) = match request.login_type.as_deref() {
-            Some("email") => ("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.email = ?", "未找到该邮箱对应的账号"),
-            Some("mobile") => ("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.mobile = ?", "未找到该手机号对应的账号"),
-            _ => ("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.username = ?", "未找到此账号，请检查用户名"),
+            Some("email") => ("SELECT u.*, ul.name as level_name, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.email = ?", "未找到该邮箱对应的账号"),
+            Some("mobile") => ("SELECT u.*, ul.name as level_name, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.mobile = ?", "未找到该手机号对应的账号"),
+            _ => ("SELECT u.*, ul.name as level_name, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.username = ?", "未找到此账号，请检查用户名"),
         };
 
         let user: User = sqlx::query_as(&state.db.format_query(query_str))
@@ -86,7 +86,7 @@ pub async fn admin_login(
 ) -> Response {
     let result = (async {
         let mut user: User = sqlx::query_as(
-            &state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.username = ? OR u.email = ?")
+            &state.db.format_query("SELECT u.*, ul.name as level_name, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.username = ? OR u.email = ?")
         )
         .bind(&request.username)
         .bind(&request.username)
