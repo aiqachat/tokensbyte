@@ -166,10 +166,10 @@ pub async fn gemini_proxy(
     }
 }
 
-
+// DeleteAsset、DeleteAssetGroup删除接口暂不对外访问，防止恶意删除了素材中心页面上传的目录组和文件
 const ARK_ASSET_ACTIONS: &[&str] = &[
-    "CreateAsset", "GetAsset", "UpdateAsset", "DeleteAsset", "ListAssets",
-    "CreateAssetGroup", "GetAssetGroup", "UpdateAssetGroup", "DeleteAssetGroup", "ListAssetGroups",
+    "CreateAsset", "GetAsset", "UpdateAsset", "ListAssets",
+    "CreateAssetGroup", "GetAssetGroup", "UpdateAssetGroup", "ListAssetGroups",
 ];
 
 pub async fn ark_asset_proxy(
