@@ -35,6 +35,7 @@ const BillingRules: React.FC = () => {
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   
   const [items, setItems] = useState<BillingRuleData[]>([]);
+  const [filterType, setFilterType] = useState('all');
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<BillingRuleData | null>(null);
@@ -284,6 +285,8 @@ const BillingRules: React.FC = () => {
     },
   ];
 
+  const filteredItems = filterType === 'all' ? items : items.filter(item => item.billing_type === filterType);
+
   return (
     <div>
       <Card title={screens.xs ? '计费配置' : '大模型价格配置与统一计费计算池'} extra={
@@ -291,9 +294,26 @@ const BillingRules: React.FC = () => {
           {screens.xs ? '新建' : '新建计费策略类'}
         </Button>
       }>
+        <div style={{ marginBottom: 20 }}>
+          <Space wrap>
+            <Text strong>筛选计费类型：</Text>
+            <Radio.Group 
+              value={filterType} 
+              onChange={e => setFilterType(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+            >
+              <Radio value="all">全部类型</Radio>
+              <Radio value="tokens">{t('models.type_tokens')}</Radio>
+              <Radio value="requests">{t('models.type_requests')}</Radio>
+              <Radio value="duration">{t('models.type_duration')}</Radio>
+            </Radio.Group>
+          </Space>
+        </div>
+
         {screens.xs ? (
           <MobileCardList
-            dataSource={items}
+            dataSource={filteredItems}
             loading={loading}
             rowKey="id"
             pagination={{ pageSize: 15 }}
@@ -325,7 +345,7 @@ const BillingRules: React.FC = () => {
           />
         ) : (
           <Table
-            dataSource={items}
+            dataSource={filteredItems}
             columns={columns}
             rowKey="id"
             loading={loading}
