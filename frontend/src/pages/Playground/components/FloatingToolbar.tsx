@@ -11,7 +11,7 @@ import {
 import { useCanvas, usePlayground } from '../context/PlaygroundContext';
 
 const FloatingToolbar: React.FC = React.memo(() => {
-  const { activeTool, setActiveTool, canvasTransform, setNodes, maxZIndex, setMaxZIndex } = useCanvas();
+  const { activeTool, setActiveTool, canvasTransform, setNodes, maxZIndex, setMaxZIndex, setSettingsWidgetPos, setResourceWidgetPos } = useCanvas();
   const { 
     isResourceWidgetVisible, setIsResourceWidgetVisible,
     isSettingsWidgetVisible, setIsSettingsWidgetVisible
@@ -149,7 +149,12 @@ const FloatingToolbar: React.FC = React.memo(() => {
         <Button
           shape="circle"
           type={isSettingsWidgetVisible ? 'primary' : 'text'}
-          onClick={() => setIsSettingsWidgetVisible(!isSettingsWidgetVisible)}
+          onClick={() => {
+            if (!isSettingsWidgetVisible) {
+              setSettingsWidgetPos({ x: window.innerWidth - 460, y: 32 });
+            }
+            setIsSettingsWidgetVisible(!isSettingsWidgetVisible);
+          }}
           icon={isSettingsWidgetVisible ? <StarFilled style={{ fontSize: 16 }} /> : <StarOutlined style={{ fontSize: 16 }} />}
           style={{
             width: 32, height: 32, minWidth: 32,
@@ -163,7 +168,12 @@ const FloatingToolbar: React.FC = React.memo(() => {
         <Button
           shape="circle"
           type={isResourceWidgetVisible ? 'primary' : 'text'}
-          onClick={() => setIsResourceWidgetVisible(!isResourceWidgetVisible)}
+          onClick={() => {
+            if (!isResourceWidgetVisible) {
+              setResourceWidgetPos({ x: window.innerWidth - 420, y: 120 });
+            }
+            setIsResourceWidgetVisible(!isResourceWidgetVisible);
+          }}
           icon={
             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
