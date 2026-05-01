@@ -198,10 +198,23 @@ pub async fn test_channel(
         }
     }
 
-    let test_model = req.model.unwrap_or_else(|| {
-        let models = channel.get_models();
-        if !models.is_empty() { models[0].clone() } else { "gpt-3.5-turbo".to_string() }
-    });
+    let test_model = if let Some(m) = req.model {
+        m
+    } else {
+        let model_mids = channel.get_models();
+        if !model_mids.is_empty() {
+            // models 存储的是 mid，需要反查 model_id
+            let mid = &model_mids[0];
+            let model_id: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT model_id FROM models WHERE mid = ?"))
+                .bind(mid)
+                .fetch_optional(&state.db.pool)
+                .await
+                .unwrap_or(None);
+            model_id.unwrap_or_else(|| mid.clone())
+        } else {
+            "gpt-3.5-turbo".to_string()
+        }
+    };
 
     let start = std::time::Instant::now();
 

@@ -7,17 +7,33 @@ use rand::Rng;
 
 /// Select the best channel for a given model based on priority and load balancing
 pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str, level_id: &str) -> AppResult<Channel> {
-    // 1. Fetch available channels that support this model and user group (checking BOTH group_key and ULID)
-    // Filter by priority (desc) first.
-    let channels: Vec<Channel> = sqlx::query_as(
-        &state.db.format_query(r#"SELECT * FROM channels 
+    // 1. 查找请求 model_id 对应的所有 mid（渠道现在按 mid 存储模型列表）
+    let mids: Vec<String> = sqlx::query_scalar(
+        &state.db.format_query("SELECT mid FROM models WHERE model_id = ? AND is_active = 1")
+    )
+    .bind(model)
+    .fetch_all(&state.db.pool)
+    .await
+    .unwrap_or_default();
+
+    // 2. 构建匹配条件：匹配 mid 列表中的任意值，同时兼容旧格式（直接存 model_id 的渠道）
+    let mut model_conditions = vec![format!("models LIKE '%\"{}\"%'", model)]; // 兼容旧 model_id 格式
+    for mid in &mids {
+        model_conditions.push(format!("models LIKE '%\"{}\"%'", mid));
+    }
+    let model_clause = format!("(({}) OR models = '[]')", model_conditions.join(" OR "));
+
+    let sql = format!(
+        r#"SELECT * FROM channels 
            WHERE status = 1 
            AND (quota_limit < 0 OR quota_used < quota_limit)
-           AND (models LIKE ? OR models = '[]')
+           AND {}
            AND (user_groups LIKE ? OR user_groups LIKE ? OR user_groups = '[]')
-           ORDER BY priority DESC"#)
-    )
-    .bind(format!("%{:?}%", model))
+           ORDER BY priority DESC"#,
+        model_clause
+    );
+
+    let channels: Vec<Channel> = sqlx::query_as(&state.db.format_query(&sql))
     .bind(format!("%\"{}\"%" , user_group))
     .bind(format!("%\"{}\"%" , level_id))
     .fetch_all(&state.db.pool)

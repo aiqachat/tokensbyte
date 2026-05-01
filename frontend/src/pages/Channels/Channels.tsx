@@ -125,19 +125,19 @@ const Channels: React.FC = () => {
       mapping = typeof record.model_mapping === 'string' ? JSON.parse(record.model_mapping) : record.model_mapping;
     } catch (e) {}
 
-    // 将渠道模型列表中的 model_id 转为前端用于唯一选择的 mid（如果能匹配到）
-    let modelsAsMids = [];
-    if (record.models && Array.isArray(record.models)) {
-        modelsAsMids = record.models.map((modelId: string) => {
-            const match = availableModels.find(m => m.model_id === modelId);
-            return match ? match.mid : modelId;
-        });
-    }
+    // models 兼容处理：新格式存 mid，旧格式存 model_id，需要统一转为 mid
+    const modelsForForm = (record.models || []).map((val: string) => {
+      // 先检查是否已经是 mid
+      if (availableModels.find(m => m.mid === val)) return val;
+      // 如果不是 mid，尝试按 model_id 查找对应的 mid（旧格式兼容）
+      const match = availableModels.find(m => m.model_id === val);
+      return match ? match.mid : val;
+    });
 
     form.setFieldsValue({
       ...record,
       model_mapping: mapping,
-      models: modelsAsMids,
+      models: modelsForForm,
     });
     // 如果有任何映射值则自动开启开关
     const hasMapping = Object.values(mapping as Record<string, string>).some(v => v && String(v).trim());
@@ -171,15 +171,10 @@ const Channels: React.FC = () => {
       }
     }
 
-    // 保存时，把前端表单中的 mid 转换回原本用于路由和计费的 model_id
-    const modelsAsIds = (values.models || []).map((midOrId: string) => {
-      const match = availableModels.find((m: any) => m.mid === midOrId);
-      return match ? match.model_id : midOrId;
-    });
-
+    // 直接以 mid 保存，后端路由层会通过 mid 反查 model_id 进行匹配
     const data = {
       ...values,
-      models: modelsAsIds,
+      models: values.models || [],
       provider_type: values.provider_type || 'custom',
       model_mapping: finalMapping,
     };
@@ -425,7 +420,7 @@ const Channels: React.FC = () => {
                       return label.toLowerCase().includes(input.toLowerCase());
                     }}>
                     {availableModels.map((m) => {
-                      // 如果这个模型的 model_id 已经被选了，但是当前 mid 还没被选，则禁用
+                      // 同一渠道内 model_id 必须唯一：如果该 model_id 已被另一个 mid 选中，则禁用
                       const isModelIdSelected = selectedModelIds.includes(m.model_id);
                       const isCurrentMidSelected = selectedMids.includes(m.mid);
                       const isDisabled = isModelIdSelected && !isCurrentMidSelected;
@@ -457,10 +452,11 @@ const Channels: React.FC = () => {
                   {showMapping && selectedModels.map((midOrId: string) => {
                     const match = availableModels.find(m => m.mid === midOrId);
                     const actualModelId = match ? match.model_id : midOrId;
+                    const displayLabel = match ? `${actualModelId} [MID:${midOrId}]` : actualModelId;
                     return (
                       <Form.Item
-                        key={actualModelId}
-                        label={actualModelId}
+                        key={midOrId}
+                        label={displayLabel}
                         name={['model_mapping', actualModelId]}
                         style={{ marginBottom: 12 }}
                         labelCol={{ span: 8 }}
