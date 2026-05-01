@@ -4,6 +4,8 @@ use serde_json::Value;
 pub struct ExtractedFeatures {
     pub has_video: bool,
     pub has_audio: bool,
+    /// 请求是否包含参考图（用于区分文生图/图生图计费，如可灵）
+    pub has_image_ref: bool,
     pub duration_seconds: Option<f64>,
     pub resolution: Option<String>,
     /// 图片数量（用于按张计费）：请求阶段取 n，响应阶段取实际返回数量
@@ -12,6 +14,10 @@ pub struct ExtractedFeatures {
     pub service_tier: Option<String>,
     /// 提示词扩写（DashScope 等图片模型，可能影响计费）
     pub prompt_extend: bool,
+    /// 可灵视频生成模式（std/pro/4k），影响计费倍率，默认 std
+    pub mode: Option<String>,
+    /// 可灵视频有声/无声（on/off），影响计费倍率，默认 off
+    pub sound: Option<String>,
 }
 
 pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
@@ -111,6 +117,20 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         prompt_extend = true;
     }
 
+    // 可灵视频参数：mode（生成模式）和 sound（有声/无声）
+    let mode = body.get("mode").and_then(|v| v.as_str()).map(|s| s.to_lowercase());
+    let sound = body.get("sound").and_then(|v| v.as_str()).map(|s| s.to_lowercase());
+
+    // 检测参考图（用于区分文生图/图生图计费）
+    // 支持可灵（image/image_list/subject_image_list/image_reference）和 OpenAI 兼容格式
+    let has_image_ref =
+        body.get("image").map_or(false, |v| {
+            v.as_str().map_or(false, |s| !s.is_empty()) || v.is_object()
+        })
+        || body.get("image_list").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty())
+        || body.get("subject_image_list").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty())
+        || body.get("image_reference").map_or(false, |v| !v.is_null());
+
     // DashScope 格式：从 usage 中提取 duration 和 SR（异步任务结果响应）
     // 注意：usage 代表真实的后台消耗，必须无条件覆盖从 input 或 parameters 提取的可能不精确的值
     if let Some(usage) = body.get("usage") {
@@ -157,11 +177,14 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
     ExtractedFeatures {
         has_video,
         has_audio,
+        has_image_ref,
         duration_seconds,
         resolution,
         image_count,
         service_tier,
         prompt_extend,
+        mode,
+        sound,
     }
 }
 
@@ -178,27 +201,58 @@ pub fn count_response_images(response: &str) -> Option<i32> {
     }
 
     // SSE 流式缓冲回落：逐行解析 data: {...} 中的图片数量
-    let mut total = 0i32;
+    let mut accumulated_from_arrays = 0i32;
+    let mut usage_total: Option<i32> = None;
+
     for line in response.lines() {
         let line = line.trim();
+        if line.is_empty() || line.ends_with("[DONE]") { continue; }
         let json_str = if line.starts_with("data: ") {
-            let s = &line[6..];
-            if s == "[DONE]" { continue; }
-            s
+            &line[6..]
         } else {
             line
         };
+        
         if let Ok(v) = serde_json::from_str::<Value>(json_str) {
-            if let Some(count) = count_images_from_value(&v) {
-                total += count;
+            // 优先检查流中是否包含官方明确的总计数量字段（如火山方舟/阿里百炼）
+            if let Some(usage) = v.get("usage") {
+                if let Some(c) = usage.get("generated_images").and_then(|c| c.as_i64()) {
+                    usage_total = Some(c as i32);
+                } else if let Some(c) = usage.get("image_count").and_then(|c| c.as_i64()) {
+                    usage_total = Some(c as i32);
+                }
+            }
+            
+            // 累加数组中的实体数
+            if let Some(count) = count_images_from_arrays(&v) {
+                accumulated_from_arrays += count;
             }
         }
     }
-    if total > 0 { Some(total) } else { None }
+    
+    // 如果流式数据中包含 usage 统计总数，则优先使用该总数（通常流的最后一条包含准确总计）
+    if usage_total.is_some() {
+        return usage_total;
+    }
+    
+    if accumulated_from_arrays > 0 { Some(accumulated_from_arrays) } else { None }
 }
 
-/// 从单个 JSON Value 中提取图片数量（内部辅助函数）
+/// 从单个 JSON Value 中提取图片数量
 fn count_images_from_value(v: &Value) -> Option<i32> {
+    // 首先尝试从官方明确的 usage 字段获取总数
+    if let Some(usage) = v.get("usage") {
+        if let Some(c) = usage.get("generated_images").and_then(|c| c.as_i64()) {
+            return Some(c as i32);
+        } else if let Some(c) = usage.get("image_count").and_then(|c| c.as_i64()) {
+            return Some(c as i32);
+        }
+    }
+    count_images_from_arrays(v)
+}
+
+/// 内部辅助函数：深度遍历各种嵌套的 data/results 数组结构提取数量
+fn count_images_from_arrays(v: &Value) -> Option<i32> {
     let mut total_count = 0i32;
 
     // 1. 处理标准的 OpenAI / 火山方舟格式: { "data": [{"url": "..."}, ...] }
@@ -218,11 +272,14 @@ fn count_images_from_value(v: &Value) -> Option<i32> {
         }
     }
 
-    // 2. 针对异步任务终态结果深度解析 (兼容用户提供的 data.result.images 结构)
+    // 2. 针对异步任务终态结果深度解析
+    // 兼容: data.result.images (通用) / data.task_result.images (可灵) / result.images / images
     if total_count == 0 {
         let images_node = v.get("data").and_then(|d| d.get("result")).and_then(|r| r.get("images"))
+            .or_else(|| v.get("data").and_then(|d| d.get("task_result")).and_then(|r| r.get("images")))
             .or_else(|| v.get("result").and_then(|r| r.get("images")))
-            .or_else(|| v.get("images")); // 各种厂商可能的嵌套结构兜底
+            .or_else(|| v.get("task_result").and_then(|r| r.get("images")))
+            .or_else(|| v.get("images"));
             
         if let Some(images) = images_node.and_then(|i| i.as_array()) {
             for img in images {
@@ -264,13 +321,6 @@ fn count_images_from_value(v: &Value) -> Option<i32> {
             if let Some(results) = output.get("results").and_then(|r| r.as_array()) {
                 total_count = results.len() as i32;
             }
-        }
-    }
-
-    // 5. DashScope 多模态格式 (usage.image_count)
-    if total_count == 0 {
-        if let Some(count) = v.get("usage").and_then(|u| u.get("image_count")).and_then(|c| c.as_i64()) {
-            total_count = count as i32;
         }
     }
 
@@ -420,4 +470,18 @@ pub fn extract_usage_json_string(response: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// 从可灵视频终态响应中提取实际生成时长（秒）。
+/// 路径: data.task_result.videos[0].duration（字符串，如 "5.1"）
+pub fn extract_kling_video_duration(resp: &Value) -> Option<f64> {
+    resp.get("data")
+        .and_then(|d| d.get("task_result"))
+        .and_then(|r| r.get("videos"))
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| {
+            v.get("duration")
+                .and_then(|d| d.as_str().and_then(|s| s.parse::<f64>().ok()).or_else(|| d.as_f64()))
+        })
 }

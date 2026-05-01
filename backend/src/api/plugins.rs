@@ -612,7 +612,8 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
                 {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
                 {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
-                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false},
+                {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
             ]
         }),
         json!({
@@ -629,7 +630,8 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
                 {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
                 {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
-                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false},
+                {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
             ]
         }),
         json!({
@@ -693,15 +695,53 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
+        json!({
+            "id": "gpt_image_2",
+            "name": "GPT Image 2 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "OpenAI 最新旗舰图像生成模型，支持 4K 高清输出、精准文字渲染、思维推理能力，适用于 gpt-image-2 模型",
+            "params": [
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1024x1024","1024x1536","1536x1024","auto"], "default": "1024x1024"},
+                {"key": "quality", "label": "图片质量", "type": "select", "options": ["auto","low","medium","high"], "default": "auto"},
+                {"key": "output_format", "label": "输出格式", "type": "select", "options": ["png","jpeg","webp"], "default": "png"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
+                {"key": "background", "label": "背景", "type": "select", "options": ["auto","transparent","opaque"], "default": "auto"}
+            ]
+        }),
+        json!({
+            "id": "gemini_flash_image",
+            "name": "Gemini 3.1 Flash 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "Google Gemini 原生多模态图像生成，支持文生图和图片编辑，适用于 gemini-3.1-flash-image-preview 模型",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","16:9","9:16","4:3","3:4"], "default": "1:1"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"}
+            ]
+        }),
     ]
 }
 
 /// 从 DB 加载方案列表（优先使用 DB 存储，DB 为空时 fallback 到内置默认）
+/// 同时自动合并新增的内置系统方案（is_system=true），确保新增种子方案无需手动操作即可出现
 async fn load_schemes_from_db(state: &AppState, plugin_name: &str) -> Vec<serde_json::Value> {
     let configs = load_plugin_configs(state, plugin_name).await.unwrap_or_default();
     if let Some(schemes_str) = configs.get("pg_schemes") {
-        if let Ok(schemes) = serde_json::from_str::<Vec<serde_json::Value>>(schemes_str) {
+        if let Ok(mut schemes) = serde_json::from_str::<Vec<serde_json::Value>>(schemes_str) {
             if !schemes.is_empty() {
+                // 自动合并新增的内置方案
+                let defaults = get_default_schemes();
+                let existing_ids: std::collections::HashSet<String> = schemes.iter()
+                    .filter_map(|s| s.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                    .collect();
+                for d in defaults {
+                    if let Some(id) = d.get("id").and_then(|v| v.as_str()) {
+                        if d.get("is_system").and_then(|v| v.as_bool()).unwrap_or(false) && !existing_ids.contains(id) {
+                            schemes.push(d);
+                        }
+                    }
+                }
                 return schemes;
             }
         }
@@ -1053,16 +1093,18 @@ pub async fn get_marketplace_public(
 
     // 2. 用户等级权限校验
     if plugin.allowed_levels != "all" {
-        let user_group: String = sqlx::query_scalar(
-            &state.db.format_query("SELECT user_group FROM users WHERE id = ?")
+        let user_info: Option<(String, Option<i64>)> = sqlx::query_as(
+            &state.db.format_query("SELECT u.user_group, ul.id as level_id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
         )
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
-        .await?
-        .unwrap_or_else(|| "default".to_string());
+        .await?;
 
+        let (user_group, user_level_id) = user_info.unwrap_or_else(|| ("default".to_string(), Some(0)));
         let allowed: Vec<&str> = plugin.allowed_levels.split(',').collect();
-        if !allowed.contains(&user_group.as_str()) {
+        let level_id_str = user_level_id.unwrap_or(0).to_string();
+
+        if !allowed.contains(&user_group.as_str()) && !allowed.contains(&level_id_str.as_str()) {
             return Err(AppError::Forbidden("您当前的用户等级无权访问模型广场".to_string()));
         }
     }

@@ -13,97 +13,68 @@ pub async fn image_generations(
     axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     Json(body): Json<serde_json::Value>,
 ) -> AppResult<Response> {
-    let request_path = uri.path();
+    let raw_path = uri.path();
+    // 归一化：可灵原生图片路径统一到 /v1/images/generations（匹配转发规则）
+    let request_path = if raw_path.contains("omni-image") || raw_path.contains("multi-image2image") {
+        "/v1/images/generations"
+    } else {
+        raw_path
+    };
     let start_time = std::time::Instant::now();
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
-    let model = body["model"].as_str().unwrap_or("dall-e-3");
+    let model = body["model"].as_str()
+        .or_else(|| body["model_name"].as_str())
+        .unwrap_or("dall-e-3");
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
+    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance, Some("图片")).await?;
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, request_path).await?;
     let is_stream = body["stream"].as_bool().unwrap_or(false);
     
-    let max_retries = 3;
-    let mut current_try = 0;
-
-    let (channel, resolved_model, upstream_resp, resolved, upstream_body) = loop {
-        current_try += 1;
-        let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, request_path).await?;
-        
-        // 解析转发规则，未绑定规则时根据域名智能推断
-        let resolved = match forward::resolve_forward_rule(&state, model, "图片", request_path).await {
-            Some(r) => r,
-            None => {
-                if forward::model_has_forward_rules(&state, model).await {
-                    return Err(AppError::BadRequest(format!(
-                        "模型 '{}' 不支持当前接口，请检查模型对应的 API 调用方式", model
-                    )));
-                }
-                forward::infer_forward_from_base_url(&channel.base_url, "图片")
+    // 解析转发规则，未绑定规则时根据域名智能推断
+    let mut resolved = match forward::resolve_forward_rule(&state, model, "图片", request_path).await {
+        Some(r) => r,
+        None => {
+            if forward::model_has_forward_rules(&state, model).await {
+                return Err(AppError::BadRequest(format!(
+                    "模型 '{}' 不支持当前接口，请检查模型对应的转发规则", model
+                )));
             }
-        };
-
-        let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "图片");
-        let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
-        let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
-
-        tracing::info!("[Image] model={}, target_type={}, url={} (Attempt {}/{})", model, resolved.target_type, url, current_try, max_retries);
-
-        // 构建并发送上游请求
-        let mut builder = state.http_client.post(&url)
-            .header("Content-Type", "application/json");
-        for (k, v) in &auth_headers {
-            builder = builder.header(k, v);
+            forward::infer_forward_from_base_url(&channel.base_url, "图片")
         }
-        
-        match builder.json(&upstream_body).send().await {
-            Ok(upstream_resp) => {
-                if upstream_resp.status().is_success() {
-                    break (channel, resolved_model, upstream_resp, resolved, upstream_body);
-                } else {
-                    let status = upstream_resp.status().as_u16();
-                    let err = upstream_resp.text().await.unwrap_or_default();
-                    let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
-                    let latency_ms = start_time.elapsed().as_millis() as u32;
-                    let ep = format!("{}|{}", request_path, resolved.upstream_path.replace("${model}", &resolved_model));
-                    proxy::record_and_bill(
-                        &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
-                        &ep, Some(&display_err), latency_ms, 0,
-                        Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
-                        None
-                    ).await;
-
-                    if current_try >= max_retries {
-                        return Err(AppError::UpstreamError(display_err));
-                    }
-                }
-            },
-            Err(e) => {
-                let err_msg = e.to_string();
-                let latency_ms = start_time.elapsed().as_millis() as u32;
-                let ep = format!("{}|{}", request_path, resolved.upstream_path.replace("${model}", &resolved_model));
-                proxy::record_and_bill(
-                    &state, &token, channel.id, model, 0, 0, 0, 0.0, 500,
-                    &ep, Some(&err_msg), latency_ms, 0,
-                    Some(request_content_str.clone()), Some(err_msg.clone()), Some(upstream_body.to_string()),
-                    None
-                ).await;
-
-                if current_try >= max_retries {
-                    return Err(AppError::UpstreamError(err_msg));
-                }
-            }
-        }
-        
-        // Wait a bit before retrying so the async mark_failed can update the DB
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     };
 
-    let db_model: Option<crate::models::Model> = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-    )
-    .bind(model)
-    .fetch_optional(&state.db.pool)
-    .await
-    .unwrap_or(None);
+    let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "图片");
+    // 可灵动态路径：根据请求体内容调整实际端点（generations/multi-image2image）
+    forward::resolve_kling_dynamic_path(&mut resolved, &upstream_body);
+    let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
+    let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
+
+    tracing::info!("[Image] model={}, target_type={}, url={}", model, resolved.target_type, url);
+
+    // 构建并发送上游请求
+    let mut builder = state.http_client.post(&url)
+        .header("Content-Type", "application/json");
+    for (k, v) in &auth_headers {
+        builder = builder.header(k, v);
+    }
+    let upstream_resp = builder.json(&upstream_body).send().await?;
+
+    let status = upstream_resp.status().as_u16();
+    if !upstream_resp.status().is_success() {
+        let err = upstream_resp.text().await?;
+        let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
+        let latency_ms = start_time.elapsed().as_millis() as u32;
+        let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
+            proxy::record_and_bill(
+                &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
+                &ep, Some(&display_err), latency_ms, 0,
+                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
+                None
+            ).await;
+        return Err(AppError::UpstreamError(display_err));
+    }
+
+    let db_model = proxy::find_active_model(&state, model, Some("图片")).await;
 
     let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
         if let Some(rule_id) = m.billing_rule_id {
@@ -134,7 +105,8 @@ pub async fn image_generations(
             ctx.discount, request_content_str, start_time,
             resolved.upstream_path.replace("${model}", &resolved_model),
             Some(upstream_body.to_string()),
-            pre_deduction
+            pre_deduction,
+            raw_path.to_string()
         ).await.into_response())
     } else {
         let data = upstream_resp.bytes().await?;
@@ -147,7 +119,7 @@ pub async fn image_generations(
             || resp_json.get("data").and_then(|d| d.as_array()).and_then(|a| a.first()).and_then(|f| f.get("task_id")).is_some();
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("{}|{}", request_path, resolved.upstream_path.replace("${model}", &resolved_model));
+        let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
 
         if is_async {
             tracing::info!("[Image] model={}, path=ASYNC_SUBMIT, pre_deduction={}", model, pre_deduction);
@@ -156,9 +128,9 @@ pub async fn image_generations(
             } else {
                 "异步任务处理中(冻结)".to_string()
             };
-            proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200,
+            proxy::record_and_bill_with_category(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200,
                 &ep, None, latency_ms, 0,
-                Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail)).await;
+                Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail), Some("图片")).await;
         } else {
             let usage_tokens = crate::relay::usage_extractor::parse_usage(&response_content_str);
             let p_tokens = usage_tokens.prompt;
@@ -172,15 +144,15 @@ pub async fn image_generations(
                 features.image_count = Some(resp_count);
             }
             let (final_discount, discount_source) = proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, usage_tokens.cached, final_discount, &features);
+            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), p_tokens, c_tokens, 0, final_discount, &features);
             detail.push_str(&format!(" | {}", discount_source));
             if model != resolved_model {
                 detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
             }
 
-            proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, p_tokens, c_tokens, usage_tokens.cached, cost, pre_deduction, 200,
+            proxy::record_and_bill_with_category(&state, &token, channel.id, model, p_tokens, c_tokens, 0, cost, pre_deduction, 200,
                 &ep, None, latency_ms, 0,
-                Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(detail)).await;
+                Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(detail), Some("图片")).await;
         }
 
         Ok(Response::builder()

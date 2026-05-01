@@ -4,6 +4,7 @@ import { SettingOutlined, AppstoreOutlined, PictureOutlined, ReloadOutlined, Tea
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
+import { useThemeStore } from '../../store/theme';
 
 const { Title, Text } = Typography;
 
@@ -14,21 +15,20 @@ const pluginIcons: Record<string, React.ReactNode> = {
   volcengine_pool: <CloudServerOutlined style={{ fontSize: 22 }} />,
   gptimage_pool: <PictureOutlined style={{ fontSize: 22 }} />,
   model_marketplace: <ShopOutlined style={{ fontSize: 22 }} />,
-  site_icons: <AppstoreOutlined style={{ fontSize: 22 }} />,
-};
+  site_icons: <AppstoreOutlined style={{ fontSize: 22 }} /> };
 
 // 系统增强插件使用不同的图标颜色
 const pluginColors: Record<string, { bg: string; color: string }> = {
   user: { bg: 'rgba(22,119,255,0.1)', color: '#1677ff' },
-  system: { bg: 'rgba(250,140,22,0.12)', color: '#fa8c16' },
-};
+  system: { bg: 'rgba(250,140,22,0.12)', color: '#fa8c16' } };
 
 const categoryLabels: Record<string, { title: string; icon: React.ReactNode }> = {
   user: { title: '用户增强插件', icon: <AppstoreOutlined style={{ marginRight: 6 }} /> },
-  system: { title: '系统增强插件', icon: <ThunderboltOutlined style={{ marginRight: 6 }} /> },
-};
+  system: { title: '系统增强插件', icon: <ThunderboltOutlined style={{ marginRight: 6 }} /> } };
 
 const PluginsList: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -80,19 +80,18 @@ const PluginsList: React.FC = () => {
         <div
           onClick={() => navigate(`/admin0755/plugins/${plugin.name}/config`)}
           style={{
-            background: '#141414',
+            background: _isLight ? '#fff' : '#141414',
             borderRadius: 8,
-            border: `1px solid ${cat === 'system' ? 'rgba(250,140,22,0.15)' : 'rgba(255,255,255,0.08)'}`,
+            border: `1px solid ${cat === 'system' ? 'rgba(250,140,22,0.15)' : (_isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)')}`,
             padding: '20px',
             cursor: 'pointer',
-            transition: 'border-color 0.2s, box-shadow 0.2s',
-          }}
+            transition: 'border-color 0.2s, box-shadow 0.2s' }}
           onMouseEnter={(e) => {
             e.currentTarget.style.borderColor = cat === 'system' ? 'rgba(250,140,22,0.5)' : 'rgba(22,119,255,0.5)';
             e.currentTarget.style.boxShadow = cat === 'system' ? '0 0 12px rgba(250,140,22,0.08)' : '0 0 12px rgba(22,119,255,0.06)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = cat === 'system' ? 'rgba(250,140,22,0.15)' : 'rgba(255,255,255,0.08)';
+            e.currentTarget.style.borderColor = cat === 'system' ? 'rgba(250,140,22,0.15)' : (_isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)');
             e.currentTarget.style.boxShadow = 'none';
           }}
         >
@@ -103,13 +102,12 @@ const PluginsList: React.FC = () => {
                 width: 40, height: 40, borderRadius: 8,
                 background: colors.bg,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: colors.color,
-              }}>
+                color: colors.color }}>
                 {pluginIcons[plugin.name] || <AppstoreOutlined style={{ fontSize: 22 }} />}
               </div>
               <div>
-                <Text strong style={{ color: '#fff', fontSize: 15, display: 'block', lineHeight: 1.3 }}>{plugin.title}</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>{plugin.name}</Text>
+                <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 15, display: 'block', lineHeight: 1.3 }}>{plugin.title}</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>{plugin.name}</Text>
               </div>
             </Space>
             <Switch
@@ -120,22 +118,21 @@ const PluginsList: React.FC = () => {
           </div>
 
           {/* 描述 */}
-          <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, display: 'block', marginBottom: 12 }}>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 13, display: 'block', marginBottom: 12 }}>
             {plugin.description || '暂无描述'}
           </Text>
 
           {/* 底部信息 */}
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)',
-          }}>
+            paddingTop: 12, borderTop: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.25)', fontSize: 12 }}>开放：</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', fontSize: 12 }}>开放：</Text>
               {plugin.allowed_levels === 'all' ? (
                 <Tag style={{ margin: 0, fontSize: 11, background: `${colors.bg}`, border: `1px solid ${colors.color}33`, color: colors.color, borderRadius: 4 }}>{cat === 'system' ? '全部管理员分组' : '所有用户等级'}</Tag>
               ) : (
                 plugin.allowed_levels.split(',').slice(0, 2).map(lv => (
-                  <Tag key={lv} style={{ margin: 0, fontSize: 11, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)', borderRadius: 4 }}>{lv}</Tag>
+                  <Tag key={lv} style={{ margin: 0, fontSize: 11, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', borderRadius: 4 }}>{lv}</Tag>
                 ))
               )}
             </div>
@@ -143,7 +140,7 @@ const PluginsList: React.FC = () => {
               type="text"
               size="small"
               icon={<SettingOutlined />}
-              style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}
+              style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}
               onClick={(e) => { e.stopPropagation(); navigate(`/admin0755/plugins/${plugin.name}/config`); }}
             >
               配置
@@ -160,9 +157,8 @@ const PluginsList: React.FC = () => {
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         marginBottom: 20, paddingBottom: 16,
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-      }}>
-        <Title level={4} style={{ margin: 0, color: '#fff' }}>站点插件</Title>
+        borderBottom: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)' }}>
+        <Title level={4} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff' }}>站点插件</Title>
         <Button icon={<ReloadOutlined />} onClick={fetchPlugins} loading={loading}>刷新</Button>
       </div>
 
@@ -178,14 +174,12 @@ const PluginsList: React.FC = () => {
                 <div style={{
                   display: 'flex', alignItems: 'center', marginBottom: 14,
                   color: cat === 'system' ? '#fa8c16' : 'rgba(255,255,255,0.55)',
-                  fontSize: 13, fontWeight: 500,
-                }}>
+                  fontSize: 13, fontWeight: 500 }}>
                   {label.icon}
                   {label.title}
                   <span style={{
                     marginLeft: 8, fontSize: 11,
-                    color: 'rgba(255,255,255,0.25)',
-                  }}>
+                    color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)' }}>
                     ({groupedPlugins[cat].length})
                   </span>
                 </div>

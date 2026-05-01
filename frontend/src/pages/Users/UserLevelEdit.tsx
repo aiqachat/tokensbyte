@@ -22,21 +22,17 @@ const UserLevelEdit: React.FC = () => {
   // 根据名称自动生成分组标识
   const generateGroupKey = (name: string): string => {
     if (!name.trim()) return '';
-    // 判断是否包含中文字符
     const hasChinese = /[\u4e00-\u9fa5]/.test(name);
     if (hasChinese) {
-      // 中文：取每个字的拼音首字母
       const py = pinyin(name, { pattern: 'first', toneType: 'none', type: 'array' });
       return py.join('').toLowerCase().replace(/[^a-z0-9]/g, '');
     } else {
-      // 英文：直接用名称小写，去除非字母数字
       return name.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
     }
   };
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const name = e.target.value;
-    // 新建模式下且未手动编辑过分组标识，自动生成
     if (isAdd && !groupKeyManuallyEdited) {
       form.setFieldValue('group_key', generateGroupKey(name));
     }
@@ -54,6 +50,7 @@ const UserLevelEdit: React.FC = () => {
         marketing_enabled: false,
         is_default: false,
         max_token_count: 10,
+        allow_view_log_details: true,
       });
       return;
     }
@@ -68,6 +65,7 @@ const UserLevelEdit: React.FC = () => {
             ...level,
             marketing_enabled: level.marketing_enabled === 1,
             is_default: level.is_default === 1,
+            allow_view_log_details: level.allow_view_log_details === undefined ? true : level.allow_view_log_details === 1,
           });
         } else {
           message.error('未找到对应等级记录');
@@ -91,6 +89,7 @@ const UserLevelEdit: React.FC = () => {
       ...values,
       marketing_enabled: values.marketing_enabled ? 1 : 0,
       is_default: values.is_default ? 1 : 0,
+      allow_view_log_details: values.allow_view_log_details ? 1 : 0,
     };
     // 新建时自动生成 group_key
     if (isAdd && !payload.group_key) {
@@ -144,18 +143,18 @@ const UserLevelEdit: React.FC = () => {
             <Form.Item name="name" label={t('user_levels.name')} rules={[{ required: true }]}>
               <Input placeholder="输入等级呈现的中文名称" onChange={handleNameChange} />
             </Form.Item>
-            {!isAdd && (
-              <Form.Item 
-                name="group_key" 
-                label={t('user_levels.group_key')} 
-                rules={[{ required: true }]}
-              >
-                <Input 
-                  placeholder="e.g. vip, primary" 
-                  disabled={groupKey === 'default'}
-                />
-              </Form.Item>
-            )}
+            <Form.Item 
+              name="group_key" 
+              label={t('user_levels.group_key', '等级标志ID (Group Key)')} 
+              rules={[{ required: true }]}
+              extra="辅助的英文字母等级标识符（如 vip1）。系统底层已拥有永久不可变的【4位数字用户等级ID】作为安全兜底，您可以在需要的时候安全地修改本标识而不用担心数据解绑。"
+            >
+              <Input 
+                placeholder="e.g. vip, primary" 
+                disabled={!isAdd}
+                onChange={() => { if(isAdd) setGroupKeyManuallyEdited(true); }}
+              />
+            </Form.Item>
             <Form.Item 
               name="discount" 
               label={t('user_levels.discount', '计费倍率 (Discount/Multiplier)')} 
@@ -240,6 +239,17 @@ const UserLevelEdit: React.FC = () => {
               extra="限制该等级用户可以创建的 API 密钥数量上限。设为 0 表示禁止创建密钥。"
             >
               <InputNumber style={{ width: '100%' }} min={0} max={1000} step={1} precision={0} />
+            </Form.Item>
+          </TabPane>
+
+          <TabPane tab="日志配置" key="4">
+            <Form.Item 
+              name="allow_view_log_details" 
+              label="查看日志详情" 
+              valuePropName="checked"
+              extra="设置关闭后，属于当前用户等级的用户在页面的使用日志和任务日志里只能看列表信息，无法点击下拉看详细内容（同时隐藏使用日志的详情文案和任务日志的加号图标），设置开启后才能看。"
+            >
+              <Switch checkedChildren="开启" unCheckedChildren="关闭" />
             </Form.Item>
           </TabPane>
         </Tabs>

@@ -271,7 +271,7 @@ if let Some(ref req_str) = original_request {
 
 ```rust
 ResolvedForward {
-    target_type,    // "openai" | "volcengine" | "volcengine_chat" | "volcengine_image" | "gemini" | "gemini_image" | "anthropic"
+    target_type,    // "openai" | "volcengine" | "volcengine_chat" | "volcengine_image" | "gemini" | "gemini_image" | "anthropic" | "kling"
     upstream_path,  // 上游 URL 路径，支持 ${model} 变量
     auth_type,      // "bearer" | "query_key" | "x-api-key"
     asset_convert,  // 是否启用素材 URL→素材ID 自动转换

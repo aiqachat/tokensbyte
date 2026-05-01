@@ -223,6 +223,8 @@ pub fn default_site_settings() -> SiteSettings {
         login_title: String::new(),
         login_subtitle: String::new(),
         enable_multilingual: true,
+        enable_theme_toggle: true,
+        default_theme: "dark".to_string(),
     }
 }
 

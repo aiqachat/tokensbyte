@@ -62,6 +62,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
   const [unreadCount, setUnreadCount] = useState(0);
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
   const [enableMultilingual, setEnableMultilingual] = useState(true);
+  const [enableThemeToggle, setEnableThemeToggle] = useState(true);
   const [agreement, setAgreement] = useState<any>(null);
 
 
@@ -111,6 +112,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       if (site.enable_multilingual !== undefined) {
         setEnableMultilingual(site.enable_multilingual);
       }
+      if (site.enable_theme_toggle !== undefined) {
+        setEnableThemeToggle(site.enable_theme_toggle);
+      }
       if (agreementData) {
         setAgreement(agreementData);
       }
@@ -157,6 +161,18 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     fetchAnnouncements();
   }, []);
 
+  // 插件菜单：检查用户等级是否在插件允许范围内
+  const isPluginVisibleForUser = (pluginName: string) => {
+    const plugin = activePlugins.find((p: any) => p.name === pluginName);
+    if (!plugin) return false;
+    if (plugin.allowed_levels === 'all') return true;
+    if (!isUserEnd) return true; // 管理员端始终显示
+    const allowed = plugin.allowed_levels.split(',');
+    const userGroup = user?.user_group || '';
+    const levelId = user?.level_id != null ? String(user.level_id) : '';
+    return allowed.includes(userGroup) || (levelId !== '' && allowed.includes(levelId));
+  };
+
   const menuItems: MenuProps['items'] = [];
 
   menuItems.push({
@@ -164,6 +180,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     icon: <DashboardOutlined style={{ fontSize: '18px' }} />,
     label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{isUserEnd ? '控制面板' : t('menu.dashboard')}</Link>,
   });
+
+  if (isUserEnd && isPluginVisibleForUser('playground')) {
+    menuItems.push({
+      key: '/playground',
+      icon: <ExperimentOutlined style={{ fontSize: '18px' }} />,
+      label: <Link to="/playground" target="_blank">{t('menu.playground')}</Link>,
+    });
+  }
 
   // 2. Relay API
   menuItems.push({
@@ -224,15 +248,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
      menuItems.push(...filteredInitial);
   }
 
-  // 插件菜单：检查用户等级是否在插件允许范围内
-  const isPluginVisibleForUser = (pluginName: string) => {
-    const plugin = activePlugins.find((p: any) => p.name === pluginName);
-    if (!plugin) return false;
-    if (plugin.allowed_levels === 'all') return true;
-    if (!isUserEnd) return true; // 管理员端始终显示
-    const userGroup = user?.user_group || 'default';
-    return plugin.allowed_levels.split(',').includes(userGroup);
-  };
+
 
 
 
@@ -256,14 +272,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
       });
     }
 
-    // 插件菜单：模型体验中心
-    if (isPluginVisibleForUser('playground')) {
-      menuItems.push({
-        key: '/playground',
-        icon: <ExperimentOutlined style={{ fontSize: '18px' }} />,
-        label: <Link to="/playground" target="_blank">{t('menu.playground')}</Link>,
-      });
-    }
+
 
     menuItems.push(
       {
@@ -481,7 +490,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     else if (location.pathname === '/wallet') pageName = t('menu.wallet', '我的钱包') as string;
     else if (location.pathname === '/assets') pageName = t('menu.assets', '素材资产管理') as string;
     else if (location.pathname === '/advanced-marketing') pageName = t('menu.advanced_marketing', '团队营销管理') as string;
-    else if (location.pathname === '/playground') pageName = t('menu.playground', '模型体验中心') as string;
+    else if (location.pathname === '/playground') pageName = t('menu.playground', '创作中心') as string;
   }
 
   useEffect(() => {
@@ -492,13 +501,24 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     }
   }, [pageName, siteTitle]);
 
+  const isLight = themeMode === 'light';
+  const borderBottom = isLight ? '1px solid #f0f0f0' : '1px solid rgba(255,255,255,0.08)';
+  const cardBg = isLight ? '#f9fafb' : 'rgba(255, 255, 255, 0.04)';
+  const cardHoverBg = isLight ? '#f3f4f6' : 'rgba(255, 255, 255, 0.08)';
+  const titleColor = isLight ? '#1f2937' : '#fff';
+  const timeColor = isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)';
+  const contentColor = isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.7)';
+  const emptyIconColor = isLight ? '#e5e7eb' : 'rgba(255,255,255,0.1)';
+  const emptyTextColor = isLight ? '#6b7280' : '#e5e5e5';
+  const emptySubtextColor = isLight ? '#9ca3af' : 'rgba(255,255,255,0.45)';
+
   const announcementContent = (
     <div style={{ width: 360, display: 'flex', flexDirection: 'column' }}>
       <div style={{ 
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-        padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' 
+        padding: '16px 20px', borderBottom 
       }}>
-        <span style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 16, fontWeight: 500 }}>通知</span>
+        <span style={{ color: titleColor, fontSize: 16, fontWeight: 500 }}>通知</span>
       </div>
       
       <div style={{ 
@@ -514,34 +534,34 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
               <div 
                 key={item.id} 
                 style={{ 
-                  background: 'rgba(255, 255, 255, 0.04)',
+                  background: cardBg,
                   borderRadius: 12,
                   padding: '16px',
                   marginBottom: 12,
                   transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.background = cardHoverBg;
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                  e.currentTarget.style.background = cardBg;
                 }}
               >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                     {item.is_pinned === 1 && (
                       <div style={{ 
-                        background: 'rgba(22, 119, 255, 0.2)', color: '#4096ff', fontSize: 12,
+                        background: 'rgba(22, 119, 255, 0.1)', color: '#1677ff', fontSize: 12,
                         padding: '2px 6px', borderRadius: 4, marginTop: 2, whiteSpace: 'nowrap'
                       }}>
                         置顶
                       </div>
                     )}
-                    <div style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', fontSize: 15, fontWeight: 500, lineHeight: 1.5 }}>
+                    <div style={{ color: titleColor, fontSize: 15, fontWeight: 500, lineHeight: 1.5 }}>
                       {item.title}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: timeColor, fontSize: 12 }}>
                     <ScheduleOutlined />
                     {new Date(item.created_at).toLocaleString(i18n.language === 'en' ? 'en-US' : 'zh-CN', {
                       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
@@ -553,7 +573,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                   className="quill-content"
                   dangerouslySetInnerHTML={{ __html: item.content }} 
                   style={{ 
-                    color: 'rgba(255,255,255,0.7)', fontSize: 13, lineHeight: 1.6,
+                    color: contentColor, fontSize: 13, lineHeight: 1.6,
                     background: 'transparent', padding: '0', overflowWrap: 'break-word', wordBreak: 'break-all'
                   }}
                 />
@@ -562,9 +582,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
           />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-            <BellOutlined style={{ fontSize: 64, color: 'rgba(255,255,255,0.1)', marginBottom: 24 }} />
-            <div style={{ color: '#e5e5e5', fontSize: 15, fontWeight: 500, marginBottom: 8 }}>你的通知将出现在这里</div>
-            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, lineHeight: 1.6, maxWidth: 260 }}>
+            <BellOutlined style={{ fontSize: 64, color: emptyIconColor, marginBottom: 24 }} />
+            <div style={{ color: emptyTextColor, fontSize: 15, fontWeight: 500, marginBottom: 8 }}>你的通知将出现在这里</div>
+            <div style={{ color: emptySubtextColor, fontSize: 13, lineHeight: 1.6, maxWidth: 260 }}>
               平台重要公告及更新内容将在这里展示，即可第一时间收到通知。
             </div>
           </div>
@@ -739,6 +759,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                 </Button>
               )}
 
+              {(enableThemeToggle || !isUserEnd) && (
               <Tooltip title={themeMode === 'light' ? '切换暗色模式' : '切换亮色模式'} placement="bottom" color={themeMode === 'light' ? '#fff' : '#2b2b2b'} overlayInnerStyle={{ color: themeMode === 'light' ? '#1f2937' : '#fff' }}>
                 <Button 
                   type="text" 
@@ -752,6 +773,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
                   style={{ color: themeMode === 'light' ? '#1f2937' : '#fff', width: 42, height: 42 }} 
                 />
               </Tooltip>
+              )}
 
               {enableMultilingual && (
                 <Dropdown menu={{ items: langItems }} placement="bottomRight">

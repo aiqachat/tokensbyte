@@ -1,10 +1,11 @@
 import React from 'react';
-import { Card, Typography, Tag, Tabs, Descriptions, Table, Alert, Divider } from 'antd';
+import { Card, Typography, Tag, Tabs, Descriptions, Table, Alert, Divider, theme } from 'antd';
 import { RocketOutlined, CodeOutlined, InfoCircleOutlined } from '@ant-design/icons';
 
 const { Title, Text, Paragraph } = Typography;
 
 const RelayAPI: React.FC = () => {
+  const { token: themeToken } = theme.useToken();
   const isLocal = window.location.hostname === 'localhost' || /^(127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
   const baseUrl = isLocal
     ? `${window.location.protocol}//${window.location.hostname}:3000`
@@ -25,6 +26,15 @@ const RelayAPI: React.FC = () => {
     { label: '阿里百炼视频 (提交)', path: '/api/v1/services/aigc/video-generation/video-synthesis', method: 'POST', type: 'dashscope' },
     { label: '阿里百炼视频 (查询)', path: '/api/v1/tasks/{task_id}', method: 'GET', type: 'dashscope' },
     { label: '阿里百炼图片 (提交)', path: '/api/v1/services/aigc/multimodal-generation/generation', method: 'POST', type: 'dashscope' },
+    { label: '可灵文生视频 (提交)', path: '/v1/videos/text2video', method: 'POST', type: 'kling' },
+    { label: '可灵图生视频 (提交)', path: '/v1/videos/image2video', method: 'POST', type: 'kling' },
+    { label: '可灵多图生视频 (提交)', path: '/v1/videos/multi-image2video', method: 'POST', type: 'kling' },
+    { label: '可灵 Omni 视频 (提交)', path: '/v1/videos/omni-video', method: 'POST', type: 'kling' },
+    { label: '可灵视频 (查询)', path: '/v1/videos/{endpoint}/{task_id}', method: 'GET', type: 'kling' },
+    { label: '可灵图片 (提交)', path: '/v1/images/generations', method: 'POST', type: 'kling' },
+    { label: '可灵多图生图 (提交)', path: '/v1/images/multi-image2image', method: 'POST', type: 'kling' },
+    { label: '可灵 Omni 图片 (提交)', path: '/v1/images/omni-image', method: 'POST', type: 'kling' },
+    { label: '可灵图片 (查询)', path: '/v1/images/{endpoint}/{task_id}', method: 'GET', type: 'kling' },
   ];
 
   const errorCodes = [
@@ -37,7 +47,7 @@ const RelayAPI: React.FC = () => {
     { code: 502, desc: 'Bad Gateway — 上游服务请求失败（渠道不可达或已耗尽）' },
   ];
 
-  const codeStyle: React.CSSProperties = { background: '#000', padding: 12, borderRadius: 8, marginBottom: 16 };
+  const codeStyle: React.CSSProperties = { background: themeToken.colorFillQuaternary, padding: 12, borderRadius: 8, marginBottom: 16 };
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
@@ -48,7 +58,7 @@ const RelayAPI: React.FC = () => {
 
       <Alert
         message="统一认证与智能调度计费系统"
-        description="本网关兼容 OpenAI、Google Gemini、火山方舟、Anthropic 等多家厂商原生协议。只需使用您颁发的请求令牌（Token），渠道自动调度、协议自动转换、日志计费等均由平台全权智能处理。"
+        description="本网关兼容 OpenAI、Google Gemini、火山方舟、Anthropic、可灵 AI 等多家厂商原生协议。只需使用您颁发的请求令牌（Token），渠道自动调度、协议自动转换、日志计费等均由平台全权智能处理。"
         type="info"
         showIcon
         style={{ marginBottom: 24, borderRadius: 8 }}
@@ -74,7 +84,7 @@ const RelayAPI: React.FC = () => {
           <div key={item.path + item.method} style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 12 }}>
             <Tag color={item.method === 'POST' ? 'green' : 'blue'} style={{ width: 60, textAlign: 'center', margin: 0 }}>{item.method}</Tag>
             <Text type="secondary" style={{ minWidth: 160 }}>{item.label}</Text>
-            <Paragraph copyable style={{ margin: 0, fontFamily: 'monospace', fontSize: 13, background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: 4 }}>
+            <Paragraph copyable style={{ margin: 0, fontFamily: 'monospace', fontSize: 13, background: themeToken.colorFillQuaternary, padding: '2px 8px', borderRadius: 4 }}>
               {`${baseUrl}${item.path}`}
             </Paragraph>
           </div>
@@ -88,7 +98,7 @@ const RelayAPI: React.FC = () => {
             key: '1',
             label: 'OpenAI 协议指南',
             children: (
-              <Card variant="borderless" style={{ background: '#1f1f1f' }}>
+              <Card variant="borderless" style={{ background: themeToken.colorBgContainer }}>
                 {/* ── 聊天 ── */}
                 <Title level={5}>聊天接口 (Chat Completions)</Title>
                 <div style={codeStyle}><Text code>POST /v1/chat/completions</Text></div>
@@ -181,7 +191,7 @@ const RelayAPI: React.FC = () => {
                   </Descriptions.Item>
                   <Descriptions.Item label="content (选填)">
                     <Text>高级直通模式 — 直接传入火山方舟官方 content 数组结构，系统将原样透传：</Text>
-                    <div style={{ background: '#000', padding: 8, borderRadius: 4, marginTop: 4, fontSize: 12, fontFamily: 'monospace' }}>
+                    <div style={{ background: themeToken.colorFillQuaternary, padding: 8, borderRadius: 4, marginTop: 4, fontSize: 12, fontFamily: 'monospace' }}>
                       <Text code style={{ whiteSpace: 'pre-wrap' }}>{`[
   {"type":"text","text":"..."},
   {"type":"image_url","image_url":{"url":"..."},"role":"first_frame"},
@@ -213,7 +223,7 @@ const RelayAPI: React.FC = () => {
             key: '2',
             label: '原生协议 (Google/火山/阿里)',
             children: (
-              <Card variant="borderless" style={{ background: '#1f1f1f' }}>
+              <Card variant="borderless" style={{ background: themeToken.colorBgContainer }}>
                 <Title level={5}>Google Gemini 原生接口</Title>
                 <Paragraph type="secondary">发送原生 Gemini Payload，网关自动完成鉴权替换、计费审计并路由到最优渠道节点。</Paragraph>
                 <div style={codeStyle}>
@@ -296,9 +306,83 @@ const RelayAPI: React.FC = () => {
           },
           {
             key: '3',
+            label: '可灵 AI 原生协议',
+            children: (
+              <Card variant="borderless" style={{ background: themeToken.colorBgContainer }}>
+                <Alert message="可灵 AI 支持 OpenAI 兼容协议和原生协议两种调用方式。使用 OpenAI 兼容协议时，系统自动根据请求体内容动态分发到对应的可灵端点。渠道 API Key 请填写 access_key:secret_key 格式，系统自动生成 JWT Token。" type="info" showIcon style={{ marginBottom: 24, borderRadius: 8 }} />
+
+                <Title level={5}>视频生成接口</Title>
+                <Paragraph type="secondary">支持文生视频、图生视频、多图参考生视频、Omni 视频。使用 OpenAI 兼容路径时系统根据请求体自动分发。</Paragraph>
+                <div style={codeStyle}>
+                  <Text code>POST /v1/video/generations</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">OpenAI 兼容入口（自动分发）</Text></span>
+                  <br />
+                  <Text code>POST /v1/videos/text2video</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">文生视频（原生路径）</Text></span>
+                  <br />
+                  <Text code>POST /v1/videos/image2video</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">图生视频（含 image/image_tail 字段）</Text></span>
+                  <br />
+                  <Text code>POST /v1/videos/multi-image2video</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">多图参考生视频（含 image_list 字段）</Text></span>
+                  <br />
+                  <Text code>POST /v1/videos/omni-video</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">Omni 视频（统一文/图/多图/视频参考入口）</Text></span>
+                  <br />
+                  <Text code>GET  /v1/videos/text2video/{'{task_id}'}</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">任务查询（其他路径同理）</Text></span>
+                </div>
+                <Descriptions column={1} bordered size="small" style={{ marginBottom: 24 }}>
+                  <Descriptions.Item label="model (必填)">视频模型名称，如 "kling-v3"、"kling-v2-6"、"kling-v3-omni"、"kling-video-o1"</Descriptions.Item>
+                  <Descriptions.Item label="prompt (必填)">视频生成的提示词描述文本</Descriptions.Item>
+                  <Descriptions.Item label="duration (选填)">视频时长（秒），如 "5"、"10"</Descriptions.Item>
+                  <Descriptions.Item label="mode (选填)">std（标准）/ pro（专业），默认 std。影响计费倍率</Descriptions.Item>
+                  <Descriptions.Item label="sound (选填)">on / off，默认 off。开启后生成有声视频，影响计费倍率</Descriptions.Item>
+                  <Descriptions.Item label="aspect_ratio (选填)">宽高比，如 "16:9"、"9:16"、"1:1"</Descriptions.Item>
+                  <Descriptions.Item label="negative_prompt (选填)">反向提示词，描述不希望出现的内容</Descriptions.Item>
+                  <Descriptions.Item label="image (选填)">参考图片 URL（图生视频时使用）</Descriptions.Item>
+                  <Descriptions.Item label="image_tail (选填)">尾帧参考图 URL</Descriptions.Item>
+                  <Descriptions.Item label="image_list (选填)">多图参考数组（多图生视频时使用）</Descriptions.Item>
+                  <Descriptions.Item label="video_list (选填)">视频参考数组（Omni 视频时支持）</Descriptions.Item>
+                  <Descriptions.Item label="callback_url (选填)">任务完成回调地址</Descriptions.Item>
+                </Descriptions>
+
+                <Divider />
+
+                <Title level={5}>图片生成接口</Title>
+                <Paragraph type="secondary">支持文生图、多图参考生图、Omni 图片。</Paragraph>
+                <div style={codeStyle}>
+                  <Text code>POST /v1/images/generations</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">标准图片生成（OpenAI 兼容 + 可灵原生）</Text></span>
+                  <br />
+                  <Text code>POST /v1/images/multi-image2image</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">多图参考生图（含 subject_image_list）</Text></span>
+                  <br />
+                  <Text code>POST /v1/images/omni-image</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">Omni 图片（统一文/图/多图入口）</Text></span>
+                  <br />
+                  <Text code>GET  /v1/images/generations/{'{task_id}'}</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">任务查询（其他路径同理）</Text></span>
+                </div>
+                <Descriptions column={1} bordered size="small">
+                  <Descriptions.Item label="model (必填)">图片模型名称，如 "kling-v3"、"kling-v2"、"kling-image-o1"</Descriptions.Item>
+                  <Descriptions.Item label="prompt (必填)">图片生成的提示词描述文本</Descriptions.Item>
+                  <Descriptions.Item label="n (选填)">生成数量（默认 1）</Descriptions.Item>
+                  <Descriptions.Item label="resolution (选填)">分辨率，默认 1k</Descriptions.Item>
+                  <Descriptions.Item label="aspect_ratio (选填)">宽高比，如 "1:1"、"16:9"</Descriptions.Item>
+                  <Descriptions.Item label="negative_prompt (选填)">反向提示词</Descriptions.Item>
+                  <Descriptions.Item label="subject_image_list (选填)">多图参考数组（多图生图时使用）</Descriptions.Item>
+                  <Descriptions.Item label="image_fidelity (选填)">图片保真度</Descriptions.Item>
+                  <Descriptions.Item label="callback_url (选填)">任务完成回调地址</Descriptions.Item>
+                </Descriptions>
+              </Card>
+            )
+          },
+          {
+            key: '4',
             label: '错误码说明',
             children: (
-              <Card variant="borderless" style={{ background: '#1f1f1f' }}>
+              <Card variant="borderless" style={{ background: themeToken.colorBgContainer }}>
                 <Table
                   dataSource={errorCodes}
                   rowKey="code"

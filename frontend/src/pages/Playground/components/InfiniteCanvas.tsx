@@ -83,7 +83,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
         inset: 0,
         overflow: 'hidden',
         cursor: activeTool === 'hand' || isSpaceDown ? (isDraggingCanvas ? 'grabbing' : 'grab') : 'default',
-        background: '#1e1f23',
+        background: '#222225',
       }}
       onMouseDown={handleCanvasMouseDownWithDeselect}
       onMouseMove={handleCanvasMouseMove}
@@ -94,7 +94,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
       <CanvasParticles ref={particlesRef} />
 
       {/* 变换层 */}
-      <div style={{
+      <div className="transform-layer" style={{
         position: 'absolute',
         transformOrigin: '0 0',
         transform: `translate(${canvasTransform.x}px, ${canvasTransform.y}px) scale(${canvasTransform.scale})`
@@ -110,7 +110,11 @@ const InfiniteCanvas: React.FC = React.memo(() => {
             onRemove={removeNode}
             onSelect={(id) => {
               setSelectedNodeId(id);
-              setIsGenLogVisible(true);
+              if (!id.startsWith('local-asset-')) {
+                setIsGenLogVisible(true);
+              } else {
+                setIsGenLogVisible(false);
+              }
             }}
             onResizeStart={handleResizeStart}
           />

@@ -15,6 +15,7 @@ const RULE_LABELS: Record<string, string> = {
   per_image: '按张收费',
   image_resolution: '按分辨率收费',
   video_resolution: '按分辨率阶梯',
+  kling_video: '可灵视频',
 };
 
 interface BillingRuleInfo {
@@ -105,13 +106,25 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol }) => {
     }
 
     if (rule.billing_type === 'requests') {
-      if (rule.billing_rule === 'image_resolution') return <Text type="warning" style={s}>按分辨率张收费 (见配置)</Text>;
-      if (rule.billing_rule === 'per_image') return <Text type="secondary" style={s}>{currencySymbol}{rule.fixed_rate} / 张</Text>;
+      const imgRefStr = ext.image_ref_multiplier && ext.image_ref_multiplier !== 1 ? ` (图生图×${ext.image_ref_multiplier})` : '';
+      if (rule.billing_rule === 'image_resolution') return <Text type="warning" style={s}>按分辨率张收费 (见配置){imgRefStr}</Text>;
+      if (rule.billing_rule === 'per_image') return <Text type="secondary" style={s}>{currencySymbol}{rule.fixed_rate} / 张{imgRefStr}</Text>;
       return <Text type="secondary" style={s}>{currencySymbol}{rule.fixed_rate} / 请求</Text>;
     }
 
     // duration
     if (rule.billing_rule === 'video_resolution') return <Text type="warning" style={s}>按视频分辨率阶梯 (见配置)</Text>;
+    if (rule.billing_rule === 'kling_video') {
+      const mm = ext.mode_multipliers || {};
+      const sm = ext.sound_multipliers || {};
+      return (
+        <Space direction="vertical" size={0}>
+          <Text type="secondary" style={s}>基准: {currencySymbol}{rule.duration_rate}/s</Text>
+          <Text type="secondary" style={s}>mode: std×{mm.std ?? 1} / pro×{mm.pro ?? 1.33} / 4k×{mm['4k'] ?? 2}</Text>
+          <Text type="secondary" style={s}>sound: off×{sm.off ?? 1} / on×{sm.on ?? 1.5}</Text>
+        </Space>
+      );
+    }
     return <Text type="secondary" style={s}>{currencySymbol}{rule.duration_rate}/s</Text>;
   };
 
@@ -120,6 +133,7 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol }) => {
     'seedance2.0': 'volcano', 'seedance1.5pro': 'volcano', 'seedance1.0': 'volcano',
     fixed: 'default', per_image: 'lime', image_resolution: 'gold',
     video_resolution: 'gold',
+    kling_video: 'purple',
   };
 
   return (

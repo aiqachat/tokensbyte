@@ -46,9 +46,9 @@ pub async fn login(
 ) -> Response {
     let result = (async {
         let (query_str, err_msg) = match request.login_type.as_deref() {
-            Some("email") => ("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.email = ?", "未找到该邮箱对应的账号"),
-            Some("mobile") => ("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.mobile = ?", "未找到该手机号对应的账号"),
-            _ => ("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.username = ?", "未找到此账号，请检查用户名"),
+            Some("email") => ("SELECT u.*, ul.name as level_name, ul.id as level_id, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.email = ?", "未找到该邮箱对应的账号"),
+            Some("mobile") => ("SELECT u.*, ul.name as level_name, ul.id as level_id, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.mobile = ?", "未找到该手机号对应的账号"),
+            _ => ("SELECT u.*, ul.name as level_name, ul.id as level_id, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.username = ?", "未找到此账号，请检查用户名"),
         };
 
         let user: User = sqlx::query_as(&state.db.format_query(query_str))
@@ -86,7 +86,7 @@ pub async fn admin_login(
 ) -> Response {
     let result = (async {
         let mut user: User = sqlx::query_as(
-            &state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.username = ? OR u.email = ?")
+            &state.db.format_query("SELECT u.*, ul.name as level_name, ul.id as level_id, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.username = ? OR u.email = ?")
         )
         .bind(&request.username)
         .bind(&request.username)
@@ -260,9 +260,16 @@ pub async fn register(
         .await?
         .unwrap_or_else(|| "default".to_string());
 
+        let referral_history = if let Some(ref inviter) = referred_by {
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+        } else {
+            None
+        };
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group, referral_history)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?, ?)"#)
         )
         .bind(&user_id)
         .bind(&uid)
@@ -273,6 +280,7 @@ pub async fn register(
         .bind(&referred_by)
         .bind(&raw_ip)
         .bind(&default_group)
+        .bind(&referral_history)
         .execute(&mut *tx)
         .await?;
 
@@ -455,13 +463,20 @@ pub async fn register_email(
         .await?
         .unwrap_or_else(|| "default".to_string());
 
+        let referral_history = if let Some(ref inviter) = referred_by {
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+        } else {
+            None
+        };
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group, referral_history)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?, ?)"#)
         )
         .bind(&user_id).bind(&uid).bind(&username).bind(&request.email)
         .bind(&password_hash).bind(initial_balance).bind(&referred_by).bind(&raw_ip)
-        .bind(&default_group)
+        .bind(&default_group).bind(&referral_history)
         .execute(&mut *tx)
         .await?;
 
@@ -562,14 +577,21 @@ pub async fn register_mobile(
         .await?
         .unwrap_or_else(|| "default".to_string());
 
+        let referral_history = if let Some(ref inviter) = referred_by {
+            let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+        } else {
+            None
+        };
+
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, mobile, password_hash, role, balance, is_active, referred_by, register_ip, user_group)
-               VALUES (?, ?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, mobile, password_hash, role, balance, is_active, referred_by, register_ip, user_group, referral_history)
+               VALUES (?, ?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?, ?)"#)
         )
         .bind(&user_id).bind(&uid).bind(&username).bind(&placeholder_email)
         .bind(&request.mobile).bind(&password_hash).bind(initial_balance)
         .bind(&referred_by).bind(&raw_ip)
-        .bind(&default_group)
+        .bind(&default_group).bind(&referral_history)
         .execute(&mut *tx).await?;
 
         if gift_amount > 0.0 {

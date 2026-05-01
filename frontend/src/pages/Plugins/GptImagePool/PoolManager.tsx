@@ -3,6 +3,7 @@ import { Typography, Button, Table, Tag, Tabs, Modal, Form, Input, InputNumber, 
 import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, ApiOutlined, PictureOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import dayjs from 'dayjs';
+import { useThemeStore } from '../../../store/theme';
 
 const { Text } = Typography;
 
@@ -30,16 +31,16 @@ interface PoolLog {
 
 const poolTypeLabels: Record<string, { label: string; color: string }> = {
   image: { label: '图片', color: '#52c41a' },
-  custom: { label: '自定义', color: '#722ed1' },
-};
+  custom: { label: '自定义', color: '#722ed1' } };
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
   active: { color: 'success', icon: <CheckCircleOutlined />, label: '可用' },
   disabled: { color: 'error', icon: <CloseCircleOutlined />, label: '故障禁用' },
-  exhausted: { color: 'warning', icon: <ExclamationCircleOutlined />, label: '配额耗尽' },
-};
+  exhausted: { color: 'warning', icon: <ExclamationCircleOutlined />, label: '配额耗尽' } };
 
 const GptImagePoolManager: React.FC = () => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [pools, setPools] = useState<Pool[]>([]);
   const [selectedPool, setSelectedPool] = useState<Pool | null>(null);
   const [accounts, setAccounts] = useState<PoolAccount[]>([]);
@@ -126,8 +127,7 @@ const GptImagePoolManager: React.FC = () => {
       const values = await poolForm.validateFields();
       const payload: any = {
         name: values.name, pool_type: values.pool_type, strategy: values.strategy,
-        remark: values.remark || '', account_ids: values.account_ids || [],
-      };
+        remark: values.remark || '', account_ids: values.account_ids || [] };
       if (editingPool) {
         payload.is_active = values.is_active;
         await request.put(`/plugins/gptimage_pool/pools/${editingPool.id}`, payload);
@@ -183,8 +183,7 @@ const GptImagePoolManager: React.FC = () => {
         daily_quota: values.daily_quota || 0,
         hourly_quota: values.hourly_quota || 0,
         period_quota: values.period_quota || 0,
-        priority: values.priority || 0,
-      };
+        priority: values.priority || 0 };
       if (editingAccount) {
         payload.status = values.status;
         await request.put(`/plugins/gptimage_pool/accounts/${editingAccount.id}`, payload);
@@ -212,8 +211,7 @@ const GptImagePoolManager: React.FC = () => {
         models: modelsAsMids,
         _resetTime: dayjs().hour(account.daily_reset_hour).minute(account.daily_reset_minute),
         _periodRange: account.period_start && account.period_end
-          ? [dayjs(account.period_start, 'HH:mm'), dayjs(account.period_end, 'HH:mm')] : undefined,
-      });
+          ? [dayjs(account.period_start, 'HH:mm'), dayjs(account.period_end, 'HH:mm')] : undefined });
     }
     setAccountModalVisible(true);
   };
@@ -240,15 +238,15 @@ const GptImagePoolManager: React.FC = () => {
 
   // ── 渲染 ─────────────────────────────────────────────────
   const quotaBar = (used: number, quota: number) => {
-    if (quota <= 0) return <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>不限</Text>;
+    if (quota <= 0) return <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>不限</Text>;
     const pct = Math.min(100, (used / quota) * 100);
     const color = pct >= 90 ? '#ff4d4f' : pct >= 60 ? '#faad14' : '#52c41a';
     return (
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', marginBottom: 2 }}>
           <span>{used.toFixed(0)}</span><span>{quota.toFixed(0)}</span>
         </div>
-        <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 2, height: 4 }}>
+        <div style={{ background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)', borderRadius: 2, height: 4 }}>
           <div style={{ width: `${pct}%`, background: color, borderRadius: 2, height: 4, transition: 'width 0.3s' }} />
         </div>
       </div>
@@ -299,7 +297,7 @@ const GptImagePoolManager: React.FC = () => {
   const poolTab = (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>管理所有卡池，每个卡池可包含多个 GPT-Image 来源账号</Text>
+        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 13 }}>管理所有卡池，每个卡池可包含多个 GPT-Image 来源账号</Text>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchPools} loading={loading}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openPoolModal()}>新建卡池</Button>
@@ -319,23 +317,22 @@ const GptImagePoolManager: React.FC = () => {
                 }}
                 style={{
                   background: isSelected ? 'rgba(82,196,26,0.06)' : '#1a1a1a',
-                  border: isSelected ? '1px solid rgba(82,196,26,0.4)' : '1px solid rgba(255,255,255,0.08)',
-                  cursor: 'pointer',
-                }}
+                  border: isSelected ? '1px solid rgba(82,196,26,0.4)' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)'),
+                  cursor: 'pointer' }}
                 styles={{ body: { padding: '14px 16px' } }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <Space>
                     <PictureOutlined style={{ color: typeInfo.color, fontSize: 18 }} />
-                    <Text strong style={{ color: '#fff', fontSize: 14 }}>{pool.name}</Text>
+                    <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>{pool.name}</Text>
                     <Tag color={typeInfo.color} style={{ fontSize: 11 }}>{typeInfo.label}</Tag>
                   </Space>
                   <Tag color={pool.is_active ? 'success' : 'default'}>{pool.is_active ? '启用' : '禁用'}</Tag>
                 </div>
                 <Row gutter={16}>
-                  <Col span={8}><Statistic title="账号" value={pool.total_accounts} valueStyle={{ fontSize: 16, color: '#fff' }} /></Col>
+                  <Col span={8}><Statistic title="账号" value={pool.total_accounts} valueStyle={{ fontSize: 16, color: _isLight ? '#1f2937' : '#fff' }} /></Col>
                   <Col span={8}><Statistic title="在线" value={pool.active_accounts} valueStyle={{ fontSize: 16, color: '#52c41a' }} /></Col>
-                  <Col span={8}><Statistic title="策略" value={pool.strategy === 'random' ? '随机' : '顺序'} valueStyle={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }} /></Col>
+                  <Col span={8}><Statistic title="策略" value={pool.strategy === 'random' ? '随机' : '顺序'} valueStyle={{ fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }} /></Col>
                 </Row>
                 <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
                   <Button size="small" icon={<EditOutlined />} onClick={e => { e.stopPropagation(); openPoolModal(pool); }}>编辑</Button>
@@ -348,7 +345,7 @@ const GptImagePoolManager: React.FC = () => {
           );
         })}
         {pools.length === 0 && !loading && (
-          <Col span={24}><div style={{ textAlign: 'center', padding: 40, color: 'rgba(255,255,255,0.3)' }}>暂无卡池，点击「新建卡池」开始</div></Col>
+          <Col span={24}><div style={{ textAlign: 'center', padding: 40, color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }}>暂无卡池，点击「新建卡池」开始</div></Col>
         )}
       </Row>
     </div>
@@ -358,14 +355,14 @@ const GptImagePoolManager: React.FC = () => {
   const accountTab = (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>独立账号池，配置 GPT-Image 来源的请求地址、密钥及配额</Text>
+        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 13 }}>独立账号池，配置 GPT-Image 来源的请求地址、密钥及配额</Text>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => fetchAccounts()}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openAccountModal()}>添加账号</Button>
         </Space>
       </div>
       <Table dataSource={accounts} columns={accountColumns} rowKey="id" size="small" pagination={{ pageSize: 20 }}
-        scroll={{ x: 1300 }} style={{ background: '#141414' }} />
+        scroll={{ x: 1300 }} style={{ background: _isLight ? '#fff' : '#141414' }} />
     </div>
   );
 
@@ -574,7 +571,7 @@ const GptImagePoolManager: React.FC = () => {
               size="small"
               pagination={false}
               scroll={{ x: 1300 }}
-              style={{ background: '#141414' }}
+              style={{ background: _isLight ? '#fff' : '#141414' }}
             />
           </div>
         )}

@@ -12,7 +12,7 @@ pub mod asset_convert;
 pub mod task_poller;
 
 use axum::{
-    extract::{State, Extension},
+    extract::{State, Extension, OriginalUri},
     Json,
     response::{Response, IntoResponse},
 };
@@ -24,9 +24,11 @@ use crate::error::{AppError, AppResult};
 pub async fn chat_completions(
     State(state): State<Arc<AppState>>,
     Extension(token): Extension<ApiToken>,
+    OriginalUri(uri): OriginalUri,
     Json(body): Json<serde_json::Value>,
 ) -> AppResult<Response> {
     let start_time = std::time::Instant::now();
+    let raw_path = uri.path();
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
     let model = body["model"].as_str().unwrap_or("gpt-3.5-turbo");
     let is_stream = body["stream"].as_bool().unwrap_or(false);
@@ -35,117 +37,88 @@ pub async fn chat_completions(
 
     // 2. 获取用户信息
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
+    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance, Some("聊天")).await?;
 
-    let max_retries = 3;
-    let mut current_try = 0;
+    // 3. 选择渠道
+    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, "/v1/chat/completions").await?;
 
-    let (channel, resolved_model, resp, target_type, final_upstream_path, upstream_body) = loop {
-        current_try += 1;
-        
-        let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, "/v1/chat/completions").await?;
-
-        let resolved = match forward::resolve_forward_rule(&state, model, "聊天", "/v1/chat/completions").await {
-            Some(r) => r,
-            None => {
-                if forward::model_has_forward_rules(&state, model).await {
-                    return Err(AppError::BadRequest(format!(
-                        "模型 '{}' 不支持当前接口，请检查模型对应的 API 调用方式", model
-                    )));
-                }
-                forward::infer_forward_from_base_url(&channel.base_url, "聊天")
+    // 4. 解析转发规则，未绑定规则时根据域名智能推断
+    let resolved = match forward::resolve_forward_rule(&state, model, "聊天", "/v1/chat/completions").await {
+        Some(r) => r,
+        None => {
+            // 模型绑定了转发规则但入口路径不匹配 → 拒绝请求
+            if forward::model_has_forward_rules(&state, model).await {
+                return Err(AppError::BadRequest(format!(
+                    "模型 '{}' 不支持当前接口，请检查模型对应的转发规则", model
+                )));
             }
-        };
-
-        let target_type = resolved.target_type.clone();
-        let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "聊天");
-        let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
-        let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
-
-        tracing::info!("[Chat] model={}, target_type={}, url={} (Attempt {}/{})", model, target_type, url, current_try, max_retries);
-
-        let mut final_upstream_path = resolved.upstream_path.replace("${model}", &resolved_model);
-
-        let (resp_result, is_stream_flag) = if is_stream {
-            let mut stream_body = upstream_body.clone();
-            stream_body["stream"] = serde_json::json!(true);
-            let stream_url = if target_type == "gemini" {
-                final_upstream_path = final_upstream_path
-                    .replace(":generateContent", ":streamGenerateContent")
-                    + "?alt=sse";
-                let mut final_url = url_utils::join_url(&channel.base_url, &final_upstream_path);
-                if resolved.auth_type == "query_key" {
-                    if final_url.contains('?') {
-                        final_url = format!("{}&key={}", final_url, channel.api_key);
-                    } else {
-                        final_url = format!("{}?key={}", final_url, channel.api_key);
-                    }
-                }
-                final_url
-            } else {
-                url.clone()
-            };
-
-            let mut stream_builder = state.http_client.post(&stream_url)
-                .header("Content-Type", "application/json");
-            for (k, v) in &auth_headers {
-                stream_builder = stream_builder.header(k, v);
-            }
-            (stream_builder.json(&stream_body).send().await, 1)
-        } else {
-            let mut builder = state.http_client.post(&url)
-                .header("Content-Type", "application/json");
-            for (k, v) in &auth_headers {
-                builder = builder.header(k, v);
-            }
-            (builder.json(&upstream_body).send().await, 0)
-        };
-
-        match resp_result {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    break (channel, resolved_model, resp, target_type, final_upstream_path, upstream_body);
-                } else {
-                    let status = resp.status().as_u16();
-                    let err = resp.text().await.unwrap_or_default();
-                    let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
-                    let latency_ms = start_time.elapsed().as_millis() as u32;
-                    let ep = format!("/v1/chat/completions|{}", final_upstream_path);
-                    proxy::record_and_bill(
-                        &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
-                        &ep, Some(&display_err), latency_ms, is_stream_flag,
-                        Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
-                        None
-                    ).await;
-
-                    if current_try >= max_retries {
-                        return Err(AppError::UpstreamError(display_err));
-                    }
-                }
-            },
-            Err(e) => {
-                let err_msg = e.to_string();
-                let latency_ms = start_time.elapsed().as_millis() as u32;
-                let ep = format!("/v1/chat/completions|{}", final_upstream_path);
-                proxy::record_and_bill(
-                    &state, &token, channel.id, model, 0, 0, 0, 0.0, 500,
-                    &ep, Some(&err_msg), latency_ms, is_stream_flag,
-                    Some(request_content_str.clone()), Some(err_msg.clone()), Some(upstream_body.to_string()),
-                    None
-                ).await;
-
-                if current_try >= max_retries {
-                    return Err(AppError::UpstreamError(err_msg));
-                }
-            }
+            // 模型未绑定转发规则 → 根据渠道域名智能推断
+            forward::infer_forward_from_base_url(&channel.base_url, "聊天")
         }
-        
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     };
 
-    // 6. 流式 vs 非流式 处理响应
+    let target_type = resolved.target_type.clone();
+    let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "聊天");
+    let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
+    let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
+
+    tracing::info!("[Chat] model={}, target_type={}, url={}", model, target_type, url);
+
+    // 5. 构建上游请求
+    let mut builder = state.http_client.post(&url)
+        .header("Content-Type", "application/json");
+    for (k, v) in &auth_headers {
+        builder = builder.header(k, v);
+    }
+
+    // 6. 流式 vs 非流式
     if is_stream {
+        // 流式请求：确保 stream=true 在请求体中
+        let mut stream_body = upstream_body.clone();
+        stream_body["stream"] = serde_json::json!(true);
+        // Gemini 流式需要特殊处理 URL
+        let mut final_upstream_path = resolved.upstream_path.replace("${model}", &resolved_model);
+        let stream_url = if target_type == "gemini" {
+            final_upstream_path = final_upstream_path
+                .replace(":generateContent", ":streamGenerateContent")
+                + "?alt=sse";
+            let mut final_url = url_utils::join_url(&channel.base_url, &final_upstream_path);
+            if resolved.auth_type == "query_key" {
+                if final_url.contains('?') {
+                    final_url = format!("{}&key={}", final_url, channel.api_key);
+                } else {
+                    final_url = format!("{}?key={}", final_url, channel.api_key);
+                }
+            }
+            final_url
+        } else {
+            url.clone()
+        };
+
+        let mut stream_builder = state.http_client.post(&stream_url)
+            .header("Content-Type", "application/json");
+        for (k, v) in &auth_headers {
+            stream_builder = stream_builder.header(k, v);
+        }
+        let resp = stream_builder.json(&stream_body).send().await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let err = resp.text().await?;
+            let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
+            let latency_ms = start_time.elapsed().as_millis() as u32;
+            let ep = format!("{}|{}", raw_path, final_upstream_path);
+            proxy::record_and_bill(
+                &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
+                &ep, Some(&display_err), latency_ms, 1,
+                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
+                None
+            ).await;
+            return Err(AppError::UpstreamError(display_err));
+        }
+
         let prompt_tokens = estimate_prompt_tokens(&body);
+
 
         if pre_deduction > 0.0 {
             if let Err(e) = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
@@ -158,9 +131,27 @@ pub async fn chat_completions(
             ctx.discount, prompt_tokens, request_content_str, start_time, target_type,
             final_upstream_path,
             Some(upstream_body.to_string()),
-            pre_deduction
+            pre_deduction,
+            raw_path.to_string()
         ).await.into_response())
     } else {
+        let resp = builder.json(&upstream_body).send().await?;
+        let status = resp.status().as_u16();
+
+        if !resp.status().is_success() {
+            let err = resp.text().await?;
+            let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
+            let latency_ms = start_time.elapsed().as_millis() as u32;
+            let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
+            proxy::record_and_bill(
+                &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
+                &ep, Some(&display_err), latency_ms, 0,
+                Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()),
+                None
+            ).await;
+            return Err(AppError::UpstreamError(display_err));
+        }
+
         let data = resp.bytes().await?;
         let response_content_str = String::from_utf8_lossy(&data).to_string();
 
@@ -174,12 +165,7 @@ pub async fn chat_completions(
         let features = usage_extractor::extract_request_features(&body);
 
         // 计费: 联表查询 Model 及其关联的 BillingRule
-        let db_model: Option<crate::models::Model> = sqlx::query_as(
-            &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-        )
-        .bind(model)
-        .fetch_optional(&state.db.pool)
-        .await?;
+        let db_model = proxy::find_active_model(&state, model, Some("聊天")).await;
 
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {
@@ -203,7 +189,7 @@ pub async fn chat_completions(
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
         }
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("/v1/chat/completions|{}", final_upstream_path);
+        let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
 
         proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, model, prompt_tokens, completion_tokens, cached_tokens,
@@ -339,12 +325,19 @@ pub fn compute_cost(
                 };
                 detail_desc = "按张返回计费".to_string();
                 
-                // 兼容阿里百炼 prompt_extend 计费调整（如果配置了倍率）
-                if features.prompt_extend {
-                    if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    // 提示词扩写倍率
+                    if features.prompt_extend {
                         if let Some(m) = ext.get("prompt_extend_multiplier").and_then(|v| v.as_f64()) {
                             rate *= m;
                             detail_desc.push_str(&format!(" [提示词扩写 x{}]", m));
+                        }
+                    }
+                    // 有图倍率（区分文生图/图生图）
+                    if features.has_image_ref {
+                        if let Some(m) = ext.get("image_ref_multiplier").and_then(|v| v.as_f64()) {
+                            rate *= m;
+                            detail_desc.push_str(&format!(" [图生图 x{}]", m));
                         }
                     }
                 }
@@ -363,12 +356,19 @@ pub fn compute_cost(
                     }
                 }
                 
-                // 提示词扩写倍率支持
-                if features.prompt_extend {
-                    if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    // 提示词扩写倍率
+                    if features.prompt_extend {
                         if let Some(m) = ext.get("prompt_extend_multiplier").and_then(|v| v.as_f64()) {
                             rate *= m;
                             detail_desc.push_str(&format!(" [提示词扩写 x{}]", m));
+                        }
+                    }
+                    // 有图倍率（区分文生图/图生图）
+                    if features.has_image_ref {
+                        if let Some(m) = ext.get("image_ref_multiplier").and_then(|v| v.as_f64()) {
+                            rate *= m;
+                            detail_desc.push_str(&format!(" [图生图 x{}]", m));
                         }
                     }
                 }
@@ -393,6 +393,22 @@ pub fn compute_cost(
                             }
                         }
                     }
+                }
+            } else if rule.billing_rule == "kling_video" {
+                // 可灵视频：基准秒单价 × mode倍率(std/pro/4k) × sound倍率(off/on)
+                detail_desc = format!("可灵视频按秒计费(基准: {})", rate);
+                if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    let mode_key = features.mode.as_deref().unwrap_or("std");
+                    let sound_key = features.sound.as_deref().unwrap_or("off");
+
+                    let mode_mult = ext.get("mode_multipliers")
+                        .and_then(|m| m.get(mode_key)).and_then(|v| v.as_f64()).unwrap_or(1.0);
+                    let sound_mult = ext.get("sound_multipliers")
+                        .and_then(|m| m.get(sound_key)).and_then(|v| v.as_f64()).unwrap_or(1.0);
+
+                    rate *= mode_mult * sound_mult;
+                    detail_desc = format!("可灵视频(mode:{}x{} sound:{}x{} 综合单价:{})",
+                        mode_key, mode_mult, sound_key, sound_mult, rate);
                 }
             }
 

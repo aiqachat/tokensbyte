@@ -22,6 +22,7 @@ pub async fn handle_chat_stream(
     upstream_path: String,
     upstream_req_content: Option<String>,
     pre_deducted: f64,
+    entry_endpoint: String,
 ) -> impl IntoResponse {
     let (tx, rx) = mpsc::channel(100);
     let mut upstream_stream = response.bytes_stream();
@@ -86,11 +87,7 @@ pub async fn handle_chat_stream(
             total_completion_tokens = 1; // 至少为 1 以防异常
         }
         
-        let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
-            .bind(&model)
-            .fetch_optional(&state.db.pool)
-            .await
-            .unwrap_or(None);
+        let db_model = crate::relay::proxy::find_active_model(&state, &model, Some("聊天")).await;
 
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {
@@ -113,7 +110,7 @@ pub async fn handle_chat_stream(
         }
         
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("/v1/chat/completions|{}", upstream_path);
+        let ep = format!("{}|{}", entry_endpoint, upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens, total_cached_tokens,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,
@@ -147,6 +144,7 @@ pub async fn handle_image_stream(
     upstream_path: String,
     upstream_req_content: Option<String>,
     pre_deducted: f64,
+    entry_endpoint: String,
 ) -> impl IntoResponse {
     let (tx, rx) = mpsc::channel(100);
     let mut upstream_stream = response.bytes_stream();
@@ -199,10 +197,7 @@ pub async fn handle_image_stream(
             tracing::info!("[Image Stream Fallback] model={}, prompt={}, completion={}", model, total_prompt_tokens, total_completion_tokens);
         }
 
-        let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
-            .bind(&model)
-            .fetch_optional(&state.db.pool)
-            .await.unwrap_or(None);
+        let db_model = crate::relay::proxy::find_active_model(&state, &model, Some("图片")).await;
 
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {
@@ -229,7 +224,7 @@ pub async fn handle_image_stream(
         }
         
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("/v1/images/generations|{}", upstream_path);
+        let ep = format!("{}|{}", entry_endpoint, upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens, 0,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,
@@ -259,6 +254,7 @@ pub async fn handle_native_stream(
     upstream_path: String,
     upstream_req_content: Option<String>,
     pre_deducted: f64,
+    entry_endpoint: String,
 ) -> impl IntoResponse {
     let (tx, rx) = mpsc::channel(100);
     let mut upstream_stream = response.bytes_stream();
@@ -318,11 +314,7 @@ pub async fn handle_native_stream(
              completion_tokens = (full_response_text.len() as f64 / 4.0).ceil() as i32;
         }
 
-        let db_model: Option<crate::models::Model> = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"))
-            .bind(&model)
-            .fetch_optional(&state.db.pool)
-            .await
-            .unwrap_or(None);
+        let db_model = crate::relay::proxy::find_active_model(&state, &model, None).await;
 
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {
@@ -348,7 +340,7 @@ pub async fn handle_native_stream(
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
         }
         
-        let ep = format!("{}|{}", upstream_path, upstream_path);
+        let ep = format!("{}|{}", entry_endpoint, upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, prompt_tokens, completion_tokens, cached_tokens,
             cost, pre_deducted, 200, &ep, None, latency_ms, 1,

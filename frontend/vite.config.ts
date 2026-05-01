@@ -27,7 +27,7 @@ export default defineConfig({
         target: apiTarget,
         changeOrigin: true,
       },
-      '/assets': {
+      '/assets/icons/': {
         target: apiTarget,
         changeOrigin: true,
       }

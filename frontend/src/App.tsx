@@ -60,6 +60,21 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchSettings();
+    
+    // Affiliate & Team Tracking (persist for 3 days)
+    const params = new URLSearchParams(window.location.search);
+    const aff = params.get('aff');
+    const team = params.get('team');
+    
+    const now = Date.now();
+    const expiry = now + 3 * 24 * 60 * 60 * 1000; // 3 days
+    
+    if (aff) {
+      localStorage.setItem('tokensbyte_affiliate_code', JSON.stringify({ value: aff, expiry }));
+    }
+    if (team) {
+      localStorage.setItem('tokensbyte_team_invite', JSON.stringify({ value: team, expiry }));
+    }
   }, [fetchSettings]);
 
   return (

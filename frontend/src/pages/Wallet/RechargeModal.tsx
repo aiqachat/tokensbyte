@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Modal, Button, Typography, Space, Row, Col, QRCode, message, Spin, Result, InputNumber } from 'antd';
 import { WalletOutlined, AlipayCircleOutlined, WechatOutlined, SafetyCertificateOutlined, LockOutlined, CreditCardOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
+import { useThemeStore } from '../../store/theme';
 
 const { Title, Text } = Typography;
 
@@ -144,12 +145,23 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
     setSelectedAmount(null);
   };
 
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
+
   const modalStyles = {
-    content: { background: '#141414', border: '1px solid #303030', borderRadius: 16, padding: 0 },
+    content: { background: isLight ? '#fff' : '#141414', border: isLight ? '1px solid #e8e8e8' : '1px solid #303030', borderRadius: 16, padding: 0 },
     body: { padding: '28px 32px' },
     header: { display: 'none' as const },
     mask: { backgroundColor: 'rgba(0, 0, 0, 0.65)' },
   };
+  const borderIdle = isLight ? '#d9d9d9' : '#303030';
+  const bgIdle = isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)';
+  const labelColor = isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)';
+  const descColor = isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)';
+  const subColor = isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
+  const summaryBg = isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)';
+  const summaryBorder = isLight ? '#e8e8e8' : '#252525';
+  const titleColor = isLight ? '#1f2937' : '#fff';
 
   if (fetchingSettings) {
     return (
@@ -197,7 +209,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
         }}>
           <WalletOutlined style={{ fontSize: 28, color: '#fff' }} />
         </div>
-        <Title level={4} style={{ margin: 0, color: '#fff' }}>钱包余额充值</Title>
+        <Title level={4} style={{ margin: 0, color: titleColor }}>钱包余额充值</Title>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 6 }}>
           <LockOutlined style={{ fontSize: 11, color: '#52c41a' }} />
           <Text type="secondary" style={{ fontSize: 12 }}>安全加密支付通道</Text>
@@ -249,26 +261,26 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
       ) : (
         <div>
           {/* Amount Selection */}
-          <Text strong style={{ display: 'block', marginBottom: 12, color: 'rgba(255,255,255,0.85)' }}>选择金额 (元)</Text>
+          <Text strong style={{ display: 'block', marginBottom: 12, color: labelColor }}>选择金额 (元)</Text>
           <Row gutter={[10, 10]}>
             {AMOUNTS.map(amt => (
               <Col span={8} key={amt}>
                 <div
                   onClick={() => handlePresetClick(amt)}
                   style={{
-                    border: `2px solid ${!isCustom && selectedAmount === amt ? '#1677ff' : '#303030'}`,
+                    border: `2px solid ${!isCustom && selectedAmount === amt ? '#1677ff' : borderIdle}`,
                     borderRadius: 10,
                     padding: '14px 0',
                     textAlign: 'center',
                     cursor: 'pointer',
                     background: !isCustom && selectedAmount === amt
                       ? 'rgba(22, 119, 255, 0.12)'
-                      : 'rgba(255, 255, 255, 0.04)',
+                      : bgIdle,
                     transition: 'all 0.25s ease',
                   }}
                 >
                   <Text strong style={{
-                    color: !isCustom && selectedAmount === amt ? '#1677ff' : 'rgba(255,255,255,0.85)',
+                    color: !isCustom && selectedAmount === amt ? '#1677ff' : labelColor,
                     fontSize: 20,
                   }}>
                     {amt}
@@ -283,17 +295,17 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
             onClick={handleCustomFocus}
             style={{
               marginTop: 12,
-              border: `2px solid ${isCustom ? '#1677ff' : '#303030'}`,
+              border: `2px solid ${isCustom ? '#1677ff' : borderIdle}`,
               borderRadius: 10,
               padding: '8px 16px',
-              background: isCustom ? 'rgba(22, 119, 255, 0.12)' : 'rgba(255, 255, 255, 0.04)',
+              background: isCustom ? 'rgba(22, 119, 255, 0.12)' : bgIdle,
               transition: 'all 0.25s ease',
               display: 'flex',
               alignItems: 'center',
               gap: 8,
             }}
           >
-            <Text style={{ color: 'rgba(255,255,255,0.65)', whiteSpace: 'nowrap' }}>自定义</Text>
+            <Text style={{ color: descColor, whiteSpace: 'nowrap' }}>自定义</Text>
             <InputNumber
               min={0.01}
               max={50000}
@@ -306,11 +318,11 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
               variant="borderless"
               style={{ flex: 1, background: 'transparent' }}
             />
-            <Text style={{ color: 'rgba(255,255,255,0.45)' }}>元</Text>
+            <Text style={{ color: subColor }}>元</Text>
           </div>
 
           {/* Payment Method */}
-          <Text strong style={{ display: 'block', marginTop: 24, marginBottom: 12, color: 'rgba(255,255,255,0.85)' }}>支付方式</Text>
+          <Text strong style={{ display: 'block', marginTop: 24, marginBottom: 12, color: labelColor }}>支付方式</Text>
           <Row gutter={12}>
             {alipayEnabled && (
               <Col flex={1}>
@@ -319,8 +331,8 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                     height: 52, borderRadius: 10, cursor: 'pointer',
-                    border: `2px solid ${paymentMethod === 'alipay' ? '#1677ff' : '#303030'}`,
-                    background: paymentMethod === 'alipay' ? 'rgba(22, 119, 255, 0.12)' : 'rgba(255, 255, 255, 0.04)',
+                    border: `2px solid ${paymentMethod === 'alipay' ? '#1677ff' : borderIdle}`,
+                    background: paymentMethod === 'alipay' ? 'rgba(22, 119, 255, 0.12)' : bgIdle,
                     transition: 'all 0.25s ease',
                   }}
                 >
@@ -336,8 +348,8 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                     height: 52, borderRadius: 10, cursor: 'pointer',
-                    border: `2px solid ${paymentMethod === 'wechat' ? '#07c160' : '#303030'}`,
-                    background: paymentMethod === 'wechat' ? 'rgba(7, 193, 96, 0.12)' : 'rgba(255, 255, 255, 0.04)',
+                    border: `2px solid ${paymentMethod === 'wechat' ? '#07c160' : borderIdle}`,
+                    background: paymentMethod === 'wechat' ? 'rgba(7, 193, 96, 0.12)' : bgIdle,
                     transition: 'all 0.25s ease',
                   }}
                 >
@@ -368,7 +380,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           {/* Summary */}
           <div style={{
             marginTop: 24, padding: '16px 20px',
-            background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid #252525',
+            background: summaryBg, borderRadius: 10, border: `1px solid ${summaryBorder}`,
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
             <Text type="secondary" style={{ fontSize: 13 }}>应付金额</Text>

@@ -30,7 +30,7 @@ import './Playground.css';
 const PlaygroundLayout: React.FC = () => {
   const { themeMode } = useThemeStore();
   return (
-    <div style={{ height: '100vh', width: '100vw', overflow: 'hidden', background: '#1e1f23', position: 'relative' }}>
+    <div className="playground-root" style={{ height: '100vh', width: '100vw', overflow: 'hidden', background: '#1E1E20', position: 'relative' }}>
 
       {/* ═══════════ Layer 1: 无限画布层 (Canvas Layer) ═══════════ */}
       {/* 画布视口容器 — 包含画布 + 固定位置面板，保证鼠标事件冒泡链完整 */}
@@ -69,7 +69,7 @@ const Playground: React.FC = () => {
     <ConfigProvider theme={{
       
       token: {
-        colorPrimary: '#A2C1FF',
+        colorPrimary: '#fff',
         borderRadius: 12,
         colorBgContainer: '#1E1F22',
         colorBorder: 'rgba(255,255,255,0.08)'

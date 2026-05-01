@@ -25,6 +25,7 @@ macro_rules! pg_migration_blocks {
             config TEXT, referred_by TEXT, commission_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0, admin_group_id INTEGER,
             register_ip TEXT DEFAULT '',
             admin_remark TEXT DEFAULT '',
+            referral_history TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -404,7 +405,6 @@ macro_rules! pg_migration_blocks {
         FROM (VALUES
             ('OpenAI 兼容原生通道 (聊天)', 'openai', '标准的按路径聊天透传规则', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/chat/completions","new":"/v1/chat/completions"}}', '聊天', 1),
             ('OpenAI 兼容原生通道 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"}}', '图片', 1),
-            ('OpenAI 兼容原生通道异步 (图片)', 'openai', '供图片生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"},"poll_path":"/v1/tasks/${task_id}"}', '图片', 1),
             ('OpenAI 兼容原生通道 (视频)', 'openai', '供视频生成调用的原生通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/video/generations","new":"/v1/video/generations"}}', '视频', 1),
             ('Anthropic 原生转化', 'anthropic', '转换 Messages 格式，注入专有 Header', '{"mode":"transform","target_type":"anthropic","header_mapping":{"x-api-key":"${api_key}","anthropic-version":"2023-06-01"},"body_transform":{"extract_to_contents":true}}', '聊天', 1),
             ('Google Gemini 原生生图', 'gemini', '将标准的生图请求适配到 Gemini contents 接口', '{"mode":"transform","target_type":"gemini_image","path_rewrite":{"old":"/v1/images/generations","new":"/v1beta/models/${model}:generateContent"},"auth_type":"query_key"}', '图片', 1),
@@ -414,12 +414,10 @@ macro_rules! pg_migration_blocks {
             ('火山方舟 聊天', 'volcengine', '将标准的聊天请求转发到火山方舟官方 Chat 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_chat","path_rewrite":{"old":"/v1/chat/completions","new":"/api/v3/chat/completions"},"auth_type":"bearer"}', '聊天', 1),
             ('火山方舟 图片生成', 'volcengine', '将标准的图片生成请求转发到火山方舟官方 images 接口，body 保持 OpenAI 兼容格式', '{"mode":"transform","target_type":"volcengine_image","path_rewrite":{"old":"/v1/images/generations","new":"/api/v3/images/generations"},"auth_type":"bearer"}', '图片', 1),
             ('火山方舟 视频素材转换', 'volcengine', '在火山方舟视频生成基础上，自动将 content 中的网络 URL 通过 CreateAsset API 转换为素材 ID（asset://前缀），需配置素材资产管理插件的审核凭证', '{"mode":"transform","target_type":"volcengine","asset_convert":true,"path_rewrite":{"old":"/v1/video/generations","new":"/api/v3/contents/generations/tasks"},"auth_type":"bearer"}', '视频', 1),
-            ('mart', 'mart', '自定义mart通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"},"poll_path":"/v1/tasks/${task_id}"}', '图片', 1),
-            ('mart-视频', 'Mart', '自定义mart视频通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos/generations","new":"/v1/videos/generations"},"poll_path":"/v1/tasks/${task_id}"}', '视频', 1),
+            ('mart-图片', 'mart', '自定义mart图片通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"},"poll_path":"/v1/tasks/${task_id}"}', '图片', 1),
+            ('mart-视频', 'mart', '自定义mart视频通道', '{"mode":"passthrough","header_mapping":{"Authorization":"Bearer ${api_key}"},"path_rewrite":{"old":"/v1/videos/generations","new":"/v1/videos/generations"},"poll_path":"/v1/tasks/${task_id}"}', '视频', 1),
             ('阿里百炼 DashScope 视频生成', 'dashscope', '将标准视频生成请求（/v1/video/generations）转换为阿里百炼 DashScope 格式，支持文生视频/图生视频/参考生视频/视频编辑，异步任务自动注入 X-DashScope-Async Header', '{"mode":"transform","target_type":"dashscope","path_rewrite":{"old":"/v1/video/generations","new":"/api/v1/services/aigc/video-generation/video-synthesis"},"auth_type":"bearer","poll_path":"/api/v1/tasks/${task_id}"}', '视频', 1),
-            ('阿里百炼 DashScope 视频生成 (官方路径)', 'dashscope', '阿里百炼官方原生路径直通，适用于直接使用 DashScope API 地址调用的场景', '{"mode":"transform","target_type":"dashscope","path_rewrite":{"old":"/api/v1/services/aigc/video-generation/video-synthesis","new":"/api/v1/services/aigc/video-generation/video-synthesis"},"auth_type":"bearer","poll_path":"/api/v1/tasks/${task_id}"}', '视频', 1),
             ('阿里百炼 DashScope 图片生成', 'dashscope', '将标准图片生成请求（/v1/images/generations）转换为阿里百炼 DashScope 格式', '{"mode":"transform","target_type":"dashscope_image","path_rewrite":{"old":"/v1/images/generations","new":"/api/v1/services/aigc/multimodal-generation/generation"},"auth_type":"bearer"}', '图片', 1),
-            ('阿里百炼 DashScope 图片生成 (官方路径)', 'dashscope', '阿里百炼官方原生路径直通', '{"mode":"transform","target_type":"dashscope_image","path_rewrite":{"old":"/api/v1/services/aigc/multimodal-generation/generation","new":"/api/v1/services/aigc/multimodal-generation/generation"},"auth_type":"bearer"}', '图片', 1)
         ) AS t(name, rule_type, description, config_json, category, is_system)
         WHERE NOT EXISTS (SELECT 1 FROM forward_rules WHERE name = t.name)
     "#).execute(pool).await.ok();
@@ -502,6 +500,40 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_detail TEXT DEFAULT ''")
         .execute(pool)
         .await?;
+
+    // 异步任务 ID（非空时表示异步任务，用于轮询状态跟踪）
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS task_id TEXT DEFAULT ''")
+        .execute(pool)
+        .await?;
+    // 为 task_id 添加备注
+    sqlx::query("COMMENT ON COLUMN logs.task_id IS '异步任务ID，非空时表示异步任务，用于轮询状态跟踪'")
+        .execute(pool)
+        .await
+        .ok();
+
+    // 任务类型（聊天、图片、视频等），用于精准筛选，避免基于 endpoint 的路径猜测
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS action_type TEXT DEFAULT ''")
+        .execute(pool)
+        .await?;
+    sqlx::query("COMMENT ON COLUMN logs.action_type IS '任务类型：聊天、图片、视频等，用于精准筛选和显示'")
+        .execute(pool)
+        .await
+        .ok();
+
+    // 数据清洗：为历史数据填充 action_type
+    sqlx::query("UPDATE logs SET action_type = '聊天' WHERE action_type = '' AND (endpoint LIKE '%chat/completions%' OR endpoint LIKE '%generateContent%')").execute(pool).await.ok();
+    sqlx::query("UPDATE logs SET action_type = '图片' WHERE action_type = '' AND endpoint LIKE '%images/%'").execute(pool).await.ok();
+    sqlx::query("UPDATE logs SET action_type = '视频' WHERE action_type = '' AND (endpoint LIKE '%video/%' OR endpoint LIKE '%videos/%' OR endpoint LIKE '%contents/generations%')").execute(pool).await.ok();
+    sqlx::query("UPDATE logs SET action_type = '其它' WHERE action_type = ''").execute(pool).await.ok();
+
+    // user_levels 表新增 allow_view_log_details 控制日志详情查看权限
+    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS allow_view_log_details INTEGER NOT NULL DEFAULT 1")
+        .execute(pool)
+        .await?;
+    sqlx::query("COMMENT ON COLUMN user_levels.allow_view_log_details IS '是否允许查看日志详情，1-允许，0-不允许'")
+        .execute(pool)
+        .await
+        .ok();
 
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS channel_configs (
@@ -1210,6 +1242,42 @@ macro_rules! pg_migration_blocks {
     // ─── users 表增加 remark 字段（兼容线上旧数据） ───
     sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await.ok();
     sqlx::query("COMMENT ON COLUMN users.remark IS '推广用户备注'").execute(pool).await.ok();
+
+    // ─── users 表增加 referral_history 字段 ───
+    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_history TEXT DEFAULT ''").execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN users.referral_history IS '关联流转记录'").execute(pool).await.ok();
+
+    // ══════════════════════════════════════════════════════════════
+    //  可灵 AI (Kling) 厂商 & 转发规则 & 计费规则 种子数据
+    // ══════════════════════════════════════════════════════════════
+
+    // 内置服务商: 可灵 AI
+    sqlx::query(
+        "INSERT INTO model_providers (name, sort_order, is_system) VALUES ('可灵 AI', 4, 1) ON CONFLICT(name) DO UPDATE SET is_system = 1"
+    ).execute(pool).await.ok();
+
+    // 可灵 AI 转发规则模板
+    sqlx::query(r#"
+        INSERT INTO forward_rules (name, rule_type, description, config_json, category, is_system)
+        SELECT t.name, t.rule_type, t.description, t.config_json, t.category, t.is_system
+        FROM (VALUES
+            ('可灵 视频生成 (文/图/多图)', 'kling', '将标准视频生成请求转发到可灵官方 API，系统根据请求体自动分发到 text2video/image2video/multi-image2video', '{"mode":"transform","target_type":"kling","path_rewrite":{"old":"/v1/video/generations","new":"/v1/videos/text2video"},"auth_type":"bearer"}', '视频', 1),
+            ('可灵 Omni 视频 (kling-v3-omni/video-o1)', 'kling', '将视频生成请求转发到可灵 Omni 视频端点', '{"mode":"transform","target_type":"kling","path_rewrite":{"old":"/v1/video/generations","new":"/v1/videos/omni-video"},"auth_type":"bearer"}', '视频', 1),
+            ('可灵 图片生成', 'kling', '将标准图片生成请求转发到可灵官方 API，含多图参考自动分发', '{"mode":"transform","target_type":"kling","path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/generations"},"auth_type":"bearer"}', '图片', 1),
+            ('可灵 Omni 图片 (kling-v3-omni/image-o1)', 'kling', '将图片生成请求转发到可灵 Omni 图片端点', '{"mode":"transform","target_type":"kling","path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/omni-image"},"auth_type":"bearer"}', '图片', 1)
+        ) AS t(name, rule_type, description, config_json, category, is_system)
+        WHERE NOT EXISTS (SELECT 1 FROM forward_rules WHERE name = t.name)
+    "#).execute(pool).await.ok();
+
+    // 可灵视频计费规则（按秒计费 + mode(std/pro/4k) × sound(off/on) 倍率）
+    sqlx::query(r#"
+        INSERT INTO billing_rules (name, billing_type, duration_rate, billing_rule, extended_config, is_system)
+        SELECT t.name, t.billing_type, t.duration_rate, t.billing_rule, t.extended_config, t.is_system
+        FROM (VALUES
+            ('可灵视频官方计费', 'duration', 0.10, 'kling_video', '{"mode_multipliers":{"std":1.0,"pro":1.33,"4k":2.0},"sound_multipliers":{"off":1.0,"on":1.5}}', 1)
+        ) AS t(name, billing_type, duration_rate, billing_rule, extended_config, is_system)
+        WHERE NOT EXISTS (SELECT 1 FROM billing_rules WHERE name = t.name)
+    "#).execute(pool).await.ok();
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())

@@ -32,8 +32,8 @@ pub async fn create_user_level(
     }
 
     let id = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO user_levels (name, group_key, discount, commission_ratio, invite_reward_inviter, invite_reward_invitee, daily_invite_limit, marketing_enabled, is_default, max_token_count, description)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        &state.db.format_query(r#"INSERT INTO user_levels (name, group_key, discount, commission_ratio, invite_reward_inviter, invite_reward_invitee, daily_invite_limit, marketing_enabled, is_default, max_token_count, allow_view_log_details, description)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#)
     )
     .bind(&req.name)
@@ -46,6 +46,7 @@ pub async fn create_user_level(
     .bind(req.marketing_enabled.unwrap_or(0))
     .bind(req.is_default.unwrap_or(0))
     .bind(req.max_token_count.unwrap_or(10))
+    .bind(req.allow_view_log_details.unwrap_or(1))
     .bind(req.description.unwrap_or_default())
     .fetch_one(&state.db.pool)
     .await?
@@ -100,6 +101,9 @@ pub async fn update_user_level(
     }
     if let Some(max_token_count) = req.max_token_count {
         sqlx::query(&state.db.format_query("UPDATE user_levels SET max_token_count = ? WHERE id = ?")).bind(max_token_count).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(allow_view_log_details) = req.allow_view_log_details {
+        sqlx::query(&state.db.format_query("UPDATE user_levels SET allow_view_log_details = ? WHERE id = ?")).bind(allow_view_log_details).bind(id).execute(&state.db.pool).await?;
     }
 
     sqlx::query(&state.db.format_query("UPDATE user_levels SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;

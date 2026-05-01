@@ -4,21 +4,22 @@
  * - 上层：干净的文本输入区域
  * - 下层：功能芯片栏（模型选择、API 密钥、附加功能按钮）+ 运行按钮
  */
-import React, { useState, useRef } from 'react';
-import { Input, Tooltip, message, Dropdown } from 'antd';
+import React, { useState, useRef, useCallback } from 'react';
+import { Input, Tooltip, message, Dropdown, Modal, Switch } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   KeyOutlined, PlayCircleOutlined, AppstoreOutlined,
   LinkOutlined, PlusOutlined, AudioOutlined,
   CloseOutlined, ThunderboltOutlined,
   PaperClipOutlined, PictureOutlined, VideoCameraOutlined,
-  CloudOutlined, UploadOutlined,
+  CloudOutlined, UploadOutlined, GlobalOutlined,
 } from '@ant-design/icons';
 import { usePlayground } from '../context/PlaygroundContext';
 import { useGeneration } from '../hooks/useGeneration';
 import { getCategoryLabel } from '../constants';
 import AssetPickerModal from './AssetPickerModal';
 import ImageEditorModal from './ImageEditorModal';
+import VideoEditorModal from './VideoEditorModal';
 import type { PluginAsset } from '../../../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -42,13 +43,39 @@ const PromptInput: React.FC = React.memo(() => {
     setIsTokenModalVisible,
     setIsModelDrawerVisible,
     attachedAssets, setAttachedAssets,
+    paramValues, setParamValues,
   } = usePlayground();
   const { handleGenerate } = useGeneration();
   const [isFocused, setIsFocused] = useState(false);
   const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false);
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
+  const [isVideoPreviewOpen, setIsVideoPreviewOpen] = useState(false);
   const [editingAssetIndex, setEditingAssetIndex] = useState<number | null>(null);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /** 语音输入 - 聚焦输入框并提示使用系统听写 */
+  const handleVoiceInput = useCallback(() => {
+    // 聚焦到输入框，让系统听写可以直接输入
+    const textarea = document.querySelector('.prompt-textarea textarea') as HTMLTextAreaElement;
+    if (textarea) {
+      textarea.focus();
+    }
+
+    const isMacOS = /Mac|iPod|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+    if (isMacOS) {
+      message.info({
+        content: '请按两次 Fn 键或点击键盘上的 🎙️ 键启动系统听写',
+        duration: 4,
+      });
+    } else {
+      message.info({
+        content: '请按 Win + H 启动系统语音输入',
+        duration: 4,
+      });
+    }
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -142,12 +169,12 @@ const PromptInput: React.FC = React.memo(() => {
         background: 'rgba(22, 23, 26, 0.92)',
         backdropFilter: 'blur(20px)',
         borderRadius: 20,
-        border: `1px solid ${isFocused ? 'rgba(162, 193, 255, 0.25)' : 'rgba(255,255,255,0.08)'}`,
+        border: `1px solid ${isFocused ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255,255,255,0.08)'}`,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
         boxShadow: isFocused
-          ? '0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(162, 193, 255, 0.08)'
+          ? '0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255, 255, 255, 0.08)'
           : '0 24px 60px rgba(0,0,0,0.5)',
         zIndex: 1000,
         transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
@@ -156,15 +183,21 @@ const PromptInput: React.FC = React.memo(() => {
     >
       {/* 已附加的素材预览列表 */}
       {attachedAssets.length > 0 && (
-        <div style={{
-          padding: '12px 16px 0 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-        }}>
+        <div 
+          className="prompt-assets-scroll"
+          onWheel={(e) => {
+            if (e.deltaY !== 0) {
+              e.currentTarget.scrollLeft += e.deltaY;
+            }
+          }}
+          style={{
+            padding: '12px 16px 8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            overflowX: 'auto',
+          }}
+        >
           {attachedAssets.map((assetItem, index) => (
             <div key={assetItem.asset.id} style={{
               position: 'relative',
@@ -194,10 +227,23 @@ const PromptInput: React.FC = React.memo(() => {
                 }
                 if (isVideo) {
                   return (
-                    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                    <div 
+                      onClick={() => {
+                        setEditingAssetIndex(index);
+                        setIsVideoPreviewOpen(true);
+                      }}
+                      style={{ width: '100%', height: '100%', position: 'relative', cursor: 'pointer' }}
+                      title="点击预览视频"
+                    >
                       <video src={assetItem.fullUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" />
-                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
-                        <VideoCameraOutlined style={{ fontSize: 20, color: '#fff' }} />
+                      <div style={{ position: 'absolute', bottom: 4, left: 4, background: 'rgba(0,0,0,0.5)', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <VideoCameraOutlined style={{ fontSize: 10, color: '#fff' }} />
+                      </div>
+                      <div className="hover-edit-overlay" style={{
+                        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', 
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s'
+                      }}>
+                        <PlayCircleOutlined style={{ fontSize: 20, color: '#fff' }} />
                       </div>
                     </div>
                   );
@@ -249,6 +295,7 @@ const PromptInput: React.FC = React.memo(() => {
 
       {/* 输入区域 */}
       <TextArea
+        className="prompt-textarea"
         value={prompt}
         onChange={e => setPrompt(e.target.value)}
         placeholder={
@@ -293,12 +340,12 @@ const PromptInput: React.FC = React.memo(() => {
                 alignItems: 'center',
                 gap: 5,
                 padding: '5px 12px',
-                background: 'rgba(162, 193, 255, 0.1)',
-                border: '1px solid rgba(162, 193, 255, 0.2)',
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: 8,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                color: '#A2C1FF',
+                color: '#fff',
                 fontSize: 13,
                 fontWeight: 500,
                 whiteSpace: 'nowrap',
@@ -307,12 +354,12 @@ const PromptInput: React.FC = React.memo(() => {
                 textOverflow: 'ellipsis',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(162, 193, 255, 0.18)';
-                e.currentTarget.style.borderColor = 'rgba(162, 193, 255, 0.35)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(162, 193, 255, 0.1)';
-                e.currentTarget.style.borderColor = 'rgba(162, 193, 255, 0.2)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
               }}
             >
               <AppstoreOutlined style={{ fontSize: 13, flexShrink: 0 }} />
@@ -321,6 +368,33 @@ const PromptInput: React.FC = React.memo(() => {
               </span>
             </div>
           </Tooltip>
+
+          {/* 联网搜索开关 */}
+          {currentModel?.params?.some((p: any) => p.key === 'web_search') && (
+            <Tooltip title="开启后允许模型使用联网搜索能力">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '5px 10px',
+                  background: paramValues.web_search ? 'rgba(82, 196, 26, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  border: `1px solid ${paramValues.web_search ? 'rgba(82, 196, 26, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  color: paramValues.web_search ? '#52c41a' : 'rgba(255, 255, 255, 0.45)',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  whiteSpace: 'nowrap',
+                }}
+                onClick={() => setParamValues(prev => ({ ...prev, web_search: !prev.web_search }))}
+              >
+                <GlobalOutlined style={{ fontSize: 13 }} />
+                <span>联网搜索</span>
+              </div>
+            </Tooltip>
+          )}
 
           {/* API 密钥芯片 */}
           <Tooltip title={tokenName ? '点击更换 API 密钥' : '请选择 API 密钥'}>
@@ -371,10 +445,10 @@ const PromptInput: React.FC = React.memo(() => {
           {/* 分隔符 */}
           <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.06)', margin: '0 2px', flexShrink: 0 }} />
 
-          {/* 附加功能占位按钮 */}
-          <Tooltip title="语音输入 — 即将开放">
+          {/* 语音输入按钮 */}
+          <Tooltip title="语音输入">
             <div
-              onClick={() => message.info('语音输入功能即将开放')}
+              onClick={handleVoiceInput}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -399,8 +473,13 @@ const PromptInput: React.FC = React.memo(() => {
             </div>
           </Tooltip>
 
-          <Dropdown menu={{ items: dropdownItems, onClick: handleMenuClick }} trigger={['click']} placement="topLeft">
-            <Tooltip title="添加附件">
+          <Dropdown
+            menu={{ items: dropdownItems, onClick: handleMenuClick }}
+            trigger={['click']}
+            placement="topLeft"
+            onOpenChange={setIsAddMenuOpen}
+          >
+            <Tooltip title="添加图片/视频/音频" placement="bottom" open={isAddMenuOpen ? false : undefined}>
               <div
                 style={{
                   display: 'flex',
@@ -501,19 +580,28 @@ const PromptInput: React.FC = React.memo(() => {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
         }
+        @keyframes voicePulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(255,77,79,0.3); }
+          50% { box-shadow: 0 0 0 6px rgba(255,77,79,0); }
+        }
       `}</style>
 
       {/* 资产库选择弹窗 */}
       <AssetPickerModal
         open={isAssetPickerOpen}
         onClose={() => setIsAssetPickerOpen(false)}
-        onSelect={(asset, fullUrl) => {
-          if (attachedAssets.length >= 10) {
-            message.error('最多只能附加 10 个附件');
-            return;
-          }
-          setAttachedAssets(prev => [...prev, { asset, fullUrl }]);
-          message.success(`已附加素材: ${asset.file_name}`);
+        onSelect={(items) => {
+          setAttachedAssets(prev => {
+            const newTotal = prev.length + items.length;
+            if (newTotal > 10) {
+              message.error(`最多只能附加 10 个附件，已截断超出部分`);
+              const allowed = 10 - prev.length;
+              const toAdd = items.slice(0, Math.max(0, allowed));
+              return [...prev, ...toAdd];
+            }
+            return [...prev, ...items];
+          });
+          message.success(`已附加 ${items.length} 个素材`);
         }}
       />
 
@@ -546,6 +634,39 @@ const PromptInput: React.FC = React.memo(() => {
             setIsImageEditorOpen(false);
             setEditingAssetIndex(null);
             message.success('图片编辑已保存');
+          }}
+        />
+      )}
+
+      {/* 视频编辑弹窗 */}
+      {editingAssetIndex !== null && (attachedAssets[editingAssetIndex]?.asset.asset_type === 'video' || attachedAssets[editingAssetIndex]?.asset.file_name?.match(/\.(mp4|mov|webm|avi|mkv)$/i)) && (
+        <VideoEditorModal
+          open={isVideoPreviewOpen}
+          videoUrl={attachedAssets[editingAssetIndex].fullUrl}
+          onCancel={() => {
+            setIsVideoPreviewOpen(false);
+            setEditingAssetIndex(null);
+          }}
+          onSave={(newUrl, file) => {
+            const index = editingAssetIndex;
+            setAttachedAssets(prev => {
+              const updated = [...prev];
+              updated[index] = {
+                ...updated[index],
+                asset: {
+                  ...updated[index].asset,
+                  file_name: file.name,
+                  size: file.size,
+                  file_url: newUrl,
+                },
+                fullUrl: newUrl,
+                file: file,
+              };
+              return updated;
+            });
+            setIsVideoPreviewOpen(false);
+            setEditingAssetIndex(null);
+            message.success('视频编辑已保存');
           }}
         />
       )}

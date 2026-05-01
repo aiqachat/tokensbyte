@@ -58,13 +58,13 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
 
 /// 执行单条任务的同步轮询（支持手动或定时调用）
 pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Result<String> {
-    let row: Option<(String, i64, String)> = sqlx::query_as(
+    let row: Option<(String, i64, String, String)> = sqlx::query_as(
         &state.db.format_query(
-            "SELECT response_content, channel_id, model FROM logs WHERE id = ?"
+            "SELECT response_content, channel_id, model, COALESCE(endpoint, '') FROM logs WHERE id = ?"
         )
     ).bind(log_id).fetch_optional(&state.db.pool).await?;
 
-    let (resp_content, channel_id, model_name) = match row {
+    let (resp_content, channel_id, model_name, endpoint) = match row {
         Some(r) => r,
         None => return Err(anyhow::anyhow!("任务记录不存在")),
     };
@@ -79,14 +79,24 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
         None => return Err(anyhow::anyhow!("渠道不存在或已被删除")),
     };
 
-    let category: String = sqlx::query_scalar(
-        &state.db.format_query(
-            "SELECT COALESCE(t.name, '') FROM models m \
-             LEFT JOIN model_types t ON m.type_id = t.id \
-             WHERE m.model_id = ? LIMIT 1"
-        )
-    ).bind(&model_name).fetch_optional(&state.db.pool).await
-        .unwrap_or(None).unwrap_or_default();
+    let mut category = if endpoint.contains("/video/") || endpoint.contains("/videos/") || endpoint.contains("/v1/video") {
+        "视频".to_string()
+    } else if endpoint.contains("/image/") || endpoint.contains("/images/") || endpoint.contains("/v1/image") {
+        "图片".to_string()
+    } else {
+        String::new()
+    };
+
+    if category.is_empty() {
+        category = sqlx::query_scalar(
+            &state.db.format_query(
+                "SELECT COALESCE(t.name, '') FROM models m \
+                 LEFT JOIN model_types t ON m.type_id = t.id \
+                 WHERE m.model_id = ? LIMIT 1"
+            )
+        ).bind(&model_name).fetch_optional(&state.db.pool).await
+            .unwrap_or(None).unwrap_or_default();
+    }
 
     let entry_path = match category.as_str() {
         "视频" => "/v1/video/generations",
@@ -109,16 +119,19 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
     };
     let url = super::url_utils::join_url(&channel.base_url, &poll_path);
 
-    let resp = match state.http_client.get(&url)
-        .header("Authorization", format!("Bearer {}", channel.api_key))
-        .send().await
-    {
+    let auth_headers = super::forward::build_auth_headers(&resolved, &channel.api_key);
+    let mut builder = state.http_client.get(&url);
+    for (k, v) in auth_headers {
+        builder = builder.header(k, v);
+    }
+    
+    let resp = match builder.send().await {
         Ok(r) => r,
-        Err(e) => return Err(anyhow::anyhow!("请求渠道失败: {}", e)),
+        Err(e) => return Err(anyhow::anyhow!("请求渠道失败: {} (url: {})", e, url)),
     };
 
     if !resp.status().is_success() {
-        return Err(anyhow::anyhow!("渠道返回错误状态码: {}", resp.status()));
+        return Err(anyhow::anyhow!("渠道返回错误状态码: {} (url: {})", resp.status(), url));
     }
 
     let body = resp.text().await.unwrap_or_default();
@@ -126,14 +139,16 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
     // 提取任务状态：兼容根节点、data 节点、final_result 节点、output.task_status（DashScope）
     let raw_status = resp_json.get("status")
         .or_else(|| resp_json.get("data").and_then(|d| d.get("status")))
+        .or_else(|| resp_json.get("data").and_then(|d| d.get("task_status")))
         .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
         .or_else(|| resp_json.get("output").and_then(|o| o.get("task_status")))
         .and_then(|s| s.as_str()).unwrap_or("");
     // 将各种厂商返回的状态统一转化为全小写并归一化
     // DashScope 会返回 SUCCEEDED / FAILED / CANCELED / UNKNOWN
+    // 可灵返回 succeed（不带 ed）
     let task_status_str = raw_status.to_lowercase();
     let task_status = match task_status_str.as_str() {
-        "completed" | "succeeded" | "success" => "succeeded",
+        "completed" | "succeeded" | "succeed" | "success" => "succeeded",
         "failed" | "canceled" | "cancelled" | "unknown" => "failed",
         _ => task_status_str.as_str(),
     };
@@ -147,21 +162,20 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
         .bind(&body).bind(log_id).execute(&state.db.pool).await;
 
     if task_status == "succeeded" {
-        settle_success(state, log_id, &model_name, &body, &resp_json).await;
+        settle_success(state, log_id, &model_name, &body, &resp_json, &url, &category).await;
         Ok("任务已成功落地并计费".to_string())
     } else {
-        settle_failure(state, log_id, &model_name, &task_id).await;
+        settle_failure(state, log_id, &model_name, &task_id, &url, &category).await;
         Ok("任务已失败，预扣费已退回".to_string())
     }
 }
 
 /// 任务成功：提取 token、计费、余额结算
-async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &str, resp_json: &serde_json::Value) {
+async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &str, resp_json: &serde_json::Value, poll_url: &str, category: &str) {
     let usage = super::usage_extractor::parse_usage(body);
 
-    let db_model: Option<crate::models::Model> = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-    ).bind(model_name).fetch_optional(&state.db.pool).await.unwrap_or(None);
+    let cat_hint = if category.is_empty() { None } else { Some(category) };
+    let db_model = super::proxy::find_active_model(state, model_name, cat_hint).await;
 
     let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
         if let Some(rule_id) = m.billing_rule_id {
@@ -170,12 +184,16 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
         } else { None }
     } else { None };
 
-    let (user_id, token_id) = match sqlx::query_as::<_, (String, i64)>(
-        &state.db.format_query("SELECT user_id, token_id FROM logs WHERE id = ?")
-    ).bind(log_id).fetch_optional(&state.db.pool).await.unwrap_or(None) {
-        Some((uid, tid)) => (Some(uid), Some(tid)),
-        None => (None, None),
+    // 获取原始预扣费与关键关联 ID（用于结算和折扣查询）
+    let log_data: Option<(f64, String, Option<i64>, Option<i64>)> = sqlx::query_as(
+        &state.db.format_query("SELECT cost, user_id, token_id, channel_id FROM logs WHERE id = ?")
+    ).bind(log_id).fetch_optional(&state.db.pool).await.unwrap_or(None);
+
+    let (pre_deduction, uid, token_id, channel_id) = match log_data {
+        Some(d) => d,
+        None => (0.0, "".to_string(), None, None),
     };
+    let user_id = if uid.is_empty() { None } else { Some(uid) };
 
     // 提取图片数量（供 compute_cost 中按张计费规则使用）
     let image_count = super::usage_extractor::count_response_images(body);
@@ -203,6 +221,9 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
                 let upstream_feat = super::usage_extractor::extract_request_features(&upstream_json);
                 if features.duration_seconds.is_none() { features.duration_seconds = upstream_feat.duration_seconds; }
                 if features.resolution.is_none() { features.resolution = upstream_feat.resolution; }
+                if features.mode.is_none() { features.mode = upstream_feat.mode; }
+                if features.sound.is_none() { features.sound = upstream_feat.sound; }
+                if upstream_feat.has_image_ref { features.has_image_ref = true; }
             }
         }
     }
@@ -216,15 +237,19 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
                 if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
                 if req_feat.has_video { features.has_video = true; }
                 if req_feat.has_audio { features.has_audio = true; }
+                if req_feat.has_image_ref { features.has_image_ref = true; }
                 if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
+                if features.mode.is_none() { features.mode = req_feat.mode; }
+                if features.sound.is_none() { features.sound = req_feat.sound; }
             }
         }
     }
+    // 从可灵终态响应提取实际视频时长（覆盖请求体中的预期值）
+    if let Some(kling_dur) = super::usage_extractor::extract_kling_video_duration(resp_json) {
+        features.duration_seconds = Some(kling_dur);
+    }
     // 视频模型 duration 兜底：确保按秒计费时不为 0
-    let category_name: String = sqlx::query_scalar(
-        &state.db.format_query("SELECT COALESCE(t.name, '') FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? LIMIT 1")
-    ).bind(model_name).fetch_optional(&state.db.pool).await.unwrap_or(None).unwrap_or_default();
-    if category_name == "视频" && features.duration_seconds.is_none() {
+    if category == "视频" && features.duration_seconds.is_none() {
         features.duration_seconds = Some(5.0);
     }
     // 异步任务终态如果是图片，使用前面已提取的图片数量进行计费
@@ -233,76 +258,115 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
     }
 
     let (final_discount, discount_source) = super::proxy::resolve_discount(db_model.as_ref(), user_discount);
-    let (cost, mut detail) = super::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, usage.cached, final_discount, &features);
+    let (cost, mut detail) = super::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, 0, final_discount, &features);
     detail.push_str(&format!(" | {} | [后台自动轮询结算]", discount_source));
 
-    let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
+
+
     let apply_balance = cost - pre_deduction;
 
-    // 更新日志计费
-    let _ = sqlx::query(&state.db.format_query(
-        "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-    )).bind(usage.prompt).bind(usage.completion).bind(usage.cached).bind(cost).bind(&detail).bind(log_id)
-    .execute(&state.db.pool).await;
-
-    // 余额结算
-    if let Some(uid) = user_id {
-        if cost > 0.0 || pre_deduction > 0.0 {
+    match state.db.pool.begin().await {
+        Ok(mut tx) => {
+            // 1. 更新日志计费
             let _ = sqlx::query(&state.db.format_query(
-                "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-            )).bind(apply_balance).bind(apply_balance).bind(&uid)
-            .execute(&state.db.pool).await;
+                "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+            )).bind(usage.prompt).bind(usage.completion).bind(0_i32).bind(cost).bind(&detail).bind(log_id)
+            .execute(&mut *tx).await;
 
-            if let Some(tid) = token_id {
-                let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                )).bind(apply_balance).bind(tid)
-                .execute(&state.db.pool).await;
+            // 2. 余额结算
+            if let Some(ref final_uid) = user_id {
+                if cost > 0.0 || pre_deduction > 0.0 {
+                    // 更新用户余额与配额
+                    let _ = sqlx::query(&state.db.format_query(
+                        "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                    )).bind(apply_balance).bind(apply_balance).bind(final_uid)
+                    .execute(&mut *tx).await;
+
+                    // 更新 Token 配额
+                    if let Some(tid) = token_id {
+                        let _ = sqlx::query(&state.db.format_query(
+                            "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(apply_balance).bind(tid)
+                        .execute(&mut *tx).await;
+                    }
+
+                    // 更新渠道配额 (修复遗漏)
+                    if let Some(cid) = channel_id {
+                        let _ = sqlx::query(&state.db.format_query(
+                            "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(apply_balance).bind(cid)
+                        .execute(&mut *tx).await;
+                    }
+                }
             }
 
-            tracing::info!("[TaskPoller] 自动结算完成, model={}, tokens={}, cost={:.6}, pre_deducted={:.6}",
-                model_name, usage.total, cost, pre_deduction);
+            let _ = tx.commit().await;
+
+            tracing::info!("[TaskPoller Success] log_id={}, model={}, tokens={}, cost={:.6}, applied={:.6}, url={}",
+                log_id, model_name, usage.total, cost, apply_balance, poll_url);
+        }
+        Err(e) => {
+            tracing::error!("[TaskPoller Success Billing] 启动事务失败: {:?}", e);
         }
     }
 }
 
 /// 任务失败：退回预扣费并标记
-async fn settle_failure(state: &AppState, log_id: i64, model_name: &str, task_id: &str) {
-    let pre_deduction = {
-        let db_model: Option<crate::models::Model> = sqlx::query_as(
-            &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-        ).bind(model_name).fetch_optional(&state.db.pool).await.unwrap_or(None);
-        db_model.map(|m| m.pre_deduction).unwrap_or(0.0)
+async fn settle_failure(state: &AppState, log_id: i64, _model_name: &str, _task_id: &str, poll_url: &str, _category: &str) {
+    // 获取原始预扣费与关键 ID
+    let log_data: Option<(f64, String, Option<i64>, Option<i64>)> = sqlx::query_as(
+        &state.db.format_query("SELECT cost, user_id, token_id, channel_id FROM logs WHERE id = ?")
+    ).bind(log_id).fetch_optional(&state.db.pool).await.unwrap_or(None);
+
+    let (pre_deduction, uid, token_id, channel_id) = match log_data {
+        Some(d) => d,
+        None => (0.0, "".to_string(), None, None),
     };
-
-    if pre_deduction > 0.0 {
-        if let Some((uid, tid)) = sqlx::query_as::<_, (String, i64)>(
-            &state.db.format_query("SELECT user_id, token_id FROM logs WHERE id = ?")
-        ).bind(log_id).fetch_optional(&state.db.pool).await.unwrap_or(None) {
-            let _ = sqlx::query(&state.db.format_query(
-                "UPDATE users SET balance = balance + ?, used_quota = used_quota - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-            )).bind(pre_deduction).bind(pre_deduction).bind(&uid)
-            .execute(&state.db.pool).await;
-
-            let _ = sqlx::query(&state.db.format_query(
-                "UPDATE api_tokens SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-            )).bind(pre_deduction).bind(tid)
-            .execute(&state.db.pool).await;
-        }
-    }
 
     let detail = if pre_deduction > 0.0 {
         "任务失败，预扣费已退回 | [后台自动轮询]"
     } else {
-        "任务失败，该模型无预扣费 | [后台自动轮询]"
+        "任务失败，该请求无冻结费用 | [后台自动轮询]"
     };
 
-    let _ = sqlx::query(&state.db.format_query(
-        "UPDATE logs SET billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-    )).bind(detail).bind(log_id)
-    .execute(&state.db.pool).await;
+    match state.db.pool.begin().await {
+        Ok(mut tx) => {
+            if pre_deduction > 0.0 {
+                // 退回用户余额与配额
+                let _ = sqlx::query(&state.db.format_query(
+                    "UPDATE users SET balance = balance + ?, used_quota = used_quota - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                )).bind(pre_deduction).bind(pre_deduction).bind(&uid)
+                .execute(&mut *tx).await;
 
-    tracing::info!("[TaskPoller] task={} 任务失败已处理, model={}, 退回预扣费={:.6}", task_id, model_name, pre_deduction);
+                // 退回 Token 配额
+                if let Some(tid) = token_id {
+                    let _ = sqlx::query(&state.db.format_query(
+                        "UPDATE api_tokens SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                    )).bind(pre_deduction).bind(tid)
+                    .execute(&mut *tx).await;
+                }
+
+                // 退回渠道配额 (修复遗漏)
+                if let Some(cid) = channel_id {
+                    let _ = sqlx::query(&state.db.format_query(
+                        "UPDATE channels SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                    )).bind(pre_deduction).bind(cid)
+                    .execute(&mut *tx).await;
+                }
+            }
+
+            let _ = sqlx::query(&state.db.format_query(
+                "UPDATE logs SET cost = 0, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+            )).bind(detail).bind(log_id)
+            .execute(&mut *tx).await;
+
+            let _ = tx.commit().await;
+            tracing::info!("[TaskPoller Failure] log_id={} failed, refunded pre_deduction={:.6}, url={}", log_id, pre_deduction, poll_url);
+        }
+        Err(e) => {
+            tracing::error!("[TaskPoller Failure Billing] 启动事务失败: {:?}", e);
+        }
+    }
 }
 
 /// 获取渠道信息（含 preset 覆盖）

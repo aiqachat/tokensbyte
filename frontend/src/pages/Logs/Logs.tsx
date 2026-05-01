@@ -410,26 +410,28 @@ const Logs: React.FC = () => {
           columns={columns}
           rowKey="id"
           loading={loading}
-          expandable={{ 
-            expandedRowRender, 
-            expandRowByClick: true,
-            expandIcon: ({ expanded, onExpand, record }) => (
-              <Tooltip title={expanded ? "收起详情" : "查看详细请求与响应"}>
-                <Button 
-                  type="link" 
-                  size="small" 
-                  onClick={e => {
-                    // 阻止事件冒泡，以免与 expandRowByClick 冲突导致触发两次
-                    e.stopPropagation();
-                    onExpand(record, e);
-                  }}
-                  style={{ padding: '0 4px', fontSize: 13 }}
-                >
-                  详细
-                </Button>
-              </Tooltip>
-            )
-          }}
+          expandable={
+            (user?.role === 'admin' || user?.allow_view_log_details !== 0) ? { 
+              expandedRowRender, 
+              expandRowByClick: true,
+              expandIcon: ({ expanded, onExpand, record }) => (
+                <Tooltip title={expanded ? "收起详情" : "查看详细请求与响应"}>
+                  <Button 
+                    type="link" 
+                    size="small" 
+                    onClick={e => {
+                      // 阻止事件冒泡，以免与 expandRowByClick 冲突导致触发两次
+                      e.stopPropagation();
+                      onExpand(record, e);
+                    }}
+                    style={{ padding: '0 4px', fontSize: 13 }}
+                  >
+                    详细
+                  </Button>
+                </Tooltip>
+              )
+            } : undefined
+          }
           pagination={{
             total,
             current: page,

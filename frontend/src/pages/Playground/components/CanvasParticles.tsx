@@ -18,19 +18,19 @@ interface Props {
 }
 
 /** 网格间距（基础像素） */
-const GRID_GAP = 16;
+const GRID_GAP = 6;
 /** 鼠标影响半径（像素） */
-const INFLUENCE_RADIUS = 120;
+const INFLUENCE_RADIUS = 90;
 /** 粒子基础亮度 */
-const BASE_ALPHA = 0.50;
+const BASE_ALPHA = 0.20;
 /** 粒子高亮亮度 */
-const HIGHLIGHT_ALPHA = 0.45;
+const HIGHLIGHT_ALPHA = 0.40;
 /** 高亮衰减速度 */
 const DECAY_RATE = 0.93;
 /** 粒子基础半径 */
-const BASE_RADIUS = 0.6;
+const BASE_RADIUS = 0.9;
 /** 粒子高亮半径 */
-const HIGHLIGHT_RADIUS = 1.2;
+const HIGHLIGHT_RADIUS = 1.6;
 /** 最小绘制间距（像素），低于此值则跳步绘制 */
 const MIN_DRAW_GAP = 6;
 /** 最大绘制间距（像素），高于此值仍正常绘制 */
@@ -144,10 +144,14 @@ const CanvasParticles = React.forwardRef<CanvasParticlesHandle, {}>((_, ref) => 
             if (distSq < radSq) {
               const dist = Math.sqrt(distSq);
               const proximity = 1 - (dist / searchRadius);
-              const brightness = proximity * proximity;
+              // 使用 smoothstep 平滑过渡，消除边缘突变感
+              const brightness = proximity * proximity * (3 - 2 * proximity);
 
               const alpha = BASE_ALPHA + brightness * (HIGHLIGHT_ALPHA - BASE_ALPHA);
-              const hRadius = (radius + brightness * HIGHLIGHT_RADIUS) * 1.5;
+              
+              // 平滑插值半径，避免刚进入影响范围时发生半径突跳
+              const targetHighlightRadius = HIGHLIGHT_RADIUS * Math.min(Math.max(scale, 0.5), 1.2);
+              const hRadius = radius + brightness * (targetHighlightRadius - radius);
 
               const r = Math.round(162 + brightness * 40);
               const g = Math.round(193 + brightness * 30);

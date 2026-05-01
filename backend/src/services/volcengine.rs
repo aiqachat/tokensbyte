@@ -44,6 +44,7 @@ impl VolcConfig {
     }
 }
 
+#[derive(Clone)]
 pub struct VolcClient {
     config: VolcConfig,
     client: Client,

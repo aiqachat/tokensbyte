@@ -2,13 +2,104 @@
  * 参数控件渲染器
  * 根据 SchemeParam.type 渲染对应的表单控件
  */
-import React from 'react';
-import { Typography, Select, Input, InputNumber, Switch } from 'antd';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Typography, Select, Input, InputNumber, Switch, Slider } from 'antd';
 import type { SchemeParam } from '../types';
 import { RESOLUTION_MAP } from '../constants';
 import { usePlayground } from '../context/PlaygroundContext';
 
 const { Text } = Typography;
+
+/** 独立滑块控件 — 拖拽时仅更新本地 state，松手后同步到全局 Context，保证丝滑 60fps */
+const SliderControl: React.FC<{
+  param: SchemeParam;
+  value: any;
+  onChange: (v: number) => void;
+}> = React.memo(({ param, value, onChange }) => {
+  const min = param.min ?? 0;
+  const max = param.max ?? 100;
+  const step = param.step ?? 1;
+
+  const precision = step.toString().split('.')[1]?.length || 0;
+  const roundToStep = useCallback((v: number) => {
+    return Number((Math.round(v / step) * step).toFixed(precision));
+  }, [step, precision]);
+
+  const toNum = useCallback((v: any) => (typeof v === 'number' ? v : Number(v) || min), [min]);
+
+  const [localValue, setLocalValue] = useState(() => roundToStep(toNum(value)));
+  const [sliderValue, setSliderValue] = useState(() => roundToStep(toNum(value)));
+  const dragging = useRef(false);
+
+  // 外部值变化时同步到本地（非拖拽状态下）
+  useEffect(() => {
+    if (!dragging.current) {
+      const val = roundToStep(toNum(value));
+      setLocalValue(val);
+      setSliderValue(val);
+    }
+  }, [value, roundToStep]);
+
+  const handleSliderChange = useCallback((v: number) => {
+    dragging.current = true;
+    setSliderValue(v); // 丝滑拖拽，不断档
+    setLocalValue(roundToStep(v)); // 数字框显示按 step 吸附的值
+  }, [roundToStep]);
+
+  const handleSliderComplete = useCallback((v: number) => {
+    dragging.current = false;
+    const rounded = roundToStep(v);
+    setSliderValue(rounded); // 松手时吸附到准确位置
+    setLocalValue(rounded);
+    onChange(rounded);
+  }, [onChange, roundToStep]);
+
+  const handleInputChange = useCallback((v: number | null) => {
+    if (v === null) return;
+    const rounded = roundToStep(v);
+    setLocalValue(rounded);
+    setSliderValue(rounded);
+    onChange(rounded);
+  }, [onChange, roundToStep]);
+
+  return (
+    <div>
+      <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Slider
+          style={{ flex: 1 }}
+          min={min}
+          max={max}
+          step={(max - min) / 1000} // 设置极小的 step 保证视觉极度丝滑
+          value={sliderValue}
+          onChange={handleSliderChange}
+          onChangeComplete={handleSliderComplete}
+          tooltip={{ formatter: null }} // 隐藏默认气泡，因为右侧已经有输入框
+        />
+        <InputNumber
+          size="small"
+          min={min}
+          max={max}
+          step={step}
+          value={localValue}
+          onChange={handleInputChange}
+          style={{
+            width: 68,
+            background: '#222',
+            borderRadius: 8,
+            borderColor: 'rgba(255,255,255,0.12)',
+            textAlign: 'center',
+            fontFamily: 'monospace',
+            fontSize: 13,
+          }}
+          controls={false}
+        />
+      </div>
+      {param.hint && <Text style={{ display: 'block', marginTop: 4, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{param.hint}</Text>}
+    </div>
+  );
+});
+SliderControl.displayName = 'SliderControl';
 
 interface Props {
   param: SchemeParam;
@@ -43,7 +134,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
     return (
       <div key={param.key}>
         <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
-        <div style={{ width: '100%', display: 'flex', height: 68, background: '#17181A', borderRadius: 12, padding: 4 }}>
+        <div style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {param.options.map(opt => {
             const isActive = value === opt;
             return (
@@ -51,20 +142,24 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
                 key={String(opt)}
                 onClick={() => setParamValues(prev => ({ ...prev, [param.key]: opt }))}
                 style={{
-                  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer', background: isActive ? '#33373E' : 'transparent', borderRadius: 8,
-                  color: isActive ? '#fff' : 'rgba(255,255,255,0.45)', transition: 'all 0.2s',
-                  fontSize: 13, fontWeight: 500,
+                  width: 64, height: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer',
+                  background: isActive ? '#33373E' : '#17181A',
+                  borderRadius: 12,
+                  border: isActive ? '1.5px solid rgba(255,255,255,0.35)' : '1.5px solid transparent',
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.45)',
+                  transition: 'all 0.2s',
+                  fontSize: 12, fontWeight: 500,
                 }}
               >
                 {String(opt).includes(':') ? (
                   <>
                     <div style={{
-                      width: String(opt) === '16:9' || String(opt) === '21:9' ? 22 : String(opt) === '9:16' ? 12 : String(opt) === '1:1' ? 16 : String(opt) === '4:3' ? 18 : String(opt) === '3:4' ? 14 : 16,
-                      height: String(opt) === '16:9' || String(opt) === '21:9' ? 12 : String(opt) === '9:16' ? 22 : String(opt) === '1:1' ? 16 : String(opt) === '4:3' ? 14 : String(opt) === '3:4' ? 18 : 16,
-                      border: '1.5px solid currentColor', borderRadius: 2, marginBottom: 6
+                      width: String(opt) === '16:9' || String(opt) === '21:9' ? 22 : String(opt) === '9:16' ? 12 : String(opt) === '1:1' ? 16 : String(opt) === '4:3' ? 18 : String(opt) === '3:4' ? 14 : String(opt) === '3:2' ? 18 : String(opt) === '2:3' ? 14 : 16,
+                      height: String(opt) === '16:9' || String(opt) === '21:9' ? 12 : String(opt) === '9:16' ? 22 : String(opt) === '1:1' ? 16 : String(opt) === '4:3' ? 14 : String(opt) === '3:4' ? 18 : String(opt) === '3:2' ? 14 : String(opt) === '2:3' ? 18 : 16,
+                      border: '1.5px solid currentColor', borderRadius: 2, marginBottom: 4
                     }} />
-                    <span>{String(opt)}</span>
+                    <span style={{ fontSize: 11 }}>{String(opt)}</span>
                   </>
                 ) : (
                   <span>{String(opt)}</span>
@@ -120,6 +215,10 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
         />
       </div>
     );
+  }
+
+  if (param.type === 'slider') {
+    return <SliderControl param={param} value={value} onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))} />;
   }
 
   if (param.type === 'input') {

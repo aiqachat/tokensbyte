@@ -25,7 +25,7 @@ fn main() {
             for (i, line) in raw.lines().filter(|l| !l.trim().is_empty()).enumerate() {
                 let parts: Vec<&str> = line.splitn(5, '\x1F').collect();
                 let version = format!("v1.0.{}", 10usize.saturating_sub(i));
-                let hash = parts.get(0).unwrap_or(&"").replace("\"", "\\\"");
+                let hash = parts.first().unwrap_or(&"").replace("\"", "\\\"");
                 let short_hash = parts.get(1).unwrap_or(&"").replace("\"", "\\\"");
                 let raw_author = parts.get(2).unwrap_or(&"").replace("\"", "\\\"");
                 let author = if raw_author.chars().count() > 2 {

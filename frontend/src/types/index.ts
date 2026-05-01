@@ -19,10 +19,14 @@ export interface User {
   permissions?: string[];
   is_active: boolean;
   level_name?: string;
+  level_id?: number;
   created_at: string;
+  updated_at: string;
   register_ip?: string;
   admin_remark?: string;
+  referral_history?: string;
   referred_by?: string;
+  allow_view_log_details?: number;
 }
 
 export interface UserLevel {
@@ -37,6 +41,7 @@ export interface UserLevel {
   marketing_enabled: number;
   is_default: number;
   max_token_count: number;
+  allow_view_log_details: number;
   description: string;
   created_at: string;
 }
@@ -247,6 +252,8 @@ export interface SiteSettings {
   login_title?: string;
   login_subtitle?: string;
   enable_multilingual?: boolean;
+  enable_theme_toggle?: boolean;
+  default_theme?: 'light' | 'dark';
 }
 
 export interface CurrencySettings {
@@ -425,6 +432,7 @@ export interface ReferralUser {
   balance: number;
   is_active: number;
   created_at: string;
+  updated_at: string;
   total_recharge: number;
   remark?: string;
 }

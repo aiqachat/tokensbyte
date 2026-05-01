@@ -100,7 +100,7 @@ const ModelDrawer: React.FC = React.memo(() => {
         }}
       >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <AppstoreOutlined style={{ color: '#A2C1FF', fontSize: 16 }} />
+          <AppstoreOutlined style={{ color: '#fff', fontSize: 16 }} />
           <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>模型选择器</span>
         </div>
         <Tooltip title="关闭">
@@ -136,9 +136,9 @@ const ModelDrawer: React.FC = React.memo(() => {
               key={model.mid}
               onClick={() => handleSelectModel(model.mid)}
               style={{
-                background: selectedMid === model.mid ? 'rgba(162,193,255,0.15)' : 'rgba(255,255,255,0.02)',
+                background: selectedMid === model.mid ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.02)',
                 padding: '16px 20px', borderRadius: 16,
-                border: selectedMid === model.mid ? '1px solid rgba(162,193,255,0.4)' : '1px solid rgba(255,255,255,0.05)',
+                border: selectedMid === model.mid ? '1px solid rgba(255,255,255,0.4)' : '1px solid rgba(255,255,255,0.05)',
                 cursor: 'pointer', display: 'flex', gap: 16, transition: 'all 0.2s ease'
               }}
               onMouseEnter={(e) => {
@@ -148,7 +148,7 @@ const ModelDrawer: React.FC = React.memo(() => {
                 if (selectedMid !== model.mid) e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
               }}
             >
-              <div style={{ fontSize: 28, padding: '4px 8px 4px 0', opacity: 0.9, color: '#A2C1FF' }}>
+              <div style={{ fontSize: 28, padding: '4px 8px 4px 0', opacity: 0.9, color: '#fff' }}>
                 {getCategoryIcon(activeCategory, true)}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>

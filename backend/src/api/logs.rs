@@ -79,7 +79,28 @@ pub async fn list_logs(
     for val in &binds {
         logs_q = logs_q.bind(val);
     }
-    let logs = logs_q.fetch_all(&state.db.pool).await?;
+    let mut logs = logs_q.fetch_all(&state.db.pool).await?;
+
+    // 检查当前登录用户的日志详情查看权限
+    let mut allow_details = true;
+    if claims.role != "admin" {
+        let perm: Option<i32> = sqlx::query_scalar(
+            &state.db.format_query("SELECT ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
+        )
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .flatten();
+        allow_details = perm.unwrap_or(1) == 1;
+    }
+
+    if !allow_details {
+        for log in &mut logs {
+            log.request_content = None;
+            log.response_content = None;
+            log.upstream_req_content = None;
+        }
+    }
 
     Ok(Json(LogListResponse { data: logs, total }))
 }

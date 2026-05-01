@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid, Switch, theme } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid, Switch, theme, Spin } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined, KeyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -267,7 +267,11 @@ const Tokens: React.FC = () => {
 
   return (
     <Card variant="borderless" style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column' }} styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}>
-      {!loading && tokens.length === 0 ? (
+      {loading && tokens.length === 0 ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Spin size="large" />
+        </div>
+      ) : tokens.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
           <div style={{ marginBottom: 48 }}>
              <Title level={screens.xs ? 4 : 2} style={{ margin: 0, marginBottom: 8 }}>{t('tokens.title')}</Title>
