@@ -116,6 +116,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let payment_public_routes: Router<Arc<AppState>> = Router::new()
         .route("/finance/pay/notify/wechat", post(pay::wechat_notify))
         .route("/finance/pay/notify/alipay", post(pay::alipay_notify))
+        .route("/finance/pay/notify/stripe", post(pay::stripe_notify))
         .with_state(state.clone());
 
     // 2. Auth APIs & Public Configs (Public)

@@ -217,6 +217,22 @@ fn default_sign_type() -> String {
     "RSA2".to_string()
 }
 
+/// Stripe 支付设置
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PaymentStripeSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Stripe Secret Key (sk_live_xxx 或 sk_test_xxx)
+    #[serde(default)]
+    pub secret_key: String,
+    /// Stripe Publishable Key (pk_live_xxx 或 pk_test_xxx)
+    #[serde(default)]
+    pub publishable_key: String,
+    /// Stripe Webhook Signing Secret (whsec_xxx)
+    #[serde(default)]
+    pub webhook_secret: String,
+}
+
 /// 谷歌 OAuth 2.0 设置
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GoogleOAuthSettings {
@@ -252,6 +268,7 @@ pub struct AllSettings {
     pub database: DatabaseSettings,
     pub payment_wechat: Option<PaymentWechatSettings>,
     pub payment_alipay: Option<PaymentAlipaySettings>,
+    pub payment_stripe: Option<PaymentStripeSettings>,
     pub google_oauth: Option<GoogleOAuthSettings>,
     pub wechat_oauth: Option<WechatOAuthSettings>,
     pub agreement: AgreementSettings,
@@ -270,6 +287,7 @@ pub struct UpdateSettingsRequest {
     pub database: Option<DatabaseSettings>,
     pub payment_wechat: Option<PaymentWechatSettings>,
     pub payment_alipay: Option<PaymentAlipaySettings>,
+    pub payment_stripe: Option<PaymentStripeSettings>,
     pub google_oauth: Option<GoogleOAuthSettings>,
     pub wechat_oauth: Option<WechatOAuthSettings>,
     pub agreement: Option<AgreementSettings>,

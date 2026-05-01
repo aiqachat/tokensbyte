@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, Typography, Row, Col, Table, Button, Space, Statistic, Tag, Tooltip, message } from 'antd';
 import { SwapOutlined, HistoryOutlined, CopyOutlined, TeamOutlined, GiftOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -55,9 +56,27 @@ const Wallet: React.FC = () => {
     message.success('邀请链接已复制到剪贴板');
   };
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Stripe/支付宝跳转回来后，检测 URL 参数并提示
+  useEffect(() => {
+    const payment = searchParams.get('payment');
+    if (payment === 'success') {
+      message.success('支付已完成，余额稍后到账');
+      // 清除 URL 参数，避免刷新重复提示
+      setSearchParams({}, { replace: true });
+      // 延迟刷新数据，等待 webhook 处理
+      const timer = setTimeout(() => fetchData(), 3000);
+      return () => clearTimeout(timer);
+    } else if (payment === 'cancelled') {
+      message.info('支付已取消');
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams]);
 
   const columns = [
     {

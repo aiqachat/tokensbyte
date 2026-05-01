@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal, Button, Typography, Space, Row, Col, QRCode, message, Spin, Result, InputNumber } from 'antd';
-import { WalletOutlined, AlipayCircleOutlined, WechatOutlined, SafetyCertificateOutlined, LockOutlined } from '@ant-design/icons';
+import { WalletOutlined, AlipayCircleOutlined, WechatOutlined, SafetyCertificateOutlined, LockOutlined, CreditCardOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 
 const { Title, Text } = Typography;
@@ -17,11 +17,12 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
   const [selectedAmount, setSelectedAmount] = useState<number | null>(50);
   const [customAmount, setCustomAmount] = useState<number | null>(null);
   const [isCustom, setIsCustom] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'wechat' | 'alipay'>('alipay');
+  const [paymentMethod, setPaymentMethod] = useState<'wechat' | 'alipay' | 'stripe'>('alipay');
   const [loading, setLoading] = useState(false);
   
   const [wechatEnabled, setWechatEnabled] = useState(false);
   const [alipayEnabled, setAlipayEnabled] = useState(false);
+  const [stripeEnabled, setStripeEnabled] = useState(false);
   const [fetchingSettings, setFetchingSettings] = useState(true);
 
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
@@ -62,16 +63,20 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
     setFetchingSettings(true);
     try {
       const res = await (request.get('/settings') as any);
-      let wc = false, al = false;
+      let wc = false, al = false, st = false;
       if (res?.payment_wechat?.enabled) wc = true;
       if (res?.payment_alipay?.enabled) al = true;
+      if (res?.payment_stripe?.enabled) st = true;
       
       setWechatEnabled(wc);
       setAlipayEnabled(al);
+      setStripeEnabled(st);
       if (al) {
         setPaymentMethod('alipay');
       } else if (wc) {
         setPaymentMethod('wechat');
+      } else if (st) {
+        setPaymentMethod('stripe');
       }
     } catch (e) {
       console.error(e);
@@ -114,6 +119,9 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
       
       if (paymentMethod === 'alipay') {
         window.location.href = res.payment_url;
+      } else if (paymentMethod === 'stripe') {
+        window.open(res.payment_url, '_blank');
+        startPolling(res.out_trade_no);
       } else if (paymentMethod === 'wechat') {
         setQrCodeUrl(res.payment_url);
         startPolling(res.out_trade_no);
@@ -151,7 +159,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
     );
   }
 
-  if (!wechatEnabled && !alipayEnabled) {
+  if (!wechatEnabled && !alipayEnabled && !stripeEnabled) {
     return (
       <Modal open={visible} footer={null} onCancel={onCancel} centered styles={modalStyles}>
         <Result
@@ -211,6 +219,27 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           <div style={{ padding: 16, background: '#fff', borderRadius: 12, display: 'inline-block', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
             <QRCode value={qrCodeUrl} size={200} color="#000000" />
           </div>
+          <div style={{ marginTop: 24 }}>
+            <Title level={3} style={{ color: '#ff4d4f', margin: 0 }}>¥ {finalAmount.toFixed(2)}</Title>
+            <Text type="secondary" style={{ fontSize: 13 }}>订单号: {outTradeNo}</Text>
+          </div>
+          <Button style={{ marginTop: 24, borderRadius: 8 }} onClick={resetState}>返回修改</Button>
+        </div>
+      ) : payStatus === 'paying' && paymentMethod === 'stripe' ? (
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 64, height: 64, borderRadius: 16,
+            background: 'linear-gradient(135deg, #635bff, #4b45c6)',
+            marginBottom: 20, boxShadow: '0 8px 24px rgba(99, 91, 255, 0.3)',
+          }}>
+            <CreditCardOutlined style={{ fontSize: 32, color: '#fff' }} />
+          </div>
+          <Title level={4} style={{ color: '#fff', margin: '0 0 8px 0' }}>等待 Stripe 支付完成</Title>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 20 }}>
+            请在新打开的页面完成支付，支付成功后此页面将自动更新
+          </Text>
+          <Spin size="large" />
           <div style={{ marginTop: 24 }}>
             <Title level={3} style={{ color: '#ff4d4f', margin: 0 }}>¥ {finalAmount.toFixed(2)}</Title>
             <Text type="secondary" style={{ fontSize: 13 }}>订单号: {outTradeNo}</Text>
@@ -317,6 +346,23 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
                 </div>
               </Col>
             )}
+            {stripeEnabled && (
+              <Col flex={1}>
+                <div
+                  onClick={() => setPaymentMethod('stripe')}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    height: 52, borderRadius: 10, cursor: 'pointer',
+                    border: `2px solid ${paymentMethod === 'stripe' ? '#635bff' : '#303030'}`,
+                    background: paymentMethod === 'stripe' ? 'rgba(99, 91, 255, 0.12)' : 'rgba(255, 255, 255, 0.04)',
+                    transition: 'all 0.25s ease',
+                  }}
+                >
+                  <CreditCardOutlined style={{ fontSize: 22, color: '#635bff' }} />
+                  <Text strong style={{ color: '#635bff', fontSize: 15 }}>Stripe</Text>
+                </div>
+              </Col>
+            )}
           </Row>
 
           {/* Summary */}
@@ -333,21 +379,27 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
             type="primary"
             block
             size="large"
-            style={{
-              marginTop: 20, borderRadius: 10, height: 50, fontSize: 16, fontWeight: 600,
-              background: paymentMethod === 'alipay'
-                ? 'linear-gradient(135deg, #1677ff, #003eb3)'
-                : 'linear-gradient(135deg, #07c160, #059048)',
-              border: 'none',
-              boxShadow: paymentMethod === 'alipay'
-                ? '0 4px 16px rgba(22, 119, 255, 0.35)'
-                : '0 4px 16px rgba(7, 193, 96, 0.35)',
-            }}
             loading={loading}
             onClick={handleCreateOrder}
             disabled={finalAmount < 0.01}
+            style={{
+              marginTop: 20, borderRadius: 10, height: 50, fontSize: 16, fontWeight: 600,
+              background: paymentMethod === 'stripe'
+                ? 'linear-gradient(135deg, #635bff, #4b45c6)'
+                : paymentMethod === 'alipay'
+                  ? 'linear-gradient(135deg, #1677ff, #003eb3)'
+                  : 'linear-gradient(135deg, #07c160, #059048)',
+              border: 'none',
+              boxShadow: paymentMethod === 'stripe'
+                ? '0 4px 16px rgba(99, 91, 255, 0.35)'
+                : paymentMethod === 'alipay'
+                  ? '0 4px 16px rgba(22, 119, 255, 0.35)'
+                  : '0 4px 16px rgba(7, 193, 96, 0.35)',
+            }}
           >
-            {paymentMethod === 'alipay' ? (
+            {paymentMethod === 'stripe' ? (
+              <Space><CreditCardOutlined />去 Stripe 支付</Space>
+            ) : paymentMethod === 'alipay' ? (
               <Space><AlipayCircleOutlined />去支付宝支付</Space>
             ) : (
               <Space><WechatOutlined />生成微信支付码</Space>

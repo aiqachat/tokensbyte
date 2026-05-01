@@ -32,6 +32,7 @@ const statusMap: Record<string, { color: string; label: string }> = {
 const methodMap: Record<string, { color: string; label: string }> = {
   wechat: { color: '#07c160', label: '微信支付' },
   alipay: { color: '#1677ff', label: '支付宝' },
+  stripe: { color: '#635bff', label: 'Stripe' },
 };
 
 const OrderDetails: React.FC = () => {
@@ -193,6 +194,7 @@ const OrderDetails: React.FC = () => {
             options={[
               { label: '微信支付', value: 'wechat' },
               { label: '支付宝', value: 'alipay' },
+              { label: 'Stripe', value: 'stripe' },
             ]}
           />
           <Input

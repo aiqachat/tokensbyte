@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Form, Input, Button, message, Typography, Tabs, Switch, Alert, Divider, InputNumber } from 'antd';
-import { WechatOutlined, AlipayCircleOutlined, CopyOutlined, LinkOutlined, SafetyCertificateOutlined, DollarOutlined } from '@ant-design/icons';
+import { WechatOutlined, AlipayCircleOutlined, CopyOutlined, LinkOutlined, SafetyCertificateOutlined, DollarOutlined, CreditCardOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
@@ -13,14 +13,17 @@ const PaymentSettings: React.FC = () => {
   const [formCurrency] = Form.useForm();
   const [formWechat] = Form.useForm();
   const [formAlipay] = Form.useForm();
+  const [formStripe] = Form.useForm();
   const [loadingCurrency, setLoadingCurrency] = useState(false);
   const [loadingWechat, setLoadingWechat] = useState(false);
   const [loadingAlipay, setLoadingAlipay] = useState(false);
+  const [loadingStripe, setLoadingStripe] = useState(false);
 
   // 回调地址展示：生产环境用户通过域名访问，nginx 自动反代 /api/v1 到后端
   const siteOrigin = window.location.origin;
   const notifyWechat = `${siteOrigin}/api/v1/finance/pay/notify/wechat`;
   const notifyAlipay = `${siteOrigin}/api/v1/finance/pay/notify/alipay`;
+  const notifyStripe = `${siteOrigin}/api/v1/finance/pay/notify/stripe`;
 
   useEffect(() => { fetchSettings(); }, []);
 
@@ -30,6 +33,7 @@ const PaymentSettings: React.FC = () => {
       if (response?.currency) formCurrency.setFieldsValue(response.currency);
       if (response?.payment_wechat) formWechat.setFieldsValue(response.payment_wechat);
       if (response?.payment_alipay) formAlipay.setFieldsValue(response.payment_alipay);
+      if (response?.payment_stripe) formStripe.setFieldsValue(response.payment_stripe);
     } catch (error) {
       console.error('Failed to fetch payment settings:', error);
     }
@@ -101,6 +105,28 @@ const PaymentSettings: React.FC = () => {
       message.error(t('common.error'));
     } finally {
       setLoadingAlipay(false);
+    }
+  };
+
+  const onFinishStripe = async (values: any) => {
+    setLoadingStripe(true);
+    try {
+      const payload = {
+        payment_stripe: {
+          enabled: values.enabled || false,
+          secret_key: values.secret_key || '',
+          publishable_key: values.publishable_key || '',
+          webhook_secret: values.webhook_secret || '',
+        }
+      };
+      const updatedSettings = await (request.post('/settings', payload) as any);
+      message.success('Stripe 配置保存成功');
+      updateStoreSettings(updatedSettings);
+    } catch (error) {
+      console.error('Save stripe error:', error);
+      message.error(t('common.error'));
+    } finally {
+      setLoadingStripe(false);
     }
   };
 
@@ -269,6 +295,62 @@ const PaymentSettings: React.FC = () => {
               <Button type="primary" htmlType="submit" loading={loadingAlipay} size="large"
                 style={{ background: 'linear-gradient(135deg, #1677ff, #003eb3)', border: 'none', borderRadius: 8 }}>
                 <AlipayCircleOutlined /> 保存支付宝配置
+              </Button>
+            </Form.Item>
+          </Form>
+        </div>
+      ),
+    },
+    {
+      key: 'stripe',
+      label: <span><CreditCardOutlined style={{ color: '#635bff' }} /> Stripe</span>,
+      children: (
+        <div style={{ maxWidth: 640, marginTop: 16 }}>
+          <Alert
+            type="info"
+            showIcon
+            icon={<SafetyCertificateOutlined />}
+            style={{ marginBottom: 20, borderRadius: 8 }}
+            message="Stripe Checkout 接入指引"
+            description={
+              <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+                <div>1. 登录 <a href="https://dashboard.stripe.com" target="_blank" rel="noreferrer">Stripe Dashboard</a> → 获取 <strong>Secret Key</strong> 和 <strong>Publishable Key</strong></div>
+                <div>2. 开发者 → Webhooks → 添加端点，填入下方回调地址</div>
+                <div>3. 监听事件选择 <strong>checkout.session.completed</strong></div>
+                <div>4. 获取 <strong>Webhook Signing Secret</strong>（whsec_ 开头）填入下方</div>
+                <div>5. 支持全球主流信用卡、Apple Pay、Google Pay 等支付方式</div>
+              </div>
+            }
+          />
+
+          {notifyUrlBlock(notifyStripe, 'Stripe Webhook 回调地址（请将此地址配置到 Stripe Dashboard → Webhooks → Endpoint URL）')}
+
+          <Divider style={{ margin: '16px 0' }} />
+
+          <Form form={formStripe} layout="vertical" onFinish={onFinishStripe} autoComplete="off">
+            <Form.Item label="是否启用 Stripe 支付" name="enabled" valuePropName="checked">
+              <Switch checkedChildren="已开启" unCheckedChildren="已关闭" />
+            </Form.Item>
+
+            <Form.Item label="Secret Key (密钥)" name="secret_key" rules={[{ required: true, message: '请输入 Stripe Secret Key' }]}
+              extra="以 sk_live_ 或 sk_test_ 开头，在 Dashboard → API Keys 获取">
+              <Input.Password placeholder="sk_live_xxxx 或 sk_test_xxxx" />
+            </Form.Item>
+
+            <Form.Item label="Publishable Key (公钥)" name="publishable_key" rules={[{ required: true, message: '请输入 Stripe Publishable Key' }]}
+              extra="以 pk_live_ 或 pk_test_ 开头">
+              <Input placeholder="pk_live_xxxx 或 pk_test_xxxx" />
+            </Form.Item>
+
+            <Form.Item label="Webhook Signing Secret" name="webhook_secret" rules={[{ required: true, message: '请输入 Webhook Secret' }]}
+              extra="以 whsec_ 开头，在 Webhooks 端点详情页查看">
+              <Input.Password placeholder="whsec_xxxx" />
+            </Form.Item>
+
+            <Form.Item>
+              <Button type="primary" htmlType="submit" loading={loadingStripe} size="large"
+                style={{ background: 'linear-gradient(135deg, #635bff, #4b45c6)', border: 'none', borderRadius: 8 }}>
+                <CreditCardOutlined /> 保存 Stripe 配置
               </Button>
             </Form.Item>
           </Form>

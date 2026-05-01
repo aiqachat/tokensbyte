@@ -203,7 +203,7 @@ pub async fn chat_completions(
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
         }
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+        let ep = format!("/v1/chat/completions|{}", final_upstream_path);
 
         proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, model, prompt_tokens, completion_tokens, cached_tokens,

@@ -9,6 +9,7 @@ use crate::models::order::Order;
 use crate::error::{AppResult, AppError};
 use crate::services::payment::alipay::AlipayClient;
 use crate::services::payment::wechat::WechatClient;
+use crate::services::payment::stripe::StripeClient;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::Local;
@@ -93,6 +94,33 @@ pub async fn create_order(
         let return_url = format!("{}/wallet", return_url);
         tracing::info!("[支付] 支付宝回调地址: {}", notify_url);
         payment_url = alipay_client.generate_page_pay_url(&out_trade_no, payload.amount, "钱包充值", &notify_url, &return_url)?;
+    } else if payload.payment_method == "stripe" {
+        let stripe_setting: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'payment_stripe'")).fetch_optional(&state.db.pool).await?;
+        let stripe_config: crate::models::PaymentStripeSettings = serde_json::from_str(&stripe_setting.unwrap_or_default()).map_err(|_| AppError::BadRequest("Stripe 未配置".to_string()))?;
+
+        if !stripe_config.enabled {
+            return Err(AppError::BadRequest("Stripe 支付暂未开启".to_string()));
+        }
+
+        let return_url = std::env::var("PUBLIC_FRONTEND_URL").unwrap_or_else(|_| base_notify_url.clone());
+        let success_url = format!("{}/wallet?payment=success", return_url);
+        let cancel_url = format!("{}/wallet?payment=cancelled", return_url);
+
+        // 从全局货币设置读取货币代码
+        let currency_setting: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'currency_settings'")).fetch_optional(&state.db.pool).await?;
+        let currency = currency_setting
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v["default_currency"].as_str().map(|s| s.to_lowercase()))
+            .unwrap_or_else(|| "usd".to_string());
+
+        let stripe_client = StripeClient::new(stripe_config);
+        tracing::info!("[支付] Stripe Checkout Session 创建中, 货币: {}", currency);
+        let (session_url, session_id) = stripe_client.create_checkout_session(
+            &out_trade_no, payload.amount, &currency, "钱包充值",
+            &success_url, &cancel_url,
+        ).await.map_err(|e| AppError::UpstreamError(e.to_string()))?;
+        tracing::info!("[支付] Stripe session_id: {}", session_id);
+        payment_url = session_url;
     } else {
         return Err(AppError::BadRequest("不支持的支付方式".to_string()));
     }
@@ -414,4 +442,154 @@ pub async fn alipay_notify(
     tracing::info!("[支付宝回调] ✅ 订单 {} 处理完成, 用户 {} 充值 {:.2} 元", out_trade_no, order.user_id, amount);
 
     "success".to_string()
+}
+
+pub async fn stripe_notify(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    body: String,
+) -> impl IntoResponse {
+    use axum::http::StatusCode;
+
+    tracing::info!("[Stripe回调] 收到 Webhook 通知, body长度: {}", body.len());
+
+    let resp_ok = (StatusCode::OK, "ok");
+    let resp_fail = (StatusCode::BAD_REQUEST, "fail");
+
+    // 1. 读取 Stripe 配置
+    let stripe_setting: Option<String> = match sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'payment_stripe'")).fetch_optional(&state.db.pool).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("[Stripe回调] 读取配置失败: {:?}", e);
+            return resp_fail;
+        }
+    };
+
+    let config = match serde_json::from_str::<crate::models::PaymentStripeSettings>(&stripe_setting.unwrap_or_default()) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("[Stripe回调] 解析配置失败: {:?}", e);
+            return resp_fail;
+        }
+    };
+
+    // 2. 验证 Webhook 签名
+    let sig_header = headers.get("stripe-signature").and_then(|v| v.to_str().ok()).unwrap_or("");
+    let client = StripeClient::new(config);
+
+    if !sig_header.is_empty() {
+        match client.verify_webhook_signature(&body, sig_header) {
+            Ok(true) => tracing::info!("[Stripe回调] 签名验证通过"),
+            Ok(false) => {
+                tracing::error!("[Stripe回调] 签名验证失败");
+                return resp_fail;
+            }
+            Err(e) => {
+                tracing::error!("[Stripe回调] 签名验证异常: {:?}", e);
+                return resp_fail;
+            }
+        }
+    } else {
+        tracing::warn!("[Stripe回调] 缺少 Stripe-Signature 头，跳过签名验证（仅建议测试环境）");
+    }
+
+    // 3. 解析事件
+    let event: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("[Stripe回调] JSON 解析失败: {:?}", e);
+            return resp_fail;
+        }
+    };
+
+    let event_type = event["type"].as_str().unwrap_or("");
+    tracing::info!("[Stripe回调] event type: {}", event_type);
+
+    if event_type != "checkout.session.completed" {
+        tracing::info!("[Stripe回调] 非 checkout.session.completed 事件，忽略");
+        return resp_ok;
+    }
+
+    let session = &event["data"]["object"];
+    let payment_status = session["payment_status"].as_str().unwrap_or("");
+    let out_trade_no = session["client_reference_id"].as_str().unwrap_or("");
+    let stripe_session_id = session["id"].as_str().unwrap_or("");
+
+    tracing::info!("[Stripe回调] payment_status: {}, out_trade_no: {}, session_id: {}", payment_status, out_trade_no, stripe_session_id);
+
+    if payment_status != "paid" {
+        tracing::info!("[Stripe回调] payment_status 非 paid: {}", payment_status);
+        return resp_ok;
+    }
+
+    // 4. 前置检查
+    let order: Option<Order> = sqlx::query_as(&state.db.format_query("SELECT * FROM orders WHERE out_trade_no = ?"))
+        .bind(out_trade_no)
+        .fetch_optional(&state.db.pool)
+        .await.unwrap_or(None);
+
+    if order.is_none() {
+        tracing::warn!("[Stripe回调] 订单不存在: {}", out_trade_no);
+        return resp_ok;
+    }
+
+    let order = order.unwrap();
+    if order.status != "pending" {
+        tracing::info!("[Stripe回调] 订单已处理过, 当前状态: {}", order.status);
+        return resp_ok;
+    }
+
+    // 5. 事务处理
+    let mut tx = match state.db.pool.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("[Stripe回调] 开启事务失败: {:?}", e);
+            return resp_fail;
+        }
+    };
+
+    let amount = order.amount;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let result = sqlx::query(&state.db.format_query("UPDATE orders SET status = 'paid', trade_no = ?, paid_at = ? WHERE out_trade_no = ? AND status = 'pending'"))
+        .bind(stripe_session_id).bind(&now).bind(out_trade_no)
+        .execute(&mut *tx).await;
+    match result {
+        Ok(r) if r.rows_affected() == 0 => {
+            tracing::info!("[Stripe回调] 订单已被并发处理，跳过: {}", out_trade_no);
+            let _ = tx.rollback().await;
+            return resp_ok;
+        }
+        Err(e) => {
+            tracing::error!("[Stripe回调] 更新订单状态失败: {:?}", e);
+            let _ = tx.rollback().await;
+            return resp_fail;
+        }
+        _ => {}
+    }
+
+    if let Err(e) = sqlx::query(&state.db.format_query("UPDATE users SET balance = balance + ? WHERE id = ?"))
+        .bind(amount).bind(&order.user_id)
+        .execute(&mut *tx).await {
+        tracing::error!("[Stripe回调] 更新用户余额失败: {:?}", e);
+        let _ = tx.rollback().await;
+        return resp_fail;
+    }
+
+    if let Err(e) = sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'stripe', ?)"))
+        .bind(&order.user_id).bind(amount).bind(format!("Stripe 充值 订单号:{}", out_trade_no))
+        .execute(&mut *tx).await {
+        tracing::error!("[Stripe回调] 写充值记录失败: {:?}", e);
+        let _ = tx.rollback().await;
+        return resp_fail;
+    }
+
+    if let Err(e) = tx.commit().await {
+        tracing::error!("[Stripe回调] 事务提交失败: {:?}", e);
+        return resp_fail;
+    }
+
+    tracing::info!("[Stripe回调] ✅ 订单 {} 处理完成, 用户 {} 充值 {:.2}", out_trade_no, order.user_id, amount);
+
+    resp_ok
 }
