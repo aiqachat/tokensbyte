@@ -43,6 +43,11 @@ pub async fn list_logs(
         }
     }
 
+    if let Some(ref uid) = query.uid {
+        sql.push_str(" AND u.uid = ?");
+        binds.push(uid.clone());
+    }
+
     if let Some(ref model) = query.model {
         sql.push_str(" AND l.model LIKE ?");
         binds.push(format!("%{}%", model));

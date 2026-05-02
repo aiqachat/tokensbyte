@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid, Select, Tooltip } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { SyncOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
+import { SyncOutlined, SearchOutlined, UserOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
@@ -28,6 +28,7 @@ const Logs: React.FC = () => {
   const [userFilter, setUserFilter] = useState<string | undefined>(undefined);
   const [channelFilter, setChannelFilter] = useState<number | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [uidFilter, setUidFilter] = useState('');
   const [usersList, setUsersList] = useState<any[]>([]);
   const [channelsList, setChannelsList] = useState<any[]>([]);
   const { user } = useAuthStore();
@@ -47,6 +48,7 @@ const Logs: React.FC = () => {
       if (userFilter) params.user_id = userFilter;
       if (channelFilter) params.channel_id = channelFilter;
       if (statusFilter) params.status = statusFilter;
+      if (uidFilter) params.uid = uidFilter;
       const resp = await (request.get('/logs', { params }) as unknown as Promise<{ data: RequestLog[]; total: number }>);
       setLogs(resp.data);
       setTotal(resp.total);
@@ -55,7 +57,7 @@ const Logs: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, modelFilter, userFilter, channelFilter, statusFilter]);
+  }, [page, pageSize, modelFilter, userFilter, channelFilter, statusFilter, uidFilter]);
 
   useEffect(() => {
     fetchLogs();
@@ -340,6 +342,13 @@ const Logs: React.FC = () => {
             onPressEnter={fetchLogs}
             style={{ width: screens.xs ? '100%' : 140 }}
           />
+          <Input
+            placeholder="用户 UID"
+            value={uidFilter}
+            onChange={e => setUidFilter(e.target.value)}
+            onPressEnter={fetchLogs}
+            style={{ width: screens.xs ? '100%' : 120 }}
+          />
           <Button icon={<SyncOutlined />} onClick={fetchLogs}>{t('common.refresh')}</Button>
         </Space>
       </div>
@@ -413,22 +422,29 @@ const Logs: React.FC = () => {
           expandable={
             (user?.role === 'admin' || user?.allow_view_log_details !== 0) ? { 
               expandedRowRender, 
-              expandRowByClick: true,
+              expandRowByClick: false,
+              columnWidth: 80,
               expandIcon: ({ expanded, onExpand, record }) => (
-                <Tooltip title={expanded ? "收起详情" : "查看详细请求与响应"}>
-                  <Button 
-                    type="link" 
-                    size="small" 
-                    onClick={e => {
-                      // 阻止事件冒泡，以免与 expandRowByClick 冲突导致触发两次
-                      e.stopPropagation();
-                      onExpand(record, e);
-                    }}
-                    style={{ padding: '0 4px', fontSize: 13 }}
-                  >
-                    详细
-                  </Button>
-                </Tooltip>
+                <Button
+                  size="small"
+                  onClick={e => onExpand(record, e)}
+                  type="primary"
+                  ghost
+                  icon={expanded ? <UpOutlined /> : <DownOutlined />}
+                  style={{ 
+                    fontSize: '12px',
+                    height: '26px',
+                    padding: '0 10px',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    borderColor: expanded ? themeToken.colorWarning : themeToken.colorPrimary,
+                    color: expanded ? themeToken.colorWarning : themeToken.colorPrimary,
+                  }}
+                >
+                  {expanded ? '收起' : '详细'}
+                </Button>
               )
             } : undefined
           }

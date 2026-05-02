@@ -34,6 +34,7 @@ const Users: React.FC = () => {
   const [isRechargeModalVisible, setIsRechargeModalVisible] = useState(false);
   const [rechargingUser, setRechargingUser] = useState<User | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [filterGroup, setFilterGroup] = useState<string>('all');
   const [form] = Form.useForm();
   const [rechargeForm] = Form.useForm();
 
@@ -63,17 +64,26 @@ const Users: React.FC = () => {
   }, [isAdminPage]);
 
   const displayedUsers = useMemo(() => {
-    if (!searchText) return users;
-    const lower = searchText.toLowerCase();
-    return users.filter(user => 
-      user.username?.toLowerCase().includes(lower) ||
-      user.uid?.toLowerCase().includes(lower) ||
-      user.nickname?.toLowerCase().includes(lower) ||
-      user.email?.toLowerCase().includes(lower) ||
-      user.mobile?.toLowerCase().includes(lower) ||
-      user.register_ip?.toLowerCase().includes(lower)
-    );
-  }, [users, searchText]);
+    let result = users;
+    
+    if (filterGroup && filterGroup !== 'all') {
+      result = result.filter(user => user.user_group === filterGroup);
+    }
+    
+    if (searchText) {
+      const lower = searchText.toLowerCase();
+      result = result.filter(user => 
+        user.username?.toLowerCase().includes(lower) ||
+        user.uid?.toLowerCase().includes(lower) ||
+        user.nickname?.toLowerCase().includes(lower) ||
+        user.email?.toLowerCase().includes(lower) ||
+        user.mobile?.toLowerCase().includes(lower) ||
+        user.register_ip?.toLowerCase().includes(lower)
+      );
+    }
+    
+    return result;
+  }, [users, searchText, filterGroup]);
 
   const handleAdd = () => {
     setEditingUser(null);
@@ -278,21 +288,18 @@ const Users: React.FC = () => {
         const total = balance + used;
         const percent = total > 0 ? (balance / total) * 100 : 0;
         return (
-          <div style={{ width: 140 }}>
+          <div style={{ width: 110 }}>
              <Tag 
-                icon={<DollarOutlined />}
                 style={{ 
                   width: '100%', 
                   background: 'rgba(255, 255, 255, 0.04)',
                   borderColor: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '12px',
-                  padding: '4px 8px',
-                  fontSize: '13px',
+                  borderRadius: '6px',
+                  padding: '1px 4px',
+                  fontSize: '12px',
                   textAlign: 'center',
-                  marginBottom: 4,
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center'
+                  marginBottom: 2,
+                  display: 'block'
                 }}
              >
                 {currencySymbol}{balance.toFixed(2)} / {currencySymbol}{total.toFixed(2)}
@@ -303,7 +310,7 @@ const Users: React.FC = () => {
                 size="small" 
                 strokeColor={balance > 0 ? '#52c41a' : '#ff4d4f'}
                 trailColor="rgba(255, 255, 255, 0.1)"
-                style={{ marginBottom: 0, padding: '0 8px' }}
+                style={{ marginBottom: 0 }}
              />
           </div>
         );
@@ -359,6 +366,17 @@ const Users: React.FC = () => {
           {isAdminPage ? t('menu.admin_list') : t('menu.user_list')}
         </Title>
         <Space wrap>
+          {!isAdminPage && (
+            <Select
+              value={filterGroup}
+              onChange={setFilterGroup}
+              style={{ width: 200 }}
+              options={[
+                { value: 'all', label: '全部用户等级' },
+                ...userLevels.map(level => ({ value: level.group_key, label: `${level.name} (${level.discount}x)` }))
+              ]}
+            />
+          )}
           <Input.Search 
             placeholder="搜索用户名/ID/昵称/邮箱/手机号/IP..." 
             allowClear 
@@ -366,7 +384,7 @@ const Users: React.FC = () => {
             onChange={(e) => setSearchText(e.target.value)} 
             style={{ width: screens.xs ? '100%' : 300 }}
           />
-          <Button icon={<SyncOutlined />} onClick={fetchUsers}>{t('common.refresh')}</Button>
+          {isAdminPage && <Button icon={<SyncOutlined />} onClick={fetchUsers}>{t('common.refresh')}</Button>}
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{isAdminPage ? '添加管理员' : '添加普通用户'}</Button>
         </Space>
       </div>
@@ -478,7 +496,7 @@ const Users: React.FC = () => {
                 return searchStr.includes(input.toLowerCase());
               }}
               options={allUsers.map(u => ({
-                value: u.uid || String(u.id),
+                value: String(u.id),
                 label: `${u.username} ${u.nickname ? `(${u.nickname})` : ''} - UID: ${u.uid || u.id} ${u.email ? `(${u.email})` : ''}`
               }))}
             />

@@ -52,7 +52,25 @@ pub async fn create_user(
     let role = request.role.as_deref().unwrap_or("user");
     let user_group = request.user_group.as_deref().unwrap_or(request.group.as_deref().unwrap_or("default"));
     let admin_group_id = request.admin_group_id;
-    let referred_by = request.referred_by.clone().or(request.aff.clone());
+    let mut referred_by = request.referred_by.clone().or(request.aff.clone());
+    
+    // Resolve referred_by to ID if it's a UID or Username
+    if let Some(ref ref_val) = referred_by {
+        if !ref_val.trim().is_empty() {
+            let resolved_id: Option<String> = sqlx::query_scalar(&state.db.format_query(
+                "SELECT id FROM users WHERE id = ? OR uid = ? OR username = ? LIMIT 1"
+            ))
+            .bind(ref_val)
+            .bind(ref_val)
+            .bind(ref_val)
+            .fetch_optional(&state.db.pool)
+            .await?;
+            
+            if let Some(id) = resolved_id {
+                referred_by = Some(id);
+            }
+        }
+    }
 
     let referral_history = if let Some(ref inviter) = referred_by {
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -117,7 +135,24 @@ pub async fn update_user(
     let old_referred_by = user.referred_by.clone();
 
     if let Some(referred_by) = request.referred_by { 
-        let new_ref = if referred_by.trim().is_empty() { None } else { Some(referred_by.clone()) }; 
+        let mut new_ref = if referred_by.trim().is_empty() { None } else { Some(referred_by.clone()) }; 
+        
+        // Resolve referred_by to ID if it's a UID or Username
+        if let Some(ref ref_val) = new_ref {
+            let resolved_id: Option<String> = sqlx::query_scalar(&state.db.format_query(
+                "SELECT id FROM users WHERE id = ? OR uid = ? OR username = ? LIMIT 1"
+            ))
+            .bind(ref_val)
+            .bind(ref_val)
+            .bind(ref_val)
+            .fetch_optional(&state.db.pool)
+            .await?;
+            
+            if let Some(id) = resolved_id {
+                new_ref = Some(id);
+            }
+        }
+
         if old_referred_by != new_ref {
             let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let old_str = old_referred_by.unwrap_or_else(|| "无".to_string());
