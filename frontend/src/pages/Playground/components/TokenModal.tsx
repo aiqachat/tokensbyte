@@ -6,6 +6,7 @@ import { Modal, Button } from 'antd';
 import { CloseOutlined, CheckCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { usePlayground } from '../context/PlaygroundContext';
+import dayjs from 'dayjs';
 
 const TokenModal: React.FC = React.memo(() => {
   const {
@@ -69,10 +70,7 @@ const TokenModal: React.FC = React.memo(() => {
           </svg>
         </div>
         <div>
-          <div style={{ color: '#E8EAED', fontSize: 14, fontWeight: 500, marginBottom: 4 }}>已开启滥用行为自动检测功能</div>
-          <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
-            为了保护您的安全，我们会自动停用所有已遭公开泄露的 API 密钥，以防止滥用。 <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>了解详情</span>.
-          </div>
+          <div style={{ color: '#E8EAED', fontSize: 14, fontWeight: 500, marginBottom: 4 }}>保护好您的密钥，请不要泄露</div>
         </div>
       </div>
 
@@ -91,10 +89,13 @@ const TokenModal: React.FC = React.memo(() => {
         ) : (
           <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden' }}>
             {apiTokens.map((t, index) => {
-              // 简化的格式化逻辑，如果缺少字段则显示默认值
-              const createdStr = t.created_at ? new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Apr 26, 2026';
-              const usedStr = t.last_used_at ? new Date(t.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '从未';
-              const maskedKey = `...${t.token_key.substring(t.token_key.length - 11)}`;
+              // 使用数字格式日期时间
+              const createdStr = t.created_at ? dayjs(t.created_at).format('YYYY-MM-DD HH:mm:ss') : '-';
+              const usedStr = t.last_used_at ? dayjs(t.last_used_at).format('YYYY-MM-DD HH:mm:ss') : '从未';
+              // API 密码显示头尾中间省略号
+              const head = t.token_key.substring(0, 8);
+              const tail = t.token_key.substring(t.token_key.length - 6);
+              const maskedKey = `${head}......${tail}`;
 
               return (
                 <div

@@ -16,7 +16,7 @@ import {
   VideoCameraOutlined, CheckCircleOutlined, LoadingOutlined,
   CloseCircleOutlined, FileTextOutlined,
   ScissorOutlined, EditOutlined, ReloadOutlined,
-  DownloadOutlined, DeleteOutlined,
+  DownloadOutlined, DeleteOutlined, ArrowLeftOutlined,
 } from '@ant-design/icons';
 import { MessageCircle } from 'lucide-react';
 import { useCanvas, usePlayground } from '../context/PlaygroundContext';
@@ -258,20 +258,20 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     message.success('已删除');
   }, [selectedNode, setNodes, setSelectedNodeId, setIsGenLogVisible]);
 
-  if (!isGenLogVisible || !selectedNode) return null;
+  if (!isGenLogVisible) return null;
 
-  const statusInfo = () => {
-    if (selectedNode.status === 'completed') return { icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />, label: '生成完成', color: '#52c41a' };
-    if (selectedNode.status === 'loading') return { icon: <LoadingOutlined style={{ color: '#fff' }} />, label: '正在生成...', color: '#fff' };
+  const statusInfo = (status: string) => {
+    if (status === 'completed') return { icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />, label: '生成完成', color: '#52c41a' };
+    if (status === 'loading') return { icon: <LoadingOutlined style={{ color: '#fff' }} />, label: '正在生成...', color: '#fff' };
     return { icon: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />, label: '生成失败', color: '#ff4d4f' };
   };
 
-  const status = statusInfo();
+  const status = selectedNode ? statusInfo(selectedNode.status) : null;
 
-  const typeLabel = selectedNode.type === 'video' ? 'AI 视频' : selectedNode.type === 'image' ? 'AI 图像' : '文本生成';
-  const typeIcon = selectedNode.type === 'video'
+  const typeLabel = selectedNode?.type === 'video' ? 'AI 视频' : selectedNode?.type === 'image' ? 'AI 图像' : '文本生成';
+  const typeIcon = selectedNode?.type === 'video'
     ? <VideoCameraOutlined style={{ fontSize: 16, color: '#fff' }} />
-    : selectedNode.type === 'image'
+    : selectedNode?.type === 'image'
     ? <PictureOutlined style={{ fontSize: 16, color: '#fff' }} />
     : <FileTextOutlined style={{ fontSize: 16, color: '#fff' }} />;
 
@@ -280,12 +280,12 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     setSelectedNodeId(null);
   };
 
-  const isCompleted = selectedNode.status === 'completed';
-  const isImage = selectedNode.type === 'image';
-  const hasResult = !!getResultUrl(selectedNode);
+  const isCompleted = selectedNode?.status === 'completed';
+  const isImage = selectedNode?.type === 'image';
+  const hasResult = selectedNode ? !!getResultUrl(selectedNode) : false;
 
   // 操作按钮定义
-  const actionButtons = [
+  const actionButtons = selectedNode ? [
     { key: 'add', icon: <ScissorOutlined />, label: '加入提示词', onClick: handleAddToCreate, disabled: !isCompleted || !hasResult },
     { key: 'edit', icon: <EditOutlined />, label: '预览/编辑', onClick: handleEditMedia, disabled: !isCompleted || (selectedNode.type !== 'image' && selectedNode.type !== 'video') || !hasResult },
     { 
@@ -298,7 +298,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     { key: 'regen', icon: <ReloadOutlined />, label: '重新生成', onClick: handleRegenerate, disabled: !selectedNode.taskData?.prompt },
     { key: 'download', icon: <DownloadOutlined />, label: '下载', onClick: handleDownload, disabled: !isCompleted || !hasResult },
     { key: 'delete', icon: <DeleteOutlined />, label: '删除', onClick: handleDelete, disabled: false, danger: true },
-  ];
+  ] : [];
 
   return (
     <>
@@ -321,22 +321,41 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     >
       {/* 标题栏 */}
       <div style={{
-        padding: '0 24px', height: 48, minHeight: 48,
+        padding: '0 20px', height: 48, minHeight: 48,
         borderBottom: '1px solid rgba(255,255,255,0.05)',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         background: 'rgba(255,255,255,0.02)',
         userSelect: 'none',
       }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {selectedNode && (
+            <Tooltip title="返回列表">
+              <div
+                onClick={() => setSelectedNodeId(null)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 24, height: 24, borderRadius: 4, cursor: 'pointer',
+                  color: 'rgba(255,255,255,0.6)', transition: 'all 0.2s',
+                  marginLeft: -4, marginRight: 2
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
+              >
+                <ArrowLeftOutlined style={{ fontSize: 13 }} />
+              </div>
+            </Tooltip>
+          )}
           <MessageCircle size={16} style={{ color: '#fff' }} />
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>创作日志</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>
+            {selectedNode ? '日志详情' : '项目创作记录'}
+          </Text>
         </div>
         <Tooltip title="关闭">
           <div
-            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
+            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,0.5)', borderRadius: 4, transition: 'all 0.2s' }}
             onClick={handleClose}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
-            onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255,255,255,0.5)'}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.5)'; e.currentTarget.style.background = 'transparent'; }}
           >
             <CloseOutlined />
           </div>
@@ -345,7 +364,71 @@ const GenerationLogWidget: React.FC = React.memo(() => {
 
       {/* 内容区域 */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-
+        
+        {/* 如果没有选中节点，显示历史记录列表 */}
+        {!selectedNode ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {nodes.length === 0 ? (
+              <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', padding: '40px 0', fontSize: 13 }}>
+                暂无创作记录
+              </div>
+            ) : (
+              [...nodes].reverse().map(node => {
+                const url = getResultUrl(node);
+                const sInfo = statusInfo(node.status);
+                // 确保有安全的回退样式
+                return (
+                  <div
+                    key={node.id}
+                    onClick={() => setSelectedNodeId(node.id)}
+                    style={{
+                      display: 'flex', gap: 12, padding: 12, borderRadius: 12,
+                      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)',
+                      cursor: 'pointer', transition: 'all 0.2s',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+                  >
+                    {/* 缩略图 */}
+                    <div style={{
+                      width: 48, height: 48, borderRadius: 8, flexShrink: 0,
+                      background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)'
+                    }}>
+                      {url ? (
+                        node.type === 'video' ? (
+                          <video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted disablePictureInPicture />
+                        ) : (
+                          <img src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                        )
+                      ) : (
+                        node.type === 'video' ? <VideoCameraOutlined style={{ color: 'rgba(255,255,255,0.3)', fontSize: 20 }} /> :
+                        node.type === 'image' ? <PictureOutlined style={{ color: 'rgba(255,255,255,0.3)', fontSize: 20 }} /> :
+                        <FileTextOutlined style={{ color: 'rgba(255,255,255,0.3)', fontSize: 20 }} />
+                      )}
+                    </div>
+                    {/* 详情 */}
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {node.taskData?.prompt || '无提示词'}
+                      </Text>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>
+                          {node.taskData?.created_at ? new Date(node.taskData.created_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '刚刚'}
+                        </Text>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 10 }}>{sInfo.icon}</span>
+                          <Text style={{ color: sInfo.color, fontSize: 11 }}>{sInfo.label}</Text>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        ) : (
+          <>
         {/* 提示词区块 */}
         <div style={{
           background: 'rgba(0,0,0,0.3)', borderRadius: 14, padding: '14px 16px',
@@ -671,6 +754,8 @@ const GenerationLogWidget: React.FC = React.memo(() => {
             </Text>
           </div>
         )}
+        </>
+      )}
       </div>
     </div>
 
