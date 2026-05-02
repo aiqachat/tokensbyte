@@ -19,9 +19,9 @@ pub struct UserContext {
 }
 
 pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult<UserContext> {
-    let (g, l_id, b, d): (String, i64, f64, f64) = sqlx::query_as(
+    let (g, l_id, b, gb, d): (String, i64, f64, f64, f64) = sqlx::query_as(
         &state.db.format_query(
-            "SELECT u.user_group, COALESCE(ul.id, 0), u.balance, COALESCE(ul.discount, 1.0) \
+            "SELECT u.user_group, COALESCE(ul.id, 0), u.balance, u.gift_balance, COALESCE(ul.discount, 1.0) \
              FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key \
              WHERE u.id = ?"
         )
@@ -29,7 +29,7 @@ pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult
     .bind(user_id)
     .fetch_one(&state.db.pool)
     .await?;
-    Ok(UserContext { user_group: g, level_id: l_id.to_string(), balance: b, discount: d })
+    Ok(UserContext { user_group: g, level_id: l_id.to_string(), balance: b + gb, discount: d })
 }
 
 /// 统一折扣优先级：模型全站折扣（启用时）> 用户等级折扣
@@ -123,8 +123,13 @@ use super::url_utils::join_url;
 
 pub async fn pre_deduct(state: &Arc<AppState>, user_id: &str, amount: f64) -> Result<(), sqlx::Error> {
     if amount > 0.0 {
-        sqlx::query(&state.db.format_query("UPDATE users SET balance = balance - ? WHERE id = ?"))
-            .bind(amount)
+        sqlx::query(&state.db.format_query(
+            "UPDATE users SET 
+             balance = CASE WHEN gift_balance >= ? THEN balance ELSE balance - (? - gift_balance) END,
+             gift_balance = CASE WHEN gift_balance >= ? THEN gift_balance - ? ELSE 0 END 
+             WHERE id = ?"
+        ))
+            .bind(amount).bind(amount).bind(amount).bind(amount)
             .bind(user_id)
             .execute(&state.db.pool)
             .await?;
@@ -344,14 +349,41 @@ async fn record_and_bill_inner(
             .await?;
             
             let apply_balance = cost - pre_deducted; // 正数表示还要扣，负数表示退款
-            sqlx::query(&state.db.format_query(
-                "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            ))
-            .bind(apply_balance)
-            .bind(cost)
-            .bind(&token.user_id)
-            .execute(&mut *tx)
-            .await?;
+            if apply_balance > 0.0 {
+                sqlx::query(&state.db.format_query(
+                    "UPDATE users SET 
+                     balance = CASE WHEN gift_balance >= ? THEN balance ELSE balance - (? - gift_balance) END,
+                     gift_used_quota = gift_used_quota + CASE WHEN gift_balance >= ? THEN ? ELSE gift_balance END,
+                     gift_balance = CASE WHEN gift_balance >= ? THEN gift_balance - ? ELSE 0 END,
+                     used_quota = used_quota + ?, 
+                     updated_at = CURRENT_TIMESTAMP 
+                     WHERE id = ?",
+                ))
+                .bind(apply_balance).bind(apply_balance).bind(apply_balance).bind(apply_balance)
+                .bind(apply_balance).bind(apply_balance).bind(cost).bind(&token.user_id)
+                .execute(&mut *tx)
+                .await?;
+            } else if apply_balance < 0.0 {
+                // 如果是退款（pre_deducted 过多），统一退回到主余额
+                let refund = -apply_balance;
+                sqlx::query(&state.db.format_query(
+                    "UPDATE users SET balance = balance + ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                ))
+                .bind(refund)
+                .bind(cost) // cost happens to be actual cost, so used_quota increases by cost. But pre_deducted was taken. Wait, if we pre_deducted 10, actual cost 2, apply_balance is -8, refund is 8. used_quota increases by 2. This is correct.
+                .bind(&token.user_id)
+                .execute(&mut *tx)
+                .await?;
+            } else {
+                // apply_balance == 0
+                sqlx::query(&state.db.format_query(
+                    "UPDATE users SET used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                ))
+                .bind(cost)
+                .bind(&token.user_id)
+                .execute(&mut *tx)
+                .await?;
+            }
             
             if channel_id > 0 {
                 sqlx::query(&state.db.format_query(

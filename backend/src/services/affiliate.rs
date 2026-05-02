@@ -28,7 +28,8 @@ pub async fn award_commission(
                 let commission_amount = amount * ratio;
                 if commission_amount > 0.0 {
                     // 3. Award commission
-                    sqlx::query(&db.format_query("UPDATE users SET commission_balance = commission_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                    sqlx::query(&db.format_query("UPDATE users SET commission_balance = commission_balance + ?, gift_balance = gift_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                        .bind(commission_amount)
                         .bind(commission_amount)
                         .bind(&inviter_id)
                         .execute(&mut **tx)

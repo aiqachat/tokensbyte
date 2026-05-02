@@ -44,7 +44,8 @@
     "admin_list": "管理员列表",
     "user_levels": "用户等级",
     "finance": "财务管理",
-    "finance_recharges": "资金明细",
+    "finance_recharges": "系统资金明细",
+    "finance_gifts": "赠送金明细",
     "finance_orders": "在线充值明细",
     "settings": "站点设置",
     "basic_settings": "基础设置",
@@ -101,7 +102,8 @@
     "wechat_login": "微信登录",
     "google_login": "谷歌登录",
     "confirm_password": "确认密码",
-    "password_mismatch": "两次填写的密码不一致"
+    "password_mismatch": "两次填写的密码不一致",
+    "account_disabled": "账号已被禁用"
   },
   "channels": {
     "title": "渠道分组管理",
@@ -352,7 +354,8 @@
     "time": "时间"
   },
   "finance": {
-    "recharge_title": "资金明细",
+    "recharge_title": "系统资金明细",
+    "gift_records_title": "赠送金明细",
     "order_title": "在线充值明细",
     "amount": "金额",
     "remark": "备注",
@@ -369,6 +372,7 @@
     "recharge_type_commission": "邀请返佣",
     "recharge_type_alipay": "支付宝充值",
     "recharge_type_wechat": "微信充值",
+    "recharge_type_gift": "赠送金",
     "recharge_type_other": "其它"
   },
   "marketing": {

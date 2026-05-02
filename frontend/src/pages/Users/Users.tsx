@@ -89,7 +89,7 @@ const Users: React.FC = () => {
     setEditingUser(null);
     setSelectedRole(targetRole);
     form.resetFields();
-    form.setFieldsValue({ role: targetRole, is_active: true, balance: 0, user_group: 'default' });
+    form.setFieldsValue({ role: targetRole, is_active: 1, balance: 0, user_group: 'default' });
     setIsModalVisible(true);
   };
 
@@ -157,6 +157,7 @@ const Users: React.FC = () => {
       const payload = {
         amount: finalAmount,
         remark: values.remark,
+        wallet_type: values.walletType || 'system',
       };
       await request.post(`/users/${rechargingUser.id}/recharge`, payload);
       message.success(t('users.recharge_success'));
@@ -193,7 +194,14 @@ const Users: React.FC = () => {
       title: t('users.uid'),
       dataIndex: 'uid',
       key: 'uid',
-      render: (text: string) => <Text code style={{ color: '#fff' }}>{text}</Text>,
+      render: (text: string, record: User) => (
+        <Space direction="vertical" size={4} align="center">
+          <Text code style={{ color: '#fff', padding: '2px 6px' }}>{text}</Text>
+          <Tag color={record.is_active ? 'success' : 'error'} style={{ fontSize: 11, padding: '0 4px', margin: 0 }}>
+            {record.is_active ? t('common.active') : t('common.disabled')}
+          </Tag>
+        </Space>
+      ),
     },
     {
       title: t('users.username'),
@@ -280,51 +288,91 @@ const Users: React.FC = () => {
       },
     },
     {
-      title: '剩余额度/总额度',
+      title: '钱包余额',
       key: 'balance',
       render: (_: unknown, record: User) => {
         const balance = record.balance;
+        const gift = record.gift_balance || 0;
         const used = record.used_quota || 0;
+        const gift_used = record.gift_used_quota || 0;
         const total = balance + used;
+        const gift_total = gift + gift_used;
         const percent = total > 0 ? (balance / total) * 100 : 0;
+        const gift_percent = gift_total > 0 ? (gift / gift_total) * 100 : 0;
         return (
-          <div style={{ width: 110 }}>
-             <Tag 
-                style={{ 
-                  width: '100%', 
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  borderColor: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '6px',
-                  padding: '1px 4px',
-                  fontSize: '12px',
-                  textAlign: 'center',
-                  marginBottom: 2,
-                  display: 'block'
-                }}
-             >
-                {currencySymbol}{balance.toFixed(2)} / {currencySymbol}{total.toFixed(2)}
-             </Tag>
-             <Progress 
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px' }}>
+            <div style={{ width: 140 }}>
+              <div style={{ marginBottom: 4 }}>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>系统钱包</Text>
+              </div>
+              <div style={{ marginBottom: 6 }}>
+                <Tag 
+                  style={{ 
+                    background: 'rgba(255, 255, 255, 0.04)',
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '4px',
+                    padding: '2px 6px',
+                    fontSize: '11px',
+                    margin: 0,
+                    display: 'block',
+                    textAlign: 'center'
+                  }}
+                >
+                  {currencySymbol}{balance.toFixed(2)} / {currencySymbol}{total.toFixed(2)}
+                </Tag>
+              </div>
+              <Progress 
                 percent={percent} 
                 showInfo={false} 
                 size="small" 
                 strokeColor={balance > 0 ? '#52c41a' : '#ff4d4f'}
                 trailColor="rgba(255, 255, 255, 0.1)"
                 style={{ marginBottom: 0 }}
-             />
+              />
+            </div>
+            {gift_total > 0 && (
+              <div style={{ width: 140 }}>
+                <div style={{ marginBottom: 4 }}>
+                  <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>赠送钱包</Text>
+                </div>
+                <div style={{ marginBottom: 6 }}>
+                  <Tag 
+                    color="gold"
+                    style={{ 
+                      borderRadius: '4px',
+                      padding: '2px 6px',
+                      fontSize: '11px',
+                      margin: 0,
+                      display: 'block',
+                      textAlign: 'center'
+                    }}
+                  >
+                    🎁 {currencySymbol}{gift.toFixed(2)} / {currencySymbol}{gift_total.toFixed(2)}
+                  </Tag>
+                </div>
+                <Progress 
+                  percent={gift_percent} 
+                  showInfo={false} 
+                  size="small" 
+                  strokeColor={gift > 0 ? '#faad14' : '#ff4d4f'}
+                  trailColor="rgba(255, 255, 255, 0.1)"
+                  style={{ marginBottom: 0 }}
+                />
+              </div>
+            )}
+            {gift_total === 0 && (
+              <div style={{ width: 140 }}>
+                <div style={{ marginBottom: 4 }}>
+                  <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>赠送钱包</Text>
+                </div>
+                <div style={{ marginBottom: 6 }}>
+                  <Text type="secondary" style={{ fontSize: 11, display: 'block', textAlign: 'center' }}>-</Text>
+                </div>
+              </div>
+            )}
           </div>
         );
       },
-    },
-    {
-      title: t('common.status'),
-      dataIndex: 'is_active',
-      key: 'is_active',
-      render: (active: boolean) => (
-        <Tag color={active ? 'success' : 'error'}>
-          {active ? t('common.active') : t('common.disabled')}
-        </Tag>
-      ),
     },
 
     {
@@ -410,10 +458,18 @@ const Users: React.FC = () => {
                 {record.email && <CardRow label="邮箱"><Text style={{ fontSize: 12 }}>{record.email}</Text></CardRow>}
                 {record.mobile && <CardRow label="手机号"><Text style={{ fontSize: 12 }}>{record.mobile}</Text></CardRow>}
                 {!isAdminPage && (
-                  <CardRow label="余额">
-                    <Text style={{ color: '#52c41a', fontWeight: 'bold' }}>{currencySymbol}{balance.toFixed(2)}</Text>
-                    <Text type="secondary" style={{ fontSize: 11 }}> / {currencySymbol}{total.toFixed(2)}</Text>
-                  </CardRow>
+                  <>
+                    <CardRow label="系统余额">
+                      <Text style={{ color: '#52c41a', fontWeight: 'bold' }}>{currencySymbol}{balance.toFixed(2)}</Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}> / {currencySymbol}{total.toFixed(2)}</Text>
+                    </CardRow>
+                    {(record.gift_balance || 0) + (record.gift_used_quota || 0) > 0 && (
+                      <CardRow label="赠送余额">
+                        <Text style={{ color: '#faad14', fontWeight: 'bold' }}>🎁 {currencySymbol}{(record.gift_balance || 0).toFixed(2)}</Text>
+                        <Text type="secondary" style={{ fontSize: 11 }}> / {currencySymbol}{((record.gift_balance || 0) + (record.gift_used_quota || 0)).toFixed(2)}</Text>
+                      </CardRow>
+                    )}
+                  </>
                 )}
                 {isAdminPage ? (
                   <CardRow label="分组">
@@ -451,6 +507,7 @@ const Users: React.FC = () => {
           columns={columns}
           rowKey="id"
           loading={loading}
+          size="small"
           pagination={{ 
             defaultPageSize: 50, 
             pageSizeOptions: ['50', '100', '200'], 
@@ -549,10 +606,10 @@ const Users: React.FC = () => {
               </Select>
             </Form.Item>
           )}
-          <Form.Item name="is_active" label={t('common.status')} initialValue={true}>
+          <Form.Item name="is_active" label={t('common.status')} initialValue={1}>
             <Select>
-              <Option value={true}>{t('common.active')}</Option>
-              <Option value={false}>{t('common.disabled')}</Option>
+              <Option value={1}>{t('common.active')}</Option>
+              <Option value={0}>{t('common.disabled')}</Option>
             </Select>
           </Form.Item>
                   </>
@@ -620,10 +677,18 @@ const Users: React.FC = () => {
           <Text type="secondary">{t('users.username')}: </Text>
           <Text strong>{rechargingUser?.username}</Text>
           <br />
-          <Text type="secondary">{t('users.balance')}: </Text>
+          <Text type="secondary">系统钱包: </Text>
           <Text strong style={{ color: '#1677ff' }}>{currencySymbol}{rechargingUser?.balance.toFixed(2)}</Text>
+          <Text type="secondary" style={{ marginLeft: 16 }}>赠送钱包: </Text>
+          <Text strong style={{ color: '#faad14' }}>🎁 {currencySymbol}{(rechargingUser?.gift_balance || 0).toFixed(2)}</Text>
         </div>
-        <Form form={rechargeForm} layout="vertical" onFinish={handleRechargeSave} initialValues={{ actionType: 'increase', amount: 0 }}>
+        <Form form={rechargeForm} layout="vertical" onFinish={handleRechargeSave} initialValues={{ actionType: 'increase', amount: 0, walletType: 'system' }}>
+          <Form.Item name="walletType" label="充值到哪个钱包">
+            <Radio.Group optionType="button" buttonStyle="solid">
+              <Radio value="system">系统钱包 (正常充值)</Radio>
+              <Radio value="gift">赠送钱包 (活动赠送)</Radio>
+            </Radio.Group>
+          </Form.Item>
           <Form.Item name="actionType" label="操作类型">
             <Radio.Group optionType="button" buttonStyle="solid">
               <Radio value="increase">增加金额 (+)</Radio>

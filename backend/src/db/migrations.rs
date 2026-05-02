@@ -1281,6 +1281,14 @@ macro_rules! pg_migration_blocks {
     sqlx::query("COMMENT ON COLUMN channels.exclude_user_groups IS '不支持的用户等级列表(JSON数组)，黑名单模式'")
         .execute(pool).await.ok();
 
+    // ─── users 表增加 gift_balance 字段（赠送钱包额度，注册送、活动送等） ───
+    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS gift_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS gift_used_quota DOUBLE PRECISION NOT NULL DEFAULT 0.0")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN users.gift_balance IS '赠送钱包余额，注册赠送/活动赠送等免费额度，消费时优先扣赠送余额'")
+        .execute(pool).await.ok();
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};

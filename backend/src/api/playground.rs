@@ -17,6 +17,7 @@ use serde::Deserialize;
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/init-storage", post(init_storage))
         .route("/projects", get(list_projects).post(create_project))
         .route("/projects/{id}", get(get_project).put(update_project).delete(delete_project))
         .route("/projects/{id}/save-canvas", post(save_canvas))
@@ -24,6 +25,43 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/assets/upload", post(upload_reference))
         .route("/assets/{id}", delete(delete_asset))
         .route("/storage-stats", get(storage_stats))
+}
+
+// ========== 存储初始化 ==========
+
+/// 用户首次进入体验中心时调用：检查 TOS 配置并创建用户根文件夹 p{uid}/
+async fn init_storage(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    // 1. 检查 TOS 配置是否存在
+    let tos_config = get_tos_config(&state, "playground").await
+        .ok_or_else(|| AppError::BadRequest(
+            "系统存储未配置，请联系管理员正确配置火山引擎 TOS 对象存储后再使用创作中心。".to_string()
+        ))?;
+
+    // 2. 获取用户 UID
+    let uid: String = sqlx::query_scalar(&state.db.format_query("SELECT uid FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+
+    let user_folder = format!("p{}", uid);
+
+    // 3. 尝试在 TOS 上创建用户根文件夹（通过上传一个 .keep 占位文件）
+    let keep_key = tos_config.full_key(&format!("{}/.keep", user_folder));
+    let keep_data = b"playground user root folder".to_vec();
+
+    tos::upload_file(&tos_config, &keep_key, keep_data, "text/plain", None).await
+        .map_err(|e| AppError::Internal(
+            format!("创建用户存储目录失败，请确认系统存储配置正确: {}", e)
+        ))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "user_folder": user_folder,
+        "message": "存储初始化成功"
+    })))
 }
 
 // ========== 项目 CRUD ==========
@@ -127,6 +165,17 @@ async fn create_project(
     .bind(&desc)
     .execute(&state.db.pool)
     .await?;
+
+    // 在 TOS 上为该项目创建子文件夹 p{uid}/{project_id}/
+    if let Some(tos_config) = get_tos_config(&state, "playground").await {
+        let project_folder_key = tos_config.full_key(
+            &format!("p{}/{:08}/.keep", uid, new_id)
+        );
+        let _ = tos::upload_file(
+            &tos_config, &project_folder_key,
+            b"playground project folder".to_vec(), "text/plain", None
+        ).await;
+    }
 
     Ok(Json(json!({
         "id": new_id,
@@ -368,8 +417,8 @@ async fn persist_asset(
         _ => "text",
     };
     let file_name = format!("{}_{}.{}", timestamp, hash, file_ext);
-    // 强制把 project_id 补全为 8 位数（以还原丢失的 0 前缀）
-    let relative_path = format!("{}/{:08}/{}/{}", uid, project_id, type_folder, file_name);
+    // 使用 p{uid}/{project_id}/{type_folder}/ 目录结构
+    let relative_path = format!("p{}/{:08}/{}/{}", uid, project_id, type_folder, file_name);
     let object_key = tos_config.full_key(&relative_path);
 
     // 上传到 TOS
@@ -621,8 +670,8 @@ async fn upload_reference(
     
     let pid_str = project_id.map(|id| format!("{:08}", id)).unwrap_or_else(|| "00000000".to_string());
     
-    // 存放在 references 目录下
-    let relative_path = format!("{}/{}/references/{}_{}.{}", uid, pid_str, timestamp, hash, ext);
+    // 存放在 p{uid}/{project_id}/references/ 目录下
+    let relative_path = format!("p{}/{}/references/{}_{}.{}", uid, pid_str, timestamp, hash, ext);
     let object_key = tos_config.full_key(&relative_path);
 
     let file_url = tos::upload_file(&tos_config, &object_key, data.to_vec(), &content_type, None).await

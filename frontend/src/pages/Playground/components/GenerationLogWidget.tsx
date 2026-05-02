@@ -12,7 +12,7 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { Typography, Tooltip, Tag, message } from 'antd';
 import {
-  CloseOutlined, PictureOutlined,
+  CloseOutlined, PictureOutlined, CopyOutlined,
   VideoCameraOutlined, CheckCircleOutlined, LoadingOutlined,
   CloseCircleOutlined, FileTextOutlined,
   ScissorOutlined, EditOutlined, ReloadOutlined,
@@ -156,6 +156,32 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     setEditorOpen(true);
   }, [selectedNode, getResultUrl]);
 
+  /** 生成视频 - 将图片作为参考素材加入提示词区，引导用户图生视频 */
+  const handleGenerateVideo = useCallback(() => {
+    if (!selectedNode) return;
+    const url = getResultUrl(selectedNode);
+    if (!url) {
+      message.warning('暂无可用的图片');
+      return;
+    }
+    setAttachedAssets(prev => {
+      if (prev.some(a => a.fullUrl === url)) {
+        message.info('该图片已在附件中，请选择视频模型并生成');
+        return prev;
+      }
+      return [...prev, {
+        asset: {
+          id: Date.now() + Math.random(),
+          file_name: `img2video_${Date.now()}.png`,
+          asset_type: 'image',
+          file_url: url,
+        },
+        fullUrl: url,
+      }];
+    });
+    message.success('图片已加入素材，请选择视频模型并生成');
+  }, [selectedNode, getResultUrl, setAttachedAssets]);
+
   /** 编辑保存回调 */
   const handleEditorSave = useCallback((newUrl: string, file: File) => {
     if (!selectedNode) return;
@@ -253,6 +279,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
   const actionButtons = [
     { key: 'add', icon: <ScissorOutlined />, label: '加入提示词', onClick: handleAddToCreate, disabled: !isCompleted || !hasResult },
     { key: 'edit', icon: <EditOutlined />, label: '图片编辑', onClick: handleEditImage, disabled: !isCompleted || !isImage || !hasResult },
+    { key: 'img2video', icon: <VideoCameraOutlined />, label: '生成视频', onClick: handleGenerateVideo, disabled: !isCompleted || !isImage || !hasResult },
     { key: 'regen', icon: <ReloadOutlined />, label: '重新生成', onClick: handleRegenerate, disabled: !selectedNode.taskData?.prompt },
     { key: 'download', icon: <DownloadOutlined />, label: '下载', onClick: handleDownload, disabled: !isCompleted || !hasResult },
     { key: 'delete', icon: <DeleteOutlined />, label: '删除', onClick: handleDelete, disabled: false, danger: true },
@@ -307,17 +334,48 @@ const GenerationLogWidget: React.FC = React.memo(() => {
         {/* 提示词区块 */}
         <div style={{
           background: 'rgba(0,0,0,0.3)', borderRadius: 14, padding: '14px 16px',
-          marginBottom: 12,
+          marginBottom: 12, position: 'relative',
         }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 16, lineHeight: '22px', flexShrink: 0 }}>🎨</span>
-            <Text style={{
-              color: 'rgba(255,255,255,0.8)', fontSize: 14, lineHeight: '22px',
-              wordBreak: 'break-word',
-            }}>
-              {selectedNode.taskData?.prompt || '无提示词'}
-            </Text>
-          </div>
+          <Text style={{
+            color: 'rgba(255,255,255,0.8)', fontSize: 14, lineHeight: '22px',
+            wordBreak: 'break-word', display: 'block',
+            paddingRight: selectedNode.taskData?.prompt ? 28 : 0,
+          }}>
+            {selectedNode.taskData?.prompt || '无提示词'}
+          </Text>
+          {selectedNode.taskData?.prompt && (
+            <Tooltip title="复制提示词">
+              <span
+                onClick={() => {
+                  const text = selectedNode.taskData?.prompt || '';
+                  if (!text) return;
+                  try {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.style.position = 'fixed';
+                    textarea.style.left = '-9999px';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    message.success('提示词已复制');
+                  } catch {
+                    message.error('复制失败');
+                  }
+                }}
+                style={{
+                  position: 'absolute', top: 12, right: 12,
+                  fontSize: 14, color: 'rgba(255,255,255,0.3)',
+                  cursor: 'pointer', transition: 'color 0.2s',
+                  lineHeight: 1,
+                }}
+                onMouseEnter={(e: any) => e.currentTarget.style.color = '#fff'}
+                onMouseLeave={(e: any) => e.currentTarget.style.color = 'rgba(255,255,255,0.3)'}
+              >
+                <CopyOutlined />
+              </span>
+            </Tooltip>
+          )}
         </div>
 
         {/* 生成结果预览 */}
@@ -362,6 +420,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
         {/* 操作按钮行 */}
         <div style={{
           display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'nowrap', alignItems: 'center',
+          justifyContent: 'center',
         }}>
           {actionButtons.map(btn => (
             <Tooltip 

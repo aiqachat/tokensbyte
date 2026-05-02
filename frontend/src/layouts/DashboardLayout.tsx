@@ -419,6 +419,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/finance/recharges">{t('menu.finance_recharges')}</Link>,
           },
           {
+            key: '/admin0755/finance/gifts',
+            label: <Link to="/admin0755/finance/gifts">{t('menu.finance_gifts')}</Link>,
+          },
+          {
             key: '/admin0755/finance/orders',
             label: <Link to="/admin0755/finance/orders">{t('menu.finance_orders')}</Link>,
           }

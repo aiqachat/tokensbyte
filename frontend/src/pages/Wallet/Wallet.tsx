@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Typography, Row, Col, Table, Button, Space, Statistic, Tag, Tooltip, message } from 'antd';
-import { SwapOutlined, HistoryOutlined, CopyOutlined, TeamOutlined, GiftOutlined } from '@ant-design/icons';
+import { Card, Typography, Row, Col, Table, Button, Tag, Tooltip, message, Grid, theme } from 'antd';
+import { WalletOutlined, GiftOutlined, TeamOutlined, CopyOutlined, PlusOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
-import { useThemeStore } from '../../store/theme';
 import useAuthStore from '../../store/auth';
 import type { WalletStats, RechargeRecord } from '../../types';
 import dayjs from 'dayjs';
@@ -12,27 +11,27 @@ import dayjs from 'dayjs';
 import RechargeModal from './RechargeModal';
 
 const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
+const { useToken } = theme;
 
 const Wallet: React.FC = () => {
   const { t } = useTranslation();
   const { settings } = useSettingsStore();
-  const { themeMode } = useThemeStore();
   const { user } = useAuthStore();
+  const screens = useBreakpoint();
+  const { token } = useToken();
+  
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const currencyUnit = settings?.currency?.currency_unit || '元';
-  const isLight = themeMode === 'light';
-  // 主题适配变量
-  const cardBg = isLight ? '#fff' : '#1d1d1d';
-  const cardBorder = isLight ? '1px solid #e8e8e8' : '1px solid #303030';
-  const headBorder = isLight ? '1px solid #e8e8e8' : '1px solid #303030';
-  const subText = isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
-  const descText = isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)';
-  const mainText = isLight ? '#1f2937' : '#fff';
-  const subtleBg = isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)';
-  const subtleBorder = isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)';
-  const linkBoxBg = isLight ? '#f5f5f5' : '#000';
-  const linkBoxBorder = isLight ? '1px dashed #d9d9d9' : '1px dashed #434343';
-  const dividerColor = isLight ? '#e8e8e8' : '#303030';
+  
+  const cardBg = token.colorBgContainer;
+  const cardBorder = `1px solid ${token.colorBorderSecondary}`;
+  const subText = token.colorTextSecondary;
+  const mainText = token.colorText;
+  const primaryBlue = token.colorPrimary;
+  const giftColor = token.colorWarning;
+  const successColor = token.colorSuccess;
+  
   const [rechargeModalVisible, setRechargeModalVisible] = useState(false);
   const [stats, setStats] = useState<WalletStats | null>(null);
   const [records, setRecords] = useState<RechargeRecord[]>([]);
@@ -50,17 +49,6 @@ const Wallet: React.FC = () => {
       console.error(e);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleTransfer = async () => {
-    if (!stats || stats.commission_balance <= 0) return;
-    try {
-      await request.post('/user/affiliate/transfer', {});
-      message.success('奖励金已成功转入主余额');
-      fetchData();
-    } catch (e: any) {
-      message.error(e.response?.data?.message || '转账失败');
     }
   };
 
@@ -86,7 +74,7 @@ const Wallet: React.FC = () => {
       dataIndex: 'amount',
       key: 'amount',
       render: (amount: number) => (
-        <Text style={{ color: amount > 0 ? '#52c41a' : '#ff4d4f', fontWeight: 'bold' }}>
+        <Text style={{ color: amount > 0 ? successColor : token.colorError, fontWeight: 500 }}>
           {amount > 0 ? '+' : '-'}{currencySymbol}{Math.abs(amount).toFixed(2)}
         </Text>
       ),
@@ -95,219 +83,156 @@ const Wallet: React.FC = () => {
       title: t('wallet.remark'),
       dataIndex: 'remark',
       key: 'remark',
-      render: (text: string) => text || '-',
+      render: (text: string) => <Text style={{ color: mainText }}>{text || '-'}</Text>,
     },
     {
       title: t('wallet.time'),
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (text: string) => dayjs(text).format('YYYY/MM/DD HH:mm:ss'),
+      render: (text: string) => <Text style={{ color: subText }}>{dayjs(text).format('YYYY/MM/DD HH:mm:ss')}</Text>,
     },
   ];
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-      {/* Wallet Balance Card */}
-      <Card 
-        style={{ 
-          marginBottom: 24, 
-          borderRadius: 16, 
-          background: 'linear-gradient(135deg, #1677ff 0%, #003eb3 100%)', 
-          border: 'none',
-          boxShadow: '0 8px 24px rgba(22, 119, 255, 0.25)'
-        }}
-        styles={{ body: { padding: '32px' } }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <Title level={1} style={{ margin: 0, color: '#fff', fontSize: '48px' }}>
-              {currencySymbol}{stats?.balance.toFixed(6) || '0.000000'}
-            </Title>
-            <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: '18px' }}>{currencyUnit}</Text>
-          </div>
-          <Button 
-            type="primary" 
-            ghost={false}
-            icon={<SwapOutlined />} 
-            size="large"
-            style={{ borderRadius: 8, borderColor: 'rgba(255,255,255,0.65)', color: '#1677ff', background: '#fff' }}
-            onClick={() => setRechargeModalVisible(true)}
-          >
-            立即在线充值
-          </Button>
-        </div>
+    <div style={{ maxWidth: 1200, margin: '0 auto', padding: screens.md ? '32px 0' : '16px 0' }}>
+      {/* Header Area */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <Title level={3} style={{ margin: 0, fontWeight: 600, color: mainText, letterSpacing: '-0.5px' }}>
+          钱包与账户
+        </Title>
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />}
+          style={{ borderRadius: 6, padding: '0 20px', height: 38, fontWeight: 500, boxShadow: 'none' }}
+          onClick={() => setRechargeModalVisible(true)}
+        >
+          在线充值
+        </Button>
+      </div>
 
-        <Divider style={{ borderColor: 'rgba(255,255,255,0.1)', margin: '24px 0' }} />
-
-        <Row gutter={32}>
-          <Col xs={8}>
-            <Statistic 
-              title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>{t('wallet.total_consumption')}</span>} 
-              value={stats?.total_consumption || 0} 
-              precision={6}
-              styles={{ content: { color: '#fff', fontSize: '20px' } }}
-            />
-          </Col>
-          <Col xs={8}>
-            <Statistic 
-              title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>{t('wallet.total_calls')}</span>} 
-              value={stats?.total_calls || 0} 
-              styles={{ content: { color: '#fff', fontSize: '20px' } }}
-            />
-          </Col>
-          <Col xs={8}>
-            <Statistic 
-              title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>{t('wallet.success_calls')}</span>} 
-              value={stats?.success_calls || 0} 
-              styles={{ content: { color: '#fff', fontSize: '20px' } }}
-            />
-          </Col>
-        </Row>
-      </Card>
-
-      {stats?.marketing_enabled && (
-      <Row gutter={24}>
-        <Col xs={24} md={12}>
-          {/* Reward Balance Card */}
+      {/* Main Balances */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={(stats?.gift_balance ?? 0) > 0 ? 12 : 24}>
           <Card 
-            style={{ 
-              marginBottom: 24, 
-              borderRadius: 16, 
-              background: 'linear-gradient(135deg, #722ed1 0%, #391085 100%)', 
-              border: 'none',
-              boxShadow: '0 8px 24px rgba(114, 46, 209, 0.25)'
-            }}
+            style={{ borderRadius: 12, height: '100%', border: cardBorder, background: cardBg }}
             styles={{ body: { padding: '24px' } }}
+            bordered={false}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <Statistic 
-                  title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>奖励余额 (不可直接消费)</span>} 
-                  value={stats?.commission_balance || 0} 
-                  precision={2}
-                  styles={{ content: { color: '#fff', fontSize: '32px', fontWeight: 'bold' } }}
-                  prefix={currencySymbol}
-                />
-              </div>
-              <Button 
-                type="primary" 
-                icon={<SwapOutlined />} 
-                style={{ background: '#52c41a', borderColor: '#52c41a', borderRadius: 8 }}
-                onClick={handleTransfer}
-                disabled={!stats || stats.commission_balance <= 0}
-              >
-                转入主余额
-              </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <WalletOutlined style={{ color: primaryBlue, fontSize: 16 }} />
+              <Text style={{ color: subText, fontSize: 14, fontWeight: 500 }}>系统主余额</Text>
             </div>
-            <Divider style={{ borderColor: 'rgba(255,255,255,0.1)', margin: '16px 0' }} />
-            <Row>
-              <Col span={12}>
-                <Statistic 
-                  title={<span style={{ color: 'rgba(255,255,255,0.65)' }}>累计邀请人数</span>} 
-                  value={stats?.total_referred || 0} 
-                  styles={{ content: { color: '#fff', fontSize: '18px' } }}
-                  prefix={<TeamOutlined />}
-                />
-              </Col>
-            </Row>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+              <span style={{ fontSize: 32, fontWeight: 600, color: mainText, lineHeight: 1, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                {stats?.balance.toFixed(4) || '0.0000'}
+              </span>
+              <span style={{ fontSize: 14, color: subText, fontWeight: 500 }}>{currencyUnit}</span>
+            </div>
           </Card>
         </Col>
 
-        <Col xs={24} md={12}>
-          {/* Invite Link Card */}
-          <Card 
-            title={<Space><GiftOutlined /><span>邀请获返利</span></Space>}
-            style={{ 
-              marginBottom: 24, 
-              borderRadius: 16, 
-              background: cardBg, 
-              border: cardBorder,
-              height: 'calc(100% - 24px)'
-            }}
-            headStyle={{ borderBottom: headBorder, color: mainText }}
-          >
-            <div style={{ marginBottom: 16 }}>
-              <Text style={{ color: descText }}>
-                分享您的专属链接，被邀请用户充值后，您将获得对应比例的奖励金余额。
-              </Text>
-            </div>
-
-            {/* 推广详情 */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: 12,
-              marginBottom: 16,
-              padding: '14px 16px',
-              background: subtleBg,
-              borderRadius: 10,
-              border: subtleBorder,
-            }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ color: subText, fontSize: 12, marginBottom: 4 }}>返利比例</div>
-                <div style={{ color: '#faad14', fontSize: 20, fontWeight: 700 }}>
-                  {Math.round((stats?.commission_ratio || 0) * 100)}%
+        {(stats?.gift_balance ?? 0) > 0 && (
+          <Col xs={24} md={12}>
+            <Card 
+              style={{ borderRadius: 12, height: '100%', border: cardBorder, background: cardBg }}
+              styles={{ body: { padding: '24px' } }}
+              bordered={false}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <GiftOutlined style={{ color: giftColor, fontSize: 16 }} />
+                  <Text style={{ color: subText, fontSize: 14, fontWeight: 500 }}>赠送金余额</Text>
                 </div>
+                <Tag color="processing" bordered={false} style={{ margin: 0, borderRadius: 4, fontSize: 12 }}>优先扣除</Tag>
               </div>
-              <div style={{ textAlign: 'center', borderLeft: subtleBorder, borderRight: subtleBorder }}>
-                <div style={{ color: subText, fontSize: 12, marginBottom: 4 }}>邀请人奖励</div>
-                <div style={{ color: '#52c41a', fontSize: 20, fontWeight: 700 }}>
-                  {currencySymbol}{stats?.invite_reward_inviter || 0}
-                </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                <span style={{ fontSize: 32, fontWeight: 600, color: mainText, lineHeight: 1, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                  {stats?.gift_balance.toFixed(4) || '0.0000'}
+                </span>
+                <span style={{ fontSize: 14, color: subText, fontWeight: 500 }}>{currencyUnit}</span>
               </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ color: subText, fontSize: 12, marginBottom: 4 }}>新用户奖励</div>
-                <div style={{ color: '#1677ff', fontSize: 20, fontWeight: 700 }}>
-                  {currencySymbol}{stats?.invite_reward_invitee || 0}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ 
-              background: linkBoxBg, 
-              padding: '12px 16px', 
-              borderRadius: 8, 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              border: linkBoxBorder
-            }}>
-              <Text ellipsis style={{ color: mainText, width: '80%' }}>
-                {window.location.origin}/register?aff={user?.uid}
-              </Text>
-              <Tooltip title="复制链接">
-                <Button 
-                  type="text" 
-                  icon={<CopyOutlined style={{ color: '#1677ff' }} />} 
-                  onClick={copyInviteLink}
-                />
-              </Tooltip>
-            </div>
-          </Card>
-        </Col>
+            </Card>
+          </Col>
+        )}
       </Row>
+
+
+
+      {/* Affiliate Banner */}
+      {stats?.marketing_enabled && (
+        <Card 
+          style={{ borderRadius: 12, border: cardBorder, background: cardBg, marginBottom: 32 }}
+          styles={{ body: { padding: '20px 24px' } }}
+          bordered={false}
+        >
+          <Row align="middle" justify="space-between" gutter={[24, 24]}>
+            <Col xs={24} md={12}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: token.colorSuccessBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CopyOutlined style={{ color: successColor, fontSize: 20 }} />
+                </div>
+                <div>
+                  <Text style={{ fontSize: 15, fontWeight: 600, color: mainText, display: 'block', marginBottom: 2 }}>邀请好友获返利</Text>
+                  <Text style={{ fontSize: 13, color: subText }}>分享专属链接，用户充值后您将获得 <strong style={{ color: successColor }}>{Math.round((stats?.commission_ratio || 0) * 100)}%</strong> 的充值奖励金</Text>
+                </div>
+              </div>
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                <div style={{ 
+                  flex: 1,
+                  background: token.colorBgLayout, 
+                  padding: '8px 16px', 
+                  borderRadius: 6, 
+                  border: cardBorder,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
+                  <Text ellipsis style={{ color: subText, fontSize: 13, fontFamily: 'monospace' }}>
+                    {window.location.origin}/register?aff={user?.uid}
+                  </Text>
+                  <Tooltip title="复制链接">
+                    <Button type="text" icon={<CopyOutlined />} onClick={copyInviteLink} style={{ color: subText, margin: '-4px -8px -4px 0' }} />
+                  </Tooltip>
+                </div>
+                <div style={{ paddingLeft: 16, borderLeft: cardBorder, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <Text style={{ color: subText, fontSize: 12, marginBottom: 2 }}>已邀请</Text>
+                  <Text style={{ color: mainText, fontSize: 16, fontWeight: 600, fontFamily: 'system-ui, -apple-system, sans-serif' }}>{stats?.total_referred || 0} <span style={{ fontSize: 12, color: subText, fontWeight: 400 }}>人</span></Text>
+                </div>
+              </div>
+            </Col>
+          </Row>
+        </Card>
       )}
 
       {/* Recharge Records */}
-      <Card 
-        title={<Space><HistoryOutlined /><span>{t('wallet.recharge_records')}</span></Space>}
-        style={{ 
-          borderRadius: 16, 
-          background: cardBg, 
-          border: cardBorder 
-        }}
-        headStyle={{ borderBottom: headBorder, color: mainText }}
-      >
-        <Table
-          dataSource={records}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10, showSizeChanger: true }}
-          size="middle"
-          scroll={{ x: 'max-content' }}
-        />
-      </Card>
+      <div style={{ marginTop: 32 }}>
+        <Title level={5} style={{ color: mainText, fontWeight: 600, marginBottom: 16 }}>
+          {t('wallet.recharge_records')}
+        </Title>
+        <Card
+          style={{
+            borderRadius: 12,
+            background: cardBg,
+            border: cardBorder,
+            overflow: 'hidden'
+          }}
+          styles={{ body: { padding: 0 } }}
+          bordered={false}
+        >
+          <Table
+            dataSource={records}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            pagination={{ pageSize: 10, showSizeChanger: true }}
+            size="middle"
+            scroll={{ x: 'max-content' }}
+            style={{ margin: 0 }}
+          />
+        </Card>
+      </div>
 
       {/* Recharge Modal */}
       <RechargeModal 
@@ -321,9 +246,5 @@ const Wallet: React.FC = () => {
     </div>
   );
 };
-
-const Divider = ({ style }: { style?: React.CSSProperties }) => (
-  <div style={{ height: '1px', width: '100%', borderTop: '1px solid currentColor', opacity: 0.1, margin: '16px 0', ...style }} />
-);
 
 export default Wallet;

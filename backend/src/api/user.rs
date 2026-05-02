@@ -333,7 +333,7 @@ pub async fn get_wallet_stats(
 ) -> AppResult<Json<WalletStats>> {
     let user_id = &claims.sub;
 
-    let balance: f64 = sqlx::query_scalar(&state.db.format_query("SELECT balance FROM users WHERE id = ?"))
+    let (balance, gift_balance): (f64, f64) = sqlx::query_as(&state.db.format_query("SELECT balance, gift_balance FROM users WHERE id = ?"))
         .bind(user_id).fetch_one(&state.db.pool).await?;
 
     let stats: (f64, i64, i64) = sqlx::query_as(
@@ -368,6 +368,7 @@ pub async fn get_wallet_stats(
 
     Ok(Json(WalletStats {
         balance,
+        gift_balance,
         total_consumption: stats.0,
         total_calls: stats.1,
         success_calls: stats.2,

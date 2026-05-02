@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined, MessageOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
@@ -142,6 +142,8 @@ const PluginConfigInner: React.FC = () => {
   const [pgSchemes, setPgSchemes] = useState<any[]>([]);
   const [savingPlayground, setSavingPlayground] = useState(false);
   const [pgSearchKeyword, setPgSearchKeyword] = useState('');
+  const [pgTypeFilter, setPgTypeFilter] = useState('all');
+  const [pgSchemeTypeFilter, setPgSchemeTypeFilter] = useState('all');
   const [pgSchemeDrawerVisible, setPgSchemeDrawerVisible] = useState(false);
   const [pgCurrentId, setPgCurrentId] = useState<number | null>(null);
   const [pgSelectedSchemeId, setPgSelectedSchemeId] = useState<string>('');
@@ -1352,6 +1354,15 @@ const PluginConfigInner: React.FC = () => {
 
   // ====== 体验中心 (Playground) 统一模型管理 Tab ======
   const filteredPgModels = pgModels.filter(m => {
+    let matchType = true;
+    if (pgTypeFilter !== 'all') {
+      const t = m.type_name || '';
+      if (pgTypeFilter === 'video') matchType = t.includes('视频');
+      else if (pgTypeFilter === 'image') matchType = t.includes('图片');
+      else if (pgTypeFilter === 'chat') matchType = !t.includes('视频') && !t.includes('图片');
+    }
+    if (!matchType) return false;
+    
     if (!pgSearchKeyword) return true;
     const kw = pgSearchKeyword.toLowerCase();
     return m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid?.toLowerCase()?.includes(kw);
@@ -1429,13 +1440,21 @@ const PluginConfigInner: React.FC = () => {
               开启体验开关并绑定方案后，用户即可在体验中心使用该模型。已开启 {pgModels.filter(m => m.pg_enabled).length} / {pgModels.length} 个模型
             </Text>
           </div>
-          <Input
-            placeholder="搜索模型..."
-            value={pgSearchKeyword}
-            onChange={e => setPgSearchKeyword(e.target.value)}
-            style={{ width: 220 }}
-            allowClear
-          />
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <Radio.Group value={pgTypeFilter} onChange={e => setPgTypeFilter(e.target.value)}>
+              <Radio.Button value="all">全部</Radio.Button>
+              <Radio.Button value="chat">对话</Radio.Button>
+              <Radio.Button value="image">图片</Radio.Button>
+              <Radio.Button value="video">视频</Radio.Button>
+            </Radio.Group>
+            <Input
+              placeholder="搜索模型..."
+              value={pgSearchKeyword}
+              onChange={e => setPgSearchKeyword(e.target.value)}
+              style={{ width: 220 }}
+              allowClear
+            />
+          </div>
         </div>
 
         <Table
@@ -1530,16 +1549,30 @@ const PluginConfigInner: React.FC = () => {
               管理内置和自定义的体验方案。每个方案定义了可配置的参数模板，绑定到模型后用户侧会动态展示。
             </Text>
           </div>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAddScheme}>新增方案</Button>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <Radio.Group value={pgSchemeTypeFilter} onChange={e => setPgSchemeTypeFilter(e.target.value)}>
+              <Radio.Button value="all">全部</Radio.Button>
+              <Radio.Button value="chat">对话</Radio.Button>
+              <Radio.Button value="image">图片</Radio.Button>
+              <Radio.Button value="video">视频</Radio.Button>
+            </Radio.Group>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleAddScheme}>新增方案</Button>
+          </div>
         </div>
 
         {(() => {
           const typeGroups: Record<string, { label: string; icon: React.ReactNode; color: string; schemes: { scheme: any; idx: number }[] }> = {
             video: { label: '视频生成方案', icon: <VideoCameraOutlined />, color: '#1677ff', schemes: [] },
             image: { label: '图片生成方案', icon: <PictureOutlined />, color: '#52c41a', schemes: [] },
+            chat: { label: '聊天对话方案', icon: <MessageOutlined />, color: '#722ed1', schemes: [] },
             other: { label: '其他方案', icon: <AppstoreOutlined />, color: '#faad14', schemes: [] } };
           schemeList.forEach((scheme, idx) => {
-            const key = scheme.type === 'video' ? 'video' : scheme.type === 'image' ? 'image' : 'other';
+            if (pgSchemeTypeFilter !== 'all') {
+              if (pgSchemeTypeFilter === 'chat' && scheme.type !== 'chat') return;
+              if (pgSchemeTypeFilter === 'video' && scheme.type !== 'video') return;
+              if (pgSchemeTypeFilter === 'image' && scheme.type !== 'image') return;
+            }
+            const key = scheme.type === 'video' ? 'video' : scheme.type === 'image' ? 'image' : scheme.type === 'chat' ? 'chat' : 'other';
             typeGroups[key].schemes.push({ scheme, idx });
           });
           const activeGroups = Object.entries(typeGroups).filter(([, g]) => g.schemes.length > 0);

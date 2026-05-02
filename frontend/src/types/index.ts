@@ -27,6 +27,8 @@ export interface User {
   referral_history?: string;
   referred_by?: string;
   allow_view_log_details?: number;
+  gift_balance?: number;
+  gift_used_quota?: number;
 }
 
 export interface UserLevel {
@@ -131,6 +133,7 @@ export interface FinanceRechargeRecord {
 
 export interface WalletStats {
   balance: number;
+  gift_balance: number;
   total_consumption: number;
   total_calls: number;
   success_calls: number;

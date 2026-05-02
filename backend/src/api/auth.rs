@@ -247,10 +247,6 @@ pub async fn register(
         if !marketing_override && settings.marketing.enable_registration_gift {
             gift_amount = calc_gift_amount(&settings.marketing);
         }
-        
-        if gift_amount > 0.0 {
-            initial_balance += gift_amount;
-        }
 
         // 查询默认注册等级
         let default_group: String = sqlx::query_scalar(&state.db.format_query(
@@ -268,8 +264,8 @@ pub async fn register(
         };
 
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group, referral_history)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, gift_balance, is_active, referred_by, register_ip, user_group, referral_history)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, ?, 1, ?, ?, ?, ?)"#)
         )
         .bind(&user_id)
         .bind(&uid)
@@ -277,6 +273,7 @@ pub async fn register(
         .bind(&actual_email)
         .bind(&password_hash)
         .bind(initial_balance)
+        .bind(gift_amount)
         .bind(&referred_by)
         .bind(&raw_ip)
         .bind(&default_group)
@@ -295,7 +292,7 @@ pub async fn register(
 
         if inviter_reward > 0.0 {
             if let Some(ref inv_id) = referred_by {
-                sqlx::query(&state.db.format_query("UPDATE users SET balance = balance + ? WHERE id = ?"))
+                sqlx::query(&state.db.format_query("UPDATE users SET gift_balance = gift_balance + ? WHERE id = ?"))
                     .bind(inviter_reward)
                     .bind(inv_id)
                     .execute(&mut *tx)
@@ -450,9 +447,6 @@ pub async fn register_email(
         let mut gift_amount = 0.0;
         if settings.marketing.enable_registration_gift {
             gift_amount = calc_gift_amount(&settings.marketing);
-            if gift_amount > 0.0 {
-                initial_balance += gift_amount;
-            }
         }
 
         // 查询默认注册等级
@@ -471,11 +465,11 @@ pub async fn register_email(
         };
 
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, is_active, referred_by, register_ip, user_group, referral_history)
-               VALUES (?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, gift_balance, is_active, referred_by, register_ip, user_group, referral_history)
+               VALUES (?, ?, ?, ?, ?, 'user', ?, ?, 1, ?, ?, ?, ?)"#)
         )
         .bind(&user_id).bind(&uid).bind(&username).bind(&request.email)
-        .bind(&password_hash).bind(initial_balance).bind(&referred_by).bind(&raw_ip)
+        .bind(&password_hash).bind(initial_balance).bind(gift_amount).bind(&referred_by).bind(&raw_ip)
         .bind(&default_group).bind(&referral_history)
         .execute(&mut *tx)
         .await?;
@@ -564,9 +558,6 @@ pub async fn register_mobile(
         let mut gift_amount = 0.0;
         if settings.marketing.enable_registration_gift {
             gift_amount = calc_gift_amount(&settings.marketing);
-            if gift_amount > 0.0 {
-                initial_balance += gift_amount;
-            }
         }
 
         // 查询默认注册等级
@@ -585,11 +576,11 @@ pub async fn register_mobile(
         };
 
         sqlx::query(
-            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, mobile, password_hash, role, balance, is_active, referred_by, register_ip, user_group, referral_history)
-               VALUES (?, ?, ?, ?, ?, ?, 'user', ?, 1, ?, ?, ?, ?)"#)
+            &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, mobile, password_hash, role, balance, gift_balance, is_active, referred_by, register_ip, user_group, referral_history)
+               VALUES (?, ?, ?, ?, ?, ?, 'user', ?, ?, 1, ?, ?, ?, ?)"#)
         )
         .bind(&user_id).bind(&uid).bind(&username).bind(&placeholder_email)
-        .bind(&request.mobile).bind(&password_hash).bind(initial_balance)
+        .bind(&request.mobile).bind(&password_hash).bind(initial_balance).bind(gift_amount)
         .bind(&referred_by).bind(&raw_ip)
         .bind(&default_group).bind(&referral_history)
         .execute(&mut *tx).await?;
@@ -740,15 +731,27 @@ pub async fn oauth_wechat_callback(
             .await?
             .unwrap_or_else(|| "default".to_string());
 
+            let mut initial_balance = state.config.default_user_quota;
+            let mut gift_amount = 0.0;
+            if settings.marketing.enable_registration_gift {
+                gift_amount = calc_gift_amount(&settings.marketing);
+            }
+
             sqlx::query(
-                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, wechat_id, wechat_name, role, balance, is_active, user_group)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user', ?, 1, ?)"#)
+                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, wechat_id, wechat_name, role, balance, gift_balance, is_active, user_group)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user', ?, ?, 1, ?)"#)
             )
             .bind(&user_id).bind(&uid).bind(&username).bind(&placeholder_email)
             .bind(&password_hash).bind(nickname).bind(wechat_identifier).bind(&info.nickname)
-            .bind(state.config.default_user_quota)
+            .bind(initial_balance).bind(gift_amount)
             .bind(&default_group)
             .execute(&state.db.pool).await?;
+
+            if gift_amount > 0.0 {
+                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
+                    .bind(&user_id).bind(gift_amount)
+                    .execute(&state.db.pool).await?;
+            }
 
             sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
                 .bind(&user_id).fetch_one(&state.db.pool).await?
@@ -845,15 +848,27 @@ pub async fn oauth_google_callback(
             .await?
             .unwrap_or_else(|| "default".to_string());
 
+            let mut initial_balance = state.config.default_user_quota;
+            let mut gift_amount = 0.0;
+            if settings.marketing.enable_registration_gift {
+                gift_amount = calc_gift_amount(&settings.marketing);
+            }
+
             sqlx::query(
-                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, google_id, google_name, role, balance, is_active, user_group)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user', ?, 1, ?)"#)
+                &state.db.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, nickname, google_id, google_name, role, balance, gift_balance, is_active, user_group)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user', ?, ?, 1, ?)"#)
             )
             .bind(&user_id).bind(&uid).bind(&username).bind(&actual_email)
             .bind(&password_hash).bind(name_val).bind(&info.id).bind(&google_display_name)
-            .bind(state.config.default_user_quota)
+            .bind(initial_balance).bind(gift_amount)
             .bind(&default_group)
             .execute(&state.db.pool).await?;
+
+            if gift_amount > 0.0 {
+                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
+                    .bind(&user_id).bind(gift_amount)
+                    .execute(&state.db.pool).await?;
+            }
 
             sqlx::query_as(&state.db.format_query("SELECT * FROM users WHERE id = ?"))
                 .bind(&user_id).fetch_one(&state.db.pool).await?

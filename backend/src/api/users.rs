@@ -129,6 +129,8 @@ pub async fn update_user(
     if let Some(wechat_id) = request.wechat_id { user.wechat_id = Some(wechat_id); }
     if let Some(role) = request.role { user.role = role; }
     if let Some(balance) = request.balance { user.balance = balance; }
+    if let Some(gift_balance) = request.gift_balance { user.gift_balance = gift_balance; }
+    if let Some(gift_used_quota) = request.gift_used_quota { user.gift_used_quota = gift_used_quota; }
     if let Some(user_group) = request.user_group { user.user_group = user_group; }
     if let Some(is_active) = request.is_active { user.is_active = is_active; }
     if let Some(admin_remark) = request.admin_remark { user.admin_remark = Some(admin_remark); }
@@ -170,7 +172,7 @@ pub async fn update_user(
     sqlx::query(
         &state.db.format_query(r#"UPDATE users SET username = ?, email = ?, password_hash = ?, 
            nickname = ?, mobile = ?, wechat_id = ?,
-           role = ?, balance = ?, user_group = ?, is_active = ?, admin_remark = ?, referred_by = ?, referral_history = ?, updated_at = CURRENT_TIMESTAMP
+           role = ?, balance = ?, gift_balance = ?, gift_used_quota = ?, user_group = ?, is_active = ?, admin_remark = ?, referred_by = ?, referral_history = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&user.username)
@@ -181,6 +183,8 @@ pub async fn update_user(
     .bind(&user.wechat_id)
     .bind(&user.role)
     .bind(user.balance)
+    .bind(user.gift_balance)
+    .bind(user.gift_used_quota)
     .bind(&user.user_group)
     .bind(user.is_active)
     .bind(&user.admin_remark)
@@ -278,25 +282,41 @@ pub async fn recharge_user(
     .await?
     .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
-    let new_balance = user.balance + request.amount;
     let remark = request.remark.unwrap_or_else(|| "Administrator Adjustment".to_string());
+    let is_gift = request.wallet_type == "gift";
 
-    sqlx::query(&state.db.format_query("UPDATE users SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
-        .bind(new_balance)
-        .bind(&id)
-        .execute(&mut *tx)
-        .await?;
+    if is_gift {
+        // 赠送钱包操作
+        let new_gift = user.gift_balance + request.amount;
+        sqlx::query(&state.db.format_query("UPDATE users SET gift_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+            .bind(new_gift)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
+    } else {
+        // 系统钱包操作
+        let new_balance = user.balance + request.amount;
+        sqlx::query(&state.db.format_query("UPDATE users SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+            .bind(new_balance)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
+    }
 
-    let recharge_id: i64 = sqlx::query_scalar::<Any, i64>(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'manual', ?) RETURNING id"))
+    let recharge_type = if is_gift { "gift" } else { "manual" };
+    let recharge_id: i64 = sqlx::query_scalar::<Any, i64>(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, ?, ?) RETURNING id"))
         .bind(&id)
         .bind(request.amount)
+        .bind(recharge_type)
         .bind(&remark)
         .fetch_one(&mut *tx)
         .await?;
 
-    // Award commission if user has inviter
-    if let Err(e) = crate::services::affiliate::award_commission(&state.db, &mut tx, &id, recharge_id, request.amount).await {
-        tracing::error!("Failed to award commission for recharge {}: {}", recharge_id, e);
+    // 系统钱包才奖励佣金，赠送钱包不计入佣金范围
+    if !is_gift {
+        if let Err(e) = crate::services::affiliate::award_commission(&state.db, &mut tx, &id, recharge_id, request.amount).await {
+            tracing::error!("Failed to award commission for recharge {}: {}", recharge_id, e);
+        }
     }
 
     tx.commit().await?;

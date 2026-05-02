@@ -44,6 +44,10 @@ pub struct User {
     pub admin_remark: Option<String>,
     #[sqlx(default)]
     pub referral_history: Option<String>,
+    #[sqlx(default)]
+    pub gift_balance: f64,
+    #[sqlx(default)]
+    pub gift_used_quota: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,6 +84,8 @@ pub struct UpdateUserRequest {
     pub admin_remark: Option<String>,
     pub referral_history: Option<String>,
     pub referred_by: Option<String>,
+    pub gift_balance: Option<f64>,
+    pub gift_used_quota: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,11 +112,15 @@ pub struct RechargeRecord {
 pub struct RechargeRequest {
     pub amount: f64,
     pub remark: Option<String>,
+    /// wallet_type: 'system'=系统钱包, 'gift'=赠送钱包
+    #[serde(default)]
+    pub wallet_type: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct WalletStats {
     pub balance: f64,
+    pub gift_balance: f64,
     pub total_consumption: f64,
     pub total_calls: i64,
     pub success_calls: i64,

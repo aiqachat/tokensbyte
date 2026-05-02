@@ -8,6 +8,8 @@ import {
   BorderOutlined,
   FontSizeOutlined,
   ClearOutlined,
+  ExpandOutlined,
+  CompressOutlined,
 } from '@ant-design/icons';
 import { Eraser, MousePointer2 } from 'lucide-react';
 
@@ -55,6 +57,7 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
   const [textInputVisible, setTextInputVisible] = useState(false);
   const [textPos, setTextPos] = useState({ x: 0, y: 0, canvasX: 0, canvasY: 0, scale: 1 });
   const [textValue, setTextValue] = useState('');
+  const [viewMode, setViewMode] = useState<'fit' | '100'>('fit');
 
   // Snapshot before starting a shape (arrow/rect)
   const snapshotRef = useRef<ImageData | null>(null);
@@ -354,35 +357,79 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
         mask: { backdropFilter: 'blur(5px)' }
       }}
     >
-      {/* Top Undo/Redo Toolbar */}
+      {/* Top Toolbar */}
       <div style={{
         position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)',
-        display: 'flex', gap: 10, zIndex: 100,
+        display: 'flex', gap: 6, zIndex: 100,
         background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)',
-        padding: '8px 16px', borderRadius: 30, border: '1px solid rgba(255,255,255,0.1)'
+        padding: '8px 12px', borderRadius: 30, border: '1px solid rgba(255,255,255,0.1)',
+        alignItems: 'center',
       }}>
-        <div 
-          onClick={handleUndo} 
-          style={{ cursor: historyStep > 0 ? 'pointer' : 'not-allowed', color: historyStep > 0 ? '#fff' : 'rgba(255,255,255,0.3)', padding: '4px 8px' }}
-        >
-          <UndoOutlined />
-        </div>
-        <div 
-          onClick={handleRedo} 
-          style={{ cursor: historyStep < history.length - 1 ? 'pointer' : 'not-allowed', color: historyStep < history.length - 1 ? '#fff' : 'rgba(255,255,255,0.3)', padding: '4px 8px' }}
-        >
-          <RedoOutlined />
-        </div>
+        <Tooltip title="撤销" placement="bottom">
+          <div 
+            onClick={handleUndo} 
+            style={{ cursor: historyStep > 0 ? 'pointer' : 'not-allowed', color: historyStep > 0 ? '#fff' : 'rgba(255,255,255,0.3)', padding: '4px 8px' }}
+          >
+            <UndoOutlined />
+          </div>
+        </Tooltip>
+        <Tooltip title="重做" placement="bottom">
+          <div 
+            onClick={handleRedo} 
+            style={{ cursor: historyStep < history.length - 1 ? 'pointer' : 'not-allowed', color: historyStep < history.length - 1 ? '#fff' : 'rgba(255,255,255,0.3)', padding: '4px 8px' }}
+          >
+            <RedoOutlined />
+          </div>
+        </Tooltip>
+        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
+        <Tooltip title="适应屏幕" placement="bottom">
+          <div
+            onClick={() => setViewMode('fit')}
+            style={{
+              padding: '4px 10px', borderRadius: 16, cursor: 'pointer',
+              fontSize: 13, fontWeight: 500, transition: 'all 0.2s',
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: viewMode === 'fit' ? 'rgba(255,255,255,0.2)' : 'transparent',
+              color: viewMode === 'fit' ? '#fff' : 'rgba(255,255,255,0.5)',
+            }}
+          >
+            <CompressOutlined style={{ fontSize: 14 }} />
+            <span>适应</span>
+          </div>
+        </Tooltip>
+        <Tooltip title="100% 原始尺寸" placement="bottom">
+          <div
+            onClick={() => setViewMode('100')}
+            style={{
+              padding: '4px 10px', borderRadius: 16, cursor: 'pointer',
+              fontSize: 13, fontWeight: 500, transition: 'all 0.2s',
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: viewMode === '100' ? 'rgba(255,255,255,0.2)' : 'transparent',
+              color: viewMode === '100' ? '#fff' : 'rgba(255,255,255,0.5)',
+            }}
+          >
+            <ExpandOutlined style={{ fontSize: 14 }} />
+            <span>100%</span>
+          </div>
+        </Tooltip>
       </div>
 
       {/* Main Drawing Area */}
       <div 
         ref={containerRef}
         style={{
-          position: 'absolute', inset: 80, display: 'flex', alignItems: 'center', justifyContent: 'center'
+          position: 'absolute', inset: 80,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          overflow: viewMode === '100' ? 'auto' : 'hidden',
         }}
       >
-        <div style={{ position: 'relative', maxWidth: '100%', maxHeight: '100%', display: 'inline-block' }}>
+        <div style={{
+          position: 'relative',
+          ...(viewMode === 'fit'
+            ? { maxWidth: '100%', maxHeight: '100%', display: 'inline-block' }
+            : { display: 'inline-block', flexShrink: 0 }
+          ),
+        }}>
           {/* Background Original Image */}
           <img
             ref={imageRef}
@@ -390,8 +437,12 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
             alt="Original"
             onLoad={handleImageLoad}
             style={{
-              display: 'block', maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain',
-              userSelect: 'none', pointerEvents: 'none'
+              display: 'block',
+              userSelect: 'none', pointerEvents: 'none',
+              ...(viewMode === 'fit'
+                ? { maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' }
+                : { width: canvasSize.width, height: canvasSize.height }
+              ),
             }}
           />
           {/* Transparent Drawing Canvas */}

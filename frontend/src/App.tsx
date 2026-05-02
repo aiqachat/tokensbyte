@@ -35,6 +35,7 @@ import Redemptions from './pages/Redemptions/Redemptions';
 import Profile from './pages/Profile/Profile';
 import Wallet from './pages/Wallet/Wallet';
 import RechargeRecords from './pages/Finance/RechargeRecords';
+import GiftRecords from './pages/Finance/GiftRecords';
 import OrderDetails from './pages/Finance/OrderDetails';
 import Settings from './pages/admin/Settings';
 import PaymentSettings from './pages/admin/PaymentSettings';
@@ -168,6 +169,7 @@ const App: React.FC = () => {
           <Route path="user-levels/:actionId" element={<UserLevelEdit />} />
           <Route path="admin-groups" element={<AdminGroups />} />
           <Route path="finance/recharges" element={<RechargeRecords />} />
+          <Route path="finance/gifts" element={<GiftRecords />} />
           <Route path="finance/orders" element={<OrderDetails />} />
           <Route path="settings" element={<Settings />} />
           <Route path="payment-settings" element={<PaymentSettings />} />

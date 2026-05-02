@@ -8,10 +8,10 @@
  * - 裁剪后预览与保存
  */
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Modal, message } from 'antd';
+import { Modal, Tooltip, message } from 'antd';
 import {
   PlayCircleOutlined, PauseCircleOutlined,
-  UndoOutlined,
+  UndoOutlined, ExpandOutlined, CompressOutlined,
 } from '@ant-design/icons';
 
 interface VideoEditorModalProps {
@@ -40,6 +40,8 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
   const [trimEnd, setTrimEnd] = useState(1);
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [viewMode, setViewMode] = useState<'fit' | '100'>('fit');
+  const [videoDims, setVideoDims] = useState({ w: 0, h: 0 });
 
   // 同步 ref
   useEffect(() => { trimStartRef.current = trimStart; }, [trimStart]);
@@ -64,6 +66,7 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
     if (!vid || !vid.duration || !isFinite(vid.duration)) return;
     setDuration(vid.duration);
     durationRef.current = vid.duration;
+    setVideoDims({ w: vid.videoWidth || 0, h: vid.videoHeight || 0 });
   }, []);
 
   const handleTimeUpdate = useCallback(() => {
@@ -349,7 +352,40 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
           style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, cursor: 'pointer', userSelect: 'none' }}>
           取消
         </div>
-        <span style={{ color: '#fff', fontSize: 15, fontWeight: 600 }}>编辑视频</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: '#fff', fontSize: 15, fontWeight: 600 }}>编辑视频</span>
+          <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.12)', margin: '0 4px' }} />
+          <Tooltip title="适应窗口" placement="bottom">
+            <div
+              onClick={() => setViewMode('fit')}
+              style={{
+                padding: '3px 8px', borderRadius: 12, cursor: 'pointer',
+                fontSize: 12, fontWeight: 500, transition: 'all 0.2s',
+                display: 'flex', alignItems: 'center', gap: 3,
+                background: viewMode === 'fit' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                color: viewMode === 'fit' ? '#fff' : 'rgba(255,255,255,0.4)',
+              }}
+            >
+              <CompressOutlined style={{ fontSize: 12 }} />
+              <span>适应</span>
+            </div>
+          </Tooltip>
+          <Tooltip title="100% 原始尺寸" placement="bottom">
+            <div
+              onClick={() => setViewMode('100')}
+              style={{
+                padding: '3px 8px', borderRadius: 12, cursor: 'pointer',
+                fontSize: 12, fontWeight: 500, transition: 'all 0.2s',
+                display: 'flex', alignItems: 'center', gap: 3,
+                background: viewMode === '100' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                color: viewMode === '100' ? '#fff' : 'rgba(255,255,255,0.4)',
+              }}
+            >
+              <ExpandOutlined style={{ fontSize: 12 }} />
+              <span>100%</span>
+            </div>
+          </Tooltip>
+        </div>
         <div onClick={exporting ? undefined : handleExport}
           style={{
             color: exporting ? 'rgba(255,255,255,0.3)' : '#FFD60A',
@@ -361,14 +397,34 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
       </div>
 
       {/* 视频预览区 */}
-      <div style={{
+      <div className="vid-scroll" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: '#000', position: 'relative', minHeight: 280,
+        background: '#000', position: 'relative',
+        minHeight: 280, maxHeight: 380,
+        overflow: viewMode === '100' ? 'scroll' : 'hidden',
       }}>
+        <style>{`
+          .vid-scroll { scrollbar-gutter: stable both-edges; }
+          .vid-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+          .vid-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.06); }
+          .vid-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
+          .vid-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); border: 2px solid transparent; background-clip: content-box; }
+          .vid-scroll::-webkit-scrollbar-corner { background: rgba(255,255,255,0.03); }
+        `}</style>
         <video
           ref={videoRef}
           src={videoUrl}
-          style={{ maxWidth: '100%', maxHeight: 380, display: 'block' }}
+          disablePictureInPicture
+          controlsList="noplaybackrate nodownload nofullscreen"
+          style={{
+            display: 'block',
+            margin: 'auto',
+            flexShrink: 0,
+            ...(viewMode === 'fit'
+              ? { maxWidth: '100%', maxHeight: 380 }
+              : { width: videoDims.w || 'auto', height: videoDims.h || 'auto' }
+            ),
+          }}
           preload="auto"
           playsInline
           muted
@@ -377,21 +433,6 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
           onEnded={handleVideoEnded}
           onClick={togglePlay}
         />
-        {!playing && duration > 0 && (
-          <div onClick={togglePlay} style={{
-            position: 'absolute', inset: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', background: 'rgba(0,0,0,0.25)',
-          }}>
-            <div style={{
-              width: 64, height: 64, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <PlayCircleOutlined style={{ fontSize: 36, color: '#fff' }} />
-            </div>
-          </div>
-        )}
       </div>
 
       {/* 底部控制区 */}
@@ -533,7 +574,7 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
             onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
           >
             {playing ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-            <span>{playing ? '暂停' : '预览'}</span>
+            <span>{playing ? '暂停' : '播放'}</span>
           </div>
 
           {isTrimmed && (
