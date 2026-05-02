@@ -496,7 +496,7 @@ const Users: React.FC = () => {
                 return searchStr.includes(input.toLowerCase());
               }}
               options={allUsers.map(u => ({
-                value: u.uid || String(u.id),
+                value: String(u.id),
                 label: `${u.username} ${u.nickname ? `(${u.nickname})` : ''} - UID: ${u.uid || u.id} ${u.email ? `(${u.email})` : ''}`
               }))}
             />
