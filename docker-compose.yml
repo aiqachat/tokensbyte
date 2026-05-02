@@ -52,7 +52,7 @@ services:
       - REGISTER_ENABLED=${REGISTER_ENABLED:-true}
       - RUST_LOG=${RUST_LOG:-info}
     volumes:
-      - ./data:/data
+      - ./data:/app/data
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     networks:
