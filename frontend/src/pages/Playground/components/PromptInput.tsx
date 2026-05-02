@@ -331,6 +331,48 @@ const PromptInput: React.FC = React.memo(() => {
       >
         {/* 左侧功能芯片区 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
+          {/* API 密钥芯片（置于最前） */}
+          <Tooltip title={tokenName ? '点击更换 API 密钥' : '请选择 API 密钥'}>
+            <div
+              onClick={() => setIsTokenModalVisible(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: tokenName ? 'auto' : 30,
+                height: 30,
+                padding: tokenName ? '0 10px' : 0,
+                background: tokenName ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: 8,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                color: tokenName ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.65)',
+                fontSize: 13,
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = tokenName ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.06)';
+              }}
+            >
+              {!tokenName ? (
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.65)' }}>
+                  <svg width="14" height="14" viewBox="0 0 1024 1024" fill="currentColor">
+                    <path d="M854.6 288.6L539.2 604c-11.3 11.3-29.6 11.3-40.9 0L426 531.7c-11.3-11.3-29.6-11.3-40.9 0L247.9 668.9 224 816c-1.8 11-11.3 19.3-22.4 19.6L128 840c-13.3.4-24-10.4-24-24v-73.6c0-11 8.6-20.5 19.6-22.4l147.1-23.9 137.2-137.2c-11.3-11.3-11.3-29.6 0-40.9l72.3-72.3c11.3-11.3 11.3-29.6 0-40.9L164.8 139.4c-6.2-6.2-6.2-16.4 0-22.6l22.6-22.6c6.2-6.2 16.4-6.2 22.6 0l717.1 717.1c6.2 6.2 6.2 16.4 0 22.6l-22.6 22.6c-6.2 6.2-16.4 6.2-22.6 0L590.2 584.8l264.4-264.4c11.3-11.3 29.6-11.3 40.9 0l72.3 72.3c6.2 6.2 16.4 6.2 22.6 0l22.6-22.6c6.2-6.2 6.2-16.4 0-22.6L877.2 288.6c-6.2-6.2-16.4-6.2-22.6 0zM754 130c-84.5 0-153 68.5-153 153s68.5 153 153 153 153-68.5 153-153-68.5-153-153-153zm0 238c-46.9 0-85-38.1-85-85s38.1-85 85-85 85 38.1 85 85-38.1 85-85 85z" />
+                    <path d="M754 215c-37.5 0-68 30.5-68 68s30.5 68 68 68 68-30.5 68-68-30.5-68-68-68z" />
+                  </svg>
+                  <div style={{ position: 'absolute', width: 18, height: 1.5, background: 'currentColor', transform: 'rotate(-45deg)' }} />
+                </div>
+              ) : (
+                <span>{tokenName}</span>
+              )}
+            </div>
+          </Tooltip>
+
           {/* 模型快捷切换按钮 */}
           <Tooltip title="切换模型">
             <div
@@ -339,7 +381,8 @@ const PromptInput: React.FC = React.memo(() => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
-                padding: '5px 12px',
+                height: 30,
+                padding: '0 10px',
                 background: 'rgba(255, 255, 255, 0.1)',
                 border: '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: 8,
@@ -362,7 +405,6 @@ const PromptInput: React.FC = React.memo(() => {
                 e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
               }}
             >
-              <AppstoreOutlined style={{ fontSize: 13, flexShrink: 0 }} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {currentModel?.name || '选择模型'}
               </span>
@@ -377,7 +419,8 @@ const PromptInput: React.FC = React.memo(() => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 5,
-                  padding: '5px 10px',
+                  height: 30,
+                  padding: '0 10px',
                   background: paramValues.web_search ? 'rgba(82, 196, 26, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                   border: `1px solid ${paramValues.web_search ? 'rgba(82, 196, 26, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
                   borderRadius: 8,
@@ -395,52 +438,6 @@ const PromptInput: React.FC = React.memo(() => {
               </div>
             </Tooltip>
           )}
-
-          {/* API 密钥芯片 */}
-          <Tooltip title={tokenName ? '点击更换 API 密钥' : '请选择 API 密钥'}>
-            <div
-              onClick={() => setIsTokenModalVisible(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '5px 10px',
-                background: tokenName
-                  ? 'rgba(255,255,255,0.05)'
-                  : 'rgba(255, 77, 79, 0.08)',
-                border: `1px solid ${tokenName ? 'rgba(255,255,255,0.1)' : 'rgba(255, 77, 79, 0.25)'}`,
-                borderRadius: 8,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                color: tokenName ? 'rgba(255,255,255,0.65)' : '#ff4d4f',
-                fontSize: 13,
-                fontWeight: 400,
-                whiteSpace: 'nowrap',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = tokenName
-                  ? 'rgba(255,255,255,0.1)'
-                  : 'rgba(255, 77, 79, 0.14)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = tokenName
-                  ? 'rgba(255,255,255,0.05)'
-                  : 'rgba(255, 77, 79, 0.08)';
-              }}
-            >
-              <KeyOutlined style={{ fontSize: 12, flexShrink: 0 }} />
-              <span>{tokenName || '未选密钥'}</span>
-              {tokenName && (
-                <CloseOutlined
-                  style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 2 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsTokenModalVisible(true);
-                  }}
-                />
-              )}
-            </div>
-          </Tooltip>
 
           {/* 分隔符 */}
           <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.06)', margin: '0 2px', flexShrink: 0 }} />

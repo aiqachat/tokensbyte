@@ -10,6 +10,8 @@ import {
   ClearOutlined,
   ExpandOutlined,
   CompressOutlined,
+  FullscreenOutlined,
+  FullscreenExitOutlined,
 } from '@ant-design/icons';
 import { Eraser, MousePointer2 } from 'lucide-react';
 
@@ -57,7 +59,75 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
   const [textInputVisible, setTextInputVisible] = useState(false);
   const [textPos, setTextPos] = useState({ x: 0, y: 0, canvasX: 0, canvasY: 0, scale: 1 });
   const [textValue, setTextValue] = useState('');
-  const [viewMode, setViewMode] = useState<'fit' | '100'>('fit');
+  const [zoomLevel, setZoomLevel] = useState<number>(0); // 0 = fit mode, >0 = explicit scale
+  const fitScaleRef = useRef<number>(1); // cached fit scale
+  const canvasReady = canvasSize.width > 1 || canvasSize.height > 1; // image loaded?
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!modalRef.current) return;
+    if (!document.fullscreenElement) {
+      modalRef.current.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+  // 重置状态 when modal opens
+  useEffect(() => {
+    if (open) {
+      setZoomLevel(0);
+      setCanvasSize({ width: 1, height: 1 });
+      setHistory([]);
+      setHistoryStep(-1);
+      setTexts([]);
+      setCurrentTool('pointer');
+    }
+  }, [open]);
+
+  // 计算适应屏幕的缩放比例
+  const computeFitScale = useCallback(() => {
+    if (!containerRef.current || !canvasSize.width || !canvasSize.height) return 1;
+    const rect = containerRef.current.getBoundingClientRect();
+    const sw = rect.width / canvasSize.width;
+    const sh = rect.height / canvasSize.height;
+    return Math.min(sw, sh, 1);
+  }, [canvasSize]);
+
+  // 获取当前实际显示比例
+  const currentScale = zoomLevel > 0 ? zoomLevel : computeFitScale();
+
+  // 更新 fitScaleRef
+  useEffect(() => {
+    fitScaleRef.current = computeFitScale();
+  }, [computeFitScale]);
+
+  // 触控板手势缩放 (pinch-to-zoom)
+  const openRef = useRef(open);
+  openRef.current = open;
+
+  useEffect(() => {
+    const handler = (e: WheelEvent) => {
+      if (!openRef.current) return;
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const delta = -e.deltaY * 0.008;
+      setZoomLevel(prev => {
+        const base = prev > 0 ? prev : fitScaleRef.current;
+        return Math.max(0.05, Math.min(10, base * (1 + delta)));
+      });
+    };
+    document.addEventListener('wheel', handler, { passive: false });
+    return () => document.removeEventListener('wheel', handler);
+  }, []); // 只挂载一次，通过 ref 判断 open 状态
 
   // Snapshot before starting a shape (arrow/rect)
   const snapshotRef = useRef<ImageData | null>(null);
@@ -357,6 +427,7 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
         mask: { backdropFilter: 'blur(5px)' }
       }}
     >
+      <div ref={modalRef} style={{ width: '100%', height: '100%', position: 'relative', background: '#111111' }}>
       {/* Top Toolbar */}
       <div style={{
         position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)',
@@ -384,13 +455,13 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
         <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
         <Tooltip title="适应屏幕" placement="bottom">
           <div
-            onClick={() => setViewMode('fit')}
+            onClick={() => setZoomLevel(0)}
             style={{
               padding: '4px 10px', borderRadius: 16, cursor: 'pointer',
               fontSize: 13, fontWeight: 500, transition: 'all 0.2s',
               display: 'flex', alignItems: 'center', gap: 4,
-              background: viewMode === 'fit' ? 'rgba(255,255,255,0.2)' : 'transparent',
-              color: viewMode === 'fit' ? '#fff' : 'rgba(255,255,255,0.5)',
+              background: zoomLevel === 0 ? 'rgba(255,255,255,0.2)' : 'transparent',
+              color: zoomLevel === 0 ? '#fff' : 'rgba(255,255,255,0.5)',
             }}
           >
             <CompressOutlined style={{ fontSize: 14 }} />
@@ -399,17 +470,41 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
         </Tooltip>
         <Tooltip title="100% 原始尺寸" placement="bottom">
           <div
-            onClick={() => setViewMode('100')}
+            onClick={() => setZoomLevel(1)}
             style={{
               padding: '4px 10px', borderRadius: 16, cursor: 'pointer',
               fontSize: 13, fontWeight: 500, transition: 'all 0.2s',
               display: 'flex', alignItems: 'center', gap: 4,
-              background: viewMode === '100' ? 'rgba(255,255,255,0.2)' : 'transparent',
-              color: viewMode === '100' ? '#fff' : 'rgba(255,255,255,0.5)',
+              background: (zoomLevel === 1) ? 'rgba(255,255,255,0.2)' : 'transparent',
+              color: (zoomLevel === 1) ? '#fff' : 'rgba(255,255,255,0.5)',
             }}
           >
             <ExpandOutlined style={{ fontSize: 14 }} />
             <span>100%</span>
+          </div>
+        </Tooltip>
+        <div style={{
+          padding: '4px 10px', borderRadius: 16,
+          fontSize: 12, fontWeight: 600, fontFamily: 'monospace',
+          color: 'rgba(255,255,255,0.6)',
+          background: 'rgba(255,255,255,0.06)',
+          minWidth: 48, textAlign: 'center',
+        }}>
+          {Math.round(currentScale * 100)}%
+        </div>
+        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
+        <Tooltip title={isFullscreen ? '退出全屏' : '全屏'} placement="bottom">
+          <div
+            onClick={toggleFullscreen}
+            style={{
+              padding: '4px 10px', borderRadius: 16, cursor: 'pointer',
+              fontSize: 13, fontWeight: 500, transition: 'all 0.2s',
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: isFullscreen ? 'rgba(255,255,255,0.2)' : 'transparent',
+              color: isFullscreen ? '#fff' : 'rgba(255,255,255,0.5)',
+            }}
+          >
+            {isFullscreen ? <FullscreenExitOutlined style={{ fontSize: 14 }} /> : <FullscreenOutlined style={{ fontSize: 14 }} />}
           </div>
         </Tooltip>
       </div>
@@ -420,14 +515,16 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
         style={{
           position: 'absolute', inset: 80,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          overflow: viewMode === '100' ? 'auto' : 'hidden',
+          overflow: (zoomLevel > 0 && canvasReady) ? 'auto' : 'hidden',
         }}
       >
         <div style={{
           position: 'relative',
-          ...(viewMode === 'fit'
-            ? { maxWidth: '100%', maxHeight: '100%', display: 'inline-block' }
-            : { display: 'inline-block', flexShrink: 0 }
+          display: 'inline-block',
+          flexShrink: 0,
+          ...(canvasReady
+            ? { width: canvasSize.width * currentScale, height: canvasSize.height * currentScale }
+            : { maxWidth: '100%', maxHeight: '100%' }
           ),
         }}>
           {/* Background Original Image */}
@@ -439,9 +536,9 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
             style={{
               display: 'block',
               userSelect: 'none', pointerEvents: 'none',
-              ...(viewMode === 'fit'
-                ? { maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' }
-                : { width: canvasSize.width, height: canvasSize.height }
+              ...(canvasReady
+                ? { width: '100%', height: '100%' }
+                : { maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' }
               ),
             }}
           />
@@ -649,7 +746,13 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
       }}>
         <Button 
           shape="round" 
-          onClick={onCancel}
+          onClick={() => {
+            if (isFullscreen) {
+              document.exitFullscreen().catch(() => {});
+            } else {
+              onCancel();
+            }
+          }}
           style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', width: 100 }}
         >
           取消
@@ -662,6 +765,7 @@ const ImageEditorModal: React.FC<ImageEditorModalProps> = ({ open, imageUrl, onC
         >
           保存
         </Button>
+      </div>
       </div>
     </Modal>
   );

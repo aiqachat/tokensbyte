@@ -12,6 +12,8 @@ import { Modal, Tooltip, message } from 'antd';
 import {
   PlayCircleOutlined, PauseCircleOutlined,
   UndoOutlined, ExpandOutlined, CompressOutlined,
+  FullscreenOutlined, FullscreenExitOutlined,
+  SoundOutlined,
 } from '@ant-design/icons';
 
 interface VideoEditorModalProps {
@@ -42,6 +44,24 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
   const [exporting, setExporting] = useState(false);
   const [viewMode, setViewMode] = useState<'fit' | '100'>('fit');
   const [videoDims, setVideoDims] = useState({ w: 0, h: 0 });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!modalRef.current) return;
+    if (!document.fullscreenElement) {
+      modalRef.current.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
 
   // 同步 ref
   useEffect(() => { trimStartRef.current = trimStart; }, [trimStart]);
@@ -343,6 +363,7 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
         mask: { backdropFilter: 'blur(8px)' },
       }}
     >
+      <div ref={modalRef} style={{ background: '#0a0a0a', display: 'flex', flexDirection: 'column', height: isFullscreen ? '100vh' : 'auto' }}>
       {/* 顶部操作栏 */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -385,6 +406,21 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
               <span>100%</span>
             </div>
           </Tooltip>
+          <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.1)', margin: '0 2px' }} />
+          <Tooltip title={isFullscreen ? '退出全屏' : '全屏'} placement="bottom">
+            <div
+              onClick={toggleFullscreen}
+              style={{
+                padding: '3px 8px', borderRadius: 12, cursor: 'pointer',
+                fontSize: 12, fontWeight: 500, transition: 'all 0.2s',
+                display: 'flex', alignItems: 'center', gap: 3,
+                background: isFullscreen ? 'rgba(255,255,255,0.15)' : 'transparent',
+                color: isFullscreen ? '#fff' : 'rgba(255,255,255,0.4)',
+              }}
+            >
+              {isFullscreen ? <FullscreenExitOutlined style={{ fontSize: 13 }} /> : <FullscreenOutlined style={{ fontSize: 13 }} />}
+            </div>
+          </Tooltip>
         </div>
         <div onClick={exporting ? undefined : handleExport}
           style={{
@@ -400,7 +436,9 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
       <div className="vid-scroll" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: '#000', position: 'relative',
-        minHeight: 280, maxHeight: 380,
+        minHeight: 280,
+        maxHeight: isFullscreen ? 'calc(100vh - 220px)' : 380,
+        flex: isFullscreen ? 1 : 'none',
         overflow: viewMode === '100' ? 'scroll' : 'hidden',
       }}>
         <style>{`
@@ -421,7 +459,7 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
             margin: 'auto',
             flexShrink: 0,
             ...(viewMode === 'fit'
-              ? { maxWidth: '100%', maxHeight: 380 }
+              ? { maxWidth: '100%', maxHeight: isFullscreen ? 'calc(100vh - 220px)' : 380 }
               : { width: videoDims.w || 'auto', height: videoDims.h || 'auto' }
             ),
           }}
@@ -450,11 +488,43 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
             color: isTrimmed ? '#FFD60A' : 'rgba(255,255,255,0.5)',
             fontSize: 13, fontWeight: 500,
           }}>
-            {isTrimmed && '✂ '}{formatTime(trimDuration)} / {formatTime(duration)}
+            {formatTime(trimDuration)} / {formatTime(duration)}
           </span>
-          <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, fontFamily: 'monospace' }}>
-            {formatTime(trimEnd * duration)}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, fontFamily: 'monospace' }}>
+              {formatTime(trimEnd * duration)}
+            </span>
+            <Tooltip title={isMuted ? '取消静音' : '静音'} placement="top">
+              <div
+                onClick={() => {
+                  if (videoRef.current) {
+                    const next = !isMuted;
+                    videoRef.current.muted = next;
+                    setIsMuted(next);
+                  }
+                }}
+                style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', transition: 'all 0.2s',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: isMuted ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.7)',
+                  fontSize: 14, position: 'relative',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+              >
+                <SoundOutlined />
+                {isMuted && (
+                  <div style={{
+                    position: 'absolute', width: 18, height: 2,
+                    background: 'rgba(255,255,255,0.3)', transform: 'rotate(-45deg)',
+                    borderRadius: 1,
+                  }} />
+                )}
+              </div>
+            </Tooltip>
+          </div>
         </div>
 
         {/* 时间轴 */}
@@ -594,6 +664,7 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
             </div>
           )}
         </div>
+      </div>
       </div>
     </Modal>
   );
