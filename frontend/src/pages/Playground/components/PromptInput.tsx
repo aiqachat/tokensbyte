@@ -177,8 +177,9 @@ const PromptInput: React.FC = React.memo(() => {
     const textarea = document.querySelector('.prompt-textarea textarea') as HTMLTextAreaElement;
     const before = prompt.substring(0, start);
     const afterCursor = prompt.substring(textarea?.selectionStart ?? prompt.length);
-    // 插入 @标签 + \u200B（零宽空格锚点）+ \u3000（全角空格，占一个中文字符宽度，约15px）+ \u200B
-    const placeholder = '\u200B\u3000\u200B';
+    // 插入 @标签 + \u200B + 空格 + \u3000(占位) + 空格 + \u200B
+    // 前后加的普通空格用来产生视觉上的间距（防拥挤），底层文字流也会随之撑开
+    const placeholder = '\u200B \u3000 \u200B';
     const newPrompt = `${before}@${label}${placeholder} ${afterCursor}`;
     setPrompt(newPrompt);
     setMentionOpen(false);
@@ -187,7 +188,7 @@ const PromptInput: React.FC = React.memo(() => {
     // 恢复光标位置
     setTimeout(() => {
       if (textarea) {
-        const pos = before.length + label.length + 1 + 3 + 1; // @ + label + placeholder(3) + space(1)
+        const pos = before.length + label.length + 1 + 5 + 1; // @ + label + placeholder(5) + space(1)
         textarea.selectionStart = pos;
         textarea.selectionEnd = pos;
         textarea.focus();
@@ -216,7 +217,8 @@ const PromptInput: React.FC = React.memo(() => {
     if (!prompt || Object.keys(assetMap).length === 0) return null;
     const labels = Object.keys(assetMap).map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     if (labels.length === 0) return null;
-    const regex = new RegExp(`(@(?:${labels.join('|')}))(\u200B\u3000\u200B)?`, 'g');
+    // 匹配 @标签 以及带左右空格的占位符
+    const regex = new RegExp(`(@(?:${labels.join('|')}))(\u200B \u3000 \u200B)?`, 'g');
     const parts = prompt.split(regex);
     if (parts.length <= 1) return null;
 
@@ -228,14 +230,14 @@ const PromptInput: React.FC = React.memo(() => {
       const match = part.match(/^@(.+)$/);
       if (match && assetMap[match[1]]) {
         const info = assetMap[match[1]];
-        const hasPlaceholder = parts[i + 1] === '\u200B\u3000\u200B';
+        const hasPlaceholder = parts[i + 1] === '\u200B \u3000 \u200B';
         
         result.push(
           <span key={i} style={{ color: '#60a5fa', fontWeight: 500 }}>
             {part}
             {hasPlaceholder && (
               <span style={{ position: 'relative' }}>
-                {'\u200B\u3000\u200B'}
+                {'\u200B \u3000 \u200B'}
                 <span className="mention-inline-thumb">
                   {info.type === 'image' ? (
                     <img src={info.url} alt="" />
