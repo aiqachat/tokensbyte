@@ -361,17 +361,22 @@ const GenerationLogWidget: React.FC = React.memo(() => {
 
         {/* 操作按钮行 */}
         <div style={{
-          display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap',
+          display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'nowrap', alignItems: 'center',
         }}>
           {actionButtons.map(btn => (
-            <Tooltip key={btn.key} title={btn.disabled ? (btn.key === 'edit' ? '仅图片可编辑' : '') : ''}>
+            <Tooltip 
+              key={btn.key} 
+              title={btn.disabled && btn.key === 'edit' ? '图片编辑 (仅图片可用)' : btn.label}
+              placement="top"
+              mouseEnterDelay={0.1}
+            >
               <div
                 onClick={btn.disabled ? undefined : btn.onClick}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '6px 10px',
-                  borderRadius: 8,
-                  fontSize: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 38, height: 38,
+                  borderRadius: '50%',
+                  fontSize: 16,
                   cursor: btn.disabled ? 'not-allowed' : 'pointer',
                   background: btn.danger ? 'rgba(255,77,79,0.08)' : 'rgba(255,255,255,0.04)',
                   border: `1px solid ${btn.danger ? 'rgba(255,77,79,0.15)' : 'rgba(255,255,255,0.06)'}`,
@@ -380,22 +385,27 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                     : btn.danger
                     ? '#ff4d4f'
                     : 'rgba(255,255,255,0.65)',
-                  transition: 'all 0.2s',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                   userSelect: 'none',
+                  flexShrink: 0,
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
                 }}
                 onMouseEnter={(e) => {
                   if (btn.disabled) return;
                   e.currentTarget.style.background = btn.danger ? 'rgba(255,77,79,0.15)' : 'rgba(255,255,255,0.1)';
                   e.currentTarget.style.color = btn.danger ? '#ff7875' : '#fff';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
                 }}
                 onMouseLeave={(e) => {
                   if (btn.disabled) return;
                   e.currentTarget.style.background = btn.danger ? 'rgba(255,77,79,0.08)' : 'rgba(255,255,255,0.04)';
                   e.currentTarget.style.color = btn.danger ? '#ff4d4f' : 'rgba(255,255,255,0.65)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.05)';
                 }}
               >
                 {btn.icon}
-                <span>{btn.label}</span>
               </div>
             </Tooltip>
           ))}

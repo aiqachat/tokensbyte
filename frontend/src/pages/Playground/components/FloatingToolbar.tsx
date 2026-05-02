@@ -151,7 +151,7 @@ const FloatingToolbar: React.FC = React.memo(() => {
           type={isSettingsWidgetVisible ? 'primary' : 'text'}
           onClick={() => {
             if (!isSettingsWidgetVisible) {
-              setSettingsWidgetPos({ x: window.innerWidth - 460, y: 32 });
+              setSettingsWidgetPos({ x: window.innerWidth - 440, y: 32 });
             }
             setIsSettingsWidgetVisible(!isSettingsWidgetVisible);
           }}
@@ -170,7 +170,7 @@ const FloatingToolbar: React.FC = React.memo(() => {
           type={isResourceWidgetVisible ? 'primary' : 'text'}
           onClick={() => {
             if (!isResourceWidgetVisible) {
-              setResourceWidgetPos({ x: window.innerWidth - 420, y: 120 });
+              setResourceWidgetPos({ x: window.innerWidth - 400, y: 120 });
             }
             setIsResourceWidgetVisible(!isResourceWidgetVisible);
           }}

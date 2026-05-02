@@ -184,9 +184,16 @@ export const useGeneration = () => {
         if (currentModel.endpoint || true) { // Default to full multi-modal payload format for all video endpoints
           const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
           
-          imageAssets.forEach(img => {
-            contentArr.push({ type: 'image_url', image_url: { url: img.url }, role: 'reference_image' });
-          });
+          if (imageAssets.length === 1) {
+            contentArr.push({ type: 'image_url', image_url: { url: imageAssets[0].url } });
+          } else if (imageAssets.length === 2) {
+            contentArr.push({ type: 'image_url', image_url: { url: imageAssets[0].url }, role: 'first_frame' });
+            contentArr.push({ type: 'image_url', image_url: { url: imageAssets[1].url }, role: 'last_frame' });
+          } else {
+            imageAssets.forEach(img => {
+              contentArr.push({ type: 'image_url', image_url: { url: img.url }, role: 'reference_image' });
+            });
+          }
           videoAssets.forEach(vid => {
             contentArr.push({ type: 'video_url', video_url: { url: vid.url }, role: 'reference_video' });
           });
@@ -196,7 +203,7 @@ export const useGeneration = () => {
 
           // Fallback for single image param
           if (imageAssets.length === 0 && paramValues.image_url) {
-            contentArr.push({ type: 'image_url', image_url: { url: paramValues.image_url }, role: 'reference_image' });
+            contentArr.push({ type: 'image_url', image_url: { url: paramValues.image_url } });
           }
 
           body.content = contentArr;

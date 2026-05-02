@@ -159,8 +159,8 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
   const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [maxZIndex, setMaxZIndex] = useState(10);
-  const [settingsWidgetPos, setSettingsWidgetPos] = useState<Point>({ x: window.innerWidth - 460, y: 32 });
-  const [resourceWidgetPos, setResourceWidgetPos] = useState<Point>({ x: window.innerWidth - 420, y: 120 });
+  const [settingsWidgetPos, setSettingsWidgetPos] = useState<Point>({ x: window.innerWidth - 440, y: 32 });
+  const [resourceWidgetPos, setResourceWidgetPos] = useState<Point>({ x: window.innerWidth - 400, y: 120 });
   const [modelWidgetPos, setModelWidgetPos] = useState<Point>({ x: window.innerWidth - 480, y: 100 });
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null!);
