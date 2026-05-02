@@ -10,6 +10,7 @@ use crate::error::{AppResult, AppError};
 use crate::services::payment::alipay::AlipayClient;
 use crate::services::payment::wechat::WechatClient;
 use crate::services::payment::stripe::StripeClient;
+use crate::services::payment::bonuspay::BonuspayClient;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::Local;
@@ -19,6 +20,10 @@ use std::collections::BTreeMap;
 pub struct CreateOrderReq {
     pub amount: f64,
     pub payment_method: String,
+    /// BonusPay: 币种 USDT / USDC
+    pub asset_code: Option<String>,
+    /// BonusPay: 网络 TRON / ETH / POLYGON
+    pub network: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -33,7 +38,7 @@ pub async fn create_order(
     headers: axum::http::HeaderMap,
     Json(payload): Json<CreateOrderReq>,
 ) -> AppResult<Json<CreateOrderResp>> {
-    if payload.amount <= 0.0 {
+    if payload.payment_method != "bonuspay" && payload.amount <= 0.0 {
         return Err(AppError::BadRequest("金额必须大于0".to_string()));
     }
 
@@ -121,11 +126,41 @@ pub async fn create_order(
         ).await.map_err(|e| AppError::UpstreamError(e.to_string()))?;
         tracing::info!("[支付] Stripe session_id: {}", session_id);
         payment_url = session_url;
+    } else if payload.payment_method == "bonuspay" {
+        let bonuspay_setting: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT value FROM settings WHERE key = 'payment_bonuspay'")).fetch_optional(&state.db.pool).await?;
+        let bonuspay_config: crate::models::PaymentBonuspaySettings = serde_json::from_str(&bonuspay_setting.unwrap_or_default()).map_err(|_| AppError::BadRequest("BonusPay 未配置".to_string()))?;
+
+        if !bonuspay_config.enabled {
+            return Err(AppError::BadRequest("BonusPay 支付暂未开启".to_string()));
+        }
+
+        let bonuspay_client = BonuspayClient::new(bonuspay_config);
+        // Crypto TOPUP: 用户ID作为 customerId，前端选择币种和网络
+        let asset_code = payload.asset_code.as_deref().unwrap_or("USDT");
+        let network = payload.network.as_deref().unwrap_or("TRON");
+        // 校验参数
+        if !matches!(asset_code, "USDT" | "USDC") {
+            return Err(AppError::BadRequest(format!("不支持的币种: {}", asset_code)));
+        }
+        if !matches!(network, "TRON" | "ETH" | "POLYGON") {
+            return Err(AppError::BadRequest(format!("不支持的网络: {}", network)));
+        }
+        tracing::info!("[支付] BonusPay TOPUP: user={}, asset={}, network={}", claims.sub, asset_code, network);
+        let wallet = bonuspay_client.get_deposit_address(&claims.sub, asset_code, network).await.map_err(|e| AppError::UpstreamError(e.to_string()))?;
+        let cashier_url = wallet.cashier_url
+            .ok_or_else(|| AppError::UpstreamError("BonusPay 未返回 cashierUrl".to_string()))?;
+
+        // BonusPay TOPUP 不需要预创建订单，充值由回调驱动，直接返回
+        tracing::info!("[支付] BonusPay 充值地址获取成功, cashierUrl 已返回");
+        return Ok(Json(CreateOrderResp {
+            out_trade_no: String::new(),
+            payment_url: cashier_url,
+        }));
     } else {
         return Err(AppError::BadRequest("不支持的支付方式".to_string()));
     }
 
-    // Save order
+    // Save order (仅用于微信/支付宝/Stripe 等传统支付方式)
     sqlx::query(&state.db.format_query("INSERT INTO orders (out_trade_no, user_id, payment_method, amount, status) VALUES (?, ?, ?, ?, 'pending')"))
         .bind(&out_trade_no)
         .bind(&claims.sub)
@@ -593,3 +628,233 @@ pub async fn stripe_notify(
 
     resp_ok
 }
+
+pub async fn bonuspay_notify(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    body: String,
+) -> impl IntoResponse {
+    tracing::info!("[BonusPay回调] 收到充值回调, body长度: {}", body.len());
+    tracing::debug!("[BonusPay回调] 原始数据: {}", body);
+
+    // 从 Header 中取签名
+    let sign = headers
+        .get("Sign")
+        .or_else(|| headers.get("sign"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let partner_id = headers
+        .get("Partner-Id")
+        .or_else(|| headers.get("partner-id"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    tracing::info!("[BonusPay回调] Partner-Id: {}, Sign长度: {}", partner_id, sign.len());
+
+    // 解析 JSON body
+    let data: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("[BonusPay回调] JSON 解析失败: {:?}", e);
+            return "FAIL".to_string();
+        }
+    };
+
+    // Crypto TOPUP 回调格式: body.customerDepositOrder
+    let deposit_order = &data["body"]["customerDepositOrder"];
+    let order_status = deposit_order["status"].as_str().unwrap_or("");
+    let customer_id = deposit_order["customerId"].as_str().unwrap_or("");
+    let order_no = deposit_order["orderNo"].as_str().unwrap_or("");
+    let tx_hash = deposit_order["txHash"].as_str().unwrap_or("");
+    let network = deposit_order["network"].as_str().unwrap_or("");
+
+    // 实际到账金额 (扣除手续费后)
+    let settled_amount = deposit_order["settledAmount"]["amount"]
+        .as_f64()
+        .unwrap_or(0.0);
+    let settled_currency = deposit_order["settledAmount"]["currency"]
+        .as_str()
+        .unwrap_or("USDT");
+    // 充值金额 (用户转入的原始金额)
+    let deposit_amount = deposit_order["depositAmount"]["amount"]
+        .as_f64()
+        .unwrap_or(0.0);
+
+    tracing::info!(
+        "[BonusPay回调] status={}, customerId={}, orderNo={}, depositAmount={}, settledAmount={} {}, txHash={}, network={}",
+        order_status, customer_id, order_no, deposit_amount, settled_amount, settled_currency, tx_hash, network
+    );
+
+    // 只处理 SUCCESS 状态
+    if order_status != "SUCCESS" {
+        tracing::info!("[BonusPay回调] 非成功状态，忽略: {}", order_status);
+        return "SUCCESS".to_string();
+    }
+
+    if customer_id.is_empty() || settled_amount <= 0.0 {
+        tracing::error!("[BonusPay回调] customerId 或 settledAmount 无效");
+        return "FAIL".to_string();
+    }
+
+    // 读取配置
+    let bonuspay_setting: Option<String> = sqlx::query_scalar(&state.db.format_query(
+        "SELECT value FROM settings WHERE key = 'payment_bonuspay'",
+    ))
+    .fetch_optional(&state.db.pool)
+    .await
+    .unwrap_or_default();
+
+    let config = match serde_json::from_str::<crate::models::PaymentBonuspaySettings>(
+        &bonuspay_setting.unwrap_or_default(),
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("[BonusPay回调] 解析配置失败: {:?}", e);
+            return "FAIL".to_string();
+        }
+    };
+
+    // 用 BonusPay 公钥验证签名 (安全加固)
+    if !config.bonuspay_public_key.is_empty() {
+        if sign.is_empty() {
+            tracing::error!("[BonusPay回调] 签名为空，拒绝请求");
+            return "FAIL".to_string();
+        }
+        match BonuspayClient::verify_signature(&config.bonuspay_public_key, &body, sign) {
+            Ok(true) => {
+                tracing::info!("[BonusPay回调] RSA 签名验证通过");
+            }
+            Ok(false) => {
+                tracing::error!("[BonusPay回调] RSA 签名验证失败");
+                return "FAIL".to_string();
+            }
+            Err(e) => {
+                tracing::error!("[BonusPay回调] 签名验证异常: {:?}", e);
+                return "FAIL".to_string();
+            }
+        }
+    } else {
+        tracing::warn!("[BonusPay回调] ⚠️ 严重警告：未配置 BonusPay 公钥，跳过签名验证，存在极高安全风险！");
+    }
+
+    // customerId 就是系统内的用户 ID
+    let user_id = customer_id;
+
+    // 检查用户是否存在
+    let user_exists: Option<String> = sqlx::query_scalar(
+        &state.db.format_query("SELECT id FROM users WHERE id = ?"),
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db.pool)
+    .await
+    .unwrap_or(None);
+
+    if user_exists.is_none() {
+        tracing::error!("[BonusPay回调] 用户不存在: {}", user_id);
+        return "FAIL".to_string();
+    }
+
+    // 防止重复处理: 检查 orderNo 是否已经处理过
+    let existing_order: Option<String> = sqlx::query_scalar(
+        &state.db.format_query("SELECT trade_no FROM orders WHERE trade_no = ?"),
+    )
+    .bind(order_no)
+    .fetch_optional(&state.db.pool)
+    .await
+    .unwrap_or(None);
+
+    if existing_order.is_some() {
+        tracing::info!("[BonusPay回调] 订单已处理过, orderNo: {}", order_no);
+        return "SUCCESS".to_string();
+    }
+
+    // 使用实际到账金额充值
+    // 重要修复: BonusPay 回调中的 settledAmount 是 USDT/USDC 数量
+    // 必须乘以汇率 (crypto_exchange_rate) 转换为系统货币 (如 CNY/USD) 后再入账
+    let exchange_rate = config.crypto_exchange_rate;
+    let amount = if exchange_rate > 0.0 {
+        settled_amount * exchange_rate
+    } else {
+        settled_amount // fallback if not set properly
+    };
+    
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    tracing::info!(
+        "[BonusPay回调] 货币转换: {} {} * {} (汇率) = {:.6} 系统货币",
+        settled_amount, settled_currency, exchange_rate, amount
+    );
+
+    // 事务处理
+    let mut tx = match state.db.pool.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("[BonusPay回调] 开启事务失败: {:?}", e);
+            return "FAIL".to_string();
+        }
+    };
+
+    // 创建订单记录
+    let out_trade_no = format!("BP{}", order_no);
+    if let Err(e) = sqlx::query(&state.db.format_query(
+        "INSERT INTO orders (out_trade_no, user_id, payment_method, amount, status, trade_no, paid_at) VALUES (?, ?, 'bonuspay', ?, 'paid', ?, ?)",
+    ))
+    .bind(&out_trade_no)
+    .bind(user_id)
+    .bind(amount)
+    .bind(order_no)
+    .bind(&now)
+    .execute(&mut *tx)
+    .await
+    {
+        tracing::error!("[BonusPay回调] 创建订单记录失败: {:?}", e);
+        let _ = tx.rollback().await;
+        return "FAIL".to_string();
+    }
+
+    // 充值余额
+    if let Err(e) = sqlx::query(
+        &state.db.format_query("UPDATE users SET balance = balance + ? WHERE id = ?"),
+    )
+    .bind(amount)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    {
+        tracing::error!("[BonusPay回调] 更新余额失败: {:?}", e);
+        let _ = tx.rollback().await;
+        return "FAIL".to_string();
+    }
+
+    // 写充值记录
+    if let Err(e) = sqlx::query(&state.db.format_query(
+        "INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'bonuspay', ?)",
+    ))
+    .bind(user_id)
+    .bind(amount)
+    .bind(format!(
+        "BonusPay 充值 {} {} (txHash: {})",
+        deposit_amount, settled_currency, tx_hash
+    ))
+    .execute(&mut *tx)
+    .await
+    {
+        tracing::error!("[BonusPay回调] 写充值记录失败: {:?}", e);
+        let _ = tx.rollback().await;
+        return "FAIL".to_string();
+    }
+
+    if let Err(e) = tx.commit().await {
+        tracing::error!("[BonusPay回调] 事务提交失败: {:?}", e);
+        return "FAIL".to_string();
+    }
+
+    tracing::info!(
+        "[BonusPay回调] ✅ 充值完成: 用户={}, 到账={:.6} {}, txHash={}",
+        user_id, amount, settled_currency, tx_hash
+    );
+
+    "SUCCESS".to_string()
+}
+

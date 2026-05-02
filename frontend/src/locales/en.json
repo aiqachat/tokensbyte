@@ -370,6 +370,7 @@
     "recharge_type_commission": "Invite Commission",
     "recharge_type_alipay": "Alipay",
     "recharge_type_wechat": "WeChat Pay",
+    "recharge_type_bonuspay": "BonusPay",
     "recharge_type_other": "Other"
   },
   "marketing": {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Form, Input, Button, message, Typography, Tabs, Switch, Alert, Divider, InputNumber } from 'antd';
-import { WechatOutlined, AlipayCircleOutlined, CopyOutlined, LinkOutlined, SafetyCertificateOutlined, DollarOutlined, CreditCardOutlined } from '@ant-design/icons';
+import { WechatOutlined, AlipayCircleOutlined, CopyOutlined, LinkOutlined, SafetyCertificateOutlined, DollarOutlined, CreditCardOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
@@ -14,16 +14,19 @@ const PaymentSettings: React.FC = () => {
   const [formWechat] = Form.useForm();
   const [formAlipay] = Form.useForm();
   const [formStripe] = Form.useForm();
+  const [formBonuspay] = Form.useForm();
   const [loadingCurrency, setLoadingCurrency] = useState(false);
   const [loadingWechat, setLoadingWechat] = useState(false);
   const [loadingAlipay, setLoadingAlipay] = useState(false);
   const [loadingStripe, setLoadingStripe] = useState(false);
+  const [loadingBonuspay, setLoadingBonuspay] = useState(false);
 
   // 回调地址展示：生产环境用户通过域名访问，nginx 自动反代 /api/v1 到后端
   const siteOrigin = window.location.origin;
   const notifyWechat = `${siteOrigin}/api/v1/finance/pay/notify/wechat`;
   const notifyAlipay = `${siteOrigin}/api/v1/finance/pay/notify/alipay`;
   const notifyStripe = `${siteOrigin}/api/v1/finance/pay/notify/stripe`;
+  const notifyBonuspay = `${siteOrigin}/api/v1/finance/pay/notify/bonuspay`;
 
   useEffect(() => { fetchSettings(); }, []);
 
@@ -34,6 +37,7 @@ const PaymentSettings: React.FC = () => {
       if (response?.payment_wechat) formWechat.setFieldsValue(response.payment_wechat);
       if (response?.payment_alipay) formAlipay.setFieldsValue(response.payment_alipay);
       if (response?.payment_stripe) formStripe.setFieldsValue(response.payment_stripe);
+      if (response?.payment_bonuspay) formBonuspay.setFieldsValue(response.payment_bonuspay);
     } catch (error) {
       console.error('Failed to fetch payment settings:', error);
     }
@@ -127,6 +131,30 @@ const PaymentSettings: React.FC = () => {
       message.error(t('common.error'));
     } finally {
       setLoadingStripe(false);
+    }
+  };
+
+  const onFinishBonuspay = async (values: any) => {
+    setLoadingBonuspay(true);
+    try {
+      const payload = {
+        payment_bonuspay: {
+          enabled: values.enabled || false,
+          partner_id: values.partner_id || '',
+          merchant_private_key: values.merchant_private_key || '',
+          bonuspay_public_key: values.bonuspay_public_key || '',
+          api_url: values.api_url || 'https://api.bonuspay.network',
+          crypto_exchange_rate: values.crypto_exchange_rate || 1.0,
+        }
+      };
+      const updatedSettings = await (request.post('/settings', payload) as any);
+      message.success('BonusPay 配置保存成功');
+      updateStoreSettings(updatedSettings);
+    } catch (error) {
+      console.error('Save bonuspay error:', error);
+      message.error(t('common.error'));
+    } finally {
+      setLoadingBonuspay(false);
     }
   };
 
@@ -351,6 +379,74 @@ const PaymentSettings: React.FC = () => {
               <Button type="primary" htmlType="submit" loading={loadingStripe} size="large"
                 style={{ background: 'linear-gradient(135deg, #635bff, #4b45c6)', border: 'none', borderRadius: 8 }}>
                 <CreditCardOutlined /> 保存 Stripe 配置
+              </Button>
+            </Form.Item>
+          </Form>
+        </div>
+      ),
+    },
+    {
+      key: 'bonuspay',
+      label: <span><ThunderboltOutlined style={{ color: '#ff6a00' }} /> BonusPay</span>,
+      children: (
+        <div style={{ maxWidth: 640, marginTop: 16 }}>
+          <Alert
+            type="info"
+            showIcon
+            icon={<SafetyCertificateOutlined />}
+            style={{ marginBottom: 20, borderRadius: 8 }}
+            message="BonusPay 加密货币支付接入指引"
+            description={
+              <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+                <div>1. 在 <a href="https://www.bonuspay.network" target="_blank" rel="noreferrer">bonuspay.network</a> 注册商户账号</div>
+                <div>2. 商户后台 → Setting → Your Business → API Keys → 获取 <strong>Partner-Id</strong></div>
+                <div>3. 使用密钥生成工具或 OpenSSL 生成 RSA 密钥对 (2048位)</div>
+                <div>4. 上传商户公钥到 BonusPay 后台，并下载 <strong>BonusPay 公钥</strong></div>
+                <div>5. 将商户 RSA 私钥 (PKCS#8 PEM) 和 BonusPay 公钥填入下方</div>
+                <div>6. 将下方回调地址配置到商户后台的回调通知设置中</div>
+                <div style={{ marginTop: 4, color: '#888' }}>📖 API 文档：<a href="https://docs.bonuspay.network" target="_blank" rel="noreferrer">docs.bonuspay.network</a></div>
+              </div>
+            }
+          />
+
+          {notifyUrlBlock(notifyBonuspay, 'BonusPay 异步回调通知地址（请配置到商户后台 → API Keys → Notification URL）')}
+
+          <Divider style={{ margin: '16px 0' }} />
+
+          <Form form={formBonuspay} layout="vertical" onFinish={onFinishBonuspay} autoComplete="off">
+            <Form.Item label="是否启用 BonusPay" name="enabled" valuePropName="checked">
+              <Switch checkedChildren="已开启" unCheckedChildren="已关闭" />
+            </Form.Item>
+
+            <Form.Item label="Partner-Id (商户ID)" name="partner_id" rules={[{ required: true, message: '请输入 Partner-Id' }]}
+              extra="在 BonusPay 商户后台 → Setting → Your Business 获取，12位数字">
+              <Input placeholder="例如：200000000888" />
+            </Form.Item>
+
+            <Form.Item label="商户 RSA 私钥 (PKCS#8 PEM)" name="merchant_private_key" rules={[{ required: true, message: '请输入商户私钥' }]}
+              extra="用于对请求进行 SHA256WithRSA 签名，请妥善保管">
+              <Input.TextArea rows={4} placeholder={'-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----'} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+            </Form.Item>
+
+            <Form.Item label="BonusPay RSA 公钥 (PEM)" name="bonuspay_public_key" rules={[{ required: true, message: '请输入 BonusPay 公钥' }]}
+              extra="用于验证回调签名，在商户后台下载">
+              <Input.TextArea rows={4} placeholder={'-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----'} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+            </Form.Item>
+
+            <Form.Item label="API 接口地址" name="api_url"
+              extra="正式环境：https://api.bonuspay.network 测试环境：http://api.testbonuspay.network">
+              <Input placeholder="https://api.bonuspay.network" />
+            </Form.Item>
+
+            <Form.Item label="USDT / USDC 汇率" name="crypto_exchange_rate" rules={[{ required: true, message: '请输入加密货币兑换系统法币的汇率' }]}
+              extra="例如系统货币为 CNY，汇率为 7.2，则 10 USDT/USDC 会为用户充值 72 余额。如果系统货币是 USD，请填 1.0">
+              <InputNumber min={0.01} step={0.1} style={{ width: '100%' }} placeholder="7.2" />
+            </Form.Item>
+
+            <Form.Item>
+              <Button type="primary" htmlType="submit" loading={loadingBonuspay} size="large"
+                style={{ background: 'linear-gradient(135deg, #ff6a00, #ee0979)', border: 'none', borderRadius: 8 }}>
+                <ThunderboltOutlined /> 保存 BonusPay 配置
               </Button>
             </Form.Item>
           </Form>

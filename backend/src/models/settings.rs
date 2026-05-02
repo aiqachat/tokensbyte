@@ -247,6 +247,37 @@ pub struct PaymentStripeSettings {
     pub webhook_secret: String,
 }
 
+/// BonusPay 加密货币支付设置
+/// 基于 https://docs.bonuspay.network 文档
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PaymentBonuspaySettings {
+    #[serde(default)]
+    pub enabled: bool,
+    /// BonusPay 商户 Partner-Id (如 200000000888)
+    #[serde(default)]
+    pub partner_id: String,
+    /// 商户 RSA 私钥 (PKCS#8 PEM 格式，用于请求签名)
+    #[serde(default)]
+    pub merchant_private_key: String,
+    /// BonusPay RSA 公钥 (PEM 格式，用于验证回调签名)
+    #[serde(default)]
+    pub bonuspay_public_key: String,
+    /// API 接口地址
+    #[serde(default = "default_bonuspay_api_url")]
+    pub api_url: String,
+    /// USDT/USDC 兑换系统货币(如CNY)的汇率
+    #[serde(default = "default_crypto_exchange_rate")]
+    pub crypto_exchange_rate: f64,
+}
+
+fn default_crypto_exchange_rate() -> f64 {
+    1.0
+}
+
+fn default_bonuspay_api_url() -> String {
+    "https://api.bonuspay.network".to_string()
+}
+
 /// 谷歌 OAuth 2.0 设置
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GoogleOAuthSettings {
@@ -283,6 +314,7 @@ pub struct AllSettings {
     pub payment_wechat: Option<PaymentWechatSettings>,
     pub payment_alipay: Option<PaymentAlipaySettings>,
     pub payment_stripe: Option<PaymentStripeSettings>,
+    pub payment_bonuspay: Option<PaymentBonuspaySettings>,
     pub google_oauth: Option<GoogleOAuthSettings>,
     pub wechat_oauth: Option<WechatOAuthSettings>,
     pub agreement: AgreementSettings,
@@ -302,6 +334,7 @@ pub struct UpdateSettingsRequest {
     pub payment_wechat: Option<PaymentWechatSettings>,
     pub payment_alipay: Option<PaymentAlipaySettings>,
     pub payment_stripe: Option<PaymentStripeSettings>,
+    pub payment_bonuspay: Option<PaymentBonuspaySettings>,
     pub google_oauth: Option<GoogleOAuthSettings>,
     pub wechat_oauth: Option<WechatOAuthSettings>,
     pub agreement: Option<AgreementSettings>,
