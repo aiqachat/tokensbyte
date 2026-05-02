@@ -97,7 +97,7 @@ const SettingsWidget: React.FC = React.memo(() => {
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         zIndex: 1000,
         transition: 'height 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        height: isSettingsCollapsed ? 64 : Math.min(800, window.innerHeight - settingsWidgetPos.y - 24)
+        height: isSettingsCollapsed ? 48 : Math.min(800, window.innerHeight - settingsWidgetPos.y - 24)
       }}
       onWheel={(e) => e.stopPropagation()}
     >
@@ -106,7 +106,7 @@ const SettingsWidget: React.FC = React.memo(() => {
         onMouseDown={handleMouseDown}
         onDoubleClick={() => setIsSettingsCollapsed(!isSettingsCollapsed)}
         style={{
-          padding: '0 24px', height: 64, minHeight: 64,
+          padding: '0 24px', height: 48, minHeight: 48,
           borderBottom: isSettingsCollapsed ? 'none' : '1px solid rgba(255,255,255,0.05)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           cursor: 'grab',

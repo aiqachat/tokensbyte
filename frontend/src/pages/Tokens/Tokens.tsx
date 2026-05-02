@@ -416,7 +416,7 @@ const Tokens: React.FC = () => {
                 unCheckedChildren="未开启"
               />
               <Text type="secondary" style={{ fontSize: 13 }}>
-                {enableModelFilter ? '仅允许请求下方指定的模型' : '不限制，可请求站内全部模型'}
+                {enableModelFilter ? '仅允许请求下方指定的模型' : '不开启，全站模型都可以使用，一般不开'}
               </Text>
             </div>
           </Form.Item>

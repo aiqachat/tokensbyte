@@ -91,7 +91,7 @@ const ModelDrawer: React.FC = React.memo(() => {
       <div
         onMouseDown={handleMouseDown}
         style={{
-          padding: '0 24px', height: 64, minHeight: 64,
+          padding: '0 24px', height: 48, minHeight: 48,
           borderBottom: '1px solid rgba(255,255,255,0.05)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           cursor: 'grab',
@@ -101,7 +101,7 @@ const ModelDrawer: React.FC = React.memo(() => {
       >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <AppstoreOutlined style={{ color: '#fff', fontSize: 16 }} />
-          <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>模型选择器</span>
+          <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>选择模型</span>
         </div>
         <Tooltip title="关闭">
           <div

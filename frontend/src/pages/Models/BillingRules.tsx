@@ -7,7 +7,7 @@ import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import RateDisplay from './RateDisplay';
 import { useThemeStore } from '../../store/theme';
-
+import dayjs from 'dayjs';
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
 
@@ -25,6 +25,7 @@ interface BillingRuleData {
   is_active: number;
   is_system: number;
   created_at: string;
+  updated_at: string;
 }
 
 const BillingRules: React.FC = () => {
@@ -265,6 +266,13 @@ const BillingRules: React.FC = () => {
       width: 100,
     },
     {
+      title: '最后修改时间',
+      dataIndex: 'updated_at',
+      key: 'updated_at',
+      width: 150,
+      render: (text: string) => <Text type="secondary" style={{ fontSize: 12 }}>{text ? dayjs(text).format('YYYY-MM-DD HH:mm:ss') : '-'}</Text>,
+    },
+    {
       title: t('common.actions'),
       key: 'actions',
       render: (_: any, record: BillingRuleData) => (
@@ -327,6 +335,7 @@ const BillingRules: React.FC = () => {
                   <CardRow label="ID"><Text type="secondary">{record.id}</Text></CardRow>
                   <CardRow label="计费类型"><Tag color={colors[record.billing_type]}>{t(`models.type_${record.billing_type}`)}</Tag></CardRow>
                   <CardRow label="费率"><RateDisplay rule={record} currencySymbol={currencySymbol} /></CardRow>
+                  <CardRow label="最后修改"><Text type="secondary" style={{ fontSize: 12 }}>{record.updated_at ? dayjs(record.updated_at).format('YYYY-MM-DD HH:mm:ss') : '-'}</Text></CardRow>
                   <CardActions>
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
                     {record.is_system === 1 ? (

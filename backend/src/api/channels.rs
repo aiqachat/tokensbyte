@@ -29,6 +29,7 @@ pub async fn create_channel(
     let mapping_json = serde_json::to_string(&request.model_mapping.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     let config_json = serde_json::to_string(&request.config.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     let groups_json = serde_json::to_string(&request.user_groups.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
+    let exclude_groups_json = serde_json::to_string(&request.exclude_user_groups.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
     
     // Auto-generate unique 4-digit group_aid
     let mut group_aid_val = String::new();
@@ -49,8 +50,8 @@ pub async fn create_channel(
         group_aid_val = rand::thread_rng().gen_range(1000..10000).to_string(); // fallback
     }
 
-    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, group_aid, preset_id, pool_id, gptimage_pool_id, priority, weight, status, max_rps, quota_limit, quota_used, config)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?) RETURNING id"#;
+    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, exclude_user_groups, group_aid, preset_id, pool_id, gptimage_pool_id, priority, weight, status, max_rps, quota_limit, quota_used, config)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?) RETURNING id"#;
 
     let id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(sql))
         .bind(&request.name)
@@ -60,6 +61,7 @@ pub async fn create_channel(
         .bind(&models_json)
         .bind(&mapping_json)
         .bind(&groups_json)
+        .bind(&exclude_groups_json)
         .bind(&group_aid_val)
         .bind(request.preset_id)
         .bind(request.pool_id)
@@ -99,6 +101,7 @@ pub async fn update_channel(
     if let Some(models) = request.models { channel.models = serde_json::to_string(&models).unwrap_or_else(|_| "[]".to_string()); }
     if let Some(mapping) = request.model_mapping { channel.model_mapping = serde_json::to_string(&mapping).unwrap_or_else(|_| "{}".to_string()); }
     if let Some(user_groups) = request.user_groups { channel.user_groups = serde_json::to_string(&user_groups).unwrap_or_else(|_| "[]".to_string()); }
+    if let Some(exclude_user_groups) = request.exclude_user_groups { channel.exclude_user_groups = serde_json::to_string(&exclude_user_groups).unwrap_or_else(|_| "[]".to_string()); }
     if let Some(group_aid) = request.group_aid { channel.group_aid = Some(group_aid); }
     if let Some(preset_id) = request.preset_id { channel.preset_id = Some(preset_id); }
     if let Some(priority) = request.priority { channel.priority = priority; }
@@ -133,7 +136,7 @@ pub async fn update_channel(
 
     sqlx::query(
         &state.db.format_query(r#"UPDATE channels SET name = ?, provider_type = ?, base_url = ?, api_key = ?, models = ?, 
-           model_mapping = ?, user_groups = ?, preset_id = ?, pool_id = ?, gptimage_pool_id = ?, priority = ?, weight = ?, status = ?, max_rps = ?, quota_limit = ?, quota_used = ?, config = ?, group_aid = ?, updated_at = CURRENT_TIMESTAMP
+           model_mapping = ?, user_groups = ?, exclude_user_groups = ?, preset_id = ?, pool_id = ?, gptimage_pool_id = ?, priority = ?, weight = ?, status = ?, max_rps = ?, quota_limit = ?, quota_used = ?, config = ?, group_aid = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&channel.name)
@@ -143,6 +146,7 @@ pub async fn update_channel(
     .bind(&channel.models)
     .bind(&channel.model_mapping)
     .bind(&channel.user_groups)
+    .bind(&channel.exclude_user_groups)
     .bind(channel.preset_id)
     .bind(channel.pool_id)
     .bind(channel.gptimage_pool_id)

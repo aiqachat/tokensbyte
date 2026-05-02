@@ -1275,6 +1275,12 @@ macro_rules! pg_migration_blocks {
         WHERE NOT EXISTS (SELECT 1 FROM billing_rules WHERE name = t.name)
     "#).execute(pool).await.ok();
 
+    // ─── channels 表增加 exclude_user_groups 字段（不支持的用户等级，黑名单模式） ───
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS exclude_user_groups TEXT NOT NULL DEFAULT '[]'")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN channels.exclude_user_groups IS '不支持的用户等级列表(JSON数组)，黑名单模式'")
+        .execute(pool).await.ok();
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};

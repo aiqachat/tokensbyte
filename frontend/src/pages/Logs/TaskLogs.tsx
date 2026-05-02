@@ -405,7 +405,7 @@ const TaskLogs: React.FC = () => {
           loading={loading}
           expandable={
             (isAdmin || user?.allow_view_log_details !== 0) 
-              ? { expandedRowRender, expandRowByClick: true } 
+              ? { expandedRowRender, expandRowByClick: false } 
               : undefined
           }
           pagination={{

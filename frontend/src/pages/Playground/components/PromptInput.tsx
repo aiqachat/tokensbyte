@@ -518,37 +518,34 @@ const PromptInput: React.FC = React.memo(() => {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
+            gap: 8,
             padding: '6px 16px',
-            borderRadius: 10,
+            borderRadius: 14,
             cursor: currentModel && prompt.trim() && !generating ? 'pointer' : 'not-allowed',
-            transition: 'all 0.25s ease',
+            transition: 'all 0.2s ease',
             background: currentModel && prompt.trim() && !generating
-              ? 'linear-gradient(135deg, rgba(102,126,234,0.9) 0%, rgba(118,75,162,0.9) 100%)'
-              : 'rgba(255,255,255,0.04)',
+              ? 'rgba(255, 255, 255, 0.15)'
+              : 'transparent',
+            border: currentModel && prompt.trim() && !generating
+              ? '1px solid transparent'
+              : '1px solid rgba(255, 255, 255, 0.08)',
             color: currentModel && prompt.trim() && !generating
               ? '#fff'
-              : 'rgba(255,255,255,0.25)',
-            fontSize: 13,
+              : 'rgba(255, 255, 255, 0.25)',
+            fontSize: 15,
             fontWeight: 500,
-            letterSpacing: '0.3px',
-            boxShadow: currentModel && prompt.trim() && !generating
-              ? '0 4px 12px rgba(102,126,234,0.3)'
-              : 'none',
             whiteSpace: 'nowrap',
             userSelect: 'none',
             flexShrink: 0,
           }}
           onMouseEnter={(e) => {
             if (currentModel && prompt.trim() && !generating) {
-              e.currentTarget.style.transform = 'translateY(-1px)';
-              e.currentTarget.style.boxShadow = '0 6px 20px rgba(102,126,234,0.45)';
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.22)';
             }
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
             if (currentModel && prompt.trim() && !generating) {
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(102,126,234,0.3)';
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
             }
           }}
         >
@@ -559,13 +556,14 @@ const PromptInput: React.FC = React.memo(() => {
             </>
           ) : (
             <>
-              <PlayCircleOutlined style={{ fontSize: 14 }} />
               <span>Run</span>
               <span style={{
-                fontSize: 12,
-                opacity: 0.65,
-                marginLeft: 2,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 15,
                 fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                fontWeight: 400,
               }}>
                 {modSymbol} ↵
               </span>

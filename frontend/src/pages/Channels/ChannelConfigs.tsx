@@ -164,26 +164,15 @@ const ChannelConfigs: React.FC = () => {
           <Form.Item name="name" label="配置名称" rules={[{ required: true }]}>
             <Input placeholder="例如：OpenAI 官方渠道接口" />
           </Form.Item>
-          <Form.Item name="provider_type" label="服务商类型 (输入或快捷选择)" rules={[{ required: true }]}>
-            <AutoComplete
-              options={(upstreams || []).map(p => ({ value: p.name, label: p.name.toUpperCase() })).concat([
-                { value: 'openai', label: 'OPENAI (默认)' },
-                { value: 'anthropic', label: 'ANTHROPIC' },
-                { value: 'gemini', label: 'GEMINI' },
-                { value: 'kling', label: 'KLING (可灵 AI)' },
-              ])}
-              placeholder="可直选或自由输入 (如: custom)"
-              filterOption={(inputValue, option) =>
-                option!.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
-              }
-            />
+          <Form.Item name="provider_type" label="服务商类型">
+            <Input placeholder="可自由输入 (如: custom)" />
           </Form.Item>
           <Form.Item name="base_url" label="端点基础地址 (Base URL)" rules={[{ required: true }]}>
             <AutoComplete
               options={[
-                { value: 'https://ark.cn-beijing.volces.com', label: '火山方舟' },
-                { value: 'https://api-beijing.klingai.com', label: '可灵' },
-                { value: 'https://dashscope.aliyuncs.com', label: '阿里百炼' },
+                { value: 'https://ark.cn-beijing.volces.com', label: '火山方舟 (https://ark.cn-beijing.volces.com)' },
+                { value: 'https://api-beijing.klingai.com', label: '可灵 (https://api-beijing.klingai.com)' },
+                { value: 'https://dashscope.aliyuncs.com', label: '阿里百炼 (https://dashscope.aliyuncs.com)' },
               ]}
               placeholder="可直接选择预设地址或自由输入"
               filterOption={(inputValue, option) =>

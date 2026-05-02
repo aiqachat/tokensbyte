@@ -29,8 +29,14 @@ const ForwardRules: React.FC = () => {
   const [isConfigModalVisible, setIsConfigModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<ForwardRule | null>(null);
   const [currentConfig, setCurrentConfig] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [form] = Form.useForm();
   const screens = useBreakpoint();
+
+  const filteredItems = items.filter(item => {
+    if (!searchQuery) return true;
+    return item.name && item.name.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   const fetchItems = async () => {
     setLoading(true);
@@ -269,12 +275,19 @@ const ForwardRules: React.FC = () => {
   return (
     <div>
       <Card title={
-        <Space>
+        <Space wrap>
           {!screens.xs && '大模型高级转发规则引擎配置'}
           {screens.xs && '转发规则'}
           <Popover content={helpContent} title="什么是高级转发规则引擎？" trigger="hover" placement="bottomLeft">
             <QuestionCircleOutlined style={{ color: '#1890ff', cursor: 'pointer' }} />
           </Popover>
+          <Input.Search
+            placeholder="搜索规则名称"
+            allowClear
+            onSearch={setSearchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ width: 200 }}
+          />
         </Space>
       } extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
@@ -283,7 +296,7 @@ const ForwardRules: React.FC = () => {
       }>
         {screens.xs ? (
           <MobileCardList
-            dataSource={items}
+            dataSource={filteredItems}
             loading={loading}
             rowKey="id"
             pagination={{ pageSize: 15 }}
@@ -321,7 +334,7 @@ const ForwardRules: React.FC = () => {
           />
         ) : (
           <Table
-            dataSource={items}
+            dataSource={filteredItems}
             columns={columns}
             rowKey="id"
             loading={loading}

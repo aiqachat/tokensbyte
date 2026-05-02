@@ -279,7 +279,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     >
       {/* 标题栏 */}
       <div style={{
-        padding: '0 24px', height: 56, minHeight: 56,
+        padding: '0 24px', height: 48, minHeight: 48,
         borderBottom: '1px solid rgba(255,255,255,0.05)',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         background: 'rgba(255,255,255,0.02)',

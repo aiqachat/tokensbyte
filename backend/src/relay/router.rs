@@ -39,6 +39,15 @@ pub async fn select_channel(state: &Arc<AppState>, model: &str, user_group: &str
     .fetch_all(&state.db.pool)
     .await?;
 
+    // 过滤掉 exclude_user_groups（黑名单）包含当前用户等级的渠道
+    let channels: Vec<Channel> = channels.into_iter().filter(|c| {
+        let excludes = c.get_exclude_user_groups();
+        if excludes.is_empty() {
+            return true;
+        }
+        !excludes.contains(&user_group.to_string()) && !excludes.contains(&level_id.to_string())
+    }).collect();
+
     if channels.is_empty() {
         return Err(AppError::NotFound(format!("No available channels found for model {}", model)));
     }

@@ -28,7 +28,6 @@ const Logs: React.FC = () => {
   const [userFilter, setUserFilter] = useState<string | undefined>(undefined);
   const [channelFilter, setChannelFilter] = useState<number | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
-  const [uidFilter, setUidFilter] = useState('');
   const [usersList, setUsersList] = useState<any[]>([]);
   const [channelsList, setChannelsList] = useState<any[]>([]);
   const { user } = useAuthStore();
@@ -48,7 +47,6 @@ const Logs: React.FC = () => {
       if (userFilter) params.user_id = userFilter;
       if (channelFilter) params.channel_id = channelFilter;
       if (statusFilter) params.status = statusFilter;
-      if (uidFilter) params.uid = uidFilter;
       const resp = await (request.get('/logs', { params }) as unknown as Promise<{ data: RequestLog[]; total: number }>);
       setLogs(resp.data);
       setTotal(resp.total);
@@ -57,7 +55,7 @@ const Logs: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, modelFilter, userFilter, channelFilter, statusFilter, uidFilter]);
+  }, [page, pageSize, modelFilter, userFilter, channelFilter, statusFilter]);
 
   useEffect(() => {
     fetchLogs();
@@ -293,9 +291,9 @@ const Logs: React.FC = () => {
             <>
               <Select
                 showSearch
-                placeholder="筛选用户"
+                placeholder="搜索用户 (用户名/昵称/UID)"
                 allowClear
-                style={{ width: 140 }}
+                style={{ width: 220 }}
                 value={userFilter}
                 onChange={setUserFilter}
                 optionFilterProp="children"
@@ -303,7 +301,7 @@ const Logs: React.FC = () => {
                 <Option value="unknown">未知用户 (unknown)</Option>
                 {usersList.map(u => (
                   <Option key={u.id} value={u.id}>
-                    {u.username} {u.nickname ? `(${u.nickname})` : ''}
+                    {u.username} {u.nickname ? `(${u.nickname})` : ''} {u.uid ? `[UID: ${u.uid}]` : ''}
                   </Option>
                 ))}
               </Select>
@@ -341,13 +339,6 @@ const Logs: React.FC = () => {
             onChange={e => setModelFilter(e.target.value)}
             onPressEnter={fetchLogs}
             style={{ width: screens.xs ? '100%' : 140 }}
-          />
-          <Input
-            placeholder="用户 UID"
-            value={uidFilter}
-            onChange={e => setUidFilter(e.target.value)}
-            onPressEnter={fetchLogs}
-            style={{ width: screens.xs ? '100%' : 120 }}
           />
           <Button icon={<SyncOutlined />} onClick={fetchLogs}>{t('common.refresh')}</Button>
         </Space>
@@ -422,30 +413,7 @@ const Logs: React.FC = () => {
           expandable={
             (user?.role === 'admin' || user?.allow_view_log_details !== 0) ? { 
               expandedRowRender, 
-              expandRowByClick: false,
-              columnWidth: 80,
-              expandIcon: ({ expanded, onExpand, record }) => (
-                <Button
-                  size="small"
-                  onClick={e => onExpand(record, e)}
-                  type="primary"
-                  ghost
-                  icon={expanded ? <UpOutlined /> : <DownOutlined />}
-                  style={{ 
-                    fontSize: '12px',
-                    height: '26px',
-                    padding: '0 10px',
-                    borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    borderColor: expanded ? themeToken.colorWarning : themeToken.colorPrimary,
-                    color: expanded ? themeToken.colorWarning : themeToken.colorPrimary,
-                  }}
-                >
-                  {expanded ? '收起' : '详细'}
-                </Button>
-              )
+              expandRowByClick: false
             } : undefined
           }
           pagination={{

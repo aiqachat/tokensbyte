@@ -97,7 +97,7 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
       <div
         onMouseDown={handleMouseDown}
         style={{
-          padding: '0 24px', height: 64, minHeight: 64,
+          padding: '0 24px', height: 48, minHeight: 48,
           borderBottom: '1px solid rgba(255,255,255,0.05)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           cursor: 'grab',

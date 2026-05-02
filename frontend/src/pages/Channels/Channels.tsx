@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch, Grid } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch, Grid, Segmented } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -34,6 +34,25 @@ const Channels: React.FC = () => {
   const [showMapping, setShowMapping] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const screens = useBreakpoint();
+  const [isExcludeMode, setIsExcludeMode] = useState(false);
+
+  const [statusFilter, setStatusFilter] = useState<number | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredChannels = channels.filter(c => {
+    let matchStatus = true;
+    if (statusFilter !== 'all') {
+      matchStatus = c.status === statusFilter;
+    }
+    
+    let matchSearch = true;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      matchSearch = (c.name && c.name.toLowerCase().includes(q)) || 
+                    (c.group_aid && c.group_aid.toLowerCase().includes(q));
+    }
+    return matchStatus && matchSearch;
+  });
 
   const fetchChannels = async () => {
     setLoading(true);
@@ -115,6 +134,7 @@ const Channels: React.FC = () => {
     setEditingChannel(null);
     form.resetFields();
     setShowMapping(false);
+    setIsExcludeMode(false);
     setIsModalVisible(true);
   };
 
@@ -138,10 +158,13 @@ const Channels: React.FC = () => {
       ...record,
       model_mapping: mapping,
       models: modelsForForm,
+      level_select: (record as any).exclude_user_groups?.length > 0 ? (record as any).exclude_user_groups : record.user_groups,
     });
     // 如果有任何映射值则自动开启开关
     const hasMapping = Object.values(mapping as Record<string, string>).some(v => v && String(v).trim());
     setShowMapping(hasMapping);
+    // 判断是否为排除模式
+    setIsExcludeMode((record as any).exclude_user_groups?.length > 0);
     setIsModalVisible(true);
   };
 
@@ -172,12 +195,16 @@ const Channels: React.FC = () => {
     }
 
     // 直接以 mid 保存，后端路由层会通过 mid 反查 model_id 进行匹配
+    const selectedLevels = values.level_select || [];
     const data = {
       ...values,
       models: values.models || [],
       provider_type: values.provider_type || 'custom',
       model_mapping: finalMapping,
+      user_groups: isExcludeMode ? [] : selectedLevels,
+      exclude_user_groups: isExcludeMode ? selectedLevels : [],
     };
+    delete data.level_select;
 
     try {
       if (editingChannel) {
@@ -219,13 +246,25 @@ const Channels: React.FC = () => {
     },
     {
       title: '支持等级', // Supported user levels
-      dataIndex: 'user_groups',
       key: 'user_groups',
-      render: (groups: string[] | undefined) => {
+      render: (_: any, record: any) => {
+        const groups = record.user_groups;
+        const excludeGroups = record.exclude_user_groups;
+        if (excludeGroups && excludeGroups.length > 0) {
+          return (
+            <Space size={[0, 4]} wrap>
+              <Tag color="orange">排除模式</Tag>
+              {excludeGroups.map((idStr: string) => {
+                const level = availableUserLevels.find(l => l.id.toString() === idStr || l.group_key === idStr);
+                return <Tag color="red" key={idStr}>{level ? level.name : idStr}</Tag>;
+              })}
+            </Space>
+          );
+        }
         if (!groups || groups.length === 0) return <Tag color="green">全部允许</Tag>;
         return (
           <Space size={[0, 4]} wrap>
-            {groups.map(idStr => {
+            {groups.map((idStr: string) => {
               const level = availableUserLevels.find(l => l.id.toString() === idStr || l.group_key === idStr);
               return <Tag color="blue" key={idStr}>{level ? level.name : idStr}</Tag>;
             })}
@@ -281,7 +320,23 @@ const Channels: React.FC = () => {
     <Card variant="borderless">
       <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
         <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('channels.title')}</Title>
-        <Space>
+        <Space wrap>
+          <Segmented
+            options={[
+              { label: '全部', value: 'all' },
+              { label: '激活', value: 1 },
+              { label: '已禁用', value: 0 },
+            ]}
+            value={statusFilter}
+            onChange={(val) => setStatusFilter(val as number | 'all')}
+          />
+          <Input.Search
+            placeholder="搜索 AID 或 名称"
+            allowClear
+            onSearch={setSearchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ width: 200 }}
+          />
           <Button icon={<SyncOutlined />} onClick={fetchChannels}>{t('common.refresh')}</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('channels.add_channel')}</Button>
         </Space>
@@ -289,7 +344,7 @@ const Channels: React.FC = () => {
 
       {screens.xs ? (
         <MobileCardList
-          dataSource={channels}
+          dataSource={filteredChannels}
           loading={loading}
           rowKey="id"
           pagination={{ pageSize: 10 }}
@@ -297,6 +352,7 @@ const Channels: React.FC = () => {
             const used = record.quota_used || 0;
             const limit = record.quota_limit ?? -1;
             const groups = record.user_groups;
+            const excludeGroups = record.exclude_user_groups;
             return (
               <MobileCard
                 title={<Text strong>{record.name}</Text>}
@@ -305,12 +361,20 @@ const Channels: React.FC = () => {
                 {record.group_aid && <CardRow label="AID"><Tag color="geekblue">{record.group_aid}</Tag></CardRow>}
                 <CardRow label="类型"><Tag color="purple">通用接口池</Tag></CardRow>
                 <CardRow label="支持等级">
-                  {(!groups || groups.length === 0)
-                    ? <Tag color="green">全部允许</Tag>
-                    : <Space size={[0, 4]} wrap>{groups.map((idStr: string) => {
-                        const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
-                        return <Tag color="blue" key={idStr}>{lv ? lv.name : idStr}</Tag>;
-                      })}</Space>
+                  {excludeGroups && excludeGroups.length > 0
+                    ? <Space size={[0, 4]} wrap>
+                        <Tag color="orange">排除模式</Tag>
+                        {excludeGroups.map((idStr: string) => {
+                          const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
+                          return <Tag color="red" key={idStr}>{lv ? lv.name : idStr}</Tag>;
+                        })}
+                      </Space>
+                    : (!groups || groups.length === 0)
+                      ? <Tag color="green">全部允许</Tag>
+                      : <Space size={[0, 4]} wrap>{groups.map((idStr: string) => {
+                          const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
+                          return <Tag color="blue" key={idStr}>{lv ? lv.name : idStr}</Tag>;
+                        })}</Space>
                   }
                 </CardRow>
                 <CardRow label="已用/额度">
@@ -333,7 +397,7 @@ const Channels: React.FC = () => {
         />
       ) : (
         <Table
-          dataSource={channels}
+          dataSource={filteredChannels}
           columns={columns}
           rowKey="id"
           loading={loading}
@@ -472,26 +536,39 @@ const Channels: React.FC = () => {
           </Form.Item>
 
 
-          <Form.Item name="user_groups" label="支持用户等级" extra="默认不选则表示允许所有等级的用户使用该渠道">
-            <Select mode="multiple" placeholder="选择开放该渠道的特定 VIP 等级（留空允许所有）" allowClear>
+          <Form.Item label={
+            <Space>
+              <span>{isExcludeMode ? '不支持的用户等级' : '支持用户等级'}</span>
+              <Switch
+                size="small"
+                checked={isExcludeMode}
+                onChange={(checked) => setIsExcludeMode(checked)}
+                checkedChildren="排除"
+                unCheckedChildren="允许"
+              />
+            </Space>
+          } extra={isExcludeMode ? '当前为排除模式：选中的等级将不允许使用该渠道，其余等级均可使用。' : '当前为允许模式：不选则允许所有等级，选中的等级才可以使用该渠道。'}>
+            <Form.Item name="level_select" noStyle>
+              <Select mode="multiple" placeholder={isExcludeMode ? '选择要排除的用户等级' : '选择开放该渠道的特定 VIP 等级（留空允许所有）'} allowClear>
                 {availableUserLevels.map((l) => (
-                    <Option key={l.id.toString()} value={l.id.toString()}>{l.name} (ULID: {l.id.toString().padStart(4, '0')})</Option>
+                  <Option key={l.id.toString()} value={l.id.toString()}>{l.name} (ULID: {l.id.toString().padStart(4, '0')})</Option>
                 ))}
-            </Select>
+              </Select>
+            </Form.Item>
           </Form.Item>
 
           <Row gutter={16}>
-            <Col span={6}>
-              <Form.Item name="priority" label={t('channels.priority')} initialValue={0}>
+            <Col span={12}>
+              <Form.Item name="priority" label={t('channels.priority')} initialValue={0} extra="数字越大优先级越高。系统优先调用高优先级渠道，仅当其不可用时才会降级到低优先级。">
                 <InputNumber style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-            <Col span={6}>
-              <Form.Item name="weight" label={t('channels.weight')} initialValue={1}>
+            <Col span={12}>
+              <Form.Item name="weight" label={t('channels.weight')} initialValue={1} extra="优先级相同的渠道，将根据权重比例分配流量。例如权重为 2 和 1，则请求会按 2:1 的概率分发。">
                 <InputNumber style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col span={12}>
               <Form.Item name="quota_limit" label="使用额度" initialValue={-1} extra="-1 表示无限额度">
                 <InputNumber 
                   min={-1} 
@@ -501,7 +578,7 @@ const Channels: React.FC = () => {
                 />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col span={12}>
               <Form.Item name="status" label={t('common.status')} initialValue={1}>
                 <Select>
                   <Option value={1}>{t('common.enabled')}</Option>

@@ -12,6 +12,7 @@ pub struct Channel {
     pub models: String,       // JSON array string
     pub model_mapping: String, // JSON object string
     pub user_groups: String,   // JSON array of user level ids/keys
+    pub exclude_user_groups: String, // JSON array of excluded user level ids/keys (blacklist)
     #[sqlx(default)]
     pub group_aid: Option<String>,
     #[sqlx(default)]
@@ -39,6 +40,10 @@ impl Channel {
 
     pub fn get_user_groups(&self) -> Vec<String> {
         serde_json::from_str(&self.user_groups).unwrap_or_default()
+    }
+
+    pub fn get_exclude_user_groups(&self) -> Vec<String> {
+        serde_json::from_str(&self.exclude_user_groups).unwrap_or_default()
     }
 
     pub fn get_model_mapping(&self) -> std::collections::HashMap<String, String> {
@@ -82,6 +87,7 @@ pub struct CreateChannelRequest {
     pub models: Vec<String>,
     pub model_mapping: Option<std::collections::HashMap<String, String>>,
     pub user_groups: Option<Vec<String>>,
+    pub exclude_user_groups: Option<Vec<String>>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
     pub pool_id: Option<i64>,
@@ -103,6 +109,7 @@ pub struct UpdateChannelRequest {
     pub models: Option<Vec<String>>,
     pub model_mapping: Option<std::collections::HashMap<String, String>>,
     pub user_groups: Option<Vec<String>>,
+    pub exclude_user_groups: Option<Vec<String>>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
     pub pool_id: Option<i64>,
@@ -133,6 +140,7 @@ pub struct ChannelSafe {
     pub models: Vec<String>,
     pub model_mapping: std::collections::HashMap<String, String>,
     pub user_groups: Vec<String>,
+    pub exclude_user_groups: Vec<String>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
     pub pool_id: Option<i64>,
@@ -153,6 +161,7 @@ impl From<Channel> for ChannelSafe {
         let models = ch.get_models();
         let model_mapping = ch.get_model_mapping();
         let user_groups = ch.get_user_groups();
+        let exclude_user_groups = ch.get_exclude_user_groups();
         Self {
             id: ch.id,
             name: ch.name,
@@ -162,6 +171,7 @@ impl From<Channel> for ChannelSafe {
             models,
             model_mapping,
             user_groups,
+            exclude_user_groups,
             group_aid: ch.group_aid,
             preset_id: ch.preset_id,
             pool_id: ch.pool_id,
