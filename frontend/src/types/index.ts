@@ -182,6 +182,7 @@ export interface ApiToken {
   forward_rule_ids?: string;
   is_active: number | boolean;
   config?: string;
+  last_used_at?: string;
 }
 
 export interface Redemption {

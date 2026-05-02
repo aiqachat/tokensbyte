@@ -177,7 +177,9 @@ const PromptInput: React.FC = React.memo(() => {
     const textarea = document.querySelector('.prompt-textarea textarea') as HTMLTextAreaElement;
     const before = prompt.substring(0, start);
     const afterCursor = prompt.substring(textarea?.selectionStart ?? prompt.length);
-    const newPrompt = `${before}@${label} ${afterCursor}`;
+    // 插入 @标签 + \u200B（零宽空格锚点）+ \u3000（全角空格，占一个中文字符宽度，约15px）+ \u200B
+    const placeholder = '\u200B\u3000\u200B';
+    const newPrompt = `${before}@${label}${placeholder} ${afterCursor}`;
     setPrompt(newPrompt);
     setMentionOpen(false);
     setMentionFilter('');
@@ -185,7 +187,7 @@ const PromptInput: React.FC = React.memo(() => {
     // 恢复光标位置
     setTimeout(() => {
       if (textarea) {
-        const pos = before.length + label.length + 2; // @label + space
+        const pos = before.length + label.length + 1 + 3 + 1; // @ + label + placeholder(3) + space(1)
         textarea.selectionStart = pos;
         textarea.selectionEnd = pos;
         textarea.focus();
@@ -209,22 +211,53 @@ const PromptInput: React.FC = React.memo(() => {
     return map;
   }, [attachedAssets]);
 
-  // 渲染富文本提示词（@图1 等仅变蓝色，不加任何额外元素）
+  // 渲染富文本提示词
   const renderRichPrompt = React.useMemo(() => {
     if (!prompt || Object.keys(assetMap).length === 0) return null;
     const labels = Object.keys(assetMap).map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     if (labels.length === 0) return null;
-    const regex = new RegExp(`(@(?:${labels.join('|')}))`, 'g');
+    const regex = new RegExp(`(@(?:${labels.join('|')}))(\u200B\u3000\u200B)?`, 'g');
     const parts = prompt.split(regex);
     if (parts.length <= 1) return null;
 
-    return parts.map((part, i) => {
+    const result = [];
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (part === undefined) continue;
+
       const match = part.match(/^@(.+)$/);
       if (match && assetMap[match[1]]) {
-        return <span key={i} style={{ color: '#60a5fa' }}>{part}</span>;
+        const info = assetMap[match[1]];
+        const hasPlaceholder = parts[i + 1] === '\u200B\u3000\u200B';
+        
+        result.push(
+          <span key={i} style={{ color: '#60a5fa', fontWeight: 500 }}>
+            {part}
+            {hasPlaceholder && (
+              <span style={{ position: 'relative' }}>
+                {'\u200B\u3000\u200B'}
+                <span className="mention-inline-thumb">
+                  {info.type === 'image' ? (
+                    <img src={info.url} alt="" />
+                  ) : info.type === 'video' ? (
+                    <video src={info.url} muted preload="metadata" disablePictureInPicture />
+                  ) : (
+                    <AudioOutlined style={{ fontSize: 10, color: '#faad14' }} />
+                  )}
+                </span>
+              </span>
+            )}
+          </span>
+        );
+        
+        if (hasPlaceholder) {
+          i++; // 跳过占位符部分
+        }
+      } else {
+        result.push(<span key={i}>{part}</span>);
       }
-      return <span key={i}>{part}</span>;
-    });
+    }
+    return result;
   }, [prompt, assetMap]);
 
   // 提取 prompt 中引用的素材列表（用于显示引用条）
@@ -556,6 +589,30 @@ const PromptInput: React.FC = React.memo(() => {
           .prompt-textarea .ant-input {
             caret-color: #E8EAED !important;
           }
+          .mention-inline-thumb {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 17px;
+            height: 17px;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid rgba(96,165,250,0.4);
+            background: rgba(0,0,0,0.5);
+            pointer-events: none;
+            z-index: 10;
+          }
+          .mention-inline-thumb img,
+          .mention-inline-thumb video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+          }
         `}</style>
 
         {/* @mention 下拉面板 */}
@@ -632,38 +689,6 @@ const PromptInput: React.FC = React.memo(() => {
           );
         })()}
       </div>
-
-      {/* 引用素材条 - 显示 prompt 中 @引用的素材缩略图 */}
-      {referencedAssets.length > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '4px 16px 2px 16px', flexWrap: 'wrap',
-        }}>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', flexShrink: 0 }}>引用:</span>
-          {referencedAssets.map(ref => (
-            <div key={ref.label} style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              background: 'rgba(22,119,255,0.1)',
-              border: '1px solid rgba(22,119,255,0.2)',
-              borderRadius: 6, padding: '2px 8px 2px 3px',
-            }}>
-              <div style={{
-                width: 20, height: 20, borderRadius: 4, overflow: 'hidden', flexShrink: 0,
-                background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                {ref.type === 'image' ? (
-                  <img src={ref.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : ref.type === 'video' ? (
-                  <video src={ref.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" disablePictureInPicture />
-                ) : (
-                  <AudioOutlined style={{ fontSize: 10, color: '#faad14' }} />
-                )}
-              </div>
-              <span style={{ fontSize: 11, color: '#60a5fa', fontWeight: 500 }}>@{ref.label}</span>
-            </div>
-          ))}
-        </div>
-      )}
       {/* 底部工具栏 */}
       <div
         style={{

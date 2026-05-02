@@ -246,10 +246,18 @@ const Tokens: React.FC = () => {
       ),
     },
     {
-      title: t('users.joined'),
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm:ss'),
+      title: '时间信息',
+      key: 'times',
+      render: (record: ApiToken) => (
+        <Space direction="vertical" size={2}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            创建: {dayjs(record.created_at).format('YYYY-MM-DD HH:mm')}
+          </Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            最后使用: {record.last_used_at ? record.last_used_at : '从未'}
+          </Text>
+        </Space>
+      ),
     },
     {
       title: t('common.actions'),
@@ -356,8 +364,11 @@ const Tokens: React.FC = () => {
                   <CardRow label={t('tokens.limits')}>
                     <Text type="secondary" style={{ fontSize: 12 }}>RPS: {record.rps_limit || '∞'} / RPM: {record.rpm_limit || '∞'}</Text>
                   </CardRow>
-                  <CardRow label={t('users.joined')}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm')}</Text>
+                  <CardRow label="时间信息">
+                    <Space direction="vertical" size={2}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>创建: {dayjs(record.created_at).format('MM-DD HH:mm')}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>最后使用: {record.last_used_at ? record.last_used_at : '从未'}</Text>
+                    </Space>
                   </CardRow>
                   <CardActions>
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />

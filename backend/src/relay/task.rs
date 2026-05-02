@@ -241,10 +241,11 @@ pub async fn task_status(
                         )).bind(apply_balance).bind(apply_balance).bind(&token.user_id)
                         .execute(&mut *tx).await;
 
-                        // 更新 Token 配额
+                        // 更新 Token 配额及使用时间
+                        let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                         let _ = sqlx::query(&state.db.format_query(
-                            "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(token.id)
+                            "UPDATE api_tokens SET quota_used = quota_used + ?, last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(apply_balance).bind(&now_str).bind(token.id)
                         .execute(&mut *tx).await;
 
                         // 更新渠道配额 (修复遗漏)

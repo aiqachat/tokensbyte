@@ -339,6 +339,17 @@ async fn record_and_bill_inner(
 
     let res: Result<(), sqlx::Error> = async {
         let mut tx = state.db.pool.begin().await?;
+        let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        
+        // 始终更新令牌最后使用时间
+        sqlx::query(&state.db.format_query(
+            "UPDATE api_tokens SET last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ))
+        .bind(&now_str)
+        .bind(token.id)
+        .execute(&mut *tx)
+        .await?;
+
         if cost > 0.0 || pre_deducted > 0.0 {
             sqlx::query(&state.db.format_query(
                 "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",

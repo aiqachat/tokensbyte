@@ -20,6 +20,8 @@ pub struct ApiToken {
     pub is_active: i64,
     pub created_at: String,
     pub updated_at: String,
+    #[sqlx(default)]
+    pub last_used_at: Option<String>,
 }
 
 impl ApiToken {

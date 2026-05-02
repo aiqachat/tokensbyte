@@ -1289,6 +1289,12 @@ macro_rules! pg_migration_blocks {
     sqlx::query("COMMENT ON COLUMN users.gift_balance IS '赠送钱包余额，注册赠送/活动赠送等免费额度，消费时优先扣赠送余额'")
         .execute(pool).await.ok();
 
+    // ─── api_tokens 表增加 last_used_at 字段（最后使用时间） ───
+    sqlx::query("ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS last_used_at VARCHAR(30) DEFAULT NULL")
+        .execute(pool).await.ok();
+    sqlx::query("COMMENT ON COLUMN api_tokens.last_used_at IS '令牌最后使用时间'")
+        .execute(pool).await.ok();
+
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};
