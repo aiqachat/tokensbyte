@@ -134,7 +134,7 @@ const SettingsWidget: React.FC = React.memo(() => {
       {/* 可折叠内容区域 */}
       <div style={{
         flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
-        padding: '24px', gap: 24,
+        padding: '20px 24px', gap: 16,
         opacity: isSettingsCollapsed ? 0 : 1,
         transition: 'opacity 0.3s ease',
         pointerEvents: isSettingsCollapsed ? 'none' : 'auto'

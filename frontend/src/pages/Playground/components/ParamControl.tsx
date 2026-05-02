@@ -64,7 +64,7 @@ const SliderControl: React.FC<{
 
   return (
     <div>
-      <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+      <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <Slider
           style={{ flex: 1 }}
@@ -114,7 +114,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
     const currentRatio = paramValues['ratio'] || '';
     return (
       <div key={param.key}>
-        <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <Select
           style={{ width: '100%' }} size="large"
           value={value}
@@ -133,7 +133,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
   if (param.type === 'radio' && param.options) {
     return (
       <div key={param.key}>
-        <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <div style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {param.options.map(opt => {
             const isActive = value === opt;
@@ -161,6 +161,14 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
                     }} />
                     <span style={{ fontSize: 11 }}>{String(opt)}</span>
                   </>
+                ) : String(opt).toLowerCase() === 'adaptive' ? (
+                  <>
+                    <div style={{
+                      width: 18, height: 14,
+                      border: '1.5px dashed currentColor', borderRadius: 2, marginBottom: 4
+                    }} />
+                    <span style={{ fontSize: 11 }}>相似比例</span>
+                  </>
                 ) : (
                   <span>{String(opt)}</span>
                 )}
@@ -175,7 +183,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
   if (param.type === 'select' && param.options) {
     return (
       <div key={param.key}>
-        <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <Select
           style={{ width: '100%' }} size="large"
           value={value}
@@ -191,7 +199,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
   if (param.type === 'number') {
     return (
       <div key={param.key}>
-        <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <InputNumber
           size="large"
           style={{ width: '100%', background: '#17181A' }}
@@ -224,7 +232,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
   if (param.type === 'input') {
     return (
       <div key={param.key}>
-        <Text style={{ display: 'block', marginBottom: 12, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <Input
           size="large"
           value={value || ''}

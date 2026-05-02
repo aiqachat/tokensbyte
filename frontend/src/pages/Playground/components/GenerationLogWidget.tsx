@@ -21,6 +21,7 @@ import {
 import { MessageCircle } from 'lucide-react';
 import { useCanvas, usePlayground } from '../context/PlaygroundContext';
 import ImageEditorModal from './ImageEditorModal';
+import VideoEditorModal from './VideoEditorModal';
 
 const { Text } = Typography;
 
@@ -33,6 +34,8 @@ const GenerationLogWidget: React.FC = React.memo(() => {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorImageUrl, setEditorImageUrl] = useState('');
+  const [videoEditorOpen, setVideoEditorOpen] = useState(false);
+  const [editorVideoUrl, setEditorVideoUrl] = useState('');
   const [mediaInfo, setMediaInfo] = useState<{ fileSize?: string; width?: number; height?: number; duration?: number } | null>(null);
 
   // 找到当前选中的节点
@@ -144,16 +147,21 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     message.success('已加入提示词附件');
   }, [selectedNode, getResultUrl, setAttachedAssets]);
 
-  /** 图片编辑 */
-  const handleEditImage = useCallback(() => {
+  /** 媒体预览与编辑 */
+  const handleEditMedia = useCallback(() => {
     if (!selectedNode) return;
     const url = getResultUrl(selectedNode);
     if (!url) {
-      message.warning('暂无可编辑的图片');
+      message.warning('暂无可操作的媒体');
       return;
     }
-    setEditorImageUrl(url);
-    setEditorOpen(true);
+    if (selectedNode.type === 'video') {
+      setEditorVideoUrl(url);
+      setVideoEditorOpen(true);
+    } else {
+      setEditorImageUrl(url);
+      setEditorOpen(true);
+    }
   }, [selectedNode, getResultUrl]);
 
   /** 生成视频 - 将图片作为参考素材加入提示词区，引导用户图生视频 */
@@ -197,14 +205,15 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     setAttachedAssets(prev => [...prev, {
       asset: {
         id: Date.now() + Math.random(),
-        file_name: file.name || `edited_${Date.now()}.jpg`,
-        asset_type: 'image',
+        file_name: file.name || `edited_${Date.now()}.${selectedNode.type === 'video' ? 'mp4' : 'jpg'}`,
+        asset_type: selectedNode.type,
         file_url: newUrl,
       },
       fullUrl: newUrl,
       file,
     }]);
     setEditorOpen(false);
+    setVideoEditorOpen(false);
     message.success('编辑完成，已加入素材');
   }, [selectedNode, setNodes, setAttachedAssets]);
 
@@ -278,8 +287,14 @@ const GenerationLogWidget: React.FC = React.memo(() => {
   // 操作按钮定义
   const actionButtons = [
     { key: 'add', icon: <ScissorOutlined />, label: '加入提示词', onClick: handleAddToCreate, disabled: !isCompleted || !hasResult },
-    { key: 'edit', icon: <EditOutlined />, label: '图片编辑', onClick: handleEditImage, disabled: !isCompleted || !isImage || !hasResult },
-    { key: 'img2video', icon: <VideoCameraOutlined />, label: '生成视频', onClick: handleGenerateVideo, disabled: !isCompleted || !isImage || !hasResult },
+    { key: 'edit', icon: <EditOutlined />, label: '预览/编辑', onClick: handleEditMedia, disabled: !isCompleted || (selectedNode.type !== 'image' && selectedNode.type !== 'video') || !hasResult },
+    { 
+      key: 'img2video', 
+      icon: <VideoCameraOutlined />, 
+      label: selectedNode.type === 'video' ? '延长视频' : '生成视频', 
+      onClick: selectedNode.type === 'video' ? () => message.info('延长视频功能开发中...') : handleGenerateVideo, 
+      disabled: !isCompleted || (selectedNode.type !== 'image' && selectedNode.type !== 'video') || !hasResult 
+    },
     { key: 'regen', icon: <ReloadOutlined />, label: '重新生成', onClick: handleRegenerate, disabled: !selectedNode.taskData?.prompt },
     { key: 'download', icon: <DownloadOutlined />, label: '下载', onClick: handleDownload, disabled: !isCompleted || !hasResult },
     { key: 'delete', icon: <DeleteOutlined />, label: '删除', onClick: handleDelete, disabled: false, danger: true },
@@ -403,6 +418,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                     src={resultUrl}
                     style={{ width: 56, height: 56, borderRadius: 10, objectFit: 'cover', background: '#000', border: '1px solid rgba(255,255,255,0.1)' }}
                     muted preload="metadata"
+                    disablePictureInPicture
                   />
                 ) : (
                   <img
@@ -425,7 +441,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
           {actionButtons.map(btn => (
             <Tooltip 
               key={btn.key} 
-              title={btn.disabled && btn.key === 'edit' ? '图片编辑 (仅图片可用)' : btn.label}
+              title={btn.disabled && btn.key === 'edit' ? '预览/编辑 (仅图片/视频可用)' : btn.label}
               placement="top"
               mouseEnterDelay={0.1}
             >
@@ -493,6 +509,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                         }}
                         muted
                         preload="metadata"
+                        disablePictureInPicture
                       />
                     );
                   }
@@ -522,6 +539,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                         }}
                         muted
                         preload="metadata"
+                        disablePictureInPicture
                       />
                     );
                   }
@@ -661,6 +679,14 @@ const GenerationLogWidget: React.FC = React.memo(() => {
       open={editorOpen}
       imageUrl={editorImageUrl}
       onCancel={() => setEditorOpen(false)}
+      onSave={handleEditorSave}
+    />
+
+    {/* 视频预览/编辑弹窗 */}
+    <VideoEditorModal
+      open={videoEditorOpen}
+      videoUrl={editorVideoUrl}
+      onCancel={() => setVideoEditorOpen(false)}
       onSave={handleEditorSave}
     />
     </>

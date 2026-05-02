@@ -22,8 +22,18 @@ const TokenModal: React.FC = React.memo(() => {
       footer={null}
       width={720}
       styles={{
-        body: { backgroundColor: '#1E1F22', padding: '24px 32px' },
-        wrapper: { backgroundColor: '#1E1F22', borderRadius: 12, padding: 0, overflow: 'hidden' },
+        mask: { backgroundColor: 'rgba(0, 0, 0, 0.45)' },
+        body: { padding: '32px' },
+        content: { 
+          backgroundColor: 'rgba(28, 29, 31, 0.65)', 
+          backdropFilter: 'blur(32px) saturate(150%)', 
+          WebkitBackdropFilter: 'blur(32px) saturate(150%)',
+          borderRadius: 20, 
+          padding: 0, 
+          overflow: 'hidden',
+          border: '1px solid rgba(255,255,255,0.1)',
+          boxShadow: '0 32px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)'
+        },
       }}
       closeIcon={<CloseOutlined style={{ color: 'rgba(255,255,255,0.45)' }} />}
     >
@@ -67,8 +77,8 @@ const TokenModal: React.FC = React.memo(() => {
       </div>
 
       <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 40px', padding: '0 16px 12px 16px', color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
-          <div>API 密钥</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 40px', padding: '0 16px 12px 16px', color: 'rgba(255,255,255,0.45)', fontSize: 13, alignItems: 'center' }}>
+          <div>API 密钥 <span style={{ fontSize: 12, opacity: 0.6, marginLeft: 8 }}>(点击已选密钥可取消选择)</span></div>
           <div>创建时间</div>
           <div>上次使用时间</div>
           <div></div>
@@ -90,8 +100,13 @@ const TokenModal: React.FC = React.memo(() => {
                 <div
                   key={t.token_key}
                   onClick={() => {
-                    setSelectedTokenKey(t.token_key);
-                    localStorage.setItem('playground_saved_token', t.token_key);
+                    if (selectedTokenKey === t.token_key) {
+                      setSelectedTokenKey('');
+                      localStorage.removeItem('playground_saved_token');
+                    } else {
+                      setSelectedTokenKey(t.token_key);
+                      localStorage.setItem('playground_saved_token', t.token_key);
+                    }
                     setIsTokenModalVisible(false);
                   }}
                   style={{

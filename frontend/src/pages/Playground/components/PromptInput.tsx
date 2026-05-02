@@ -36,6 +36,7 @@ const isMac = (): boolean => {
 
 const PromptInput: React.FC = React.memo(() => {
   const {
+    loading,
     prompt, setPrompt,
     currentModel, activeCategory,
     selectedTokenKey, apiTokens,
@@ -54,6 +55,12 @@ const PromptInput: React.FC = React.memo(() => {
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // @mention 状态
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState('');
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionStartRef = useRef<number>(-1); // @ 符号在 prompt 中的位置
 
   /** 语音输入 - 聚焦输入框并提示使用系统听写 */
   const handleVoiceInput = useCallback(() => {
@@ -146,8 +153,158 @@ const PromptInput: React.FC = React.memo(() => {
     ? (apiTokens.find(t => t.token_key === selectedTokenKey)?.name || 'Token')
     : null;
 
+  // 构建 @mention 选项列表
+  const getMentionOptions = useCallback(() => {
+    const options: { label: string; icon: React.ReactNode; type: string; url: string }[] = [];
+    const counts: Record<string, number> = { image: 0, video: 0, audio: 0 };
+    attachedAssets.forEach((assetItem) => {
+      const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
+      const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
+      const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+      const typeKey = isAudio ? 'audio' : isVideo ? 'video' : 'image';
+      counts[typeKey]++;
+      const label = typeKey === 'audio' ? `声音${counts[typeKey]}` : typeKey === 'video' ? `视频${counts[typeKey]}` : `图${counts[typeKey]}`;
+      const icon = typeKey === 'audio' ? <AudioOutlined /> : typeKey === 'video' ? <VideoCameraOutlined /> : <PictureOutlined />;
+      options.push({ label, icon, type: typeKey, url: assetItem.fullUrl });
+    });
+    return options;
+  }, [attachedAssets]);
+
+  // 选择 mention
+  const insertMention = useCallback((label: string) => {
+    const start = mentionStartRef.current;
+    if (start < 0) return;
+    const textarea = document.querySelector('.prompt-textarea textarea') as HTMLTextAreaElement;
+    const before = prompt.substring(0, start);
+    const afterCursor = prompt.substring(textarea?.selectionStart ?? prompt.length);
+    const newPrompt = `${before}@${label} ${afterCursor}`;
+    setPrompt(newPrompt);
+    setMentionOpen(false);
+    setMentionFilter('');
+    mentionStartRef.current = -1;
+    // 恢复光标位置
+    setTimeout(() => {
+      if (textarea) {
+        const pos = before.length + label.length + 2; // @label + space
+        textarea.selectionStart = pos;
+        textarea.selectionEnd = pos;
+        textarea.focus();
+      }
+    }, 0);
+  }, [prompt, setPrompt]);
+
+  // 构建素材标签 -> URL 映射，用于内联预览
+  const assetMap = React.useMemo(() => {
+    const map: Record<string, { url: string; type: string }> = {};
+    const counts: Record<string, number> = { image: 0, video: 0, audio: 0 };
+    attachedAssets.forEach((assetItem) => {
+      const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
+      const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
+      const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+      const typeKey = isAudio ? 'audio' : isVideo ? 'video' : 'image';
+      counts[typeKey]++;
+      const label = typeKey === 'audio' ? `声音${counts[typeKey]}` : typeKey === 'video' ? `视频${counts[typeKey]}` : `图${counts[typeKey]}`;
+      map[label] = { url: assetItem.fullUrl, type: typeKey };
+    });
+    return map;
+  }, [attachedAssets]);
+
+  // 渲染富文本提示词（@图1 等仅变蓝色，不加任何额外元素）
+  const renderRichPrompt = React.useMemo(() => {
+    if (!prompt || Object.keys(assetMap).length === 0) return null;
+    const labels = Object.keys(assetMap).map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (labels.length === 0) return null;
+    const regex = new RegExp(`(@(?:${labels.join('|')}))`, 'g');
+    const parts = prompt.split(regex);
+    if (parts.length <= 1) return null;
+
+    return parts.map((part, i) => {
+      const match = part.match(/^@(.+)$/);
+      if (match && assetMap[match[1]]) {
+        return <span key={i} style={{ color: '#60a5fa' }}>{part}</span>;
+      }
+      return <span key={i}>{part}</span>;
+    });
+  }, [prompt, assetMap]);
+
+  // 提取 prompt 中引用的素材列表（用于显示引用条）
+  const referencedAssets = React.useMemo(() => {
+    if (!prompt || Object.keys(assetMap).length === 0) return [];
+    const labels = Object.keys(assetMap);
+    const found: { label: string; url: string; type: string }[] = [];
+    const seen = new Set<string>();
+    labels.forEach(label => {
+      if (prompt.includes(`@${label}`) && !seen.has(label)) {
+        seen.add(label);
+        found.push({ label, ...assetMap[label] });
+      }
+    });
+    return found;
+  }, [prompt, assetMap]);
+
+  // 使用 ref 追踪最新的 attachedAssets
+  const attachedAssetsRef = useRef(attachedAssets);
+  attachedAssetsRef.current = attachedAssets;
+
+  // 监听 prompt 变化，跟踪 mention 过滤
+  React.useEffect(() => {
+    if (!mentionOpen) return;
+    const start = mentionStartRef.current;
+    if (start < 0) return;
+    // 取 @ 后面的文本作为过滤词
+    const afterAt = prompt.substring(start + 1);
+    const spaceIdx = afterAt.search(/[\s]/);
+    const filter = spaceIdx >= 0 ? '' : afterAt;
+    if (spaceIdx >= 0) {
+      // 用户输入了空格，关闭 mention
+      setMentionOpen(false);
+      return;
+    }
+    setMentionFilter(filter);
+  }, [prompt, mentionOpen]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     e.stopPropagation();
+
+    // 检测 @ 键按下，立即打开 mention
+    if (e.key === '@' || (e.key === '2' && e.shiftKey)) {
+      // 记录 @ 在 prompt 中的位置（当前光标位置，@ 字符尚未插入）
+      const target = e.target as HTMLTextAreaElement;
+      mentionStartRef.current = target.selectionStart;
+      setMentionFilter('');
+      setMentionIndex(0);
+      setMentionOpen(true);
+      return;
+    }
+
+    // mention 下拉框激活时的键盘导航
+    if (mentionOpen) {
+      const allOptions = getMentionOptions();
+      const options = allOptions.filter(o =>
+        !mentionFilter || o.label.includes(mentionFilter)
+      );
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex(prev => Math.min(prev + 1, (options.length || 1) - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex(prev => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' && options.length > 0) {
+        e.preventDefault();
+        insertMention(options[mentionIndex]?.label || options[0].label);
+        return;
+      }
+      if (e.key === 'Escape' || e.key === 'Backspace') {
+        if (e.key === 'Escape') e.preventDefault();
+        setMentionOpen(false);
+        return;
+      }
+    }
+
     // ⌘+Enter 或 Ctrl+Enter 快捷发送
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
@@ -156,6 +313,50 @@ const PromptInput: React.FC = React.memo(() => {
       }
     }
   };
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'calc(100% - 48px)',
+          maxWidth: 720,
+          background: 'rgba(22, 23, 26, 0.92)',
+          backdropFilter: 'blur(20px)',
+          borderRadius: 20,
+          border: '1px solid rgba(255,255,255,0.08)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+          zIndex: 1000,
+          padding: '24px 20px 12px 20px',
+        }}
+      >
+        <div style={{ height: 20, background: 'rgba(255,255,255,0.04)', borderRadius: 10, width: '30%', marginBottom: 28, animation: 'promptPulse 1.5s infinite' }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ height: 30, width: 100, background: 'rgba(255,255,255,0.04)', borderRadius: 8, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 30, width: 140, background: 'rgba(255,255,255,0.04)', borderRadius: 8, animation: 'promptPulse 1.5s infinite' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ height: 32, width: 32, background: 'rgba(255,255,255,0.04)', borderRadius: 10, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 32, width: 32, background: 'rgba(255,255,255,0.04)', borderRadius: 10, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 32, width: 80, background: 'rgba(255,255,255,0.04)', borderRadius: 14, animation: 'promptPulse 1.5s infinite' }} />
+          </div>
+        </div>
+        <style>{`
+          @keyframes promptPulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 0.2; }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -182,143 +383,287 @@ const PromptInput: React.FC = React.memo(() => {
       onWheel={(e) => e.stopPropagation()}
     >
       {/* 已附加的素材预览列表 */}
-      {attachedAssets.length > 0 && (
-        <div 
-          className="prompt-assets-scroll"
-          onWheel={(e) => {
-            if (e.deltaY !== 0) {
-              e.currentTarget.scrollLeft += e.deltaY;
-            }
-          }}
-          style={{
-            padding: '12px 16px 8px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            overflowX: 'auto',
-          }}
-        >
-          {attachedAssets.map((assetItem, index) => (
-            <div key={assetItem.asset.id} style={{
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 64,
-              height: 64,
-              borderRadius: 10,
-              overflow: 'hidden',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-              flexShrink: 0,
-              background: 'rgba(0,0,0,0.2)',
-            }}>
-              {/* 缩略图渲染逻辑 */}
-              {(() => {
-                const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
-                const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
-                const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
-                if (isAudio) {
-                  return (
-                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <AudioOutlined style={{ fontSize: 24, color: '#1677ff' }} />
-                    </div>
-                  );
-                }
-                if (isVideo) {
-                  return (
-                    <div 
-                      onClick={() => {
-                        setEditingAssetIndex(index);
-                        setIsVideoPreviewOpen(true);
-                      }}
-                      style={{ width: '100%', height: '100%', position: 'relative', cursor: 'pointer' }}
-                      title="点击预览视频"
-                    >
-                      <video src={assetItem.fullUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" />
-                      <div style={{ position: 'absolute', bottom: 4, left: 4, background: 'rgba(0,0,0,0.5)', padding: '2px 4px', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <VideoCameraOutlined style={{ fontSize: 10, color: '#fff' }} />
-                      </div>
-                      <div className="hover-edit-overlay" style={{
-                        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', 
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s'
-                      }}>
-                        <PlayCircleOutlined style={{ fontSize: 20, color: '#fff' }} />
-                      </div>
-                    </div>
-                  );
-                }
-                return (
-                  <div 
-                    onClick={() => {
-                      setEditingAssetIndex(index);
-                      setIsImageEditorOpen(true);
-                    }}
-                    style={{ width: '100%', height: '100%', cursor: 'pointer', position: 'relative' }}
-                    title="点击放大并编辑图片"
-                  >
-                    <img
-                      src={assetItem.fullUrl}
-                      alt=""
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                    <div className="hover-edit-overlay" style={{
-                      position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', 
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s'
-                    }}>
-                      <PictureOutlined style={{ fontSize: 16, color: '#fff' }} />
-                    </div>
-                  </div>
-                );
-              })()}
-              {/* 删除按钮 */}
+      {attachedAssets.length > 0 && (() => {
+        // 按类型分组
+        const grouped: { type: string; label: string; items: { item: typeof attachedAssets[0]; origIndex: number }[] }[] = [];
+        const typeMap: Record<string, typeof grouped[0]> = {};
+
+        attachedAssets.forEach((assetItem, index) => {
+          const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
+          const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
+          const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+          const typeKey = isAudio ? 'audio' : isVideo ? 'video' : 'image';
+          const typeLabel = isAudio ? '声音' : isVideo ? '视频' : '图';
+          if (!typeMap[typeKey]) {
+            typeMap[typeKey] = { type: typeKey, label: typeLabel, items: [] };
+            grouped.push(typeMap[typeKey]);
+          }
+          typeMap[typeKey].items.push({ item: assetItem, origIndex: index });
+        });
+
+        return (
+          <div style={{ padding: '12px 16px 4px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {grouped.map(group => (
               <div
-                onClick={() => removeAsset(index)}
-                style={{
-                  position: 'absolute', top: 4, right: 4, width: 18, height: 18, borderRadius: '50%',
-                  background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                  transition: 'all 0.2s', color: '#fff', zIndex: 10,
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,77,79,0.9)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.5)'; }}
+                key={group.type}
+                className="prompt-assets-scroll"
+                onWheel={(e) => { if (e.deltaY !== 0) e.currentTarget.scrollLeft += e.deltaY; }}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 10, overflowX: 'auto' }}
               >
-                <CloseOutlined style={{ fontSize: 9 }} />
+                {group.items.map((entry, idx) => (
+                  <div key={entry.item.asset.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                    <div style={{
+                      position: 'relative',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 56, height: 56, borderRadius: 10, overflow: 'hidden',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                      background: 'rgba(0,0,0,0.2)',
+                    }}>
+                      {(() => {
+                        if (group.type === 'audio') {
+                          return (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <AudioOutlined style={{ fontSize: 22, color: '#1677ff' }} />
+                            </div>
+                          );
+                        }
+                        if (group.type === 'video') {
+                          return (
+                            <div
+                              onClick={() => { setEditingAssetIndex(entry.origIndex); setIsVideoPreviewOpen(true); }}
+                              style={{ width: '100%', height: '100%', position: 'relative', cursor: 'pointer' }}
+                            >
+                              <video src={entry.item.fullUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" disablePictureInPicture />
+                              <div style={{ position: 'absolute', bottom: 3, left: 3, background: 'rgba(0,0,0,0.5)', padding: '1px 3px', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <VideoCameraOutlined style={{ fontSize: 9, color: '#fff' }} />
+                              </div>
+                              <div className="hover-edit-overlay" style={{
+                                position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s'
+                              }}>
+                                <PlayCircleOutlined style={{ fontSize: 18, color: '#fff' }} />
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div
+                            onClick={() => { setEditingAssetIndex(entry.origIndex); setIsImageEditorOpen(true); }}
+                            style={{ width: '100%', height: '100%', cursor: 'pointer', position: 'relative' }}
+                          >
+                            <img src={entry.item.fullUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <div className="hover-edit-overlay" style={{
+                              position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s'
+                            }}>
+                              <PictureOutlined style={{ fontSize: 14, color: '#fff' }} />
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      {/* 删除按钮 */}
+                      <div
+                        onClick={() => removeAsset(entry.origIndex)}
+                        style={{
+                          position: 'absolute', top: 3, right: 3, width: 16, height: 16, borderRadius: '50%',
+                          background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                          transition: 'all 0.2s', color: '#fff', zIndex: 10,
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,77,79,0.9)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.5)'; }}
+                      >
+                        <CloseOutlined style={{ fontSize: 8 }} />
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 10, color: 'rgba(255,255,255,0.4)',
+                      lineHeight: 1, whiteSpace: 'nowrap',
+                    }}>
+                      {group.label}{idx + 1}
+                    </span>
+                  </div>
+                ))}
               </div>
-            </div>
-          ))}
-          <style>{`
-            .hover-edit-overlay:hover { opacity: 1 !important; }
-          `}</style>
-        </div>
-      )}
+            ))}
+            <style>{`
+              .hover-edit-overlay:hover { opacity: 1 !important; }
+            `}</style>
+          </div>
+        );
+      })()}
 
       {/* 输入区域 */}
-      <TextArea
-        className="prompt-textarea"
-        value={prompt}
-        onChange={e => setPrompt(e.target.value)}
-        placeholder={
-          currentModel
-            ? `Start typing a prompt to create ${getCategoryLabel(activeCategory)}...`
-            : '请先在右侧面板选择一个模型...'
-        }
-        autoSize={{ minRows: 2, maxRows: 8 }}
-        bordered={false}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        style={{
-          color: '#E8EAED',
-          resize: 'none',
-          padding: attachedAssets.length > 0 ? '8px 20px 8px 20px' : '18px 20px 8px 20px',
-          fontSize: 15,
-          lineHeight: '1.6',
-          background: 'transparent',
-          letterSpacing: '0.2px',
-        }}
-        onKeyDown={handleKeyDown}
-      />
+      <div style={{ position: 'relative' }}>
+        {/* 富文本覆盖层 - 显示 @mention 内联缩略图 */}
+        {renderRichPrompt && (
+          <div
+            className="prompt-rich-overlay"
+            style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              padding: attachedAssets.length > 0 ? '8px 20px 8px 20px' : '18px 20px 8px 20px',
+              fontSize: 15,
+              lineHeight: '1.6',
+              letterSpacing: '0.2px',
+              color: '#E8EAED',
+              pointerEvents: 'none',
+              whiteSpace: 'pre-wrap',
+              wordWrap: 'break-word',
+              overflow: 'hidden',
+              zIndex: 1,
+            }}
+          >
+            {renderRichPrompt}
+          </div>
+        )}
+        <TextArea
+          className="prompt-textarea"
+          value={prompt}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+          }}
+          placeholder={
+            currentModel
+              ? attachedAssets.length > 0
+                ? `输入提示词，使用 @ 引用素材...`
+                : `Start typing a prompt to create ${getCategoryLabel(activeCategory)}...`
+              : '请先在右侧面板选择一个模型...'
+          }
+          autoSize={{ minRows: 2, maxRows: 8 }}
+          bordered={false}
+          onFocus={() => setIsFocused(true)}
+          onBlur={(e) => {
+            setIsFocused(false);
+            setTimeout(() => setMentionOpen(false), 200);
+          }}
+          style={{
+            color: renderRichPrompt ? 'transparent' : '#E8EAED',
+            caretColor: '#E8EAED',
+            resize: 'none',
+            padding: attachedAssets.length > 0 ? '8px 20px 8px 20px' : '18px 20px 8px 20px',
+            fontSize: 15,
+            lineHeight: '1.6',
+            background: 'transparent',
+            letterSpacing: '0.2px',
+            position: 'relative',
+            zIndex: 2,
+          }}
+          onKeyDown={handleKeyDown}
+        />
+        <style>{`
+          .prompt-textarea .ant-input {
+            caret-color: #E8EAED !important;
+          }
+        `}</style>
 
+        {/* @mention 下拉面板 */}
+        {mentionOpen && (() => {
+          const allOptions = getMentionOptions();
+          const filtered = allOptions.filter(o => !mentionFilter || o.label.includes(mentionFilter));
+          const hasAssets = attachedAssets.length > 0;
+          return (
+            <div style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: 16,
+              marginBottom: 6,
+              background: 'rgba(30, 31, 35, 0.98)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 12,
+              padding: '6px 0',
+              minWidth: 180,
+              maxHeight: 280,
+              overflowY: 'auto',
+              zIndex: 2000,
+              boxShadow: '0 -8px 32px rgba(0,0,0,0.5)',
+            }}>
+              <div style={{ padding: '4px 12px 6px', fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>
+                {hasAssets ? '引用素材' : '提示'}
+              </div>
+              {!hasAssets ? (
+                <div style={{
+                  padding: '12px 14px', fontSize: 13,
+                  color: 'rgba(255,255,255,0.4)', textAlign: 'center',
+                }}>
+                  当前没有素材可供选择，请先添加素材
+                </div>
+              ) : filtered.length === 0 ? (
+                <div style={{
+                  padding: '12px 14px', fontSize: 13,
+                  color: 'rgba(255,255,255,0.4)', textAlign: 'center',
+                }}>
+                  没有匹配的素材
+                </div>
+              ) : (
+                filtered.map((opt, idx) => (
+                  <div
+                    key={opt.label}
+                    onMouseDown={(e) => { e.preventDefault(); insertMention(opt.label); }}
+                    onMouseEnter={() => setMentionIndex(idx)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '6px 12px', cursor: 'pointer',
+                      fontSize: 13, color: idx === mentionIndex ? '#fff' : 'rgba(255,255,255,0.7)',
+                      background: idx === mentionIndex ? 'rgba(255,255,255,0.1)' : 'transparent',
+                      transition: 'all 0.1s',
+                    }}
+                  >
+                    <div style={{
+                      width: 28, height: 28, borderRadius: 6, overflow: 'hidden', flexShrink: 0,
+                      background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {opt.type === 'image' ? (
+                        <img src={opt.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : opt.type === 'video' ? (
+                        <video src={opt.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" disablePictureInPicture />
+                      ) : (
+                        <AudioOutlined style={{ fontSize: 14, color: '#faad14' }} />
+                      )}
+                    </div>
+                    <span style={{ fontWeight: 500 }}>@{opt.label}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* 引用素材条 - 显示 prompt 中 @引用的素材缩略图 */}
+      {referencedAssets.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '4px 16px 2px 16px', flexWrap: 'wrap',
+        }}>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', flexShrink: 0 }}>引用:</span>
+          {referencedAssets.map(ref => (
+            <div key={ref.label} style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: 'rgba(22,119,255,0.1)',
+              border: '1px solid rgba(22,119,255,0.2)',
+              borderRadius: 6, padding: '2px 8px 2px 3px',
+            }}>
+              <div style={{
+                width: 20, height: 20, borderRadius: 4, overflow: 'hidden', flexShrink: 0,
+                background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {ref.type === 'image' ? (
+                  <img src={ref.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : ref.type === 'video' ? (
+                  <video src={ref.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" disablePictureInPicture />
+                ) : (
+                  <AudioOutlined style={{ fontSize: 10, color: '#faad14' }} />
+                )}
+              </div>
+              <span style={{ fontSize: 11, color: '#60a5fa', fontWeight: 500 }}>@{ref.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {/* 底部工具栏 */}
       <div
         style={{
@@ -332,7 +677,7 @@ const PromptInput: React.FC = React.memo(() => {
         {/* 左侧功能芯片区 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
           {/* API 密钥芯片（置于最前） */}
-          <Tooltip title={tokenName ? '点击更换 API 密钥' : '请选择 API 密钥'}>
+          <Tooltip title={tokenName ? '点击更换或取消 API 密钥' : '选择 API 密钥 (可选)'}>
             <div
               onClick={() => setIsTokenModalVisible(true)}
               style={{
@@ -360,15 +705,23 @@ const PromptInput: React.FC = React.memo(() => {
               }}
             >
               {!tokenName ? (
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.65)' }}>
-                  <svg width="14" height="14" viewBox="0 0 1024 1024" fill="currentColor">
-                    <path d="M854.6 288.6L539.2 604c-11.3 11.3-29.6 11.3-40.9 0L426 531.7c-11.3-11.3-29.6-11.3-40.9 0L247.9 668.9 224 816c-1.8 11-11.3 19.3-22.4 19.6L128 840c-13.3.4-24-10.4-24-24v-73.6c0-11 8.6-20.5 19.6-22.4l147.1-23.9 137.2-137.2c-11.3-11.3-11.3-29.6 0-40.9l72.3-72.3c11.3-11.3 11.3-29.6 0-40.9L164.8 139.4c-6.2-6.2-6.2-16.4 0-22.6l22.6-22.6c6.2-6.2 16.4-6.2 22.6 0l717.1 717.1c6.2 6.2 6.2 16.4 0 22.6l-22.6 22.6c-6.2 6.2-16.4 6.2-22.6 0L590.2 584.8l264.4-264.4c11.3-11.3 29.6-11.3 40.9 0l72.3 72.3c6.2 6.2 16.4 6.2 22.6 0l22.6-22.6c6.2-6.2 6.2-16.4 0-22.6L877.2 288.6c-6.2-6.2-16.4-6.2-22.6 0zM754 130c-84.5 0-153 68.5-153 153s68.5 153 153 153 153-68.5 153-153-68.5-153-153-153zm0 238c-46.9 0-85-38.1-85-85s38.1-85 85-85 85 38.1 85 85-38.1 85-85 85z" />
-                    <path d="M754 215c-37.5 0-68 30.5-68 68s30.5 68 68 68 68-30.5 68-68-30.5-68-68-68z" />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.65)' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M7 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z" />
+                    <circle cx="7" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                    <path d="M11 12h11v4h-3v-2h-2v2h-3v-4" />
+                    <line x1="3" y1="3" x2="21" y2="21" strokeWidth="2" />
                   </svg>
-                  <div style={{ position: 'absolute', width: 18, height: 1.5, background: 'currentColor', transform: 'rotate(-45deg)' }} />
                 </div>
               ) : (
-                <span>{tokenName}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.8 }}>
+                    <path d="M7 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z" />
+                    <circle cx="7" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                    <path d="M11 12h11v4h-3v-2h-2v2h-3v-4" />
+                  </svg>
+                  <span>{tokenName}</span>
+                </div>
               )}
             </div>
           </Tooltip>

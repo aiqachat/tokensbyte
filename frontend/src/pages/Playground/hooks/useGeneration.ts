@@ -69,10 +69,6 @@ export const useGeneration = () => {
   const handleGenerate = useCallback(async () => {
     if (generating) return;
     if (!currentModel || !prompt.trim()) return;
-    if (!selectedTokenKey) {
-      message.warning('请先选择一个 API 密钥');
-      return;
-    }
 
     setGenerating(true);
 
@@ -228,11 +224,18 @@ export const useGeneration = () => {
         delete body.prompt;
       }
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (selectedTokenKey) {
+        headers['Authorization'] = `Bearer ${selectedTokenKey}`;
+      } else {
+        const token = localStorage.getItem('token');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const res = await axios.post(endpoint, body, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${selectedTokenKey}`
-        }
+        headers
       }).then(r => r.data);
 
       // 检测异步任务响应：视频端点 或 图片端点返回了 task_id (如 GPT Image 2)
@@ -307,9 +310,15 @@ export const useGeneration = () => {
       attempts++;
 
       try {
-        const res = await axios.get(buildPollUrl(), {
-          headers: { 'Authorization': `Bearer ${selectedTokenKey}` }
-        }).then(r => r.data);
+        const headers: Record<string, string> = {};
+        if (selectedTokenKey) {
+          headers['Authorization'] = `Bearer ${selectedTokenKey}`;
+        } else {
+          const token = localStorage.getItem('token');
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const res = await axios.get(buildPollUrl(), { headers }).then(r => r.data);
 
         // 兼容多种异步响应格式：
         // 视频: { status: 'succeeded', content: { video_url } }
