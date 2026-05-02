@@ -12,7 +12,7 @@ import {
   LinkOutlined, PlusOutlined, AudioOutlined,
   CloseOutlined, ThunderboltOutlined,
   PaperClipOutlined, PictureOutlined, VideoCameraOutlined,
-  CloudOutlined, UploadOutlined, GlobalOutlined,
+  CloudOutlined, UploadOutlined, GlobalOutlined, PlusCircleOutlined,
 } from '@ant-design/icons';
 import { usePlayground } from '../context/PlaygroundContext';
 import { useGeneration } from '../hooks/useGeneration';
@@ -439,9 +439,10 @@ const PromptInput: React.FC = React.memo(() => {
             </Tooltip>
           )}
 
-          {/* 分隔符 */}
-          <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.06)', margin: '0 2px', flexShrink: 0 }} />
+        </div>
 
+        {/* 右侧操作区 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           {/* 语音输入按钮 */}
           <Tooltip title="语音输入">
             <div
@@ -450,26 +451,29 @@ const PromptInput: React.FC = React.memo(() => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: 30,
-                height: 30,
-                borderRadius: 8,
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                color: 'rgba(255,255,255,0.3)',
+                color: 'rgba(255,255,255,0.65)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.color = '#fff';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'rgba(255,255,255,0.3)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                e.currentTarget.style.color = 'rgba(255,255,255,0.65)';
               }}
             >
-              <AudioOutlined style={{ fontSize: 14 }} />
+              <AudioOutlined style={{ fontSize: 16 }} />
             </div>
           </Tooltip>
 
+          {/* 添加按钮 */}
           <Dropdown
             menu={{ items: dropdownItems, onClick: handleMenuClick }}
             trigger={['click']}
@@ -482,31 +486,31 @@ const PromptInput: React.FC = React.memo(() => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: 30,
-                  height: 30,
-                  borderRadius: 8,
+                  width: 32,
+                  height: 32,
+                  borderRadius: 10,
+                  background: attachedAssets.length > 0 ? 'rgba(22,119,255,0.15)' : 'rgba(255, 255, 255, 0.04)',
+                  border: attachedAssets.length > 0 ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  color: attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.3)',
-                  background: attachedAssets.length > 0 ? 'rgba(22,119,255,0.1)' : 'transparent',
+                  color: attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.65)',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.18)' : 'rgba(255,255,255,0.06)';
-                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.6)';
+                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.25)' : 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : '#fff';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.1)' : 'transparent';
-                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.3)';
+                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.15)' : 'rgba(255, 255, 255, 0.04)';
+                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.65)';
                 }}
               >
-                <PlusOutlined style={{ fontSize: 14 }} />
+                <PlusCircleOutlined style={{ fontSize: 16 }} />
               </div>
             </Tooltip>
           </Dropdown>
-        </div>
 
-        {/* 右侧运行按钮 */}
-        <div
+          {/* 运行按钮 */}
+          <div
           onClick={() => {
             if (currentModel && prompt.trim() && !generating) {
               handleGenerate();
@@ -566,6 +570,7 @@ const PromptInput: React.FC = React.memo(() => {
               </span>
             </>
           )}
+        </div>
         </div>
       </div>
 
