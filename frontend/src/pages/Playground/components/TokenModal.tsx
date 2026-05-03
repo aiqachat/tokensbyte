@@ -22,7 +22,7 @@ const TokenModal: React.FC = React.memo(() => {
       onCancel={() => setIsTokenModalVisible(false)}
       footer={null}
       width={720}
-      styles={{
+      styles={({
         mask: { backgroundColor: 'rgba(0, 0, 0, 0.45)' },
         body: { padding: '32px' },
         content: { 
@@ -35,7 +35,7 @@ const TokenModal: React.FC = React.memo(() => {
           border: '1px solid rgba(255,255,255,0.1)',
           boxShadow: '0 32px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)'
         },
-      }}
+      }) as any}
       closeIcon={<CloseOutlined style={{ color: 'rgba(255,255,255,0.45)' }} />}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>

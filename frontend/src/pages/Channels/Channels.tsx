@@ -42,14 +42,16 @@ const Channels: React.FC = () => {
   const filteredChannels = channels.filter(c => {
     let matchStatus = true;
     if (statusFilter !== 'all') {
-      matchStatus = c.status === statusFilter;
+      matchStatus = c.status === Number(statusFilter);
     }
     
     let matchSearch = true;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      matchSearch = (c.name && c.name.toLowerCase().includes(q)) || 
-                    (c.group_aid && c.group_aid.toLowerCase().includes(q));
+      matchSearch = !!(
+        (c.name && c.name.toLowerCase().includes(q)) || 
+        (c.group_aid && c.group_aid.toLowerCase().includes(q))
+      );
     }
     return matchStatus && matchSearch;
   });
@@ -324,11 +326,11 @@ const Channels: React.FC = () => {
           <Segmented
             options={[
               { label: '全部', value: 'all' },
-              { label: '激活', value: 1 },
-              { label: '已禁用', value: 0 },
+              { label: '激活', value: '1' },
+              { label: '已禁用', value: '0' },
             ]}
-            value={statusFilter}
-            onChange={(val) => setStatusFilter(val as number | 'all')}
+            value={String(statusFilter)}
+            onChange={(val) => setStatusFilter(val === 'all' ? 'all' : Number(val))}
           />
           <Input.Search
             placeholder="搜索 AID 或 名称"
