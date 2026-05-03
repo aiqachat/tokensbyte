@@ -533,7 +533,7 @@ const Channels: React.FC = () => {
                                       const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
                                       return (
                                         <div key={idStr} style={{ padding: '6px 8px', background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                          <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{lv ? lv.name : '未知等级'}</span>
+                                          <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{lv ? `${lv.name} (${lv.discount}x)` : '未知等级'}</span>
                                           <span style={{ fontSize: 11, color: 'var(--text-secondary)', flexShrink: 0 }}>ULID: {idStr.padStart(4, '0')}</span>
                                         </div>
                                       );
@@ -609,10 +609,35 @@ const Channels: React.FC = () => {
                             <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
                               {() => {
                                 const selected = form.getFieldValue('models') || [];
-                                const allMids = availableModels.map(m => m.mid);
+                                
+                                const handleSelectAll = () => {
+                                  const currentSelectedMids = form.getFieldValue('models') || [];
+                                  const currentSelectedModelIds = new Set(currentSelectedMids.map((mid: string) => {
+                                    const m = availableModels.find((model: any) => model.mid === mid);
+                                    return m ? m.model_id : mid;
+                                  }));
+
+                                  const newSelection = [...currentSelectedMids];
+
+                                  const filteredModels = availableModels.filter(m => {
+                                    if (!modelSearch) return true;
+                                    const q = modelSearch.toLowerCase();
+                                    return m.name.toLowerCase().includes(q) || m.model_id.toLowerCase().includes(q) || m.mid.toLowerCase().includes(q);
+                                  });
+
+                                  filteredModels.forEach(m => {
+                                    if (!currentSelectedModelIds.has(m.model_id) && !newSelection.includes(m.mid)) {
+                                      newSelection.push(m.mid);
+                                      currentSelectedModelIds.add(m.model_id);
+                                    }
+                                  });
+
+                                  form.setFieldsValue({ models: newSelection });
+                                };
+
                                 return (
                                   <>
-                                    <Button onClick={() => form.setFieldsValue({ models: allMids })}>全选</Button>
+                                    <Button onClick={handleSelectAll}>全选</Button>
                                     <Button onClick={() => form.setFieldsValue({ models: [] })} disabled={selected.length === 0}>
                                       清空
                                     </Button>
@@ -689,22 +714,40 @@ const Channels: React.FC = () => {
 
                     {activeRightPanel === 'levels' && (
                       <div style={{ animation: 'fadeIn 0.2s' }}>
-                        <Title level={4} style={{ marginBottom: 24 }}>支持用户等级</Title>
-                        <div style={{ marginBottom: 24, padding: 16, background: _isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)', borderRadius: 8 }}>
-                          <Space size={16} align="center">
-                            <span>访问控制模式：</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
+                          <Space size={16} align="center" wrap>
+                            <Title level={4} style={{ margin: 0, whiteSpace: 'nowrap' }}>支持用户等级</Title>
+                            <Form.Item shouldUpdate={(prev, curr) => prev.level_select !== curr.level_select} noStyle>
+                              {() => {
+                                const selected = form.getFieldValue('level_select') || [];
+                                const allLevelIds = availableUserLevels.map(l => l.id.toString());
+                                return (
+                                  <Space>
+                                    <Button onClick={() => form.setFieldsValue({ level_select: allLevelIds })}>全选</Button>
+                                    <Button onClick={() => form.setFieldsValue({ level_select: [] })} disabled={selected.length === 0}>
+                                      清空
+                                    </Button>
+                                  </Space>
+                                );
+                              }}
+                            </Form.Item>
+                          </Space>
+                          <Space size={8} align="center">
+                            <Text type="secondary" style={{ fontSize: 13, display: screens.xs ? 'none' : 'inline-block' }}>访问控制模式：</Text>
                             <Segmented
                               options={['允许模式', '排除模式']}
                               value={isExcludeMode ? '排除模式' : '允许模式'}
                               onChange={(val) => setIsExcludeMode(val === '排除模式')}
                             />
-                            <Text type="secondary" style={{ fontSize: 13 }}>
-                              {isExcludeMode ? '选中排除的等级将【不可】使用该渠道' : '选中允许的等级才【可以】使用该渠道'}
-                            </Text>
                           </Space>
                         </div>
+                        <div style={{ marginBottom: 24 }}>
+                          <Text type="secondary" style={{ fontSize: 13 }}>
+                            {isExcludeMode ? '选中排除的等级将【不可】使用该渠道。' : '选中允许的等级才【可以】使用该渠道。'}
+                          </Text>
+                        </div>
                         
-                        <Form.Item name="level_select">
+                        <Form.Item name="level_select" style={{ marginBottom: 0 }}>
                           <Input style={{ display: 'none' }} />
                         </Form.Item>
                         
@@ -712,38 +755,39 @@ const Channels: React.FC = () => {
                           {() => {
                             const selectedLevels = form.getFieldValue('level_select') || [];
                             return (
-                              <Row gutter={[16, 16]}>
-                                {availableUserLevels.map((l) => {
-                                  const idStr = l.id.toString();
-                                  const isSelected = selectedLevels.includes(idStr);
-                                  return (
-                                    <Col xs={24} sm={12} key={idStr}>
-                                      <div 
-                                        onClick={() => {
-                                          const next = isSelected ? selectedLevels.filter((id: string) => id !== idStr) : [...selectedLevels, idStr];
-                                          form.setFieldsValue({ level_select: next });
-                                        }}
-                                        style={{
-                                          padding: '12px 16px',
-                                          borderRadius: 8,
-                                          border: isSelected ? '1px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'),
-                                          background: isSelected ? (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)') : 'transparent',
-                                          cursor: 'pointer',
-                                          display: 'flex',
-                                          justifyContent: 'space-between',
-                                          alignItems: 'center',
-                                          transition: 'all 0.2s'
-                                        }}
-                                      >
-                                        <Space direction="vertical" size={2}>
-                                          <Text strong style={{ color: isSelected ? 'var(--text)' : undefined }}>{l.name}</Text>
-                                          <Text type="secondary" style={{ fontSize: 12 }}>ULID: {idStr.padStart(4, '0')} | {l.group_key}</Text>
-                                        </Space>
-                                      </div>
-                                    </Col>
-                                  );
-                                })}
-                              </Row>
+                              <div style={{ maxHeight: 600, overflowY: 'auto', paddingRight: 8 }}>
+                                <Row gutter={[12, 12]}>
+                                  {availableUserLevels.map((l) => {
+                                    const idStr = l.id.toString();
+                                    const isSelected = selectedLevels.includes(idStr);
+                                    return (
+                                      <Col xs={24} sm={12} lg={12} key={idStr}>
+                                        <div 
+                                          onClick={() => {
+                                            const next = isSelected ? selectedLevels.filter((id: string) => id !== idStr) : [...selectedLevels, idStr];
+                                            form.setFieldsValue({ level_select: next });
+                                          }}
+                                          style={{
+                                            padding: '8px 12px',
+                                            borderRadius: 6,
+                                            border: isSelected ? '1px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'),
+                                            background: isSelected ? (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)') : 'transparent',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            transition: 'all 0.2s'
+                                          }}
+                                        >
+                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontWeight: 500, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: isSelected ? 'var(--text)' : 'inherit' }}>{l.name} ({l.discount}x)</div>
+                                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>ULID: {idStr.padStart(4, '0')} | {l.group_key}</div>
+                                          </div>
+                                        </div>
+                                      </Col>
+                                    );
+                                  })}
+                                </Row>
+                              </div>
                             );
                           }}
                         </Form.Item>

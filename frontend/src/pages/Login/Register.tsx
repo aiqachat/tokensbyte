@@ -20,19 +20,20 @@ const Register: React.FC = () => {
   const { settings, fetchSettings } = useSettingsStore();
   const [searchParams] = useSearchParams();
   
-  const getStoredValue = (key: string) => {
+  const getStoredValue = (key: string): string => {
+    // 1) 优先读 localStorage（带 TTL 校验）
     const stored = localStorage.getItem(key);
-    if (!stored) return '';
-    try {
-      const data = JSON.parse(stored);
-      if (Date.now() > data.expiry) {
-        localStorage.removeItem(key);
-        return '';
-      }
-      return data.value;
-    } catch (e) {
-      return '';
+    if (stored) {
+      try {
+        const data = JSON.parse(stored);
+        if (Date.now() <= data.expiry) return data.value;
+        localStorage.removeItem(key); // 过期，清理
+      } catch { /* ignore */ }
     }
+    // 2) 降级读 cookie（浏览器自动管理过期）
+    const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${key}=([^;]*)`));
+    if (match) return decodeURIComponent(match[1]);
+    return '';
   };
 
   const aff = searchParams.get('aff') || getStoredValue('tokensbyte_affiliate_code');

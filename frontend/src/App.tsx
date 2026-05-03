@@ -65,23 +65,31 @@ const App: React.FC = () => {
     document.documentElement.lang = i18n.language === 'zh' ? 'zh-CN' : 'en';
   }, [i18n.language]);
 
-  useEffect(() => {
-    fetchSettings();
-    
-    // Affiliate & Team Tracking (persist for 3 days)
+  // ─── Affiliate & Team Tracking: 3-day persistent invite codes ───
+  // Runs synchronously on EVERY render cycle so child components
+  // (Register / Login) can read the stored value immediately.
+  // Uses both localStorage AND cookie as dual-storage for maximum reliability.
+  React.useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const aff = params.get('aff');
     const team = params.get('team');
-    
-    const now = Date.now();
-    const expiry = now + 3 * 24 * 60 * 60 * 1000; // 3 days
-    
-    if (aff) {
-      localStorage.setItem('tokensbyte_affiliate_code', JSON.stringify({ value: aff, expiry }));
-    }
-    if (team) {
-      localStorage.setItem('tokensbyte_team_invite', JSON.stringify({ value: team, expiry }));
-    }
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+    const persist = (key: string, value: string) => {
+      const expiry = Date.now() + THREE_DAYS_MS;
+      // localStorage
+      localStorage.setItem(key, JSON.stringify({ value, expiry }));
+      // cookie (HttpOnly=false so JS can read; path=/ so all routes see it)
+      const expires = new Date(expiry).toUTCString();
+      document.cookie = `${key}=${encodeURIComponent(value)}; path=/; expires=${expires}; SameSite=Lax`;
+    };
+
+    if (aff) persist('tokensbyte_affiliate_code', aff);
+    if (team) persist('tokensbyte_team_invite', team);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchSettings();
   }, [fetchSettings]);
 
   return (
