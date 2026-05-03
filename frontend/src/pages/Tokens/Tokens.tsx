@@ -22,6 +22,7 @@ const Tokens: React.FC = () => {
   const screens = useBreakpoint();
   const [saving, setSaving] = useState(false);
   const [enableModelFilter, setEnableModelFilter] = useState(false);
+  const [isUnlimitedQuota, setIsUnlimitedQuota] = useState(true);
 
   // 密钥明文展示状态
   const [revealModalVisible, setRevealModalVisible] = useState(false);
@@ -54,6 +55,7 @@ const Tokens: React.FC = () => {
     setEditingToken(null);
     form.resetFields();
     setEnableModelFilter(false);
+    setIsUnlimitedQuota(true);
     setIsModalVisible(true);
   };
 
@@ -62,6 +64,7 @@ const Tokens: React.FC = () => {
     const models = record.allowed_models ? (typeof record.allowed_models === 'string' ? JSON.parse(record.allowed_models) : record.allowed_models) : [];
     const hasModels = Array.isArray(models) && models.length > 0;
     setEnableModelFilter(hasModels);
+    setIsUnlimitedQuota(record.quota_limit < 0);
     form.setFieldsValue({
       ...record,
       allowed_models: Array.isArray(models) ? models.join('\n') : '',
@@ -404,14 +407,46 @@ const Tokens: React.FC = () => {
             <Input placeholder="e.g. Project A" />
           </Form.Item>
 
-          <Form.Item name="quota_limit" label={`${t('tokens.limit')} ${t('tokens.limit_hint')}`} initialValue={-1}>
-            <InputNumber 
-              min={-1}
-              style={{ width: '100%' }} 
-              formatter={(val) => (val === -1 || val === '-1') ? t('tokens.unlimited_quota') : `${val}`}
-              parser={(val) => (val === t('tokens.unlimited_quota') ? -1 : parseFloat(val as string) || 0) as -1}
-            />
+          <Form.Item label={t('tokens.limit')} style={{ marginBottom: isUnlimitedQuota ? 24 : 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Switch
+                checked={isUnlimitedQuota}
+                onChange={(checked) => {
+                  setIsUnlimitedQuota(checked);
+                  if (checked) {
+                    form.setFieldsValue({ quota_limit: -1 });
+                  } else {
+                    const currentVal = form.getFieldValue('quota_limit');
+                    if (currentVal < 0) {
+                      form.setFieldsValue({ quota_limit: 1000 });
+                    }
+                  }
+                }}
+              />
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#E8EAED' }}>
+                {isUnlimitedQuota ? '无限额' : '限制额度'}
+              </span>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                {isUnlimitedQuota ? '当前令牌不限制使用额度' : '开启后，额度消耗完该令牌将失效'}
+              </Text>
+            </div>
           </Form.Item>
+
+          {!isUnlimitedQuota && (
+            <Form.Item name="quota_limit" rules={[{ required: true, message: '请输入额度' }]}>
+              <InputNumber 
+                min={0}
+                style={{ width: '100%' }} 
+                placeholder="请输入限制额度"
+              />
+            </Form.Item>
+          )}
+
+          {isUnlimitedQuota && (
+            <Form.Item name="quota_limit" initialValue={-1} hidden>
+              <InputNumber />
+            </Form.Item>
+          )}
 
           <Form.Item label="选择指定模型" style={{ marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -423,9 +458,10 @@ const Tokens: React.FC = () => {
                     form.setFieldsValue({ allowed_models: '' });
                   }
                 }}
-                checkedChildren="已开启"
-                unCheckedChildren="未开启"
               />
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#E8EAED' }}>
+                {enableModelFilter ? '已开启' : '未开启'}
+              </span>
               <Text type="secondary" style={{ fontSize: 13 }}>
                 {enableModelFilter ? '仅允许请求下方指定的模型' : '不开启，全站模型都可以使用，一般不开'}
               </Text>
