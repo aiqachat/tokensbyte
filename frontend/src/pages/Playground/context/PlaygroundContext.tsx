@@ -347,6 +347,50 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
                 }
                 return n;
               });
+
+              // 补充 canvas_data 中缺失但 assets 表中存在的记录
+              // （解决 persistAsset 持久化成功但 canvas 尚未保存的情况）
+              const existingAssetIds = new Set(
+                fixedNodes.map((n: any) => n.id).filter((id: string) => id.startsWith('asset-'))
+              );
+              // 同时收集已有节点的 file_url 用于去重
+              const existingUrls = new Set<string>();
+              fixedNodes.forEach((n: any) => {
+                const url = n.resultData?.data?.[0]?.url || n.resultData?.content?.video_url;
+                if (url) existingUrls.add(url);
+              });
+              const missingAssets = assets.filter((a: any) => {
+                if (a.asset_type !== 'image' && a.asset_type !== 'video') return false;
+                // 按 asset ID 匹配
+                if (existingAssetIds.has(`asset-${a.id}`)) return false;
+                // 按 URL 去重（避免同一图片以不同节点 ID 重复出现）
+                if (existingUrls.has(a.file_url)) return false;
+                return true;
+              });
+              if (missingAssets.length > 0) {
+                const maxZIndex = Math.max(...fixedNodes.map((n: any) => n.zIndex || 0), 0);
+                const maxX = Math.max(...fixedNodes.map((n: any) => (n.x || 0) + (n.width || 480)), 600);
+                missingAssets.forEach((asset: any, idx: number) => {
+                  let pos = { x: maxX + 40 + (idx % 2) * 520, y: 100 + Math.floor(idx / 2) * 380 };
+                  try {
+                    const nd = JSON.parse(asset.canvas_node_data);
+                    if (nd?.x !== undefined) pos = { x: nd.x, y: nd.y };
+                  } catch {}
+                  fixedNodes.push({
+                    id: `asset-${asset.id}`,
+                    type: asset.asset_type,
+                    status: 'completed' as const,
+                    taskData: { prompt: asset.prompt },
+                    resultData: asset.asset_type === 'image'
+                      ? { data: [{ url: asset.file_url }] }
+                      : { content: { video_url: asset.file_url } },
+                    x: pos.x, y: pos.y,
+                    width: asset.width || 480, height: asset.height || 320,
+                    zIndex: maxZIndex + idx + 1,
+                  });
+                });
+              }
+
               setNodes(fixedNodes);
               if (canvasData.transform) {
                 setCanvasTransform(canvasData.transform);

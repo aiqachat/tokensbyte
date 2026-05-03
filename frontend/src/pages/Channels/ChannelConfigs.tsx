@@ -90,6 +90,12 @@ const ChannelConfigs: React.FC = () => {
 
   const columns = [
     {
+      title: 'ID',
+      dataIndex: 'id',
+      key: 'id',
+      width: 60,
+    },
+    {
       title: '配置名称',
       dataIndex: 'name',
       key: 'name',
@@ -138,7 +144,7 @@ const ChannelConfigs: React.FC = () => {
   return (
     <Card bordered={false}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>模型渠道配置预设</Title>
+        <Title level={2} style={{ margin: 0 }}>上游渠道配置预设</Title>
         <Space>
           <Button icon={<SyncOutlined />} onClick={fetchConfigs}>{t('common.refresh')}</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加预设配置</Button>

@@ -61,11 +61,13 @@ export const useGeneration = () => {
         canvas_node_data: { x: node.x, y: node.y, width: node.width, height: node.height },
       }) as any;
       
-      // 更新节点为永久的 TOS URL
+      // 更新节点为永久的 TOS URL，并将节点 ID 更新为稳定的 asset-{id} 格式
+      // 以确保下次加载时能与 assets 表记录正确匹配
       if (res && res.file_url) {
+        const stableId = `asset-${res.id}`;
         setNodes(prev => prev.map(n => {
           if (n.id !== node.id) return n;
-          const updatedNode = { ...n };
+          const updatedNode = { ...n, id: stableId };
           if (updatedNode.type === 'image') {
             updatedNode.resultData = { data: [{ url: res.file_url }] };
           } else if (updatedNode.type === 'video') {

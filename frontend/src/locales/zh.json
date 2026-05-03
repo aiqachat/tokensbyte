@@ -77,7 +77,7 @@
     "plugins": "站点插件",
     "system_about": "系统关于",
     "channel_groups": "模型渠道分组",
-    "channel_configs": "模型渠道配置"
+    "channel_configs": "上游渠道配置"
   },
   "dashboard": {
     "title": "系统概览",
@@ -107,8 +107,8 @@
   },
   "channels": {
     "title": "渠道分组管理",
-    "add_channel": "添加渠道",
-    "edit_channel": "编辑渠道",
+    "add_channel": "添加渠道分组",
+    "edit_channel": "编辑渠道分组",
     "name": "名称",
     "type": "类型",
     "base_url": "基础 URL",
