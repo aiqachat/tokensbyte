@@ -657,8 +657,8 @@ const GenerationLogWidget: React.FC = React.memo(() => {
               <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500 }}>{typeLabel}</Text>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {status.icon}
-              <Text style={{ color: status.color, fontSize: 12, fontWeight: 500 }}>{status.label}</Text>
+              {status?.icon}
+              <Text style={{ color: status?.color, fontSize: 12, fontWeight: 500 }}>{status?.label}</Text>
             </div>
           </div>
           <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '0 0 10px 0' }} />

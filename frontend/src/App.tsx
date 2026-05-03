@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import Login from './pages/Login/Login';
 import Register from './pages/Login/Register';
 import ForgotPassword from './pages/Login/ForgotPassword';
@@ -46,7 +47,7 @@ import Announcements from './pages/admin/Marketing/Announcements';
 import SystemAbout from './pages/admin/SystemAbout';
 import useAuthStore from './store/auth';
 import useSettingsStore from './store/settings';
-import { useEffect } from 'react';
+
 
 const PrivateRoute = ({ children, adminOnly = false, userOnly = false }: { children: React.ReactNode, adminOnly?: boolean, userOnly?: boolean }) => {
   const { token, user } = useAuthStore();
@@ -58,6 +59,11 @@ const PrivateRoute = ({ children, adminOnly = false, userOnly = false }: { child
 
 const App: React.FC = () => {
   const { fetchSettings } = useSettingsStore();
+  const { i18n } = useTranslation();
+
+  useEffect(() => {
+    document.documentElement.lang = i18n.language === 'zh' ? 'zh-CN' : 'en';
+  }, [i18n.language]);
 
   useEffect(() => {
     fetchSettings();

@@ -48,12 +48,19 @@ const applyThemeSettings = (site?: AllSettings['site']) => {
 
 const applySiteSettings = (site?: AllSettings['site']) => {
   if (!site) return;
-  if (site.title) document.title = site.title;
+  if (site.title) {
+    document.title = site.title;
+    localStorage.setItem('tokensbyte_site_title', site.title);
+  }
   updateFavicon(site.favicon);
   updateMeta('keywords', site.keywords);
   updateMeta('description', site.description);
   applyThemeSettings(site);
 };
+
+// 页面加载时立即使用缓存的站点标题，避免闪烁
+const cachedTitle = localStorage.getItem('tokensbyte_site_title');
+if (cachedTitle) document.title = cachedTitle;
 
 const useSettingsStore = create<SettingsState>((set) => ({
   settings: null,

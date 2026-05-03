@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch, Grid, Segmented } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
@@ -35,6 +35,9 @@ const Channels: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const screens = useBreakpoint();
   const [isExcludeMode, setIsExcludeMode] = useState(false);
+  const [isBranch, setIsBranch] = useState(false);
+  const [activeRightPanel, setActiveRightPanel] = useState<'models' | 'levels' | 'mapping' | 'presets'>('models');
+  const [modelSearch, setModelSearch] = useState('');
 
   const [statusFilter, setStatusFilter] = useState<number | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,8 +51,8 @@ const Channels: React.FC = () => {
     let matchSearch = true;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      matchSearch = (c.name && c.name.toLowerCase().includes(q)) || 
-                    (c.group_aid && c.group_aid.toLowerCase().includes(q));
+      matchSearch = !!((c.name && c.name.toLowerCase().includes(q)) || 
+                    (c.group_aid && c.group_aid.toLowerCase().includes(q)));
     }
     return matchStatus && matchSearch;
   });
@@ -135,6 +138,9 @@ const Channels: React.FC = () => {
     form.resetFields();
     setShowMapping(false);
     setIsExcludeMode(false);
+    setIsBranch(false);
+    setActiveRightPanel('models');
+    setModelSearch('');
     setIsModalVisible(true);
   };
 
@@ -165,6 +171,11 @@ const Channels: React.FC = () => {
     setShowMapping(hasMapping);
     // 判断是否为排除模式
     setIsExcludeMode((record as any).exclude_user_groups?.length > 0);
+    // 判断是否为分支
+    const configObj = record.config ? (typeof record.config === 'string' ? JSON.parse(record.config) : record.config) : {};
+    setIsBranch(!!configObj.is_branch);
+    setActiveRightPanel('models');
+    setModelSearch('');
     setIsModalVisible(true);
   };
 
@@ -196,6 +207,12 @@ const Channels: React.FC = () => {
 
     // 直接以 mid 保存，后端路由层会通过 mid 反查 model_id 进行匹配
     const selectedLevels = values.level_select || [];
+    // 处理 config
+    const configObj = editingChannel && editingChannel.config ? 
+        (typeof editingChannel.config === 'string' ? JSON.parse(editingChannel.config) : editingChannel.config) 
+        : {};
+    configObj.is_branch = isBranch;
+
     const data = {
       ...values,
       models: values.models || [],
@@ -203,6 +220,7 @@ const Channels: React.FC = () => {
       model_mapping: finalMapping,
       user_groups: isExcludeMode ? [] : selectedLevels,
       exclude_user_groups: isExcludeMode ? selectedLevels : [],
+      config: configObj,
     };
     delete data.level_select;
 
@@ -318,277 +336,447 @@ const Channels: React.FC = () => {
 
   return (
     <Card variant="borderless">
-      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
-        <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('channels.title')}</Title>
-        <Space wrap>
-          <Segmented
-            options={[
-              { label: '全部', value: 'all' },
-              { label: '激活', value: 1 },
-              { label: '已禁用', value: 0 },
-            ]}
-            value={statusFilter}
-            onChange={(val) => setStatusFilter(val as number | 'all')}
-          />
-          <Input.Search
-            placeholder="搜索 AID 或 名称"
-            allowClear
-            onSearch={setSearchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ width: 200 }}
-          />
-          <Button icon={<SyncOutlined />} onClick={fetchChannels}>{t('common.refresh')}</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('channels.add_channel')}</Button>
-        </Space>
-      </div>
+      {!isModalVisible ? (
+        <>
+          <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
+            <Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>{t('channels.title')}</Title>
+            <Space wrap>
+              <Segmented
+                options={[
+                  { label: '全部', value: 'all' },
+                  { label: '激活', value: '1' },
+                  { label: '已禁用', value: '0' },
+                ]}
+                value={statusFilter === 'all' ? 'all' : statusFilter.toString()}
+                onChange={(val) => setStatusFilter(val === 'all' ? 'all' : parseInt(val as string, 10))}
+              />
+              <Input.Search
+                placeholder="搜索 AID 或 名称"
+                allowClear
+                onSearch={setSearchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ width: 200 }}
+              />
+              <Button icon={<SyncOutlined />} onClick={fetchChannels}>{t('common.refresh')}</Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('channels.add_channel')}</Button>
+            </Space>
+          </div>
 
-      {screens.xs ? (
-        <MobileCardList
-          dataSource={filteredChannels}
-          loading={loading}
-          rowKey="id"
-          pagination={{ pageSize: 10 }}
-          renderCard={(record: any) => {
-            const used = record.quota_used || 0;
-            const limit = record.quota_limit ?? -1;
-            const groups = record.user_groups;
-            const excludeGroups = record.exclude_user_groups;
-            return (
-              <MobileCard
-                title={<Text strong>{record.name}</Text>}
-                extra={<Tag color={record.status === 1 ? 'success' : 'error'}>{record.status === 1 ? t('common.active') : t('common.disabled')}</Tag>}
-              >
-                {record.group_aid && <CardRow label="AID"><Tag color="geekblue">{record.group_aid}</Tag></CardRow>}
-                <CardRow label="类型"><Tag color="purple">通用接口池</Tag></CardRow>
-                <CardRow label="支持等级">
-                  {excludeGroups && excludeGroups.length > 0
-                    ? <Space size={[0, 4]} wrap>
-                        <Tag color="orange">排除模式</Tag>
-                        {excludeGroups.map((idStr: string) => {
-                          const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
-                          return <Tag color="red" key={idStr}>{lv ? lv.name : idStr}</Tag>;
-                        })}
+          {screens.xs ? (
+            <MobileCardList
+              dataSource={filteredChannels}
+              loading={loading}
+              rowKey="id"
+              pagination={{ pageSize: 10 }}
+              renderCard={(record: any) => {
+                const used = record.quota_used || 0;
+                const limit = record.quota_limit ?? -1;
+                const groups = record.user_groups;
+                const excludeGroups = record.exclude_user_groups;
+                return (
+                  <MobileCard
+                    title={<Text strong>{record.name}</Text>}
+                    extra={<Tag color={record.status === 1 ? 'success' : 'error'}>{record.status === 1 ? t('common.active') : t('common.disabled')}</Tag>}
+                  >
+                    {record.group_aid && <CardRow label="AID"><Tag color="geekblue">{record.group_aid}</Tag></CardRow>}
+                    <CardRow label="类型"><Tag color="purple">通用接口池</Tag></CardRow>
+                    <CardRow label="支持等级">
+                      {excludeGroups && excludeGroups.length > 0
+                        ? <Space size={[0, 4]} wrap>
+                            <Tag color="orange">排除模式</Tag>
+                            {excludeGroups.map((idStr: string) => {
+                              const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
+                              return <Tag color="red" key={idStr}>{lv ? lv.name : idStr}</Tag>;
+                            })}
+                          </Space>
+                        : (!groups || groups.length === 0)
+                          ? <Tag color="green">全部允许</Tag>
+                          : <Space size={[0, 4]} wrap>{groups.map((idStr: string) => {
+                              const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
+                              return <Tag color="blue" key={idStr}>{lv ? lv.name : idStr}</Tag>;
+                            })}</Space>
+                      }
+                    </CardRow>
+                    <CardRow label="已用/额度">
+                      <Space size={4}>
+                        <Tag color="orange">{currencySymbol}{used.toFixed(2)}</Tag>
+                        <Text type="secondary">/</Text>
+                        {limit < 0 ? <Tag color="green">∞</Tag> : <Tag>{currencySymbol}{limit.toFixed(2)}</Tag>}
                       </Space>
-                    : (!groups || groups.length === 0)
-                      ? <Tag color="green">全部允许</Tag>
-                      : <Space size={[0, 4]} wrap>{groups.map((idStr: string) => {
-                          const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
-                          return <Tag color="blue" key={idStr}>{lv ? lv.name : idStr}</Tag>;
-                        })}</Space>
-                  }
-                </CardRow>
-                <CardRow label="已用/额度">
-                  <Space size={4}>
-                    <Tag color="orange">{currencySymbol}{used.toFixed(2)}</Tag>
-                    <Text type="secondary">/</Text>
-                    {limit < 0 ? <Tag color="green">∞</Tag> : <Tag>{currencySymbol}{limit.toFixed(2)}</Tag>}
-                  </Space>
-                </CardRow>
-                <CardActions>
-                  <Button size="small" onClick={() => handleTest(record)}>{t('common.test')}</Button>
-                  <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
-                  <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-                    <Button size="small" icon={<DeleteOutlined />} danger />
-                  </Popconfirm>
-                </CardActions>
-              </MobileCard>
-            );
-          }}
-        />
+                    </CardRow>
+                    <CardActions>
+                      <Button size="small" onClick={() => handleTest(record)}>{t('common.test')}</Button>
+                      <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                      <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                        <Button size="small" icon={<DeleteOutlined />} danger />
+                      </Popconfirm>
+                    </CardActions>
+                  </MobileCard>
+                );
+              }}
+            />
+          ) : (
+            <Table
+              dataSource={filteredChannels}
+              columns={columns}
+              rowKey="id"
+              loading={loading}
+              pagination={{ pageSize: 10 }}
+              scroll={{ x: 'max-content' }}
+            />
+          )}
+        </>
       ) : (
-        <Table
-          dataSource={filteredChannels}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 'max-content' }}
-        />
+        <div style={{ animation: 'fadeIn 0.3s' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24, gap: 16 }}>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => setIsModalVisible(false)}>返回</Button>
+            <Title level={3} style={{ margin: 0 }}>
+              {editingChannel ? t('channels.edit_channel') : t('channels.add_channel')}
+            </Title>
+          </div>
+          <div style={{ maxWidth: 1200, width: '100%' }}>
+            <Form form={form} layout="vertical" onFinish={handleSave}>
+              <Row gutter={24}>
+                {/* 左侧基本配置栏 */}
+                <Col xs={24} md={8} xl={7}>
+                  <div style={{ padding: 16, background: _isLight ? '#f9fafb' : '#1f2028', borderRadius: 8, height: '100%' }}>
+                    <Form.Item name="name" label={<Text strong>{t('channels.name')}</Text>} rules={[{ required: true }]}>
+                      <Input placeholder="e.g. OpenAI Primary" />
+                    </Form.Item>
+
+                    <Form.Item label={<Text strong>路由与范围配置</Text>} style={{ marginBottom: 0 }}>
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        <Button block onClick={() => setActiveRightPanel('models')} type={activeRightPanel === 'models' ? 'primary' : 'default'} style={{ textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
+                            {() => {
+                              const m = form.getFieldValue('models') || [];
+                              return <span>选择模型 (已选 {m.length} 个)</span>;
+                            }}
+                          </Form.Item>
+                        </Button>
+                        <Button block onClick={() => setActiveRightPanel('levels')} type={activeRightPanel === 'levels' ? 'primary' : 'default'} style={{ textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>支持用户等级 ({isExcludeMode ? '排除模式' : '允许模式'})</span>
+                        </Button>
+                        <Button block onClick={() => setActiveRightPanel('mapping')} type={activeRightPanel === 'mapping' ? 'primary' : 'default'} style={{ textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>模型别名映射 {showMapping ? '(开启)' : ''}</span>
+                        </Button>
+                        <Button block onClick={() => setActiveRightPanel('presets')} type={activeRightPanel === 'presets' ? 'primary' : 'default'} style={{ textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Form.Item shouldUpdate={(prev, curr) => prev.preset_id !== curr.preset_id || prev.pool_id !== curr.pool_id || prev.gptimage_pool_id !== curr.gptimage_pool_id} noStyle>
+                            {() => {
+                              const hasAny = form.getFieldValue('preset_id') || form.getFieldValue('pool_id') || form.getFieldValue('gptimage_pool_id');
+                              return <span>预设与卡池 {hasAny ? '(已配置)' : ''}</span>;
+                            }}
+                          </Form.Item>
+                        </Button>
+                      </Space>
+                    </Form.Item>
+
+                    <div style={{ marginTop: 24 }}>
+                      <Text strong style={{ display: 'block', marginBottom: 12 }}>调度策略</Text>
+                      <Row gutter={12}>
+                        <Col span={12}>
+                          <Form.Item name="priority" label="优先级" initialValue={0}>
+                            <InputNumber style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item name="weight" label="权重" initialValue={1}>
+                            <InputNumber style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item name="quota_limit" label="使用额度" initialValue={-1}>
+                            <InputNumber 
+                              min={-1} 
+                              style={{ width: '100%' }} 
+                              formatter={(val) => (val === -1 || val === '-1') ? '无限额' : `${val}`}
+                              parser={(val) => (val === '无限额' ? -1 : parseFloat(val as string) || 0) as -1}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item name="status" label="状态" initialValue={1}>
+                            <Select>
+                              <Option value={1}>{t('common.enabled')}</Option>
+                              <Option value={0}>{t('common.disabled')}</Option>
+                            </Select>
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      
+                      <Form.Item label="其他属性" style={{ marginBottom: 0 }}>
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>渠道分支</span>
+                            <Switch size="small" checked={isBranch} onChange={setIsBranch} />
+                          </div>
+                        </Space>
+                      </Form.Item>
+                    </div>
+                  </div>
+                </Col>
+
+                {/* 右侧动态面板 */}
+                <Col xs={24} md={16} xl={17}>
+                  <div style={{ padding: 24, background: _isLight ? '#fff' : '#16171d', border: _isLight ? '1px solid #e5e4e7' : '1px solid #2e303a', borderRadius: 8, minHeight: 600 }}>
+                    
+                    {activeRightPanel === 'models' && (
+                      <div style={{ animation: 'fadeIn 0.2s' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                          <Title level={4} style={{ margin: 0 }}>选择模型</Title>
+                          <Space>
+                            <Input.Search placeholder="搜索模型名称或ID" value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} style={{ width: 250 }} allowClear />
+                            <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
+                              {() => {
+                                const selected = form.getFieldValue('models') || [];
+                                return (
+                                  <Button onClick={() => form.setFieldsValue({ models: [] })} disabled={selected.length === 0}>
+                                    清空已选
+                                  </Button>
+                                );
+                              }}
+                            </Form.Item>
+                          </Space>
+                        </div>
+                        <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
+                          {() => {
+                            const selectedMids: string[] = form.getFieldValue('models') || [];
+                            const selectedModelIds = selectedMids.map(mid => {
+                              const m = availableModels.find(m => m.mid === mid);
+                              return m ? m.model_id : mid;
+                            });
+
+                            const filteredModels = availableModels.filter(m => {
+                              if (!modelSearch) return true;
+                              const q = modelSearch.toLowerCase();
+                              return m.name.toLowerCase().includes(q) || m.model_id.toLowerCase().includes(q) || m.mid.toLowerCase().includes(q);
+                            });
+
+                            return (
+                              <Form.Item name="models">
+                                <Select 
+                                  mode="multiple" 
+                                  open={true}
+                                  placeholder="请选择模型" 
+                                  showSearch={false}
+                                  style={{ width: '100%', minHeight: 400, opacity: 0, position: 'absolute', zIndex: -1 }}
+                                >
+                                </Select>
+                                <div style={{ maxHeight: 500, overflowY: 'auto', paddingRight: 8 }}>
+                                  <Row gutter={[12, 12]}>
+                                    {filteredModels.map((m) => {
+                                      const isModelIdSelected = selectedModelIds.includes(m.model_id);
+                                      const isCurrentMidSelected = selectedMids.includes(m.mid);
+                                      const isDisabled = isModelIdSelected && !isCurrentMidSelected;
+                                      return (
+                                        <Col xs={24} sm={12} lg={8} key={m.mid}>
+                                          <div 
+                                            onClick={() => {
+                                              if (isDisabled) return;
+                                              const next = isCurrentMidSelected ? selectedMids.filter(id => id !== m.mid) : [...selectedMids, m.mid];
+                                              form.setFieldsValue({ models: next });
+                                            }}
+                                            style={{
+                                              padding: '8px 12px',
+                                              borderRadius: 6,
+                                              border: isCurrentMidSelected ? '1px solid var(--accent)' : (_isLight ? '1px solid #e5e4e7' : '1px solid #2e303a'),
+                                              background: isCurrentMidSelected ? 'var(--accent-bg)' : 'transparent',
+                                              cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                              opacity: isDisabled ? 0.5 : 1,
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: 8,
+                                              transition: 'all 0.2s'
+                                            }}
+                                          >
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                              <div style={{ fontWeight: 500, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</div>
+                                              <div style={{ fontSize: 12, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model_id}</div>
+                                            </div>
+                                          </div>
+                                        </Col>
+                                      );
+                                    })}
+                                  </Row>
+                                </div>
+                              </Form.Item>
+                            );
+                          }}
+                        </Form.Item>
+                      </div>
+                    )}
+
+                    {activeRightPanel === 'levels' && (
+                      <div style={{ animation: 'fadeIn 0.2s' }}>
+                        <Title level={4} style={{ marginBottom: 24 }}>支持用户等级</Title>
+                        <div style={{ marginBottom: 24, padding: 16, background: _isLight ? '#f9fafb' : '#1f2028', borderRadius: 8 }}>
+                          <Space size={16} align="center">
+                            <span>访问控制模式：</span>
+                            <Segmented
+                              options={['允许模式', '排除模式']}
+                              value={isExcludeMode ? '排除模式' : '允许模式'}
+                              onChange={(val) => setIsExcludeMode(val === '排除模式')}
+                            />
+                            <Text type="secondary" style={{ fontSize: 13 }}>
+                              {isExcludeMode ? '选中排除的等级将【不可】使用该渠道' : '选中允许的等级才【可以】使用该渠道'}
+                            </Text>
+                          </Space>
+                        </div>
+                        
+                        <Form.Item name="level_select">
+                          <Select 
+                            mode="multiple" 
+                            style={{ display: 'none' }}
+                          />
+                        </Form.Item>
+                        
+                        <Form.Item shouldUpdate={(prev, curr) => prev.level_select !== curr.level_select} noStyle>
+                          {() => {
+                            const selectedLevels = form.getFieldValue('level_select') || [];
+                            return (
+                              <Row gutter={[16, 16]}>
+                                {availableUserLevels.map((l) => {
+                                  const idStr = l.id.toString();
+                                  const isSelected = selectedLevels.includes(idStr);
+                                  return (
+                                    <Col xs={24} sm={12} key={idStr}>
+                                      <div 
+                                        onClick={() => {
+                                          const next = isSelected ? selectedLevels.filter((id: string) => id !== idStr) : [...selectedLevels, idStr];
+                                          form.setFieldsValue({ level_select: next });
+                                        }}
+                                        style={{
+                                          padding: '12px 16px',
+                                          borderRadius: 8,
+                                          border: isSelected ? (isExcludeMode ? '1px solid #ff4d4f' : '1px solid var(--accent)') : (_isLight ? '1px solid #e5e4e7' : '1px solid #2e303a'),
+                                          background: isSelected ? (isExcludeMode ? 'rgba(255,77,79,0.1)' : 'var(--accent-bg)') : 'transparent',
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          transition: 'all 0.2s'
+                                        }}
+                                      >
+                                        <Space direction="vertical" size={2}>
+                                          <Text strong style={{ color: isSelected && isExcludeMode ? '#ff4d4f' : undefined }}>{l.name}</Text>
+                                          <Text type="secondary" style={{ fontSize: 12 }}>ULID: {idStr.padStart(4, '0')} | {l.group_key}</Text>
+                                        </Space>
+                                      </div>
+                                    </Col>
+                                  );
+                                })}
+                              </Row>
+                            );
+                          }}
+                        </Form.Item>
+                      </div>
+                    )}
+
+                    {activeRightPanel === 'mapping' && (
+                      <div style={{ animation: 'fadeIn 0.2s' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                          <Title level={4} style={{ margin: 0 }}>模型别名映射</Title>
+                          <Switch checked={showMapping} onChange={setShowMapping} checkedChildren="已开启" unCheckedChildren="未开启" />
+                        </div>
+                        <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>开启后可为每个模型指定上游别名，解决上下游模型名称不一致的问题。</Text>
+                        
+                        {showMapping ? (
+                          <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
+                            {() => {
+                              const selectedModels = form.getFieldValue('models') || [];
+                              if (selectedModels.length === 0) {
+                                return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text)', background: _isLight ? '#f9fafb' : '#1f2028', borderRadius: 8 }}>请先在左侧选择模型</div>;
+                              }
+                              return (
+                                <div style={{ maxHeight: 450, overflowY: 'auto', paddingRight: 12 }}>
+                                  <Row gutter={16}>
+                                    {selectedModels.map((midOrId: string) => {
+                                      const match = availableModels.find(m => m.mid === midOrId);
+                                      const actualModelId = match ? match.model_id : midOrId;
+                                      return (
+                                        <Col span={24} key={midOrId}>
+                                          <Form.Item
+                                            label={`${match?.name || actualModelId} [MID:${midOrId}]`}
+                                            name={['model_mapping', actualModelId]}
+                                            labelCol={{ span: 8 }}
+                                            wrapperCol={{ span: 16 }}
+                                            style={{ marginBottom: 16 }}
+                                          >
+                                            <Input placeholder={`默认为原名：${actualModelId}`} />
+                                          </Form.Item>
+                                        </Col>
+                                      );
+                                    })}
+                                  </Row>
+                                </div>
+                              );
+                            }}
+                          </Form.Item>
+                        ) : (
+                          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text)', background: _isLight ? '#f9fafb' : '#1f2028', borderRadius: 8 }}>别名映射功能已关闭</div>
+                        )}
+                      </div>
+                    )}
+
+                    {activeRightPanel === 'presets' && (
+                      <div style={{ animation: 'fadeIn 0.2s' }}>
+                        <Title level={4} style={{ marginBottom: 24 }}>预设与卡池配置</Title>
+                        <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>配置后，该渠道的请求将被路由到对应的预设或卡池中。（三种配置互斥，只能选其一）</Text>
+                        
+                        <Form.Item shouldUpdate={(prev, curr) => prev.preset_id !== curr.preset_id || prev.pool_id !== curr.pool_id || prev.gptimage_pool_id !== curr.gptimage_pool_id} noStyle>
+                          {() => {
+                            const currentPreset = form.getFieldValue('preset_id');
+                            const currentVolcPool = form.getFieldValue('pool_id');
+                            const currentGptImagePool = form.getFieldValue('gptimage_pool_id');
+
+                            return (
+                              <Space direction="vertical" size={24} style={{ width: '100%' }}>
+                                <Form.Item name="preset_id" label={<Text strong>预设渠道配置</Text>} extra="选择预设后，基础 URL 和 API Key 会在实际请求时被预设接管">
+                                  <Select placeholder="选择预设配置" allowClear size="large" disabled={!!currentVolcPool || !!currentGptImagePool}>
+                                    {(presets || []).map(p => (
+                                      <Option key={p.id} value={p.id}>{p.name} [{p.provider_type}]</Option>
+                                    ))}
+                                  </Select>
+                                </Form.Item>
+
+                                {activePlugins['volcengine_pool'] && (
+                                  <Form.Item name="pool_id" label={<Text strong>火山引擎卡池</Text>} extra="使用卡池内的账号进行请求分发和限额">
+                                    <Select placeholder="选择火山卡池" allowClear size="large" disabled={!!currentPreset || !!currentGptImagePool}>
+                                      {(volcenginePools || []).map(p => (
+                                        <Option key={p.id} value={p.id}>{p.name} [{p.strategy === 'random' ? '随机' : '顺序'}]</Option>
+                                      ))}
+                                    </Select>
+                                  </Form.Item>
+                                )}
+
+                                {activePlugins['gptimage_pool'] && (
+                                  <Form.Item name="gptimage_pool_id" label={<Text strong>GPT Image卡池</Text>} extra="使用卡池内的账号进行请求分发和限额">
+                                    <Select placeholder="选择 GPT Image 卡池" allowClear size="large" disabled={!!currentPreset || !!currentVolcPool}>
+                                      {(gptImagePools || []).map(p => (
+                                        <Option key={p.id} value={p.id}>{p.name} [{p.strategy === 'random' ? '随机' : '顺序'}]</Option>
+                                      ))}
+                                    </Select>
+                                  </Form.Item>
+                                )}
+                              </Space>
+                            );
+                          }}
+                        </Form.Item>
+                      </div>
+                    )}
+                  </div>
+                </Col>
+              </Row>
+
+              <div style={{ marginTop: 24, paddingTop: 24, borderTop: _isLight ? '1px solid #e5e4e7' : '1px solid #2e303a', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <Button size="large" onClick={() => setIsModalVisible(false)}>取消</Button>
+                <Button size="large" type="primary" htmlType="submit" loading={submitting} style={{ minWidth: 120 }}>保存设置</Button>
+              </div>
+            </Form>
+          </div>
+        </div>
       )}
 
-      <Modal
-        title={editingChannel ? t('channels.edit_channel') : t('channels.add_channel')}
-        open={isModalVisible}
-        onCancel={() => setIsModalVisible(false)}
-        onOk={() => form.submit()}
-        confirmLoading={submitting}
-        width={800}
-      >
-        <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Row gutter={16}>
-            <Col span={24}>
-              <Form.Item name="name" label={t('channels.name')} rules={[{ required: true }]}>
-                <Input placeholder="e.g. OpenAI Primary" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item shouldUpdate={(prev, curr) => prev.preset_id !== curr.preset_id || prev.pool_id !== curr.pool_id || prev.gptimage_pool_id !== curr.gptimage_pool_id} noStyle>
-            {() => {
-              const currentPreset = form.getFieldValue('preset_id');
-              const currentVolcPool = form.getFieldValue('pool_id');
-              const currentGptImagePool = form.getFieldValue('gptimage_pool_id');
-
-              return (
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <Form.Item name="preset_id" label="预设渠道配置 (可选)" extra="选择预设后，基础 URL 和 API Key 会在实际请求时被预设接管（预设和各类卡池互斥，只能选其一）">
-                      <Select placeholder="选择预设配置" allowClear disabled={!!currentVolcPool || !!currentGptImagePool}>
-                        {(presets || []).map(p => (
-                          <Option key={p.id} value={p.id}>{p.name} [{p.provider_type}]</Option>
-                        ))}
-                      </Select>
-                    </Form.Item>
-                  </Col>
-                  {activePlugins['volcengine_pool'] && (
-                    <Col span={12}>
-                      <Form.Item name="pool_id" label="火山引擎卡池 (可选)" extra="使用卡池内的账号进行请求分发和限额（预设和各类卡池互斥，只能选其一）">
-                        <Select placeholder="选择卡池" allowClear disabled={!!currentPreset || !!currentGptImagePool}>
-                          {(volcenginePools || []).map(p => (
-                            <Option key={p.id} value={p.id}>{p.name} [{p.strategy === 'random' ? '随机' : '顺序'}]</Option>
-                          ))}
-                        </Select>
-                      </Form.Item>
-                    </Col>
-                  )}
-                  {activePlugins['gptimage_pool'] && (
-                    <Col span={12}>
-                      <Form.Item name="gptimage_pool_id" label="GPT Image卡池 (可选)" extra="使用卡池内的账号进行请求分发和限额（预设和各类卡池互斥，只能选其一）">
-                        <Select placeholder="选择卡池" allowClear disabled={!!currentPreset || !!currentVolcPool}>
-                          {(gptImagePools || []).map(p => (
-                            <Option key={p.id} value={p.id}>{p.name} [{p.strategy === 'random' ? '随机' : '顺序'}]</Option>
-                          ))}
-                        </Select>
-                      </Form.Item>
-                    </Col>
-                  )}
-                </Row>
-              );
-            }}
-          </Form.Item>
-
-
-          <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
-            {() => {
-              const selectedMids: string[] = form.getFieldValue('models') || [];
-              const selectedModelIds = selectedMids.map(mid => {
-                const m = availableModels.find(m => m.mid === mid);
-                return m ? m.model_id : mid;
-              });
-
-              return (
-                <Form.Item name="models" label={t('channels.models')} rules={[{ required: true }]}>
-                  <Select mode="multiple" placeholder="选择模型" showSearch
-                    filterOption={(input, option) => {
-                      const label = String((option as any)?.children ?? '');
-                      return label.toLowerCase().includes(input.toLowerCase());
-                    }}>
-                    {availableModels.map((m) => {
-                      // 同一渠道内 model_id 必须唯一：如果该 model_id 已被另一个 mid 选中，则禁用
-                      const isModelIdSelected = selectedModelIds.includes(m.model_id);
-                      const isCurrentMidSelected = selectedMids.includes(m.mid);
-                      const isDisabled = isModelIdSelected && !isCurrentMidSelected;
-                      return (
-                        <Option key={m.mid} value={m.mid} disabled={isDisabled}>
-                          {m.name} ({m.model_id}) [MID:{m.mid}]
-                        </Option>
-                      );
-                    })}
-                  </Select>
-                </Form.Item>
-              );
-            }}
-          </Form.Item>
-
-          <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
-            {() => {
-              const selectedModels = form.getFieldValue('models') || [];
-              if (selectedModels.length === 0) return null;
-              return (
-                <div style={{ marginBottom: 24, padding: 16, background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', borderRadius: 8, border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showMapping ? 12 : 0 }}>
-                    <div>
-                      <Text strong style={{ display: 'block', marginBottom: 2 }}>模型别名映射 (Model Mapping)</Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>开启后可为每个模型指定上游别名</Text>
-                    </div>
-                    <Switch checked={showMapping} onChange={setShowMapping} size="small" />
-                  </div>
-                  {showMapping && selectedModels.map((midOrId: string) => {
-                    const match = availableModels.find(m => m.mid === midOrId);
-                    const actualModelId = match ? match.model_id : midOrId;
-                    const displayLabel = match ? `${actualModelId} [MID:${midOrId}]` : actualModelId;
-                    return (
-                      <Form.Item
-                        key={midOrId}
-                        label={displayLabel}
-                        name={['model_mapping', actualModelId]}
-                        style={{ marginBottom: 12 }}
-                        labelCol={{ span: 8 }}
-                        wrapperCol={{ span: 16 }}
-                      >
-                        <Input placeholder={`默认为原名：${actualModelId}`} />
-                      </Form.Item>
-                    );
-                  })}
-                </div>
-              );
-            }}
-          </Form.Item>
-
-
-          <Form.Item label={
-            <Space>
-              <span>{isExcludeMode ? '不支持的用户等级' : '支持用户等级'}</span>
-              <Switch
-                size="small"
-                checked={isExcludeMode}
-                onChange={(checked) => setIsExcludeMode(checked)}
-                checkedChildren="排除"
-                unCheckedChildren="允许"
-              />
-            </Space>
-          } extra={isExcludeMode ? '当前为排除模式：选中的等级将不允许使用该渠道，其余等级均可使用。' : '当前为允许模式：不选则允许所有等级，选中的等级才可以使用该渠道。'}>
-            <Form.Item name="level_select" noStyle>
-              <Select mode="multiple" placeholder={isExcludeMode ? '选择要排除的用户等级' : '选择开放该渠道的特定 VIP 等级（留空允许所有）'} allowClear>
-                {availableUserLevels.map((l) => (
-                  <Option key={l.id.toString()} value={l.id.toString()}>{l.name} (ULID: {l.id.toString().padStart(4, '0')})</Option>
-                ))}
-              </Select>
-            </Form.Item>
-          </Form.Item>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="priority" label={t('channels.priority')} initialValue={0} extra="数字越大优先级越高。系统优先调用高优先级渠道，仅当其不可用时才会降级到低优先级。">
-                <InputNumber style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="weight" label={t('channels.weight')} initialValue={1} extra="优先级相同的渠道，将根据权重比例分配流量。例如权重为 2 和 1，则请求会按 2:1 的概率分发。">
-                <InputNumber style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="quota_limit" label="使用额度" initialValue={-1} extra="-1 表示无限额度">
-                <InputNumber 
-                  min={-1} 
-                  style={{ width: '100%' }} 
-                  formatter={(val) => (val === -1 || val === '-1') ? '无限额' : `${val}`}
-                  parser={(val) => (val === '无限额' ? -1 : parseFloat(val as string) || 0) as -1}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="status" label={t('common.status')} initialValue={1}>
-                <Select>
-                  <Option value={1}>{t('common.enabled')}</Option>
-                  <Option value={0}>{t('common.disabled')}</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
-      </Modal>
     </Card>
   );
 };

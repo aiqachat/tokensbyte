@@ -163,6 +163,7 @@ export interface Channel {
   balance?: number;
   quota_limit: number; // -1 = unlimited
   quota_used: number;
+  config?: string | any;
   created_at: string;
 }
 
@@ -183,6 +184,7 @@ export interface ApiToken {
   is_active: number | boolean;
   config?: string;
   last_used_at?: string;
+  created_at?: string;
 }
 
 export interface Redemption {

@@ -1377,6 +1377,12 @@ const PluginConfigInner: React.FC = () => {
         <div>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{name}</Text>
           <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
+          {(() => {
+            const scheme = pgSchemes.find(s => s.id === record.pg_scheme_id);
+            return scheme ? (
+              <div style={{ fontSize: 11, color: '#1677ff', marginTop: 2 }}>已挂载流：{scheme.name}</div>
+            ) : null;
+          })()}
         </div>
       ) },
     {
@@ -1768,6 +1774,12 @@ const PluginConfigInner: React.FC = () => {
         <div>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{nameVal}</Text>
           <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
+          {(() => {
+            const scheme = pgSchemes.find(s => s.id === record.pg_scheme_id);
+            return scheme ? (
+              <div style={{ fontSize: 11, color: '#1677ff', marginTop: 2 }}>已挂载流：{scheme.name}</div>
+            ) : null;
+          })()}
         </div>
       ) },
     {

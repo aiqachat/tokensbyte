@@ -128,8 +128,8 @@ pub async fn api_key_middleware(
         return AppError::Forbidden("Token expired".to_string()).into_response();
     }
 
-    // Check quota
-    if !token.has_quota() {
+    // Check quota (allow GET requests for task polling even if quota is exceeded)
+    if !token.has_quota() && request.method() != axum::http::Method::GET {
         crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 403, &path, "Token quota exceeded").await;
         return AppError::Forbidden("Quota exceeded".to_string()).into_response();
     }

@@ -738,7 +738,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             </div>
             
             <Space size={screens.xs ? "small" : "middle"}>
-              {isUserEnd && isPluginVisibleForUser('model_marketplace') && (
+              {isPluginVisibleForUser('model_marketplace') && (
                 <Button 
                   type="text" 
                   icon={<ShopOutlined style={{ fontSize: '18px' }} />} 

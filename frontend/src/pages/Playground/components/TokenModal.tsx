@@ -35,7 +35,7 @@ const TokenModal: React.FC = React.memo(() => {
           border: '1px solid rgba(255,255,255,0.1)',
           boxShadow: '0 32px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)'
         },
-      }}
+      } as any}
       closeIcon={<CloseOutlined style={{ color: 'rgba(255,255,255,0.45)' }} />}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
@@ -75,8 +75,9 @@ const TokenModal: React.FC = React.memo(() => {
       </div>
 
       <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 40px', padding: '0 16px 12px 16px', color: 'rgba(255,255,255,0.45)', fontSize: 13, alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr 1.2fr 40px', padding: '0 16px 12px 16px', color: 'rgba(255,255,255,0.45)', fontSize: 13, alignItems: 'center' }}>
           <div>API 密钥 <span style={{ fontSize: 12, opacity: 0.6, marginLeft: 8 }}>(点击已选密钥可取消选择)</span></div>
+          <div>可用额度</div>
           <div>创建时间</div>
           <div>上次使用时间</div>
           <div></div>
@@ -97,6 +98,21 @@ const TokenModal: React.FC = React.memo(() => {
               const tail = t.token_key.substring(t.token_key.length - 6);
               const maskedKey = `${head}......${tail}`;
 
+              // 可用额度
+              const limit = t.quota_limit;
+              const used = t.quota_used || 0;
+              let quotaText = '';
+              let isQuotaExceeded = false;
+              if (limit < 0) {
+                quotaText = '不限额度';
+              } else {
+                const remain = Math.max(0, limit - used);
+                // 简化显示：如果带小数则保留两位，如果是整数则直接显示
+                const formatNumber = (num: number) => num % 1 === 0 ? num.toString() : num.toFixed(2);
+                quotaText = `${formatNumber(remain)} / ${formatNumber(limit)}`;
+                if (remain <= 0) isQuotaExceeded = true;
+              }
+
               return (
                 <div
                   key={t.token_key}
@@ -112,7 +128,7 @@ const TokenModal: React.FC = React.memo(() => {
                   }}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '2fr 1fr 1fr 40px',
+                    gridTemplateColumns: '2fr 1fr 1.2fr 1.2fr 40px',
                     alignItems: 'center',
                     padding: '16px',
                     background: selectedTokenKey === t.token_key ? 'rgba(255,255,255,0.06)' : 'transparent',
@@ -129,6 +145,9 @@ const TokenModal: React.FC = React.memo(() => {
                 >
                   <div style={{ fontFamily: 'monospace', color: '#E8EAED', fontSize: 14 }}>
                     {maskedKey}
+                  </div>
+                  <div style={{ color: isQuotaExceeded ? '#ff4d4f' : 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>
+                    {quotaText}
                   </div>
                   <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14 }}>{createdStr}</div>
                   <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14 }}>{usedStr}</div>
