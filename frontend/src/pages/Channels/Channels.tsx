@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch, Grid, Segmented } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, ArrowLeftOutlined, ArrowRightOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
@@ -37,6 +37,10 @@ const Channels: React.FC = () => {
   const [isExcludeMode, setIsExcludeMode] = useState(false);
   const [activeRightPanel, setActiveRightPanel] = useState<'models' | 'levels' | 'mapping' | 'presets'>('models');
   const [modelSearch, setModelSearch] = useState('');
+  // useRef to hold reliable copies of models/levels outside AntD form store
+  // (form store gets corrupted when model_mapping Form.Items are registered)
+  const modelsRef = useRef<string[]>([]);
+  const levelsRef = useRef<string[]>([]);
 
   const [statusFilter, setStatusFilter] = useState<number | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -139,38 +143,60 @@ const Channels: React.FC = () => {
     setIsExcludeMode(false);
     setActiveRightPanel('models');
     setModelSearch('');
+    modelsRef.current = [];
+    levelsRef.current = [];
     setIsModalVisible(true);
   };
 
   const handleEdit = (record: Channel) => {
     setEditingChannel(record);
-    let mapping = {};
+    let mapping: Record<string, string> = {};
     try {
-      mapping = typeof record.model_mapping === 'string' ? JSON.parse(record.model_mapping) : record.model_mapping;
+      mapping = typeof record.model_mapping === 'string' ? JSON.parse(record.model_mapping) : (record.model_mapping || {});
     } catch (e) {}
 
     // models 兼容处理：新格式存 mid，旧格式存 model_id，需要统一转为 mid
-    const modelsForForm = (record.models || []).map((val: string) => {
-      // 先检查是否已经是 mid
+    const rawModels = Array.isArray(record.models) ? record.models : [];
+    const modelsForForm = rawModels.map((val: string) => {
       if (availableModels.find(m => m.mid === val)) return val;
-      // 如果不是 mid，尝试按 model_id 查找对应的 mid（旧格式兼容）
       const match = availableModels.find(m => m.model_id === val);
       return match ? match.mid : val;
     });
 
-    form.setFieldsValue({
-      ...record,
-      model_mapping: mapping,
-      models: modelsForForm,
-      level_select: (record as any).exclude_user_groups?.length > 0 ? (record as any).exclude_user_groups : record.user_groups,
-    });
-    // 如果有任何映射值则自动开启开关
-    const hasMapping = Object.values(mapping as Record<string, string>).some(v => v && String(v).trim());
+    const levelIds = (record.exclude_user_groups && record.exclude_user_groups.length > 0)
+      ? record.exclude_user_groups
+      : (record.user_groups || []);
+
+    // Sync refs (reliable source of truth for save)
+    modelsRef.current = modelsForForm;
+    levelsRef.current = levelIds;
+
+    const hasMapping = Object.values(mapping).some(v => v && String(v).trim());
     setShowMapping(hasMapping);
-    // 判断是否为排除模式
-    setIsExcludeMode((record as any).exclude_user_groups?.length > 0);
+    setIsExcludeMode(!!record.exclude_user_groups && record.exclude_user_groups.length > 0);
     setActiveRightPanel('models');
     setModelSearch('');
+
+    form.setFieldsValue({
+      name: record.name,
+      provider_type: record.provider_type || 'custom',
+      base_url: record.base_url,
+      api_key: (record as any).api_key || '',
+      sort_order: record.sort_order || 0,
+      priority: record.priority || 0,
+      status: record.status ?? 1,
+      weight: record.weight || 1,
+      max_rps: (record as any).max_rps || 0,
+      quota_limit: record.quota_limit ?? -1,
+      quota_used: record.quota_used || 0,
+      preset_id: record.preset_id || null,
+      pool_id: (record as any).pool_id || null,
+      gptimage_pool_id: (record as any).gptimage_pool_id || null,
+      model_mapping: mapping,
+      models: modelsForForm,
+      level_select: levelIds,
+    });
+
     setIsModalVisible(true);
   };
 
@@ -207,17 +233,36 @@ const Channels: React.FC = () => {
         (typeof editingChannel.config === 'string' ? JSON.parse(editingChannel.config) : editingChannel.config) 
         : {};
 
+    // Read models and levels from refs (immune to form store corruption)
+    const reliableModels = modelsRef.current;
+    const reliableLevels = levelsRef.current;
+
+    if (reliableModels.length === 0) {
+      message.error('请选择至少一个模型');
+      setSubmitting(false);
+      return;
+    }
+
+    if (!values.preset_id && !values.pool_id && !values.gptimage_pool_id) {
+      message.error('请选择上游渠道（预设、火山引擎卡池或GPT Image卡池至少选其一）');
+      setSubmitting(false);
+      return;
+    }
+
     const data = {
       ...values,
-      models: values.models || [],
+      models: reliableModels,
       provider_type: values.provider_type || 'custom',
       model_mapping: finalMapping,
-      user_groups: isExcludeMode ? [] : selectedLevels,
-      exclude_user_groups: isExcludeMode ? selectedLevels : [],
+      user_groups: isExcludeMode ? [] : reliableLevels,
+      exclude_user_groups: isExcludeMode ? reliableLevels : [],
       config: configObj,
+      sort_order: values.sort_order || 0,
       priority: values.priority || 0,
     };
     delete data.level_select;
+    delete data.models;
+    data.models = reliableModels;
 
     try {
       if (editingChannel) {
@@ -236,11 +281,11 @@ const Channels: React.FC = () => {
     }
   };
 
-  const handleUpdatePriority = async (id: number, priority: number) => {
+  const handleUpdateSortOrder = async (id: number, sort_order: number) => {
     try {
-      await request.put(`/channels/${id}`, { priority });
+      await request.put(`/channels/${id}`, { sort_order });
       // Update local state without full refresh for instant feedback
-      setChannels(prev => prev.map(c => c.id === id ? { ...c, priority } : c));
+      setChannels(prev => prev.map(c => c.id === id ? { ...c, sort_order } : c));
       message.success('排序已更新');
     } catch (e) {
       console.error(e);
@@ -299,7 +344,14 @@ const Channels: React.FC = () => {
       }
     },
     {
-      title: '排序',
+      title: '页面排序',
+      dataIndex: 'sort_order',
+      key: 'sort_order',
+      sorter: (a: Channel, b: Channel) => (a.sort_order || 0) - (b.sort_order || 0),
+      render: (sort_order: number) => <Text type="secondary" style={{ fontSize: 13 }}>{sort_order || 0}</Text>,
+    },
+    {
+      title: '请求优先级',
       dataIndex: 'priority',
       key: 'priority',
       sorter: (a: Channel, b: Channel) => (a.priority || 0) - (b.priority || 0),
@@ -402,7 +454,10 @@ const Channels: React.FC = () => {
                         {currencySymbol}{used.toFixed(2)} / {limit < 0 ? '∞' : `${currencySymbol}${limit.toFixed(2)}`}
                       </Text>
                     </CardRow>
-                    <CardRow label="排序">
+                    <CardRow label="页面排序">
+                      <Text type="secondary">{record.sort_order || 0}</Text>
+                    </CardRow>
+                    <CardRow label="请求优先级">
                       <Text type="secondary">{record.priority || 0}</Text>
                     </CardRow>
                     <CardRow label="最后修改">
@@ -450,7 +505,7 @@ const Channels: React.FC = () => {
 
                     <Row gutter={16}>
                       <Col span={12}>
-                        <Form.Item name="priority" label={<Text strong>排序</Text>} initialValue={0}>
+                        <Form.Item name="sort_order" label={<Text strong>页面排序</Text>} initialValue={0}>
                           <InputNumber min={0} max={9999} style={{ width: '100%' }} placeholder="越大越靠前" />
                         </Form.Item>
                       </Col>
@@ -472,7 +527,10 @@ const Channels: React.FC = () => {
 
                         return (
                           <div style={{ marginBottom: 24, padding: 12, borderRadius: 8, background: _isLight ? '#fff' : 'rgba(255,255,255,0.02)', border: _isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.05)' }}>
-                            <Text strong style={{ display: 'block', marginBottom: 12 }}>预设与卡池配置 (互斥)</Text>
+                            <Text strong style={{ display: 'block', marginBottom: 12 }}>
+                              <span style={{ color: '#ff4d4f', marginRight: 4, fontFamily: 'SimSun, sans-serif' }}>*</span>
+                              选择上游渠道
+                            </Text>
                             <Space direction="vertical" size={12} style={{ width: '100%' }}>
                               <Form.Item name="preset_id" style={{ marginBottom: 0 }}>
                                 <Select placeholder="选择预设渠道配置" allowClear disabled={!!currentVolcPool || !!currentGptImagePool}>
@@ -521,17 +579,30 @@ const Channels: React.FC = () => {
                                   <span style={{ fontSize: 12, color: isActive ? 'var(--text)' : 'var(--text-secondary)' }}>已选 {m.length} 个 <ArrowRightOutlined style={{ marginLeft: 4 }} /></span>
                                 </div>
                                 {m.length > 0 && (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    {m.slice(0, 8).map((mid: string) => {
-                                      const match = availableModels.find(model => model.mid === mid);
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto', paddingRight: 4 }}>
+                                    {m.map((mid: string) => {
+                                      const match = availableModels.find((model: any) => model.mid === mid);
                                       return (
                                         <div key={mid} style={{ padding: '6px 8px', background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                           <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{match ? match.name : '未知模型'}</span>
-                                          <span style={{ fontSize: 11, color: 'var(--text-secondary)', flexShrink: 0 }}>MID: {match ? match.mid : mid}</span>
+                                          <Space size={8} style={{ flexShrink: 0 }}>
+                                            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>MID: {match ? match.mid : mid}</span>
+                                            <Button 
+                                              type="text" 
+                                              size="small" 
+                                              icon={<CloseOutlined style={{ fontSize: 10 }} />} 
+                                              style={{ width: 20, height: 20, minWidth: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', margin: 0, padding: 0 }}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const next = m.filter((id: string) => id !== mid);
+                                                form.setFieldsValue({ models: next });
+                                                modelsRef.current = next;
+                                              }}
+                                            />
+                                          </Space>
                                         </div>
                                       );
                                     })}
-                                    {m.length > 8 && <div style={{ fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', marginTop: 2 }}>...还有 {m.length - 8} 个</div>}
                                   </div>
                                 )}
                               </div>
@@ -547,7 +618,7 @@ const Channels: React.FC = () => {
                             return (
                               <div onClick={() => setActiveRightPanel('levels')} style={{ padding: '12px 16px', borderRadius: 8, border: isActive ? '1px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'), background: isActive ? (_isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)') : (_isLight ? '#fff' : 'rgba(255,255,255,0.02)'), cursor: 'pointer', transition: 'all 0.2s' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: levels.length > 0 ? 8 : 0 }}>
-                                  <Text strong={isActive} style={{ color: isActive ? 'var(--text)' : 'inherit' }}>支持用户等级</Text>
+                                  <Text strong={isActive} style={{ color: isActive ? 'var(--text)' : 'inherit' }}>{isExcludeMode ? '不支持用户等级' : '支持用户等级'}</Text>
                                   <span style={{ fontSize: 12, color: isActive ? 'var(--text)' : 'var(--text-secondary)' }}>
                                     <Tag style={{ marginRight: 4, border: 'none', background: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)', color: 'var(--text)' }}>{isExcludeMode ? '排除模式' : '允许模式'}</Tag>
                                     <ArrowRightOutlined />
@@ -567,7 +638,7 @@ const Channels: React.FC = () => {
                                     {levels.length > 8 && <div style={{ fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', marginTop: 2 }}>...还有 {levels.length - 8} 个</div>}
                                   </div>
                                 ) : (
-                                  <Text type="secondary" style={{ fontSize: 12 }}>{isExcludeMode ? '未排除任何等级 (全部允许)' : '未选择等级 (全部允许)'}</Text>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>{isExcludeMode ? '未排除任何等级 (全部允许)' : '当前全部用户等级允许'}</Text>
                                 )}
                               </div>
                             );
@@ -590,7 +661,7 @@ const Channels: React.FC = () => {
                       <Text strong style={{ display: 'block', marginBottom: 12 }}>调度策略</Text>
                       <Row gutter={12}>
                         <Col span={12}>
-                          <Form.Item name="priority" label="优先级" initialValue={0}>
+                          <Form.Item name="priority" label="请求优先级" initialValue={0}>
                             <InputNumber style={{ width: '100%' }} />
                           </Form.Item>
                         </Col>
@@ -650,13 +721,14 @@ const Channels: React.FC = () => {
                                     }
                                   });
 
+                                  modelsRef.current = newSelection;
                                   form.setFieldsValue({ models: newSelection });
                                 };
 
                                 return (
                                   <>
                                     <Button onClick={handleSelectAll}>全选</Button>
-                                    <Button onClick={() => form.setFieldsValue({ models: [] })} disabled={selected.length === 0}>
+                                    <Button onClick={() => { modelsRef.current = []; form.setFieldsValue({ models: [] }); }} disabled={selected.length === 0}>
                                       清空
                                     </Button>
                                   </>
@@ -681,9 +753,8 @@ const Channels: React.FC = () => {
 
                             return (
                               <>
-                                <Form.Item name="models" rules={[{ required: true, message: '请选择至少一个模型' }]} style={{ marginBottom: 0 }}>
-                                  {/* 隐藏真实的 Input，只用于触发表单验证规则 */}
-                                  <Input style={{ display: 'none' }} />
+                                <Form.Item name="models" rules={[{ required: true, message: '请选择至少一个模型' }]} style={{ marginBottom: 0 }} hidden>
+                                  <Select mode="multiple" />
                                 </Form.Item>
                                 <div style={{ maxHeight: 600, overflowY: 'auto', paddingRight: 8, marginTop: 12 }}>
                                   <Row gutter={[12, 12]}>
@@ -698,6 +769,7 @@ const Channels: React.FC = () => {
                                               if (isDisabled) return;
                                               const next = isCurrentMidSelected ? selectedMids.filter(id => id !== m.mid) : [...selectedMids, m.mid];
                                               form.setFieldsValue({ models: next });
+                                              modelsRef.current = next;
                                             }}
                                             style={{
                                               padding: '8px 12px',
@@ -734,15 +806,15 @@ const Channels: React.FC = () => {
                       <div style={{ animation: 'fadeIn 0.2s' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
                           <Space size={16} align="center" wrap>
-                            <Title level={4} style={{ margin: 0, whiteSpace: 'nowrap' }}>支持用户等级</Title>
+                            <Title level={4} style={{ margin: 0, whiteSpace: 'nowrap' }}>{isExcludeMode ? '不支持用户等级' : '支持用户等级'}</Title>
                             <Form.Item shouldUpdate={(prev, curr) => prev.level_select !== curr.level_select} noStyle>
                               {() => {
                                 const selected = form.getFieldValue('level_select') || [];
                                 const allLevelIds = availableUserLevels.map(l => l.id.toString());
                                 return (
                                   <Space>
-                                    <Button onClick={() => form.setFieldsValue({ level_select: allLevelIds })}>全选</Button>
-                                    <Button onClick={() => form.setFieldsValue({ level_select: [] })} disabled={selected.length === 0}>
+                                    <Button onClick={() => { levelsRef.current = allLevelIds; form.setFieldsValue({ level_select: allLevelIds }); }}>全选</Button>
+                                    <Button onClick={() => { levelsRef.current = []; form.setFieldsValue({ level_select: [] }); }} disabled={selected.length === 0}>
                                       清空
                                     </Button>
                                   </Space>
@@ -765,8 +837,8 @@ const Channels: React.FC = () => {
                           </Text>
                         </div>
                         
-                        <Form.Item name="level_select" style={{ marginBottom: 0 }}>
-                          <Input style={{ display: 'none' }} />
+                        <Form.Item name="level_select" style={{ marginBottom: 0 }} hidden>
+                          <Select mode="multiple" />
                         </Form.Item>
                         
                         <Form.Item shouldUpdate={(prev, curr) => prev.level_select !== curr.level_select} noStyle>
@@ -783,7 +855,9 @@ const Channels: React.FC = () => {
                                         <div 
                                           onClick={() => {
                                             const next = isSelected ? selectedLevels.filter((id: string) => id !== idStr) : [...selectedLevels, idStr];
+                                            levelsRef.current = next;
                                             form.setFieldsValue({ level_select: next });
+                                            levelsRef.current = next;
                                           }}
                                           style={{
                                             padding: '8px 12px',

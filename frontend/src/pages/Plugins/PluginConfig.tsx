@@ -142,11 +142,12 @@ const PluginConfigInner: React.FC = () => {
   const [pgSchemes, setPgSchemes] = useState<any[]>([]);
   const [savingPlayground, setSavingPlayground] = useState(false);
   const [pgSearchKeyword, setPgSearchKeyword] = useState('');
-  const [pgTypeFilter, setPgTypeFilter] = useState('all');
+  const [pgTypeFilter, setPgTypeFilter] = useState('chat');
   const [pgSchemeTypeFilter, setPgSchemeTypeFilter] = useState('all');
   const [pgSchemeDrawerVisible, setPgSchemeDrawerVisible] = useState(false);
   const [pgCurrentId, setPgCurrentId] = useState<number | null>(null);
   const [pgSelectedSchemeId, setPgSelectedSchemeId] = useState<string>('');
+  const [pgDefaultModelMids, setPgDefaultModelMids] = useState<Record<string, string>>({});
 
   // ====== 模型广场管理 (Model Marketplace) 配置 ======
   const [mpModels, setMpModels] = useState<any[]>([]);
@@ -210,6 +211,7 @@ const PluginConfigInner: React.FC = () => {
       const res = await (request.get(`/plugins/${name}/playground-config`) as Promise<any>);
       if (res.models) setPgModels(res.models);
       if (res.schemes) setPgSchemes(res.schemes);
+      if (res.default_model_mids) setPgDefaultModelMids(res.default_model_mids);
     } catch (e) {
       console.error(e);
     }
@@ -225,6 +227,7 @@ const PluginConfigInner: React.FC = () => {
     try {
       setSavingPlayground(true);
       const payload = {
+        default_model_mids: pgDefaultModelMids,
         models: pgModels.map(m => ({
           id: m.id,
           mid: m.mid || '',
@@ -1358,16 +1361,27 @@ const PluginConfigInner: React.FC = () => {
     </div>
   );
 
-  // ====== 体验中心 (Playground) 统一模型管理 Tab ======
+  // 辅助函数：将 type_name 映射到 type key
+  const getPgTypeKey = (typeName: string) => {
+    if (typeName.includes('视频')) return 'video';
+    if (typeName.includes('图片')) return 'image';
+    return 'chat';
+  };
+
+  // 获取所有可用的类型 tab
+  const pgTypeCategories = (() => {
+    const typeSet = new Set<string>();
+    pgModels.forEach(m => typeSet.add(getPgTypeKey(m.type_name || '')));
+    const order = ['chat', 'image', 'video'];
+    return order.filter(t => typeSet.has(t));
+  })();
+
+  const pgTypeLabelMap: Record<string, string> = { chat: '对话', image: '图片', video: '视频' };
+
   const filteredPgModels = pgModels.filter(m => {
-    let matchType = true;
-    if (pgTypeFilter !== 'all') {
-      const t = m.type_name || '';
-      if (pgTypeFilter === 'video') matchType = t.includes('视频');
-      else if (pgTypeFilter === 'image') matchType = t.includes('图片');
-      else if (pgTypeFilter === 'chat') matchType = !t.includes('视频') && !t.includes('图片');
-    }
-    if (!matchType) return false;
+    const t = m.type_name || '';
+    const typeKey = getPgTypeKey(t);
+    if (typeKey !== pgTypeFilter) return false;
     
     if (!pgSearchKeyword) return true;
     const kw = pgSearchKeyword.toLowerCase();
@@ -1427,6 +1441,21 @@ const PluginConfigInner: React.FC = () => {
         );
       } },
     {
+      title: '默认',
+      key: 'pg_default',
+      width: 60,
+      align: 'center' as const,
+      render: (_: any, record: any) => {
+        const typeKey = getPgTypeKey(record.type_name || '');
+        return (
+          <Radio
+            checked={pgDefaultModelMids[typeKey] === record.mid}
+            onChange={() => setPgDefaultModelMids(prev => ({ ...prev, [typeKey]: record.mid }))}
+            disabled={!record.pg_enabled}
+          />
+        );
+      } },
+    {
       title: '操作',
       key: 'action',
       width: 80,
@@ -1449,16 +1478,10 @@ const PluginConfigInner: React.FC = () => {
           <div>
             <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>可体验模型列表</Text>
             <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
-              开启体验开关并绑定方案后，用户即可在体验中心使用该模型。已开启 {pgModels.filter(m => m.pg_enabled).length} / {pgModels.length} 个模型
+              开启体验开关并绑定方案后，用户即可在体验中心使用该模型。选中"默认"列后，用户打开体验中心将自动加载对应类型的默认模型。
             </Text>
           </div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <Radio.Group value={pgTypeFilter} onChange={e => setPgTypeFilter(e.target.value)}>
-              <Radio.Button value="all">全部</Radio.Button>
-              <Radio.Button value="chat">对话</Radio.Button>
-              <Radio.Button value="image">图片</Radio.Button>
-              <Radio.Button value="video">视频</Radio.Button>
-            </Radio.Group>
             <Input
               placeholder="搜索模型..."
               value={pgSearchKeyword}
@@ -1468,6 +1491,38 @@ const PluginConfigInner: React.FC = () => {
             />
           </div>
         </div>
+
+        <Tabs
+          activeKey={pgTypeFilter}
+          onChange={key => setPgTypeFilter(key)}
+          items={pgTypeCategories.map(typeKey => {
+            const typeModels = pgModels.filter(m => getPgTypeKey(m.type_name || '') === typeKey);
+            const enabledCount = typeModels.filter(m => m.pg_enabled).length;
+            const defaultMid = pgDefaultModelMids[typeKey];
+            const defaultModel = defaultMid ? typeModels.find(m => m.mid === defaultMid) : null;
+            return {
+              key: typeKey,
+              label: (
+                <span>
+                  {pgTypeLabelMap[typeKey] || typeKey}
+                  <span style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', marginLeft: 6 }}>
+                    {enabledCount}/{typeModels.length}
+                  </span>
+                </span>
+              ),
+            };
+          })}
+        />
+
+        {/* 当前类型默认模型提示 */}
+        {pgDefaultModelMids[pgTypeFilter] && (() => {
+          const dm = pgModels.find(m => m.mid === pgDefaultModelMids[pgTypeFilter]);
+          return dm ? (
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 6, background: 'rgba(22,119,255,0.06)', border: '1px solid rgba(22,119,255,0.15)', fontSize: 12 }}>
+              <Text style={{ color: '#1677ff' }}>当前{pgTypeLabelMap[pgTypeFilter]}类型默认模型：<Text strong style={{ color: '#1677ff' }}>{dm.name}</Text></Text>
+            </div>
+          ) : null;
+        })()}
 
         <Table
           dataSource={filteredPgModels}

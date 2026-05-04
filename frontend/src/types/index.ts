@@ -158,6 +158,7 @@ export interface Channel {
   preset_id?: number | null;
   pool_id?: number | null;   // 关联的火山引擎卡池ID
   gptimage_pool_id?: number | null; // 关联的GPT-Image卡池ID
+  sort_order: number;
   priority: number;
   weight: number;
   status: number; // 1=active, 0=disabled
