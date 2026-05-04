@@ -761,6 +761,7 @@ pub struct PlaygroundModelConfig {
 #[derive(Deserialize)]
 pub struct PlaygroundConfigRequest {
     pub models: Vec<PlaygroundModelConfig>,
+    pub default_model_mids: Option<serde_json::Value>, // {"chat": "mid1", "image": "mid2", "video": "mid3"}
 }
 
 /// 管理员：获取体验中心配置（返回全部模型 + 每个模型的启用/方案信息）
@@ -816,9 +817,15 @@ async fn get_playground_config(
         }));
     }
 
+    // 读取每个类型的默认模型
+    let default_model_mids: serde_json::Value = configs.get("pg_default_model_mids")
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or(json!({}));
+
     Ok(Json(json!({
         "models": model_list,
         "schemes": load_schemes_from_db(&state, &name).await,
+        "default_model_mids": default_model_mids,
     })))
 }
 
@@ -835,6 +842,11 @@ async fn save_playground_config(
         .await?;
     if role != "admin" {
         return Err(AppError::Unauthorized);
+    }
+
+    // 保存每个类型的默认模型
+    if let Some(ref mids) = payload.default_model_mids {
+        upsert_config(&state, &name, "pg_default_model_mids", &mids.to_string()).await?;
     }
 
     for mc in &payload.models {
@@ -950,8 +962,14 @@ async fn get_playground_public_config(
         }));
     }
 
+    // 读取每个类型的默认模型
+    let default_model_mids: serde_json::Value = configs.get("pg_default_model_mids")
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or(json!({}));
+
     Ok(Json(json!({
         "models": enabled_models,
+        "default_model_mids": default_model_mids,
     })))
 }
 
@@ -1191,10 +1209,12 @@ pub async fn get_marketplace_public(
                 "name": b.name,
                 "prompt_rate": b.prompt_rate,
                 "completion_rate": b.completion_rate,
+                "cached_rate": b.cached_rate,
                 "fixed_rate": b.fixed_rate,
                 "duration_rate": b.duration_rate,
                 "pricing_tiers": b.pricing_tiers,
                 "billing_rule": b.billing_rule,
+                "extended_config": b.extended_config,
             }))
             .unwrap_or(json!(null));
 

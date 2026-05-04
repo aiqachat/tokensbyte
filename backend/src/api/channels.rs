@@ -11,7 +11,7 @@ use crate::relay::url_utils::join_url;
 pub async fn list_channels(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<ChannelListResponse>> {
-    let channels: Vec<Channel> = sqlx::query_as(&state.db.format_query("SELECT * FROM channels ORDER BY priority DESC"))
+    let channels: Vec<Channel> = sqlx::query_as(&state.db.format_query("SELECT * FROM channels ORDER BY sort_order DESC, priority DESC, id DESC"))
         .fetch_all(&state.db.pool)
         .await?;
 
@@ -50,8 +50,8 @@ pub async fn create_channel(
         group_aid_val = rand::thread_rng().gen_range(1000..10000).to_string(); // fallback
     }
 
-    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, exclude_user_groups, group_aid, preset_id, pool_id, gptimage_pool_id, priority, weight, status, max_rps, quota_limit, quota_used, config)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?) RETURNING id"#;
+    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, exclude_user_groups, group_aid, preset_id, pool_id, gptimage_pool_id, sort_order, priority, weight, status, max_rps, quota_limit, quota_used, config)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?) RETURNING id"#;
 
     let id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(sql))
         .bind(&request.name)
@@ -66,6 +66,7 @@ pub async fn create_channel(
         .bind(request.preset_id)
         .bind(request.pool_id)
         .bind(request.gptimage_pool_id)
+        .bind(request.sort_order.unwrap_or(0))
         .bind(request.priority.unwrap_or(0))
         .bind(request.weight.unwrap_or(1))
         .bind(request.max_rps.unwrap_or(0))
@@ -103,7 +104,7 @@ pub async fn update_channel(
     if let Some(user_groups) = request.user_groups { channel.user_groups = serde_json::to_string(&user_groups).unwrap_or_else(|_| "[]".to_string()); }
     if let Some(exclude_user_groups) = request.exclude_user_groups { channel.exclude_user_groups = serde_json::to_string(&exclude_user_groups).unwrap_or_else(|_| "[]".to_string()); }
     if let Some(group_aid) = request.group_aid { channel.group_aid = Some(group_aid); }
-    if let Some(preset_id) = request.preset_id { channel.preset_id = Some(preset_id); }
+    if let Some(sort_order) = request.sort_order { channel.sort_order = sort_order; }
     if let Some(priority) = request.priority { channel.priority = priority; }
     if let Some(weight) = request.weight { channel.weight = weight; }
     if let Some(status) = request.status { channel.status = status; }
@@ -111,8 +112,20 @@ pub async fn update_channel(
     if let Some(quota_limit) = request.quota_limit { channel.quota_limit = quota_limit; }
     if let Some(quota_used) = request.quota_used { channel.quota_used = quota_used; }
     if let Some(config) = request.config { channel.config = serde_json::to_string(&config).unwrap_or_else(|_| "{}".to_string()); }
-    if let Some(pool_id) = request.pool_id { channel.pool_id = Some(pool_id); }
-    if let Some(gptimage_pool_id) = request.gptimage_pool_id { channel.gptimage_pool_id = Some(gptimage_pool_id); }
+
+    if let Some(pool_id) = request.pool_id {
+        channel.pool_id = Some(pool_id);
+        channel.preset_id = None;
+        channel.gptimage_pool_id = None;
+    } else if let Some(gptimage_pool_id) = request.gptimage_pool_id {
+        channel.gptimage_pool_id = Some(gptimage_pool_id);
+        channel.preset_id = None;
+        channel.pool_id = None;
+    } else if let Some(preset_id) = request.preset_id {
+        channel.preset_id = Some(preset_id);
+        channel.pool_id = None;
+        channel.gptimage_pool_id = None;
+    }
 
     let mut group_aid_val = channel.group_aid.clone().unwrap_or_default();
     if group_aid_val.is_empty() {
@@ -136,7 +149,7 @@ pub async fn update_channel(
 
     sqlx::query(
         &state.db.format_query(r#"UPDATE channels SET name = ?, provider_type = ?, base_url = ?, api_key = ?, models = ?, 
-           model_mapping = ?, user_groups = ?, exclude_user_groups = ?, preset_id = ?, pool_id = ?, gptimage_pool_id = ?, priority = ?, weight = ?, status = ?, max_rps = ?, quota_limit = ?, quota_used = ?, config = ?, group_aid = ?, updated_at = CURRENT_TIMESTAMP
+           model_mapping = ?, user_groups = ?, exclude_user_groups = ?, preset_id = ?, pool_id = ?, gptimage_pool_id = ?, sort_order = ?, priority = ?, weight = ?, status = ?, max_rps = ?, quota_limit = ?, quota_used = ?, config = ?, group_aid = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&channel.name)
@@ -150,6 +163,7 @@ pub async fn update_channel(
     .bind(channel.preset_id)
     .bind(channel.pool_id)
     .bind(channel.gptimage_pool_id)
+    .bind(channel.sort_order)
     .bind(channel.priority)
     .bind(channel.weight)
     .bind(channel.status)

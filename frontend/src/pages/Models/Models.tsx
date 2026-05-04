@@ -454,7 +454,7 @@ const Models: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="type_id" label={t('models.type')}>
+              <Form.Item name="type_id" label={t('models.type')} rules={[{ required: true, message: '请选择模型类型' }]}>
                 <Select placeholder={t('common.select_placeholder')} allowClear>
                   {allTypes.map(t => (
                     <Option key={t.id} value={t.id}>{t.name}</Option>
@@ -463,6 +463,14 @@ const Models: React.FC = () => {
               </Form.Item>
             </Col>
           </Row>
+
+          <Form.Item name="billing_rule_id" label="计费基础定价模板绑定 (核心枢纽)" rules={[{ required: true }]}>
+             <Select placeholder="选择从《计费策略配置库》中下发的统一基础定价方案" allowClear>
+               {allBillingRules.map(b => (
+                 <Option key={b.id} value={b.id}>{b.name}</Option>
+               ))}
+             </Select>
+          </Form.Item>
 
           <Form.Item name="forward_rule_ids" label="挂载高级组合理念流 (转发规则组合包)">
             <Select 
@@ -475,14 +483,6 @@ const Models: React.FC = () => {
                 <Option key={r.id} value={r.id}>{r.name} ({r.rule_type})</Option>
               ))}
             </Select>
-          </Form.Item>
-
-          <Form.Item name="billing_rule_id" label="计费基础定价模板绑定 (核心枢纽)" rules={[{ required: true }]}>
-             <Select placeholder="选择从《计费策略配置库》中下发的统一基础定价方案" allowClear>
-               {allBillingRules.map(b => (
-                 <Option key={b.id} value={b.id}>{b.name}</Option>
-               ))}
-             </Select>
           </Form.Item>
 
           <Row gutter={16}>

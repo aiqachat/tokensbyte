@@ -94,7 +94,7 @@ const ModelMarketplace: React.FC = () => {
   const [selectedProviders, setSelectedProviders] = useState<number[]>([]);
   const [sortBy, setSortBy] = useState<'popular' | 'name' | 'newest'>('popular');
   const [selectedModel, setSelectedModel] = useState<MarketplaceModel | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   const [collapsed, setCollapsed] = useState(false);
   const screens = useBreakpoint();
 
@@ -176,20 +176,26 @@ const ModelMarketplace: React.FC = () => {
   // 统计每个类型的数量
   const typeCounts = useMemo(() => {
     const counts: Record<number, number> = {};
-    models.forEach(m => {
+    const providerFilteredModels = selectedProviders.length > 0 
+      ? models.filter(m => selectedProviders.includes(m.provider_id)) 
+      : models;
+    providerFilteredModels.forEach(m => {
       if (m.type_id) counts[m.type_id] = (counts[m.type_id] || 0) + 1;
     });
     return counts;
-  }, [models]);
+  }, [models, selectedProviders]);
 
   // 统计每个供应商的数量
   const providerCounts = useMemo(() => {
     const counts: Record<number, number> = {};
-    models.forEach(m => {
+    const typeFilteredModels = selectedType !== null 
+      ? models.filter(m => m.type_id === selectedType)
+      : models;
+    typeFilteredModels.forEach(m => {
       if (m.provider_id) counts[m.provider_id] = (counts[m.provider_id] || 0) + 1;
     });
     return counts;
-  }, [models]);
+  }, [models, selectedType]);
 
   const handleProviderToggle = (id: number) => {
     setSelectedProviders(prev =>
@@ -440,7 +446,7 @@ const ModelMarketplace: React.FC = () => {
 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, alignItems: 'flex-start' }}>
                   {/* 左侧详情 */}
-                  <div style={{ flex: '1 1 500px', background: isLight ? '#fff' : 'rgba(255,255,255,0.02)', border: `1px solid ${c.cardBorder}`, borderRadius: 16, padding: screens.xs ? '20px' : '40px' }}>
+                  <div style={{ flex: '1 1 500px', background: c.cardBg, border: `1px solid ${c.cardBorder}`, borderRadius: 16, padding: screens.xs ? '20px' : '40px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32 }}>
                       <div style={{ width: 64, height: 64, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, overflow: 'hidden' }}>
                         {selectedModel.logo ? (
@@ -470,6 +476,12 @@ const ModelMarketplace: React.FC = () => {
                       </h3>
                       <div style={{ fontSize: 16, color: c.text2, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
                         {selectedModel.description || '该模型暂无详细描述信息。作为行业领先的 AI 模型，它能够提供高质量的生成结果。'}
+                      </div>
+                      <div style={{ marginTop: 24, padding: '16px 20px', background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', borderRadius: 12, border: `1px solid ${c.cardBorder}` }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: c.text1, marginBottom: 8 }}>关于该模型</div>
+                        <div style={{ fontSize: 14, color: c.text3, lineHeight: 1.6 }}>
+                          该模型目前已在全平台上线。您可以直接在 API 调用或控制面板中使用。如果您有大规模调用需求，请联系客服获取专属优惠。
+                        </div>
                       </div>
                     </div>
 
@@ -501,29 +513,6 @@ const ModelMarketplace: React.FC = () => {
 
 
                   </div>
-
-                  {/* 右侧价格卡片 */}
-                  <div style={{ width: screens.xs ? '100%' : 340, flexShrink: 0 }}>
-                    
-                    
-                    <div style={{ background: c.detailBg, border: `1px solid ${c.cardBorder}`, borderRadius: 16, padding: '20px' }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: c.text1, marginBottom: 12 }}>关于该模型</div>
-                      <div style={{ fontSize: 13, color: c.text3, lineHeight: 1.6 }}>
-                        该模型目前已在全平台上线。您可以直接在 API 调用或控制面板中使用。如果您有大规模调用需求，请联系客服获取专属优惠。
-                      </div>
-                    </div>
-                    
-                    {selectedModel.billing && selectedModel.billing.billing_rule && (
-                      <div style={{ background: c.detailBg, border: `1px solid ${c.cardBorder}`, borderRadius: 16, padding: '20px', marginTop: 24 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: c.text1, marginBottom: 12 }}>计费规则说明</div>
-                        <div 
-                          className="quill-content"
-                          dangerouslySetInnerHTML={{ __html: selectedModel.billing.billing_rule }}
-                          style={{ fontSize: 13, color: c.text3, lineHeight: 1.6, overflowWrap: 'break-word', wordBreak: 'break-all' }} 
-                        />
-                      </div>
-                    )}
-                  </div>
                 </div>
 
                 <div style={{ background: c.cardBg, border: `1px solid ${c.cardBorder}`, borderRadius: 16, padding: '24px', marginTop: 40 }}>
@@ -540,9 +529,10 @@ const ModelMarketplace: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* 基础费率 */}
-                      {selectedModel.billing.billing_type === 'tokens' && (
+                      {/* 基础费率 (标准计费 / 火山旧版) */}
+                      {selectedModel.billing.billing_type === 'tokens' && (!selectedModel.billing.billing_rule || selectedModel.billing.billing_rule === 'standard' || selectedModel.billing.billing_rule === 'volcengine') && (
                         <div style={{ padding: '16px', background: c.panelBg, borderRadius: 12 }}>
+                          <div style={{ fontSize: 13, color: c.text3, marginBottom: 12 }}>标准计费</div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                             <span style={{ color: c.text2, fontSize: 14 }}>输入 (Prompt)</span>
                             <span style={{ color: c.text1, fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.prompt_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
@@ -554,7 +544,118 @@ const ModelMarketplace: React.FC = () => {
                         </div>
                       )}
 
-                      {selectedModel.billing.billing_type === 'requests' && (
+                      {/* Seedance 2.0 */}
+                      {selectedModel.billing.billing_type === 'tokens' && selectedModel.billing.billing_rule === 'seedance2.0' && (() => {
+                        let ext: any = {};
+                        try { if (selectedModel.billing.extended_config) ext = JSON.parse(selectedModel.billing.extended_config); } catch {}
+                        const rates = ext.resolution_rates || {};
+                        const activeRes = Object.keys(rates).filter(k => ['480p', '720p', '1080p'].includes(k));
+                        return (
+                          <div style={{ padding: '16px', background: c.panelBg, borderRadius: 12 }}>
+                            <div style={{ fontSize: 13, color: c.text3, marginBottom: 12 }}>Seedance 2.0 分辨率计费</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              {activeRes.length === 0 ? (
+                                <div style={{ color: c.text2, fontSize: 14 }}>无独立分辨率设置(自动兜底计费)</div>
+                              ) : activeRes.map((r, i) => (
+                                <div key={r} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: i < activeRes.length - 1 ? 10 : 0, borderBottom: i < activeRes.length - 1 ? `1px dashed ${c.sortBorder}` : 'none' }}>
+                                  <span style={{ color: c.text1, fontSize: 14, fontWeight: 500 }}>{r}</span>
+                                  <div style={{ display: 'flex', gap: 16, fontSize: 14, color: c.text2 }}>
+                                    <span>含视频: {currencySymbol}{rates[r].with_video} <small>/ 1M</small></span>
+                                    <span>无视频: {currencySymbol}{rates[r].without_video} <small>/ 1M</small></span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Seedance 1.5 Pro */}
+                      {selectedModel.billing.billing_type === 'tokens' && selectedModel.billing.billing_rule === 'seedance1.5pro' && (() => {
+                        let ext: any = {};
+                        try { if (selectedModel.billing.extended_config) ext = JSON.parse(selectedModel.billing.extended_config); } catch {}
+                        const discountStr = ext.offline_discount !== undefined ? `(离线折扣: ${ext.offline_discount})` : '';
+                        return (
+                          <div style={{ padding: '16px', background: c.panelBg, borderRadius: 12 }}>
+                            <div style={{ fontSize: 13, color: c.text3, marginBottom: 12 }}>Seedance 1.5 Pro {discountStr}</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                              <span style={{ color: c.text2, fontSize: 14 }}>带语音处理</span>
+                              <span style={{ color: c.text1, fontSize: 18, fontWeight: 600 }}>{currencySymbol}{ext.audio_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ color: c.text2, fontSize: 14 }}>无语音处理</span>
+                              <span style={{ color: c.text1, fontSize: 18, fontWeight: 600 }}>{currencySymbol}{ext.base_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Seedance 1.0 */}
+                      {selectedModel.billing.billing_type === 'tokens' && selectedModel.billing.billing_rule === 'seedance1.0' && (() => {
+                        let ext: any = {};
+                        try { if (selectedModel.billing.extended_config) ext = JSON.parse(selectedModel.billing.extended_config); } catch {}
+                        return (
+                          <div style={{ padding: '16px', background: c.panelBg, borderRadius: 12 }}>
+                            <div style={{ fontSize: 13, color: c.text3, marginBottom: 12 }}>Seedance 1.0 (离线/在线)</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                              <span style={{ color: c.text2, fontSize: 14 }}>在线处理</span>
+                              <span style={{ color: c.text1, fontSize: 18, fontWeight: 600 }}>{currencySymbol}{ext.online_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ color: c.text2, fontSize: 14 }}>离线处理</span>
+                              <span style={{ color: c.text1, fontSize: 18, fontWeight: 600 }}>{currencySymbol}{ext.offline_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 1M tokens</small></span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* 图像分辨率计费 (image_resolution) */}
+                      {selectedModel.billing.billing_type === 'requests' && selectedModel.billing.billing_rule === 'image_resolution' && (() => {
+                        let tiers: any[] = [];
+                        let ext: any = {};
+                        try { if (selectedModel.billing.pricing_tiers) tiers = JSON.parse(selectedModel.billing.pricing_tiers); } catch {}
+                        try { if (selectedModel.billing.extended_config) ext = JSON.parse(selectedModel.billing.extended_config); } catch {}
+                        const activeTiers = Array.isArray(tiers) ? tiers.filter(t => t.enabled !== false) : [];
+                        const imgRefStr = ext.image_ref_multiplier && ext.image_ref_multiplier !== 1 ? ` (图生图倍率: ×${ext.image_ref_multiplier})` : '';
+                        
+                        return (
+                          <div style={{ padding: '16px', background: c.panelBg, borderRadius: 12 }}>
+                            <div style={{ fontSize: 13, color: c.text3, marginBottom: 12 }}>按图像分辨率收费{imgRefStr}</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              {activeTiers.length === 0 ? (
+                                <div style={{ color: c.text2, fontSize: 14 }}>未配置分辨率阶梯</div>
+                              ) : activeTiers.map((t, i) => (
+                                <div key={t.resolution || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: i < activeTiers.length - 1 ? 10 : 0, borderBottom: i < activeTiers.length - 1 ? `1px dashed ${c.sortBorder}` : 'none' }}>
+                                  <span style={{ color: c.text1, fontSize: 14, fontWeight: 500 }}>{t.resolution}</span>
+                                  <span style={{ color: c.text1, fontSize: 16, fontWeight: 600 }}>{currencySymbol}{t.rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 张</small></span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* 按张收费 (per_image) */}
+                      {selectedModel.billing.billing_type === 'requests' && selectedModel.billing.billing_rule === 'per_image' && (() => {
+                        let ext: any = {};
+                        try { if (selectedModel.billing.extended_config) ext = JSON.parse(selectedModel.billing.extended_config); } catch {}
+                        const imgRefStr = ext.image_ref_multiplier && ext.image_ref_multiplier !== 1 ? `图生图倍率: ×${ext.image_ref_multiplier}` : '';
+                        
+                        return (
+                          <div style={{ padding: '16px', background: c.panelBg, borderRadius: 12 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                <span style={{ color: c.text2, fontSize: 14 }}>按张收费</span>
+                                {imgRefStr && <span style={{ color: c.text3, fontSize: 12 }}>{imgRefStr}</span>}
+                              </div>
+                              <span style={{ color: c.text1, fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.fixed_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 张</small></span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* 基础单次调用费用 (fixed) */}
+                      {selectedModel.billing.billing_type === 'requests' && (!selectedModel.billing.billing_rule || (selectedModel.billing.billing_rule !== 'image_resolution' && selectedModel.billing.billing_rule !== 'per_image')) && (
                         <div style={{ padding: '16px', background: c.panelBg, borderRadius: 12 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ color: c.text2, fontSize: 14 }}>单次调用费用</span>
@@ -563,7 +664,51 @@ const ModelMarketplace: React.FC = () => {
                         </div>
                       )}
 
-                      {selectedModel.billing.billing_type === 'duration' && (
+                      {/* 视频分辨率阶梯计费 */}
+                      {selectedModel.billing.billing_type === 'duration' && selectedModel.billing.billing_rule === 'video_resolution' && (() => {
+                        let tiers: any[] = [];
+                        try { if (selectedModel.billing.pricing_tiers) tiers = JSON.parse(selectedModel.billing.pricing_tiers); } catch {}
+                        const activeTiers = Array.isArray(tiers) ? tiers.filter(t => t.enabled !== false) : [];
+                        return (
+                          <div style={{ padding: '16px', background: c.panelBg, borderRadius: 12 }}>
+                            <div style={{ fontSize: 13, color: c.text3, marginBottom: 12 }}>按视频分辨率阶梯计费</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              {activeTiers.length === 0 ? (
+                                <div style={{ color: c.text2, fontSize: 14 }}>未配置分辨率阶梯</div>
+                              ) : activeTiers.map((t, i) => (
+                                <div key={t.resolution || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: i < activeTiers.length - 1 ? 10 : 0, borderBottom: i < activeTiers.length - 1 ? `1px dashed ${c.sortBorder}` : 'none' }}>
+                                  <span style={{ color: c.text1, fontSize: 14, fontWeight: 500 }}>{t.resolution}</span>
+                                  <span style={{ color: c.text1, fontSize: 16, fontWeight: 600 }}>{currencySymbol}{t.rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 秒</small></span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* 可灵视频 (Kling Video) */}
+                      {selectedModel.billing.billing_type === 'duration' && selectedModel.billing.billing_rule === 'kling_video' && (() => {
+                        let ext: any = {};
+                        try { if (selectedModel.billing.extended_config) ext = JSON.parse(selectedModel.billing.extended_config); } catch {}
+                        const mm = ext.mode_multipliers || {};
+                        const sm = ext.sound_multipliers || {};
+                        return (
+                          <div style={{ padding: '16px', background: c.panelBg, borderRadius: 12 }}>
+                            <div style={{ fontSize: 13, color: c.text3, marginBottom: 12 }}>可灵视频计费 (倍率)</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                              <span style={{ color: c.text2, fontSize: 14 }}>基准单价</span>
+                              <span style={{ color: c.text1, fontSize: 18, fontWeight: 600 }}>{currencySymbol}{selectedModel.billing.duration_rate ?? '-'} <small style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>/ 秒</small></span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: c.text2 }}>
+                              <div>模式倍率: std×{mm.std ?? 1} / pro×{mm.pro ?? 1.33} / 4k×{mm['4k'] ?? 2}</div>
+                              <div>声音倍率: off×{sm.off ?? 1} / on×{sm.on ?? 1.5}</div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* 基础按时长计费 */}
+                      {selectedModel.billing.billing_type === 'duration' && (!selectedModel.billing.billing_rule || (selectedModel.billing.billing_rule !== 'video_resolution' && selectedModel.billing.billing_rule !== 'kling_video')) && (
                         <div style={{ padding: '16px', background: c.panelBg, borderRadius: 12 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ color: c.text2, fontSize: 14 }}>按时长计费</span>
@@ -572,8 +717,8 @@ const ModelMarketplace: React.FC = () => {
                         </div>
                       )}
 
-                      {/* 阶梯计费 */}
-                      {selectedModel.billing.pricing_tiers && (() => {
+                      {/* 阶梯计费 (按上下文) */}
+                      {selectedModel.billing.billing_type === 'tokens' && selectedModel.billing.billing_rule === 'tiered' && selectedModel.billing.pricing_tiers && (() => {
                         try {
                           const tiers = JSON.parse(selectedModel.billing.pricing_tiers);
                           if (Array.isArray(tiers) && tiers.length > 0) {

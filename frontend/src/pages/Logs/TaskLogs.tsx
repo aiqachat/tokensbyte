@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Tag, Button, Space, Typography, DatePicker, Input, Select, Row, Col, Form, message, Grid, Descriptions } from 'antd';
+import { Table, Tag, Button, Space, Typography, DatePicker, Input, Select, Row, Col, Form, message, Grid, Descriptions, Card } from 'antd';
 import MobileCardList, { MobileCard, CardRow } from '../../components/MobileCardList';
 import { SyncOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
@@ -374,7 +374,7 @@ const TaskLogs: React.FC = () => {
   };
 
   return (
-    <div>
+    <Card variant="borderless" style={{ background: isLight ? '#fff' : 'rgba(255,255,255,0.02)', borderRadius: 12 }}>
       <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
         <Col>
           <Typography.Title level={4} style={{ margin: 0 }}>
@@ -420,7 +420,7 @@ const TaskLogs: React.FC = () => {
           size="middle"
         />
       )}
-    </div>
+    </Card>
   );
 };
 
