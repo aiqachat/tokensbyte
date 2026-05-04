@@ -345,14 +345,20 @@ async fn delete_project(
 
     // 3. 从 TOS 中清理项目文件夹下的所有文件
     if let Some(tos_config) = get_tos_config(&state, "playground").await {
-        let folder_prefix = format!("users/{}/playground/{}/", claims.sub, id);
+        // 获取用户 UID
+        let uid: String = sqlx::query_scalar(&state.db.format_query("SELECT uid FROM users WHERE id = ?"))
+            .bind(&claims.sub)
+            .fetch_one(&state.db.pool)
+            .await?;
+
+        let folder_prefix = format!("p{}/{:08}/", uid, id);
         if let Ok((objects, _)) = tos::list_folder(&tos_config, &folder_prefix).await {
             for obj in objects {
                 let _ = tos::delete_file(&tos_config, &obj.key).await;
             }
         }
         // 同时清理可能存在的目录标记 (Directory marker)
-        let folder_key = tos_config.full_key(&folder_prefix);
+        let folder_key = tos_config.full_key(&format!("p{}/{:08}/.keep", uid, id));
         let _ = tos::delete_file(&tos_config, &folder_key).await;
     }
 
@@ -441,6 +447,50 @@ async fn persist_asset(
     };
 
     let file_size = file_data.len() as i64;
+
+    // --- 后端硬性校验配额 ---
+    let configs = load_plugin_configs_pub(&state, "playground").await.unwrap_or_default();
+    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or(1);
+
+    let max_assets: i64 = configs.get(&format!("max_assets_{}", user_level_id))
+        .or_else(|| configs.get("default_max_assets"))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+
+    let asset_count: i64 = sqlx::query_scalar(
+        &state.db.format_query("SELECT COUNT(*) FROM playground_assets WHERE project_id = ? AND user_id = ? AND is_deleted = 0")
+    )
+    .bind(project_id)
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
+    if asset_count >= max_assets {
+        return Err(AppError::BadRequest(format!("该项目素材数量已达系统安全上限 ({}个)，请清理无用素材", max_assets)));
+    }
+
+    let quota_mb: i64 = configs.get(&format!("quota_{}", user_level_id))
+        .or_else(|| configs.get("default_quota"))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100);
+
+    let total_size: i64 = sqlx::query_scalar(
+        &state.db.format_query("SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) FROM playground_assets WHERE user_id = ? AND is_deleted = 0")
+    )
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
+    if quota_mb > 0 && total_size + file_size > quota_mb * 1024 * 1024 {
+        return Err(AppError::BadRequest("您的创作中心存储空间配额已不足，请先清理部分历史素材或项目".to_string()));
+    }
+    // ------------------------
 
     // 生成 TOS object key
     let timestamp = chrono::Utc::now().timestamp();
@@ -706,7 +756,49 @@ async fn upload_reference(
         }
     }
 
+    if let Some(pid) = project_id {
+        let exists: i64 = sqlx::query_scalar(
+            &state.db.format_query("SELECT COUNT(*) FROM playground_projects WHERE id = ? AND user_id = ? AND is_deleted = 0")
+        )
+        .bind(pid)
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+
+        if exists == 0 {
+            return Err(AppError::BadRequest("指定项目不存在或无权限".to_string()));
+        }
+    }
+
     let data = file_data.ok_or_else(|| AppError::BadRequest("未提供文件".to_string()))?;
+    let file_size = data.len() as i64;
+
+    // --- 后端硬性校验配额 ---
+    let configs = load_plugin_configs_pub(&state, "playground").await.unwrap_or_default();
+    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or(1);
+
+    let quota_mb: i64 = configs.get(&format!("quota_{}", user_level_id))
+        .or_else(|| configs.get("default_quota"))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100);
+
+    let total_size: i64 = sqlx::query_scalar(
+        &state.db.format_query("SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) FROM playground_assets WHERE user_id = ? AND is_deleted = 0")
+    )
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
+    if quota_mb > 0 && total_size + file_size > quota_mb * 1024 * 1024 {
+        return Err(AppError::BadRequest("您的创作中心存储空间配额已不足，无法上传参考图，请先清理部分历史素材或项目".to_string()));
+    }
+    // ------------------------
+
     let ext = std::path::Path::new(&original_name)
         .extension()
         .and_then(std::ffi::OsStr::to_str)
