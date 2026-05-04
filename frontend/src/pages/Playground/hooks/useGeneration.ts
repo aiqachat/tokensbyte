@@ -96,6 +96,15 @@ export const useGeneration = () => {
     if (generating) return;
     if (!currentModel || !prompt.trim()) return;
 
+    if (!selectedTokenKey) {
+      message.warning({
+        content: '生成不成功：请先在下方选择一个令牌 (Token)',
+        duration: 4,
+        key: 'no-token-selected',
+      });
+      return;
+    }
+
     // 前置校验：检查当前选中密钥的额度是否已用尽
     if (selectedTokenKey) {
       const currentToken = apiTokens.find((t: any) => t.token_key === selectedTokenKey);
