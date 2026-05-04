@@ -244,14 +244,14 @@ async fn record_and_bill_inner(
         String::new()
     };
     let sql = format!(
-        "SELECT m.enable_log_content, t.name as category_name, b.pid as billing_pid, f.eid as forward_eid \
+        "SELECT m.enable_log_content, m.forward_rule_ids, t.name as category_name, b.pid as billing_pid \
          FROM models m \
          LEFT JOIN model_types t ON m.type_id = t.id \
          LEFT JOIN billing_rules b ON m.billing_rule_id = b.id \
-         LEFT JOIN forward_rules f ON m.forward_rule_id = f.id \
          WHERE m.model_id = ? AND m.is_active = 1{} LIMIT 1",
         cat_filter
     );
+    let mut forward_rule_ids_str: Option<String> = None;
     if let Ok(Some(row)) = sqlx::query(&state.db.format_query(&sql))
     .bind(model_name)
     .fetch_optional(&state.db.pool)
@@ -261,7 +261,19 @@ async fn record_and_bill_inner(
         enable_log = row.try_get("enable_log_content").unwrap_or(0);
         category = row.try_get("category_name").unwrap_or_default();
         billing_pid = row.try_get("billing_pid").unwrap_or(None);
-        forward_eid = row.try_get("forward_eid").unwrap_or(None);
+        forward_rule_ids_str = row.try_get("forward_rule_ids").unwrap_or(None);
+    }
+
+    if let Some(ids_str) = forward_rule_ids_str {
+        if let Ok(ids) = serde_json::from_str::<Vec<i64>>(&ids_str) {
+            if let Some(first_id) = ids.first() {
+                forward_eid = sqlx::query_scalar(&state.db.format_query("SELECT eid FROM forward_rules WHERE id = ?"))
+                    .bind(first_id)
+                    .fetch_optional(&state.db.pool)
+                    .await
+                    .unwrap_or(None);
+            }
+        }
     }
 
     let filter_content = |content: Option<String>, respect_log_flag: bool| -> Option<String> {

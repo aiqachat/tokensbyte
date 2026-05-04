@@ -16,6 +16,7 @@ interface ForwardRule {
   category: string;
   config_json: string;
   description?: string;
+  eid?: string;
   is_active: number;
   is_system?: number;
   created_at: string;
@@ -35,7 +36,9 @@ const ForwardRules: React.FC = () => {
 
   const filteredItems = items.filter(item => {
     if (!searchQuery) return true;
-    return item.name && item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const lowerQuery = searchQuery.toLowerCase();
+    return (item.name && item.name.toLowerCase().includes(lowerQuery)) ||
+           (item.eid && String(item.eid).toLowerCase().includes(lowerQuery));
   });
 
   const fetchItems = async () => {
@@ -289,7 +292,7 @@ const ForwardRules: React.FC = () => {
             <QuestionCircleOutlined style={{ color: '#1890ff', cursor: 'pointer' }} />
           </Popover>
           <Input.Search
-            placeholder="搜索规则名称"
+            placeholder="搜索规则名称或EID"
             allowClear
             onSearch={setSearchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

@@ -56,6 +56,7 @@ const PlaygroundHome: React.FC = () => {
   const [siteLogo, setSiteLogo] = useState<string>('');
   const [agreement, setAgreement] = useState<any>(null);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
+  const [storageStats, setStorageStats] = useState<any>(null);
   const [selectedProject, setSelectedProject] = useState<ProjectItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -88,6 +89,13 @@ const PlaygroundHome: React.FC = () => {
         }
       } catch (e) {
         console.error('获取站点配置失败', e);
+      }
+
+      try {
+        const statsRes = await request.get('/playground/storage-stats') as any;
+        setStorageStats(statsRes);
+      } catch (e) {
+        console.error('获取存储统计失败', e);
       }
 
       setInitPhase('正在加载项目...');
@@ -170,8 +178,8 @@ const PlaygroundHome: React.FC = () => {
     }
 
     Modal.confirm({
-      title: '确定要删除该项目吗？',
-      content: '删除后，该项目下的所有对话记录和画布内容都将无法找回。',
+      title: '确认删除此项目？',
+      content: <span style={{ color: '#ff4d4f' }}>警告：此操作为物理删除，删除后该项目下的所有内容和数据将永久丢失，无法恢复！</span>,
       okText: '确定删除',
       okType: 'danger',
       cancelText: '取消',
@@ -484,6 +492,27 @@ const PlaygroundHome: React.FC = () => {
                         </>
                       )}
                     </div>
+                    
+                    {/* 删除按钮 */}
+                    {hoveredId === project.id && editingId !== project.id && (
+                      <div style={{ display: 'flex', gap: 4, flexShrink: 0, paddingLeft: 8 }}>
+                        <Tooltip title="删除项目">
+                          <div
+                            onClick={(e) => handleDeleteProject(e, project.id)}
+                            style={{
+                              width: 32, height: 32, borderRadius: 8,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: themeMode === 'dark' ? 'rgba(255,77,79,0.7)' : 'rgba(255,77,79,0.8)',
+                              cursor: 'pointer', transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e: any) => { e.currentTarget.style.background = 'rgba(255,77,79,0.1)'; e.currentTarget.style.color = '#ff4d4f'; }}
+                            onMouseLeave={(e: any) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = themeMode === 'dark' ? 'rgba(255,77,79,0.7)' : 'rgba(255,77,79,0.8)'; }}
+                          >
+                            <DeleteOutlined style={{ fontSize: 14 }} />
+                          </div>
+                        </Tooltip>
+                      </div>
+                    )}
                   </div>
                   ))}
                 </div>
@@ -527,6 +556,49 @@ const PlaygroundHome: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* 存储配额与项目配额使用情况 */}
+          {storageStats && (
+            <div style={{
+              padding: '16px 24px',
+              borderTop: themeMode === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+              display: 'flex', flexDirection: 'column', gap: 14
+            }}>
+              {/* 项目数量进度 */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: themeMode === 'dark' ? '#a1a1aa' : '#666', marginBottom: 6 }}>
+                  <span>可创建项目数</span>
+                  <span><strong style={{color: themeMode === 'dark' ? '#e4e4e7' : '#333'}}>{storageStats.project_count}</strong> / {storageStats.max_projects}</span>
+                </div>
+                <div style={{ width: '100%', height: 4, background: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ 
+                    height: '100%', 
+                    width: `${Math.min(100, (storageStats.project_count / (storageStats.max_projects || 1)) * 100)}%`,
+                    background: (storageStats.project_count >= storageStats.max_projects) ? '#ff4d4f' : '#1677ff',
+                    borderRadius: 2,
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+              </div>
+              
+              {/* 空间使用量进度 */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: themeMode === 'dark' ? '#a1a1aa' : '#666', marginBottom: 6 }}>
+                  <span>空间大小限制</span>
+                  <span><strong style={{color: themeMode === 'dark' ? '#e4e4e7' : '#333'}}>{(storageStats.total_size_mb || 0).toFixed(1)}</strong> / {storageStats.quota_mb} MB</span>
+                </div>
+                <div style={{ width: '100%', height: 4, background: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ 
+                    height: '100%', 
+                    width: `${Math.min(100, storageStats.usage_percent || 0)}%`,
+                    background: (storageStats.usage_percent || 0) > 90 ? '#ff4d4f' : '#1677ff',
+                    borderRadius: 2,
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ===== 右侧主区域：预览 或 Stitch Welcome Screen ===== */}

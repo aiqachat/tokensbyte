@@ -16,6 +16,7 @@ export const useGeneration = () => {
     selectedTokenKey, generating, setGenerating,
     taskPollingNodes, setTaskPollingNodes, currentProjectId,
     attachedAssets, setAttachedAssets, models, apiTokens,
+    storageStats,
   } = usePlayground();
 
   // 保持 currentProjectId 的最新引用（避免闭包过期问题）
@@ -67,7 +68,14 @@ export const useGeneration = () => {
         const stableId = `asset-${res.id}`;
         setNodes(prev => prev.map(n => {
           if (n.id !== node.id) return n;
-          const updatedNode = { ...n, id: stableId };
+          const updatedNode = { 
+            ...n, 
+            id: stableId,
+            taskData: {
+              ...n.taskData,
+              file_size: res.file_size
+            }
+          };
           if (updatedNode.type === 'image') {
             updatedNode.resultData = { data: [{ url: res.file_url }] };
           } else if (updatedNode.type === 'video') {
@@ -101,13 +109,30 @@ export const useGeneration = () => {
       }
     }
 
+    const maxAssets = storageStats?.max_assets || 10;
+    if (nodes.length >= maxAssets) {
+      message.warning({
+        content: `当前项目创作素材内容已达到 ${maxAssets} 个上限，请先清理部分素材再创作。`,
+        duration: 4,
+        key: 'max-assets-exceeded',
+      });
+      return;
+    }
+
     setGenerating(true);
 
     const newNodeId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
     const centerX = -canvasTransform.x / canvasTransform.scale + window.innerWidth / 2 - 250;
     const centerY = -canvasTransform.y / canvasTransform.scale + window.innerHeight / 2 - 200;
-    const offsetX = (Math.random() - 0.5) * 100;
-    const offsetY = (Math.random() - 0.5) * 100;
+
+    let targetX = centerX;
+    let targetY = centerY;
+    if (nodes.length > 0) {
+      // 找到最右侧的节点或者最后一个节点，紧随其后排列
+      const lastNode = nodes[nodes.length - 1];
+      targetX = lastNode.x + (lastNode.width || 480) + 5;
+      targetY = lastNode.y;
+    }
 
     const newZIndex = maxZIndex + 1;
     setMaxZIndex(newZIndex);
@@ -126,8 +151,8 @@ export const useGeneration = () => {
         created_at: new Date().toISOString(),
       },
       resultData: null,
-      x: centerX + offsetX,
-      y: centerY + offsetY,
+      x: targetX,
+      y: targetY,
       width: 480,
       height: 320,
       zIndex: newZIndex
@@ -293,8 +318,8 @@ export const useGeneration = () => {
                   return {
                     ...updated[mainNodeIndex],
                     id: `${newNodeId}-ext-${idx}`,
-                    x: updated[mainNodeIndex].x + 40 * (idx + 1),
-                    y: updated[mainNodeIndex].y + 40 * (idx + 1),
+                    x: updated[mainNodeIndex].x + (updated[mainNodeIndex].width + 5) * (idx + 1),
+                    y: updated[mainNodeIndex].y,
                     zIndex: updated[mainNodeIndex].zIndex + idx + 1,
                     resultData: { ...res, data: [imgObj] }
                   };
@@ -318,7 +343,7 @@ export const useGeneration = () => {
       setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, status: 'error', resultData: { message: errMsg } } : n));
       setGenerating(false);
     }
-  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets, apiTokens]);
+  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets, apiTokens, nodes.length]);
 
   /** 轮询异步任务状态（视频/图片） */
   const pollTaskStatus = useCallback((nodeId: string, taskId: string, modelId: string, pollEndpointTemplate?: string) => {

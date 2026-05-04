@@ -22,6 +22,7 @@ interface BillingRuleData {
   duration_rate: number;
   pricing_tiers: string;
   extended_config: string;
+  pid?: string;
   is_active: number;
   is_system: number;
   created_at: string;
@@ -37,6 +38,7 @@ const BillingRules: React.FC = () => {
   
   const [items, setItems] = useState<BillingRuleData[]>([]);
   const [filterType, setFilterType] = useState('all');
+  const [searchText, setSearchText] = useState('');
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<BillingRuleData | null>(null);
@@ -300,7 +302,16 @@ const BillingRules: React.FC = () => {
     },
   ];
 
-  const filteredItems = filterType === 'all' ? items : items.filter(item => item.billing_type === filterType);
+  const filteredItems = items.filter(item => {
+    if (filterType !== 'all' && item.billing_type !== filterType) return false;
+    if (searchText) {
+      const lower = searchText.toLowerCase();
+      if (!item.name?.toLowerCase().includes(lower) && !String(item.pid || '').toLowerCase().includes(lower)) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   return (
     <div>
@@ -309,7 +320,7 @@ const BillingRules: React.FC = () => {
           {screens.xs ? '新建' : '新建计费策略类'}
         </Button>
       }>
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
           <Space wrap>
             <Text strong>筛选计费类型：</Text>
             <Radio.Group 
@@ -324,6 +335,13 @@ const BillingRules: React.FC = () => {
               <Radio value="duration">{t('models.type_duration')}</Radio>
             </Radio.Group>
           </Space>
+          <Input.Search
+            placeholder="搜索名称或PID"
+            allowClear
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            style={{ width: 200 }}
+          />
         </div>
 
         {screens.xs ? (

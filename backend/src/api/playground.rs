@@ -71,7 +71,7 @@ async fn list_projects(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let projects: Vec<(i32, String, String, String, String, String, i32, String, String)> = sqlx::query_as(
+    let projects: Vec<(i64, String, String, String, String, String, i32, String, String)> = sqlx::query_as(
         &state.db.format_query(
             "SELECT id, uid, name, description, cover_url, canvas_data, is_deleted, created_at, updated_at \
              FROM playground_projects WHERE user_id = ? AND is_deleted = 0 ORDER BY updated_at DESC"
@@ -111,11 +111,32 @@ async fn create_project(
     Extension(claims): Extension<auth::Claims>,
     Json(payload): Json<CreateProjectRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
-    // 获取用户 UID
-    let uid: String = sqlx::query_scalar(&state.db.format_query("SELECT uid FROM users WHERE id = ?"))
+    // 获取用户 UID 和 User Level ID
+    let user_info: (String, i64) = sqlx::query_as(&state.db.format_query("SELECT u.uid, ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_one(&state.db.pool)
         .await?;
+    let uid = user_info.0;
+    let user_level_id = user_info.1;
+
+    // 获取用户的项目数上限
+    let configs = load_plugin_configs_pub(&state, "playground").await.unwrap_or_default();
+    let max_projects: i64 = configs.get(&format!("max_projects_{}", user_level_id))
+        .or_else(|| configs.get("default_max_projects"))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+
+    // 查询当前项目数
+    let current_project_count: i64 = sqlx::query_scalar(&state.db.format_query(
+        "SELECT COUNT(*) FROM playground_projects WHERE user_id = ? AND is_deleted = 0"
+    ))
+    .bind(&claims.sub)
+    .fetch_one(&state.db.pool)
+    .await?;
+
+    if current_project_count >= max_projects {
+        return Err(AppError::BadRequest(format!("已达到最大项目数量限制 ({} 个)，请先删除一些项目后再创建", max_projects)));
+    }
 
     let name = payload.name.unwrap_or_else(|| "未命名项目".to_string());
     let desc = payload.description.unwrap_or_default();
@@ -127,13 +148,13 @@ async fn create_project(
         format!("{:0>3}", uid)
     };
 
-    let mut new_id: i32 = 0;
+    let mut new_id: i64 = 0;
     for i in 0..50 {
         let ts = chrono::Utc::now().timestamp_micros() as u64;
         // 增加些许伪随机扰动避免同一微秒重复
         let random_part = ((ts + i * 137) % 90000) + 10000; 
         let id_str = format!("{}{}", uid_suffix, random_part);
-        if let Ok(id_val) = id_str.parse::<i32>() {
+        if let Ok(id_val) = id_str.parse::<i64>() {
             // 查询是否已存在（涵盖了已被软删除的旧项目）
             let exists: i64 = sqlx::query_scalar(&state.db.format_query(
                 "SELECT COUNT(*) FROM playground_projects WHERE id = ?"
@@ -189,10 +210,10 @@ async fn create_project(
 /// 获取单个项目详情（含资源列表）
 async fn get_project(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let project: (i32, String, String, String, String, String, String, String) = sqlx::query_as(
+    let project: (i64, String, String, String, String, String, String, String) = sqlx::query_as(
         &state.db.format_query(
             "SELECT id, uid, name, description, cover_url, canvas_data, created_at, updated_at \
              FROM playground_projects WHERE id = ? AND user_id = ? AND is_deleted = 0"
@@ -205,7 +226,7 @@ async fn get_project(
     .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
 
     // 获取该项目的资源列表
-    let assets: Vec<(i32, String, String, i64, String, String, String, String, String, String, f64, i32, i32, String)> = sqlx::query_as(
+    let assets: Vec<(i64, String, String, i64, String, String, String, String, String, String, f64, i32, i32, String)> = sqlx::query_as(
         &state.db.format_query(
             "SELECT id, asset_type, file_name, file_size, file_url, thumbnail_url, prompt, model_id, model_name, \
              canvas_node_data, duration_seconds, width, height, created_at \
@@ -260,7 +281,7 @@ struct UpdateProjectRequest {
 
 async fn update_project(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Extension(claims): Extension<auth::Claims>,
     Json(payload): Json<UpdateProjectRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
@@ -296,14 +317,15 @@ async fn update_project(
     Ok(Json(json!({ "message": "项目更新成功" })))
 }
 
-/// 软删除项目
+/// 物理删除项目及关联资源
 async fn delete_project(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
+    // 1. 物理删除项目
     let result = sqlx::query(
-        &state.db.format_query("UPDATE playground_projects SET is_deleted = 1, updated_at = now()::text WHERE id = ? AND user_id = ?")
+        &state.db.format_query("DELETE FROM playground_projects WHERE id = ? AND user_id = ?")
     )
     .bind(id)
     .bind(&claims.sub)
@@ -314,14 +336,27 @@ async fn delete_project(
         return Err(AppError::NotFound("项目不存在".to_string()));
     }
 
-    // 同时软删除项目下的所有资源
-    sqlx::query(&state.db.format_query("UPDATE playground_assets SET is_deleted = 1 WHERE project_id = ? AND user_id = ?"))
+    // 2. 物理删除项目下的所有资源
+    sqlx::query(&state.db.format_query("DELETE FROM playground_assets WHERE project_id = ? AND user_id = ?"))
         .bind(id)
         .bind(&claims.sub)
         .execute(&state.db.pool)
         .await?;
 
-    Ok(Json(json!({ "message": "项目已删除" })))
+    // 3. 从 TOS 中清理项目文件夹下的所有文件
+    if let Some(tos_config) = get_tos_config(&state, "playground").await {
+        let folder_prefix = format!("users/{}/playground/{}/", claims.sub, id);
+        if let Ok((objects, _)) = tos::list_folder(&tos_config, &folder_prefix).await {
+            for obj in objects {
+                let _ = tos::delete_file(&tos_config, &obj.key).await;
+            }
+        }
+        // 同时清理可能存在的目录标记 (Directory marker)
+        let folder_key = tos_config.full_key(&folder_prefix);
+        let _ = tos::delete_file(&tos_config, &folder_key).await;
+    }
+
+    Ok(Json(json!({ "message": "项目及资源已永久删除" })))
 }
 
 /// 保存画布状态
@@ -332,7 +367,7 @@ struct SaveCanvasRequest {
 
 async fn save_canvas(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Extension(claims): Extension<auth::Claims>,
     Json(payload): Json<SaveCanvasRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
@@ -356,7 +391,7 @@ async fn save_canvas(
 
 #[derive(Deserialize)]
 struct PersistAssetRequest {
-    project_id: i32,
+    project_id: i64,
     asset_type: String,       // image | video | text
     source_url: Option<String>, // 远程 URL（图片/视频的结果 URL）
     base64_data: Option<String>, // Base64 数据（部分模型直接返回 base64）
@@ -374,7 +409,7 @@ async fn persist_asset(
     Json(payload): Json<PersistAssetRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
     // 验证项目归属
-    let project: Option<(i32, String)> = sqlx::query_as(
+    let project: Option<(i64, String)> = sqlx::query_as(
         &state.db.format_query("SELECT id, uid FROM playground_projects WHERE id = ? AND user_id = ? AND is_deleted = 0")
     )
     .bind(payload.project_id)
@@ -443,7 +478,7 @@ async fn persist_asset(
         .map(|v| v.to_string())
         .unwrap_or_else(|| "{}".to_string());
 
-    let asset_id: i32 = sqlx::query_scalar(
+    let asset_id: i64 = sqlx::query_scalar(
         &state.db.format_query(
             "INSERT INTO playground_assets \
              (project_id, user_id, uid, asset_type, file_name, file_size, file_url, tos_object_key, \
@@ -490,11 +525,11 @@ async fn persist_asset(
 /// 删除单个资源
 async fn delete_asset(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
     // 查询资源信息
-    let asset: Option<(i32, String)> = sqlx::query_as(
+    let asset: Option<(i64, String)> = sqlx::query_as(
         &state.db.format_query("SELECT id, tos_object_key FROM playground_assets WHERE id = ? AND user_id = ? AND is_deleted = 0")
     )
     .bind(id)
@@ -526,7 +561,7 @@ async fn storage_stats(
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
     let total_size: i64 = sqlx::query_scalar(
-        &state.db.format_query("SELECT COALESCE(SUM(file_size), 0) FROM playground_assets WHERE user_id = ? AND is_deleted = 0")
+        &state.db.format_query("SELECT CAST(COALESCE(SUM(file_size), 0) AS BIGINT) FROM playground_assets WHERE user_id = ? AND is_deleted = 0")
     )
     .bind(&claims.sub)
     .fetch_one(&state.db.pool)
@@ -551,17 +586,27 @@ async fn storage_stats(
 
     // 获取用户的存储配额（从 plugin_configs 查询）
     let configs = load_plugin_configs_pub(&state, "playground").await.unwrap_or_default();
-    let user_group: String = sqlx::query_scalar(&state.db.format_query("SELECT user_group FROM users WHERE id = ?"))
+    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_one(&state.db.pool)
         .await
-        .unwrap_or_else(|_| "default".to_string());
+        .unwrap_or(1);
 
-    let quota_key = format!("pg_quota_{}", user_group);
+    let quota_key = format!("quota_{}", user_level_id);
     let quota_mb: i64 = configs.get(&quota_key)
-        .or_else(|| configs.get("pg_default_quota"))
+        .or_else(|| configs.get("default_quota"))
         .and_then(|v| v.parse().ok())
-        .unwrap_or(500); // 默认 500MB
+        .unwrap_or(100); // 默认 100MB
+
+    let max_projects: i64 = configs.get(&format!("max_projects_{}", user_level_id))
+        .or_else(|| configs.get("default_max_projects"))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+
+    let max_assets: i64 = configs.get(&format!("max_assets_{}", user_level_id))
+        .or_else(|| configs.get("default_max_assets"))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
 
     Ok(Json(json!({
         "total_size_bytes": total_size,
@@ -569,6 +614,8 @@ async fn storage_stats(
         "total_count": total_count,
         "project_count": project_count,
         "quota_mb": quota_mb,
+        "max_projects": max_projects,
+        "max_assets": max_assets,
         "usage_percent": if quota_mb > 0 {
             ((total_size as f64) / (quota_mb as f64 * 1024.0 * 1024.0) * 100.0).min(100.0)
         } else {
@@ -646,7 +693,7 @@ async fn upload_reference(
     let mut file_data: Option<axum::body::Bytes> = None;
     let mut original_name = String::new();
     let mut content_type = String::new();
-    let mut project_id: Option<i32> = None;
+    let mut project_id: Option<i64> = None;
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         let name = field.name().unwrap_or("").to_string();

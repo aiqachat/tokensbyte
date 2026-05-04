@@ -5,7 +5,7 @@
  * 数据来源：后端 /playground/projects API
  */
 import React, { useState, useRef, useCallback } from 'react';
-import { Input, Typography, Tooltip, message } from 'antd';
+import { Input, Typography, Tooltip, message, Modal } from 'antd';
 import {
   SearchOutlined, AppstoreOutlined, TeamOutlined,
   DesktopOutlined, VideoCameraOutlined, PictureOutlined,
@@ -44,6 +44,7 @@ const HistoryPanel: React.FC = () => {
   const [position, setPosition] = useState({ x: 24, y: 80 });
   const [activeTab, setActiveTab] = useState<'my' | 'shared'>('my');
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [hoveredProjectId, setHoveredProjectId] = useState<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const isDragging = useRef(false);
@@ -53,6 +54,7 @@ const HistoryPanel: React.FC = () => {
   const {
     projects, currentProjectId, setCurrentProjectId,
     loadProjects, createProject, saveCanvasState,
+    storageStats,
   } = usePlayground();
 
   const { nodes, setNodes } = useCanvas();
@@ -210,19 +212,28 @@ const HistoryPanel: React.FC = () => {
   }, [createProject, setNodes]);
 
   // 删除项目
-  const handleDeleteProject = useCallback(async (e: React.MouseEvent, projectId: number) => {
+  const handleDeleteProject = useCallback((e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
-    try {
-      await request.delete(`/playground/projects/${projectId}`);
-      message.success('项目已删除');
-      await loadProjects();
-      if (projectId === currentProjectId) {
-        setCurrentProjectId(null);
-        setNodes([]);
+    Modal.confirm({
+      title: '确认删除此项目？',
+      content: <span style={{ color: '#ff4d4f' }}>警告：此操作为物理删除，删除后该项目下的所有内容和数据将永久丢失，无法恢复！</span>,
+      okText: '确定删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await request.delete(`/playground/projects/${projectId}`);
+          message.success('项目已删除');
+          await loadProjects();
+          if (projectId === currentProjectId) {
+            setCurrentProjectId(null);
+            setNodes([]);
+          }
+        } catch {
+          message.error('删除失败');
+        }
       }
-    } catch {
-      message.error('删除失败');
-    }
+    });
   }, [loadProjects, currentProjectId, setCurrentProjectId, setNodes]);
 
   // 重命名项目
@@ -454,9 +465,11 @@ const HistoryPanel: React.FC = () => {
                         border: project.id === currentProjectId ? '1px solid rgba(22,119,255,0.25)' : '1px solid transparent',
                       }}
                       onMouseEnter={(e) => {
+                        setHoveredProjectId(project.id);
                         if (project.id !== currentProjectId) e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
                       }}
                       onMouseLeave={(e) => {
+                        setHoveredProjectId(null);
                         if (project.id !== currentProjectId) e.currentTarget.style.background = 'transparent';
                       }}
                     >
@@ -509,7 +522,7 @@ const HistoryPanel: React.FC = () => {
                       </div>
 
                       {/* 操作按钮 */}
-                      {project.id === currentProjectId && editingProjectId !== project.id && (
+                      {(project.id === currentProjectId || project.id === hoveredProjectId) && editingProjectId !== project.id && (
                         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                           <Tooltip title="重命名">
                             <div
@@ -569,6 +582,48 @@ const HistoryPanel: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* 底部使用量统计 */}
+      {storageStats && (
+        <div style={{
+          padding: '16px 20px',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          background: 'rgba(0,0,0,0.2)',
+          flexShrink: 0,
+        }}>
+          {/* 存储空间进度条 */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
+              <span>存储空间</span>
+              <span>{storageStats.total_size_mb ? storageStats.total_size_mb.toFixed(2) : 0} MB / {storageStats.quota_mb} MB</span>
+            </div>
+            <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ 
+                height: '100%', 
+                width: `${storageStats.usage_percent || 0}%`, 
+                background: (storageStats.usage_percent || 0) > 90 ? '#ff4d4f' : '#1677ff',
+                borderRadius: 3 
+              }} />
+            </div>
+          </div>
+          
+          {/* 项目限制 */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
+              <span>创建项目数量</span>
+              <span>{projects.length} / {storageStats.max_projects} 个</span>
+            </div>
+            <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ 
+                height: '100%', 
+                width: `${Math.min((projects.length / (storageStats.max_projects || 1)) * 100, 100)}%`, 
+                background: projects.length >= storageStats.max_projects ? '#ff4d4f' : '#52c41a',
+                borderRadius: 3 
+              }} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .hide-scrollbar::-webkit-scrollbar {

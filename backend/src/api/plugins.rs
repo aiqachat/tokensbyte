@@ -125,6 +125,10 @@ pub struct ConfigRequest {
     pub default_max_files_per_folder: Option<i64>,              // 默认每文件夹文件上限
     pub level_api_enabled: Option<HashMap<String, bool>>,      // 每个等级的 API 接口开放状态
     pub default_api_enabled: Option<bool>,                     // 默认 API 接口开放状态
+    pub level_max_projects: Option<HashMap<String, i64>>,      // 每个等级的项目数量上限
+    pub default_max_projects: Option<i64>,                     // 默认项目数量上限
+    pub level_max_assets: Option<HashMap<String, i64>>,        // 每个等级的素材数量上限
+    pub default_max_assets: Option<i64>,                       // 默认素材数量上限
 }
 
 /// 管理员：配置插件的开放等级
@@ -198,6 +202,30 @@ async fn update_plugin_config(
     // 保存默认 API 访问开关
     if let Some(dae) = payload.default_api_enabled {
         upsert_config(&state, &name, "api_enabled", if dae { "true" } else { "false" }).await?;
+    }
+
+    // 保存每个等级的项目上限
+    if let Some(ref level_mp) = payload.level_max_projects {
+        for (level_key, val) in level_mp {
+            let config_key = format!("max_projects_{}", level_key);
+            upsert_config(&state, &name, &config_key, &val.to_string()).await?;
+        }
+    }
+
+    if let Some(dmp) = payload.default_max_projects {
+        upsert_config(&state, &name, "default_max_projects", &dmp.to_string()).await?;
+    }
+
+    // 保存每个等级的素材上限
+    if let Some(ref level_ma) = payload.level_max_assets {
+        for (level_key, val) in level_ma {
+            let config_key = format!("max_assets_{}", level_key);
+            upsert_config(&state, &name, &config_key, &val.to_string()).await?;
+        }
+    }
+
+    if let Some(dma) = payload.default_max_assets {
+        upsert_config(&state, &name, "default_max_assets", &dma.to_string()).await?;
     }
 
     Ok(Json(json!({ "message": "ok" })))
@@ -283,6 +311,8 @@ async fn get_storage_config(
     let mut level_max_folders = serde_json::Map::new();
     let mut level_max_files = serde_json::Map::new();
     let mut level_api_enabled = serde_json::Map::new();
+    let mut level_max_projects = serde_json::Map::new();
+    let mut level_max_assets = serde_json::Map::new();
     for (k, v) in &configs {
         if let Some(level_key) = k.strip_prefix("quota_") {
             let mb: i64 = v.parse().unwrap_or(100);
@@ -296,6 +326,12 @@ async fn get_storage_config(
         } else if let Some(level_key) = k.strip_prefix("api_enabled_") {
             let val = v == "true";
             level_api_enabled.insert(level_key.to_string(), serde_json::Value::Bool(val));
+        } else if let Some(level_key) = k.strip_prefix("max_projects_") {
+            let val: i64 = v.parse().unwrap_or(3);
+            level_max_projects.insert(level_key.to_string(), serde_json::Value::Number(val.into()));
+        } else if let Some(level_key) = k.strip_prefix("max_assets_") {
+            let val: i64 = v.parse().unwrap_or(30);
+            level_max_assets.insert(level_key.to_string(), serde_json::Value::Number(val.into()));
         }
     }
 
@@ -304,6 +340,8 @@ async fn get_storage_config(
     let default_max_folders: i64 = configs.get("max_folders").and_then(|v| v.parse().ok()).unwrap_or(20);
     let default_max_files_per_folder: i64 = configs.get("max_files_per_folder").and_then(|v| v.parse().ok()).unwrap_or(100);
     let default_api_enabled: bool = configs.get("api_enabled").map(|v| v == "true").unwrap_or(true);
+    let default_max_projects: i64 = configs.get("default_max_projects").and_then(|v| v.parse().ok()).unwrap_or(3);
+    let default_max_assets: i64 = configs.get("default_max_assets").and_then(|v| v.parse().ok()).unwrap_or(30);
 
     Ok(Json(json!({
         "tos_access_key": configs.get("tos_access_key").cloned().unwrap_or_default(),
@@ -323,6 +361,10 @@ async fn get_storage_config(
         "default_max_files_per_folder": default_max_files_per_folder,
         "level_api_enabled": level_api_enabled,
         "default_api_enabled": default_api_enabled,
+        "level_max_projects": level_max_projects,
+        "default_max_projects": default_max_projects,
+        "level_max_assets": level_max_assets,
+        "default_max_assets": default_max_assets,
     })))
 }
 
@@ -513,7 +555,7 @@ pub async fn get_tos_config(state: &AppState, plugin_name: &str) -> Option<TosCo
 
 #[derive(serde::Serialize, sqlx::FromRow)]
 pub struct PluginApiLog {
-    pub id: i32,
+    pub id: i64,
     pub user_id: String,
     pub plugin_name: String,
     pub api_endpoint: String,
@@ -753,7 +795,7 @@ async fn load_schemes_from_db(state: &AppState, plugin_name: &str) -> Vec<serde_
 /// 每个模型的体验配置（启用状态 + 绑定方案）
 #[derive(Deserialize)]
 pub struct PlaygroundModelConfig {
-    pub id: i32,
+    pub id: i64,
     pub enabled: bool,
     pub scheme_id: Option<String>,
 }
@@ -1053,7 +1095,7 @@ async fn get_marketplace_models(
 
 #[derive(Deserialize)]
 pub struct MarketplaceModelConfig {
-    pub id: i32,
+    pub id: i64,
     pub enabled: bool,
     pub sort_order: Option<i64>,
     pub description: Option<String>,
@@ -1251,11 +1293,11 @@ pub async fn get_marketplace_public(
         sb.cmp(&sa)
     });
 
-    let active_provider_ids: std::collections::HashSet<i32> = marketplace_models.iter()
-        .filter_map(|m| m.get("provider_id").and_then(|v| v.as_i64()).map(|v| v as i32))
+    let active_provider_ids: std::collections::HashSet<i64> = marketplace_models.iter()
+        .filter_map(|m| m.get("provider_id").and_then(|v| v.as_i64()))
         .collect();
-    let active_type_ids: std::collections::HashSet<i32> = marketplace_models.iter()
-        .filter_map(|m| m.get("type_id").and_then(|v| v.as_i64()).map(|v| v as i32))
+    let active_type_ids: std::collections::HashSet<i64> = marketplace_models.iter()
+        .filter_map(|m| m.get("type_id").and_then(|v| v.as_i64()))
         .collect();
 
     let provider_list: Vec<serde_json::Value> = providers.iter()

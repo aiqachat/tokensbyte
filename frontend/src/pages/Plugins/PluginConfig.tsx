@@ -97,6 +97,10 @@ const PluginConfigInner: React.FC = () => {
   const [defaultMaxFilesPerFolder, setDefaultMaxFilesPerFolder] = useState<number>(100);
   const [levelApiEnabled, setLevelApiEnabled] = useState<Record<string, boolean>>({});
   const [defaultApiEnabled, setDefaultApiEnabled] = useState<boolean>(true);
+  const [levelMaxProjects, setLevelMaxProjects] = useState<Record<string, number>>({});
+  const [defaultMaxProjects, setDefaultMaxProjects] = useState<number>(3);
+  const [levelMaxAssets, setLevelMaxAssets] = useState<Record<string, number>>({});
+  const [defaultMaxAssets, setDefaultMaxAssets] = useState<number>(10);
 
   // 管理员分组（系统增强插件使用）
   const [adminGroups, setAdminGroups] = useState<{id: number; name: string; description?: string}[]>([]);
@@ -440,12 +444,12 @@ const PluginConfigInner: React.FC = () => {
 
       if (storageRes) {
         setStorageConfig(storageRes);
-        // 加载等级配额 (统一转换为 ULID key)
+        // 加载等级配额 (统一使用 ULID key 即 lv.id.toString())
         if (storageRes.level_quotas) {
           const lq: Record<string, number> = {};
           allLevels.forEach((lv: any) => {
-            const lvIdStr = lv.id.toString();
-            lq[lvIdStr] = storageRes.level_quotas[lvIdStr] ?? storageRes.level_quotas[lv.group_key];
+            const key = lv.id.toString();
+            lq[key] = storageRes.level_quotas[key] ?? storageRes.level_quotas[lv.group_key];
           });
           setLevelQuotas(lq);
         }
@@ -455,8 +459,8 @@ const PluginConfigInner: React.FC = () => {
         if (storageRes.level_max_folders) {
           const lmf: Record<string, number> = {};
           allLevels.forEach((lv: any) => {
-            const lvIdStr = lv.id.toString();
-            lmf[lvIdStr] = storageRes.level_max_folders[lvIdStr] ?? storageRes.level_max_folders[lv.group_key];
+            const key = lv.id.toString();
+            lmf[key] = storageRes.level_max_folders[key] ?? storageRes.level_max_folders[lv.group_key];
           });
           setLevelMaxFolders(lmf);
         }
@@ -466,8 +470,8 @@ const PluginConfigInner: React.FC = () => {
         if (storageRes.level_max_files_per_folder) {
           const lmfpf: Record<string, number> = {};
           allLevels.forEach((lv: any) => {
-            const lvIdStr = lv.id.toString();
-            lmfpf[lvIdStr] = storageRes.level_max_files_per_folder[lvIdStr] ?? storageRes.level_max_files_per_folder[lv.group_key];
+            const key = lv.id.toString();
+            lmfpf[key] = storageRes.level_max_files_per_folder[key] ?? storageRes.level_max_files_per_folder[lv.group_key];
           });
           setLevelMaxFilesPerFolder(lmfpf);
         }
@@ -482,10 +486,31 @@ const PluginConfigInner: React.FC = () => {
         const apiDefault = storageRes.default_api_enabled ?? true;
         const initialApiEnabled: Record<string, boolean> = {};
         allLevels.forEach((lv: any) => {
-          const lvIdStr = lv.id.toString();
-          initialApiEnabled[lvIdStr] = savedApiEnabled[lvIdStr] ?? savedApiEnabled[lv.group_key] ?? apiDefault;
+          const key = lv.id.toString();
+          initialApiEnabled[key] = savedApiEnabled[key] ?? savedApiEnabled[lv.group_key] ?? apiDefault;
         });
         setLevelApiEnabled(initialApiEnabled);
+        
+        if (storageRes.level_max_projects) {
+          const lmp: Record<string, number> = {};
+          allLevels.forEach((lv: any) => {
+            const key = lv.id.toString();
+            lmp[key] = storageRes.level_max_projects[key] ?? storageRes.level_max_projects[lv.group_key];
+          });
+          setLevelMaxProjects(lmp);
+        }
+        if (storageRes.default_max_projects != null) setDefaultMaxProjects(storageRes.default_max_projects);
+
+        if (storageRes.level_max_assets) {
+          const lma: Record<string, number> = {};
+          allLevels.forEach((lv: any) => {
+            const key = lv.id.toString();
+            lma[key] = storageRes.level_max_assets[key] ?? storageRes.level_max_assets[lv.group_key];
+          });
+          setLevelMaxAssets(lma);
+        }
+        if (storageRes.default_max_assets != null) setDefaultMaxAssets(storageRes.default_max_assets);
+
         // 延迟设置表单值，等待 Tabs 内的 Form 组件渲染完毕
         setTimeout(() => {
           storageForm.setFieldsValue({
@@ -556,7 +581,11 @@ const PluginConfigInner: React.FC = () => {
         level_max_files_per_folder: levelMaxFilesPerFolder,
         default_max_files_per_folder: defaultMaxFilesPerFolder,
         level_api_enabled: levelApiEnabled,
-        default_api_enabled: defaultApiEnabled });
+        default_api_enabled: defaultApiEnabled,
+        level_max_projects: levelMaxProjects,
+        default_max_projects: defaultMaxProjects,
+        level_max_assets: levelMaxAssets,
+        default_max_assets: defaultMaxAssets });
       message.success('配置已保存');
     } catch (error) {
       message.error('保存失败');
@@ -744,7 +773,7 @@ const PluginConfigInner: React.FC = () => {
                       </Text>
                     </div>
                   </div>
-                  {showLimits && (
+                  {showLimits && name === 'asset_manager' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, marginLeft: 24, flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>存储空间</Text>
@@ -785,6 +814,7 @@ const PluginConfigInner: React.FC = () => {
                       </div>
                     </div>
                   )}
+
                 </div>
               );
             })}
@@ -793,7 +823,87 @@ const PluginConfigInner: React.FC = () => {
         )}
       </div>
 
-      {isAllLevels && (name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace') && (
+      {isAllLevels && name === 'playground' && (
+        <div style={{
+          background: _isLight ? '#fff' : '#141414', borderRadius: 8,
+          border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16 }}>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>资源配额管理</Text><br />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>全局默认的用户体验中心配额（对所有用户生效），可按等级单独覆盖</Text>
+          <Divider style={{ borderColor: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
+          
+          {/* 表头 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '0 14px 8px', alignItems: 'center' }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11 }}>等级</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>存储空间</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>项目限制</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>每个项目素材</Text>
+          </div>
+
+          {/* 全局默认行 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '10px 14px', borderRadius: 6, border: '1px solid rgba(22,119,255,0.3)', background: 'rgba(22,119,255,0.04)', marginBottom: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13, fontWeight: 500 }}>全局默认</Text>
+              <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>默认值</Tag>
+            </div>
+            <InputNumber size="small" min={1} max={10240}
+              value={defaultQuota} onChange={(val) => setDefaultQuota(val ?? 100)}
+              style={{ width: '100%' }}
+              addonAfter="MB"
+            />
+            <InputNumber size="small" min={1} max={1000}
+              value={defaultMaxProjects} onChange={(val) => setDefaultMaxProjects(val ?? 3)}
+              style={{ width: '100%' }}
+              addonAfter="个"
+            />
+            <InputNumber size="small" min={1} max={1000}
+              value={defaultMaxAssets} onChange={(val) => setDefaultMaxAssets(val ?? 10)}
+              style={{ width: '100%' }}
+              addonAfter="个"
+            />
+          </div>
+
+          {/* 按等级覆盖 */}
+          {levels.length > 0 && (
+            <>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', margin: '12px 0 8px' }}>按等级单独设置（覆盖全局默认值）</Text>
+              {levels.map(lv => (
+                <div key={lv.id.toString()}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '8px 14px', borderRadius: 6, border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, alignItems: 'center' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>
+                      {lv.name}
+                      <span style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, marginLeft: 6 }}>
+                        (ULID: {lv.id.toString().padStart(4, '0')})
+                      </span>
+                    </Text>
+                  </div>
+                  <InputNumber size="small" min={1} max={10240}
+                    value={levelQuotas[lv.id.toString()] ?? defaultQuota}
+                    onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultQuota }))}
+                    style={{ width: '100%' }}
+                    addonAfter="MB"
+                  />
+                  <InputNumber size="small" min={1} max={1000}
+                    value={levelMaxProjects[lv.id.toString()] ?? defaultMaxProjects}
+                    onChange={(val) => setLevelMaxProjects(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultMaxProjects }))}
+                    style={{ width: '100%' }}
+                    addonAfter="个"
+                  />
+                  <InputNumber size="small" min={1} max={1000}
+                    value={levelMaxAssets[lv.id.toString()] ?? defaultMaxAssets}
+                    onChange={(val) => setLevelMaxAssets(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultMaxAssets }))}
+                    style={{ width: '100%' }}
+                    addonAfter="个"
+                  />
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {isAllLevels && name === 'asset_manager' && (
         <div style={{
           background: _isLight ? '#fff' : '#141414', borderRadius: 8,
           border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16 }}>

@@ -167,14 +167,20 @@ async fn upload_asset(
             // 普通用户上传前检查存储配额
             if user.role != "admin" {
                 let used_bytes: Option<i64> = sqlx::query_scalar(
-                    &state.db.format_query("SELECT COALESCE(SUM(size), 0) FROM plugin_assets WHERE user_id = ? AND source = 'user'")
+                    &state.db.format_query("SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) FROM plugin_assets WHERE user_id = ? AND source = 'user'")
                 )
                 .bind(&user.id)
                 .fetch_one(&state.db.pool)
                 .await?;
 
+                let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+                    .bind(&user.id)
+                    .fetch_one(&state.db.pool)
+                    .await
+                    .unwrap_or(1);
+
                 // 从 plugin_configs 获取该用户等级的配额（单位 MB，默认 100）
-                let quota_key = format!("quota_{}", user.user_group);
+                let quota_key = format!("quota_{}", user_level_id);
                 let quota_mb: i64 = sqlx::query_scalar::<_, Option<String>>(
                     &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
                 )
@@ -294,7 +300,7 @@ async fn admin_list_assets(
 
     // 管理员（source=builtin）的存储使用量
     let admin_used: Option<i64> = sqlx::query_scalar(
-        &state.db.format_query("SELECT COALESCE(SUM(size), 0) FROM plugin_assets WHERE source = 'builtin'")
+        &state.db.format_query("SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) FROM plugin_assets WHERE source = 'builtin'")
     )
     .fetch_one(&state.db.pool)
     .await?;
@@ -603,14 +609,20 @@ async fn user_list_assets(
 
     // 计算用户已用空间（仅计算用户自己上传的）
     let used_bytes: Option<i64> = sqlx::query_scalar(
-        &state.db.format_query("SELECT COALESCE(SUM(size), 0) FROM plugin_assets WHERE user_id = ? AND source = 'user'")
+        &state.db.format_query("SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) FROM plugin_assets WHERE user_id = ? AND source = 'user'")
     )
     .bind(&user.id)
     .fetch_one(&state.db.pool)
     .await?;
 
+    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+        .bind(&user.id)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or(1);
+
     // 获取配额
-    let quota_key = format!("quota_{}", user.user_group);
+    let quota_key = format!("quota_{}", user_level_id);
     let quota_mb: i64 = sqlx::query_scalar::<_, Option<String>>(
         &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
     )
@@ -712,7 +724,7 @@ async fn user_storage_info(
     .unwrap_or(0);
 
     let db_total_size: i64 = sqlx::query_scalar(&state.db.format_query(
-        "SELECT COALESCE(SUM(size), 0) FROM plugin_assets WHERE user_id = ? AND source = 'user'"
+        "SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) FROM plugin_assets WHERE user_id = ? AND source = 'user'"
     ))
     .bind(&claims.sub)
     .fetch_one(&state.db.pool)
@@ -727,7 +739,12 @@ async fn user_storage_info(
     let quota_mb: i64 = if user.role == "admin" {
         0 // 0 表示无限制
     } else {
-        let quota_key = format!("quota_{}", user.user_group);
+        let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+            .bind(&user.id)
+            .fetch_one(&state.db.pool)
+            .await
+            .unwrap_or(1);
+        let quota_key = format!("quota_{}", user_level_id);
         sqlx::query_scalar::<_, Option<String>>(
             &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
         )
@@ -772,7 +789,12 @@ async fn user_storage_info(
     let folder_quota: i64 = if user.role == "admin" {
         0 // 管理员无限制
     } else {
-        let level_key = format!("max_folders_{}", user.user_group);
+        let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+            .bind(&user.id)
+            .fetch_one(&state.db.pool)
+            .await
+            .unwrap_or(1);
+        let level_key = format!("max_folders_{}", user_level_id);
         let per_level = sqlx::query_scalar::<_, Option<String>>(
             &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
         )
@@ -1089,14 +1111,19 @@ async fn upload_virtual_portrait(
     // 存储空间配额检查（管理员跳过）
     if user.role != "admin" {
         let used_bytes: Option<i64> = sqlx::query_scalar(
-            &state.db.format_query("SELECT COALESCE(SUM(size), 0) FROM plugin_assets WHERE user_id = ? AND source = 'user'")
+            &state.db.format_query("SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) FROM plugin_assets WHERE user_id = ? AND source = 'user'")
         )
         .bind(&user.id)
         .fetch_one(&state.db.pool)
         .await?;
 
         // 优先查用户等级配额，fallback 到全局默认
-        let quota_key = format!("quota_{}", user.user_group);
+        let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+            .bind(&user.id)
+            .fetch_one(&state.db.pool)
+            .await
+            .unwrap_or(1);
+        let quota_key = format!("quota_{}", user_level_id);
         let quota_mb: i64 = sqlx::query_scalar::<_, Option<String>>(
             &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
         )
@@ -1146,7 +1173,12 @@ async fn upload_virtual_portrait(
     .await?;
 
     // 检查该文件夹下的素材数量是否已达上限（按用户等级查询，fallback 到全局默认）
-    let level_files_key = format!("max_files_{}", user.user_group);
+    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+        .bind(&user.id)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or(1);
+    let level_files_key = format!("max_files_{}", user_level_id);
     let max_files_per_folder: i64 = sqlx::query_scalar::<_, Option<String>>(
         &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
     )
@@ -1333,7 +1365,12 @@ async fn user_create_group(
     .ok_or_else(|| crate::error::AppError::Unauthorized)?;
 
     // 按用户等级查询文件夹上限，fallback 到全局默认
-    let level_folders_key = format!("max_folders_{}", user.user_group);
+    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+        .bind(&user.id)
+        .fetch_one(&state.db.pool)
+        .await
+        .unwrap_or(1);
+    let level_folders_key = format!("max_folders_{}", user_level_id);
     let max_folders: i64 = sqlx::query_scalar::<_, Option<String>>(
         &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
     )

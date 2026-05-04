@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Upstream {
-    pub id: i32,
+    pub id: i64,
     pub name: String,
     pub upstream_type: String,
     pub sort_order: i32,

@@ -12,8 +12,8 @@ use crate::models::{Model, CreateModelRequest, UpdateModelRequest, ModelListResp
 
 #[derive(Debug, serde::Deserialize)]
 pub struct ModelQuery {
-    pub provider_id: Option<i32>,
-    pub type_id: Option<i32>,
+    pub provider_id: Option<i64>,
+    pub type_id: Option<i64>,
     pub page_size: Option<i64>,
     pub search: Option<String>,   // 支持按 name / model_id / mid 搜索
 }
@@ -101,7 +101,7 @@ pub async fn create_model(
             let n: u32 = rand::thread_rng().gen_range(300000..=309999);
             n.to_string()
         };
-        let taken: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE mid = ?"))
+        let taken: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE mid = ?"))
             .bind(&candidate)
             .fetch_optional(&state.db.pool)
             .await?;
@@ -183,7 +183,7 @@ pub async fn update_model(
                 let n: u32 = rand::thread_rng().gen_range(300000..=309999);
                 n.to_string()
             };
-            let taken: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE mid = ? AND id != ?"))
+            let taken: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM models WHERE mid = ? AND id != ?"))
                 .bind(&candidate)
                 .bind(id)
                 .fetch_optional(&state.db.pool)

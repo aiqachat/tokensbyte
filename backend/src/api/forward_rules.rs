@@ -30,7 +30,7 @@ pub async fn create_rule(
 
     let config_json = req.config_json.unwrap_or_else(|| "{}".to_string());
     
-    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM forward_rules WHERE name = ?"))
+    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM forward_rules WHERE name = ?"))
         .bind(&req.name)
         .fetch_optional(&state.db.pool)
         .await?;
@@ -65,7 +65,7 @@ pub async fn create_rule(
 
 pub async fn update_rule(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Json(mut req): Json<UpdateRuleRequest>,
 ) -> AppResult<Json<ForwardRule>> {
     let existing: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT is_system FROM forward_rules WHERE id = ?"))
@@ -86,7 +86,7 @@ pub async fn update_rule(
     }
 
     if let Some(name) = &req.name {
-        let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM forward_rules WHERE name = ? AND id != ?"))
+        let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM forward_rules WHERE name = ? AND id != ?"))
             .bind(name)
             .bind(id)
             .fetch_optional(&state.db.pool)
@@ -128,7 +128,7 @@ pub async fn update_rule(
 
 pub async fn delete_rule(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     let existing: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT is_system FROM forward_rules WHERE id = ?"))
         .bind(id)

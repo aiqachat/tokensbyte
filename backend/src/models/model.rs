@@ -7,10 +7,10 @@ pub struct Model {
     pub mid: String,        // 6位系统识别码，永久不变
     pub name: String,
     pub model_id: String,
-    pub provider_id: Option<i32>,
-    pub type_id: Option<i32>,
+    pub provider_id: Option<i64>,
+    pub type_id: Option<i64>,
     pub group_ratios: String, // {"default": 1.0, "vip": 0.8}
-    pub billing_rule_id: Option<i32>,
+    pub billing_rule_id: Option<i64>,
     pub pre_deduction: f64,
     pub is_active: i32,
     pub forward_rule_ids: Option<String>,
@@ -27,7 +27,7 @@ pub struct Model {
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct BillingRule {
-    pub id: i32,
+    pub id: i64,
     pub name: String,
     pub billing_type: String,
     pub prompt_rate: f64,
@@ -93,7 +93,7 @@ pub struct PricingTier {
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ForwardRule {
-    pub id: i32,
+    pub id: i64,
     pub name: String,
     pub rule_type: String,
     pub category: String,
@@ -133,7 +133,7 @@ pub fn default_active() -> i32 { 1 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ModelProvider {
-    pub id: i32,
+    pub id: i64,
     pub name: String,
     pub sort_order: i32,
     pub is_active: i32,
@@ -148,7 +148,7 @@ pub struct ModelProvider {
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ModelType {
-    pub id: i32,
+    pub id: i64,
     pub name: String,
     pub sort_order: i32,
     pub is_active: i32,
@@ -162,7 +162,7 @@ pub struct ModelType {
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct ClassificationCount {
-    pub id: Option<i32>,
+    pub id: Option<i64>,
     pub name: String,
     #[serde(default)]
     pub is_system: i32,
@@ -190,12 +190,12 @@ impl Model {
 pub struct CreateModelRequest {
     pub name: String,
     pub model_id: String,
-    pub provider_id: Option<i32>,
-    pub type_id: Option<i32>,
+    pub provider_id: Option<i64>,
+    pub type_id: Option<i64>,
     pub group_ratios: Option<serde_json::Value>,
-    pub billing_rule_id: Option<i32>,
+    pub billing_rule_id: Option<i64>,
     pub pre_deduction: Option<f64>,
-    pub forward_rule_ids: Option<Vec<i32>>,
+    pub forward_rule_ids: Option<Vec<i64>>,
     pub is_active: Option<i32>,
     pub enable_log_content: Option<i32>,
     pub site_discount: Option<f64>,
@@ -207,13 +207,13 @@ pub struct CreateModelRequest {
 pub struct UpdateModelRequest {
     pub name: Option<String>,
     pub model_id: Option<String>,
-    pub provider_id: Option<i32>,
-    pub type_id: Option<i32>,
+    pub provider_id: Option<i64>,
+    pub type_id: Option<i64>,
     pub group_ratios: Option<serde_json::Value>,
-    pub billing_rule_id: Option<i32>,
+    pub billing_rule_id: Option<i64>,
     pub pre_deduction: Option<f64>,
     pub is_active: Option<i32>,
-    pub forward_rule_ids: Option<Vec<i32>>,
+    pub forward_rule_ids: Option<Vec<i64>>,
     pub enable_log_content: Option<i32>,
     pub site_discount: Option<f64>,
     pub site_discount_enabled: Option<i32>,

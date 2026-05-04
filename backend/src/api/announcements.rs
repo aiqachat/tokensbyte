@@ -71,7 +71,7 @@ pub async fn create_announcement(
 
 pub async fn update_announcement(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Json(payload): Json<UpdateAnnouncementReq>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let current: Announcement = sqlx::query_as(
@@ -111,7 +111,7 @@ pub async fn update_announcement(
 
 pub async fn delete_announcement(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     sqlx::query(&state.db.format_query("DELETE FROM announcements WHERE id = ?"))
         .bind(id)

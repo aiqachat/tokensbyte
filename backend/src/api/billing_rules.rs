@@ -31,7 +31,7 @@ pub async fn create_rule(
     let pricing_tiers_str = serde_json::to_string(&req.pricing_tiers.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
     let extended_config_str = serde_json::to_string(&req.extended_config.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     
-    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM billing_rules WHERE name = ?"))
+    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM billing_rules WHERE name = ?"))
         .bind(&req.name)
         .fetch_optional(&state.db.pool)
         .await?;
@@ -46,7 +46,7 @@ pub async fn create_rule(
         pid_val = format!("6{:04}", rand::thread_rng().gen_range(0..10000));
     }
 
-    let id_i32 = sqlx::query(
+    let id_i64 = sqlx::query(
         &state.db.format_query(r#"INSERT INTO billing_rules 
             (name, billing_type, prompt_rate, completion_rate, cached_rate, fixed_rate, duration_rate, billing_rule, pricing_tiers, extended_config, is_active, pid) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"#)
@@ -65,10 +65,10 @@ pub async fn create_rule(
     .bind(&pid_val)
     .fetch_one(&state.db.pool)
     .await?
-    .get::<i32, _>("id");
+    .get::<i64, _>("id");
 
     let rule = sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ?"))
-        .bind(id_i32)
+        .bind(id_i64)
         .fetch_one(&state.db.pool)
         .await?;
 
@@ -77,7 +77,7 @@ pub async fn create_rule(
 
 pub async fn update_rule(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Json(mut req): Json<UpdateBillingRuleRequest>,
 ) -> AppResult<Json<BillingRule>> {
     if let Some(name) = &mut req.name {
@@ -85,7 +85,7 @@ pub async fn update_rule(
         if name.is_empty() {
             return Err(crate::error::AppError::BadRequest("规则名称不能为空".to_string()));
         }
-        let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM billing_rules WHERE name = ? AND id != ?"))
+        let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM billing_rules WHERE name = ? AND id != ?"))
             .bind(&*name)
             .bind(id)
             .fetch_optional(&state.db.pool)
@@ -144,7 +144,7 @@ pub async fn update_rule(
 
 pub async fn delete_rule(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     let rule: Option<BillingRule> = sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ?"))
         .bind(id)

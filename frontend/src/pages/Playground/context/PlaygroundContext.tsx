@@ -113,6 +113,9 @@ interface PlaygroundContextValue {
   // 素材附件
   attachedAssets: { asset: any; fullUrl: string; file?: File }[];
   setAttachedAssets: React.Dispatch<React.SetStateAction<{ asset: any; fullUrl: string; file?: File }[]>>;
+  // 存储统计
+  storageStats: any;
+  loadStorageStats: () => Promise<void>;
 }
 
 const PlaygroundContext = createContext<PlaygroundContextValue | null>(null);
@@ -144,13 +147,14 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
   const [isTokenModalVisible, setIsTokenModalVisible] = useState(false);
   const [isSettingsCollapsed, setIsSettingsCollapsed] = useState(false);
   const [isResourceWidgetVisible, setIsResourceWidgetVisible] = useState(false);
-  const [isSettingsWidgetVisible, setIsSettingsWidgetVisible] = useState(true);
+  const [isSettingsWidgetVisible, setIsSettingsWidgetVisible] = useState(false);
   const [isGenLogVisible, setIsGenLogVisible] = useState(false);
   const [attachedAssets, setAttachedAssets] = useState<{ asset: any; fullUrl: string; file?: File }[]>([]);
 
   // --- 项目管理 ---
   const [projects, setProjects] = useState<PlaygroundProject[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(null);
+  const [storageStats, setStorageStats] = useState<any>(null);
 
   // --- 高频画布状态 ---
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
@@ -216,7 +220,6 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
     setIsModelDrawerVisible(false);
   }, [models, initParamDefaults]);
 
-  // --- 项目管理函数 ---
   const loadProjects = useCallback(async () => {
     try {
       const res = await request.get('/playground/projects') as any;
@@ -225,6 +228,15 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
       }
     } catch (e) {
       console.error('加载项目列表失败', e);
+    }
+  }, []);
+
+  const loadStorageStats = useCallback(async () => {
+    try {
+      const res = await request.get('/playground/storage-stats') as any;
+      setStorageStats(res);
+    } catch (e) {
+      console.error('加载存储统计失败', e);
     }
   }, []);
 
@@ -344,8 +356,9 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
       } finally {
         setLoading(false);
       }
+      loadStorageStats();
     })();
-  }, []);
+  }, [loadStorageStats]);
 
   // --- 加载当前项目的画布数据 ---
   React.useEffect(() => {
@@ -370,18 +383,33 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
                 }
               }
               const fixedNodes = canvasData.nodes.map((n: any) => {
-                if ((n.status === 'completed' && !n.resultData) || n.status === 'loading') {
-                  const matches = assetGroup.get(n.taskData?.prompt || '');
-                  if (matches && matches.length > 0) {
-                    const match = matches.shift(); // 消费掉一个
-                    return {
-                      ...n,
-                      status: 'completed',
-                      resultData: match.asset_type === 'image'
-                        ? { data: [{ url: match.file_url }] }
-                        : { content: { video_url: match.file_url } },
-                    };
+                let match = null;
+                // Find matching asset by prompt
+                const matches = assetGroup.get(n.taskData?.prompt || '');
+                if (matches && matches.length > 0) {
+                  // Only consume the match if we actually need it (for resultData or missing model info)
+                  if ((n.status === 'completed' && !n.resultData) || n.status === 'loading' || !n.taskData?.model_id) {
+                    match = matches.shift();
                   }
+                }
+
+                if (match) {
+                  return {
+                    ...n,
+                    status: 'completed',
+                    taskData: {
+                      ...n.taskData,
+                      created_at: match.created_at || n.taskData?.created_at,
+                      model_id: match.model_id || n.taskData?.model_id,
+                      model_name: match.model_name || n.taskData?.model_name,
+                      file_size: match.file_size || n.taskData?.file_size,
+                      width: match.width || n.taskData?.width,
+                      height: match.height || n.taskData?.height,
+                    },
+                    resultData: n.resultData || (match.asset_type === 'image'
+                      ? { data: [{ url: match.file_url }] }
+                      : { content: { video_url: match.file_url } }),
+                  };
                 }
                 return n;
               });
@@ -406,26 +434,57 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
                 return true;
               });
               if (missingAssets.length > 0) {
+                const TARGET_HEIGHT = 320;
+                const GAP = 5;
                 const maxZIndex = Math.max(...fixedNodes.map((n: any) => n.zIndex || 0), 0);
-                const maxX = Math.max(...fixedNodes.map((n: any) => (n.x || 0) + (n.width || 480)), 600);
+                
+                // 寻找现有的最右边界
+                let currentX = Math.max(...fixedNodes.map((n: any) => (n.x || 0) + (n.width || 480)), 600) + GAP;
+                // 尝试对齐到最后一行的 Y
+                let currentY = 100;
+                if (fixedNodes.length > 0) {
+                  currentY = fixedNodes[fixedNodes.length - 1].y || 100;
+                }
+
                 missingAssets.forEach((asset: any, idx: number) => {
-                  let pos = { x: maxX + 40 + (idx % 2) * 520, y: 100 + Math.floor(idx / 2) * 380 };
+                  let pos = { x: currentX, y: currentY };
+                  let savedPosFound = false;
                   try {
                     const nd = JSON.parse(asset.canvas_node_data);
-                    if (nd?.x !== undefined) pos = { x: nd.x, y: nd.y };
+                    if (nd?.x !== undefined) {
+                      pos = { x: nd.x, y: nd.y };
+                      savedPosFound = true;
+                    }
                   } catch {}
+
+                  const origW = asset.width || 480;
+                  const origH = asset.height || 320;
+                  const targetWidth = (origW / origH) * TARGET_HEIGHT;
+
                   fixedNodes.push({
                     id: `asset-${asset.id}`,
                     type: asset.asset_type,
                     status: 'completed' as const,
-                    taskData: { prompt: asset.prompt },
+                    taskData: { 
+                      prompt: asset.prompt, 
+                      created_at: asset.created_at, 
+                      model_id: asset.model_id, 
+                      model_name: asset.model_name,
+                      file_size: asset.file_size,
+                      width: asset.width,
+                      height: asset.height
+                    },
                     resultData: asset.asset_type === 'image'
                       ? { data: [{ url: asset.file_url }] }
                       : { content: { video_url: asset.file_url } },
                     x: pos.x, y: pos.y,
-                    width: asset.width || 480, height: asset.height || 320,
+                    width: targetWidth, height: TARGET_HEIGHT,
                     zIndex: maxZIndex + idx + 1,
                   });
+                  
+                  if (!savedPosFound) {
+                    currentX += targetWidth + GAP;
+                  }
                 });
               }
 
@@ -440,28 +499,74 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
 
         // canvas_data 为空但有 assets，从 assets 重建节点
         if (assets.length > 0) {
-          const rebuiltNodes = assets
-            .filter((a: any) => a.asset_type === 'image' || a.asset_type === 'video')
-            .map((asset: any, idx: number) => {
-              let pos = { x: 100 + (idx % 3) * 520, y: 100 + Math.floor(idx / 3) * 380 };
-              try {
-                const nd = JSON.parse(asset.canvas_node_data);
-                if (nd?.x !== undefined) pos = { x: nd.x, y: nd.y };
-              } catch {}
-              return {
-                id: `asset-${asset.id}`,
-                type: asset.asset_type,
-                status: 'completed' as const,
-                taskData: { prompt: asset.prompt },
-                resultData: asset.asset_type === 'image'
-                  ? { data: [{ url: asset.file_url }] }
-                  : { content: { video_url: asset.file_url } },
-                x: pos.x, y: pos.y,
-                width: asset.width || 480, height: asset.height || 320,
-                zIndex: idx + 1,
-              };
-            });
-          if (rebuiltNodes.length > 0) setNodes(rebuiltNodes);
+          const TARGET_HEIGHT = 320;
+          const GAP = 5;
+          const validAssets = assets.filter((a: any) => a.asset_type === 'image' || a.asset_type === 'video');
+          const COLS = Math.max(3, Math.ceil(Math.sqrt(validAssets.length)));
+          
+          let currentX = 0;
+          let currentY = 0;
+          let maxRowWidth = 0;
+
+          const rebuiltNodes = validAssets.map((asset: any, idx: number) => {
+            const origW = asset.width || 480;
+            const origH = asset.height || 320;
+            const targetWidth = (origW / origH) * TARGET_HEIGHT;
+            
+            if (idx > 0 && idx % COLS === 0) {
+              currentX = 0;
+              currentY += TARGET_HEIGHT + GAP;
+            }
+            
+            const node = {
+              id: `asset-${asset.id}`,
+              type: asset.asset_type,
+              status: 'completed' as const,
+              taskData: { 
+                prompt: asset.prompt, 
+                created_at: asset.created_at, 
+                model_id: asset.model_id, 
+                model_name: asset.model_name,
+                file_size: asset.file_size,
+                width: asset.width,
+                height: asset.height
+              },
+              resultData: asset.asset_type === 'image'
+                ? { data: [{ url: asset.file_url }] }
+                : { content: { video_url: asset.file_url } },
+              x: currentX, y: currentY,
+              width: targetWidth, height: TARGET_HEIGHT,
+              zIndex: idx + 1,
+            };
+            
+            currentX += targetWidth + GAP;
+            if (currentX > maxRowWidth) {
+              maxRowWidth = currentX;
+            }
+            
+            return node;
+          });
+
+          if (rebuiltNodes.length > 0) {
+            setNodes(rebuiltNodes);
+            
+            // 计算边界框并居中缩放
+            const totalWidth = maxRowWidth > 0 ? maxRowWidth - GAP : 0;
+            const totalHeight = currentY + TARGET_HEIGHT;
+            
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            
+            // 留出 20% 的边距
+            const scaleX = (viewportWidth * 0.8) / (totalWidth || 1);
+            const scaleY = (viewportHeight * 0.8) / (totalHeight || 1);
+            const targetScale = Math.min(1, scaleX, scaleY);
+            
+            const translateX = (viewportWidth - totalWidth * targetScale) / 2;
+            const translateY = (viewportHeight - totalHeight * targetScale) / 2;
+            
+            setCanvasTransform({ x: translateX, y: translateY, scale: targetScale });
+          }
         }
       } catch (e) {
         console.warn('加载项目画布数据失败', e);
@@ -583,6 +688,7 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
     projects, currentProjectId, setCurrentProjectId,
     loadProjects, createProject, saveCanvasState,
     attachedAssets, setAttachedAssets,
+    storageStats, loadStorageStats,
   }), [
     loading, models, selectedMid, currentModel, categories,
     activeCategory, modelsInCategory, searchModelKeyword,
@@ -592,6 +698,7 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
     handleCategoryChange, handleSelectModel, initParamDefaults,
     projects, currentProjectId, loadProjects, createProject, saveCanvasState,
     attachedAssets, setAttachedAssets,
+    storageStats, loadStorageStats,
   ]);
 
   return (

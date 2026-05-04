@@ -109,7 +109,7 @@ pub async fn admin_login(
         // Fetch permissions
         let permissions = if let Some(group_id) = user.admin_group_id {
             let row: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT permissions FROM admin_groups WHERE id = ?"))
-                .bind(group_id as i32)
+                .bind(group_id)
                 .fetch_optional(&state.db.pool)
                 .await?;
             
@@ -205,7 +205,7 @@ pub async fn register(
                     
                 if let Some(row) = level_row_opt {
                     let enabled: i64 = row.try_get::<i64, _>("marketing_enabled")
-                        .unwrap_or_else(|_| row.try_get::<i32, _>("marketing_enabled").unwrap_or(0) as i64);
+                        .unwrap_or_else(|_| row.try_get::<i64, _>("marketing_enabled").unwrap_or(0) as i64);
                         
                     if enabled == 1 {
                         marketing_override = true;
@@ -213,7 +213,7 @@ pub async fn register(
                         let invitee_rew: f64 = row.try_get::<f64, _>("invite_reward_invitee").unwrap_or(0.0);
                         let inviter_rew: f64 = row.try_get::<f64, _>("invite_reward_inviter").unwrap_or(0.0);
                         let limit: i64 = row.try_get::<i64, _>("daily_invite_limit")
-                            .unwrap_or_else(|_| row.try_get::<i32, _>("daily_invite_limit").unwrap_or(10) as i64);
+                            .unwrap_or_else(|_| row.try_get::<i64, _>("daily_invite_limit").unwrap_or(10) as i64);
                             
                         gift_amount = invitee_rew;
                         gift_remark = "走专属链接注册特权赠送".to_string();
@@ -464,7 +464,7 @@ pub async fn register_email(
 
                 if let Some(row) = level_row_opt {
                     let enabled: i64 = row.try_get::<i64, _>("marketing_enabled")
-                        .unwrap_or_else(|_| row.try_get::<i32, _>("marketing_enabled").unwrap_or(0) as i64);
+                        .unwrap_or_else(|_| row.try_get::<i64, _>("marketing_enabled").unwrap_or(0) as i64);
 
                     if enabled == 1 {
                         marketing_override = true;
@@ -472,7 +472,7 @@ pub async fn register_email(
                         let invitee_rew: f64 = row.try_get::<f64, _>("invite_reward_invitee").unwrap_or(0.0);
                         let inviter_rew: f64 = row.try_get::<f64, _>("invite_reward_inviter").unwrap_or(0.0);
                         let limit: i64 = row.try_get::<i64, _>("daily_invite_limit")
-                            .unwrap_or_else(|_| row.try_get::<i32, _>("daily_invite_limit").unwrap_or(10) as i64);
+                            .unwrap_or_else(|_| row.try_get::<i64, _>("daily_invite_limit").unwrap_or(10) as i64);
 
                         gift_amount = invitee_rew;
                         gift_remark = "走专属链接注册特权赠送".to_string();
@@ -650,7 +650,7 @@ pub async fn register_mobile(
 
                 if let Some(row) = level_row_opt {
                     let enabled: i64 = row.try_get::<i64, _>("marketing_enabled")
-                        .unwrap_or_else(|_| row.try_get::<i32, _>("marketing_enabled").unwrap_or(0) as i64);
+                        .unwrap_or_else(|_| row.try_get::<i64, _>("marketing_enabled").unwrap_or(0) as i64);
 
                     if enabled == 1 {
                         marketing_override = true;
@@ -658,7 +658,7 @@ pub async fn register_mobile(
                         let invitee_rew: f64 = row.try_get::<f64, _>("invite_reward_invitee").unwrap_or(0.0);
                         let inviter_rew: f64 = row.try_get::<f64, _>("invite_reward_inviter").unwrap_or(0.0);
                         let limit: i64 = row.try_get::<i64, _>("daily_invite_limit")
-                            .unwrap_or_else(|_| row.try_get::<i32, _>("daily_invite_limit").unwrap_or(10) as i64);
+                            .unwrap_or_else(|_| row.try_get::<i64, _>("daily_invite_limit").unwrap_or(10) as i64);
 
                         gift_amount = invitee_rew;
                         gift_remark = "走专属链接注册特权赠送".to_string();
