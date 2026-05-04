@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ConfigProvider, theme, Input, Tooltip, message, Popover, Avatar, Button, Modal } from 'antd';
+import { ConfigProvider, theme, Input, Tooltip, message, Popover, Avatar, Button, Modal, App } from 'antd';
 import {
   SearchOutlined, PlusOutlined, DeleteOutlined, EditOutlined,
   AppstoreOutlined, TeamOutlined, AudioOutlined, ArrowUpOutlined,
@@ -51,6 +51,7 @@ const formatDateGroup = (dateStr: string): string => {
 const PlaygroundHome: React.FC = () => {
   const { themeMode } = useThemeStore();
   const navigate = useNavigate();
+  const { modal, message: appMessage } = App.useApp();
   const { user, logout } = useAuthStore();
   const [siteName, setSiteName] = useState<string>('TokensByte');
   const [siteLogo, setSiteLogo] = useState<string>('');
@@ -161,7 +162,7 @@ const PlaygroundHome: React.FC = () => {
         navigate(`/playground/${res.id}`);
       }
     } catch {
-      message.error('创建项目失败');
+      appMessage.error('创建项目失败');
     }
   }, [navigate]);
 
@@ -173,13 +174,15 @@ const PlaygroundHome: React.FC = () => {
     e.stopPropagation();
     
     if (projects.length <= 1) {
-      message.info('由于这是您的最后一个项目，建议直接编辑或重命名使用。');
+      appMessage.info('由于这是您的最后一个项目，建议直接编辑或重命名使用。');
       return;
     }
 
-    Modal.confirm({
-      title: '确认删除此项目？',
-      content: <span style={{ color: '#ff4d4f' }}>警告：此操作为物理删除，删除后该项目下的所有内容和数据将永久丢失，无法恢复！</span>,
+    modal.confirm({
+      title: <span style={{ color: '#E3E3E3' }}>确认删除此项目？</span>,
+      content: <span style={{ color: 'rgba(255,77,79,0.8)' }}>警告：此操作为物理删除，删除后该项目下的所有内容和数据将永久丢失，无法恢复！</span>,
+      wrapClassName: 'dark-confirm-modal',
+      className: 'dark-confirm-modal',
       okText: '确定删除',
       okType: 'danger',
       cancelText: '取消',
@@ -187,10 +190,10 @@ const PlaygroundHome: React.FC = () => {
       async onOk() {
         try {
           await request.delete(`/playground/projects/${projectId}`);
-          message.success('项目已删除');
+          appMessage.success('项目已删除');
           await loadProjects();
         } catch {
-          message.error('删除失败');
+          appMessage.error('删除失败');
         }
       },
     });
@@ -203,7 +206,7 @@ const PlaygroundHome: React.FC = () => {
       await loadProjects();
       setEditingId(null);
     } catch {
-      message.error('重命名失败');
+      appMessage.error('重命名失败');
     }
   }, [editingName, loadProjects]);
 
@@ -255,6 +258,46 @@ const PlaygroundHome: React.FC = () => {
           @keyframes pgPulse {
             0%, 100% { opacity: 0.4; }
             50% { opacity: 0.15; }
+          }
+          
+          /* 强制覆盖 Modal.confirm 的深色样式 */
+          .dark-confirm-modal .ant-modal-content,
+          .dark-confirm-modal.ant-modal-content,
+          .ant-modal-wrap.dark-confirm-modal .ant-modal-content {
+            background: #1e1f20 !important;
+            border: 1px solid #444746 !important;
+            border-radius: 16px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+          }
+          .dark-confirm-modal .ant-modal-confirm-title { color: #e3e3e3 !important; }
+          .dark-confirm-modal .ant-modal-confirm-content { color: #c4c7c5 !important; }
+          .dark-confirm-modal .ant-btn-default {
+            background: transparent !important;
+            border: 1px solid #444746 !important;
+            color: #e3e3e3 !important;
+            border-radius: 8px !important;
+            outline: none !important;
+            box-shadow: none !important;
+          }
+          .dark-confirm-modal .ant-btn-default:hover {
+            background: rgba(255,255,255,0.08) !important;
+            border-color: #8ab4f8 !important;
+            color: #8ab4f8 !important;
+          }
+          .dark-confirm-modal .ant-btn-primary.ant-btn-dangerous {
+            background: rgba(255, 77, 79, 0.15) !important;
+            border: 1px solid rgba(255, 77, 79, 0.3) !important;
+            color: #ff4d4f !important;
+            border-radius: 8px !important;
+            outline: none !important;
+            box-shadow: none !important;
+          }
+          .dark-confirm-modal .ant-btn-primary.ant-btn-dangerous:hover {
+            background: rgba(255, 77, 79, 0.25) !important;
+            border-color: rgba(255, 77, 79, 0.5) !important;
+          }
+          .dark-confirm-modal .ant-modal-confirm-btns {
+            margin-top: 24px !important;
           }
         `}</style>
 
@@ -420,8 +463,8 @@ const PlaygroundHome: React.FC = () => {
                     onMouseEnter={() => setHoveredId(project.id)}
                     onMouseLeave={() => setHoveredId(null)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 14,
-                      padding: '10px', borderRadius: 12, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '8px', borderRadius: 12, cursor: 'pointer',
                       transition: 'all 0.2s ease',
                       background: selectedProject?.id === project.id
                         ? (themeMode === 'dark' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.12)')
@@ -457,7 +500,7 @@ const PlaygroundHome: React.FC = () => {
                     </div>
 
                     {/* 信息 */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0, height: 40, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
                       {editingId === project.id ? (
                         <Input
                           size="small" value={editingName} autoFocus
@@ -475,19 +518,27 @@ const PlaygroundHome: React.FC = () => {
                           <div
                             onClick={(e) => { e.stopPropagation(); handleOpenProject(project.id); }}
                             style={{
-                              fontSize: 14, fontWeight: 600, color: themeMode === 'dark' ? '#fff' : '#000',
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              display: 'flex', alignItems: 'center', gap: 6,
+                              overflow: 'hidden', whiteSpace: 'nowrap',
+                              lineHeight: '20px',
                             }}
                           >
-                            {project.name}
-                          </div>
-                          <div style={{ fontSize: 11, color: themeMode === 'dark' ? '#71717a' : '#999', marginTop: 2, fontFamily: 'monospace' }}>
-                            ID: {project.id}
+                            <span style={{
+                              fontSize: 14, fontWeight: 600, color: themeMode === 'dark' ? '#e4e4e7' : '#111',
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {project.name}
+                            </span>
+                            <span style={{ fontSize: 11, color: themeMode === 'dark' ? '#71717a' : '#999', fontFamily: 'monospace', flexShrink: 0 }}>
+                              ID:{project.id}
+                            </span>
                           </div>
 
-                          <div style={{ fontSize: 12, color: themeMode === 'dark' ? '#a1a1aa' : '#666', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <DesktopOutlined /> 
-                            {new Date(project.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          <div style={{ fontSize: 12, color: themeMode === 'dark' ? '#a1a1aa' : '#666', lineHeight: '18px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <DesktopOutlined /> 
+                              {new Date(project.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
                           </div>
                         </>
                       )}
@@ -502,11 +553,11 @@ const PlaygroundHome: React.FC = () => {
                             style={{
                               width: 32, height: 32, borderRadius: 8,
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              color: themeMode === 'dark' ? 'rgba(255,77,79,0.7)' : 'rgba(255,77,79,0.8)',
+                              color: themeMode === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)',
                               cursor: 'pointer', transition: 'all 0.2s',
                             }}
-                            onMouseEnter={(e: any) => { e.currentTarget.style.background = 'rgba(255,77,79,0.1)'; e.currentTarget.style.color = '#ff4d4f'; }}
-                            onMouseLeave={(e: any) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = themeMode === 'dark' ? 'rgba(255,77,79,0.7)' : 'rgba(255,77,79,0.8)'; }}
+                            onMouseEnter={(e: any) => { e.currentTarget.style.background = themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'; e.currentTarget.style.color = themeMode === 'dark' ? '#fff' : '#000'; }}
+                            onMouseLeave={(e: any) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = themeMode === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)'; }}
                           >
                             <DeleteOutlined style={{ fontSize: 14 }} />
                           </div>
@@ -574,7 +625,7 @@ const PlaygroundHome: React.FC = () => {
                   <div style={{ 
                     height: '100%', 
                     width: `${Math.min(100, (storageStats.project_count / (storageStats.max_projects || 1)) * 100)}%`,
-                    background: (storageStats.project_count >= storageStats.max_projects) ? '#ff4d4f' : '#1677ff',
+                    background: (storageStats.project_count >= storageStats.max_projects) ? '#ff4d4f' : (themeMode === 'dark' ? '#fff' : '#333'),
                     borderRadius: 2,
                     transition: 'width 0.3s ease'
                   }} />
@@ -591,7 +642,7 @@ const PlaygroundHome: React.FC = () => {
                   <div style={{ 
                     height: '100%', 
                     width: `${Math.min(100, storageStats.usage_percent || 0)}%`,
-                    background: (storageStats.usage_percent || 0) > 90 ? '#ff4d4f' : '#1677ff',
+                    background: (storageStats.usage_percent || 0) > 90 ? '#ff4d4f' : (themeMode === 'dark' ? '#fff' : '#333'),
                     borderRadius: 2,
                     transition: 'width 0.3s ease'
                   }} />

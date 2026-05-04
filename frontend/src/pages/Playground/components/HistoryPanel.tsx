@@ -5,7 +5,7 @@
  * 数据来源：后端 /playground/projects API
  */
 import React, { useState, useRef, useCallback } from 'react';
-import { Input, Typography, Tooltip, message, Modal } from 'antd';
+import { Input, Typography, Tooltip, message, Modal, App } from 'antd';
 import {
   SearchOutlined, AppstoreOutlined, TeamOutlined,
   DesktopOutlined, VideoCameraOutlined, PictureOutlined,
@@ -45,6 +45,7 @@ const HistoryPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'my' | 'shared'>('my');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [hoveredProjectId, setHoveredProjectId] = useState<number | null>(null);
+  const { modal, message: appMessage } = App.useApp();
   const panelRef = useRef<HTMLDivElement>(null);
 
   const isDragging = useRef(false);
@@ -207,30 +208,32 @@ const HistoryPanel: React.FC = () => {
     const id = await createProject();
     if (id) {
       setNodes([]);
-      message.success('新项目已创建');
+      appMessage.success('新项目已创建');
     }
   }, [createProject, setNodes]);
 
   // 删除项目
   const handleDeleteProject = useCallback((e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
-    Modal.confirm({
-      title: '确认删除此项目？',
-      content: <span style={{ color: '#ff4d4f' }}>警告：此操作为物理删除，删除后该项目下的所有内容和数据将永久丢失，无法恢复！</span>,
+    modal.confirm({
+      title: <span style={{ color: '#E3E3E3' }}>确认删除此项目？</span>,
+      content: <span style={{ color: 'rgba(255,77,79,0.8)' }}>警告：此操作为物理删除，删除后该项目下的所有内容和数据将永久丢失，无法恢复！</span>,
+      wrapClassName: 'dark-confirm-modal',
+      className: 'dark-confirm-modal',
       okText: '确定删除',
       okType: 'danger',
       cancelText: '取消',
       onOk: async () => {
         try {
           await request.delete(`/playground/projects/${projectId}`);
-          message.success('项目已删除');
+          appMessage.success('项目已删除');
           await loadProjects();
           if (projectId === currentProjectId) {
             setCurrentProjectId(null);
             setNodes([]);
           }
         } catch {
-          message.error('删除失败');
+          appMessage.error('删除失败');
         }
       }
     });
@@ -247,7 +250,7 @@ const HistoryPanel: React.FC = () => {
       await loadProjects();
       setEditingProjectId(null);
     } catch {
-      message.error('重命名失败');
+      appMessage.error('重命名失败');
     }
   }, [editingName, loadProjects]);
 
@@ -630,8 +633,47 @@ const HistoryPanel: React.FC = () => {
           width: 0px;
           background: transparent;
         }
-      `}
-      </style>
+        
+        /* 强制覆盖 Modal.confirm 的深色样式 */
+        .dark-confirm-modal .ant-modal-content,
+        .dark-confirm-modal.ant-modal-content,
+        .ant-modal-wrap.dark-confirm-modal .ant-modal-content {
+          background: #1e1f20 !important;
+          border: 1px solid #444746 !important;
+          border-radius: 16px !important;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+        }
+        .dark-confirm-modal .ant-modal-confirm-title { color: #e3e3e3 !important; }
+        .dark-confirm-modal .ant-modal-confirm-content { color: #c4c7c5 !important; }
+        .dark-confirm-modal .ant-btn-default {
+          background: transparent !important;
+          border: 1px solid #444746 !important;
+          color: #e3e3e3 !important;
+          border-radius: 8px !important;
+          outline: none !important;
+          box-shadow: none !important;
+        }
+        .dark-confirm-modal .ant-btn-default:hover {
+          background: rgba(255,255,255,0.08) !important;
+          border-color: #8ab4f8 !important;
+          color: #8ab4f8 !important;
+        }
+        .dark-confirm-modal .ant-btn-primary.ant-btn-dangerous {
+          background: rgba(255, 77, 79, 0.15) !important;
+          border: 1px solid rgba(255, 77, 79, 0.3) !important;
+          color: #ff4d4f !important;
+          border-radius: 8px !important;
+          outline: none !important;
+          box-shadow: none !important;
+        }
+        .dark-confirm-modal .ant-btn-primary.ant-btn-dangerous:hover {
+          background: rgba(255, 77, 79, 0.25) !important;
+          border-color: rgba(255, 77, 79, 0.5) !important;
+        }
+        .dark-confirm-modal .ant-modal-confirm-btns {
+          margin-top: 24px !important;
+        }
+      `}</style>
     </div>
   );
 };

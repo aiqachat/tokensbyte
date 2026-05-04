@@ -233,3 +233,51 @@ body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .
   font-weight: 500;
   font-size: 12px;
 }
+
+/* 自定义深色删除确认弹窗 */
+.dark-confirm-modal .ant-modal-content,
+.dark-confirm-modal.ant-modal-content,
+.ant-modal.dark-confirm-modal .ant-modal-content,
+.ant-modal-wrap.dark-confirm-modal .ant-modal-content {
+  background: #1e1f20 !important;
+  border: 1px solid #444746 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+}
+
+.dark-confirm-modal .ant-modal-confirm-title {
+  color: #e3e3e3 !important;
+}
+
+.dark-confirm-modal .ant-modal-confirm-content {
+  color: #c4c7c5 !important;
+}
+
+.dark-confirm-modal .ant-btn-default {
+  background: transparent !important;
+  border: 1px solid #444746 !important;
+  color: #e3e3e3 !important;
+  border-radius: 8px !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.dark-confirm-modal .ant-btn-default:hover {
+  background: rgba(255,255,255,0.08) !important;
+  border-color: #8ab4f8 !important;
+  color: #8ab4f8 !important;
+}
+
+.dark-confirm-modal .ant-btn-primary.ant-btn-dangerous {
+  background: rgba(255, 77, 79, 0.15) !important;
+  border: 1px solid rgba(255, 77, 79, 0.3) !important;
+  color: #ff4d4f !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.dark-confirm-modal .ant-btn-primary.ant-btn-dangerous:hover {
+  background: rgba(255, 77, 79, 0.25) !important;
+  border-color: rgba(255, 77, 79, 0.5) !important;
+}
