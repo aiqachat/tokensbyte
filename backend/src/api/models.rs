@@ -120,7 +120,7 @@ pub async fn create_model(
     let is_active = req.is_active.unwrap_or(1);
     let enable_log_content = req.enable_log_content.unwrap_or(0);
 
-    let id_i32 = sqlx::query(
+    let new_id = sqlx::query(
         &state.db.format_query(r#"INSERT INTO models (mid, name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, site_discount, site_discount_enabled, is_active, enable_log_content, logo)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#)
@@ -141,10 +141,10 @@ pub async fn create_model(
     .bind(&req.logo)
     .fetch_one(&state.db.pool)
     .await?
-    .get::<i32, _>("id");
+    .get::<i64, _>("id");
 
     let model = sqlx::query_as(&state.db.format_query("SELECT * FROM models WHERE id = ?"))
-        .bind(id_i32)
+        .bind(new_id)
         .fetch_one(&state.db.pool)
         .await?;
 
@@ -153,7 +153,7 @@ pub async fn create_model(
 
 pub async fn update_model(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Json(mut req): Json<UpdateModelRequest>,
 ) -> AppResult<Json<Model>> {
     // Basic trimming if fields are provided
@@ -256,7 +256,7 @@ pub async fn update_model(
 
 pub async fn delete_model(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     sqlx::query(&state.db.format_query("DELETE FROM models WHERE id = ?"))
         .bind(id)
