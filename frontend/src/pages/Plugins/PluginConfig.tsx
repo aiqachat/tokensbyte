@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense } from 'react';
-import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App } from 'antd';
+import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App, Segmented } from 'antd';
 import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined, MessageOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
@@ -152,11 +152,16 @@ const PluginConfigInner: React.FC = () => {
   const [mpModels, setMpModels] = useState<any[]>([]);
   const [savingMarketplace, setSavingMarketplace] = useState(false);
   const [mpSearchKeyword, setMpSearchKeyword] = useState('');
+  const [mpProviderFilter, setMpProviderFilter] = useState<string>('all');
+  const [mpTypeFilter, setMpTypeFilter] = useState<string>('all');
+  const [mpStatusFilter, setMpStatusFilter] = useState<string>('all'); // 'all' | 'enabled' | 'disabled'
+  const [mpDisplayMode, setMpDisplayMode] = useState<'whitelist' | 'blacklist'>('whitelist');
 
   const fetchMarketplaceConfig = async () => {
     try {
       const res = await (request.get(`/plugins/${name}/marketplace-models`) as Promise<any>);
       if (res.models) setMpModels(res.models);
+      if (res.display_mode) setMpDisplayMode(res.display_mode);
     } catch (e) {
       console.error(e);
     }
@@ -172,6 +177,7 @@ const PluginConfigInner: React.FC = () => {
     try {
       setSavingMarketplace(true);
       const payload = {
+        display_mode: mpDisplayMode,
         models: mpModels.map(m => ({
           id: m.id,
           enabled: m.mp_enabled,
@@ -1377,6 +1383,12 @@ const PluginConfigInner: React.FC = () => {
         <div>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{name}</Text>
           <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
+          {(() => {
+            const scheme = pgSchemes.find(s => s.id === record.pg_scheme_id);
+            return scheme ? (
+              <div style={{ fontSize: 11, color: '#1677ff', marginTop: 2 }}>已挂载流：{scheme.name}</div>
+            ) : null;
+          })()}
         </div>
       ) },
     {
@@ -1753,11 +1765,32 @@ const PluginConfigInner: React.FC = () => {
   );
 
   // ====== 模型广场管理 模型列表 Tab ======
+  // 提取供应商和类型的唯一列表，用于筛选下拉
+  const mpProviderOptions = Array.from(new Set(mpModels.map(m => m.provider_name).filter(Boolean)));
+  const mpTypeOptions = Array.from(new Set(mpModels.map(m => m.type_name).filter(Boolean)));
+
   const filteredMpModels = mpModels.filter(m => {
-    if (!mpSearchKeyword) return true;
-    const kw = mpSearchKeyword.toLowerCase();
-    return m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid?.toLowerCase()?.includes(kw) || m.provider_name?.toLowerCase()?.includes(kw);
+    // 关键词搜索
+    if (mpSearchKeyword) {
+      const kw = mpSearchKeyword.toLowerCase();
+      const matchText = m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid?.toLowerCase()?.includes(kw) || m.provider_name?.toLowerCase()?.includes(kw);
+      if (!matchText) return false;
+    }
+    // 供应商筛选
+    if (mpProviderFilter !== 'all' && (m.provider_name || '') !== mpProviderFilter) return false;
+    // 类型筛选
+    if (mpTypeFilter !== 'all' && (m.type_name || '') !== mpTypeFilter) return false;
+    // 展示状态筛选
+    if (mpStatusFilter === 'enabled' && !m.mp_enabled) return false;
+    if (mpStatusFilter === 'disabled' && m.mp_enabled) return false;
+    return true;
   });
+
+  // 一键切换当前筛选结果的广场展示状态
+  const handleMpBatchToggle = (enabled: boolean) => {
+    const filteredIds = new Set(filteredMpModels.map(m => m.id));
+    setMpModels(prev => prev.map(m => filteredIds.has(m.id) ? { ...m, mp_enabled: enabled } : m));
+  };
 
   const mpModelColumns = [
     {
@@ -1768,6 +1801,12 @@ const PluginConfigInner: React.FC = () => {
         <div>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{nameVal}</Text>
           <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
+          {(() => {
+            const scheme = pgSchemes.find(s => s.id === record.pg_scheme_id);
+            return scheme ? (
+              <div style={{ fontSize: 11, color: '#1677ff', marginTop: 2 }}>已挂载流：{scheme.name}</div>
+            ) : null;
+          })()}
         </div>
       ) },
     {
@@ -1830,23 +1869,134 @@ const PluginConfigInner: React.FC = () => {
       ) },
   ];
 
-  const marketplaceModelTab = (
+  const marketplaceModelTab = (() => {
+    const enabledCount = mpModels.filter(m => m.mp_enabled).length;
+    const filteredEnabledCount = filteredMpModels.filter(m => m.mp_enabled).length;
+    const allFilteredEnabled = filteredMpModels.length > 0 && filteredEnabledCount === filteredMpModels.length;
+
+    return (
     <div>
       <div style={{ background: _isLight ? '#fff' : '#141414', borderRadius: 8, padding: '20px', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div>
-            <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>模型广场模型列表</Text>
-            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
-              开启展示开关后，该模型将在用户端模型广场中可见。数字越大排序越靠前。已展示 {mpModels.filter(m => m.mp_enabled).length} / {mpModels.length} 个模型
+        {/* 标题 + 一键开关 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>模型广场模型列表</Text>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 12, whiteSpace: 'nowrap' }}>
+              {filteredMpModels.length === mpModels.length ? '一键全部' : `当前 ${filteredMpModels.length} 项`}
             </Text>
+            <Switch
+              checked={allFilteredEnabled}
+              onChange={(val) => handleMpBatchToggle(val)}
+              checkedChildren="全展示"
+              unCheckedChildren="全隐藏"
+            />
           </div>
-          <Input
-            placeholder="搜索模型..."
-            value={mpSearchKeyword}
-            onChange={e => setMpSearchKeyword(e.target.value)}
-            style={{ width: 220 }}
-            allowClear
+        </div>
+
+        {/* 展示模式切换 */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          marginBottom: 16, padding: '10px 14px', borderRadius: 8,
+          background: mpDisplayMode === 'blacklist'
+            ? (_isLight ? 'rgba(22,119,255,0.04)' : 'rgba(22,119,255,0.08)')
+            : (_isLight ? '#fafafa' : 'rgba(255,255,255,0.02)'),
+          border: mpDisplayMode === 'blacklist'
+            ? '1px solid rgba(22,119,255,0.2)'
+            : (_isLight ? '1px solid rgba(0,0,0,0.04)' : '1px solid rgba(255,255,255,0.04)'),
+        }}>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)', fontSize: 12, whiteSpace: 'nowrap' }}>展示模式：</Text>
+          <Segmented
+            options={[
+              { label: '手动选择展示', value: 'whitelist' },
+              { label: '默认全部展示', value: 'blacklist' },
+            ]}
+            value={mpDisplayMode}
+            onChange={(val) => setMpDisplayMode(val as 'whitelist' | 'blacklist')}
+            size="small"
           />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>
+            {mpDisplayMode === 'blacklist'
+              ? '所有模型默认在广场展示（含新添加的），仅需关闭不想展示的。'
+              : '模型默认不展示，需手动逐个开启。'}
+          </Text>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, marginLeft: 'auto' }}>
+            已展示 {enabledCount} / {mpModels.length}
+          </Text>
+        </div>
+
+        {/* 筛选区 */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 16,
+          marginBottom: 16, padding: '16px', borderRadius: 8,
+          background: _isLight ? '#fafafa' : 'rgba(255,255,255,0.02)',
+          border: _isLight ? '1px solid rgba(0,0,0,0.04)' : '1px solid rgba(255,255,255,0.04)',
+        }}>
+          {/* 第一行：搜索 + 供应商 */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
+            <Input
+              placeholder="搜索模型名称 / ID..."
+              value={mpSearchKeyword}
+              onChange={e => setMpSearchKeyword(e.target.value)}
+              style={{ width: 260 }}
+              allowClear
+              size="small"
+            />
+            {/* 供应商筛选 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1 }}>
+              <Text type="secondary" style={{ fontSize: 13, flexShrink: 0, marginTop: 2 }}>供应商:</Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <span 
+                  onClick={() => setMpProviderFilter('all')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpProviderFilter === 'all' ? '#1677ff' : 'transparent', color: mpProviderFilter === 'all' ? '#fff' : 'var(--text-secondary)' }}
+                >全部</span>
+                {mpProviderOptions.map(p => (
+                  <span 
+                    key={p} onClick={() => setMpProviderFilter(p)}
+                    style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpProviderFilter === p ? '#1677ff' : 'transparent', color: mpProviderFilter === p ? '#fff' : 'var(--text-secondary)' }}
+                  >{p}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 第二行：类型 + 状态 */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 32, flexWrap: 'wrap' }}>
+            {/* 类型筛选 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13, flexShrink: 0, marginTop: 2 }}>类型:</Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <span 
+                  onClick={() => setMpTypeFilter('all')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpTypeFilter === 'all' ? '#1677ff' : 'transparent', color: mpTypeFilter === 'all' ? '#fff' : 'var(--text-secondary)' }}
+                >全部</span>
+                {mpTypeOptions.map(t => (
+                  <span 
+                    key={t} onClick={() => setMpTypeFilter(t)}
+                    style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpTypeFilter === t ? '#1677ff' : 'transparent', color: mpTypeFilter === t ? '#fff' : 'var(--text-secondary)' }}
+                  >{t}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* 状态筛选 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13, flexShrink: 0, marginTop: 2 }}>状态:</Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <span 
+                  onClick={() => setMpStatusFilter('all')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpStatusFilter === 'all' ? '#1677ff' : 'transparent', color: mpStatusFilter === 'all' ? '#fff' : 'var(--text-secondary)' }}
+                >全部</span>
+                <span 
+                  onClick={() => setMpStatusFilter('enabled')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpStatusFilter === 'enabled' ? '#1677ff' : 'transparent', color: mpStatusFilter === 'enabled' ? '#fff' : 'var(--text-secondary)' }}
+                >已展示</span>
+                <span 
+                  onClick={() => setMpStatusFilter('disabled')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpStatusFilter === 'disabled' ? '#1677ff' : 'transparent', color: mpStatusFilter === 'disabled' ? '#fff' : 'var(--text-secondary)' }}
+                >未展示</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <Table
@@ -1854,7 +2004,7 @@ const PluginConfigInner: React.FC = () => {
           columns={mpModelColumns}
           rowKey="id"
           size="small"
-          pagination={{ pageSize: 20 }}
+          pagination={{ pageSize: 20, showTotal: (total) => `共 ${total} 项` }}
           style={{ marginBottom: 16 }}
         />
 
@@ -1865,7 +2015,9 @@ const PluginConfigInner: React.FC = () => {
         </div>
       </div>
     </div>
-  );
+    );
+  })();
+
 
   return (
 

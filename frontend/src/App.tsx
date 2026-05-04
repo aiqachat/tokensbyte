@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import Login from './pages/Login/Login';
 import Register from './pages/Login/Register';
 import ForgotPassword from './pages/Login/ForgotPassword';
@@ -46,7 +47,7 @@ import Announcements from './pages/admin/Marketing/Announcements';
 import SystemAbout from './pages/admin/SystemAbout';
 import useAuthStore from './store/auth';
 import useSettingsStore from './store/settings';
-import { useEffect } from 'react';
+
 
 const PrivateRoute = ({ children, adminOnly = false, userOnly = false }: { children: React.ReactNode, adminOnly?: boolean, userOnly?: boolean }) => {
   const { token, user } = useAuthStore();
@@ -58,24 +59,37 @@ const PrivateRoute = ({ children, adminOnly = false, userOnly = false }: { child
 
 const App: React.FC = () => {
   const { fetchSettings } = useSettingsStore();
+  const { i18n } = useTranslation();
 
   useEffect(() => {
-    fetchSettings();
-    
-    // Affiliate & Team Tracking (persist for 3 days)
+    document.documentElement.lang = i18n.language === 'zh' ? 'zh-CN' : 'en';
+  }, [i18n.language]);
+
+  // ─── Affiliate & Team Tracking: 3-day persistent invite codes ───
+  // Runs synchronously on EVERY render cycle so child components
+  // (Register / Login) can read the stored value immediately.
+  // Uses both localStorage AND cookie as dual-storage for maximum reliability.
+  React.useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const aff = params.get('aff');
     const team = params.get('team');
-    
-    const now = Date.now();
-    const expiry = now + 3 * 24 * 60 * 60 * 1000; // 3 days
-    
-    if (aff) {
-      localStorage.setItem('tokensbyte_affiliate_code', JSON.stringify({ value: aff, expiry }));
-    }
-    if (team) {
-      localStorage.setItem('tokensbyte_team_invite', JSON.stringify({ value: team, expiry }));
-    }
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+    const persist = (key: string, value: string) => {
+      const expiry = Date.now() + THREE_DAYS_MS;
+      // localStorage
+      localStorage.setItem(key, JSON.stringify({ value, expiry }));
+      // cookie (HttpOnly=false so JS can read; path=/ so all routes see it)
+      const expires = new Date(expiry).toUTCString();
+      document.cookie = `${key}=${encodeURIComponent(value)}; path=/; expires=${expires}; SameSite=Lax`;
+    };
+
+    if (aff) persist('tokensbyte_affiliate_code', aff);
+    if (team) persist('tokensbyte_team_invite', team);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchSettings();
   }, [fetchSettings]);
 
   return (
@@ -88,11 +102,10 @@ const App: React.FC = () => {
         <Route path="/admin0755" element={<AdminLogin />} />
         <Route path="/legal/:type" element={<LegalPage />} />
 
-        {/* Playground Routes (Full Screen, Independent) */}
         <Route
           path="/playground"
           element={
-            <PrivateRoute userOnly={true}>
+            <PrivateRoute>
               <PlaygroundHome />
             </PrivateRoute>
           }
@@ -100,7 +113,7 @@ const App: React.FC = () => {
         <Route
           path="/playground/:projectId"
           element={
-            <PrivateRoute userOnly={true}>
+            <PrivateRoute>
               <Playground />
             </PrivateRoute>
           }
@@ -110,7 +123,7 @@ const App: React.FC = () => {
         <Route
           path="/models"
           element={
-            <PrivateRoute userOnly={true}>
+            <PrivateRoute>
               <ModelMarketplace />
             </PrivateRoute>
           }

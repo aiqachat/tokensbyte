@@ -198,7 +198,29 @@ const Models: React.FC = () => {
       title: t('models.model_id'),
       dataIndex: 'model_id',
       key: 'model_id',
-      render: (text: string) => <Tag color="blue">{text}</Tag>,
+      render: (text: string, record: ModelModel) => {
+        let ruleNames: string[] = [];
+        try {
+          if (record.forward_rule_ids) {
+            const ruleIds = JSON.parse(record.forward_rule_ids);
+            if (Array.isArray(ruleIds)) {
+              ruleNames = ruleIds.map((id: number) => {
+                const r = allForwardRules.find(rule => rule.id === id);
+                return r ? r.name : null;
+              }).filter(Boolean);
+            }
+          }
+        } catch (e) {}
+
+        return (
+          <Space direction="vertical" size={4} style={{ display: 'flex' }}>
+            <Tag color="blue">{text}</Tag>
+            {ruleNames.length > 0 && (
+              <div style={{ fontSize: 11, color: '#1677ff' }}>已挂载: {ruleNames.join(', ')}</div>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: t('models.billing_type'),
@@ -327,7 +349,29 @@ const Models: React.FC = () => {
                 <CardRow label="MID">
                   <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: 11 }}>{record.mid || '-'}</Tag>
                 </CardRow>
-                <CardRow label="模型ID"><Tag color="blue" style={{ fontSize: 11 }}>{record.model_id}</Tag></CardRow>
+                <CardRow label="模型ID">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <Tag color="blue" style={{ fontSize: 11, width: 'fit-content', margin: 0 }}>{record.model_id}</Tag>
+                    {(() => {
+                      let ruleNames: string[] = [];
+                      try {
+                        if (record.forward_rule_ids) {
+                          const ruleIds = JSON.parse(record.forward_rule_ids);
+                          if (Array.isArray(ruleIds)) {
+                            ruleNames = ruleIds.map((id: number) => {
+                              const r = allForwardRules.find(rule => rule.id === id);
+                              return r ? r.name : null;
+                            }).filter(Boolean);
+                          }
+                        }
+                      } catch (e) {}
+                      if (ruleNames.length > 0) {
+                        return <div style={{ fontSize: 11, color: '#1677ff' }}>已挂载: {ruleNames.join(', ')}</div>;
+                      }
+                      return null;
+                    })()}
+                  </div>
+                </CardRow>
                 <CardRow label="计费类型">
                   <Space size={4}>
                     <Tag color={colors[billingTypeVal]} style={{ margin: 0 }}>{t(`models.type_${billingTypeVal}`)}</Tag>

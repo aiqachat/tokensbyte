@@ -986,12 +986,20 @@ async fn get_marketplace_models(
         &state.db.format_query("SELECT * FROM model_types ORDER BY sort_order ASC")
     ).fetch_all(&state.db.pool).await?;
 
+    // 读取展示模式: whitelist（默认隐藏，手动开启）或 blacklist（默认展示，手动排除）
+    let display_mode = configs.get("mp_display_mode").map(|s| s.as_str()).unwrap_or("whitelist");
+    let is_blacklist = display_mode == "blacklist";
+
     let mut model_list = Vec::new();
     for m in &models {
         let config_key = format!("mp_model_id_{}", m.id);
         let model_conf: serde_json::Value = configs.get(&config_key)
             .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or(json!({"enabled": false, "sort_order": 0, "description": ""}));
+            .unwrap_or(json!({"sort_order": 0, "description": ""}));
+
+        // 在黑名单模式下，没有配置的模型默认展示 (enabled=true)
+        let default_enabled = is_blacklist;
+        let mp_enabled = model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(default_enabled);
 
         let provider_name = m.provider_id
             .and_then(|pid| providers.iter().find(|p| p.id == pid))
@@ -1013,7 +1021,7 @@ async fn get_marketplace_models(
             "type_id": m.type_id,
             "type_name": type_name,
             "is_active": m.is_active,
-            "mp_enabled": model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+            "mp_enabled": mp_enabled,
             "mp_sort_order": model_conf.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0),
             "mp_description": model_conf.get("description").and_then(|v| v.as_str()).unwrap_or(""),
         }));
@@ -1021,6 +1029,7 @@ async fn get_marketplace_models(
 
     Ok(Json(json!({
         "models": model_list,
+        "display_mode": display_mode,
     })))
 }
 
@@ -1035,6 +1044,7 @@ pub struct MarketplaceModelConfig {
 #[derive(Deserialize)]
 pub struct MarketplaceConfigRequest {
     pub models: Vec<MarketplaceModelConfig>,
+    pub display_mode: Option<String>, // "whitelist" or "blacklist"
 }
 
 /// 管理员：保存模型广场配置
@@ -1050,6 +1060,11 @@ async fn save_marketplace_models(
         .await?;
     if role != "admin" {
         return Err(AppError::Unauthorized);
+    }
+
+    // 保存展示模式
+    if let Some(ref mode) = payload.display_mode {
+        upsert_config(&state, &name, "mp_display_mode", mode).await?;
     }
 
     for mc in &payload.models {
@@ -1093,19 +1108,21 @@ pub async fn get_marketplace_public(
 
     // 2. 用户等级权限校验
     if plugin.allowed_levels != "all" {
-        let user_info: Option<(String, Option<i64>)> = sqlx::query_as(
-            &state.db.format_query("SELECT u.user_group, ul.id as level_id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
+        let user_info: Option<(String, String, Option<i64>)> = sqlx::query_as(
+            &state.db.format_query("SELECT u.role, u.user_group, ul.id as level_id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
         )
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?;
 
-        let (user_group, user_level_id) = user_info.unwrap_or_else(|| ("default".to_string(), Some(0)));
-        let allowed: Vec<&str> = plugin.allowed_levels.split(',').collect();
-        let level_id_str = user_level_id.unwrap_or(0).to_string();
+        let (role, user_group, user_level_id) = user_info.unwrap_or_else(|| ("user".to_string(), "default".to_string(), Some(0)));
+        if role != "admin" {
+            let allowed: Vec<&str> = plugin.allowed_levels.split(',').collect();
+            let level_id_str = user_level_id.unwrap_or(0).to_string();
 
-        if !allowed.contains(&user_group.as_str()) && !allowed.contains(&level_id_str.as_str()) {
-            return Err(AppError::Forbidden("您当前的用户等级无权访问模型广场".to_string()));
+            if !allowed.contains(&user_group.as_str()) && !allowed.contains(&level_id_str.as_str()) {
+                return Err(AppError::Forbidden("您当前的用户等级无权访问模型广场".to_string()));
+            }
         }
     }
 
@@ -1138,14 +1155,20 @@ pub async fn get_marketplace_public(
         &state.db.format_query("SELECT * FROM billing_rules WHERE is_active = 1")
     ).fetch_all(&state.db.pool).await?;
 
+    // 读取展示模式
+    let display_mode = configs.get("mp_display_mode").map(|s| s.as_str()).unwrap_or("whitelist");
+    let is_blacklist = display_mode == "blacklist";
+
     let mut marketplace_models: Vec<serde_json::Value> = Vec::new();
     for m in &models {
         let config_key = format!("mp_model_id_{}", m.id);
         let model_conf: serde_json::Value = configs.get(&config_key)
             .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or(json!({"enabled": false, "sort_order": 0, "description": ""}));
+            .unwrap_or(json!({"sort_order": 0, "description": ""}));
 
-        let is_enabled = model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        // 黑名单模式：没有配置的模型默认展示；白名单模式：没有配置的模型默认隐藏
+        let default_enabled = is_blacklist;
+        let is_enabled = model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(default_enabled);
         if !is_enabled { continue; }
 
         let sort_order = model_conf.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);

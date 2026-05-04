@@ -307,15 +307,17 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
         },
         {
           key: '/admin0755/channel-configs',
-          label: <Link to="/admin0755/channel-configs">{t('menu.channel_configs', '模型渠道配置')}</Link>,
+          label: <Link to="/admin0755/channel-configs">{t('menu.channel_configs', '上游渠道配置')}</Link>,
         },
       ];
+      /*
       if (hasPermission('upstreams') || isSuperAdmin) {
         channelChildren.push({
           key: '/admin0755/upstreams',
           label: <Link to="/admin0755/upstreams">{t('menu.upstreams', '上游管理')}</Link>,
         });
       }
+      */
       menuItems.push({
         key: 'channels-management-group',
         icon: <ControlOutlined style={{ fontSize: '18px' }} />,
@@ -738,7 +740,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             </div>
             
             <Space size={screens.xs ? "small" : "middle"}>
-              {isUserEnd && isPluginVisibleForUser('model_marketplace') && (
+              {isPluginVisibleForUser('model_marketplace') && (
                 <Button 
                   type="text" 
                   icon={<ShopOutlined style={{ fontSize: '18px' }} />} 

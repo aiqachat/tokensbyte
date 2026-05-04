@@ -171,7 +171,7 @@ body[data-theme='light'] .ant-radio-button-wrapper-checked:not(.ant-radio-button
   line-height: 24px !important;
 }
 body[data-theme='light'] .ant-switch {
-  background-color: #d1d5db !important; /* 亮色模式下默认关闭状态 */
+  background-color: #d1d5db !important;
 }
 
 .ant-switch.ant-switch-checked {
@@ -206,3 +206,30 @@ body[data-theme='light'] .ant-switch:hover:not(.ant-switch-disabled) {
   border-radius: 50% !important;
 }
 
+/* 开关内文字颜色：根据主题和开关状态自动匹配 */
+/* 开启状态（轨道浅色 #e5e5e5）→ 文字深色 */
+.ant-switch.ant-switch-checked .ant-switch-inner,
+.ant-switch.ant-switch-checked .ant-switch-inner .ant-switch-inner-checked,
+.ant-switch.ant-switch-checked .ant-switch-inner .ant-switch-inner-unchecked {
+  color: #1a1a1a !important;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* 亮色模式 - 关闭状态（轨道浅灰 #d1d5db）→ 文字深色 */
+body[data-theme='light'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner,
+body[data-theme='light'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-checked,
+body[data-theme='light'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-unchecked {
+  color: #333 !important;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* 暗黑模式 - 关闭状态（轨道深色 rgba(255,255,255,0.15)）→ 文字浅色 */
+body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner,
+body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-checked,
+body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-unchecked {
+  color: #e8eaed !important;
+  font-weight: 500;
+  font-size: 12px;
+}

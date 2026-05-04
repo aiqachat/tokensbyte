@@ -15,7 +15,7 @@ export const useGeneration = () => {
     currentModel, prompt, paramValues,
     selectedTokenKey, generating, setGenerating,
     taskPollingNodes, setTaskPollingNodes, currentProjectId,
-    attachedAssets, setAttachedAssets, models,
+    attachedAssets, setAttachedAssets, models, apiTokens,
   } = usePlayground();
 
   // 保持 currentProjectId 的最新引用（避免闭包过期问题）
@@ -49,7 +49,7 @@ export const useGeneration = () => {
       if (!sourceUrl && !base64Data) return;
 
       const { default: requestUtil } = await import('../../../utils/request');
-      await requestUtil.post('/playground/assets/persist', {
+      const res = await requestUtil.post('/playground/assets/persist', {
         project_id: pid,
         asset_type: assetType,
         source_url: sourceUrl || undefined,
@@ -59,16 +59,47 @@ export const useGeneration = () => {
         model_name: modelInfo?.name || '',
         generation_params: node.taskData || {},
         canvas_node_data: { x: node.x, y: node.y, width: node.width, height: node.height },
-      });
+      }) as any;
+      
+      // 更新节点为永久的 TOS URL，并将节点 ID 更新为稳定的 asset-{id} 格式
+      // 以确保下次加载时能与 assets 表记录正确匹配
+      if (res && res.file_url) {
+        const stableId = `asset-${res.id}`;
+        setNodes(prev => prev.map(n => {
+          if (n.id !== node.id) return n;
+          const updatedNode = { ...n, id: stableId };
+          if (updatedNode.type === 'image') {
+            updatedNode.resultData = { data: [{ url: res.file_url }] };
+          } else if (updatedNode.type === 'video') {
+            updatedNode.resultData = { content: { video_url: res.file_url } };
+          }
+          return updatedNode;
+        }));
+      }
+      return res;
     } catch (e) {
       console.warn('资源持久化失败，不影响本次生成', e);
+      return null;
     }
-  }, []);
+  }, [setNodes]);
 
   /** 发送生成请求 */
   const handleGenerate = useCallback(async () => {
     if (generating) return;
     if (!currentModel || !prompt.trim()) return;
+
+    // 前置校验：检查当前选中密钥的额度是否已用尽
+    if (selectedTokenKey) {
+      const currentToken = apiTokens.find((t: any) => t.token_key === selectedTokenKey);
+      if (currentToken && currentToken.quota_limit >= 0 && currentToken.quota_used >= currentToken.quota_limit) {
+        message.warning({
+          content: '当前密钥额度已用尽，请更换密钥或前往密钥管理页面充值额度',
+          duration: 4,
+          key: 'quota-exceeded',
+        });
+        return;
+      }
+    }
 
     setGenerating(true);
 
@@ -287,7 +318,7 @@ export const useGeneration = () => {
       setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, status: 'error', resultData: { message: errMsg } } : n));
       setGenerating(false);
     }
-  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets]);
+  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets, apiTokens]);
 
   /** 轮询异步任务状态（视频/图片） */
   const pollTaskStatus = useCallback((nodeId: string, taskId: string, modelId: string, pollEndpointTemplate?: string) => {

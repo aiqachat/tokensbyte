@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Typography, Button, Table, Modal, Input, InputNumber, Select, Space, Tag, message, Popconfirm, Spin, Tooltip, Switch } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, TeamOutlined, CrownOutlined, CopyOutlined, LinkOutlined, TrophyOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
@@ -33,6 +33,12 @@ const TeamConfig: React.FC = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedLevels, setSelectedLevels] = useState<number[]>([]);
   const [selectedMemberLevels, setSelectedMemberLevels] = useState<number[]>([]);
+
+  // Refs to always get latest selected values in async searchUsers
+  const selectedLeadersRef = useRef(selectedLeaders);
+  const selectedMembersRef = useRef(selectedMembers);
+  useEffect(() => { selectedLeadersRef.current = selectedLeaders; }, [selectedLeaders]);
+  useEffect(() => { selectedMembersRef.current = selectedMembers; }, [selectedMembers]);
   const [allLevels, setAllLevels] = useState<UserLevel[]>([]);
 
   useEffect(() => {
@@ -66,7 +72,18 @@ const TeamConfig: React.FC = () => {
     try {
       setSearchLoading(true);
       const res = await (request.get('/team-marketing/search-users', { params: { keyword } }) as any);
-      if (res.users) setUserOptions(res.users);
+      if (res.users) {
+        // Merge new search results with existing options to preserve already-selected users
+        setUserOptions(prev => {
+          const allSelectedIds = new Set([...selectedLeadersRef.current, ...selectedMembersRef.current]);
+          // Keep previously selected users that are not in the new search results
+          const preservedOptions = prev.filter(u => allSelectedIds.has(u.user_id));
+          // Add new search results, avoiding duplicates
+          const existingIds = new Set(preservedOptions.map(u => u.user_id));
+          const newOptions = (res.users as UserOption[]).filter(u => !existingIds.has(u.user_id));
+          return [...preservedOptions, ...newOptions];
+        });
+      }
     } catch (e) {
       console.error('搜索用户失败', e);
     } finally {
@@ -381,7 +398,7 @@ const TeamConfig: React.FC = () => {
               onChange={setSelectedMemberLevels}
               options={allLevels.map(l => ({
                 value: l.id,
-                label: `${l.name} (ULID: ${l.id.toString().padStart(4, '0')})` }))}
+                label: `${l.name}（倍率 ${l.discount}x）` }))}
               placeholder="选择可分配给团队成员的用户等级..."
               style={{ width: '100%' }}
               optionFilterProp="label"
@@ -435,7 +452,7 @@ const TeamConfig: React.FC = () => {
               onChange={setSelectedLevels}
               options={allLevels.map(l => ({
                 value: l.id,
-                label: `${l.name} (ULID: ${l.id.toString().padStart(4, '0')})` }))}
+                label: `${l.name}（倍率 ${l.discount}x）` }))}
               placeholder="选择可分配的用户等级..."
               style={{ width: '100%' }}
               optionFilterProp="label"

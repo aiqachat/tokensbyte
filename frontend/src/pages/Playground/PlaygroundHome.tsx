@@ -476,6 +476,7 @@ const PlaygroundHome: React.FC = () => {
                           <div style={{ fontSize: 11, color: themeMode === 'dark' ? '#71717a' : '#999', marginTop: 2, fontFamily: 'monospace' }}>
                             ID: {project.id}
                           </div>
+
                           <div style={{ fontSize: 12, color: themeMode === 'dark' ? '#a1a1aa' : '#666', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
                             <DesktopOutlined /> 
                             {new Date(project.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -647,6 +648,7 @@ const PlaygroundHome: React.FC = () => {
               <div style={{ fontSize: 12, color: themeMode === 'dark' ? '#71717a' : '#999', fontFamily: 'monospace', marginBottom: 8 }}>
                 项目 ID: {selectedProject.id}
               </div>
+
               <p style={{ fontSize: 14, color: themeMode === 'dark' ? '#a1a1aa' : '#666', margin: '0 0 32px' }}>
                 创建于 {new Date(selectedProject.created_at).toLocaleDateString('zh-CN')}
                 {' · '}

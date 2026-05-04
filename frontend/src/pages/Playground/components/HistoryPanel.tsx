@@ -500,6 +500,7 @@ const HistoryPanel: React.FC = () => {
                             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 2, fontFamily: 'monospace' }}>
                               ID: {project.id}
                             </div>
+
                             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
                               {new Date(project.updated_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
                             </div>
