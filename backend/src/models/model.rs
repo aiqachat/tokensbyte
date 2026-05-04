@@ -41,6 +41,7 @@ pub struct BillingRule {
     pub extended_config: String,
     pub is_active: i32,
     pub is_system: i32,
+    pub pid: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -60,6 +61,7 @@ pub struct CreateBillingRuleRequest {
     pub extended_config: Option<serde_json::Value>,
     #[serde(default = "default_active")]
     pub is_active: i32,
+    pub pid: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,6 +77,7 @@ pub struct UpdateBillingRuleRequest {
     pub pricing_tiers: Option<serde_json::Value>,
     pub extended_config: Option<serde_json::Value>,
     pub is_active: Option<i32>,
+    pub pid: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +101,7 @@ pub struct ForwardRule {
     pub description: Option<String>,
     pub is_active: i32,
     pub is_system: i32, // 1 for built-in, 0 for custom
+    pub eid: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -111,6 +115,7 @@ pub struct CreateRuleRequest {
     pub description: Option<String>,
     #[serde(default = "default_active")]
     pub is_active: i32,
+    pub eid: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,6 +126,7 @@ pub struct UpdateRuleRequest {
     pub config_json: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<i32>,
+    pub eid: Option<String>,
 }
 
 pub fn default_active() -> i32 { 1 }

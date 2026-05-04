@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid, Switch, theme, Spin } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined, KeyOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined, KeyOutlined, CheckOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import type { ApiToken } from '../../types';
@@ -23,6 +23,7 @@ const Tokens: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [enableModelFilter, setEnableModelFilter] = useState(false);
   const [isUnlimitedQuota, setIsUnlimitedQuota] = useState(true);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
 
   // 密钥明文展示状态
   const [revealModalVisible, setRevealModalVisible] = useState(false);
@@ -46,9 +47,10 @@ const Tokens: React.FC = () => {
     fetchTokens();
   }, []);
 
-  const handleCopy = (key: string) => {
+  const handleCopy = (key: string, tokenId: number) => {
     navigator.clipboard.writeText(key);
-    message.success(t('tokens.copy_success'));
+    setCopiedId(tokenId);
+    setTimeout(() => setCopiedId(prev => prev === tokenId ? null : prev), 2000);
   };
 
   const handleAdd = () => {
@@ -172,13 +174,13 @@ const Tokens: React.FC = () => {
             {key.substring(0, 10)}<span style={{color: '#666', margin: '0 4px'}}>••••••••</span>{key.substring(key.length - 6)}
           </Text>
         )}
-        <Tooltip title={t('tokens.copy_hint')}>
+        <Tooltip title={copiedId === record.id ? '已复制!' : t('tokens.copy_hint')}>
           <Button 
             type="text" 
-            icon={<CopyOutlined />} 
+            icon={copiedId === record.id ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />} 
             size="small" 
-            onClick={() => handleCopy(isRevealed ? revealedKeys[record.id] : key)} 
-            style={{ color: '#888', marginLeft: 8 }} 
+            onClick={() => handleCopy(isRevealed ? revealedKeys[record.id] : key, record.id)} 
+            style={{ color: copiedId === record.id ? '#52c41a' : '#888', marginLeft: 8 }} 
           />
         </Tooltip>
         <Tooltip title={isRevealed ? '隐藏密钥' : '查看完整密钥'}>
@@ -348,7 +350,9 @@ const Tokens: React.FC = () => {
                           {record.token_key.substring(0, 8)}••••{record.token_key.substring(record.token_key.length - 4)}
                         </Text>
                       )}
-                      <Button type="text" icon={<CopyOutlined />} size="small" onClick={() => handleCopy(revealedKeys[record.id] || record.token_key)} style={{ color: '#888' }} />
+                      <Tooltip title={copiedId === record.id ? '已复制!' : t('tokens.copy_hint')}>
+                        <Button type="text" icon={copiedId === record.id ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />} size="small" onClick={() => handleCopy(revealedKeys[record.id] || record.token_key, record.id)} style={{ color: copiedId === record.id ? '#52c41a' : '#888' }} />
+                      </Tooltip>
                       <Button 
                         type="text" 
                         icon={revealedKeys[record.id] ? <EyeInvisibleOutlined /> : <EyeOutlined />} 

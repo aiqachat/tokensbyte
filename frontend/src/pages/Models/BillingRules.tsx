@@ -241,6 +241,13 @@ const BillingRules: React.FC = () => {
       render: (text: string) => <Text strong>{text}</Text>
     },
     {
+      title: '快捷识别 (PID)',
+      dataIndex: 'pid',
+      key: 'pid',
+      width: 120,
+      render: (text: string) => <Tag color="blue">{text || '-'}</Tag>
+    },
+    {
       title: t('models.billing_type'),
       dataIndex: 'billing_type',
       key: 'billing_type',
@@ -333,6 +340,7 @@ const BillingRules: React.FC = () => {
                   extra={<Switch checked={record.is_active === 1} disabled size="small" />}
                 >
                   <CardRow label="ID"><Text type="secondary">{record.id}</Text></CardRow>
+                  <CardRow label="PID (快捷识别)"><Tag color="blue">{record.pid || '-'}</Tag></CardRow>
                   <CardRow label="计费类型"><Tag color={colors[record.billing_type]}>{t(`models.type_${record.billing_type}`)}</Tag></CardRow>
                   <CardRow label="费率"><RateDisplay rule={record} currencySymbol={currencySymbol} /></CardRow>
                   <CardRow label="最后修改"><Text type="secondary" style={{ fontSize: 12 }}>{record.updated_at ? dayjs(record.updated_at).format('YYYY-MM-DD HH:mm:ss') : '-'}</Text></CardRow>

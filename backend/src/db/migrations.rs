@@ -380,10 +380,10 @@ macro_rules! pg_migration_blocks {
             config_json TEXT NOT NULL DEFAULT '{}',
             description TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
-            is_system INTEGER NOT NULL DEFAULT 0,
             remark TEXT,
             upstream_type TEXT NOT NULL DEFAULT 'other',
             config TEXT,
+            eid TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -445,6 +445,7 @@ macro_rules! pg_migration_blocks {
             remark TEXT,
             upstream_type TEXT NOT NULL DEFAULT 'other',
             config TEXT,
+            pid TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -476,7 +477,16 @@ macro_rules! pg_migration_blocks {
 
     sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0")
         .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS eid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+    sqlx::query("UPDATE forward_rules SET eid = '1' || floor(random() * 9000 + 1000)::text WHERE eid = '' OR eid IS NULL")
+        .execute(pool).await.ok();
         
+    sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS pid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+    sqlx::query("UPDATE billing_rules SET pid = '6' || floor(random() * 9000 + 1000)::text WHERE pid = '' OR pid IS NULL")
+        .execute(pool).await.ok();
+
     sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0")
         .execute(pool)
         .await?;

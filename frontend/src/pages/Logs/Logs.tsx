@@ -117,14 +117,7 @@ const Logs: React.FC = () => {
         </Space>
       ),
     },
-    {
-      title: '用户等级',
-      key: 'user_level',
-      width: 90,
-      render: (_: any, record: RequestLog) => (
-        <Text type="secondary" style={{ fontSize: 12 }}>{record.user_level_name || record.user_group || '-'}</Text>
-      ),
-    },
+
     {
       title: t('logs.status'),
       dataIndex: 'status_code',
@@ -399,20 +392,22 @@ const Logs: React.FC = () => {
                     </Space>
                   </CardRow>
                 )}
+                {record.channel_group_aid && <CardRow label="渠道AID"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text></CardRow>}
                 <CardRow label="令牌">
                   <Space direction="vertical" size={0} align="end">
                     <Tag color="cyan" style={{ fontSize: 11, margin: 0 }}>{record.token_name || '-'}</Tag>
                     {record.token_kid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>KID: {record.token_kid}</Text>}
                   </Space>
                 </CardRow>
-                {record.channel_group_aid && <CardRow label="渠道AID"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text></CardRow>}
+                <CardRow label="耗时"><Text style={{ fontSize: 12 }}>{(record.latency_ms / 1000).toFixed(3)}s</Text></CardRow>
+                <CardRow label="类型"><Tag color={record.is_stream === 1 ? 'geekblue' : 'default'}>{record.is_stream === 1 ? '流' : '非流'}</Tag></CardRow>
                 <CardRow label="用量">
                   <Space direction="vertical" size={0} align="end">
                     <Text type="secondary" style={{ fontSize: 12 }}>输入:{record.prompt_tokens} / 输出:{record.completion_tokens}</Text>
                     {(record.cached_tokens ?? 0) > 0 && <Text type="secondary" style={{ fontSize: 11, color: '#52c41a' }}>缓存(输入内):{record.cached_tokens}</Text>}
                   </Space>
                 </CardRow>
-                <CardRow label="费用">
+                <CardRow label="成本">
                   <Space direction="vertical" size={0} align="end">
                     {record.cost === 0
                       ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
@@ -423,8 +418,6 @@ const Logs: React.FC = () => {
                     )}
                   </Space>
                 </CardRow>
-                <CardRow label="延迟"><Text style={{ fontSize: 12 }}>{(record.latency_ms / 1000).toFixed(3)}s</Text></CardRow>
-                <CardRow label="类型"><Tag color={record.is_stream === 1 ? 'geekblue' : 'default'}>{record.is_stream === 1 ? '流' : '非流'}</Tag></CardRow>
               </MobileCard>
             );
           }}

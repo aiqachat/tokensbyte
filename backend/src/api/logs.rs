@@ -101,11 +101,26 @@ pub async fn list_logs(
         allow_details = perm.unwrap_or(1) == 1;
     }
 
-    if !allow_details {
+    if claims.role != "admin" {
         for log in &mut logs {
-            log.request_content = None;
-            log.response_content = None;
-            log.upstream_req_content = None;
+            if !allow_details {
+                log.request_content = None;
+                log.response_content = None;
+                log.upstream_req_content = None;
+            }
+            if let Some(ref upstream) = log.upstream_url {
+                if let Some(scheme_end) = upstream.find("://") {
+                    let scheme = &upstream[0..scheme_end];
+                    let rest = &upstream[scheme_end + 3..];
+                    if let Some(slash_idx) = rest.find('/') {
+                        log.upstream_url = Some(format!("{}://***{}", scheme, &rest[slash_idx..]));
+                    } else {
+                        log.upstream_url = Some(format!("{}://***", scheme));
+                    }
+                } else {
+                    log.upstream_url = Some("***".to_string());
+                }
+            }
         }
     }
 
