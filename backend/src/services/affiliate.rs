@@ -1,9 +1,9 @@
-use sqlx::{Any, Transaction};
+use sqlx::{Postgres, Transaction};
 use anyhow::Result;
 
 pub async fn award_commission(
     db: &crate::db::Database,
-    tx: &mut Transaction<'_, Any>,
+    tx: &mut Transaction<'_, Postgres>,
     user_id: &str,
     recharge_id: i64,
     amount: f64,

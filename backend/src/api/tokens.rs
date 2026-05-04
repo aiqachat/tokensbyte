@@ -85,33 +85,18 @@ pub async fn create_token(
     let sql = r#"INSERT INTO api_tokens (user_id, token_key, kid, name, quota_limit, allowed_models, allowed_ips, expires_at, is_active)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)"#;
 
-    let last_id: i64 = if state.db.is_sqlite {
-        let res = sqlx::query(&state.db.format_query(sql))
-            .bind(&claims.sub)
-            .bind(&token_key)
-            .bind(&kid)
-            .bind(request.name.unwrap_or_else(|| "default".to_string()))
-            .bind(request.quota_limit.unwrap_or(-1.0))
-            .bind(&models_json)
-            .bind(request.allowed_ips.unwrap_or_default())
-            .bind(&request.expires_at)
-            .execute(&state.db.pool)
-            .await?;
-        res.last_insert_id().unwrap_or(0) as i64
-    } else {
-        let sql_pg = format!("{} RETURNING id", sql);
-        sqlx::query_scalar::<_, i64>(&state.db.format_query(&sql_pg))
-            .bind(&claims.sub)
-            .bind(&token_key)
-            .bind(&kid)
-            .bind(request.name.unwrap_or_else(|| "default".to_string()))
-            .bind(request.quota_limit.unwrap_or(-1.0))
-            .bind(&models_json)
-            .bind(request.allowed_ips.unwrap_or_default())
-            .bind(&request.expires_at)
-            .fetch_one(&state.db.pool)
-            .await?
-    };
+    let sql_pg = format!("{} RETURNING id", sql);
+    let last_id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(&sql_pg))
+        .bind(&claims.sub)
+        .bind(&token_key)
+        .bind(&kid)
+        .bind(request.name.unwrap_or_else(|| "default".to_string()))
+        .bind(request.quota_limit.unwrap_or(-1.0))
+        .bind(&models_json)
+        .bind(request.allowed_ips.unwrap_or_default())
+        .bind(&request.expires_at)
+        .fetch_one(&state.db.pool)
+        .await?;
 
     let token: ApiToken = sqlx::query_as(&state.db.format_query("SELECT * FROM api_tokens WHERE id = ?"))
         .bind(last_id)

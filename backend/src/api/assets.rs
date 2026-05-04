@@ -43,7 +43,7 @@ pub fn router() -> Router<Arc<AppState>> {
 
 /// 读取素材资产库的审核开关（true=需要火山引擎审核，false=独立素材库模式）
 async fn is_review_enabled(state: &AppState) -> bool {
-    sqlx::query_scalar::<sqlx::Any, Option<String>>(
+    sqlx::query_scalar::<_, Option<String>>(
         &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = 'review_enabled'")
     )
     .fetch_optional(&state.db.pool)
@@ -175,7 +175,7 @@ async fn upload_asset(
 
                 // 从 plugin_configs 获取该用户等级的配额（单位 MB，默认 100）
                 let quota_key = format!("quota_{}", user.user_group);
-                let quota_mb: i64 = sqlx::query_scalar::<sqlx::Any, Option<String>>(
+                let quota_mb: i64 = sqlx::query_scalar::<_, Option<String>>(
                     &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
                 )
                 .bind(&quota_key)
@@ -611,7 +611,7 @@ async fn user_list_assets(
 
     // 获取配额
     let quota_key = format!("quota_{}", user.user_group);
-    let quota_mb: i64 = sqlx::query_scalar::<sqlx::Any, Option<String>>(
+    let quota_mb: i64 = sqlx::query_scalar::<_, Option<String>>(
         &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
     )
     .bind(&quota_key)
@@ -728,7 +728,7 @@ async fn user_storage_info(
         0 // 0 表示无限制
     } else {
         let quota_key = format!("quota_{}", user.user_group);
-        sqlx::query_scalar::<sqlx::Any, Option<String>>(
+        sqlx::query_scalar::<_, Option<String>>(
             &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
         )
         .bind(&quota_key)
@@ -773,7 +773,7 @@ async fn user_storage_info(
         0 // 管理员无限制
     } else {
         let level_key = format!("max_folders_{}", user.user_group);
-        let per_level = sqlx::query_scalar::<sqlx::Any, Option<String>>(
+        let per_level = sqlx::query_scalar::<_, Option<String>>(
             &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
         )
         .bind(&level_key)
@@ -783,7 +783,7 @@ async fn user_storage_info(
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(0);
         if per_level > 0 { per_level } else {
-            sqlx::query_scalar::<sqlx::Any, Option<String>>(
+            sqlx::query_scalar::<_, Option<String>>(
                 &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = 'max_folders'")
             )
             .fetch_optional(&state.db.pool)
@@ -1097,7 +1097,7 @@ async fn upload_virtual_portrait(
 
         // 优先查用户等级配额，fallback 到全局默认
         let quota_key = format!("quota_{}", user.user_group);
-        let quota_mb: i64 = sqlx::query_scalar::<sqlx::Any, Option<String>>(
+        let quota_mb: i64 = sqlx::query_scalar::<_, Option<String>>(
             &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
         )
         .bind(&quota_key)
@@ -1147,7 +1147,7 @@ async fn upload_virtual_portrait(
 
     // 检查该文件夹下的素材数量是否已达上限（按用户等级查询，fallback 到全局默认）
     let level_files_key = format!("max_files_{}", user.user_group);
-    let max_files_per_folder: i64 = sqlx::query_scalar::<sqlx::Any, Option<String>>(
+    let max_files_per_folder: i64 = sqlx::query_scalar::<_, Option<String>>(
         &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
     )
     .bind(&level_files_key)
@@ -1160,7 +1160,7 @@ async fn upload_virtual_portrait(
         0
     });
     let max_files_per_folder = if max_files_per_folder > 0 { max_files_per_folder } else {
-        sqlx::query_scalar::<sqlx::Any, Option<String>>(
+        sqlx::query_scalar::<_, Option<String>>(
             &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = 'max_files_per_folder'")
         )
         .fetch_optional(&state.db.pool)
@@ -1334,7 +1334,7 @@ async fn user_create_group(
 
     // 按用户等级查询文件夹上限，fallback 到全局默认
     let level_folders_key = format!("max_folders_{}", user.user_group);
-    let max_folders: i64 = sqlx::query_scalar::<sqlx::Any, Option<String>>(
+    let max_folders: i64 = sqlx::query_scalar::<_, Option<String>>(
         &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = ?")
     )
     .bind(&level_folders_key)
@@ -1344,7 +1344,7 @@ async fn user_create_group(
     .and_then(|v| v.parse::<i64>().ok())
     .unwrap_or_else(|| 0);
     let max_folders = if max_folders > 0 { max_folders } else {
-        sqlx::query_scalar::<sqlx::Any, Option<String>>(
+        sqlx::query_scalar::<_, Option<String>>(
             &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = 'asset_manager' AND config_key = 'max_folders'")
         )
         .fetch_optional(&state.db.pool)

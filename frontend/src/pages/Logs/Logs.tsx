@@ -134,6 +134,12 @@ const Logs: React.FC = () => {
       render: (text: string, record: RequestLog) => (
         <Space direction="vertical" size={0}>
           <Text style={{ fontSize: 12 }}>{text}</Text>
+          {(record.billing_pid || record.forward_eid) && (
+            <Space size={4}>
+              {record.billing_pid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>PID:{record.billing_pid}</Text>}
+              {record.forward_eid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>EID:{record.forward_eid}</Text>}
+            </Space>
+          )}
         </Space>
       ),
     },
@@ -239,6 +245,12 @@ const Logs: React.FC = () => {
                 return <Text type="danger">{record.error_message}</Text>;
               }
             })()}
+          </Descriptions.Item>
+          <Descriptions.Item label="匹配规则">
+            <Space size={16}>
+              <Text type="secondary" style={{ fontSize: 12 }}>计费规则 (PID): {record.billing_pid ? <Typography.Text keyboard>{record.billing_pid}</Typography.Text> : '-'}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>转发规则 (EID): {record.forward_eid ? <Typography.Text keyboard>{record.forward_eid}</Typography.Text> : '-'}</Text>
+            </Space>
           </Descriptions.Item>
           <Descriptions.Item label="计费明细">
             <div>
@@ -393,6 +405,14 @@ const Logs: React.FC = () => {
                   </CardRow>
                 )}
                 {record.channel_group_aid && <CardRow label="渠道AID"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text></CardRow>}
+                {(record.billing_pid || record.forward_eid) && (
+                  <CardRow label="匹配规则">
+                    <Space size={8}>
+                      {record.billing_pid && <Text type="secondary" style={{ fontSize: 11 }}>PID:<Typography.Text keyboard style={{ fontSize: 10 }}>{record.billing_pid}</Typography.Text></Text>}
+                      {record.forward_eid && <Text type="secondary" style={{ fontSize: 11 }}>EID:<Typography.Text keyboard style={{ fontSize: 10 }}>{record.forward_eid}</Typography.Text></Text>}
+                    </Space>
+                  </CardRow>
+                )}
                 <CardRow label="令牌">
                   <Space direction="vertical" size={0} align="end">
                     <Tag color="cyan" style={{ fontSize: 11, margin: 0 }}>{record.token_name || '-'}</Tag>

@@ -608,7 +608,7 @@ const Channels: React.FC = () => {
                               <Form.Item name="preset_id" style={{ marginBottom: 0 }}>
                                 <Select placeholder="选择预设渠道配置" allowClear disabled={!!currentVolcPool || !!currentGptImagePool}>
                                   {(presets || []).map(p => (
-                                    <Option key={p.id} value={p.id}>{p.name} [ID: {p.id}] [{p.provider_type}]</Option>
+                                    <Option key={p.id} value={p.id}>{p.name} {p.yid ? `[YID: ${p.yid}]` : `[ID: ${p.id}]`} [{p.provider_type}]</Option>
                                   ))}
                                 </Select>
                               </Form.Item>

@@ -17,7 +17,7 @@ tokio-stream = "0.1"
 futures = "0.3"
 
 # Database
-sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "any", "sqlite", "postgres", "chrono", "uuid", "json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid", "json"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

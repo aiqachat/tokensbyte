@@ -9,6 +9,7 @@ use crate::models::{
     CreateChannelConfigRequest, UpdateChannelConfigRequest
 };
 use crate::error::AppError;
+use rand::Rng;
 
 pub async fn list_channel_configs(
     State(state): State<Arc<AppState>>
@@ -35,14 +36,20 @@ pub async fn create_channel_config(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateChannelConfigRequest>
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let yid = {
+        let mut rng = rand::thread_rng();
+        format!("3{}", rng.gen_range(1000..=9999))
+    };
+
     sqlx::query(
-        &state.db.format_query("INSERT INTO channel_configs (name, provider_type, base_url, api_key, remark) VALUES (?, ?, ?, ?, ?)")
+        &state.db.format_query("INSERT INTO channel_configs (name, provider_type, base_url, api_key, remark, yid) VALUES (?, ?, ?, ?, ?, ?)")
     )
     .bind(&req.name)
     .bind(&req.provider_type)
     .bind(&req.base_url)
     .bind(&req.api_key)
     .bind(&req.remark)
+    .bind(&yid)
     .execute(&state.db.pool)
     .await?;
 

@@ -104,7 +104,7 @@ pub async fn api_key_middleware(
     };
 
     // Look up the API token
-    let token: crate::models::ApiToken = match sqlx::query_as::<sqlx::Any, crate::models::ApiToken>(
+    let token: crate::models::ApiToken = match sqlx::query_as::<_, crate::models::ApiToken>(
         &state.db.format_query("SELECT * FROM api_tokens WHERE token_key = ?")
     )
     .bind(api_key)

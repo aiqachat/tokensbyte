@@ -231,6 +231,8 @@ export interface RequestLog {
   upstream_req_content?: string;
   is_stream?: number;
   billing_detail?: string;
+  billing_pid?: string;
+  forward_eid?: string;
   created_at: string;
 }
 
