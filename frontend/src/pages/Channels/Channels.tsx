@@ -218,7 +218,7 @@ const Channels: React.FC = () => {
     if (submitting) return;
     setSubmitting(true);
     const finalMapping: Record<string, string> = {};
-    if (values.model_mapping) {
+    if (showMapping && values.model_mapping) {
       for (const [k, v] of Object.entries(values.model_mapping)) {
         if (v && String(v).trim()) {
           finalMapping[k] = String(v).trim();
@@ -370,7 +370,7 @@ const Channels: React.FC = () => {
         const time = t || record.created_at;
         if (!time) return <Text type="secondary">-</Text>;
         const d = new Date(time);
-        return <Text type="secondary" style={{ fontSize: 13 }}>{d.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</Text>;
+        return <Text type="secondary" style={{ fontSize: 13 }}>{d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</Text>;
       },
     },
     {
@@ -422,7 +422,7 @@ const Channels: React.FC = () => {
               dataSource={filteredChannels}
               loading={loading}
               rowKey="id"
-              pagination={{ pageSize: 10 }}
+              pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
               renderCard={(record: any) => {
                 const used = record.quota_used || 0;
                 const limit = record.quota_limit ?? -1;
@@ -461,7 +461,7 @@ const Channels: React.FC = () => {
                       <Text type="secondary">{record.priority || 0}</Text>
                     </CardRow>
                     <CardRow label="最后修改">
-                      <Text type="secondary" style={{ fontSize: 12 }}>{new Date(record.updated_at || record.created_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{new Date(record.updated_at || record.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</Text>
                     </CardRow>
                     <CardActions>
                       <Button type="text" size="small" onClick={() => handleTest(record)}>测试</Button>
@@ -480,7 +480,7 @@ const Channels: React.FC = () => {
               columns={columns}
               rowKey="id"
               loading={loading}
-              pagination={{ pageSize: 10 }}
+              pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
               scroll={{ x: 'max-content' }}
             />
           )}
@@ -494,7 +494,7 @@ const Channels: React.FC = () => {
             </Title>
           </div>
           <div style={{ maxWidth: 1200, width: '100%' }}>
-            <Form form={form} layout="vertical" onFinish={handleSave}>
+            <Form form={form} layout="vertical" onFinish={handleSave} preserve={true}>
               <Row gutter={24}>
                 {/* 左侧基本配置栏 */}
                 <Col xs={24} md={10} xl={10}>
@@ -610,6 +610,16 @@ const Channels: React.FC = () => {
                           }}
                         </Form.Item>
 
+                        {/* Model Mapping */}
+                        <div onClick={() => setActiveRightPanel('mapping')} style={{ padding: '12px 16px', borderRadius: 8, border: activeRightPanel === 'mapping' ? '1px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'), background: activeRightPanel === 'mapping' ? (_isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)') : (_isLight ? '#fff' : 'rgba(255,255,255,0.02)'), cursor: 'pointer', transition: 'all 0.2s' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text strong={activeRightPanel === 'mapping'} style={{ color: activeRightPanel === 'mapping' ? 'var(--text)' : 'inherit' }}>模型别名映射</Text>
+                            <span style={{ fontSize: 12, color: activeRightPanel === 'mapping' ? 'var(--text)' : 'var(--text-secondary)' }}>
+                              {showMapping ? <span style={{ fontWeight: 500 }}>已开启</span> : <span>未开启</span>} <ArrowRightOutlined style={{ marginLeft: 4 }} />
+                            </span>
+                          </div>
+                        </div>
+
                         {/* User Levels */}
                         <Form.Item shouldUpdate={(prev, curr) => prev.level_select !== curr.level_select} noStyle>
                           {() => {
@@ -644,16 +654,6 @@ const Channels: React.FC = () => {
                             );
                           }}
                         </Form.Item>
-
-                        {/* Model Mapping */}
-                        <div onClick={() => setActiveRightPanel('mapping')} style={{ padding: '12px 16px', borderRadius: 8, border: activeRightPanel === 'mapping' ? '1px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'), background: activeRightPanel === 'mapping' ? (_isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)') : (_isLight ? '#fff' : 'rgba(255,255,255,0.02)'), cursor: 'pointer', transition: 'all 0.2s' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Text strong={activeRightPanel === 'mapping'} style={{ color: activeRightPanel === 'mapping' ? 'var(--text)' : 'inherit' }}>模型别名映射</Text>
-                            <span style={{ fontSize: 12, color: activeRightPanel === 'mapping' ? 'var(--text)' : 'var(--text-secondary)' }}>
-                              {showMapping ? <span style={{ fontWeight: 500 }}>已开启</span> : <span>未开启</span>} <ArrowRightOutlined style={{ marginLeft: 4 }} />
-                            </span>
-                          </div>
-                        </div>
                       </Space>
                     </Form.Item>
 
@@ -689,8 +689,7 @@ const Channels: React.FC = () => {
                 <Col xs={24} md={14} xl={14}>
                   <div style={{ padding: 24, background: _isLight ? '#fff' : 'rgba(255,255,255,0.02)', border: _isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)', borderRadius: 8, minHeight: 600 }}>
                     
-                    {activeRightPanel === 'models' && (
-                      <div style={{ animation: 'fadeIn 0.2s' }}>
+                    <div style={{ display: activeRightPanel === 'models' ? 'block' : 'none', animation: 'fadeIn 0.2s' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                           <Title level={4} style={{ margin: 0 }}>选择模型</Title>
                           <Space>
@@ -800,10 +799,9 @@ const Channels: React.FC = () => {
                           }}
                         </Form.Item>
                       </div>
-                    )}
 
-                    {activeRightPanel === 'levels' && (
-                      <div style={{ animation: 'fadeIn 0.2s' }}>
+
+                    <div style={{ display: activeRightPanel === 'levels' ? 'block' : 'none', animation: 'fadeIn 0.2s' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
                           <Space size={16} align="center" wrap>
                             <Title level={4} style={{ margin: 0, whiteSpace: 'nowrap' }}>{isExcludeMode ? '不支持用户等级' : '支持用户等级'}</Title>
@@ -857,7 +855,6 @@ const Channels: React.FC = () => {
                                             const next = isSelected ? selectedLevels.filter((id: string) => id !== idStr) : [...selectedLevels, idStr];
                                             levelsRef.current = next;
                                             form.setFieldsValue({ level_select: next });
-                                            levelsRef.current = next;
                                           }}
                                           style={{
                                             padding: '8px 12px',
@@ -884,10 +881,9 @@ const Channels: React.FC = () => {
                           }}
                         </Form.Item>
                       </div>
-                    )}
 
-                    {activeRightPanel === 'mapping' && (
-                      <div style={{ animation: 'fadeIn 0.2s' }}>
+
+                    <div style={{ display: activeRightPanel === 'mapping' ? 'block' : 'none', animation: 'fadeIn 0.2s' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                           <Title level={4} style={{ margin: 0 }}>模型别名映射</Title>
                           <Switch checked={showMapping} onChange={setShowMapping} checkedChildren="已开启" unCheckedChildren="未开启" />
@@ -930,7 +926,7 @@ const Channels: React.FC = () => {
                           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text)', background: _isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)', borderRadius: 8 }}>别名映射功能已关闭</div>
                         )}
                       </div>
-                    )}
+
                   </div>
                 </Col>
               </Row>

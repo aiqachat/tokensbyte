@@ -21,12 +21,14 @@ pub async fn list_logs(
         c.group_aid as channel_group_aid, c.name as channel_name, \
         COALESCE(u.nickname, u.username) as user_nickname, \
         u.user_group, \
+        ul.name as user_level_name, \
         u.uid as user_uid, \
         t.name as token_name, \
         t.kid as token_kid \
         FROM logs l \
         LEFT JOIN channels c ON l.channel_id = c.id \
         LEFT JOIN users u ON l.user_id = u.id \
+        LEFT JOIN user_levels ul ON u.user_group = ul.group_key \
         LEFT JOIN api_tokens t ON l.token_id = t.id \
         WHERE 1=1".to_string();
     let mut binds: Vec<String> = Vec::new();

@@ -446,7 +446,7 @@ const ModelMarketplace: React.FC = () => {
 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, alignItems: 'flex-start' }}>
                   {/* 左侧详情 */}
-                  <div style={{ flex: '1 1 500px', background: isLight ? '#fff' : 'rgba(255,255,255,0.02)', border: `1px solid ${c.cardBorder}`, borderRadius: 16, padding: screens.xs ? '20px' : '40px' }}>
+                  <div style={{ flex: '1 1 500px', background: c.cardBg, border: `1px solid ${c.cardBorder}`, borderRadius: 16, padding: screens.xs ? '20px' : '40px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32 }}>
                       <div style={{ width: 64, height: 64, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, overflow: 'hidden' }}>
                         {selectedModel.logo ? (

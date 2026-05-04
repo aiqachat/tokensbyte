@@ -223,6 +223,7 @@ export interface RequestLog {
   user_nickname?: string;
   user_uid?: string;
   user_group?: string;
+  user_level_name?: string;
   token_name?: string;
   token_kid?: string;
   request_content?: string;
