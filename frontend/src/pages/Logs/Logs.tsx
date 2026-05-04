@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import useAuthStore from '../../store/auth';
+import { useThemeStore } from '../../store/theme';
 import type { RequestLog, ModelModel } from '../../types';
 import dayjs from 'dayjs';
 
@@ -18,6 +19,8 @@ const Logs: React.FC = () => {
   const { t } = useTranslation();
   const { token: themeToken } = theme.useToken();
   const { settings } = useSettingsStore();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [logs, setLogs] = useState<RequestLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,30 +69,15 @@ const Logs: React.FC = () => {
       title: t('logs.time'),
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 130,
-      render: (text: string) => <Text style={{ fontSize: 12 }}>{dayjs(text).format('MM-DD HH:mm:ss')}</Text>,
+      width: 170,
+      render: (text: string) => <Text style={{ fontSize: 12 }}>{dayjs(text).format('YYYY-MM-DD HH:mm:ss')}</Text>,
     },
     {
-      title: t('logs.model'),
-      dataIndex: 'model',
-      key: 'model',
-      render: (text: string, record: RequestLog) => (
-        <Space direction="vertical" size={0}>
-          <Tag color="blue">{text}</Tag>
-          {user?.role === 'admin' && record.channel_name && <Text type="secondary" style={{ fontSize: 11 }}>渠道: {record.channel_name}</Text>}
-        </Space>
-      ),
-    },
-    {
-      title: '令牌',
-      key: 'token_name',
-      width: 120,
-      render: (_: any, record: RequestLog) => (
-        <Space direction="vertical" size={0}>
-          <Tag color="cyan">{record.token_name || '-'}</Tag>
-          {record.token_kid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>KID: {record.token_kid}</Text>}
-        </Space>
-      ),
+      title: '渠道AID',
+      dataIndex: 'channel_group_aid',
+      key: 'channel_group_aid',
+      width: 80,
+      render: (text: string) => <Text type="secondary" style={{ fontSize: 12 }}>{text || '-'}</Text>,
     },
     user?.role === 'admin' ? {
       title: '用户',
@@ -110,11 +98,57 @@ const Logs: React.FC = () => {
       },
     } : null,
     {
-      title: '渠道AID',
-      dataIndex: 'channel_group_aid',
-      key: 'channel_group_aid',
+      title: '令牌',
+      key: 'token_name',
+      width: 120,
+      render: (_: any, record: RequestLog) => (
+        <Space direction="vertical" size={0}>
+          <Text style={{ fontSize: 12 }}>{record.token_name || '-'}</Text>
+          {record.token_kid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>KID: {record.token_kid}</Text>}
+        </Space>
+      ),
+    },
+    {
+      title: '用户等级',
+      key: 'user_level',
+      width: 90,
+      render: (_: any, record: RequestLog) => (
+        <Text type="secondary" style={{ fontSize: 12 }}>{record.user_level_name || record.user_group || '-'}</Text>
+      ),
+    },
+    {
+      title: t('logs.status'),
+      dataIndex: 'status_code',
+      key: 'status_code',
+      width: 60,
+      render: (code: number) => <Tag color={code === 200 ? 'success' : 'error'}>{code}</Tag>,
+    },
+    {
+      title: t('logs.model'),
+      dataIndex: 'model',
+      key: 'model',
+      width: 180,
+      ellipsis: true,
+      render: (text: string, record: RequestLog) => (
+        <Space direction="vertical" size={0}>
+          <Text style={{ fontSize: 12 }}>{text}</Text>
+          {user?.role === 'admin' && record.channel_name && <Text type="secondary" style={{ fontSize: 11 }}>渠道: {record.channel_name}</Text>}
+        </Space>
+      ),
+    },
+    {
+      title: t('logs.latency'),
+      dataIndex: 'latency_ms',
+      key: 'latency_ms',
       width: 80,
-      render: (text: string) => <Tag color="purple">{text || '-'}</Tag>,
+      render: (val: number) => <Text style={{ fontSize: 12 }}>{(val / 1000).toFixed(3)}s</Text>,
+    },
+    {
+      title: '类型',
+      dataIndex: 'is_stream',
+      key: 'is_stream',
+      width: 60,
+      render: (stream: number) => <Text type="secondary" style={{ fontSize: 12 }}>{stream === 1 ? '流' : '非流'}</Text>,
     },
     {
       title: t('logs.usage'),
@@ -144,27 +178,6 @@ const Logs: React.FC = () => {
           )}
         </Space>
       ),
-    },
-    {
-      title: t('logs.latency'),
-      dataIndex: 'latency_ms',
-      key: 'latency_ms',
-      width: 80,
-      render: (val: number) => <Text style={{ fontSize: 12 }}>{(val / 1000).toFixed(3)}s</Text>,
-    },
-    {
-      title: '类型',
-      dataIndex: 'is_stream',
-      key: 'is_stream',
-      width: 60,
-      render: (stream: number) => <Tag color={stream === 1 ? 'geekblue' : 'default'}>{stream === 1 ? '流' : '非流'}</Tag>,
-    },
-    {
-      title: t('logs.status'),
-      dataIndex: 'status_code',
-      key: 'status_code',
-      width: 60,
-      render: (code: number) => <Tag color={code === 200 ? 'success' : 'error'}>{code}</Tag>,
     },
   ].filter(Boolean)) as any[];
 
@@ -280,7 +293,7 @@ const Logs: React.FC = () => {
   };
 
   return (
-    <Card variant="borderless">
+    <Card variant="borderless" style={{ background: _isLight ? '#fff' : 'rgba(255,255,255,0.02)', borderRadius: 12 }}>
       <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, alignItems: 'flex-start', gap: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           <SyncOutlined style={{ marginRight: 8 }} />
@@ -362,7 +375,7 @@ const Logs: React.FC = () => {
                 title={<Tag color="blue">{record.model}</Tag>}
                 extra={<Tag color={record.status_code === 200 ? 'success' : 'error'}>{record.status_code}</Tag>}
               >
-                <CardRow label="时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm:ss')}</Text></CardRow>
+                <CardRow label="时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text></CardRow>
                 {user?.role === 'admin' && (
                   <CardRow label="用户">
                     <Space size={4}>

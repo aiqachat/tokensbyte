@@ -21,6 +21,7 @@ pub struct Channel {
     pub pool_id: Option<i64>,    // 关联的卡池ID
     #[sqlx(default)]
     pub gptimage_pool_id: Option<i64>, // GPT-Image卡池ID
+    pub sort_order: i32,
     pub priority: i32,
     pub weight: i32,
     pub status: i32,           // 1=active, 0=disabled, 2=testing
@@ -92,6 +93,7 @@ pub struct CreateChannelRequest {
     pub preset_id: Option<i64>,
     pub pool_id: Option<i64>,
     pub gptimage_pool_id: Option<i64>,
+    pub sort_order: Option<i32>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub max_rps: Option<i32>,
@@ -114,6 +116,7 @@ pub struct UpdateChannelRequest {
     pub preset_id: Option<i64>,
     pub pool_id: Option<i64>,
     pub gptimage_pool_id: Option<i64>,
+    pub sort_order: Option<i32>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub status: Option<i32>,
@@ -145,6 +148,7 @@ pub struct ChannelSafe {
     pub preset_id: Option<i64>,
     pub pool_id: Option<i64>,
     pub gptimage_pool_id: Option<i64>,
+    pub sort_order: i32,
     pub priority: i32,
     pub weight: i32,
     pub status: i32,
@@ -176,6 +180,7 @@ impl From<Channel> for ChannelSafe {
             preset_id: ch.preset_id,
             pool_id: ch.pool_id,
             gptimage_pool_id: ch.gptimage_pool_id,
+            sort_order: ch.sort_order,
             priority: ch.priority,
             weight: ch.weight,
             status: ch.status,

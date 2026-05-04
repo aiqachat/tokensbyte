@@ -135,6 +135,7 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
   const [activeCategory, setActiveCategory] = useState<string>('');
   const [searchModelKeyword, setSearchModelKeyword] = useState('');
   const [paramValues, setParamValues] = useState<Record<string, any>>({});
+  const [defaultModelMids, setDefaultModelMids] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [taskPollingNodes, setTaskPollingNodes] = useState<string[]>([]);
   const [apiTokens, setApiTokens] = useState<any[]>([]);
@@ -187,12 +188,26 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
 
   const handleCategoryChange = useCallback((cat: string) => {
     setActiveCategory(cat);
-    const first = models.find(m => (m.scheme_type || m.type_name) === cat);
-    if (first) {
-      setSelectedMid(first.mid);
-      initParamDefaults(first.params);
+    // 将分类名映射到 type key，用于查找默认模型
+    const catToTypeKey = (c: string) => {
+      if (c.includes('video') || c.includes('视频')) return 'video';
+      if (c.includes('image') || c.includes('图片')) return 'image';
+      return 'chat';
+    };
+    const typeKey = catToTypeKey(cat);
+    const defMid = defaultModelMids[typeKey];
+    const defModel = defMid ? models.find(m => m.mid === defMid) : null;
+    if (defModel) {
+      setSelectedMid(defModel.mid);
+      initParamDefaults(defModel.params);
+    } else {
+      const first = models.find(m => (m.scheme_type || m.type_name) === cat);
+      if (first) {
+        setSelectedMid(first.mid);
+        initParamDefaults(first.params);
+      }
     }
-  }, [models, initParamDefaults]);
+  }, [models, defaultModelMids, initParamDefaults]);
 
   const handleSelectModel = useCallback((mid: string) => {
     setSelectedMid(mid);
@@ -276,18 +291,41 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
         ]);
 
         const enabledModels: PlaygroundModel[] = configRes?.models || [];
+        const defaultMids: Record<string, string> = configRes?.default_model_mids || {};
         setModels(enabledModels);
+        setDefaultModelMids(defaultMids);
 
         if (enabledModels.length > 0) {
-          const cats = [...new Set(enabledModels.map(m => m.scheme_type || m.type_name))];
+          const cats = [...new Set(enabledModels.map(m => m.scheme_type || m.type_name))].filter(Boolean);
           const firstCat = cats[0] || '';
           setActiveCategory(firstCat);
-          const firstModel = enabledModels.find(m => (m.scheme_type || m.type_name) === firstCat);
-          if (firstModel) {
-            setSelectedMid(firstModel.mid);
+
+          // 将分类名映射到 type key，用于查找默认模型
+          const catToTypeKey = (cat: string) => {
+            if (cat.includes('video') || cat.includes('视频')) return 'video';
+            if (cat.includes('image') || cat.includes('图片')) return 'image';
+            return 'chat';
+          };
+
+          // 优先选择当前分类的默认模型
+          const typeKey = catToTypeKey(firstCat);
+          const defaultMid = defaultMids[typeKey];
+          const defaultModel = defaultMid ? enabledModels.find(m => m.mid === defaultMid) : null;
+
+          if (defaultModel) {
+            setSelectedMid(defaultModel.mid);
             const defaults: Record<string, any> = {};
-            for (const p of firstModel.params) defaults[p.key] = p.default;
+            for (const p of defaultModel.params) defaults[p.key] = p.default;
             setParamValues(defaults);
+          } else {
+            // 回退：选第一个分类的第一个模型
+            const firstModel = enabledModels.find(m => (m.scheme_type || m.type_name) === firstCat);
+            if (firstModel) {
+              setSelectedMid(firstModel.mid);
+              const defaults: Record<string, any> = {};
+              for (const p of firstModel.params) defaults[p.key] = p.default;
+              setParamValues(defaults);
+            }
           }
         }
 

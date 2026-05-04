@@ -509,7 +509,7 @@ const Users: React.FC = () => {
           loading={loading}
           size="small"
           pagination={{ 
-            defaultPageSize: 50, 
+            pageSize: 50, 
             pageSizeOptions: ['50', '100', '200'], 
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条数据`
