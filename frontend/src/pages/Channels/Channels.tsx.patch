@@ -1,0 +1,25 @@
+--- frontend/src/pages/Channels/Channels.tsx
++++ frontend/src/pages/Channels/Channels.tsx
+@@ -40,6 +40,7 @@
+   const screens = useBreakpoint();
+   const [isExcludeMode, setIsExcludeMode] = useState(false);
+   const [isBranch, setIsBranch] = useState(false);
++  const [activeRightPanel, setActiveRightPanel] = useState<'models' | 'levels' | 'mapping' | 'presets'>('models');
++  const [modelSearch, setModelSearch] = useState('');
+ 
+   const [statusFilter, setStatusFilter] = useState<number | 'all'>('all');
+   const [searchQuery, setSearchQuery] = useState('');
+@@ -141,6 +142,7 @@
+     setShowMapping(false);
+     setIsExcludeMode(false);
+     setIsBranch(false);
++    setActiveRightPanel('models');
+     setIsModalVisible(true);
+   };
+ 
+@@ -171,6 +173,7 @@
+     const configObj = record.config ? (typeof record.config === 'string' ? JSON.parse(record.config) : record.config) : {};
+     setIsBranch(!!configObj.is_branch);
++    setActiveRightPanel('models');
+     setIsModalVisible(true);
+   };
