@@ -365,6 +365,10 @@ macro_rules! pg_migration_blocks {
         .execute(pool).await.ok();
     sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS quota_used DOUBLE PRECISION NOT NULL DEFAULT 0")
         .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS group_aid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
 
     // Forward Rules table
     sqlx::query(

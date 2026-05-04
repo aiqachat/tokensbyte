@@ -218,8 +218,9 @@ const Channels: React.FC = () => {
     if (submitting) return;
     setSubmitting(true);
     const finalMapping: Record<string, string> = {};
-    if (showMapping && values.model_mapping) {
-      for (const [k, v] of Object.entries(values.model_mapping)) {
+    const currentModelMapping = form.getFieldValue('model_mapping') || values.model_mapping;
+    if (showMapping && currentModelMapping) {
+      for (const [k, v] of Object.entries(currentModelMapping)) {
         if (v && String(v).trim()) {
           finalMapping[k] = String(v).trim();
         }
@@ -249,6 +250,19 @@ const Channels: React.FC = () => {
       return;
     }
 
+    // Ensure only one upstream is used and others are explicitly cleared
+    let { preset_id, pool_id, gptimage_pool_id } = values;
+    if (preset_id) {
+      pool_id = null;
+      gptimage_pool_id = null;
+    } else if (pool_id) {
+      preset_id = null;
+      gptimage_pool_id = null;
+    } else if (gptimage_pool_id) {
+      preset_id = null;
+      pool_id = null;
+    }
+
     const data = {
       ...values,
       models: reliableModels,
@@ -259,6 +273,9 @@ const Channels: React.FC = () => {
       config: configObj,
       sort_order: values.sort_order || 0,
       priority: values.priority || 0,
+      preset_id,
+      pool_id,
+      gptimage_pool_id,
     };
     delete data.level_select;
     delete data.models;

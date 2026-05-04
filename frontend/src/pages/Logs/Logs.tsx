@@ -15,6 +15,15 @@ const { Option } = Select;
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
+const maskUrlDomain = (url: string) => {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//***${u.pathname}${u.search}${u.hash}`;
+  } catch {
+    return url.replace(/^(https?:\/\/)[^\/]+/, '$1***');
+  }
+};
+
 const Logs: React.FC = () => {
   const { t } = useTranslation();
   const { token: themeToken } = theme.useToken();
@@ -132,7 +141,6 @@ const Logs: React.FC = () => {
       render: (text: string, record: RequestLog) => (
         <Space direction="vertical" size={0}>
           <Text style={{ fontSize: 12 }}>{text}</Text>
-          {user?.role === 'admin' && record.channel_name && <Text type="secondary" style={{ fontSize: 11 }}>渠道: {record.channel_name}</Text>}
         </Space>
       ),
     },
@@ -212,7 +220,11 @@ const Logs: React.FC = () => {
           <Descriptions.Item label="系统请求路径">
             {record.endpoint.startsWith('http') ? record.endpoint : `${window.location.origin}${record.endpoint.startsWith('/') ? '' : '/'}${record.endpoint}`}
           </Descriptions.Item>
-          {record.upstream_url && <Descriptions.Item label="真实上游地址">{record.upstream_url}</Descriptions.Item>}
+          {record.upstream_url && (
+            <Descriptions.Item label="真实上游地址">
+              {user?.role === 'admin' ? record.upstream_url : maskUrlDomain(record.upstream_url)}
+            </Descriptions.Item>
+          )}
           <Descriptions.Item label="渠道标识">{record.channel_group_aid || '-'}</Descriptions.Item>
           <Descriptions.Item label="错误信息">
             {(() => {
@@ -393,7 +405,7 @@ const Logs: React.FC = () => {
                     {record.token_kid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>KID: {record.token_kid}</Text>}
                   </Space>
                 </CardRow>
-                {user?.role === 'admin' && record.channel_name && <CardRow label="渠道"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_name}</Text></CardRow>}
+                {record.channel_group_aid && <CardRow label="渠道AID"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text></CardRow>}
                 <CardRow label="用量">
                   <Space direction="vertical" size={0} align="end">
                     <Text type="secondary" style={{ fontSize: 12 }}>输入:{record.prompt_tokens} / 输出:{record.completion_tokens}</Text>

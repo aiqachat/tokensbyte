@@ -227,17 +227,11 @@ const TaskLogs: React.FC = () => {
       },
     },
     {
-      title: '渠道',
+      title: '渠道AID',
       key: 'channel',
-      width: 160,
+      width: 120,
       render: (_: any, r: TaskLog) => {
-        if (!r.channel_name) return '-';
-        return (
-          <Space size={4}>
-            <Text>{r.channel_name}</Text>
-            {r.channel_group_aid && <Tag style={{ borderRadius: 10 }}>{r.channel_group_aid}</Tag>}
-          </Space>
-        );
+        return <Text type="secondary" style={{ fontSize: 12 }}>{r.channel_group_aid || '-'}</Text>;
       },
     },
     {
@@ -352,9 +346,9 @@ const TaskLogs: React.FC = () => {
           ) : status === 'failed' ? <Tag color="error">失败</Tag> : <Tag color="success">成功</Tag>
         }
       >
-        {record.channel_name && (
-          <CardRow label="渠道">
-            {record.channel_name} {record.channel_group_aid && <Tag style={{ borderRadius: 10, marginLeft: 4 }}>{record.channel_group_aid}</Tag>}
+        {record.channel_group_aid && (
+          <CardRow label="渠道AID">
+            <Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text>
           </CardRow>
         )}
         {isAdmin && <CardRow label="用户"><Text style={{ fontSize: 12 }}>{record.user_nickname || record.user_id}</Text></CardRow>}
