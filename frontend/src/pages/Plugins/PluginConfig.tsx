@@ -1926,32 +1926,77 @@ const PluginConfigInner: React.FC = () => {
 
         {/* 筛选区 */}
         <div style={{
-          display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center',
-          marginBottom: 16, padding: '12px 16px', borderRadius: 8,
+          display: 'flex', flexDirection: 'column', gap: 16,
+          marginBottom: 16, padding: '16px', borderRadius: 8,
           background: _isLight ? '#fafafa' : 'rgba(255,255,255,0.02)',
           border: _isLight ? '1px solid rgba(0,0,0,0.04)' : '1px solid rgba(255,255,255,0.04)',
         }}>
-          <Input
-            placeholder="搜索模型名称 / ID..."
-            value={mpSearchKeyword}
-            onChange={e => setMpSearchKeyword(e.target.value)}
-            style={{ width: 200 }}
-            allowClear
-            size="small"
-          />
-          <Select value={mpProviderFilter} onChange={setMpProviderFilter} style={{ width: 140 }} size="small">
-            <Select.Option value="all">全部供应商</Select.Option>
-            {mpProviderOptions.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
-          </Select>
-          <Select value={mpTypeFilter} onChange={setMpTypeFilter} style={{ width: 120 }} size="small">
-            <Select.Option value="all">全部类型</Select.Option>
-            {mpTypeOptions.map(t => <Select.Option key={t} value={t}>{t}</Select.Option>)}
-          </Select>
-          <Select value={mpStatusFilter} onChange={setMpStatusFilter} style={{ width: 120 }} size="small">
-            <Select.Option value="all">全部状态</Select.Option>
-            <Select.Option value="enabled">已展示</Select.Option>
-            <Select.Option value="disabled">未展示</Select.Option>
-          </Select>
+          {/* 第一行：搜索 + 供应商 */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
+            <Input
+              placeholder="搜索模型名称 / ID..."
+              value={mpSearchKeyword}
+              onChange={e => setMpSearchKeyword(e.target.value)}
+              style={{ width: 260 }}
+              allowClear
+              size="small"
+            />
+            {/* 供应商筛选 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1 }}>
+              <Text type="secondary" style={{ fontSize: 13, flexShrink: 0, marginTop: 2 }}>供应商:</Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <span 
+                  onClick={() => setMpProviderFilter('all')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpProviderFilter === 'all' ? '#1677ff' : 'transparent', color: mpProviderFilter === 'all' ? '#fff' : 'var(--text-secondary)' }}
+                >全部</span>
+                {mpProviderOptions.map(p => (
+                  <span 
+                    key={p} onClick={() => setMpProviderFilter(p)}
+                    style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpProviderFilter === p ? '#1677ff' : 'transparent', color: mpProviderFilter === p ? '#fff' : 'var(--text-secondary)' }}
+                  >{p}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 第二行：类型 + 状态 */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 32, flexWrap: 'wrap' }}>
+            {/* 类型筛选 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13, flexShrink: 0, marginTop: 2 }}>类型:</Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <span 
+                  onClick={() => setMpTypeFilter('all')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpTypeFilter === 'all' ? '#1677ff' : 'transparent', color: mpTypeFilter === 'all' ? '#fff' : 'var(--text-secondary)' }}
+                >全部</span>
+                {mpTypeOptions.map(t => (
+                  <span 
+                    key={t} onClick={() => setMpTypeFilter(t)}
+                    style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpTypeFilter === t ? '#1677ff' : 'transparent', color: mpTypeFilter === t ? '#fff' : 'var(--text-secondary)' }}
+                  >{t}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* 状态筛选 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13, flexShrink: 0, marginTop: 2 }}>状态:</Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <span 
+                  onClick={() => setMpStatusFilter('all')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpStatusFilter === 'all' ? '#1677ff' : 'transparent', color: mpStatusFilter === 'all' ? '#fff' : 'var(--text-secondary)' }}
+                >全部</span>
+                <span 
+                  onClick={() => setMpStatusFilter('enabled')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpStatusFilter === 'enabled' ? '#1677ff' : 'transparent', color: mpStatusFilter === 'enabled' ? '#fff' : 'var(--text-secondary)' }}
+                >已展示</span>
+                <span 
+                  onClick={() => setMpStatusFilter('disabled')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpStatusFilter === 'disabled' ? '#1677ff' : 'transparent', color: mpStatusFilter === 'disabled' ? '#fff' : 'var(--text-secondary)' }}
+                >未展示</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <Table

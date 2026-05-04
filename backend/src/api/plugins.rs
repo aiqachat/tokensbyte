@@ -1108,19 +1108,21 @@ pub async fn get_marketplace_public(
 
     // 2. 用户等级权限校验
     if plugin.allowed_levels != "all" {
-        let user_info: Option<(String, Option<i64>)> = sqlx::query_as(
-            &state.db.format_query("SELECT u.user_group, ul.id as level_id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
+        let user_info: Option<(String, String, Option<i64>)> = sqlx::query_as(
+            &state.db.format_query("SELECT u.role, u.user_group, ul.id as level_id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
         )
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?;
 
-        let (user_group, user_level_id) = user_info.unwrap_or_else(|| ("default".to_string(), Some(0)));
-        let allowed: Vec<&str> = plugin.allowed_levels.split(',').collect();
-        let level_id_str = user_level_id.unwrap_or(0).to_string();
+        let (role, user_group, user_level_id) = user_info.unwrap_or_else(|| ("user".to_string(), "default".to_string(), Some(0)));
+        if role != "admin" {
+            let allowed: Vec<&str> = plugin.allowed_levels.split(',').collect();
+            let level_id_str = user_level_id.unwrap_or(0).to_string();
 
-        if !allowed.contains(&user_group.as_str()) && !allowed.contains(&level_id_str.as_str()) {
-            return Err(AppError::Forbidden("您当前的用户等级无权访问模型广场".to_string()));
+            if !allowed.contains(&user_group.as_str()) && !allowed.contains(&level_id_str.as_str()) {
+                return Err(AppError::Forbidden("您当前的用户等级无权访问模型广场".to_string()));
+            }
         }
     }
 

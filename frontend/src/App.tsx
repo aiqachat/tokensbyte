@@ -102,11 +102,10 @@ const App: React.FC = () => {
         <Route path="/admin0755" element={<AdminLogin />} />
         <Route path="/legal/:type" element={<LegalPage />} />
 
-        {/* Playground Routes (Full Screen, Independent) */}
         <Route
           path="/playground"
           element={
-            <PrivateRoute userOnly={true}>
+            <PrivateRoute>
               <PlaygroundHome />
             </PrivateRoute>
           }
@@ -114,7 +113,7 @@ const App: React.FC = () => {
         <Route
           path="/playground/:projectId"
           element={
-            <PrivateRoute userOnly={true}>
+            <PrivateRoute>
               <Playground />
             </PrivateRoute>
           }
@@ -124,7 +123,7 @@ const App: React.FC = () => {
         <Route
           path="/models"
           element={
-            <PrivateRoute userOnly={true}>
+            <PrivateRoute>
               <ModelMarketplace />
             </PrivateRoute>
           }

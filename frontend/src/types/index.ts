@@ -153,6 +153,7 @@ export interface Channel {
   models: string[];
   model_mapping: Record<string, string>;
   user_groups: string[];
+  exclude_user_groups?: string[];
   group_aid?: string;
   preset_id?: number | null;
   pool_id?: number | null;   // 关联的火山引擎卡池ID
@@ -165,6 +166,7 @@ export interface Channel {
   quota_used: number;
   config?: string | any;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ApiToken {

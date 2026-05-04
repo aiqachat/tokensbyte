@@ -215,6 +215,7 @@ const Channels: React.FC = () => {
       user_groups: isExcludeMode ? [] : selectedLevels,
       exclude_user_groups: isExcludeMode ? selectedLevels : [],
       config: configObj,
+      priority: values.priority || 0,
     };
     delete data.level_select;
 
@@ -235,93 +236,101 @@ const Channels: React.FC = () => {
     }
   };
 
+  const handleUpdatePriority = async (id: number, priority: number) => {
+    try {
+      await request.put(`/channels/${id}`, { priority });
+      // Update local state without full refresh for instant feedback
+      setChannels(prev => prev.map(c => c.id === id ? { ...c, priority } : c));
+      message.success('排序已更新');
+    } catch (e) {
+      console.error(e);
+      message.error('排序更新失败');
+    }
+  };
+
   const columns = [
     {
-      title: '渠道分组 AID',
-      dataIndex: 'group_aid',
-      key: 'group_aid',
-      render: (aid: string) => {
-        return aid ? <Tag color="geekblue">{aid}</Tag> : <Text type="secondary">-</Text>;
-      }
+      title: '渠道分组名称',
+      key: 'name_and_aid',
+      render: (_: any, record: Channel) => (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <Text strong style={{ fontSize: 14 }}>{record.name}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>AID: {record.group_aid || '-'}</Text>
+        </div>
+      ),
     },
     {
-      title: t('channels.name'),
-      dataIndex: 'name',
-      key: 'name',
-      render: (text: string) => <Text strong>{text}</Text>,
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: number) => (
+        <Space size={6} style={{ color: status === 1 ? '#52c41a' : '#ff4d4f' }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: status === 1 ? '#52c41a' : '#ff4d4f' }} />
+          <span style={{ fontSize: 13 }}>{status === 1 ? t('common.active') : t('common.disabled')}</span>
+        </Space>
+      ),
     },
     {
-      title: t('channels.type'),
-      dataIndex: 'provider_type',
-      key: 'provider_type',
-      render: (type: string) => <Tag color="purple">通用接口池</Tag>,
-    },
-    {
-      title: '支持等级', // Supported user levels
+      title: '支持等级',
       key: 'user_groups',
-      render: (_: any, record: any) => {
+      render: (_: any, record: Channel) => {
         const groups = record.user_groups;
         const excludeGroups = record.exclude_user_groups;
         if (excludeGroups && excludeGroups.length > 0) {
-          return (
-            <Space size={[0, 4]} wrap>
-              <Tag color="orange">排除模式</Tag>
-              {excludeGroups.map((idStr: string) => {
-                const level = availableUserLevels.find(l => l.id.toString() === idStr || l.group_key === idStr);
-                return <Tag color="red" key={idStr}>{level ? level.name : idStr}</Tag>;
-              })}
-            </Space>
-          );
+          return <Text type="secondary" style={{ fontSize: 13 }}>排除 {excludeGroups.length} 个等级</Text>;
         }
-        if (!groups || groups.length === 0) return <Tag color="green">全部允许</Tag>;
-        return (
-          <Space size={[0, 4]} wrap>
-            {groups.map((idStr: string) => {
-              const level = availableUserLevels.find(l => l.id.toString() === idStr || l.group_key === idStr);
-              return <Tag color="blue" key={idStr}>{level ? level.name : idStr}</Tag>;
-            })}
-          </Space>
-        );
+        if (!groups || groups.length === 0) {
+          return <Text type="secondary" style={{ fontSize: 13 }}>全部允许</Text>;
+        }
+        return <Text type="secondary" style={{ fontSize: 13 }}>允许 {groups.length} 个等级</Text>;
       },
     },
     {
-      title: '已用/额度',
+      title: '消耗 / 额度',
       key: 'quota',
-      width: 160,
       render: (_: any, record: Channel) => {
         const used = record.quota_used || 0;
         const limit = record.quota_limit ?? -1;
         return (
-          <Space size={4}>
-            <Tag color="orange">{currencySymbol}{used.toFixed(2)}</Tag>
-            <Text type="secondary">/</Text>
-            {limit < 0 
-              ? <Tag color="green">∞ 无限额</Tag>
-              : <Tag color="default">{currencySymbol}{limit.toFixed(2)}</Tag>
-            }
-          </Space>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            {currencySymbol}{used.toFixed(2)} / {limit < 0 ? '∞' : `${currencySymbol}${limit.toFixed(2)}`}
+          </Text>
         );
       }
     },
     {
-      title: t('common.status'),
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: number) => (
-        <Tag color={status === 1 ? 'success' : 'error'}>
-          {status === 1 ? t('common.active') : t('common.disabled')}
-        </Tag>
-      ),
+      title: '排序',
+      dataIndex: 'priority',
+      key: 'priority',
+      sorter: (a: Channel, b: Channel) => (a.priority || 0) - (b.priority || 0),
+      render: (priority: number) => <Text type="secondary" style={{ fontSize: 13 }}>{priority || 0}</Text>,
     },
     {
-      title: t('common.actions'),
+      title: '最后修改',
+      dataIndex: 'updated_at',
+      key: 'updated_at',
+      sorter: (a: Channel, b: Channel) => {
+        const ta = a.updated_at || a.created_at || '';
+        const tb = b.updated_at || b.created_at || '';
+        return ta.localeCompare(tb);
+      },
+      render: (t: string, record: Channel) => {
+        const time = t || record.created_at;
+        if (!time) return <Text type="secondary">-</Text>;
+        const d = new Date(time);
+        return <Text type="secondary" style={{ fontSize: 13 }}>{d.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</Text>;
+      },
+    },
+    {
+      title: '',
       key: 'actions',
+      align: 'right' as const,
       render: (_: unknown, record: Channel) => (
-        <Space>
-          <Button onClick={() => handleTest(record)}>{t('common.test')}</Button>
-          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+        <Space size={4} style={{ opacity: 0.8 }}>
+          <Button type="text" size="small" onClick={() => handleTest(record)} style={{ fontSize: 13 }}>测试</Button>
+          <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-            <Button icon={<DeleteOutlined />} danger />
+            <Button type="text" size="small" icon={<DeleteOutlined />} danger />
           </Popconfirm>
         </Space>
       ),
@@ -370,39 +379,40 @@ const Channels: React.FC = () => {
                 return (
                   <MobileCard
                     title={<Text strong>{record.name}</Text>}
-                    extra={<Tag color={record.status === 1 ? 'success' : 'error'}>{record.status === 1 ? t('common.active') : t('common.disabled')}</Tag>}
+                    extra={
+                      <Space size={6} style={{ color: record.status === 1 ? '#52c41a' : '#ff4d4f' }}>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: record.status === 1 ? '#52c41a' : '#ff4d4f' }} />
+                        <span style={{ fontSize: 12 }}>{record.status === 1 ? t('common.active') : t('common.disabled')}</span>
+                      </Space>
+                    }
                   >
-                    {record.group_aid && <CardRow label="AID"><Tag color="geekblue">{record.group_aid}</Tag></CardRow>}
-                    <CardRow label="类型"><Tag color="purple">通用接口池</Tag></CardRow>
+                    {record.group_aid && <CardRow label="AID"><Text type="secondary">{record.group_aid}</Text></CardRow>}
                     <CardRow label="支持等级">
+                      <Text type="secondary">
                       {excludeGroups && excludeGroups.length > 0
-                        ? <Space size={[0, 4]} wrap>
-                            <Tag color="orange">排除模式</Tag>
-                            {excludeGroups.map((idStr: string) => {
-                              const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
-                              return <Tag color="red" key={idStr}>{lv ? lv.name : idStr}</Tag>;
-                            })}
-                          </Space>
+                        ? `排除 ${excludeGroups.length} 个等级`
                         : (!groups || groups.length === 0)
-                          ? <Tag color="green">全部允许</Tag>
-                          : <Space size={[0, 4]} wrap>{groups.map((idStr: string) => {
-                              const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
-                              return <Tag color="blue" key={idStr}>{lv ? lv.name : idStr}</Tag>;
-                            })}</Space>
+                          ? '全部允许'
+                          : `允许 ${groups.length} 个等级`
                       }
+                      </Text>
                     </CardRow>
                     <CardRow label="已用/额度">
-                      <Space size={4}>
-                        <Tag color="orange">{currencySymbol}{used.toFixed(2)}</Tag>
-                        <Text type="secondary">/</Text>
-                        {limit < 0 ? <Tag color="green">∞</Tag> : <Tag>{currencySymbol}{limit.toFixed(2)}</Tag>}
-                      </Space>
+                      <Text type="secondary">
+                        {currencySymbol}{used.toFixed(2)} / {limit < 0 ? '∞' : `${currencySymbol}${limit.toFixed(2)}`}
+                      </Text>
+                    </CardRow>
+                    <CardRow label="排序">
+                      <Text type="secondary">{record.priority || 0}</Text>
+                    </CardRow>
+                    <CardRow label="最后修改">
+                      <Text type="secondary" style={{ fontSize: 12 }}>{new Date(record.updated_at || record.created_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</Text>
                     </CardRow>
                     <CardActions>
-                      <Button size="small" onClick={() => handleTest(record)}>{t('common.test')}</Button>
-                      <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                      <Button type="text" size="small" onClick={() => handleTest(record)}>测试</Button>
+                      <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
                       <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-                        <Button size="small" icon={<DeleteOutlined />} danger />
+                        <Button type="text" size="small" icon={<DeleteOutlined />} danger />
                       </Popconfirm>
                     </CardActions>
                   </MobileCard>
@@ -437,6 +447,22 @@ const Channels: React.FC = () => {
                     <Form.Item name="name" label={<Text strong>{t('channels.name')}</Text>} rules={[{ required: true }]}>
                       <Input placeholder="e.g. OpenAI Primary" />
                     </Form.Item>
+
+                    <Row gutter={16}>
+                      <Col span={12}>
+                        <Form.Item name="priority" label={<Text strong>排序</Text>} initialValue={0}>
+                          <InputNumber min={0} max={9999} style={{ width: '100%' }} placeholder="越大越靠前" />
+                        </Form.Item>
+                      </Col>
+                      <Col span={12}>
+                        <Form.Item name="status" label={<Text strong>状态</Text>} initialValue={1}>
+                          <Select>
+                            <Option value={1}>启用</Option>
+                            <Option value={0}>禁用</Option>
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                    </Row>
 
                     <Form.Item shouldUpdate={(prev, curr) => prev.preset_id !== curr.preset_id || prev.pool_id !== curr.pool_id || prev.gptimage_pool_id !== curr.gptimage_pool_id} noStyle>
                       {() => {
@@ -581,14 +607,6 @@ const Channels: React.FC = () => {
                               formatter={(val) => (val === -1 || val === '-1') ? '无限额' : `${val}`}
                               parser={(val) => (val === '无限额' ? -1 : parseFloat(val as string) || 0) as -1}
                             />
-                          </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                          <Form.Item name="status" label="状态" initialValue={1}>
-                            <Select>
-                              <Option value={1}>{t('common.enabled')}</Option>
-                              <Option value={0}>{t('common.disabled')}</Option>
-                            </Select>
                           </Form.Item>
                         </Col>
                       </Row>
