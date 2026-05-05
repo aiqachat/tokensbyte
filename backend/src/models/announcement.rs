@@ -3,7 +3,7 @@ use sqlx::FromRow;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct Announcement {
-    pub id: i32,
+    pub id: i64,
     pub title: String,
     pub content: String,
     pub is_pinned: i32,

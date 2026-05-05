@@ -1,41 +1,30 @@
 pub mod migrations;
 
-use sqlx::{Pool, Any, any::AnyPoolOptions};
+use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
 use crate::config::AppConfig;
 use crate::auth;
 
 #[derive(Debug, Clone)]
 pub struct Database {
-    pub pool: Pool<Any>,
-    pub is_sqlite: bool,
+    pub pool: Pool<Postgres>,
 }
 
 impl Database {
     pub async fn new(database_url: &str) -> anyhow::Result<Self> {
-        // Automatically install drivers
-        sqlx::any::install_default_drivers();
-
-        // Ensure data directory exists for SQLite
-        if database_url.starts_with("sqlite:") {
-            let path = database_url
-                .trim_start_matches("sqlite:")
-                .split('?')
-                .next()
-                .unwrap_or("./data/tokensbyte.db");
-            if let Some(parent) = std::path::Path::new(path).parent() {
-                tokio::fs::create_dir_all(parent).await?;
-            }
-        }
-
         let mut attempts = 0;
         let max_attempts = 15;
         eprintln!("⏳ Attempting database connection (attempt {})...", attempts);
+        let mut actual_url = database_url.to_string();
+        if actual_url.starts_with("postgres://") && !actual_url.contains("sslmode=") {
+            actual_url = format!("{}?sslmode=disable", actual_url);
+        }
+
         let pool = loop {
             attempts += 1;
-            match AnyPoolOptions::new()
+            match PgPoolOptions::new()
                 .max_connections(20)
                 .acquire_timeout(std::time::Duration::from_secs(5))
-                .connect(database_url)
+                .connect(&actual_url)
                 .await
             {
                 Ok(pool) => break pool,
@@ -52,33 +41,18 @@ impl Database {
             }
         };
 
-        let is_sqlite = database_url.starts_with("sqlite:");
-        if is_sqlite {
-            eprintln!("🔄 Executing SQLite PRAGMAs...");
-            sqlx::query("PRAGMA journal_mode=WAL").execute(&pool).await?;
-            sqlx::query("PRAGMA foreign_keys=ON").execute(&pool).await?;
-        }
-
         eprintln!("✅ Database connection established.");
-        Ok(Self { pool, is_sqlite })
+        Ok(Self { pool })
     }
 
     pub async fn run_migrations(&self) -> anyhow::Result<()> {
         eprintln!("🚀 Starting database migrations...");
-        if self.is_sqlite {
-            migrations::run_any(&self.pool).await?;
-        } else {
-            migrations::run_pg_any(&self.pool).await?;
-        }
+        migrations::run_pg(&self.pool).await?;
         eprintln!("✅ Database migrations completed.");
         Ok(())
     }
 
     pub fn format_query(&self, sql: &str) -> String {
-        if self.is_sqlite {
-            return sql.to_string();
-        }
-
         // Convert SQLite-specific functions and keywords to PostgreSQL
         let mut sql_new = sql.replace("date('now')", "CURRENT_DATE");
         sql_new = sql_new.replace("datetime('now')", "CURRENT_TIMESTAMP");

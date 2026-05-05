@@ -39,11 +39,17 @@ pub struct RequestLog {
     #[sqlx(default)]
     pub user_group: Option<String>,
     #[sqlx(default)]
+    pub user_level_name: Option<String>,
+    #[sqlx(default)]
     pub user_uid: Option<String>,
     #[sqlx(default)]
     pub channel_name: Option<String>,
     #[sqlx(default)]
     pub billing_detail: Option<String>,
+    #[sqlx(default)]
+    pub billing_pid: Option<String>,
+    #[sqlx(default)]
+    pub forward_eid: Option<String>,
     pub created_at: String,
 }
 
@@ -58,6 +64,7 @@ pub struct LogQuery {
     pub status: Option<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
+    pub uid: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

@@ -12,6 +12,7 @@ pub struct Channel {
     pub models: String,       // JSON array string
     pub model_mapping: String, // JSON object string
     pub user_groups: String,   // JSON array of user level ids/keys
+    pub exclude_user_groups: String, // JSON array of excluded user level ids/keys (blacklist)
     #[sqlx(default)]
     pub group_aid: Option<String>,
     #[sqlx(default)]
@@ -20,6 +21,7 @@ pub struct Channel {
     pub pool_id: Option<i64>,    // 关联的卡池ID
     #[sqlx(default)]
     pub gptimage_pool_id: Option<i64>, // GPT-Image卡池ID
+    pub sort_order: i32,
     pub priority: i32,
     pub weight: i32,
     pub status: i32,           // 1=active, 0=disabled, 2=testing
@@ -39,6 +41,10 @@ impl Channel {
 
     pub fn get_user_groups(&self) -> Vec<String> {
         serde_json::from_str(&self.user_groups).unwrap_or_default()
+    }
+
+    pub fn get_exclude_user_groups(&self) -> Vec<String> {
+        serde_json::from_str(&self.exclude_user_groups).unwrap_or_default()
     }
 
     pub fn get_model_mapping(&self) -> std::collections::HashMap<String, String> {
@@ -82,10 +88,12 @@ pub struct CreateChannelRequest {
     pub models: Vec<String>,
     pub model_mapping: Option<std::collections::HashMap<String, String>>,
     pub user_groups: Option<Vec<String>>,
+    pub exclude_user_groups: Option<Vec<String>>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
     pub pool_id: Option<i64>,
     pub gptimage_pool_id: Option<i64>,
+    pub sort_order: Option<i32>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub max_rps: Option<i32>,
@@ -103,10 +111,12 @@ pub struct UpdateChannelRequest {
     pub models: Option<Vec<String>>,
     pub model_mapping: Option<std::collections::HashMap<String, String>>,
     pub user_groups: Option<Vec<String>>,
+    pub exclude_user_groups: Option<Vec<String>>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
     pub pool_id: Option<i64>,
     pub gptimage_pool_id: Option<i64>,
+    pub sort_order: Option<i32>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub status: Option<i32>,
@@ -133,10 +143,12 @@ pub struct ChannelSafe {
     pub models: Vec<String>,
     pub model_mapping: std::collections::HashMap<String, String>,
     pub user_groups: Vec<String>,
+    pub exclude_user_groups: Vec<String>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
     pub pool_id: Option<i64>,
     pub gptimage_pool_id: Option<i64>,
+    pub sort_order: i32,
     pub priority: i32,
     pub weight: i32,
     pub status: i32,
@@ -153,6 +165,7 @@ impl From<Channel> for ChannelSafe {
         let models = ch.get_models();
         let model_mapping = ch.get_model_mapping();
         let user_groups = ch.get_user_groups();
+        let exclude_user_groups = ch.get_exclude_user_groups();
         Self {
             id: ch.id,
             name: ch.name,
@@ -162,10 +175,12 @@ impl From<Channel> for ChannelSafe {
             models,
             model_mapping,
             user_groups,
+            exclude_user_groups,
             group_aid: ch.group_aid,
             preset_id: ch.preset_id,
             pool_id: ch.pool_id,
             gptimage_pool_id: ch.gptimage_pool_id,
+            sort_order: ch.sort_order,
             priority: ch.priority,
             weight: ch.weight,
             status: ch.status,
@@ -182,6 +197,6 @@ impl From<Channel> for ChannelSafe {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TestChannelRequest {
     pub model: Option<String>,
-    pub forward_rule_id: Option<i32>,
+    pub forward_rule_id: Option<i64>,
 }
 

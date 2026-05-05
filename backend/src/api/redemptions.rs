@@ -8,7 +8,7 @@ use crate::auth;
 use crate::models::{Redemption, CreateRedemptionRequest, RedemptionListResponse, RedeemRequest};
 
 use crate::error::{AppResult, AppError};
-use sqlx::Any;
+
 use rand::{distributions::Alphanumeric, Rng};
 
 /// Admin: List all redemption codes
@@ -128,7 +128,7 @@ pub async fn redeem_code(
         .await?;
 
     // 4. Create recharge record
-    let recharge_id: i64 = sqlx::query_scalar::<Any, i64>(
+    let recharge_id: i64 = sqlx::query_scalar::<_, i64>(
         &state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'redemption', ?) RETURNING id")
     )
     .bind(&user_id)

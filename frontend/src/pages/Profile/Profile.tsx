@@ -142,11 +142,10 @@ const Profile: React.FC = () => {
 
   const handleUpdate = async (values: any) => {
     try {
-      const resp = await (request.put('/user/profile', values) as unknown as Promise<User>);
+      await request.put('/user/profile', values);
       message.success(t('profile.edit_success'));
-      setProfile(resp);
-      setUser(resp);
       setIsModalVisible(false);
+      fetchProfile();
     } catch (e) { console.error(e); }
   };
 

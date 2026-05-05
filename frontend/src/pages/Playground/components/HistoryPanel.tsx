@@ -5,7 +5,7 @@
  * 数据来源：后端 /playground/projects API
  */
 import React, { useState, useRef, useCallback } from 'react';
-import { Input, Typography, Tooltip, message } from 'antd';
+import { Input, Typography, Tooltip, message, Modal, App } from 'antd';
 import {
   SearchOutlined, AppstoreOutlined, TeamOutlined,
   DesktopOutlined, VideoCameraOutlined, PictureOutlined,
@@ -44,6 +44,8 @@ const HistoryPanel: React.FC = () => {
   const [position, setPosition] = useState({ x: 24, y: 80 });
   const [activeTab, setActiveTab] = useState<'my' | 'shared'>('my');
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [hoveredProjectId, setHoveredProjectId] = useState<number | null>(null);
+  const { modal, message: appMessage } = App.useApp();
   const panelRef = useRef<HTMLDivElement>(null);
 
   const isDragging = useRef(false);
@@ -53,6 +55,7 @@ const HistoryPanel: React.FC = () => {
   const {
     projects, currentProjectId, setCurrentProjectId,
     loadProjects, createProject, saveCanvasState,
+    storageStats,
   } = usePlayground();
 
   const { nodes, setNodes } = useCanvas();
@@ -205,24 +208,35 @@ const HistoryPanel: React.FC = () => {
     const id = await createProject();
     if (id) {
       setNodes([]);
-      message.success('新项目已创建');
+      appMessage.success('新项目已创建');
     }
   }, [createProject, setNodes]);
 
   // 删除项目
-  const handleDeleteProject = useCallback(async (e: React.MouseEvent, projectId: number) => {
+  const handleDeleteProject = useCallback((e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
-    try {
-      await request.delete(`/playground/projects/${projectId}`);
-      message.success('项目已删除');
-      await loadProjects();
-      if (projectId === currentProjectId) {
-        setCurrentProjectId(null);
-        setNodes([]);
+    modal.confirm({
+      title: <span style={{ color: '#E3E3E3' }}>确认删除此项目？</span>,
+      content: <span style={{ color: 'rgba(255,77,79,0.8)' }}>警告：此操作为物理删除，删除后该项目下的所有内容和数据将永久丢失，无法恢复！</span>,
+      wrapClassName: 'dark-confirm-modal',
+      className: 'dark-confirm-modal',
+      okText: '确定删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await request.delete(`/playground/projects/${projectId}`);
+          appMessage.success('项目已删除');
+          await loadProjects();
+          if (projectId === currentProjectId) {
+            setCurrentProjectId(null);
+            setNodes([]);
+          }
+        } catch {
+          appMessage.error('删除失败');
+        }
       }
-    } catch {
-      message.error('删除失败');
-    }
+    });
   }, [loadProjects, currentProjectId, setCurrentProjectId, setNodes]);
 
   // 重命名项目
@@ -236,7 +250,7 @@ const HistoryPanel: React.FC = () => {
       await loadProjects();
       setEditingProjectId(null);
     } catch {
-      message.error('重命名失败');
+      appMessage.error('重命名失败');
     }
   }, [editingName, loadProjects]);
 
@@ -454,9 +468,11 @@ const HistoryPanel: React.FC = () => {
                         border: project.id === currentProjectId ? '1px solid rgba(22,119,255,0.25)' : '1px solid transparent',
                       }}
                       onMouseEnter={(e) => {
+                        setHoveredProjectId(project.id);
                         if (project.id !== currentProjectId) e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
                       }}
                       onMouseLeave={(e) => {
+                        setHoveredProjectId(null);
                         if (project.id !== currentProjectId) e.currentTarget.style.background = 'transparent';
                       }}
                     >
@@ -497,7 +513,11 @@ const HistoryPanel: React.FC = () => {
                             <div style={{ fontSize: 14, fontWeight: 500, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {project.name}
                             </div>
-                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 3 }}>
+                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 2, fontFamily: 'monospace' }}>
+                              ID: {project.id}
+                            </div>
+
+                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
                               {new Date(project.updated_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
                             </div>
                           </>
@@ -505,7 +525,7 @@ const HistoryPanel: React.FC = () => {
                       </div>
 
                       {/* 操作按钮 */}
-                      {project.id === currentProjectId && editingProjectId !== project.id && (
+                      {(project.id === currentProjectId || project.id === hoveredProjectId) && editingProjectId !== project.id && (
                         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                           <Tooltip title="重命名">
                             <div
@@ -566,13 +586,94 @@ const HistoryPanel: React.FC = () => {
         )}
       </div>
 
+      {/* 底部使用量统计 */}
+      {storageStats && (
+        <div style={{
+          padding: '16px 20px',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          background: 'rgba(0,0,0,0.2)',
+          flexShrink: 0,
+        }}>
+          {/* 存储空间进度条 */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
+              <span>存储空间</span>
+              <span>{storageStats.total_size_mb ? storageStats.total_size_mb.toFixed(2) : 0} MB / {storageStats.quota_mb} MB</span>
+            </div>
+            <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ 
+                height: '100%', 
+                width: `${storageStats.usage_percent || 0}%`, 
+                background: (storageStats.usage_percent || 0) > 90 ? '#ff4d4f' : '#1677ff',
+                borderRadius: 3 
+              }} />
+            </div>
+          </div>
+          
+          {/* 项目限制 */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
+              <span>创建项目数量</span>
+              <span>{projects.length} / {storageStats.max_projects} 个</span>
+            </div>
+            <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ 
+                height: '100%', 
+                width: `${Math.min((projects.length / (storageStats.max_projects || 1)) * 100, 100)}%`, 
+                background: projects.length >= storageStats.max_projects ? '#ff4d4f' : '#52c41a',
+                borderRadius: 3 
+              }} />
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .hide-scrollbar::-webkit-scrollbar {
           width: 0px;
           background: transparent;
         }
-      `}
-      </style>
+        
+        /* 强制覆盖 Modal.confirm 的深色样式 */
+        .dark-confirm-modal .ant-modal-content,
+        .dark-confirm-modal.ant-modal-content,
+        .ant-modal-wrap.dark-confirm-modal .ant-modal-content {
+          background: #1e1f20 !important;
+          border: 1px solid #444746 !important;
+          border-radius: 16px !important;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+        }
+        .dark-confirm-modal .ant-modal-confirm-title { color: #e3e3e3 !important; }
+        .dark-confirm-modal .ant-modal-confirm-content { color: #c4c7c5 !important; }
+        .dark-confirm-modal .ant-btn-default {
+          background: transparent !important;
+          border: 1px solid #444746 !important;
+          color: #e3e3e3 !important;
+          border-radius: 8px !important;
+          outline: none !important;
+          box-shadow: none !important;
+        }
+        .dark-confirm-modal .ant-btn-default:hover {
+          background: rgba(255,255,255,0.08) !important;
+          border-color: #8ab4f8 !important;
+          color: #8ab4f8 !important;
+        }
+        .dark-confirm-modal .ant-btn-primary.ant-btn-dangerous {
+          background: rgba(255, 77, 79, 0.15) !important;
+          border: 1px solid rgba(255, 77, 79, 0.3) !important;
+          color: #ff4d4f !important;
+          border-radius: 8px !important;
+          outline: none !important;
+          box-shadow: none !important;
+        }
+        .dark-confirm-modal .ant-btn-primary.ant-btn-dangerous:hover {
+          background: rgba(255, 77, 79, 0.25) !important;
+          border-color: rgba(255, 77, 79, 0.5) !important;
+        }
+        .dark-confirm-modal .ant-modal-confirm-btns {
+          margin-top: 24px !important;
+        }
+      `}</style>
     </div>
   );
 };

@@ -113,7 +113,7 @@ pub async fn list_recharges(
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct FinanceOrderRecord {
-    pub id: i32,
+    pub id: i64,
     pub out_trade_no: String,
     pub user_id: String,
     pub username: String,

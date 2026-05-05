@@ -3,12 +3,13 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ConfigProvider, theme, Input, Tooltip, message, Popover, Avatar, Button, Modal } from 'antd';
+import { ConfigProvider, theme, Input, Tooltip, message, Popover, Avatar, Button, Modal, App } from 'antd';
 import {
   SearchOutlined, PlusOutlined, DeleteOutlined, EditOutlined,
   AppstoreOutlined, TeamOutlined, AudioOutlined, ArrowUpOutlined,
   ThunderboltOutlined, FileTextOutlined, MobileOutlined, DesktopOutlined, RocketOutlined,
-  DashboardOutlined, WalletOutlined, LogoutOutlined, SunOutlined, MoonOutlined, CheckOutlined
+  DashboardOutlined, WalletOutlined, LogoutOutlined, SunOutlined, MoonOutlined, CheckOutlined,
+  ExclamationCircleOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useThemeStore } from '../../store/theme';
@@ -50,11 +51,13 @@ const formatDateGroup = (dateStr: string): string => {
 const PlaygroundHome: React.FC = () => {
   const { themeMode } = useThemeStore();
   const navigate = useNavigate();
+  const { modal, message: appMessage } = App.useApp();
   const { user, logout } = useAuthStore();
   const [siteName, setSiteName] = useState<string>('TokensByte');
   const [siteLogo, setSiteLogo] = useState<string>('');
   const [agreement, setAgreement] = useState<any>(null);
   const [projects, setProjects] = useState<ProjectItem[]>([]);
+  const [storageStats, setStorageStats] = useState<any>(null);
   const [selectedProject, setSelectedProject] = useState<ProjectItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -67,6 +70,11 @@ const PlaygroundHome: React.FC = () => {
   const [platform, setPlatform] = useState<'app' | 'web'>('app');
   const isCreatingRef = useRef(false);
   const { setTheme } = useThemeStore();
+  const [storageReady, setStorageReady] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [initPhase, setInitPhase] = useState<string>('正在检查存储配置...');
+  const [initializing, setInitializing] = useState(true);
+  const [rightEditingName, setRightEditingName] = useState<string | null>(null);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -84,12 +92,20 @@ const PlaygroundHome: React.FC = () => {
         console.error('获取站点配置失败', e);
       }
 
+      try {
+        const statsRes = await request.get('/playground/storage-stats') as any;
+        setStorageStats(statsRes);
+      } catch (e) {
+        console.error('获取存储统计失败', e);
+      }
+
+      setInitPhase('正在加载项目...');
       const res = await request.get('/playground/projects') as any;
       let list: ProjectItem[] = res?.projects || [];
       if (list.length === 0 && !isCreatingRef.current) {
         isCreatingRef.current = true;
         try {
-          // 自动创建一个默认的未命名项目
+          setInitPhase('正在创建第一个项目...');
           const createRes = await request.post('/playground/projects', { name: '未命名项目' }) as any;
           if (createRes?.id) {
             const freshRes = await request.get('/playground/projects') as any;
@@ -105,17 +121,38 @@ const PlaygroundHome: React.FC = () => {
         if (prev && !list.find(p => p.id === prev.id)) return list[0] || null;
         return prev;
       });
+      setInitPhase('准备就绪');
     } catch (e) {
       console.error('加载项目列表失败', e);
     } finally {
       setLoading(false);
+      setTimeout(() => setInitializing(false), 400);
     }
   }, []);
 
+  // 初始化存储：检查 TOS 配置并创建用户文件夹
+  const initStorage = useCallback(async () => {
+    try {
+      setStorageError(null);
+      setInitializing(true);
+      setInitPhase('正在初始化存储空间...');
+      await request.post('/playground/init-storage', {});
+      setStorageReady(true);
+      // 存储就绪后加载项目
+      loadProjects();
+    } catch (e: any) {
+      const errMsg = e?.response?.data?.message || e?.message || '存储初始化失败';
+      setStorageError(errMsg);
+      setStorageReady(false);
+      setLoading(false);
+      setInitializing(false);
+    }
+  }, [loadProjects]);
+
   useEffect(() => {
     document.title = 'AI 创作中心';
-    loadProjects();
-  }, [loadProjects]);
+    initStorage();
+  }, [initStorage]);
 
   const handleCreateProject = useCallback(async (promptText?: string) => {
     try {
@@ -125,7 +162,7 @@ const PlaygroundHome: React.FC = () => {
         navigate(`/playground/${res.id}`);
       }
     } catch {
-      message.error('创建项目失败');
+      appMessage.error('创建项目失败');
     }
   }, [navigate]);
 
@@ -137,13 +174,15 @@ const PlaygroundHome: React.FC = () => {
     e.stopPropagation();
     
     if (projects.length <= 1) {
-      message.info('由于这是您的最后一个项目，建议直接编辑或重命名使用。');
+      appMessage.info('由于这是您的最后一个项目，建议直接编辑或重命名使用。');
       return;
     }
 
-    Modal.confirm({
-      title: '确定要删除该项目吗？',
-      content: '删除后，该项目下的所有对话记录和画布内容都将无法找回。',
+    modal.confirm({
+      title: <span style={{ color: '#E3E3E3' }}>确认删除此项目？</span>,
+      content: <span style={{ color: 'rgba(255,77,79,0.8)' }}>警告：此操作为物理删除，删除后该项目下的所有内容和数据将永久丢失，无法恢复！</span>,
+      wrapClassName: 'dark-confirm-modal',
+      className: 'dark-confirm-modal',
       okText: '确定删除',
       okType: 'danger',
       cancelText: '取消',
@@ -151,10 +190,10 @@ const PlaygroundHome: React.FC = () => {
       async onOk() {
         try {
           await request.delete(`/playground/projects/${projectId}`);
-          message.success('项目已删除');
+          appMessage.success('项目已删除');
           await loadProjects();
         } catch {
-          message.error('删除失败');
+          appMessage.error('删除失败');
         }
       },
     });
@@ -167,7 +206,7 @@ const PlaygroundHome: React.FC = () => {
       await loadProjects();
       setEditingId(null);
     } catch {
-      message.error('重命名失败');
+      appMessage.error('重命名失败');
     }
   }, [editingName, loadProjects]);
 
@@ -203,8 +242,123 @@ const PlaygroundHome: React.FC = () => {
         position: 'relative',
       }}>
         <CanvasParticles />
-        
-        {/* ===== 左侧浮动面板：项目列表 ===== */}
+
+        <style>{`
+          @keyframes pgSpin {
+            to { transform: rotate(360deg); }
+          }
+          @keyframes pgFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes pgShimmer {
+            0% { background-position: -200px 0; }
+            100% { background-position: 200px 0; }
+          }
+          @keyframes pgPulse {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 0.15; }
+          }
+          
+          /* 强制覆盖 Modal.confirm 的深色样式 */
+          .dark-confirm-modal .ant-modal-content,
+          .dark-confirm-modal.ant-modal-content,
+          .ant-modal-wrap.dark-confirm-modal .ant-modal-content {
+            background: #1e1f20 !important;
+            border: 1px solid #444746 !important;
+            border-radius: 16px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+          }
+          .dark-confirm-modal .ant-modal-confirm-title { color: #e3e3e3 !important; }
+          .dark-confirm-modal .ant-modal-confirm-content { color: #c4c7c5 !important; }
+          .dark-confirm-modal .ant-btn-default {
+            background: transparent !important;
+            border: 1px solid #444746 !important;
+            color: #e3e3e3 !important;
+            border-radius: 8px !important;
+            outline: none !important;
+            box-shadow: none !important;
+          }
+          .dark-confirm-modal .ant-btn-default:hover {
+            background: rgba(255,255,255,0.08) !important;
+            border-color: #8ab4f8 !important;
+            color: #8ab4f8 !important;
+          }
+          .dark-confirm-modal .ant-btn-primary.ant-btn-dangerous {
+            background: rgba(255, 77, 79, 0.15) !important;
+            border: 1px solid rgba(255, 77, 79, 0.3) !important;
+            color: #ff4d4f !important;
+            border-radius: 8px !important;
+            outline: none !important;
+            box-shadow: none !important;
+          }
+          .dark-confirm-modal .ant-btn-primary.ant-btn-dangerous:hover {
+            background: rgba(255, 77, 79, 0.25) !important;
+            border-color: rgba(255, 77, 79, 0.5) !important;
+          }
+          .dark-confirm-modal .ant-modal-confirm-btns {
+            margin-top: 24px !important;
+          }
+        `}</style>
+
+        {/* ===== 存储未配置错误遮罩 ===== */}
+        {storageError && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 9999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(12px)',
+          }}>
+            <div style={{
+              background: 'rgba(30, 30, 34, 0.95)',
+              border: '1px solid rgba(255, 77, 79, 0.3)',
+              borderRadius: 24,
+              padding: '48px 40px',
+              maxWidth: 460,
+              textAlign: 'center',
+              boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+            }}>
+              <ExclamationCircleOutlined style={{ fontSize: 48, color: '#ff4d4f', marginBottom: 20 }} />
+              <h2 style={{ color: '#fff', fontSize: 20, fontWeight: 600, margin: '0 0 12px' }}>创作中心暂不可用</h2>
+              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, lineHeight: 1.8, margin: '0 0 8px' }}>
+                请正确配置系统存储（火山引擎 TOS 对象存储）后再使用创作中心。
+              </p>
+              <p style={{ color: 'rgba(255,77,79,0.8)', fontSize: 13, lineHeight: 1.6, margin: '0 0 28px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                {storageError}
+              </p>
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+                <div
+                  onClick={() => navigate('/')}
+                  style={{
+                    padding: '8px 24px', borderRadius: 12, cursor: 'pointer',
+                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: 500,
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                >
+                  返回首页
+                </div>
+                <div
+                  onClick={() => initStorage()}
+                  style={{
+                    padding: '8px 24px', borderRadius: 12, cursor: 'pointer',
+                    background: 'rgba(22,119,255,0.15)', border: '1px solid rgba(22,119,255,0.3)',
+                    color: '#1677ff', fontSize: 14, fontWeight: 500,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(22,119,255,0.25)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(22,119,255,0.15)'}
+                >
+                  <ReloadOutlined />
+                  重试
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div style={{
           width: 320,
           margin: '16px 0 16px 16px',
@@ -309,8 +463,8 @@ const PlaygroundHome: React.FC = () => {
                     onMouseEnter={() => setHoveredId(project.id)}
                     onMouseLeave={() => setHoveredId(null)}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 14,
-                      padding: '10px', borderRadius: 12, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '8px', borderRadius: 12, cursor: 'pointer',
                       transition: 'all 0.2s ease',
                       background: selectedProject?.id === project.id
                         ? (themeMode === 'dark' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.12)')
@@ -346,7 +500,7 @@ const PlaygroundHome: React.FC = () => {
                     </div>
 
                     {/* 信息 */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0, height: 40, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
                       {editingId === project.id ? (
                         <Input
                           size="small" value={editingName} autoFocus
@@ -364,31 +518,138 @@ const PlaygroundHome: React.FC = () => {
                           <div
                             onClick={(e) => { e.stopPropagation(); handleOpenProject(project.id); }}
                             style={{
-                              fontSize: 14, fontWeight: 600, color: themeMode === 'dark' ? '#fff' : '#000',
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              display: 'flex', alignItems: 'center', gap: 6,
+                              overflow: 'hidden', whiteSpace: 'nowrap',
+                              lineHeight: '20px',
                             }}
                           >
-                            {project.name}
+                            <span style={{
+                              fontSize: 14, fontWeight: 600, color: themeMode === 'dark' ? '#e4e4e7' : '#111',
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {project.name}
+                            </span>
+                            <span style={{ fontSize: 11, color: themeMode === 'dark' ? '#71717a' : '#999', fontFamily: 'monospace', flexShrink: 0 }}>
+                              ID:{project.id}
+                            </span>
                           </div>
-                          <div style={{ fontSize: 12, color: themeMode === 'dark' ? '#a1a1aa' : '#666', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <DesktopOutlined /> 
-                            {new Date(project.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+
+                          <div style={{ fontSize: 12, color: themeMode === 'dark' ? '#a1a1aa' : '#666', lineHeight: '18px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <DesktopOutlined /> 
+                              {new Date(project.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
                           </div>
                         </>
                       )}
                     </div>
+                    
+                    {/* 删除按钮 */}
+                    {hoveredId === project.id && editingId !== project.id && (
+                      <div style={{ display: 'flex', gap: 4, flexShrink: 0, paddingLeft: 8 }}>
+                        <Tooltip title="删除项目">
+                          <div
+                            onClick={(e) => handleDeleteProject(e, project.id)}
+                            style={{
+                              width: 32, height: 32, borderRadius: 8,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: themeMode === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)',
+                              cursor: 'pointer', transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e: any) => { e.currentTarget.style.background = themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'; e.currentTarget.style.color = themeMode === 'dark' ? '#fff' : '#000'; }}
+                            onMouseLeave={(e: any) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = themeMode === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)'; }}
+                          >
+                            <DeleteOutlined style={{ fontSize: 14 }} />
+                          </div>
+                        </Tooltip>
+                      </div>
+                    )}
                   </div>
                   ))}
                 </div>
               </div>
             ))}
 
-            {!loading && projects.length === 0 && (
+            {/* 加载中骨架屏 */}
+            {initializing && projects.length === 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {[1, 2, 3].map(i => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    padding: '10px', borderRadius: 12,
+                    animation: 'pgPulse 1.5s ease-in-out infinite',
+                    animationDelay: `${i * 0.15}s`,
+                  }}>
+                    <div style={{
+                      width: 40, height: 40, borderRadius: 6, flexShrink: 0,
+                      background: 'rgba(255,255,255,0.06)',
+                    }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{
+                        height: 14, borderRadius: 4, marginBottom: 8,
+                        width: `${70 + i * 8}%`,
+                        background: 'rgba(255,255,255,0.06)',
+                      }} />
+                      <div style={{
+                        height: 10, borderRadius: 4,
+                        width: '50%',
+                        background: 'rgba(255,255,255,0.04)',
+                      }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!loading && !initializing && projects.length === 0 && (
               <div style={{ textAlign: 'center', padding: '60px 20px', color: 'rgba(255,255,255,0.3)' }}>
                 <div style={{ fontSize: 14 }}>暂无项目</div>
               </div>
             )}
           </div>
+
+          {/* 存储配额与项目配额使用情况 */}
+          {storageStats && (
+            <div style={{
+              padding: '16px 24px',
+              borderTop: themeMode === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+              display: 'flex', flexDirection: 'column', gap: 14
+            }}>
+              {/* 项目数量进度 */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: themeMode === 'dark' ? '#a1a1aa' : '#666', marginBottom: 6 }}>
+                  <span>可创建项目数</span>
+                  <span><strong style={{color: themeMode === 'dark' ? '#e4e4e7' : '#333'}}>{storageStats.project_count}</strong> / {storageStats.max_projects}</span>
+                </div>
+                <div style={{ width: '100%', height: 4, background: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ 
+                    height: '100%', 
+                    width: `${Math.min(100, (storageStats.project_count / (storageStats.max_projects || 1)) * 100)}%`,
+                    background: (storageStats.project_count >= storageStats.max_projects) ? '#ff4d4f' : (themeMode === 'dark' ? '#fff' : '#333'),
+                    borderRadius: 2,
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+              </div>
+              
+              {/* 空间使用量进度 */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: themeMode === 'dark' ? '#a1a1aa' : '#666', marginBottom: 6 }}>
+                  <span>空间大小限制</span>
+                  <span><strong style={{color: themeMode === 'dark' ? '#e4e4e7' : '#333'}}>{(storageStats.total_size_mb || 0).toFixed(1)}</strong> / {storageStats.quota_mb} MB</span>
+                </div>
+                <div style={{ width: '100%', height: 4, background: themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ 
+                    height: '100%', 
+                    width: `${Math.min(100, storageStats.usage_percent || 0)}%`,
+                    background: (storageStats.usage_percent || 0) > 90 ? '#ff4d4f' : (themeMode === 'dark' ? '#fff' : '#333'),
+                    borderRadius: 2,
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ===== 右侧主区域：预览 或 Stitch Welcome Screen ===== */}
@@ -402,7 +663,25 @@ const PlaygroundHome: React.FC = () => {
               <UserAvatarMenu isUserEnd={true} agreement={agreement} />
             )}
           </div>
-          {selectedProject ? (
+          {initializing && !storageError ? (
+            /* 加载中状态 */
+            <div style={{ textAlign: 'center', animation: 'pgFadeIn 0.4s ease' }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: '50%',
+                border: '3px solid rgba(255,255,255,0.06)',
+                borderTopColor: 'rgba(22,119,255,0.7)',
+                animation: 'pgSpin 0.8s linear infinite',
+                margin: '0 auto 24px',
+              }} />
+              <div key={initPhase} style={{
+                fontSize: 15, fontWeight: 500, color: 'rgba(255,255,255,0.5)',
+                animation: 'pgFadeIn 0.3s ease',
+                letterSpacing: '0.3px',
+              }}>
+                {initPhase}
+              </div>
+            </div>
+          ) : selectedProject ? (
             /* 选中项目 → 预览卡片 */
             <div style={{ textAlign: 'center', maxWidth: 500 }}>
               {/* 封面预览 */}
@@ -442,9 +721,57 @@ const PlaygroundHome: React.FC = () => {
                 )}
               </div>
 
-              <h2 style={{ fontSize: 24, fontWeight: 700, color: themeMode === 'light' ? '#1f2937' : '#fff', margin: '0 0 8px' }}>
-                {selectedProject.name}
-              </h2>
+              {rightEditingName !== null ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, margin: '0 0 4px' }}>
+                  <Input
+                    value={rightEditingName}
+                    onChange={e => setRightEditingName(e.target.value)}
+                    onPressEnter={async () => {
+                      if (rightEditingName.trim() && selectedProject) {
+                        try {
+                          await request.put(`/playground/projects/${selectedProject.id}`, { name: rightEditingName.trim() });
+                          await loadProjects();
+                          setSelectedProject(prev => prev ? { ...prev, name: rightEditingName.trim() } : prev);
+                        } catch { message.error('重命名失败'); }
+                      }
+                      setRightEditingName(null);
+                    }}
+                    onBlur={async () => {
+                      if (rightEditingName.trim() && selectedProject) {
+                        try {
+                          await request.put(`/playground/projects/${selectedProject.id}`, { name: rightEditingName.trim() });
+                          await loadProjects();
+                          setSelectedProject(prev => prev ? { ...prev, name: rightEditingName.trim() } : prev);
+                        } catch { message.error('重命名失败'); }
+                      }
+                      setRightEditingName(null);
+                    }}
+                    autoFocus
+                    style={{
+                      fontSize: 22, fontWeight: 700, textAlign: 'center',
+                      background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.2)',
+                      color: '#fff', borderRadius: 10, height: 42, maxWidth: 320,
+                    }}
+                  />
+                </div>
+              ) : (
+                <h2 style={{ fontSize: 24, fontWeight: 700, color: themeMode === 'light' ? '#1f2937' : '#fff', margin: '0 0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                  {selectedProject.name}
+                  <EditOutlined
+                    onClick={() => setRightEditingName(selectedProject.name)}
+                    style={{
+                      fontSize: 16, color: themeMode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
+                      cursor: 'pointer', transition: 'color 0.2s',
+                    }}
+                    onMouseEnter={(e: any) => e.currentTarget.style.color = themeMode === 'dark' ? '#fff' : '#000'}
+                    onMouseLeave={(e: any) => e.currentTarget.style.color = themeMode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}
+                  />
+                </h2>
+              )}
+              <div style={{ fontSize: 12, color: themeMode === 'dark' ? '#71717a' : '#999', fontFamily: 'monospace', marginBottom: 8 }}>
+                项目 ID: {selectedProject.id}
+              </div>
+
               <p style={{ fontSize: 14, color: themeMode === 'dark' ? '#a1a1aa' : '#666', margin: '0 0 32px' }}>
                 创建于 {new Date(selectedProject.created_at).toLocaleDateString('zh-CN')}
                 {' · '}

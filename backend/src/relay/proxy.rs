@@ -19,9 +19,9 @@ pub struct UserContext {
 }
 
 pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult<UserContext> {
-    let (g, l_id, b, d): (String, i64, f64, f64) = sqlx::query_as(
+    let (g, l_id, b, gb, d): (String, i64, f64, f64, f64) = sqlx::query_as(
         &state.db.format_query(
-            "SELECT u.user_group, COALESCE(ul.id, 0), u.balance, COALESCE(ul.discount, 1.0) \
+            "SELECT u.user_group, COALESCE(ul.id, 0), u.balance, u.gift_balance, COALESCE(ul.discount, 1.0) \
              FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key \
              WHERE u.id = ?"
         )
@@ -29,7 +29,7 @@ pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult
     .bind(user_id)
     .fetch_one(&state.db.pool)
     .await?;
-    Ok(UserContext { user_group: g, level_id: l_id.to_string(), balance: b, discount: d })
+    Ok(UserContext { user_group: g, level_id: l_id.to_string(), balance: b + gb, discount: d })
 }
 
 /// 统一折扣优先级：模型全站折扣（启用时）> 用户等级折扣
@@ -123,8 +123,13 @@ use super::url_utils::join_url;
 
 pub async fn pre_deduct(state: &Arc<AppState>, user_id: &str, amount: f64) -> Result<(), sqlx::Error> {
     if amount > 0.0 {
-        sqlx::query(&state.db.format_query("UPDATE users SET balance = balance - ? WHERE id = ?"))
-            .bind(amount)
+        sqlx::query(&state.db.format_query(
+            "UPDATE users SET 
+             balance = CASE WHEN gift_balance >= ? THEN balance ELSE balance - (? - gift_balance) END,
+             gift_balance = CASE WHEN gift_balance >= ? THEN gift_balance - ? ELSE 0 END 
+             WHERE id = ?"
+        ))
+            .bind(amount).bind(amount).bind(amount).bind(amount)
             .bind(user_id)
             .execute(&state.db.pool)
             .await?;
@@ -231,6 +236,8 @@ async fn record_and_bill_inner(
 ) {
     let mut enable_log: i32 = 0;
     let mut category = String::new();
+    let mut billing_pid: Option<String> = None;
+    let mut forward_eid: Option<String> = None;
     
     // 查询模型同时关联 model_types 获取 category（支持同名模型按类型区分）
     let cat_filter = if let Some(cat) = hint_category {
@@ -239,9 +246,14 @@ async fn record_and_bill_inner(
         String::new()
     };
     let sql = format!(
-        "SELECT m.enable_log_content, t.name as category_name FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? AND m.is_active = 1{} LIMIT 1",
+        "SELECT m.enable_log_content, m.forward_rule_ids, t.name as category_name, b.pid as billing_pid \
+         FROM models m \
+         LEFT JOIN model_types t ON m.type_id = t.id \
+         LEFT JOIN billing_rules b ON m.billing_rule_id = b.id \
+         WHERE m.model_id = ? AND m.is_active = 1{} LIMIT 1",
         cat_filter
     );
+    let mut forward_rule_ids_str: Option<String> = None;
     if let Ok(Some(row)) = sqlx::query(&state.db.format_query(&sql))
     .bind(model_name)
     .fetch_optional(&state.db.pool)
@@ -250,6 +262,20 @@ async fn record_and_bill_inner(
         use sqlx::Row;
         enable_log = row.try_get("enable_log_content").unwrap_or(0);
         category = row.try_get("category_name").unwrap_or_default();
+        billing_pid = row.try_get("billing_pid").unwrap_or(None);
+        forward_rule_ids_str = row.try_get("forward_rule_ids").unwrap_or(None);
+    }
+
+    if let Some(ids_str) = forward_rule_ids_str {
+        if let Ok(ids) = serde_json::from_str::<Vec<i64>>(&ids_str) {
+            if let Some(first_id) = ids.first() {
+                forward_eid = sqlx::query_scalar(&state.db.format_query("SELECT eid FROM forward_rules WHERE id = ?"))
+                    .bind(first_id)
+                    .fetch_optional(&state.db.pool)
+                    .await
+                    .unwrap_or(None);
+            }
+        }
     }
 
     let filter_content = |content: Option<String>, respect_log_flag: bool| -> Option<String> {
@@ -385,6 +411,17 @@ async fn record_and_bill_inner(
 
     let res: Result<(), sqlx::Error> = async {
         let mut tx = state.db.pool.begin().await?;
+        let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        
+        // 始终更新令牌最后使用时间
+        sqlx::query(&state.db.format_query(
+            "UPDATE api_tokens SET last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ))
+        .bind(&now_str)
+        .bind(token.id)
+        .execute(&mut *tx)
+        .await?;
+
         if cost > 0.0 || pre_deducted > 0.0 {
             sqlx::query(&state.db.format_query(
                 "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -395,14 +432,41 @@ async fn record_and_bill_inner(
             .await?;
             
             let apply_balance = cost - pre_deducted; // 正数表示还要扣，负数表示退款
-            sqlx::query(&state.db.format_query(
-                "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            ))
-            .bind(apply_balance)
-            .bind(cost)
-            .bind(&token.user_id)
-            .execute(&mut *tx)
-            .await?;
+            if apply_balance > 0.0 {
+                sqlx::query(&state.db.format_query(
+                    "UPDATE users SET 
+                     balance = CASE WHEN gift_balance >= ? THEN balance ELSE balance - (? - gift_balance) END,
+                     gift_used_quota = gift_used_quota + CASE WHEN gift_balance >= ? THEN ? ELSE gift_balance END,
+                     gift_balance = CASE WHEN gift_balance >= ? THEN gift_balance - ? ELSE 0 END,
+                     used_quota = used_quota + ?, 
+                     updated_at = CURRENT_TIMESTAMP 
+                     WHERE id = ?",
+                ))
+                .bind(apply_balance).bind(apply_balance).bind(apply_balance).bind(apply_balance)
+                .bind(apply_balance).bind(apply_balance).bind(cost).bind(&token.user_id)
+                .execute(&mut *tx)
+                .await?;
+            } else if apply_balance < 0.0 {
+                // 如果是退款（pre_deducted 过多），统一退回到主余额
+                let refund = -apply_balance;
+                sqlx::query(&state.db.format_query(
+                    "UPDATE users SET balance = balance + ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                ))
+                .bind(refund)
+                .bind(cost) // cost happens to be actual cost, so used_quota increases by cost. But pre_deducted was taken. Wait, if we pre_deducted 10, actual cost 2, apply_balance is -8, refund is 8. used_quota increases by 2. This is correct.
+                .bind(&token.user_id)
+                .execute(&mut *tx)
+                .await?;
+            } else {
+                // apply_balance == 0
+                sqlx::query(&state.db.format_query(
+                    "UPDATE users SET used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                ))
+                .bind(cost)
+                .bind(&token.user_id)
+                .execute(&mut *tx)
+                .await?;
+            }
             
             if channel_id > 0 {
                 sqlx::query(&state.db.format_query(
@@ -447,8 +511,8 @@ async fn record_and_bill_inner(
         };
 
         sqlx::query(&state.db.format_query(
-            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type, billing_pid, forward_eid) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ))
         .bind(&token.user_id)
         .bind(channel_id)
@@ -470,6 +534,8 @@ async fn record_and_bill_inner(
         .bind(billing_detail)
         .bind(&task_id)
         .bind(&final_action_type)
+        .bind(&billing_pid)
+        .bind(&forward_eid)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

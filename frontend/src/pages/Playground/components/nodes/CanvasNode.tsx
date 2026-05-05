@@ -183,10 +183,10 @@ const CanvasNode: React.FC<Props> = React.memo(({
           </div>
         )}
         {node.status === 'completed' && node.type === 'video' && (
-          <VideoNodeContent resultData={node.resultData} />
+          <VideoNodeContent resultData={node.resultData} node={node} />
         )}
         {node.status === 'completed' && node.type === 'image' && (
-          <ImageNodeContent resultData={node.resultData} />
+          <ImageNodeContent resultData={node.resultData} node={node} />
         )}
         {node.status === 'completed' && node.type === 'text' && (
           <TextNodeContent resultData={node.resultData} />

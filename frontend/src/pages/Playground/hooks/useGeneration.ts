@@ -15,7 +15,8 @@ export const useGeneration = () => {
     currentModel, prompt, paramValues,
     selectedTokenKey, generating, setGenerating,
     taskPollingNodes, setTaskPollingNodes, currentProjectId,
-    attachedAssets, setAttachedAssets, models,
+    attachedAssets, setAttachedAssets, models, apiTokens,
+    storageStats,
   } = usePlayground();
 
   // 保持 currentProjectId 的最新引用（避免闭包过期问题）
@@ -49,7 +50,7 @@ export const useGeneration = () => {
       if (!sourceUrl && !base64Data) return;
 
       const { default: requestUtil } = await import('../../../utils/request');
-      await requestUtil.post('/playground/assets/persist', {
+      const res = await requestUtil.post('/playground/assets/persist', {
         project_id: pid,
         asset_type: assetType,
         source_url: sourceUrl || undefined,
@@ -59,18 +60,71 @@ export const useGeneration = () => {
         model_name: modelInfo?.name || '',
         generation_params: node.taskData || {},
         canvas_node_data: { x: node.x, y: node.y, width: node.width, height: node.height },
-      });
+      }) as any;
+      
+      // 更新节点为永久的 TOS URL，并将节点 ID 更新为稳定的 asset-{id} 格式
+      // 以确保下次加载时能与 assets 表记录正确匹配
+      if (res && res.file_url) {
+        const stableId = `asset-${res.id}`;
+        setNodes(prev => prev.map(n => {
+          if (n.id !== node.id) return n;
+          const updatedNode = { 
+            ...n, 
+            id: stableId,
+            taskData: {
+              ...n.taskData,
+              file_size: res.file_size
+            }
+          };
+          if (updatedNode.type === 'image') {
+            updatedNode.resultData = { data: [{ url: res.file_url }] };
+          } else if (updatedNode.type === 'video') {
+            updatedNode.resultData = { content: { video_url: res.file_url } };
+          }
+          return updatedNode;
+        }));
+      }
+      return res;
     } catch (e) {
       console.warn('资源持久化失败，不影响本次生成', e);
+      return null;
     }
-  }, []);
+  }, [setNodes]);
 
   /** 发送生成请求 */
   const handleGenerate = useCallback(async () => {
     if (generating) return;
     if (!currentModel || !prompt.trim()) return;
+
     if (!selectedTokenKey) {
-      message.warning('请先选择一个 API 密钥');
+      message.warning({
+        content: '生成不成功：请先在下方选择一个令牌 (Token)',
+        duration: 4,
+        key: 'no-token-selected',
+      });
+      return;
+    }
+
+    // 前置校验：检查当前选中密钥的额度是否已用尽
+    if (selectedTokenKey) {
+      const currentToken = apiTokens.find((t: any) => t.token_key === selectedTokenKey);
+      if (currentToken && currentToken.quota_limit >= 0 && currentToken.quota_used >= currentToken.quota_limit) {
+        message.warning({
+          content: '当前密钥额度已用尽，请更换密钥或前往密钥管理页面充值额度',
+          duration: 4,
+          key: 'quota-exceeded',
+        });
+        return;
+      }
+    }
+
+    const maxAssets = storageStats?.max_assets || 10;
+    if (nodes.length >= maxAssets) {
+      message.warning({
+        content: `当前项目创作素材内容已达到 ${maxAssets} 个上限，请先清理部分素材再创作。`,
+        duration: 4,
+        key: 'max-assets-exceeded',
+      });
       return;
     }
 
@@ -79,8 +133,15 @@ export const useGeneration = () => {
     const newNodeId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
     const centerX = -canvasTransform.x / canvasTransform.scale + window.innerWidth / 2 - 250;
     const centerY = -canvasTransform.y / canvasTransform.scale + window.innerHeight / 2 - 200;
-    const offsetX = (Math.random() - 0.5) * 100;
-    const offsetY = (Math.random() - 0.5) * 100;
+
+    let targetX = centerX;
+    let targetY = centerY;
+    if (nodes.length > 0) {
+      // 找到最右侧的节点或者最后一个节点，紧随其后排列
+      const lastNode = nodes[nodes.length - 1];
+      targetX = lastNode.x + (lastNode.width || 480) + 5;
+      targetY = lastNode.y;
+    }
 
     const newZIndex = maxZIndex + 1;
     setMaxZIndex(newZIndex);
@@ -99,8 +160,8 @@ export const useGeneration = () => {
         created_at: new Date().toISOString(),
       },
       resultData: null,
-      x: centerX + offsetX,
-      y: centerY + offsetY,
+      x: targetX,
+      y: targetY,
       width: 480,
       height: 320,
       zIndex: newZIndex
@@ -184,9 +245,16 @@ export const useGeneration = () => {
         if (currentModel.endpoint || true) { // Default to full multi-modal payload format for all video endpoints
           const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
           
-          imageAssets.forEach(img => {
-            contentArr.push({ type: 'image_url', image_url: { url: img.url }, role: 'reference_image' });
-          });
+          if (imageAssets.length === 1) {
+            contentArr.push({ type: 'image_url', image_url: { url: imageAssets[0].url } });
+          } else if (imageAssets.length === 2) {
+            contentArr.push({ type: 'image_url', image_url: { url: imageAssets[0].url }, role: 'first_frame' });
+            contentArr.push({ type: 'image_url', image_url: { url: imageAssets[1].url }, role: 'last_frame' });
+          } else {
+            imageAssets.forEach(img => {
+              contentArr.push({ type: 'image_url', image_url: { url: img.url }, role: 'reference_image' });
+            });
+          }
           videoAssets.forEach(vid => {
             contentArr.push({ type: 'video_url', video_url: { url: vid.url }, role: 'reference_video' });
           });
@@ -196,7 +264,7 @@ export const useGeneration = () => {
 
           // Fallback for single image param
           if (imageAssets.length === 0 && paramValues.image_url) {
-            contentArr.push({ type: 'image_url', image_url: { url: paramValues.image_url }, role: 'reference_image' });
+            contentArr.push({ type: 'image_url', image_url: { url: paramValues.image_url } });
           }
 
           body.content = contentArr;
@@ -221,11 +289,18 @@ export const useGeneration = () => {
         delete body.prompt;
       }
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (selectedTokenKey) {
+        headers['Authorization'] = `Bearer ${selectedTokenKey}`;
+      } else {
+        const token = localStorage.getItem('token');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const res = await axios.post(endpoint, body, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${selectedTokenKey}`
-        }
+        headers
       }).then(r => r.data);
 
       // 检测异步任务响应：视频端点 或 图片端点返回了 task_id (如 GPT Image 2)
@@ -252,8 +327,8 @@ export const useGeneration = () => {
                   return {
                     ...updated[mainNodeIndex],
                     id: `${newNodeId}-ext-${idx}`,
-                    x: updated[mainNodeIndex].x + 40 * (idx + 1),
-                    y: updated[mainNodeIndex].y + 40 * (idx + 1),
+                    x: updated[mainNodeIndex].x + (updated[mainNodeIndex].width + 5) * (idx + 1),
+                    y: updated[mainNodeIndex].y,
                     zIndex: updated[mainNodeIndex].zIndex + idx + 1,
                     resultData: { ...res, data: [imgObj] }
                   };
@@ -277,7 +352,7 @@ export const useGeneration = () => {
       setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, status: 'error', resultData: { message: errMsg } } : n));
       setGenerating(false);
     }
-  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets]);
+  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets, apiTokens, nodes.length]);
 
   /** 轮询异步任务状态（视频/图片） */
   const pollTaskStatus = useCallback((nodeId: string, taskId: string, modelId: string, pollEndpointTemplate?: string) => {
@@ -300,9 +375,15 @@ export const useGeneration = () => {
       attempts++;
 
       try {
-        const res = await axios.get(buildPollUrl(), {
-          headers: { 'Authorization': `Bearer ${selectedTokenKey}` }
-        }).then(r => r.data);
+        const headers: Record<string, string> = {};
+        if (selectedTokenKey) {
+          headers['Authorization'] = `Bearer ${selectedTokenKey}`;
+        } else {
+          const token = localStorage.getItem('token');
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const res = await axios.get(buildPollUrl(), { headers }).then(r => r.data);
 
         // 兼容多种异步响应格式：
         // 视频: { status: 'succeeded', content: { video_url } }

@@ -282,11 +282,12 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
                     )).bind(apply_balance).bind(apply_balance).bind(final_uid)
                     .execute(&mut *tx).await;
 
-                    // 更新 Token 配额
+                    // 更新 Token 配额及使用时间
                     if let Some(tid) = token_id {
+                        let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                         let _ = sqlx::query(&state.db.format_query(
-                            "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(tid)
+                            "UPDATE api_tokens SET quota_used = quota_used + ?, last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(apply_balance).bind(&now_str).bind(tid)
                         .execute(&mut *tx).await;
                     }
 

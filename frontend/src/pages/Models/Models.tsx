@@ -198,7 +198,29 @@ const Models: React.FC = () => {
       title: t('models.model_id'),
       dataIndex: 'model_id',
       key: 'model_id',
-      render: (text: string) => <Tag color="blue">{text}</Tag>,
+      render: (text: string, record: ModelModel) => {
+        let ruleNames: string[] = [];
+        try {
+          if (record.forward_rule_ids) {
+            const ruleIds = JSON.parse(record.forward_rule_ids);
+            if (Array.isArray(ruleIds)) {
+              ruleNames = ruleIds.map((id: number) => {
+                const r = allForwardRules.find(rule => rule.id === id);
+                return r ? `${r.name}${r.eid ? ` (EID: ${r.eid})` : ''}` : null;
+              }).filter(Boolean);
+            }
+          }
+        } catch (e) {}
+
+        return (
+          <Space direction="vertical" size={4} style={{ display: 'flex' }}>
+            <Tag color="blue">{text}</Tag>
+            {ruleNames.length > 0 && (
+              <div style={{ fontSize: 11, color: '#1677ff' }}>已挂载: {ruleNames.join(', ')}</div>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: t('models.billing_type'),
@@ -210,7 +232,7 @@ const Models: React.FC = () => {
         return (
           <Space direction="vertical" size={4}>
             <Tag color={colors[type]} style={{ margin: 0 }}>{t(`models.type_${type}`)}</Tag>
-            {br && <Text type="secondary" style={{ fontSize: '11px' }}>{br.name}</Text>}
+            {br && <Text type="secondary" style={{ fontSize: '11px' }}>{br.name}{br.pid ? ` (PID: ${br.pid})` : ''}</Text>}
           </Space>
         );
       },
@@ -327,11 +349,33 @@ const Models: React.FC = () => {
                 <CardRow label="MID">
                   <Tag color="purple" style={{ fontFamily: 'monospace', fontSize: 11 }}>{record.mid || '-'}</Tag>
                 </CardRow>
-                <CardRow label="模型ID"><Tag color="blue" style={{ fontSize: 11 }}>{record.model_id}</Tag></CardRow>
+                <CardRow label="模型ID">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <Tag color="blue" style={{ fontSize: 11, width: 'fit-content', margin: 0 }}>{record.model_id}</Tag>
+                    {(() => {
+                      let ruleNames: string[] = [];
+                      try {
+                        if (record.forward_rule_ids) {
+                          const ruleIds = JSON.parse(record.forward_rule_ids);
+                          if (Array.isArray(ruleIds)) {
+                            ruleNames = ruleIds.map((id: number) => {
+                              const r = allForwardRules.find(rule => rule.id === id);
+                              return r ? `${r.name}${r.eid ? ` (EID: ${r.eid})` : ''}` : null;
+                            }).filter(Boolean);
+                          }
+                        }
+                      } catch (e) {}
+                      if (ruleNames.length > 0) {
+                        return <div style={{ fontSize: 11, color: '#1677ff' }}>已挂载: {ruleNames.join(', ')}</div>;
+                      }
+                      return null;
+                    })()}
+                  </div>
+                </CardRow>
                 <CardRow label="计费类型">
                   <Space size={4}>
                     <Tag color={colors[billingTypeVal]} style={{ margin: 0 }}>{t(`models.type_${billingTypeVal}`)}</Tag>
-                    {br && <Text type="secondary" style={{ fontSize: 11 }}>{br.name}</Text>}
+                    {br && <Text type="secondary" style={{ fontSize: 11 }}>{br.name}{br.pid ? ` (PID: ${br.pid})` : ''}</Text>}
                   </Space>
                 </CardRow>
                 <CardRow label="费率">
@@ -410,7 +454,7 @@ const Models: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="type_id" label={t('models.type')}>
+              <Form.Item name="type_id" label={t('models.type')} rules={[{ required: true, message: '请选择模型类型' }]}>
                 <Select placeholder={t('common.select_placeholder')} allowClear>
                   {allTypes.map(t => (
                     <Option key={t.id} value={t.id}>{t.name}</Option>
@@ -420,6 +464,14 @@ const Models: React.FC = () => {
             </Col>
           </Row>
 
+          <Form.Item name="billing_rule_id" label="计费基础定价模板绑定 (核心枢纽)" rules={[{ required: true }]}>
+             <Select placeholder="选择从《计费策略配置库》中下发的统一基础定价方案" allowClear>
+               {allBillingRules.map(b => (
+                 <Option key={b.id} value={b.id}>{b.name}{b.pid ? ` [PID: ${b.pid}]` : ''}</Option>
+               ))}
+             </Select>
+          </Form.Item>
+
           <Form.Item name="forward_rule_ids" label="挂载高级组合理念流 (转发规则组合包)">
             <Select 
                 mode="multiple" 
@@ -428,17 +480,9 @@ const Models: React.FC = () => {
                 optionFilterProp="children"
             >
               {allForwardRules.map(r => (
-                <Option key={r.id} value={r.id}>{r.name} ({r.rule_type})</Option>
+                <Option key={r.id} value={r.id}>{r.name} ({r.rule_type}){r.eid ? ` [EID: ${r.eid}]` : ''}</Option>
               ))}
             </Select>
-          </Form.Item>
-
-          <Form.Item name="billing_rule_id" label="计费基础定价模板绑定 (核心枢纽)" rules={[{ required: true }]}>
-             <Select placeholder="选择从《计费策略配置库》中下发的统一基础定价方案" allowClear>
-               {allBillingRules.map(b => (
-                 <Option key={b.id} value={b.id}>{b.name}</Option>
-               ))}
-             </Select>
           </Form.Item>
 
           <Row gutter={16}>

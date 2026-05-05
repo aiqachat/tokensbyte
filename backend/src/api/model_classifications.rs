@@ -30,7 +30,7 @@ pub async fn create_provider(
     }
 
     // Check for duplicate name
-    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_providers WHERE name = ?"))
+    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_providers WHERE name = ?"))
         .bind(&req.name)
         .fetch_optional(&state.db.pool)
         .await?;
@@ -54,7 +54,7 @@ pub async fn create_provider(
 
 pub async fn update_provider(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Json(mut req): Json<ClassificationRequest>,
 ) -> AppResult<Json<ModelProvider>> {
     req.name = req.name.trim().to_string();
@@ -63,7 +63,7 @@ pub async fn update_provider(
     }
 
     // Check for duplicate name (excluding itself)
-    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_providers WHERE name = ? AND id != ?"))
+    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_providers WHERE name = ? AND id != ?"))
         .bind(&req.name)
         .bind(id)
         .fetch_optional(&state.db.pool)
@@ -89,7 +89,7 @@ pub async fn update_provider(
 
 pub async fn delete_provider(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     let is_sys: i32 = sqlx::query_scalar(&state.db.format_query("SELECT is_system FROM model_providers WHERE id = ?"))
         .bind(id)
@@ -134,7 +134,7 @@ pub async fn create_type(
     }
 
     // Check for duplicate name
-    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_types WHERE name = ?"))
+    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_types WHERE name = ?"))
         .bind(&req.name)
         .fetch_optional(&state.db.pool)
         .await?;
@@ -157,7 +157,7 @@ pub async fn create_type(
 
 pub async fn update_type(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Json(mut req): Json<ClassificationRequest>,
 ) -> AppResult<Json<ModelType>> {
     req.name = req.name.trim().to_string();
@@ -166,7 +166,7 @@ pub async fn update_type(
     }
 
     // Check for duplicate name (excluding itself)
-    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_types WHERE name = ? AND id != ?"))
+    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM model_types WHERE name = ? AND id != ?"))
         .bind(&req.name)
         .bind(id)
         .fetch_optional(&state.db.pool)
@@ -191,7 +191,7 @@ pub async fn update_type(
 
 pub async fn delete_type(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     let is_sys: i32 = sqlx::query_scalar(&state.db.format_query("SELECT is_system FROM model_types WHERE id = ?"))
         .bind(id)
