@@ -487,7 +487,7 @@ const Channels: React.FC = () => {
               dataSource={filteredChannels}
               loading={loading}
               rowKey="id"
-              pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
+              pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
               renderCard={(record: any) => {
                 const used = record.quota_used || 0;
                 const limit = record.quota_limit ?? -1;
@@ -553,7 +553,7 @@ const Channels: React.FC = () => {
               columns={columns}
               rowKey="id"
               loading={loading}
-              pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
+              pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
               scroll={{ x: 'max-content' }}
             />
           )}
