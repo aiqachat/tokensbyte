@@ -127,7 +127,9 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
     // 支持可灵（image/image_list/subject_image_list/image_reference）和 OpenAI 兼容格式（image_urls）
     let has_image_ref =
         body.get("image").map_or(false, |v| {
-            v.as_str().map_or(false, |s| !s.is_empty()) || v.is_object()
+            v.as_str().map_or(false, |s| !s.is_empty())
+                || v.is_object()
+                || v.as_array().map_or(false, |a| !a.is_empty())
         })
         || body.get("image_urls").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty())
         || body.get("image_list").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty())

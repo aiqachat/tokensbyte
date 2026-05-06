@@ -295,13 +295,6 @@ pub fn transform_request_body(
             }
             // n 已转换为官方参数，删除避免冗余传到上游
             if let Some(obj) = fwd.as_object_mut() { obj.remove("n"); }
-            // image_urls → image 归一化（火山方舟不识别 image_urls）
-            if fwd.get("image").is_none() {
-                if let Some(first_url) = fwd.get("image_urls").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|u| u.as_str()) {
-                    fwd["image"] = serde_json::json!(first_url);
-                }
-            }
-            if let Some(obj) = fwd.as_object_mut() { obj.remove("image_urls"); }
             // watermark 直接透传（火山方舟原生支持，默认 true）
             fwd
         }
@@ -473,12 +466,6 @@ pub fn transform_request_body(
         _ => {
             let mut fwd = body.clone();
             fwd["model"] = serde_json::json!(model);
-            // image_urls 归一化：将数组首元素赋给 image（兼容其他 OpenAI 平台）
-            if fwd.get("image").is_none() {
-                if let Some(first_url) = fwd.get("image_urls").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|u| u.as_str()) {
-                    fwd["image"] = serde_json::json!(first_url);
-                }
-            }
             fwd
         }
     };

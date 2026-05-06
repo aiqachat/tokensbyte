@@ -250,23 +250,23 @@ pub async fn task_status(
 
                     // 2. 余额与配额结算
                     if cost > 0.0 || pre_deduction > 0.0 {
-                        // 更新用户余额与配额
+                        // 更新用户余额（差额）与配额（实际消费）
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(apply_balance).bind(&token.user_id)
+                        )).bind(apply_balance).bind(cost).bind(&token.user_id)
                         .execute(&mut *tx).await;
 
                         // 更新 Token 配额及使用时间
                         let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE api_tokens SET quota_used = quota_used + ?, last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(&now_str).bind(token.id)
+                        )).bind(cost).bind(&now_str).bind(token.id)
                         .execute(&mut *tx).await;
 
-                        // 更新渠道配额 (修复遗漏)
+                        // 更新渠道配额
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(channel.id)
+                        )).bind(cost).bind(channel.id)
                         .execute(&mut *tx).await;
                     }
 

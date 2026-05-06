@@ -296,10 +296,10 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
             // 2. 余额结算
             if let Some(ref final_uid) = user_id {
                 if cost > 0.0 || pre_deduction > 0.0 {
-                    // 更新用户余额与配额
+                    // 更新用户余额（差额）与配额（实际消费）
                     let _ = sqlx::query(&state.db.format_query(
                         "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                    )).bind(apply_balance).bind(apply_balance).bind(final_uid)
+                    )).bind(apply_balance).bind(cost).bind(final_uid)
                     .execute(&mut *tx).await;
 
                     // 更新 Token 配额及使用时间
@@ -307,15 +307,15 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
                         let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE api_tokens SET quota_used = quota_used + ?, last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(&now_str).bind(tid)
+                        )).bind(cost).bind(&now_str).bind(tid)
                         .execute(&mut *tx).await;
                     }
 
-                    // 更新渠道配额 (修复遗漏)
+                    // 更新渠道配额
                     if let Some(cid) = channel_id {
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(cid)
+                        )).bind(cost).bind(cid)
                         .execute(&mut *tx).await;
                     }
                 }
