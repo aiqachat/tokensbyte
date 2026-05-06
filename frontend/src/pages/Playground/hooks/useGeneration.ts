@@ -229,11 +229,7 @@ export const useGeneration = () => {
         ...paramValues,
       };
 
-      // Map web_search toggle to tools array
-      if (body.web_search) {
-        body.tools = [{ type: 'web_search' }];
-      }
-      delete body.web_search;
+
 
       let endpoint = '';
       if (schemeType === 'video' || currentModel.type_name.includes('视频')) {
@@ -388,8 +384,9 @@ export const useGeneration = () => {
         // 兼容多种异步响应格式：
         // 视频: { status: 'succeeded', content: { video_url } }
         // GPT Image /v1/tasks: { data: { status: 'completed', result: { images: [{ url: [...] }] } } }
-        const taskStatus = res?.status || res?.data?.status || res?.final_result?.status || (Array.isArray(res?.data) && res.data[0]?.status) || '';
-        const isCompleted = taskStatus === 'succeeded' || taskStatus === 'completed';
+        const rawStatus = res?.status || res?.data?.status || res?.final_result?.status || (Array.isArray(res?.data) && res.data[0]?.status) || '';
+        const taskStatus = String(rawStatus).toLowerCase();
+        const isCompleted = ['succeeded', 'completed', 'success', 'succeed'].includes(taskStatus);
 
         if (isCompleted) {
           // 标准化结果：将 GPT Image tasks 响应转换为 ImageNodeContent 可识别的格式
@@ -414,7 +411,7 @@ export const useGeneration = () => {
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
           setGenerating(false);
           return;
-        } else if (status === 'failed') {
+        } else if (['failed', 'fail', 'error'].includes(taskStatus)) {
           setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, status: 'error', resultData: { message: res?.error?.message || '生成失败', ...res } } : n));
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
           setGenerating(false);

@@ -214,6 +214,7 @@ const RelayAPI: React.FC = () => {
                   <Descriptions.Item label={<Text code>watermark</Text>}>是否添加水印 (true/false)</Descriptions.Item>
                   <Descriptions.Item label={<Text code>service_tier</Text>}>服务等级，如 <Text code>flex</Text> (离线减半) 或 <Text code>default</Text> (在线)</Descriptions.Item>
                   <Descriptions.Item label={<Text code>stream</Text>}>是否流式返回 (true/false)</Descriptions.Item>
+                  <Descriptions.Item label={<Text code>web_search</Text>}>true/false — 是否启用联网搜索（转换规则同聊天）</Descriptions.Item>
                   <Descriptions.Item label={<Text code>callback_url</Text>}>任务完成回调地址（URL）</Descriptions.Item>
                 </Descriptions>
               </Card>

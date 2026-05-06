@@ -293,7 +293,7 @@ ResolvedForward {
 
 - **视频模型默认参数兜底**：`forward.rs` 在 `category == "视频"` 时强制注入 `resolution: "720p"` 和 `duration: 5`（若未指定），确保上游数据与计费一致。
 - **白名单透传**：火山方舟视频/图片的控制参数通过 `VOLCENGINE_CONTENT_PASSTHROUGH_KEYS` 白名单驱动，新增参数只需追加一行。
-- **web_search 转换**：`convert_web_search()` 将 OpenAI 风格的 `web_search: true` 适配到各平台的联网搜索参数格式。
+- **web_search 转换**：`convert_web_search()` 将 OpenAI 风格的 `web_search: true` 适配到各平台的联网搜索参数格式（包含火山方舟的聊天、图片、视频 `volcengine` 等已统一支持转换）。
 
 ---
 

@@ -72,9 +72,10 @@ pub async fn create_user(
         }
     }
 
-    let referral_history = if let Some(ref inviter) = referred_by {
+    let referral_history = if let Some(ref inviter_id) = referred_by {
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+        let display_name = state.db.get_user_display_name(inviter_id).await;
+        Some(format!("[{}] 通过 {} 邀请注册\n", now, display_name))
     } else {
         None
     };
@@ -157,8 +158,8 @@ pub async fn update_user(
 
         if old_referred_by != new_ref {
             let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-            let old_str = old_referred_by.unwrap_or_else(|| "无".to_string());
-            let new_str = new_ref.clone().unwrap_or_else(|| "无".to_string());
+            let old_str = state.db.get_user_display_name(&old_referred_by.unwrap_or_else(|| "无".to_string())).await;
+            let new_str = state.db.get_user_display_name(&new_ref.clone().unwrap_or_else(|| "无".to_string())).await;
             let msg = format!("[{}] 推荐人从 {} 变更为 {}\n", now, old_str, new_str);
             let mut hist = user.referral_history.clone().unwrap_or_default();
             hist.push_str(&msg);
