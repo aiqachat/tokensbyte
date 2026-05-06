@@ -16,6 +16,7 @@ interface ForwardRule {
   category: string;
   config_json: string;
   description?: string;
+  eid?: string;
   is_active: number;
   is_system?: number;
   created_at: string;
@@ -35,7 +36,9 @@ const ForwardRules: React.FC = () => {
 
   const filteredItems = items.filter(item => {
     if (!searchQuery) return true;
-    return item.name && item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const lowerQuery = searchQuery.toLowerCase();
+    return (item.name && item.name.toLowerCase().includes(lowerQuery)) ||
+           (item.eid && String(item.eid).toLowerCase().includes(lowerQuery));
   });
 
   const fetchItems = async () => {
@@ -171,6 +174,13 @@ const ForwardRules: React.FC = () => {
       render: (text: string) => <Text strong>{text}</Text>
     },
     {
+      title: '快捷识别 (EID)',
+      dataIndex: 'eid',
+      key: 'eid',
+      width: 120,
+      render: (text: string) => <Tag color="blue">{text || '-'}</Tag>
+    },
+    {
       title: '来源类型',
       dataIndex: 'is_system',
       key: 'is_system',
@@ -282,7 +292,7 @@ const ForwardRules: React.FC = () => {
             <QuestionCircleOutlined style={{ color: '#1890ff', cursor: 'pointer' }} />
           </Popover>
           <Input.Search
-            placeholder="搜索规则名称"
+            placeholder="搜索规则名称或EID"
             allowClear
             onSearch={setSearchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -311,6 +321,7 @@ const ForwardRules: React.FC = () => {
                   title={<Space><Text strong>{record.name}</Text></Space>}
                   extra={<Switch checked={record.is_active === 1} size="small" onChange={(checked) => handleStatusChange(record, checked)} />}
                 >
+                  <CardRow label="EID (快捷识别)"><Tag color="blue">{record.eid || '-'}</Tag></CardRow>
                   <CardRow label="来源类型">{record.is_system === 1 ? <Tag color="blue">系统内置</Tag> : <Tag color="default">自定义</Tag>}</CardRow>
                   <CardRow label="模式"><Tag color="purple">{record.rule_type}</Tag></CardRow>
                   <CardRow label="分类"><Tag color={categoryColor}>{record.category || '聊天'}</Tag></CardRow>

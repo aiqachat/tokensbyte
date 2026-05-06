@@ -15,6 +15,15 @@ const { Option } = Select;
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
+const maskUrlDomain = (url: string) => {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//***${u.pathname}${u.search}${u.hash}`;
+  } catch {
+    return url.replace(/^(https?:\/\/)[^\/]+/, '$1***');
+  }
+};
+
 const Logs: React.FC = () => {
   const { t } = useTranslation();
   const { token: themeToken } = theme.useToken();
@@ -108,14 +117,7 @@ const Logs: React.FC = () => {
         </Space>
       ),
     },
-    {
-      title: '用户等级',
-      key: 'user_level',
-      width: 90,
-      render: (_: any, record: RequestLog) => (
-        <Text type="secondary" style={{ fontSize: 12 }}>{record.user_level_name || record.user_group || '-'}</Text>
-      ),
-    },
+
     {
       title: t('logs.status'),
       dataIndex: 'status_code',
@@ -132,7 +134,12 @@ const Logs: React.FC = () => {
       render: (text: string, record: RequestLog) => (
         <Space direction="vertical" size={0}>
           <Text style={{ fontSize: 12 }}>{text}</Text>
-          {user?.role === 'admin' && record.channel_name && <Text type="secondary" style={{ fontSize: 11 }}>渠道: {record.channel_name}</Text>}
+          {(record.billing_pid || record.forward_eid) && (
+            <Space size={4}>
+              {record.billing_pid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>PID:{record.billing_pid}</Text>}
+              {record.forward_eid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>EID:{record.forward_eid}</Text>}
+            </Space>
+          )}
         </Space>
       ),
     },
@@ -212,7 +219,11 @@ const Logs: React.FC = () => {
           <Descriptions.Item label="系统请求路径">
             {record.endpoint.startsWith('http') ? record.endpoint : `${window.location.origin}${record.endpoint.startsWith('/') ? '' : '/'}${record.endpoint}`}
           </Descriptions.Item>
-          {record.upstream_url && <Descriptions.Item label="真实上游地址">{record.upstream_url}</Descriptions.Item>}
+          {record.upstream_url && (
+            <Descriptions.Item label="真实上游地址">
+              {user?.role === 'admin' ? record.upstream_url : maskUrlDomain(record.upstream_url)}
+            </Descriptions.Item>
+          )}
           <Descriptions.Item label="渠道标识">{record.channel_group_aid || '-'}</Descriptions.Item>
           <Descriptions.Item label="错误信息">
             {(() => {
@@ -234,6 +245,12 @@ const Logs: React.FC = () => {
                 return <Text type="danger">{record.error_message}</Text>;
               }
             })()}
+          </Descriptions.Item>
+          <Descriptions.Item label="匹配规则">
+            <Space size={16}>
+              <Text type="secondary" style={{ fontSize: 12 }}>计费规则 (PID): {record.billing_pid ? <Typography.Text keyboard>{record.billing_pid}</Typography.Text> : '-'}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>转发规则 (EID): {record.forward_eid ? <Typography.Text keyboard>{record.forward_eid}</Typography.Text> : '-'}</Text>
+            </Space>
           </Descriptions.Item>
           <Descriptions.Item label="计费明细">
             <div>
@@ -387,20 +404,30 @@ const Logs: React.FC = () => {
                     </Space>
                   </CardRow>
                 )}
+                {record.channel_group_aid && <CardRow label="渠道AID"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text></CardRow>}
+                {(record.billing_pid || record.forward_eid) && (
+                  <CardRow label="匹配规则">
+                    <Space size={8}>
+                      {record.billing_pid && <Text type="secondary" style={{ fontSize: 11 }}>PID:<Typography.Text keyboard style={{ fontSize: 10 }}>{record.billing_pid}</Typography.Text></Text>}
+                      {record.forward_eid && <Text type="secondary" style={{ fontSize: 11 }}>EID:<Typography.Text keyboard style={{ fontSize: 10 }}>{record.forward_eid}</Typography.Text></Text>}
+                    </Space>
+                  </CardRow>
+                )}
                 <CardRow label="令牌">
                   <Space direction="vertical" size={0} align="end">
                     <Tag color="cyan" style={{ fontSize: 11, margin: 0 }}>{record.token_name || '-'}</Tag>
                     {record.token_kid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>KID: {record.token_kid}</Text>}
                   </Space>
                 </CardRow>
-                {user?.role === 'admin' && record.channel_name && <CardRow label="渠道"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_name}</Text></CardRow>}
+                <CardRow label="耗时"><Text style={{ fontSize: 12 }}>{(record.latency_ms / 1000).toFixed(3)}s</Text></CardRow>
+                <CardRow label="类型"><Tag color={record.is_stream === 1 ? 'geekblue' : 'default'}>{record.is_stream === 1 ? '流' : '非流'}</Tag></CardRow>
                 <CardRow label="用量">
                   <Space direction="vertical" size={0} align="end">
                     <Text type="secondary" style={{ fontSize: 12 }}>输入:{record.prompt_tokens} / 输出:{record.completion_tokens}</Text>
                     {(record.cached_tokens ?? 0) > 0 && <Text type="secondary" style={{ fontSize: 11, color: '#52c41a' }}>缓存(输入内):{record.cached_tokens}</Text>}
                   </Space>
                 </CardRow>
-                <CardRow label="费用">
+                <CardRow label="成本">
                   <Space direction="vertical" size={0} align="end">
                     {record.cost === 0
                       ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
@@ -411,8 +438,6 @@ const Logs: React.FC = () => {
                     )}
                   </Space>
                 </CardRow>
-                <CardRow label="延迟"><Text style={{ fontSize: 12 }}>{(record.latency_ms / 1000).toFixed(3)}s</Text></CardRow>
-                <CardRow label="类型"><Tag color={record.is_stream === 1 ? 'geekblue' : 'default'}>{record.is_stream === 1 ? '流' : '非流'}</Tag></CardRow>
               </MobileCard>
             );
           }}

@@ -27,7 +27,7 @@ pub async fn create_upstream(
     }
 
     // Check for duplicate name
-    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM upstreams WHERE name = ?"))
+    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM upstreams WHERE name = ?"))
         .bind(&req.name)
         .fetch_optional(&state.db.pool)
         .await?;
@@ -52,7 +52,7 @@ pub async fn create_upstream(
 
 pub async fn update_upstream(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Json(mut req): Json<UpstreamRequest>,
 ) -> AppResult<Json<Upstream>> {
     req.name = req.name.trim().to_string();
@@ -61,7 +61,7 @@ pub async fn update_upstream(
     }
 
     // Check for duplicate name
-    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM upstreams WHERE name = ? AND id != ?"))
+    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM upstreams WHERE name = ? AND id != ?"))
         .bind(&req.name)
         .bind(id)
         .fetch_optional(&state.db.pool)
@@ -88,7 +88,7 @@ pub async fn update_upstream(
 
 pub async fn delete_upstream(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     sqlx::query(&state.db.format_query("DELETE FROM upstreams WHERE id = ?"))
         .bind(id)

@@ -11,7 +11,7 @@ use crate::relay::url_utils::join_url;
 pub async fn list_channels(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<ChannelListResponse>> {
-    let channels: Vec<Channel> = sqlx::query_as(&state.db.format_query("SELECT * FROM channels ORDER BY sort_order DESC, priority DESC, id DESC"))
+    let channels: Vec<Channel> = sqlx::query_as(&state.db.format_query("SELECT * FROM channels ORDER BY status DESC, sort_order DESC, priority DESC, id DESC"))
         .fetch_all(&state.db.pool)
         .await?;
 
@@ -175,6 +175,16 @@ pub async fn update_channel(
     .bind(id)
     .execute(&state.db.pool)
     .await?;
+
+    if !group_aid_val.is_empty() {
+        sqlx::query(&state.db.format_query("UPDATE channels SET sort_order = ? WHERE group_aid = ? AND id != ?"))
+            .bind(channel.sort_order)
+            .bind(&group_aid_val)
+            .bind(id)
+            .execute(&state.db.pool)
+            .await
+            .ok();
+    }
 
     Ok(Json(ChannelSafe::from(channel)))
 }

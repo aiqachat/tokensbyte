@@ -197,6 +197,6 @@ impl From<Channel> for ChannelSafe {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TestChannelRequest {
     pub model: Option<String>,
-    pub forward_rule_id: Option<i32>,
+    pub forward_rule_id: Option<i64>,
 }
 

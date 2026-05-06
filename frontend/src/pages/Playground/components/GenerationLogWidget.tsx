@@ -25,11 +25,27 @@ import VideoEditorModal from './VideoEditorModal';
 
 const { Text } = Typography;
 
+const formatRelativeTime = (dateStr?: string) => {
+  if (!dateStr) return '刚刚';
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins <= 10) return '刚刚';
+  if (diffMins < 30) return `${diffMins} 分钟前`;
+  if (diffMins < 60) return '半小时前';
+  
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours} 小时前`;
+  
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} 天前`;
+};
+
 const GenerationLogWidget: React.FC = React.memo(() => {
   const { nodes, setNodes, selectedNodeId, setSelectedNodeId } = useCanvas();
   const {
     isGenLogVisible, setIsGenLogVisible,
-    setPrompt, setAttachedAssets,
+    setPrompt, setAttachedAssets, storageStats,
   } = usePlayground();
 
   const [editorOpen, setEditorOpen] = useState(false);
@@ -260,15 +276,19 @@ const GenerationLogWidget: React.FC = React.memo(() => {
 
   if (!isGenLogVisible) return null;
 
-  const statusInfo = (status: string) => {
-    if (status === 'completed') return { icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />, label: '生成完成', color: '#52c41a' };
-    if (status === 'loading') return { icon: <LoadingOutlined style={{ color: '#fff' }} />, label: '正在生成...', color: '#fff' };
-    return { icon: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />, label: '生成失败', color: '#ff4d4f' };
+  const statusInfo = (node: any) => {
+    const isLocal = node.id?.startsWith('local-asset-');
+    if (node.status === 'completed') return { icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />, label: isLocal ? '加载完成' : '生成完成', color: '#52c41a' };
+    if (node.status === 'loading') return { icon: <LoadingOutlined style={{ color: '#fff' }} />, label: isLocal ? '正在加载...' : '正在生成...', color: '#fff' };
+    return { icon: <CloseCircleOutlined style={{ color: '#ff4d4f' }} />, label: isLocal ? '加载失败' : '生成失败', color: '#ff4d4f' };
   };
 
-  const status = selectedNode ? statusInfo(selectedNode.status) : null;
+  const status = selectedNode ? statusInfo(selectedNode) : null;
 
-  const typeLabel = selectedNode?.type === 'video' ? 'AI 视频' : selectedNode?.type === 'image' ? 'AI 图像' : '文本生成';
+  const isLocalAsset = selectedNode?.id?.startsWith('local-asset-');
+  const typeLabel = isLocalAsset
+    ? (selectedNode?.type === 'video' ? '本地视频' : selectedNode?.type === 'image' ? '本地图像' : '本地音频')
+    : (selectedNode?.type === 'video' ? 'AI 视频' : selectedNode?.type === 'image' ? 'AI 图像' : '文本生成');
   const typeIcon = selectedNode?.type === 'video'
     ? <VideoCameraOutlined style={{ fontSize: 16, color: '#fff' }} />
     : selectedNode?.type === 'image'
@@ -300,6 +320,12 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     { key: 'delete', icon: <DeleteOutlined />, label: '删除', onClick: handleDelete, disabled: false, danger: true },
   ] : [];
 
+  const formatBytes = (bytes: number) => {
+    if (bytes > 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    if (bytes > 1024) return (bytes / 1024).toFixed(0) + ' KB';
+    return bytes + ' B';
+  };
+
   return (
     <>
     <div
@@ -307,11 +333,11 @@ const GenerationLogWidget: React.FC = React.memo(() => {
         position: 'absolute',
         left: 24,
         top: 80,
-        width: 380,
-        background: 'rgba(18, 19, 21, 0.92)',
+        width: 320,
+        background: '#1e1f20',
         borderRadius: 24,
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+        border: '1px solid #444746',
+        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
         backdropFilter: 'blur(24px)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         zIndex: 1000,
@@ -321,8 +347,8 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     >
       {/* 标题栏 */}
       <div style={{
-        padding: '0 20px', height: 48, minHeight: 48,
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        padding: '0 12px', height: 48, minHeight: 48,
+        borderBottom: '1px solid #444746',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         background: 'rgba(255,255,255,0.02)',
         userSelect: 'none',
@@ -347,7 +373,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
           )}
           <MessageCircle size={16} style={{ color: '#fff' }} />
           <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>
-            {selectedNode ? '日志详情' : '项目创作记录'}
+            {selectedNode ? '素材详情' : `项目创作记录 (${nodes.length}/${storageStats?.max_assets || 10})`}
           </Text>
         </div>
         <Tooltip title="关闭">
@@ -363,7 +389,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
       </div>
 
       {/* 内容区域 */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 5px' }}>
         
         {/* 如果没有选中节点，显示历史记录列表 */}
         {!selectedNode ? (
@@ -373,9 +399,13 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                 暂无创作记录
               </div>
             ) : (
-              [...nodes].reverse().map(node => {
+              [...nodes].sort((a, b) => {
+                const ta = a.taskData?.created_at ? new Date(a.taskData.created_at).getTime() : 0;
+                const tb = b.taskData?.created_at ? new Date(b.taskData.created_at).getTime() : 0;
+                return tb - ta;
+              }).map(node => {
                 const url = getResultUrl(node);
-                const sInfo = statusInfo(node.status);
+                const sInfo = statusInfo(node);
                 // 确保有安全的回退样式
                 return (
                   <div
@@ -383,7 +413,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                     onClick={() => setSelectedNodeId(node.id)}
                     style={{
                       display: 'flex', gap: 12, padding: 12, borderRadius: 12,
-                      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)',
+                      background: 'rgba(255,255,255,0.03)', border: '1px solid #444746',
                       cursor: 'pointer', transition: 'all 0.2s',
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
@@ -414,7 +444,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                       </Text>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>
-                          {node.taskData?.created_at ? new Date(node.taskData.created_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '刚刚'}
+                          {node.taskData?.created_at ? formatRelativeTime(node.taskData.created_at) : '刚刚'}
                         </Text>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                           <span style={{ fontSize: 10 }}>{sInfo.icon}</span>
@@ -439,7 +469,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
             wordBreak: 'break-word', display: 'block',
             paddingRight: selectedNode.taskData?.prompt ? 28 : 0,
           }}>
-            {selectedNode.taskData?.prompt || '无提示词'}
+            {isLocalAsset ? (selectedNode.taskData?.prompt || '本地文件') : (selectedNode.taskData?.prompt || '无提示词')}
           </Text>
           {selectedNode.taskData?.prompt && (
             <Tooltip title="复制提示词">
@@ -518,7 +548,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
 
         {/* 操作按钮行 */}
         <div style={{
-          display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'nowrap', alignItems: 'center',
+          display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'nowrap', alignItems: 'center',
           justifyContent: 'center',
         }}>
           {actionButtons.map(btn => (
@@ -532,12 +562,12 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                 onClick={btn.disabled ? undefined : btn.onClick}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: 38, height: 38,
+                  width: 36, height: 36,
                   borderRadius: '50%',
                   fontSize: 16,
                   cursor: btn.disabled ? 'not-allowed' : 'pointer',
                   background: btn.danger ? 'rgba(255,77,79,0.08)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${btn.danger ? 'rgba(255,77,79,0.15)' : 'rgba(255,255,255,0.06)'}`,
+                  border: `1px solid ${btn.danger ? 'rgba(255,77,79,0.15)' : '#444746'}`,
                   color: btn.disabled
                     ? 'rgba(255,255,255,0.2)'
                     : btn.danger
@@ -663,13 +693,15 @@ const GenerationLogWidget: React.FC = React.memo(() => {
           </div>
           <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '0 0 10px 0' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>模型</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 500 }}>
-                {selectedNode.taskData?.model_name || '未知'}
-              </Text>
-            </div>
-            {selectedNode.taskData?.model_id && (
+            {!isLocalAsset && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>模型</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 500 }}>
+                  {selectedNode.taskData?.model_name || '未知'}
+                </Text>
+              </div>
+            )}
+            {!isLocalAsset && selectedNode.taskData?.model_id && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Model ID</Text>
                 <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontFamily: 'monospace' }}>
@@ -681,41 +713,45 @@ const GenerationLogWidget: React.FC = React.memo(() => {
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>创建时间</Text>
                 <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-                  {new Date(selectedNode.taskData.created_at).toLocaleString('zh-CN', { hour12: false })}
+                  {new Date(selectedNode.taskData.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')}
                 </Text>
               </div>
             )}
             {/* 文件详细信息 */}
-            {mediaInfo && (
-              <>
-                {mediaInfo.width && mediaInfo.height && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>分辨率</Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-                      {mediaInfo.width} × {mediaInfo.height}
-                    </Text>
-                  </div>
-                )}
-                {mediaInfo.fileSize && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>文件大小</Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-                      {mediaInfo.fileSize}
-                    </Text>
-                  </div>
-                )}
-                {mediaInfo.duration != null && mediaInfo.duration > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>视频时长</Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-                      {mediaInfo.duration < 60
-                        ? `${mediaInfo.duration.toFixed(1)} 秒`
-                        : `${Math.floor(mediaInfo.duration / 60)}:${String(Math.round(mediaInfo.duration % 60)).padStart(2, '0')}`
-                      }
-                    </Text>
-                  </div>
-                )}
-              </>
+            {((mediaInfo?.width && mediaInfo?.height) || (selectedNode.taskData?.width && selectedNode.taskData?.height)) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>分辨率</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+                  {mediaInfo?.width || selectedNode.taskData.width} × {mediaInfo?.height || selectedNode.taskData.height}
+                </Text>
+              </div>
+            )}
+            {selectedNode.taskData?.file_format && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>文件格式</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, textTransform: 'uppercase' }}>
+                  {selectedNode.taskData.file_format.split('/').pop()}
+                </Text>
+              </div>
+            )}
+            {(mediaInfo?.fileSize || selectedNode.taskData?.file_size) && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>文件大小</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+                  {mediaInfo?.fileSize || (typeof selectedNode.taskData.file_size === 'number' ? formatBytes(selectedNode.taskData.file_size) : selectedNode.taskData.file_size)}
+                </Text>
+              </div>
+            )}
+            {mediaInfo?.duration != null && mediaInfo.duration > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>视频时长</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+                  {mediaInfo.duration < 60
+                    ? `${mediaInfo.duration.toFixed(1)} 秒`
+                    : `${Math.floor(mediaInfo.duration / 60)}:${String(Math.round(mediaInfo.duration % 60)).padStart(2, '0')}`
+                  }
+                </Text>
+              </div>
             )}
           </div>
         </div>

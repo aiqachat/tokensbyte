@@ -32,6 +32,7 @@ const Channels: React.FC = () => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const [showMapping, setShowMapping] = useState(false);
+  const [activeMappingInputs, setActiveMappingInputs] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const screens = useBreakpoint();
   const [isExcludeMode, setIsExcludeMode] = useState(false);
@@ -140,6 +141,7 @@ const Channels: React.FC = () => {
     setEditingChannel(null);
     form.resetFields();
     setShowMapping(false);
+    setActiveMappingInputs([]);
     setIsExcludeMode(false);
     setActiveRightPanel('models');
     setModelSearch('');
@@ -173,6 +175,7 @@ const Channels: React.FC = () => {
 
     const hasMapping = Object.values(mapping).some(v => v && String(v).trim());
     setShowMapping(hasMapping);
+    setActiveMappingInputs(Object.keys(mapping).filter(k => mapping[k] && String(mapping[k]).trim()));
     setIsExcludeMode(!!record.exclude_user_groups && record.exclude_user_groups.length > 0);
     setActiveRightPanel('models');
     setModelSearch('');
@@ -210,16 +213,54 @@ const Channels: React.FC = () => {
     }
   };
 
+  const handleToggleStatus = async (record: Channel) => {
+    try {
+      const newStatus = record.status === 1 ? 0 : 1;
+      await request.put(`/channels/${record.id}`, { status: newStatus });
+      setChannels(prev => prev.map(c => c.id === record.id ? { ...c, status: newStatus } : c));
+      message.success(newStatus === 1 ? '已启用渠道' : '已禁用渠道');
+    } catch (e) {
+      console.error(e);
+      message.error('状态更新失败');
+    }
+  };
+
   const handleTest = (record: Channel) => {
     navigate(`/admin0755/channels/test/${record.id}`);
+  };
+
+  const handleModelsChange = (nextModels: string[]) => {
+    form.setFieldsValue({ models: nextModels });
+    modelsRef.current = nextModels;
+
+    const currentMapping = form.getFieldValue('model_mapping') || {};
+    const validModelIds = new Set(nextModels.map(mid => {
+      const match = availableModels.find(m => m.mid === mid);
+      return match ? match.model_id : mid;
+    }));
+
+    let mappingChanged = false;
+    const newMapping = { ...currentMapping };
+    for (const key of Object.keys(newMapping)) {
+      if (!validModelIds.has(key)) {
+        newMapping[key] = undefined as any;
+        mappingChanged = true;
+      }
+    }
+
+    if (mappingChanged) {
+      form.setFieldsValue({ model_mapping: newMapping });
+      setActiveMappingInputs(prev => prev.filter(id => validModelIds.has(id)));
+    }
   };
 
   const handleSave = async (values: any) => {
     if (submitting) return;
     setSubmitting(true);
     const finalMapping: Record<string, string> = {};
-    if (showMapping && values.model_mapping) {
-      for (const [k, v] of Object.entries(values.model_mapping)) {
+    const currentModelMapping = form.getFieldValue('model_mapping') || values.model_mapping;
+    if (showMapping && currentModelMapping) {
+      for (const [k, v] of Object.entries(currentModelMapping)) {
         if (v && String(v).trim()) {
           finalMapping[k] = String(v).trim();
         }
@@ -249,6 +290,19 @@ const Channels: React.FC = () => {
       return;
     }
 
+    // Ensure only one upstream is used and others are explicitly cleared
+    let { preset_id, pool_id, gptimage_pool_id } = values;
+    if (preset_id) {
+      pool_id = null;
+      gptimage_pool_id = null;
+    } else if (pool_id) {
+      preset_id = null;
+      gptimage_pool_id = null;
+    } else if (gptimage_pool_id) {
+      preset_id = null;
+      pool_id = null;
+    }
+
     const data = {
       ...values,
       models: reliableModels,
@@ -259,6 +313,9 @@ const Channels: React.FC = () => {
       config: configObj,
       sort_order: values.sort_order || 0,
       priority: values.priority || 0,
+      preset_id,
+      pool_id,
+      gptimage_pool_id,
     };
     delete data.level_select;
     delete data.models;
@@ -311,7 +368,7 @@ const Channels: React.FC = () => {
       render: (status: number) => (
         <Space size={6} style={{ color: status === 1 ? '#52c41a' : '#ff4d4f' }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: status === 1 ? '#52c41a' : '#ff4d4f' }} />
-          <span style={{ fontSize: 13 }}>{status === 1 ? t('common.active') : t('common.disabled')}</span>
+          <span style={{ fontSize: 13 }}>{status === 1 ? '启用' : '禁用'}</span>
         </Space>
       ),
     },
@@ -374,11 +431,19 @@ const Channels: React.FC = () => {
       },
     },
     {
-      title: '',
+      title: '操作',
       key: 'actions',
-      align: 'right' as const,
+      align: 'center' as const,
       render: (_: unknown, record: Channel) => (
-        <Space size={4} style={{ opacity: 0.8 }}>
+        <Space size={4} style={{ opacity: 0.8, justifyContent: 'center', width: '100%' }}>
+          <Button 
+            type="text" 
+            size="small" 
+            onClick={() => handleToggleStatus(record)} 
+            style={{ fontSize: 13, color: record.status === 1 ? '#ff4d4f' : '#52c41a' }}
+          >
+            {record.status === 1 ? '禁用' : '启用'}
+          </Button>
           <Button type="text" size="small" onClick={() => handleTest(record)} style={{ fontSize: 13 }}>测试</Button>
           <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
@@ -464,6 +529,14 @@ const Channels: React.FC = () => {
                       <Text type="secondary" style={{ fontSize: 12 }}>{new Date(record.updated_at || record.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</Text>
                     </CardRow>
                     <CardActions>
+                      <Button 
+                        type="text" 
+                        size="small" 
+                        onClick={() => handleToggleStatus(record)} 
+                        style={{ color: record.status === 1 ? '#ff4d4f' : '#52c41a' }}
+                      >
+                        {record.status === 1 ? '禁用' : '启用'}
+                      </Button>
                       <Button type="text" size="small" onClick={() => handleTest(record)}>测试</Button>
                       <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
                       <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
@@ -535,7 +608,7 @@ const Channels: React.FC = () => {
                               <Form.Item name="preset_id" style={{ marginBottom: 0 }}>
                                 <Select placeholder="选择预设渠道配置" allowClear disabled={!!currentVolcPool || !!currentGptImagePool}>
                                   {(presets || []).map(p => (
-                                    <Option key={p.id} value={p.id}>{p.name} [ID: {p.id}] [{p.provider_type}]</Option>
+                                    <Option key={p.id} value={p.id}>{p.name} {p.yid ? `[YID: ${p.yid}]` : `[ID: ${p.id}]`} [{p.provider_type}]</Option>
                                   ))}
                                 </Select>
                               </Form.Item>
@@ -595,8 +668,7 @@ const Channels: React.FC = () => {
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 const next = m.filter((id: string) => id !== mid);
-                                                form.setFieldsValue({ models: next });
-                                                modelsRef.current = next;
+                                                handleModelsChange(next);
                                               }}
                                             />
                                           </Space>
@@ -611,14 +683,49 @@ const Channels: React.FC = () => {
                         </Form.Item>
 
                         {/* Model Mapping */}
-                        <div onClick={() => setActiveRightPanel('mapping')} style={{ padding: '12px 16px', borderRadius: 8, border: activeRightPanel === 'mapping' ? '1px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'), background: activeRightPanel === 'mapping' ? (_isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)') : (_isLight ? '#fff' : 'rgba(255,255,255,0.02)'), cursor: 'pointer', transition: 'all 0.2s' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Text strong={activeRightPanel === 'mapping'} style={{ color: activeRightPanel === 'mapping' ? 'var(--text)' : 'inherit' }}>模型别名映射</Text>
-                            <span style={{ fontSize: 12, color: activeRightPanel === 'mapping' ? 'var(--text)' : 'var(--text-secondary)' }}>
-                              {showMapping ? <span style={{ fontWeight: 500 }}>已开启</span> : <span>未开启</span>} <ArrowRightOutlined style={{ marginLeft: 4 }} />
-                            </span>
-                          </div>
-                        </div>
+                        <Form.Item shouldUpdate noStyle>
+                          {() => {
+                            const mapping = form.getFieldValue('model_mapping') || {};
+                            const mappedEntries = Object.entries(mapping).filter(([_, v]) => v && String(v).trim());
+                            const isActive = activeRightPanel === 'mapping';
+                            return (
+                              <div onClick={() => setActiveRightPanel('mapping')} style={{ padding: '12px 16px', borderRadius: 8, border: isActive ? '1px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'), background: isActive ? (_isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)') : (_isLight ? '#fff' : 'rgba(255,255,255,0.02)'), cursor: 'pointer', transition: 'all 0.2s' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: (showMapping && mappedEntries.length > 0) ? 8 : 0 }}>
+                                  <Text strong={isActive} style={{ color: isActive ? 'var(--text)' : 'inherit' }}>模型别名映射</Text>
+                                  <span style={{ fontSize: 12, color: isActive ? 'var(--text)' : 'var(--text-secondary)' }}>
+                                    {showMapping ? <span style={{ fontWeight: 500 }}>已开启 {mappedEntries.length > 0 ? `(${mappedEntries.length})` : ''}</span> : <span>未开启</span>} <ArrowRightOutlined style={{ marginLeft: 4 }} />
+                                  </span>
+                                </div>
+                                {showMapping && mappedEntries.length > 0 && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {mappedEntries.slice(0, 8).map(([k, v]) => (
+                                      <div key={k} style={{ padding: '6px 8px', background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{k}</span>
+                                        <Space size={8} style={{ flexShrink: 0 }}>
+                                          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>➔ {String(v)}</span>
+                                          <Button 
+                                            type="text" 
+                                            size="small" 
+                                            icon={<CloseOutlined style={{ fontSize: 10 }} />} 
+                                            style={{ width: 20, height: 20, minWidth: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', margin: 0, padding: 0 }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setActiveMappingInputs(prev => prev.filter(id => id !== k));
+                                              const newMapping = { ...(form.getFieldValue('model_mapping') || {}) };
+                                              newMapping[k] = undefined as any;
+                                              form.setFieldsValue({ model_mapping: newMapping });
+                                            }}
+                                          />
+                                        </Space>
+                                      </div>
+                                    ))}
+                                    {mappedEntries.length > 8 && <div style={{ fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', marginTop: 2 }}>...还有 {mappedEntries.length - 8} 个</div>}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }}
+                        </Form.Item>
 
                         {/* User Levels */}
                         <Form.Item shouldUpdate={(prev, curr) => prev.level_select !== curr.level_select} noStyle>
@@ -639,10 +746,24 @@ const Channels: React.FC = () => {
                                     {levels.slice(0, 8).map((idStr: string) => {
                                       const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
                                       return (
-                                        <div key={idStr} style={{ padding: '6px 8px', background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                          <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{lv ? `${lv.name} (${lv.discount}x)` : '未知等级'}</span>
-                                          <span style={{ fontSize: 11, color: 'var(--text-secondary)', flexShrink: 0 }}>ULID: {idStr.padStart(4, '0')}</span>
-                                        </div>
+                                      <div key={idStr} style={{ padding: '6px 8px', background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{lv ? `${lv.name} (${lv.discount}x)` : '未知等级'}</span>
+                                        <Space size={8} style={{ flexShrink: 0 }}>
+                                          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>ULID: {idStr.padStart(4, '0')}</span>
+                                          <Button 
+                                            type="text" 
+                                            size="small" 
+                                            icon={<CloseOutlined style={{ fontSize: 10 }} />} 
+                                            style={{ width: 20, height: 20, minWidth: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', margin: 0, padding: 0 }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const next = levels.filter((id: string) => id !== idStr);
+                                              form.setFieldsValue({ level_select: next });
+                                              levelsRef.current = next;
+                                            }}
+                                          />
+                                        </Space>
+                                      </div>
                                       );
                                     })}
                                     {levels.length > 8 && <div style={{ fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', marginTop: 2 }}>...还有 {levels.length - 8} 个</div>}
@@ -720,14 +841,13 @@ const Channels: React.FC = () => {
                                     }
                                   });
 
-                                  modelsRef.current = newSelection;
-                                  form.setFieldsValue({ models: newSelection });
+                                  handleModelsChange(newSelection);
                                 };
 
                                 return (
                                   <>
                                     <Button onClick={handleSelectAll}>全选</Button>
-                                    <Button onClick={() => { modelsRef.current = []; form.setFieldsValue({ models: [] }); }} disabled={selected.length === 0}>
+                                    <Button onClick={() => handleModelsChange([])} disabled={selected.length === 0}>
                                       清空
                                     </Button>
                                   </>
@@ -767,8 +887,7 @@ const Channels: React.FC = () => {
                                             onClick={() => {
                                               if (isDisabled) return;
                                               const next = isCurrentMidSelected ? selectedMids.filter(id => id !== m.mid) : [...selectedMids, m.mid];
-                                              form.setFieldsValue({ models: next });
-                                              modelsRef.current = next;
+                                              handleModelsChange(next);
                                             }}
                                             style={{
                                               padding: '8px 12px',
@@ -903,17 +1022,59 @@ const Channels: React.FC = () => {
                                     {selectedModels.map((midOrId: string) => {
                                       const match = availableModels.find(m => m.mid === midOrId);
                                       const actualModelId = match ? match.model_id : midOrId;
+                                      const isActive = activeMappingInputs.includes(actualModelId);
+                                      const currentMapping = form.getFieldValue('model_mapping') || {};
+                                      const hasValue = currentMapping[actualModelId] && String(currentMapping[actualModelId]).trim();
+
                                       return (
                                         <Col span={24} key={midOrId}>
-                                          <Form.Item
-                                            label={`${match?.name || actualModelId} [MID:${midOrId}]`}
-                                            name={['model_mapping', actualModelId]}
-                                            labelCol={{ span: 8 }}
-                                            wrapperCol={{ span: 16 }}
-                                            style={{ marginBottom: 16 }}
-                                          >
-                                            <Input placeholder={`默认为原名：${actualModelId}`} />
-                                          </Form.Item>
+                                          <div style={{ 
+                                            padding: '12px', 
+                                            marginBottom: 12, 
+                                            borderRadius: 8, 
+                                            border: _isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)',
+                                            background: isActive ? (_isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)') : 'transparent',
+                                            transition: 'all 0.2s'
+                                          }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                              <div style={{ flex: 1, minWidth: 0, paddingRight: 16 }}>
+                                                <div style={{ fontWeight: 500, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{match?.name || actualModelId}</div>
+                                                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>ID: {actualModelId} | MID: {midOrId}</div>
+                                              </div>
+                                              
+                                              {!isActive && (
+                                                <Button 
+                                                  type={hasValue ? "default" : "dashed"} 
+                                                  size="small" 
+                                                  icon={<PlusOutlined />}
+                                                  onClick={() => setActiveMappingInputs(prev => [...prev, actualModelId])}
+                                                  style={{ flexShrink: 0 }}
+                                                >
+                                                  {hasValue ? "编辑别名" : "添加映射"}
+                                                </Button>
+                                              )}
+                                            </div>
+
+                                            {isActive && (
+                                              <div style={{ marginTop: 12, display: 'flex', gap: 8, animation: 'fadeIn 0.2s' }}>
+                                                <Form.Item
+                                                  name={['model_mapping', actualModelId]}
+                                                  style={{ marginBottom: 0, flex: 1 }}
+                                                >
+                                                  <Input placeholder={`请输入上游调用的实际名称，不填则默认：${actualModelId}`} autoFocus />
+                                                </Form.Item>
+                                                <Button 
+                                                  icon={<DeleteOutlined />} 
+                                                  onClick={() => {
+                                                    setActiveMappingInputs(prev => prev.filter(id => id !== actualModelId));
+                                                    const newMapping = { ...(form.getFieldValue('model_mapping') || {}) };
+                                                    newMapping[actualModelId] = undefined as any;
+                                                    form.setFieldsValue({ model_mapping: newMapping });
+                                                  }}
+                                                />
+                                              </div>
+                                            )}
+                                          </div>
                                         </Col>
                                       );
                                     })}

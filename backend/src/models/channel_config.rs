@@ -11,6 +11,8 @@ pub struct ChannelConfig {
     pub remark: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    #[sqlx(default)]
+    pub yid: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +50,7 @@ pub struct ChannelConfigSafe {
     pub remark: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub yid: String,
 }
 
 impl From<ChannelConfig> for ChannelConfigSafe {
@@ -62,6 +65,7 @@ impl From<ChannelConfig> for ChannelConfigSafe {
             remark: c.remark,
             created_at: c.created_at,
             updated_at: c.updated_at,
+            yid: c.yid,
         }
     }
 }

@@ -336,12 +336,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
             label: <Link to="/admin0755/models">{t('menu.model_list')}</Link>,
           },
           {
-            key: '/admin0755/forward-rules',
-            label: <Link to="/admin0755/forward-rules">{t('menu.forward_rules')}</Link>,
-          },
-          {
             key: '/admin0755/billing-rules',
             label: <Link to="/admin0755/billing-rules">{t('menu.billing_rules')}</Link>,
+          },
+          {
+            key: '/admin0755/forward-rules',
+            label: <Link to="/admin0755/forward-rules">{t('menu.forward_rules')}</Link>,
           }
         );
       }

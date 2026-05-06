@@ -55,7 +55,7 @@ const Dashboard: React.FC = () => {
       title: t('dashboard.recent_activity_time', { defaultValue: 'Time' }),
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (text: string) => <Text style={{ color: '#888', fontSize: 13 }}>{dayjs(text).format('MM-DD HH:mm:ss')}</Text>,
+      render: (text: string) => <Text style={{ color: '#888', fontSize: 13 }}>{dayjs(text).format('YYYY-MM-DD HH:mm:ss')}</Text>,
     },
     {
       title: t('channels.type'),

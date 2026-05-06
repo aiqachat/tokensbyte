@@ -46,6 +46,10 @@ pub struct RequestLog {
     pub channel_name: Option<String>,
     #[sqlx(default)]
     pub billing_detail: Option<String>,
+    #[sqlx(default)]
+    pub billing_pid: Option<String>,
+    #[sqlx(default)]
+    pub forward_eid: Option<String>,
     pub created_at: String,
 }
 

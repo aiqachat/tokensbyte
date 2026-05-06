@@ -70,6 +70,14 @@ const getBillingLabel = (billing: any) => {
   }
 };
 
+const getLogoFilter = (logoName: string | undefined, isLight: boolean) => {
+  if (isLight) return 'none';
+  if (!logoName) return 'none';
+  const name = logoName.toLowerCase();
+  if (name.includes('openai') || name.includes('github')) return 'invert(1)';
+  return 'brightness(0.9)';
+};
+
 const ModelMarketplace: React.FC = () => {
   const { themeMode, toggleTheme } = useThemeStore();
   const { settings } = useSettingsStore();
@@ -450,9 +458,9 @@ const ModelMarketplace: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32 }}>
                       <div style={{ width: 64, height: 64, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, overflow: 'hidden' }}>
                         {selectedModel.logo ? (
-                          <img src={`/assets/icons/lobe/${selectedModel.logo}.svg`} alt="" style={{ width: 48, height: 48, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          <img src={`/assets/icons/lobe/${selectedModel.logo}.svg`} alt="" style={{ width: 48, height: 48, objectFit: 'contain', filter: getLogoFilter(selectedModel.logo, isLight) }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         ) : selectedModel.provider_logo ? (
-                          <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 48, height: 48, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 48, height: 48, objectFit: 'contain', filter: getLogoFilter(selectedModel.provider_logo, isLight) }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         ) : (
                           <span style={{ color: '#1677ff' }}>{getTypeIcon(selectedModel.type_name)}</span>
                         )}
@@ -461,7 +469,7 @@ const ModelMarketplace: React.FC = () => {
                         <h1 style={{ margin: 0, fontSize: screens.xs ? 24 : 32, fontWeight: 700, color: c.text1 }}>{selectedModel.name}</h1>
                         <div style={{ fontSize: 15, color: c.text3, marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
                           {selectedModel.provider_logo && (
-                            <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain', filter: getLogoFilter(selectedModel.provider_logo, isLight) }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                           )}
                           {selectedModel.provider_name}
                           <span style={{ width: 4, height: 4, borderRadius: '50%', background: c.textMuted }} />
@@ -831,7 +839,7 @@ const ModelMarketplace: React.FC = () => {
                             }}
                           >
                             {p.logo && (
-                              <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 14, height: 14, objectFit: 'contain', filter: isLight ? 'none' : 'brightness(0.9)' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                              <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 14, height: 14, objectFit: 'contain', filter: getLogoFilter(p.logo, isLight) }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                             )}
                             {p.name}
                             <span style={{ fontSize: 11, opacity: 0.7 }}>{providerCounts[p.id] || 0}</span>
@@ -884,9 +892,9 @@ const ModelMarketplace: React.FC = () => {
                               flexShrink: 0
                             }}>
                               {model.logo ? (
-                                <img src={`/assets/icons/lobe/${model.logo}.svg`} alt="" style={{ width: viewMode === 'grid' ? 28 : 14, height: viewMode === 'grid' ? 28 : 14, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                <img src={`/assets/icons/lobe/${model.logo}.svg`} alt="" style={{ width: viewMode === 'grid' ? 28 : 14, height: viewMode === 'grid' ? 28 : 14, objectFit: 'contain', filter: getLogoFilter(model.logo, isLight) }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                               ) : model.provider_logo ? (
-                                <img src={`/assets/icons/lobe/${model.provider_logo}.svg`} alt="" style={{ width: viewMode === 'grid' ? 28 : 14, height: viewMode === 'grid' ? 28 : 14, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).replaceWith(document.createTextNode('')); }} />
+                                <img src={`/assets/icons/lobe/${model.provider_logo}.svg`} alt="" style={{ width: viewMode === 'grid' ? 28 : 14, height: viewMode === 'grid' ? 28 : 14, objectFit: 'contain', filter: getLogoFilter(model.provider_logo, isLight) }} onError={e => { (e.target as HTMLImageElement).replaceWith(document.createTextNode('')); }} />
                               ) : (
                                 <span style={{ fontSize: viewMode === 'grid' ? 20 : 12 }}>{getTypeIcon(model.type_name)}</span>
                               )}

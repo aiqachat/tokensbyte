@@ -17,9 +17,16 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
 
   // 筛选出已生成的资源 (图片/视频)
   const resources = useMemo(() => {
+    const getOrder = (n: any) => {
+      if (n.taskData?.created_at) return new Date(n.taskData.created_at).getTime();
+      if (n.id.startsWith('asset-')) return parseInt(n.id.replace('asset-', '')) || 0;
+      if (n.id.startsWith('local-asset-')) return parseInt(n.id.split('-')[2]) || 0;
+      return parseInt(n.id.substring(0, 13)) || 0;
+    };
+
     return nodes
       .filter(n => n.status === 'completed' && (n.type === 'image' || n.type === 'video'))
-      .sort((a, b) => b.zIndex - a.zIndex); // 最新生成的在前
+      .sort((a, b) => getOrder(b) - getOrder(a)); // 最新生成的在前
   }, [nodes]);
 
   // 高性能拖拽：全部通过 ref + DOM 操作，零 React re-render
@@ -82,14 +89,15 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
         left: resourceWidgetPos.x,
         top: resourceWidgetPos.y,
         width: 320,
-        background: 'rgba(18, 19, 21, 0.85)',
+        background: '#1e1f20',
         borderRadius: 24,
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+        border: '1px solid #444746',
+        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
         backdropFilter: 'blur(24px)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         zIndex: 1000,
-        height: Math.min(600, window.innerHeight - resourceWidgetPos.y - 24)
+        height: 600,
+        maxHeight: 'calc(100vh - 120px)'
       }}
       onWheel={(e) => e.stopPropagation()}
     >
@@ -98,7 +106,7 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
         onMouseDown={handleMouseDown}
         style={{
           padding: '0 24px', height: 48, minHeight: 48,
-          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          borderBottom: '1px solid #444746',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           cursor: 'grab',
           background: 'rgba(255,255,255,0.02)',
@@ -123,56 +131,58 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
       </div>
 
       {/* 内容区域：网格排列资源 */}
-      <div style={{
-        flex: 1, overflowY: 'auto', padding: '16px',
-        display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, alignContent: 'start'
+      <div className="pg-scroll" style={{
+        flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px'
       }}>
         {resources.length === 0 ? (
-          <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.3)' }}>
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.3)' }}>
             暂无生成的资源
           </div>
         ) : (
-          resources.map(res => {
-            let imgUrl = '';
-            let videoUrl = '';
-            
-            if (res.type === 'image') {
-              imgUrl = typeof res.resultData?.data?.[0] === 'string' 
-                ? res.resultData?.data?.[0] 
-                : res.resultData?.data?.[0]?.url || res.resultData?.content?.image_url || '';
-            } else if (res.type === 'video') {
-              videoUrl = res.resultData?.content?.video_url || res.resultData?.final_result?.video_url || res.resultData?.video_url || '';
-              imgUrl = res.resultData?.content?.cover_image_url || res.resultData?.final_result?.cover_image_url || ''; // fallback if available
-            }
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gridAutoRows: 138, gap: 12 }}>
+            {resources.map(res => {
+              let imgUrl = '';
+              let videoUrl = '';
+              
+              if (res.type === 'image') {
+                imgUrl = typeof res.resultData?.data?.[0] === 'string' 
+                  ? res.resultData?.data?.[0] 
+                  : res.resultData?.data?.[0]?.url || res.resultData?.content?.image_url || '';
+              } else if (res.type === 'video') {
+                videoUrl = res.resultData?.content?.video_url || res.resultData?.final_result?.video_url || res.resultData?.video_url || '';
+                imgUrl = res.resultData?.content?.cover_image_url || res.resultData?.final_result?.cover_image_url || ''; // fallback if available
+              }
 
-            return (
-              <div 
-                key={res.id} 
-                onClick={() => handleRestoreNode(res.id)}
-                style={{ 
-                  aspectRatio: '1/1', background: '#000', borderRadius: 12, overflow: 'hidden', 
-                  position: 'relative', border: '1px solid rgba(255,255,255,0.08)',
-                  cursor: 'pointer'
-                }}
-              >
-                {res.type === 'video' && videoUrl ? (
-                  <video src={videoUrl} poster={imgUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted loop playsInline onMouseEnter={e => e.currentTarget.play()} onMouseLeave={e => e.currentTarget.pause()} />
-                ) : (
-                  <img src={imgUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                )}
-                {/* 右下角类型标识 */}
-                <div style={{ position: 'absolute', bottom: 6, right: 6, background: 'rgba(0,0,0,0.6)', borderRadius: 6, padding: '2px 6px', fontSize: 10, color: '#fff' }}>
-                  {res.type === 'video' ? '视频' : '图片'}
-                </div>
-                {/* 隐藏状态覆盖层 */}
-                {res.isHidden && (
-                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: '#fff', fontSize: 12, background: 'rgba(255,255,255,0.2)', padding: '4px 10px', borderRadius: 12, backdropFilter: 'blur(4px)' }}>点击恢复</Text>
+              return (
+                <div 
+                  key={res.id} 
+                  onClick={() => handleRestoreNode(res.id)}
+                  style={{ 
+                    position: 'relative', width: '100%', height: '100%',
+                    background: '#000', borderRadius: 12, overflow: 'hidden', 
+                    border: '1px solid #444746', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}
+                >
+                  {res.type === 'video' && videoUrl ? (
+                    <video src={videoUrl} poster={imgUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted loop playsInline onMouseEnter={e => e.currentTarget.play()} onMouseLeave={e => e.currentTarget.pause()} />
+                  ) : (
+                    <img src={imgUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  )}
+                  {/* 右下角类型标识 */}
+                  <div style={{ position: 'absolute', bottom: 6, right: 6, background: 'rgba(0,0,0,0.6)', borderRadius: 6, padding: '2px 6px', fontSize: 10, color: '#fff' }}>
+                    {res.type === 'video' ? '视频' : '图片'}
                   </div>
-                )}
-              </div>
-            );
-          })
+                  {/* 隐藏状态覆盖层 */}
+                  {res.isHidden && (
+                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#fff', fontSize: 12, background: 'rgba(255,255,255,0.2)', padding: '4px 10px', borderRadius: 12, backdropFilter: 'blur(4px)' }}>点击恢复</Text>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

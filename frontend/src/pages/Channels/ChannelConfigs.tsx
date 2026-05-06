@@ -102,6 +102,13 @@ const ChannelConfigs: React.FC = () => {
       render: (text: string) => <Text strong>{text}</Text>,
     },
     {
+      title: '快捷识别 (YID)',
+      dataIndex: 'yid',
+      key: 'yid',
+      width: 120,
+      render: (text: string) => <Typography.Text keyboard style={{ color: '#1677ff' }}>{text || '-'}</Typography.Text>
+    },
+    {
       title: '服务商类型',
       dataIndex: 'provider_type',
       key: 'provider_type',

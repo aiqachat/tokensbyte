@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Table, Tag, Button, Space, Typography, DatePicker, Input, Select, Row, Col, Form, message, Grid, Descriptions, Card } from 'antd';
 import MobileCardList, { MobileCard, CardRow } from '../../components/MobileCardList';
-import { SyncOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { SyncOutlined, ReloadOutlined, SearchOutlined, MessageOutlined, PictureOutlined, VideoCameraOutlined, ToolOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
@@ -38,10 +38,10 @@ interface TaskLog {
 
 // ── 工具函数：从记录中获取任务类型（直接读取后端返回的 action_type） ──────────────────────────
 const getTaskType = (r: TaskLog) => {
-  if (r.action_type === '聊天') return { label: '聊天', color: 'blue', icon: '💬' };
-  if (r.action_type === '图片') return { label: '图片', color: 'purple', icon: '🖼️' };
-  if (r.action_type === '视频') return { label: '视频', color: 'orange', icon: '🎬' };
-  return { label: r.action_type || '其它', color: 'default', icon: '🔧' };
+  if (r.action_type === '聊天') return { label: '聊天', color: 'blue', icon: <MessageOutlined /> };
+  if (r.action_type === '图片') return { label: '图片', color: 'purple', icon: <PictureOutlined /> };
+  if (r.action_type === '视频') return { label: '视频', color: 'orange', icon: <VideoCameraOutlined /> };
+  return { label: r.action_type || '其它', color: 'default', icon: <ToolOutlined /> };
 };
 
 // ── 工具函数：判断是否异步任务（后端 task_id 非空即为异步） ─────────────────
@@ -227,17 +227,11 @@ const TaskLogs: React.FC = () => {
       },
     },
     {
-      title: '渠道',
+      title: '渠道AID',
       key: 'channel',
-      width: 160,
+      width: 120,
       render: (_: any, r: TaskLog) => {
-        if (!r.channel_name) return '-';
-        return (
-          <Space size={4}>
-            <Text>{r.channel_name}</Text>
-            {r.channel_group_aid && <Tag style={{ borderRadius: 10 }}>{r.channel_group_aid}</Tag>}
-          </Space>
-        );
+        return <Text type="secondary" style={{ fontSize: 12 }}>{r.channel_group_aid || '-'}</Text>;
       },
     },
     {
@@ -246,7 +240,7 @@ const TaskLogs: React.FC = () => {
       width: 80,
       render: (_: any, r: TaskLog) => {
         const t = getTaskType(r);
-        return <Tag color={t.color}>{t.icon} {t.label}</Tag>;
+        return <Tag icon={t.icon} color={t.color} style={{ borderRadius: 4 }}>{t.label}</Tag>;
       },
     },
     {
@@ -352,13 +346,13 @@ const TaskLogs: React.FC = () => {
           ) : status === 'failed' ? <Tag color="error">失败</Tag> : <Tag color="success">成功</Tag>
         }
       >
-        {record.channel_name && (
-          <CardRow label="渠道">
-            {record.channel_name} {record.channel_group_aid && <Tag style={{ borderRadius: 10, marginLeft: 4 }}>{record.channel_group_aid}</Tag>}
+        {record.channel_group_aid && (
+          <CardRow label="渠道AID">
+            <Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text>
           </CardRow>
         )}
         {isAdmin && <CardRow label="用户"><Text style={{ fontSize: 12 }}>{record.user_nickname || record.user_id}</Text></CardRow>}
-        <CardRow label="提交"><Text type="secondary" style={{ fontSize: 12 }}>{(isAsyncPost(record) ? dayjs(record.created_at) : dayjs(record.created_at).subtract(record.latency_ms, 'ms')).format('MM-DD HH:mm:ss')}</Text></CardRow>
+        <CardRow label="提交"><Text type="secondary" style={{ fontSize: 12 }}>{(isAsyncPost(record) ? dayjs(record.created_at) : dayjs(record.created_at).subtract(record.latency_ms, 'ms')).format('YYYY-MM-DD HH:mm:ss')}</Text></CardRow>
         <CardRow label="耗时"><Text type="secondary" style={{ fontSize: 12 }}>🕗 {(() => {
           if (isAsyncPost(record)) {
             if (status === 'pending') return '处理中...';

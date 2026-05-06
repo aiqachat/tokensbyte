@@ -7,7 +7,7 @@ use crate::AppState;
 use crate::models::{User, CreateUserRequest, UpdateUserRequest, UserListResponse, RechargeRequest, LoginResponse};
 use crate::error::{AppError, AppResult};
 use crate::auth;
-use sqlx::Any;
+
 
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
@@ -304,7 +304,7 @@ pub async fn recharge_user(
     }
 
     let recharge_type = if is_gift { "gift" } else { "manual" };
-    let recharge_id: i64 = sqlx::query_scalar::<Any, i64>(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, ?, ?) RETURNING id"))
+    let recharge_id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, ?, ?) RETURNING id"))
         .bind(&id)
         .bind(request.amount)
         .bind(recharge_type)

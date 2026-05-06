@@ -1,4 +1,4 @@
-use sqlx::{Pool, Any};
+use sqlx::Pool;
 
 macro_rules! pg_migration_blocks {
     ($pool:expr) => {{
@@ -123,6 +123,8 @@ macro_rules! pg_migration_blocks {
             upstream_req_content TEXT,
             is_stream INTEGER NOT NULL DEFAULT 0,
             billing_detail TEXT DEFAULT '',
+            billing_pid TEXT DEFAULT '',
+            forward_eid TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     )
@@ -353,6 +355,14 @@ macro_rules! pg_migration_blocks {
         .execute(pool).await.ok();
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_url TEXT DEFAULT ''")
         .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_req_content TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_detail TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_pid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS forward_eid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_req_content TEXT")
         .execute(pool).await.ok();
 
@@ -365,6 +375,10 @@ macro_rules! pg_migration_blocks {
         .execute(pool).await.ok();
     sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS quota_used DOUBLE PRECISION NOT NULL DEFAULT 0")
         .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS group_aid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
 
     // Forward Rules table
     sqlx::query(
@@ -376,10 +390,10 @@ macro_rules! pg_migration_blocks {
             config_json TEXT NOT NULL DEFAULT '{}',
             description TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
-            is_system INTEGER NOT NULL DEFAULT 0,
             remark TEXT,
             upstream_type TEXT NOT NULL DEFAULT 'other',
             config TEXT,
+            eid TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -441,6 +455,7 @@ macro_rules! pg_migration_blocks {
             remark TEXT,
             upstream_type TEXT NOT NULL DEFAULT 'other',
             config TEXT,
+            pid TEXT DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -472,7 +487,21 @@ macro_rules! pg_migration_blocks {
 
     sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0")
         .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS eid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+    sqlx::query("UPDATE forward_rules SET eid = '1' || floor(random() * 9000 + 1000)::text WHERE eid = '' OR eid IS NULL")
+        .execute(pool).await.ok();
         
+    sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS pid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+    sqlx::query("UPDATE billing_rules SET pid = '6' || floor(random() * 9000 + 1000)::text WHERE pid = '' OR pid IS NULL")
+        .execute(pool).await.ok();
+        
+    sqlx::query("ALTER TABLE channel_configs ADD COLUMN IF NOT EXISTS yid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+    sqlx::query("UPDATE channel_configs SET yid = '3' || floor(random() * 9000 + 1000)::text WHERE yid = '' OR yid IS NULL")
+        .execute(pool).await.ok();
+
     sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0")
         .execute(pool)
         .await?;
@@ -500,6 +529,10 @@ macro_rules! pg_migration_blocks {
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_detail TEXT DEFAULT ''")
         .execute(pool)
         .await?;
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_pid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
+    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS forward_eid TEXT DEFAULT ''")
+        .execute(pool).await.ok();
 
     // 异步任务 ID（非空时表示异步任务，用于轮询状态跟踪）
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS task_id TEXT DEFAULT ''")
@@ -1294,19 +1327,58 @@ macro_rules! pg_migration_blocks {
         .execute(pool).await.ok();
     sqlx::query("COMMENT ON COLUMN api_tokens.last_used_at IS '令牌最后使用时间'")
         .execute(pool).await.ok();
+    let bigint_queries = vec![
+        "ALTER TABLE user_levels ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE user_levels ALTER COLUMN daily_invite_limit TYPE BIGINT",
+        "ALTER TABLE user_levels ALTER COLUMN marketing_enabled TYPE BIGINT",
+        "ALTER TABLE user_levels ALTER COLUMN is_default TYPE BIGINT",
+        "ALTER TABLE user_levels ALTER COLUMN max_token_count TYPE BIGINT",
+        "ALTER TABLE users ALTER COLUMN is_active TYPE BIGINT",
+        "ALTER TABLE users ALTER COLUMN admin_group_id TYPE BIGINT",
+        "ALTER TABLE api_tokens ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE api_tokens ALTER COLUMN is_active TYPE BIGINT",
+        "ALTER TABLE channels ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE channels ALTER COLUMN preset_id TYPE BIGINT",
+        "ALTER TABLE channels ALTER COLUMN pool_id TYPE BIGINT",
+        "ALTER TABLE channels ALTER COLUMN gptimage_pool_id TYPE BIGINT",
+        "ALTER TABLE logs ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE logs ALTER COLUMN channel_id TYPE BIGINT",
+        "ALTER TABLE logs ALTER COLUMN token_id TYPE BIGINT",
+        "ALTER TABLE task_logs ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE task_logs ALTER COLUMN channel_id TYPE BIGINT",
+        "ALTER TABLE channel_configs ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE admin_groups ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE plugins ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE plugins ALTER COLUMN is_enabled TYPE BIGINT",
+        "ALTER TABLE plugins ALTER COLUMN size TYPE BIGINT",
+        "ALTER TABLE plugins ALTER COLUMN sort_order TYPE BIGINT",
+        "ALTER TABLE site_icons ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE site_icons ALTER COLUMN is_active TYPE BIGINT",
+        "ALTER TABLE site_icons ALTER COLUMN total_synced TYPE BIGINT",
+        "ALTER TABLE site_icons ALTER COLUMN total_new TYPE BIGINT",
+        "ALTER TABLE site_icons ALTER COLUMN total_updated TYPE BIGINT",
+        "ALTER TABLE redemption_codes ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE models ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE volcengine_pools ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE volcengine_pools ALTER COLUMN pool_id TYPE BIGINT",
+        "ALTER TABLE volcengine_pools ALTER COLUMN account_id TYPE BIGINT",
+        "ALTER TABLE volcengine_pools ALTER COLUMN channel_id TYPE BIGINT",
+        "ALTER TABLE gptimage_pools ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE gptimage_pools ALTER COLUMN pool_id TYPE BIGINT",
+        "ALTER TABLE gptimage_pools ALTER COLUMN account_id TYPE BIGINT",
+        "ALTER TABLE gptimage_pools ALTER COLUMN channel_id TYPE BIGINT",
+    ];
+
+    for query in bigint_queries {
+        sqlx::query(query).execute(pool).await.ok();
+    }
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())
     }};
 }
 
-pub async fn run_pg_any(pool: &sqlx::Pool<sqlx::Any>) -> anyhow::Result<()> {
-    pg_migration_blocks!(pool)
-}
-pub async fn run_any(pool: &Pool<Any>) -> anyhow::Result<()> {
-    // SQLite blocks fully deprecated. Route any remaining any_pool setups to pg layout
-    pg_migration_blocks!(pool)
-}
+
 
 pub async fn run_pg(pool: &sqlx::Pool<sqlx::Postgres>) -> anyhow::Result<()> {
     pg_migration_blocks!(pool)

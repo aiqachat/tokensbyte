@@ -234,6 +234,8 @@ async fn record_and_bill_inner(
 ) {
     let mut enable_log: i32 = 0;
     let mut category = String::new();
+    let mut billing_pid: Option<String> = None;
+    let mut forward_eid: Option<String> = None;
     
     // 查询模型同时关联 model_types 获取 category（支持同名模型按类型区分）
     let cat_filter = if let Some(cat) = hint_category {
@@ -242,9 +244,14 @@ async fn record_and_bill_inner(
         String::new()
     };
     let sql = format!(
-        "SELECT m.enable_log_content, t.name as category_name FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? AND m.is_active = 1{} LIMIT 1",
+        "SELECT m.enable_log_content, m.forward_rule_ids, t.name as category_name, b.pid as billing_pid \
+         FROM models m \
+         LEFT JOIN model_types t ON m.type_id = t.id \
+         LEFT JOIN billing_rules b ON m.billing_rule_id = b.id \
+         WHERE m.model_id = ? AND m.is_active = 1{} LIMIT 1",
         cat_filter
     );
+    let mut forward_rule_ids_str: Option<String> = None;
     if let Ok(Some(row)) = sqlx::query(&state.db.format_query(&sql))
     .bind(model_name)
     .fetch_optional(&state.db.pool)
@@ -253,6 +260,20 @@ async fn record_and_bill_inner(
         use sqlx::Row;
         enable_log = row.try_get("enable_log_content").unwrap_or(0);
         category = row.try_get("category_name").unwrap_or_default();
+        billing_pid = row.try_get("billing_pid").unwrap_or(None);
+        forward_rule_ids_str = row.try_get("forward_rule_ids").unwrap_or(None);
+    }
+
+    if let Some(ids_str) = forward_rule_ids_str {
+        if let Ok(ids) = serde_json::from_str::<Vec<i64>>(&ids_str) {
+            if let Some(first_id) = ids.first() {
+                forward_eid = sqlx::query_scalar(&state.db.format_query("SELECT eid FROM forward_rules WHERE id = ?"))
+                    .bind(first_id)
+                    .fetch_optional(&state.db.pool)
+                    .await
+                    .unwrap_or(None);
+            }
+        }
     }
 
     let filter_content = |content: Option<String>, respect_log_flag: bool| -> Option<String> {
@@ -439,8 +460,8 @@ async fn record_and_bill_inner(
         };
 
         sqlx::query(&state.db.format_query(
-            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type, billing_pid, forward_eid) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ))
         .bind(&token.user_id)
         .bind(channel_id)
@@ -462,6 +483,8 @@ async fn record_and_bill_inner(
         .bind(billing_detail)
         .bind(&task_id)
         .bind(&final_action_type)
+        .bind(&billing_pid)
+        .bind(&forward_eid)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

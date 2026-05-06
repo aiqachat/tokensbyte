@@ -26,6 +26,15 @@ pub async fn create_user_level(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateUserLevelRequest>,
 ) -> AppResult<Json<UserLevel>> {
+    let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM user_levels WHERE group_key = ?)"))
+        .bind(&req.group_key)
+        .fetch_one(&state.db.pool)
+        .await?;
+
+    if exists {
+        return Err(crate::error::AppError::Conflict("该等级标志 ID 已存在，请使用其他的标志".to_string()));
+    }
+
     // 如果设为默认，先清除其他默认
     if req.is_default.unwrap_or(0) == 1 {
         sqlx::query(&state.db.format_query("UPDATE user_levels SET is_default = 0 WHERE is_default = 1")).execute(&state.db.pool).await?;
@@ -69,6 +78,16 @@ pub async fn update_user_level(
         sqlx::query(&state.db.format_query("UPDATE user_levels SET name = ? WHERE id = ?")).bind(name).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(group_key) = &req.group_key {
+        let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM user_levels WHERE group_key = ? AND id != ?)"))
+            .bind(group_key)
+            .bind(id)
+            .fetch_one(&state.db.pool)
+            .await?;
+
+        if exists {
+            return Err(crate::error::AppError::Conflict("该等级标志 ID 已存在，请使用其他的标志".to_string()));
+        }
+
         sqlx::query(&state.db.format_query("UPDATE user_levels SET group_key = ? WHERE id = ?")).bind(group_key).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(discount) = req.discount {

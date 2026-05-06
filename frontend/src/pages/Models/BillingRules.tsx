@@ -22,6 +22,7 @@ interface BillingRuleData {
   duration_rate: number;
   pricing_tiers: string;
   extended_config: string;
+  pid?: string;
   is_active: number;
   is_system: number;
   created_at: string;
@@ -37,6 +38,7 @@ const BillingRules: React.FC = () => {
   
   const [items, setItems] = useState<BillingRuleData[]>([]);
   const [filterType, setFilterType] = useState('all');
+  const [searchText, setSearchText] = useState('');
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<BillingRuleData | null>(null);
@@ -241,6 +243,13 @@ const BillingRules: React.FC = () => {
       render: (text: string) => <Text strong>{text}</Text>
     },
     {
+      title: '快捷识别 (PID)',
+      dataIndex: 'pid',
+      key: 'pid',
+      width: 120,
+      render: (text: string) => <Tag color="blue">{text || '-'}</Tag>
+    },
+    {
       title: t('models.billing_type'),
       dataIndex: 'billing_type',
       key: 'billing_type',
@@ -293,7 +302,16 @@ const BillingRules: React.FC = () => {
     },
   ];
 
-  const filteredItems = filterType === 'all' ? items : items.filter(item => item.billing_type === filterType);
+  const filteredItems = items.filter(item => {
+    if (filterType !== 'all' && item.billing_type !== filterType) return false;
+    if (searchText) {
+      const lower = searchText.toLowerCase();
+      if (!item.name?.toLowerCase().includes(lower) && !String(item.pid || '').toLowerCase().includes(lower)) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   return (
     <div>
@@ -302,7 +320,7 @@ const BillingRules: React.FC = () => {
           {screens.xs ? '新建' : '新建计费策略类'}
         </Button>
       }>
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
           <Space wrap>
             <Text strong>筛选计费类型：</Text>
             <Radio.Group 
@@ -317,6 +335,13 @@ const BillingRules: React.FC = () => {
               <Radio value="duration">{t('models.type_duration')}</Radio>
             </Radio.Group>
           </Space>
+          <Input.Search
+            placeholder="搜索名称或PID"
+            allowClear
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            style={{ width: 200 }}
+          />
         </div>
 
         {screens.xs ? (
@@ -333,6 +358,7 @@ const BillingRules: React.FC = () => {
                   extra={<Switch checked={record.is_active === 1} disabled size="small" />}
                 >
                   <CardRow label="ID"><Text type="secondary">{record.id}</Text></CardRow>
+                  <CardRow label="PID (快捷识别)"><Tag color="blue">{record.pid || '-'}</Tag></CardRow>
                   <CardRow label="计费类型"><Tag color={colors[record.billing_type]}>{t(`models.type_${record.billing_type}`)}</Tag></CardRow>
                   <CardRow label="费率"><RateDisplay rule={record} currencySymbol={currencySymbol} /></CardRow>
                   <CardRow label="最后修改"><Text type="secondary" style={{ fontSize: 12 }}>{record.updated_at ? dayjs(record.updated_at).format('YYYY-MM-DD HH:mm:ss') : '-'}</Text></CardRow>
