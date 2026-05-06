@@ -1,4 +1,4 @@
-use sqlx::Pool;
+
 
 macro_rules! pg_migration_blocks {
     ($pool:expr) => {{
@@ -1327,46 +1327,94 @@ macro_rules! pg_migration_blocks {
         .execute(pool).await.ok();
     sqlx::query("COMMENT ON COLUMN api_tokens.last_used_at IS '令牌最后使用时间'")
         .execute(pool).await.ok();
+    // ─── 统一将所有 INTEGER 列升级为 BIGINT，与 Rust 模型层 i64 对齐 ───
     let bigint_queries = vec![
+        // ── user_levels ──
         "ALTER TABLE user_levels ALTER COLUMN id TYPE BIGINT",
         "ALTER TABLE user_levels ALTER COLUMN daily_invite_limit TYPE BIGINT",
         "ALTER TABLE user_levels ALTER COLUMN marketing_enabled TYPE BIGINT",
         "ALTER TABLE user_levels ALTER COLUMN is_default TYPE BIGINT",
         "ALTER TABLE user_levels ALTER COLUMN max_token_count TYPE BIGINT",
+        // ── users ──
         "ALTER TABLE users ALTER COLUMN is_active TYPE BIGINT",
         "ALTER TABLE users ALTER COLUMN admin_group_id TYPE BIGINT",
+        // ── api_tokens ──
         "ALTER TABLE api_tokens ALTER COLUMN id TYPE BIGINT",
         "ALTER TABLE api_tokens ALTER COLUMN is_active TYPE BIGINT",
+        // ── channels ──
         "ALTER TABLE channels ALTER COLUMN id TYPE BIGINT",
         "ALTER TABLE channels ALTER COLUMN preset_id TYPE BIGINT",
         "ALTER TABLE channels ALTER COLUMN pool_id TYPE BIGINT",
         "ALTER TABLE channels ALTER COLUMN gptimage_pool_id TYPE BIGINT",
+        // ── logs ──
         "ALTER TABLE logs ALTER COLUMN id TYPE BIGINT",
         "ALTER TABLE logs ALTER COLUMN channel_id TYPE BIGINT",
         "ALTER TABLE logs ALTER COLUMN token_id TYPE BIGINT",
-        "ALTER TABLE task_logs ALTER COLUMN id TYPE BIGINT",
-        "ALTER TABLE task_logs ALTER COLUMN channel_id TYPE BIGINT",
+        // ── channel_configs ──
         "ALTER TABLE channel_configs ALTER COLUMN id TYPE BIGINT",
+        // ── admin_groups ──
         "ALTER TABLE admin_groups ALTER COLUMN id TYPE BIGINT",
+        // ── plugins ──
         "ALTER TABLE plugins ALTER COLUMN id TYPE BIGINT",
         "ALTER TABLE plugins ALTER COLUMN is_enabled TYPE BIGINT",
         "ALTER TABLE plugins ALTER COLUMN size TYPE BIGINT",
         "ALTER TABLE plugins ALTER COLUMN sort_order TYPE BIGINT",
+        // ── site_icons ──
         "ALTER TABLE site_icons ALTER COLUMN id TYPE BIGINT",
         "ALTER TABLE site_icons ALTER COLUMN is_active TYPE BIGINT",
-        "ALTER TABLE site_icons ALTER COLUMN total_synced TYPE BIGINT",
-        "ALTER TABLE site_icons ALTER COLUMN total_new TYPE BIGINT",
-        "ALTER TABLE site_icons ALTER COLUMN total_updated TYPE BIGINT",
-        "ALTER TABLE redemption_codes ALTER COLUMN id TYPE BIGINT",
+        // ── site_icon_sync_logs ──
+        "ALTER TABLE site_icon_sync_logs ALTER COLUMN total_synced TYPE BIGINT",
+        "ALTER TABLE site_icon_sync_logs ALTER COLUMN total_new TYPE BIGINT",
+        "ALTER TABLE site_icon_sync_logs ALTER COLUMN total_updated TYPE BIGINT",
+        // ── redemptions（原误写为 redemption_codes，已修正） ──
+        "ALTER TABLE redemptions ALTER COLUMN id TYPE BIGINT",
+        // ── models ──
         "ALTER TABLE models ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE models ALTER COLUMN provider_id TYPE BIGINT",
+        "ALTER TABLE models ALTER COLUMN type_id TYPE BIGINT",
+        "ALTER TABLE models ALTER COLUMN billing_rule_id TYPE BIGINT",
+        // ── model_providers ──
+        "ALTER TABLE model_providers ALTER COLUMN id TYPE BIGINT",
+        // ── model_types ──
+        "ALTER TABLE model_types ALTER COLUMN id TYPE BIGINT",
+        // ── forward_rules ──
+        "ALTER TABLE forward_rules ALTER COLUMN id TYPE BIGINT",
+        // ── billing_rules ──
+        "ALTER TABLE billing_rules ALTER COLUMN id TYPE BIGINT",
+        // ── recharge_records ──
+        "ALTER TABLE recharge_records ALTER COLUMN id TYPE BIGINT",
+        // ── orders ──
+        "ALTER TABLE orders ALTER COLUMN id TYPE BIGINT",
+        // ── upstreams ──
+        "ALTER TABLE upstreams ALTER COLUMN id TYPE BIGINT",
+        // ── announcements ──
+        "ALTER TABLE announcements ALTER COLUMN id TYPE BIGINT",
+        // ── verification_codes ──
+        "ALTER TABLE verification_codes ALTER COLUMN id TYPE BIGINT",
+        // ── volcengine_pools（主表） ──
         "ALTER TABLE volcengine_pools ALTER COLUMN id TYPE BIGINT",
-        "ALTER TABLE volcengine_pools ALTER COLUMN pool_id TYPE BIGINT",
-        "ALTER TABLE volcengine_pools ALTER COLUMN account_id TYPE BIGINT",
-        "ALTER TABLE volcengine_pools ALTER COLUMN channel_id TYPE BIGINT",
+        // ── volcengine_pool_accounts ──
+        "ALTER TABLE volcengine_pool_accounts ALTER COLUMN id TYPE BIGINT",
+        // ── volcengine_pool_account_mapping ──
+        "ALTER TABLE volcengine_pool_account_mapping ALTER COLUMN pool_id TYPE BIGINT",
+        "ALTER TABLE volcengine_pool_account_mapping ALTER COLUMN account_id TYPE BIGINT",
+        // ── volcengine_pool_logs ──
+        "ALTER TABLE volcengine_pool_logs ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE volcengine_pool_logs ALTER COLUMN pool_id TYPE BIGINT",
+        "ALTER TABLE volcengine_pool_logs ALTER COLUMN account_id TYPE BIGINT",
+        "ALTER TABLE volcengine_pool_logs ALTER COLUMN channel_id TYPE BIGINT",
+        // ── gptimage_pools（主表） ──
         "ALTER TABLE gptimage_pools ALTER COLUMN id TYPE BIGINT",
-        "ALTER TABLE gptimage_pools ALTER COLUMN pool_id TYPE BIGINT",
-        "ALTER TABLE gptimage_pools ALTER COLUMN account_id TYPE BIGINT",
-        "ALTER TABLE gptimage_pools ALTER COLUMN channel_id TYPE BIGINT",
+        // ── gptimage_pool_accounts ──
+        "ALTER TABLE gptimage_pool_accounts ALTER COLUMN id TYPE BIGINT",
+        // ── gptimage_pool_account_mapping ──
+        "ALTER TABLE gptimage_pool_account_mapping ALTER COLUMN pool_id TYPE BIGINT",
+        "ALTER TABLE gptimage_pool_account_mapping ALTER COLUMN account_id TYPE BIGINT",
+        // ── gptimage_pool_logs ──
+        "ALTER TABLE gptimage_pool_logs ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE gptimage_pool_logs ALTER COLUMN pool_id TYPE BIGINT",
+        "ALTER TABLE gptimage_pool_logs ALTER COLUMN account_id TYPE BIGINT",
+        "ALTER TABLE gptimage_pool_logs ALTER COLUMN channel_id TYPE BIGINT",
     ];
 
     for query in bigint_queries {

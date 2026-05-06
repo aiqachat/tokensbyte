@@ -184,7 +184,7 @@ pub async fn register(
             referred_by = inviter_id;
         }
 
-        let mut initial_balance = state.config.default_user_quota;
+        let initial_balance = state.config.default_user_quota;
         let mut gift_amount = 0.0;
         let mut inviter_reward = 0.0;
         let mut marketing_override = false;
@@ -443,7 +443,7 @@ pub async fn register_email(
             referred_by = inviter_id;
         }
 
-        let mut initial_balance = state.config.default_user_quota;
+        let initial_balance = state.config.default_user_quota;
         let mut gift_amount = 0.0;
         let mut inviter_reward = 0.0;
         let mut marketing_override = false;
@@ -629,7 +629,7 @@ pub async fn register_mobile(
             referred_by = inviter_id;
         }
 
-        let mut initial_balance = state.config.default_user_quota;
+        let initial_balance = state.config.default_user_quota;
         let mut gift_amount = 0.0;
         let mut inviter_reward = 0.0;
         let mut marketing_override = false;
@@ -880,7 +880,7 @@ pub async fn oauth_wechat_callback(
             .await?
             .unwrap_or_else(|| "default".to_string());
 
-            let mut initial_balance = state.config.default_user_quota;
+            let initial_balance = state.config.default_user_quota;
             let mut gift_amount = 0.0;
             if settings.marketing.enable_registration_gift {
                 gift_amount = calc_gift_amount(&settings.marketing);
@@ -997,7 +997,7 @@ pub async fn oauth_google_callback(
             .await?
             .unwrap_or_else(|| "default".to_string());
 
-            let mut initial_balance = state.config.default_user_quota;
+            let initial_balance = state.config.default_user_quota;
             let mut gift_amount = 0.0;
             if settings.marketing.enable_registration_gift {
                 gift_amount = calc_gift_amount(&settings.marketing);
