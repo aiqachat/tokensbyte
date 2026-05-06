@@ -1415,6 +1415,37 @@ macro_rules! pg_migration_blocks {
         "ALTER TABLE gptimage_pool_logs ALTER COLUMN pool_id TYPE BIGINT",
         "ALTER TABLE gptimage_pool_logs ALTER COLUMN account_id TYPE BIGINT",
         "ALTER TABLE gptimage_pool_logs ALTER COLUMN channel_id TYPE BIGINT",
+        // ── playground_projects（体验中心项目） ──
+        "ALTER TABLE playground_projects ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE playground_projects ALTER COLUMN is_deleted TYPE BIGINT",
+        // ── playground_assets（体验中心资源） ──
+        "ALTER TABLE playground_assets ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE playground_assets ALTER COLUMN project_id TYPE BIGINT",
+        "ALTER TABLE playground_assets ALTER COLUMN width TYPE BIGINT",
+        "ALTER TABLE playground_assets ALTER COLUMN height TYPE BIGINT",
+        "ALTER TABLE playground_assets ALTER COLUMN is_deleted TYPE BIGINT",
+        // ── plugin_api_logs ──
+        "ALTER TABLE plugin_api_logs ALTER COLUMN id TYPE BIGINT",
+        // ── plugin_configs ──
+        "ALTER TABLE plugin_configs ALTER COLUMN id TYPE BIGINT",
+        // ── plugin_asset_groups ──
+        "ALTER TABLE plugin_asset_groups ALTER COLUMN id TYPE BIGINT",
+        // ── plugin_assets ──
+        "ALTER TABLE plugin_assets ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE plugin_assets ALTER COLUMN size TYPE BIGINT",
+        "ALTER TABLE plugin_assets ALTER COLUMN sort_order TYPE BIGINT",
+        // ── marketing_teams ──
+        "ALTER TABLE marketing_teams ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE marketing_teams ALTER COLUMN max_members TYPE BIGINT",
+        "ALTER TABLE marketing_teams ALTER COLUMN members_can_set_level TYPE BIGINT",
+        // ── marketing_team_leaders ──
+        "ALTER TABLE marketing_team_leaders ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE marketing_team_leaders ALTER COLUMN team_id TYPE BIGINT",
+        // ── marketing_team_members ──
+        "ALTER TABLE marketing_team_members ALTER COLUMN id TYPE BIGINT",
+        "ALTER TABLE marketing_team_members ALTER COLUMN team_id TYPE BIGINT",
+        // ── site_icon_sync_logs ──
+        "ALTER TABLE site_icon_sync_logs ALTER COLUMN id TYPE BIGINT",
     ];
 
     for query in bigint_queries {

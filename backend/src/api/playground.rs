@@ -71,7 +71,7 @@ async fn list_projects(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let projects: Vec<(i64, String, String, String, String, String, i32, String, String)> = sqlx::query_as(
+    let projects: Vec<(i64, String, String, String, String, String, i64, String, String)> = sqlx::query_as(
         &state.db.format_query(
             "SELECT id, uid, name, description, cover_url, canvas_data, is_deleted, created_at, updated_at \
              FROM playground_projects WHERE user_id = ? AND is_deleted = 0 ORDER BY updated_at DESC"
@@ -226,7 +226,7 @@ async fn get_project(
     .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
 
     // 获取该项目的资源列表
-    let assets: Vec<(i64, String, String, i64, String, String, String, String, String, String, f64, i32, i32, String)> = sqlx::query_as(
+    let assets: Vec<(i64, String, String, i64, String, String, String, String, String, String, f64, i64, i64, String)> = sqlx::query_as(
         &state.db.format_query(
             "SELECT id, asset_type, file_name, file_size, file_url, thumbnail_url, prompt, model_id, model_name, \
              canvas_node_data, duration_seconds, width, height, created_at \
