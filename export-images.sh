@@ -172,7 +172,7 @@ cat > "$OUTPUT_DIR/UPLOAD-GUIDE.txt" << EOF
 📦 导出时间: $(date '+%Y-%m-%d %H:%M:%S')
 
 📁 需要上传的文件:
-$(ls -lh "$OUTPUT_DIR"/*${TIMESTAMP}.tar | xargs -I {} basename {})
+$(ls -1 "$OUTPUT_DIR"/*${TIMESTAMP}.tar | xargs -n 1 basename)
 - import-images.sh (导入脚本)
 - docker-compose.yml (部署配置)
 - .env.example (环境变量模板)

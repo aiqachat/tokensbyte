@@ -207,7 +207,7 @@ const Models: React.FC = () => {
               ruleNames = ruleIds.map((id: number) => {
                 const r = allForwardRules.find(rule => rule.id === id);
                 return r ? `${r.name}${r.eid ? ` (EID: ${r.eid})` : ''}` : null;
-              }).filter(Boolean);
+              }).filter(Boolean) as string[];
             }
           }
         } catch (e) {}
@@ -361,7 +361,7 @@ const Models: React.FC = () => {
                             ruleNames = ruleIds.map((id: number) => {
                               const r = allForwardRules.find(rule => rule.id === id);
                               return r ? `${r.name}${r.eid ? ` (EID: ${r.eid})` : ''}` : null;
-                            }).filter(Boolean);
+                            }).filter(Boolean) as string[];
                           }
                         }
                       } catch (e) {}
