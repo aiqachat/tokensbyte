@@ -955,6 +955,7 @@ macro_rules! pg_migration_blocks {
             strategy TEXT NOT NULL DEFAULT 'random',
             is_active INTEGER NOT NULL DEFAULT 1,
             remark TEXT,
+            model_id TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
@@ -963,6 +964,9 @@ macro_rules! pg_migration_blocks {
     sqlx::query("COMMENT ON TABLE volcengine_pools IS '火山引擎卡池分组表'").execute(pool).await.ok();
     sqlx::query("COMMENT ON COLUMN volcengine_pools.pool_type IS '卡池类型: chat=聊天, image=图片, video=视频, custom=自定义'").execute(pool).await.ok();
     sqlx::query("COMMENT ON COLUMN volcengine_pools.strategy IS '调度策略: random=随机分布, sequential=顺序轮转'").execute(pool).await.ok();
+
+    // 确保 model_id 列存在
+    sqlx::query("ALTER TABLE volcengine_pools ADD COLUMN IF NOT EXISTS model_id TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
 
     // 移除旧版本不需要的列（支持平滑升级）
     sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS quota_unit").execute(pool).await.ok();
