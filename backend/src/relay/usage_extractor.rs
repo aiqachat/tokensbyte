@@ -1,6 +1,8 @@
 use serde_json::Value;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ExtractedFeatures {
     pub has_video: bool,
     pub has_audio: bool,
@@ -122,11 +124,12 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
     let sound = body.get("sound").and_then(|v| v.as_str()).map(|s| s.to_lowercase());
 
     // 检测参考图（用于区分文生图/图生图计费）
-    // 支持可灵（image/image_list/subject_image_list/image_reference）和 OpenAI 兼容格式
+    // 支持可灵（image/image_list/subject_image_list/image_reference）和 OpenAI 兼容格式（image_urls）
     let has_image_ref =
         body.get("image").map_or(false, |v| {
             v.as_str().map_or(false, |s| !s.is_empty()) || v.is_object()
         })
+        || body.get("image_urls").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty())
         || body.get("image_list").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty())
         || body.get("subject_image_list").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty())
         || body.get("image_reference").map_or(false, |v| !v.is_null());
@@ -185,6 +188,23 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         prompt_extend,
         mode,
         sound,
+    }
+}
+
+impl Default for ExtractedFeatures {
+    fn default() -> Self {
+        Self {
+            has_video: false,
+            has_audio: false,
+            has_image_ref: false,
+            duration_seconds: None,
+            resolution: None,
+            image_count: None,
+            service_tier: None,
+            prompt_extend: false,
+            mode: None,
+            sound: None,
+        }
     }
 }
 

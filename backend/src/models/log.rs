@@ -50,6 +50,9 @@ pub struct RequestLog {
     pub billing_pid: Option<String>,
     #[sqlx(default)]
     pub forward_eid: Option<String>,
+    /// POST 阶段提取的计费特征快照 (JSON)，独立于 enable_log 开关
+    #[sqlx(default)]
+    pub billing_features: Option<String>,
     pub created_at: String,
 }
 

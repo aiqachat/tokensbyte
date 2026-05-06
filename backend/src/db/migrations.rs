@@ -1,5 +1,12 @@
 
 
+
+macro_rules! exec_ignore {
+    ($pool:expr, $( $q:expr ),+ $(,)?) => {
+        $( sqlx::query($q).execute($pool).await.ok(); )+
+    };
+}
+
 macro_rules! pg_migration_blocks {
     ($pool:expr) => {{
         let pool = $pool;
@@ -319,15 +326,16 @@ macro_rules! pg_migration_blocks {
         .await?;
         
     // Fix missing column in user_levels if table was already created
-    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS commission_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS invite_reward_inviter DOUBLE PRECISION NOT NULL DEFAULT 0.0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS invite_reward_invitee DOUBLE PRECISION NOT NULL DEFAULT 0.0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS daily_invite_limit INTEGER NOT NULL DEFAULT 10").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS marketing_enabled INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS is_default INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS max_token_count INTEGER NOT NULL DEFAULT 10").execute(pool).await.ok();
-    // 确保 default 等级为默认注册等级（仅当没有任何默认等级时）
-    sqlx::query("UPDATE user_levels SET is_default = 1 WHERE group_key = 'default' AND NOT EXISTS (SELECT 1 FROM user_levels WHERE is_default = 1)").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS commission_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0",
+        "ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS invite_reward_inviter DOUBLE PRECISION NOT NULL DEFAULT 0.0",
+        "ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS invite_reward_invitee DOUBLE PRECISION NOT NULL DEFAULT 0.0",
+        "ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS daily_invite_limit INTEGER NOT NULL DEFAULT 10",
+        "ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS marketing_enabled INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS is_default INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS max_token_count INTEGER NOT NULL DEFAULT 10",
+        "UPDATE user_levels SET is_default = 1 WHERE group_key = 'default' AND NOT EXISTS (SELECT 1 FROM user_levels WHERE is_default = 1)",
+    );
 
     // Commissions table
     sqlx::query(
@@ -345,40 +353,23 @@ macro_rules! pg_migration_blocks {
     .await?;
 
     // Add new columns to existing models/logs tables
-    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS enable_log_content INTEGER NOT NULL DEFAULT 0")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS is_stream INTEGER NOT NULL DEFAULT 0")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS request_content TEXT")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS response_content TEXT")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_url TEXT DEFAULT ''")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_req_content TEXT DEFAULT ''")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_detail TEXT DEFAULT ''")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_pid TEXT DEFAULT ''")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS forward_eid TEXT DEFAULT ''")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_req_content TEXT")
-        .execute(pool).await.ok();
-
-    // Safe fallback for existing postgres deployments
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS user_groups TEXT NOT NULL DEFAULT '[]'")
-        .execute(pool)
-        .await
-        .ok();
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS quota_limit DOUBLE PRECISION NOT NULL DEFAULT -1")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS quota_used DOUBLE PRECISION NOT NULL DEFAULT 0")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS group_aid TEXT DEFAULT ''")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE models ADD COLUMN IF NOT EXISTS enable_log_content INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS is_stream INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS request_content TEXT",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS response_content TEXT",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_url TEXT DEFAULT ''",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_req_content TEXT DEFAULT ''",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_detail TEXT DEFAULT ''",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_pid TEXT DEFAULT ''",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS forward_eid TEXT DEFAULT ''",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS upstream_req_content TEXT",
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS user_groups TEXT NOT NULL DEFAULT '[]'",
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS quota_limit DOUBLE PRECISION NOT NULL DEFAULT -1",
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS quota_used DOUBLE PRECISION NOT NULL DEFAULT 0",
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS group_aid TEXT DEFAULT ''",
+    );
 
     // Forward Rules table
     sqlx::query(
@@ -401,10 +392,9 @@ macro_rules! pg_migration_blocks {
     .execute(pool)
     .await?;
 
-    sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '聊天'")
-        .execute(pool)
-        .await
-        .ok();
+    exec_ignore!(pool,
+        "ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '聊天'",
+    );
 
 
     // Alter models to add rule link
@@ -485,31 +475,24 @@ macro_rules! pg_migration_blocks {
         .execute(pool)
         .await?;
 
-    sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS eid TEXT DEFAULT ''")
-        .execute(pool).await.ok();
-    sqlx::query("UPDATE forward_rules SET eid = '1' || floor(random() * 9000 + 1000)::text WHERE eid = '' OR eid IS NULL")
-        .execute(pool).await.ok();
-        
-    sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS pid TEXT DEFAULT ''")
-        .execute(pool).await.ok();
-    sqlx::query("UPDATE billing_rules SET pid = '6' || floor(random() * 9000 + 1000)::text WHERE pid = '' OR pid IS NULL")
-        .execute(pool).await.ok();
-        
-    sqlx::query("ALTER TABLE channel_configs ADD COLUMN IF NOT EXISTS yid TEXT DEFAULT ''")
-        .execute(pool).await.ok();
-    sqlx::query("UPDATE channel_configs SET yid = '3' || floor(random() * 9000 + 1000)::text WHERE yid = '' OR yid IS NULL")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS eid TEXT DEFAULT ''",
+        "UPDATE forward_rules SET eid = '1' || floor(random() * 9000 + 1000)::text WHERE eid = '' OR eid IS NULL",
+        "ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS pid TEXT DEFAULT ''",
+        "UPDATE billing_rules SET pid = '6' || floor(random() * 9000 + 1000)::text WHERE pid = '' OR pid IS NULL",
+        "ALTER TABLE channel_configs ADD COLUMN IF NOT EXISTS yid TEXT DEFAULT ''",
+        "UPDATE channel_configs SET yid = '3' || floor(random() * 9000 + 1000)::text WHERE yid = '' OR yid IS NULL",
+    );
 
     sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0")
         .execute(pool)
         .await?;
 
-    sqlx::query("ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS cached_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN billing_rules.cached_rate IS '缓存费率'")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS cached_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0",
+        "COMMENT ON COLUMN billing_rules.cached_rate IS '缓存费率'",
+    );
 
     // Seed Billing Rules
     let bcount: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM billing_rules").fetch_one(pool).await?;
@@ -522,51 +505,48 @@ macro_rules! pg_migration_blocks {
         "#).execute(pool).await?;
     }
 
-    let _ = sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS register_ip TEXT DEFAULT ''").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_remark TEXT DEFAULT ''").execute(pool).await;
+    exec_ignore!(pool,
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS register_ip TEXT DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_remark TEXT DEFAULT ''",
+    );
 
     // 计费明细日志扩展
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_detail TEXT DEFAULT ''")
         .execute(pool)
         .await?;
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_pid TEXT DEFAULT ''")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS forward_eid TEXT DEFAULT ''")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_pid TEXT DEFAULT ''",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS forward_eid TEXT DEFAULT ''",
+    );
 
     // 异步任务 ID（非空时表示异步任务，用于轮询状态跟踪）
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS task_id TEXT DEFAULT ''")
         .execute(pool)
         .await?;
     // 为 task_id 添加备注
-    sqlx::query("COMMENT ON COLUMN logs.task_id IS '异步任务ID，非空时表示异步任务，用于轮询状态跟踪'")
-        .execute(pool)
-        .await
-        .ok();
+    exec_ignore!(pool,
+        "COMMENT ON COLUMN logs.task_id IS '异步任务ID，非空时表示异步任务，用于轮询状态跟踪'",
+    );
 
     // 任务类型（聊天、图片、视频等），用于精准筛选，避免基于 endpoint 的路径猜测
     sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS action_type TEXT DEFAULT ''")
         .execute(pool)
         .await?;
-    sqlx::query("COMMENT ON COLUMN logs.action_type IS '任务类型：聊天、图片、视频等，用于精准筛选和显示'")
-        .execute(pool)
-        .await
-        .ok();
-
-    // 数据清洗：为历史数据填充 action_type
-    sqlx::query("UPDATE logs SET action_type = '聊天' WHERE action_type = '' AND (endpoint LIKE '%chat/completions%' OR endpoint LIKE '%generateContent%')").execute(pool).await.ok();
-    sqlx::query("UPDATE logs SET action_type = '图片' WHERE action_type = '' AND endpoint LIKE '%images/%'").execute(pool).await.ok();
-    sqlx::query("UPDATE logs SET action_type = '视频' WHERE action_type = '' AND (endpoint LIKE '%video/%' OR endpoint LIKE '%videos/%' OR endpoint LIKE '%contents/generations%')").execute(pool).await.ok();
-    sqlx::query("UPDATE logs SET action_type = '其它' WHERE action_type = ''").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "COMMENT ON COLUMN logs.action_type IS '任务类型：聊天、图片、视频等，用于精准筛选和显示'",
+        "UPDATE logs SET action_type = '聊天' WHERE action_type = '' AND (endpoint LIKE '%chat/completions%' OR endpoint LIKE '%generateContent%')",
+        "UPDATE logs SET action_type = '图片' WHERE action_type = '' AND endpoint LIKE '%images/%'",
+        "UPDATE logs SET action_type = '视频' WHERE action_type = '' AND (endpoint LIKE '%video/%' OR endpoint LIKE '%videos/%' OR endpoint LIKE '%contents/generations%')",
+        "UPDATE logs SET action_type = '其它' WHERE action_type = ''",
+    );
 
     // user_levels 表新增 allow_view_log_details 控制日志详情查看权限
     sqlx::query("ALTER TABLE user_levels ADD COLUMN IF NOT EXISTS allow_view_log_details INTEGER NOT NULL DEFAULT 1")
         .execute(pool)
         .await?;
-    sqlx::query("COMMENT ON COLUMN user_levels.allow_view_log_details IS '是否允许查看日志详情，1-允许，0-不允许'")
-        .execute(pool)
-        .await
-        .ok();
+    exec_ignore!(pool,
+        "COMMENT ON COLUMN user_levels.allow_view_log_details IS '是否允许查看日志详情，1-允许，0-不允许'",
+    );
 
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS channel_configs (
@@ -580,9 +560,11 @@ macro_rules! pg_migration_blocks {
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     ).execute(pool).await?;
-    let _ = sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS preset_id INTEGER").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE channel_configs ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await;
+    exec_ignore!(pool,
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS preset_id INTEGER",
+        "ALTER TABLE channel_configs ADD COLUMN IF NOT EXISTS remark TEXT",
+        "ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS remark TEXT",
+    );
 
     sqlx::query(
         r#"CREATE TABLE IF NOT EXISTS upstreams (
@@ -598,8 +580,10 @@ macro_rules! pg_migration_blocks {
         )"#
     ).execute(pool).await?;
 
-    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN IF NOT EXISTS upstream_type TEXT NOT NULL DEFAULT 'other'").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE upstreams ADD COLUMN IF NOT EXISTS config TEXT").execute(pool).await;
+    exec_ignore!(pool,
+        "ALTER TABLE upstreams ADD COLUMN IF NOT EXISTS upstream_type TEXT NOT NULL DEFAULT 'other'",
+        "ALTER TABLE upstreams ADD COLUMN IF NOT EXISTS config TEXT",
+    );
 
     
     // Plugins table
@@ -619,8 +603,9 @@ macro_rules! pg_migration_blocks {
     .await?;
 
     // Upgrade: add allowed_levels for existing deployments
-    let _ = sqlx::query("ALTER TABLE plugins ADD COLUMN IF NOT EXISTS allowed_levels TEXT NOT NULL DEFAULT 'all'")
-        .execute(pool).await;
+    exec_ignore!(pool,
+        "ALTER TABLE plugins ADD COLUMN IF NOT EXISTS allowed_levels TEXT NOT NULL DEFAULT 'all'",
+    );
 
     // Plugin Asset Groups table
     sqlx::query(
@@ -663,23 +648,23 @@ macro_rules! pg_migration_blocks {
     .await?;
 
     // Migrate existing plugin_assets
-    sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS category TEXT DEFAULT '未分类'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN plugin_assets.category IS '素材分类'").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS asset_id TEXT").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN plugin_assets.asset_id IS '火山方舟素材ID（如 asset://...）'").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN plugin_assets.sort_order IS '排序权重，数字越大越靠前'").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN plugin_assets.remark IS '管理员内部备注'").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS group_id TEXT").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN plugin_assets.group_id IS '素材绑定的组合ID'").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS content_hash TEXT").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN plugin_assets.content_hash IS '资源内容 SHA-256 哈希值，用于精确去重'").execute(pool).await.ok();
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_plugin_assets_content_hash ON plugin_assets(content_hash)").execute(pool).await.ok();
-
-    // Upgrade: 为 plugin_api_logs 添加 source 字段，区分日志来源（api_proxy=对外接口调用 / page=页面操作 / relay_convert=转发规则替换素材）
-    sqlx::query("ALTER TABLE plugin_api_logs ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'page'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN plugin_api_logs.source IS '日志来源: api_proxy=对外接口 / page=页面操作 / relay_convert=转发规则替换素材'").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS category TEXT DEFAULT '未分类'",
+        "COMMENT ON COLUMN plugin_assets.category IS '素材分类'",
+        "ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS asset_id TEXT",
+        "COMMENT ON COLUMN plugin_assets.asset_id IS '火山方舟素材ID（如 asset://...）'",
+        "ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0",
+        "COMMENT ON COLUMN plugin_assets.sort_order IS '排序权重，数字越大越靠前'",
+        "ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS remark TEXT",
+        "COMMENT ON COLUMN plugin_assets.remark IS '管理员内部备注'",
+        "ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS group_id TEXT",
+        "COMMENT ON COLUMN plugin_assets.group_id IS '素材绑定的组合ID'",
+        "ALTER TABLE plugin_assets ADD COLUMN IF NOT EXISTS content_hash TEXT",
+        "COMMENT ON COLUMN plugin_assets.content_hash IS '资源内容 SHA-256 哈希值，用于精确去重'",
+        "CREATE INDEX IF NOT EXISTS idx_plugin_assets_content_hash ON plugin_assets(content_hash)",
+        "ALTER TABLE plugin_api_logs ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'page'",
+        "COMMENT ON COLUMN plugin_api_logs.source IS '日志来源: api_proxy=对外接口 / page=页面操作 / relay_convert=转发规则替换素材'",
+    );
 
     // Seed Asset Manager plugin
     sqlx::query(
@@ -724,12 +709,11 @@ macro_rules! pg_migration_blocks {
     .await?;
 
     // Migration: add invite_code and max_members columns for existing deployments
-    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS invite_code TEXT UNIQUE")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS max_members INTEGER NOT NULL DEFAULT 10")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS members_can_set_level INTEGER NOT NULL DEFAULT 0")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS invite_code TEXT UNIQUE",
+        "ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS max_members INTEGER NOT NULL DEFAULT 10",
+        "ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS members_can_set_level INTEGER NOT NULL DEFAULT 0",
+    );
 
     // Backfill: generate invite_code for existing teams that don't have one
     {
@@ -790,22 +774,14 @@ macro_rules! pg_migration_blocks {
 
     // -- 多方式登录注册扩展 --
     // users 表新增 google_id（谷歌 OAuth 唯一标识）
-    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT")
-        .execute(pool).await.ok();
-    
-    // 新增第三方绑定的昵称
-    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS wechat_name TEXT")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_name TEXT")
-        .execute(pool).await.ok();
-
-    // verification_codes 表新增 phone 字段（短信验证码使用）
-    sqlx::query("ALTER TABLE verification_codes ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''")
-        .execute(pool).await.ok();
-
-    // 模型供应商和类型：新增 is_system 字段并植入内置常量配置
-    sqlx::query("ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE model_types ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS wechat_name TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_name TEXT",
+        "ALTER TABLE verification_codes ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''",
+        "ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE model_types ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0",
+    );
 
     // 内置服务商: 火山引擎、谷歌、阿里云
     sqlx::query(
@@ -822,16 +798,11 @@ macro_rules! pg_migration_blocks {
     ).execute(pool).await?;
 
     // 为 models 表增加 mid 列（系统识别码，6位数字）
-    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS mid TEXT NOT NULL DEFAULT ''")
-        .execute(pool).await.ok();
-
-    // models 表新增全站折扣字段
-    // site_discount: 全站折扣倍率（1.0=原价，0.8=八折，>1可加价）
-    // site_discount_enabled: 全站折扣启用开关（0=关闭，1=开启，开启后优先级高于用户等级折扣）
-    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS site_discount DOUBLE PRECISION NOT NULL DEFAULT 1.0")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS site_discount_enabled INTEGER NOT NULL DEFAULT 0")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE models ADD COLUMN IF NOT EXISTS mid TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE models ADD COLUMN IF NOT EXISTS site_discount DOUBLE PRECISION NOT NULL DEFAULT 1.0",
+        "ALTER TABLE models ADD COLUMN IF NOT EXISTS site_discount_enabled INTEGER NOT NULL DEFAULT 0",
+    );
 
     // Playground Projects table
     sqlx::query(
@@ -851,10 +822,10 @@ macro_rules! pg_migration_blocks {
     .execute(pool)
     .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_projects_user ON playground_projects(user_id)")
-        .execute(pool).await.ok();
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_projects_uid ON playground_projects(uid)")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "CREATE INDEX IF NOT EXISTS idx_pg_projects_user ON playground_projects(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pg_projects_uid ON playground_projects(uid)",
+    );
 
     // Announcements table
     sqlx::query(
@@ -899,16 +870,12 @@ macro_rules! pg_migration_blocks {
     .execute(pool)
     .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_assets_project ON playground_assets(project_id)")
-        .execute(pool).await.ok();
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_assets_user ON playground_assets(user_id)")
-        .execute(pool).await.ok();
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_pg_assets_type ON playground_assets(asset_type)")
-        .execute(pool).await.ok();
-
-    // api_tokens 增加 kid 列（令牌短标识：用户 UID 后3位 + 随机3位数字）
-    sqlx::query("ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS kid TEXT DEFAULT ''")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "CREATE INDEX IF NOT EXISTS idx_pg_assets_project ON playground_assets(project_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pg_assets_user ON playground_assets(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pg_assets_type ON playground_assets(asset_type)",
+        "ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS kid TEXT DEFAULT ''",
+    );
 
     // 回填已有令牌的 kid（只处理 kid 为空的记录）
     {
@@ -930,14 +897,11 @@ macro_rules! pg_migration_blocks {
     // ── 火山引擎卡池系统 Migration ──────────────────────────────────
 
     // plugins 表新增 category 列：区分用户增强插件和系统增强插件
-    sqlx::query("ALTER TABLE plugins ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'user'")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN plugins.category IS '插件分类: user=用户增强, system=系统增强'")
-        .execute(pool).await.ok();
-
-    // 更新现有插件为用户增强
-    sqlx::query("UPDATE plugins SET category = 'user' WHERE name IN ('asset_manager', 'team_marketing', 'playground') AND category = ''")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE plugins ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'user'",
+        "COMMENT ON COLUMN plugins.category IS '插件分类: user=用户增强, system=系统增强'",
+        "UPDATE plugins SET category = 'user' WHERE name IN ('asset_manager', 'team_marketing', 'playground') AND category = ''",
+    );
 
     // 种子：火山引擎卡池系统插件
     sqlx::query(
@@ -961,22 +925,20 @@ macro_rules! pg_migration_blocks {
         )"#
     ).execute(pool).await?;
 
-    sqlx::query("COMMENT ON TABLE volcengine_pools IS '火山引擎卡池分组表'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN volcengine_pools.pool_type IS '卡池类型: chat=聊天, image=图片, video=视频, custom=自定义'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN volcengine_pools.strategy IS '调度策略: random=随机分布, sequential=顺序轮转'").execute(pool).await.ok();
-
-    // 确保 model_id 列存在
-    sqlx::query("ALTER TABLE volcengine_pools ADD COLUMN IF NOT EXISTS model_id TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-
-    // 移除旧版本不需要的列（支持平滑升级）
-    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS quota_unit").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS daily_reset_hour").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS daily_reset_minute").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS period_start").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS period_end").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_daily_quota").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_hourly_quota").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_period_quota").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "COMMENT ON TABLE volcengine_pools IS '火山引擎卡池分组表'",
+        "COMMENT ON COLUMN volcengine_pools.pool_type IS '卡池类型: chat=聊天, image=图片, video=视频, custom=自定义'",
+        "COMMENT ON COLUMN volcengine_pools.strategy IS '调度策略: random=随机分布, sequential=顺序轮转'",
+        "ALTER TABLE volcengine_pools ADD COLUMN IF NOT EXISTS model_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS quota_unit",
+        "ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS daily_reset_hour",
+        "ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS daily_reset_minute",
+        "ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS period_start",
+        "ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS period_end",
+        "ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_daily_quota",
+        "ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_hourly_quota",
+        "ALTER TABLE volcengine_pools DROP COLUMN IF EXISTS default_period_quota",
+    );
 
     // 卡池账号表（独立资源池）
     sqlx::query(
@@ -1009,26 +971,27 @@ macro_rules! pg_migration_blocks {
         )"#
     ).execute(pool).await?;
 
-    sqlx::query("ALTER TABLE volcengine_pool_accounts DROP COLUMN IF EXISTS pool_id").execute(pool).await.ok(); // 移除旧绑定
-    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS base_url TEXT NOT NULL DEFAULT 'https://ark.cn-beijing.volces.com/api/v3'").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS models TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS account_id TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS access_key TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS secret_key TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS quota_unit TEXT NOT NULL DEFAULT 'tokens'").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS daily_reset_hour INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS daily_reset_minute INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS period_start TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS period_end TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-
-    sqlx::query("COMMENT ON TABLE volcengine_pool_accounts IS '火山引擎独立账号表'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.base_url IS '请求地址'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.models IS '支持的模型列表，逗号分隔'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.quota_unit IS '配额计量单位: tokens=Token数, requests=请求次数, images=图片张数'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.status IS '账号状态: active=可用, disabled=故障禁用, exhausted=配额耗尽'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.daily_quota IS '每日配额上限(0=不限)'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.hourly_quota IS '每小时配额上限(0=不限)'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN volcengine_pool_accounts.period_quota IS '时段配额上限(0=不限)'").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE volcengine_pool_accounts DROP COLUMN IF EXISTS pool_id",
+        "ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS base_url TEXT NOT NULL DEFAULT 'https://ark.cn-beijing.volces.com/api/v3'",
+        "ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS models TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS account_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS access_key TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS secret_key TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS quota_unit TEXT NOT NULL DEFAULT 'tokens'",
+        "ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS daily_reset_hour INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS daily_reset_minute INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS period_start TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pool_accounts ADD COLUMN IF NOT EXISTS period_end TEXT NOT NULL DEFAULT ''",
+        "COMMENT ON TABLE volcengine_pool_accounts IS '火山引擎独立账号表'",
+        "COMMENT ON COLUMN volcengine_pool_accounts.base_url IS '请求地址'",
+        "COMMENT ON COLUMN volcengine_pool_accounts.models IS '支持的模型列表，逗号分隔'",
+        "COMMENT ON COLUMN volcengine_pool_accounts.quota_unit IS '配额计量单位: tokens=Token数, requests=请求次数, images=图片张数'",
+        "COMMENT ON COLUMN volcengine_pool_accounts.status IS '账号状态: active=可用, disabled=故障禁用, exhausted=配额耗尽'",
+        "COMMENT ON COLUMN volcengine_pool_accounts.daily_quota IS '每日配额上限(0=不限)'",
+        "COMMENT ON COLUMN volcengine_pool_accounts.hourly_quota IS '每小时配额上限(0=不限)'",
+        "COMMENT ON COLUMN volcengine_pool_accounts.period_quota IS '时段配额上限(0=不限)'",
+    );
 
     // 卡池-账号多对多映射表
     sqlx::query(
@@ -1038,23 +1001,25 @@ macro_rules! pg_migration_blocks {
             PRIMARY KEY (pool_id, account_id)
         )"#
     ).execute(pool).await?;
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS quota_unit TEXT NOT NULL DEFAULT 'tokens'").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_reset_hour INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_reset_minute INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_start TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_end TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_quota DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS hourly_quota DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_quota DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_used DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS hourly_used DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_used DOUBLE PRECISION NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS last_daily_reset TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS last_hourly_reset TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS last_period_reset TEXT NOT NULL DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("COMMENT ON TABLE volcengine_pool_account_mapping IS '卡池与账号的多对多映射表'").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS quota_unit TEXT NOT NULL DEFAULT 'tokens'",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_reset_hour INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_reset_minute INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_start TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_end TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_quota DOUBLE PRECISION NOT NULL DEFAULT 0",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS hourly_quota DOUBLE PRECISION NOT NULL DEFAULT 0",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_quota DOUBLE PRECISION NOT NULL DEFAULT 0",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS daily_used DOUBLE PRECISION NOT NULL DEFAULT 0",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS hourly_used DOUBLE PRECISION NOT NULL DEFAULT 0",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS period_used DOUBLE PRECISION NOT NULL DEFAULT 0",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS last_daily_reset TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS last_hourly_reset TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS last_period_reset TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE volcengine_pool_account_mapping ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0",
+        "COMMENT ON TABLE volcengine_pool_account_mapping IS '卡池与账号的多对多映射表'",
+    );
 
     // 卡池调度日志表
     sqlx::query(
@@ -1073,28 +1038,15 @@ macro_rules! pg_migration_blocks {
         )"#
     ).execute(pool).await?;
 
-    sqlx::query("COMMENT ON TABLE volcengine_pool_logs IS '卡池调度使用日志'").execute(pool).await.ok();
-
-    // channels 表新增 pool_id 字段：关联卡池
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS pool_id INTEGER")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN channels.pool_id IS '关联的火山引擎卡池ID，为空表示不使用卡池'")
-        .execute(pool).await.ok();
-
-
-    // Migration: marketing_teams 新增 allowed_level_ids 字段
-    // 存储团队负责人被授权可分配的用户等级 ID 列表（JSON 数组格式，如 [1,3,5]）
-    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_level_ids TEXT NOT NULL DEFAULT '[]'")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN marketing_teams.allowed_level_ids IS '团队负责人被授权可分配的用户等级ID列表(JSON数组)'")
-        .execute(pool).await.ok();
-
-    // Migration: marketing_teams 新增 allowed_member_level_ids 字段
-    // 存储团队负责人被授权可分配给团队成员的用户等级 ID 列表（JSON 数组格式）
-    sqlx::query("ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_member_level_ids TEXT NOT NULL DEFAULT '[]'")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN marketing_teams.allowed_member_level_ids IS '团队负责人被授权可分配给团队成员的用户等级ID列表(JSON数组)'")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "COMMENT ON TABLE volcengine_pool_logs IS '卡池调度使用日志'",
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS pool_id INTEGER",
+        "COMMENT ON COLUMN channels.pool_id IS '关联的火山引擎卡池ID，为空表示不使用卡池'",
+        "ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_level_ids TEXT NOT NULL DEFAULT '[]'",
+        "COMMENT ON COLUMN marketing_teams.allowed_level_ids IS '团队负责人被授权可分配的用户等级ID列表(JSON数组)'",
+        "ALTER TABLE marketing_teams ADD COLUMN IF NOT EXISTS allowed_member_level_ids TEXT NOT NULL DEFAULT '[]'",
+        "COMMENT ON COLUMN marketing_teams.allowed_member_level_ids IS '团队负责人被授权可分配给团队成员的用户等级ID列表(JSON数组)'",
+    );
 
     // ══════════════════════════════════════════════════════════════
     //  GPT-Image 卡池系统
@@ -1121,9 +1073,11 @@ macro_rules! pg_migration_blocks {
         )"#
     ).execute(pool).await?;
 
-    sqlx::query("COMMENT ON TABLE gptimage_pools IS 'GPT-Image卡池分组表'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN gptimage_pools.pool_type IS '卡池类型: image=图片, custom=自定义'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN gptimage_pools.strategy IS '调度策略: random=随机分布, sequential=顺序轮转'").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "COMMENT ON TABLE gptimage_pools IS 'GPT-Image卡池分组表'",
+        "COMMENT ON COLUMN gptimage_pools.pool_type IS '卡池类型: image=图片, custom=自定义'",
+        "COMMENT ON COLUMN gptimage_pools.strategy IS '调度策略: random=随机分布, sequential=顺序轮转'",
+    );
 
     // GPT-Image 卡池账号表
     sqlx::query(
@@ -1156,14 +1110,16 @@ macro_rules! pg_migration_blocks {
         )"#
     ).execute(pool).await?;
 
-    sqlx::query("COMMENT ON TABLE gptimage_pool_accounts IS 'GPT-Image来源账号表'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.base_url IS '请求地址，如 https://api.openai.com'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.models IS '支持的模型列表，逗号分隔'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.quota_unit IS '配额计量单位: tokens=Token数, requests=请求次数, images=图片张数'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.status IS '账号状态: active=可用, disabled=故障禁用, exhausted=配额耗尽'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.daily_quota IS '每日配额上限(0=不限)'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.hourly_quota IS '每小时配额上限(0=不限)'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN gptimage_pool_accounts.period_quota IS '时段配额上限(0=不限)'").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "COMMENT ON TABLE gptimage_pool_accounts IS 'GPT-Image来源账号表'",
+        "COMMENT ON COLUMN gptimage_pool_accounts.base_url IS '请求地址，如 https://api.openai.com'",
+        "COMMENT ON COLUMN gptimage_pool_accounts.models IS '支持的模型列表，逗号分隔'",
+        "COMMENT ON COLUMN gptimage_pool_accounts.quota_unit IS '配额计量单位: tokens=Token数, requests=请求次数, images=图片张数'",
+        "COMMENT ON COLUMN gptimage_pool_accounts.status IS '账号状态: active=可用, disabled=故障禁用, exhausted=配额耗尽'",
+        "COMMENT ON COLUMN gptimage_pool_accounts.daily_quota IS '每日配额上限(0=不限)'",
+        "COMMENT ON COLUMN gptimage_pool_accounts.hourly_quota IS '每小时配额上限(0=不限)'",
+        "COMMENT ON COLUMN gptimage_pool_accounts.period_quota IS '时段配额上限(0=不限)'",
+    );
 
     // GPT-Image 卡池-账号多对多映射表
     sqlx::query(
@@ -1173,7 +1129,9 @@ macro_rules! pg_migration_blocks {
             PRIMARY KEY (pool_id, account_id)
         )"#
     ).execute(pool).await?;
-    sqlx::query("COMMENT ON TABLE gptimage_pool_account_mapping IS 'GPT-Image卡池与账号的多对多映射表'").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "COMMENT ON TABLE gptimage_pool_account_mapping IS 'GPT-Image卡池与账号的多对多映射表'",
+    );
 
     // GPT-Image 卡池调度日志表
     sqlx::query(
@@ -1191,17 +1149,13 @@ macro_rules! pg_migration_blocks {
             created_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
     ).execute(pool).await?;
-    sqlx::query("COMMENT ON TABLE gptimage_pool_logs IS 'GPT-Image卡池调度使用日志'").execute(pool).await.ok();
-
-    // channels 表新增 gptimage_pool_id 字段
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS gptimage_pool_id INTEGER")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN channels.gptimage_pool_id IS '关联的GPT-Image卡池ID，为空表示不使用卡池'")
-        .execute(pool).await.ok();
-
-    // 移除 models 表的 name 和 model_id 的唯一性约束，改由 mid 保证唯一性
-    sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_name_key").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE models DROP CONSTRAINT IF EXISTS models_model_id_key").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "COMMENT ON TABLE gptimage_pool_logs IS 'GPT-Image卡池调度使用日志'",
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS gptimage_pool_id INTEGER",
+        "COMMENT ON COLUMN channels.gptimage_pool_id IS '关联的GPT-Image卡池ID，为空表示不使用卡池'",
+        "ALTER TABLE models DROP CONSTRAINT IF EXISTS models_name_key",
+        "ALTER TABLE models DROP CONSTRAINT IF EXISTS models_model_id_key",
+    );
 
     // ══════════════════════════════════════════════════════════════
     //  模型广场管理插件
@@ -1240,13 +1194,15 @@ macro_rules! pg_migration_blocks {
         )"#
     ).execute(pool).await?;
 
-    sqlx::query("COMMENT ON TABLE site_icons IS '站点图标库，存储 SVG 图标元数据'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN site_icons.name IS '图标标识名（如 openai, claude）'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN site_icons.title IS '显示名称（如 OpenAI, Claude）'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN site_icons.file_path IS 'SVG 文件路径（相对于 data/assets/）'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN site_icons.source IS '图标来源: lobe-icons=从 GitHub 同步 / custom=手动上传'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN site_icons.category IS '分类: AI品牌 / 自定义'").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN site_icons.tags IS '标签(JSON数组)'").execute(pool).await.ok();
+    exec_ignore!(pool,
+        "COMMENT ON TABLE site_icons IS '站点图标库，存储 SVG 图标元数据'",
+        "COMMENT ON COLUMN site_icons.name IS '图标标识名（如 openai, claude）'",
+        "COMMENT ON COLUMN site_icons.title IS '显示名称（如 OpenAI, Claude）'",
+        "COMMENT ON COLUMN site_icons.file_path IS 'SVG 文件路径（相对于 data/assets/）'",
+        "COMMENT ON COLUMN site_icons.source IS '图标来源: lobe-icons=从 GitHub 同步 / custom=手动上传'",
+        "COMMENT ON COLUMN site_icons.category IS '分类: AI品牌 / 自定义'",
+        "COMMENT ON COLUMN site_icons.tags IS '标签(JSON数组)'",
+    );
 
     // 同步日志表
     sqlx::query(
@@ -1261,33 +1217,21 @@ macro_rules! pg_migration_blocks {
         )"#
     ).execute(pool).await?;
 
-    sqlx::query("COMMENT ON TABLE site_icon_sync_logs IS '站点图标同步日志'").execute(pool).await.ok();
-
-    // ─── 模型 / 服务商 / 类型 增加 logo 字段 ───
-    sqlx::query("ALTER TABLE models ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
-    sqlx::query("ALTER TABLE model_types ADD COLUMN IF NOT EXISTS logo TEXT").execute(pool).await.ok();
-
-    // ─── logs 表增加 cached_tokens 字段（缓存命中的 Token 数量，属于输入的子集） ───
-    sqlx::query("ALTER TABLE logs ADD COLUMN IF NOT EXISTS cached_tokens INTEGER NOT NULL DEFAULT 0").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN logs.cached_tokens IS '缓存命中的Token数量(属于输入的子集)'").execute(pool).await.ok();
-
-    // ─── users 表增加 remark 字段（兼容线上旧数据） ───
-    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS remark TEXT").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN users.remark IS '推广用户备注'").execute(pool).await.ok();
-
-    // ─── users 表增加 referral_history 字段 ───
-    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_history TEXT DEFAULT ''").execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN users.referral_history IS '关联流转记录'").execute(pool).await.ok();
-
-    // ══════════════════════════════════════════════════════════════
-    //  可灵 AI (Kling) 厂商 & 转发规则 & 计费规则 种子数据
-    // ══════════════════════════════════════════════════════════════
-
-    // 内置服务商: 可灵 AI
-    sqlx::query(
-        "INSERT INTO model_providers (name, sort_order, is_system) VALUES ('可灵 AI', 4, 1) ON CONFLICT(name) DO UPDATE SET is_system = 1"
-    ).execute(pool).await.ok();
+    exec_ignore!(pool,
+        "COMMENT ON TABLE site_icon_sync_logs IS '站点图标同步日志'",
+        "ALTER TABLE models ADD COLUMN IF NOT EXISTS logo TEXT",
+        "ALTER TABLE model_providers ADD COLUMN IF NOT EXISTS logo TEXT",
+        "ALTER TABLE model_types ADD COLUMN IF NOT EXISTS logo TEXT",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS cached_tokens INTEGER NOT NULL DEFAULT 0",
+        "COMMENT ON COLUMN logs.cached_tokens IS '缓存命中的Token数量(属于输入的子集)'",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_features TEXT",
+        "COMMENT ON COLUMN logs.billing_features IS 'POST阶段提取的计费特征快照(JSON)，独立于enable_log开关，确保异步任务结算时始终有完整计费参数'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS remark TEXT",
+        "COMMENT ON COLUMN users.remark IS '推广用户备注'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_history TEXT DEFAULT ''",
+        "COMMENT ON COLUMN users.referral_history IS '关联流转记录'",
+        "INSERT INTO model_providers (name, sort_order, is_system) VALUES ('可灵 AI', 4, 1) ON CONFLICT(name) DO UPDATE SET is_system = 1",
+    );
 
     // 可灵 AI 转发规则模板
     sqlx::query(r#"
@@ -1313,26 +1257,18 @@ macro_rules! pg_migration_blocks {
     "#).execute(pool).await.ok();
 
     // ─── channels 表增加 exclude_user_groups 字段（不支持的用户等级，黑名单模式） ───
-    sqlx::query("ALTER TABLE channels ADD COLUMN IF NOT EXISTS exclude_user_groups TEXT NOT NULL DEFAULT '[]'")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN channels.exclude_user_groups IS '不支持的用户等级列表(JSON数组)，黑名单模式'")
-        .execute(pool).await.ok();
-
-    // ─── users 表增加 gift_balance 字段（赠送钱包额度，注册送、活动送等） ───
-    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS gift_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0")
-        .execute(pool).await.ok();
-    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS gift_used_quota DOUBLE PRECISION NOT NULL DEFAULT 0.0")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN users.gift_balance IS '赠送钱包余额，注册赠送/活动赠送等免费额度，消费时优先扣赠送余额'")
-        .execute(pool).await.ok();
-
-    // ─── api_tokens 表增加 last_used_at 字段（最后使用时间） ───
-    sqlx::query("ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS last_used_at VARCHAR(30) DEFAULT NULL")
-        .execute(pool).await.ok();
-    sqlx::query("COMMENT ON COLUMN api_tokens.last_used_at IS '令牌最后使用时间'")
-        .execute(pool).await.ok();
+    exec_ignore!(pool,
+        "ALTER TABLE channels ADD COLUMN IF NOT EXISTS exclude_user_groups TEXT NOT NULL DEFAULT '[]'",
+        "COMMENT ON COLUMN channels.exclude_user_groups IS '不支持的用户等级列表(JSON数组)，黑名单模式'",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS gift_balance DOUBLE PRECISION NOT NULL DEFAULT 0.0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS gift_used_quota DOUBLE PRECISION NOT NULL DEFAULT 0.0",
+        "COMMENT ON COLUMN users.gift_balance IS '赠送钱包余额，注册赠送/活动赠送等免费额度，消费时优先扣赠送余额'",
+        "ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS last_used_at VARCHAR(30) DEFAULT NULL",
+        "COMMENT ON COLUMN api_tokens.last_used_at IS '令牌最后使用时间'",
+    );
     // ─── 统一将所有 INTEGER 列升级为 BIGINT，与 Rust 模型层 i64 对齐 ───
-    let bigint_queries = vec![
+    exec_ignore!(pool,
+
         // ── user_levels ──
         "ALTER TABLE user_levels ALTER COLUMN id TYPE BIGINT",
         "ALTER TABLE user_levels ALTER COLUMN daily_invite_limit TYPE BIGINT",
@@ -1450,11 +1386,8 @@ macro_rules! pg_migration_blocks {
         "ALTER TABLE marketing_team_members ALTER COLUMN team_id TYPE BIGINT",
         // ── site_icon_sync_logs ──
         "ALTER TABLE site_icon_sync_logs ALTER COLUMN id TYPE BIGINT",
-    ];
-
-    for query in bigint_queries {
-        sqlx::query(query).execute(pool).await.ok();
-    }
+    
+    );
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");
     Ok(())

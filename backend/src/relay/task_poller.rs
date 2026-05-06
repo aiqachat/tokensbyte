@@ -210,37 +210,57 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
         }
     } else { 1.0 };
 
-    // 从原始请求补充计费特征（分辨率、视频输入等 GET 响应通常不含这些字段）
+    // 从原始请求补充计费特征：优先从 billing_features 快照恢复（1次查询替代原来的2次）
     let mut features = super::usage_extractor::extract_request_features(resp_json);
-    // 优先从转换后请求体（upstream_req_content）补充 duration（含兜底默认值）
-    if let Ok(Some(upstream_str)) = sqlx::query_scalar::<_, String>(
-        &state.db.format_query("SELECT COALESCE(upstream_req_content, '') FROM logs WHERE id = ?")
+    if let Ok(Some(bf_str)) = sqlx::query_scalar::<_, String>(
+        &state.db.format_query("SELECT COALESCE(billing_features, '') FROM logs WHERE id = ?")
     ).bind(log_id).fetch_optional(&state.db.pool).await {
-        if !upstream_str.is_empty() {
-            if let Ok(upstream_json) = serde_json::from_str::<serde_json::Value>(&upstream_str) {
-                let upstream_feat = super::usage_extractor::extract_request_features(&upstream_json);
-                if features.duration_seconds.is_none() { features.duration_seconds = upstream_feat.duration_seconds; }
-                if features.resolution.is_none() { features.resolution = upstream_feat.resolution; }
-                if features.mode.is_none() { features.mode = upstream_feat.mode; }
-                if features.sound.is_none() { features.sound = upstream_feat.sound; }
-                if upstream_feat.has_image_ref { features.has_image_ref = true; }
+        if !bf_str.is_empty() {
+            if let Ok(saved_feat) = serde_json::from_str::<super::usage_extractor::ExtractedFeatures>(&bf_str) {
+                // 新数据：直接使用 POST 阶段快照，仅合并响应中的补充信息
+                if features.resolution.is_none() { features.resolution = saved_feat.resolution; }
+                if features.duration_seconds.is_none() { features.duration_seconds = saved_feat.duration_seconds; }
+                if features.mode.is_none() { features.mode = saved_feat.mode; }
+                if features.sound.is_none() { features.sound = saved_feat.sound; }
+                if saved_feat.has_image_ref { features.has_image_ref = true; }
+                if saved_feat.has_video { features.has_video = true; }
+                if saved_feat.has_audio { features.has_audio = true; }
+                if features.service_tier.is_none() { features.service_tier = saved_feat.service_tier; }
             }
-        }
-    }
-    if let Ok(Some(req_str)) = sqlx::query_scalar::<_, String>(
-        &state.db.format_query("SELECT COALESCE(request_content, '') FROM logs WHERE id = ?")
-    ).bind(log_id).fetch_optional(&state.db.pool).await {
-        if !req_str.is_empty() {
-            if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(&req_str) {
-                let req_feat = super::usage_extractor::extract_request_features(&req_json);
-                if features.resolution.is_none() { features.resolution = req_feat.resolution; }
-                if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
-                if req_feat.has_video { features.has_video = true; }
-                if req_feat.has_audio { features.has_audio = true; }
-                if req_feat.has_image_ref { features.has_image_ref = true; }
-                if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
-                if features.mode.is_none() { features.mode = req_feat.mode; }
-                if features.sound.is_none() { features.sound = req_feat.sound; }
+        } else {
+            // 旧数据兜底：从 upstream_req_content + request_content 提取（2次额外 SQL 查询）
+            if let Ok(Some(upstream_str)) = sqlx::query_scalar::<_, String>(
+                &state.db.format_query("SELECT COALESCE(upstream_req_content, '') FROM logs WHERE id = ?")
+            ).bind(log_id).fetch_optional(&state.db.pool).await {
+                if !upstream_str.is_empty() {
+                    if let Ok(upstream_json) = serde_json::from_str::<serde_json::Value>(&upstream_str) {
+                        let upstream_feat = super::usage_extractor::extract_request_features(&upstream_json);
+                        if features.duration_seconds.is_none() { features.duration_seconds = upstream_feat.duration_seconds; }
+                        if features.resolution.is_none() { features.resolution = upstream_feat.resolution; }
+                        if features.mode.is_none() { features.mode = upstream_feat.mode; }
+                        if features.sound.is_none() { features.sound = upstream_feat.sound; }
+                        if upstream_feat.has_image_ref { features.has_image_ref = true; }
+                        if upstream_feat.has_video { features.has_video = true; }
+                        if upstream_feat.has_audio { features.has_audio = true; }
+                    }
+                }
+            }
+            if let Ok(Some(req_str)) = sqlx::query_scalar::<_, String>(
+                &state.db.format_query("SELECT COALESCE(request_content, '') FROM logs WHERE id = ?")
+            ).bind(log_id).fetch_optional(&state.db.pool).await {
+                if !req_str.is_empty() {
+                    if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(&req_str) {
+                        let req_feat = super::usage_extractor::extract_request_features(&req_json);
+                        if features.resolution.is_none() { features.resolution = req_feat.resolution; }
+                        if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
+                        if req_feat.has_video { features.has_video = true; }
+                        if req_feat.has_audio { features.has_audio = true; }
+                        if req_feat.has_image_ref { features.has_image_ref = true; }
+                        if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
+                        if features.mode.is_none() { features.mode = req_feat.mode; }
+                        if features.sound.is_none() { features.sound = req_feat.sound; }
+                    }
+                }
             }
         }
     }

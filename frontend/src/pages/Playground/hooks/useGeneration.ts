@@ -10,7 +10,7 @@ import { useCanvas } from '../context/PlaygroundContext';
 import { usePlayground } from '../context/PlaygroundContext';
 
 export const useGeneration = () => {
-  const { canvasTransform, nodes, setNodes, maxZIndex, setMaxZIndex } = useCanvas();
+  const { canvasTransform, setCanvasTransform, nodes, setNodes, maxZIndex, setMaxZIndex } = useCanvas();
   const {
     currentModel, prompt, paramValues,
     selectedTokenKey, generating, setGenerating,
@@ -169,6 +169,15 @@ export const useGeneration = () => {
 
     setNodes(prev => [...prev, initialNode]);
 
+    // 自动平移画布，让新节点居中可见
+    const nodeCenterX = targetX + initialNode.width / 2;
+    const nodeCenterY = targetY + initialNode.height / 2;
+    setCanvasTransform(prev => ({
+      ...prev,
+      x: -nodeCenterX * prev.scale + window.innerWidth / 2,
+      y: -nodeCenterY * prev.scale + window.innerHeight / 2,
+    }));
+
     try {
       // 1. 预处理：将本地附件上传到永久存储，确保日志记录的是永久 URL 而非临时的 blob
       const uploadedAssets = await Promise.all(attachedAssets.map(async (item) => {
@@ -269,10 +278,13 @@ export const useGeneration = () => {
         delete body.image_url;
       } else if (schemeType === 'image' || currentModel.type_name.includes('图片')) {
         endpoint = '/v1/images/generations';
-        const firstImage = resolvedAssetsForAI.find(a => a.type === 'image')?.url || paramValues.image_url;
+        const allImageUrls = resolvedAssetsForAI.filter(a => a.type === 'image').map(a => a.url);
+        const firstImage = allImageUrls[0] || paramValues.image_url;
         if (firstImage) {
            body.image = firstImage;
            body.image_url = firstImage;
+           // image_urls: 数组格式，兼容其他 OpenAI 平台
+           body.image_urls = allImageUrls.length > 0 ? allImageUrls : [firstImage];
         }
       } else {
         endpoint = '/v1/chat/completions';
