@@ -256,9 +256,10 @@ pub async fn register(
         .await?
         .unwrap_or_else(|| "default".to_string());
 
-        let referral_history = if let Some(ref inviter) = referred_by {
+        let referral_history = if let Some(ref inviter_id) = referred_by {
             let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-            Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+            let display_name = state.db.get_user_display_name(inviter_id).await;
+            Some(format!("[{}] 通过 {} 邀请注册\n", now, display_name))
         } else {
             None
         };
@@ -515,9 +516,10 @@ pub async fn register_email(
         .await?
         .unwrap_or_else(|| "default".to_string());
 
-        let referral_history = if let Some(ref inviter) = referred_by {
+        let referral_history = if let Some(ref inviter_id) = referred_by {
             let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-            Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+            let display_name = state.db.get_user_display_name(inviter_id).await;
+            Some(format!("[{}] 通过 {} 邀请注册\n", now, display_name))
         } else {
             None
         };
@@ -701,9 +703,10 @@ pub async fn register_mobile(
         .await?
         .unwrap_or_else(|| "default".to_string());
 
-        let referral_history = if let Some(ref inviter) = referred_by {
+        let referral_history = if let Some(ref inviter_id) = referred_by {
             let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-            Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+            let display_name = state.db.get_user_display_name(inviter_id).await;
+            Some(format!("[{}] 通过 {} 邀请注册\n", now, display_name))
         } else {
             None
         };

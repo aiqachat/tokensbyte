@@ -22,6 +22,7 @@ pub struct AccountWithMapping {
     pub account_status: String,
     pub last_error: Option<String>,
     pub last_error_at: Option<String>,
+    pub models: String,
     pub pool_id: i64,
     pub account_id: i64,
     pub status: String,
@@ -67,7 +68,7 @@ pub async fn select_account(
 
     // 2. 获取所有账号及映射关系
     let mut accounts: Vec<AccountWithMapping> = sqlx::query_as(
-        &state.db.format_query("SELECT a.id, a.name, a.base_url, a.api_key, a.account_id as account_id_str, a.access_key, a.secret_key, a.status as account_status, a.last_error, a.last_error_at, m.pool_id, m.account_id, m.status, m.quota_unit, m.daily_reset_hour, m.daily_reset_minute, m.period_start, m.period_end, m.daily_quota, m.hourly_quota, m.period_quota, m.daily_used, m.hourly_used, m.period_used, m.last_daily_reset, m.last_hourly_reset, m.last_period_reset, m.priority FROM volcengine_pool_accounts a JOIN volcengine_pool_account_mapping m ON a.id = m.account_id WHERE m.pool_id = ? ORDER BY m.priority DESC"),
+        &state.db.format_query("SELECT a.id, a.name, a.base_url, a.api_key, a.account_id as account_id_str, a.access_key, a.secret_key, a.status as account_status, a.last_error, a.last_error_at, a.models, m.pool_id, m.account_id, m.status, m.quota_unit, m.daily_reset_hour, m.daily_reset_minute, m.period_start, m.period_end, m.daily_quota, m.hourly_quota, m.period_quota, m.daily_used, m.hourly_used, m.period_used, m.last_daily_reset, m.last_hourly_reset, m.last_period_reset, m.priority FROM volcengine_pool_accounts a JOIN volcengine_pool_account_mapping m ON a.id = m.account_id WHERE m.pool_id = ? ORDER BY m.priority DESC"),
     )
     .bind(pool_id)
     .fetch_all(&state.db.pool)
@@ -122,7 +123,7 @@ pub async fn select_account(
             account_id: account.account_id_str.clone(),
             access_key: account.access_key.clone(),
             secret_key: account.secret_key.clone(),
-            models: "".into(),
+            models: account.models.clone(),
             status: account.account_status.clone(),
             quota_unit: account.quota_unit.clone(),
             daily_reset_hour: account.daily_reset_hour,
@@ -140,8 +141,16 @@ pub async fn select_account(
 }
 
 /// 判断账号是否可用
-fn is_account_available(account: &AccountWithMapping, _model_id: &str) -> bool {
-    // 账号自身状态或映射状态非 active 一律不可用
+fn is_account_available(account: &AccountWithMapping, model_id: &str) -> bool {
+    // 1. 检查模型支持
+    if !account.models.is_empty() {
+        let supported_models: Vec<&str> = account.models.split(',').map(|s| s.trim()).collect();
+        if !supported_models.contains(&model_id) {
+            return false;
+        }
+    }
+
+    // 2. 账号自身状态或映射状态非 active 一律不可用
     if account.account_status != "active" || account.status != "active" {
         return false;
     }
@@ -281,6 +290,17 @@ async fn check_and_reset_quotas(
             .execute(&state.db.pool)
             .await
             .ok();
+
+            // 如果主账号表是 disabled 状态，一并恢复
+            if status_restored {
+                sqlx::query(&state.db.format_query(
+                    "UPDATE volcengine_pool_accounts SET status = 'active' WHERE id = ? AND status = 'disabled'",
+                ))
+                .bind(account.account_id)
+                .execute(&state.db.pool)
+                .await
+                .ok();
+            }
         }
     }
 }
@@ -314,7 +334,7 @@ pub async fn record_usage(
 
     // 检查是否超出配额，标记 exhausted
     let account: Option<AccountWithMapping> = sqlx::query_as(
-        &state.db.format_query("SELECT a.id, a.name, a.base_url, a.api_key, a.account_id as account_id_str, a.access_key, a.secret_key, a.status as account_status, a.last_error, a.last_error_at, m.pool_id, m.account_id, m.status, m.quota_unit, m.daily_reset_hour, m.daily_reset_minute, m.period_start, m.period_end, m.daily_quota, m.hourly_quota, m.period_quota, m.daily_used, m.hourly_used, m.period_used, m.last_daily_reset, m.last_hourly_reset, m.last_period_reset, m.priority FROM volcengine_pool_accounts a JOIN volcengine_pool_account_mapping m ON a.id = m.account_id WHERE m.pool_id = ? AND m.account_id = ?"),
+        &state.db.format_query("SELECT a.id, a.name, a.base_url, a.api_key, a.account_id as account_id_str, a.access_key, a.secret_key, a.status as account_status, a.last_error, a.last_error_at, a.models, m.pool_id, m.account_id, m.status, m.quota_unit, m.daily_reset_hour, m.daily_reset_minute, m.period_start, m.period_end, m.daily_quota, m.hourly_quota, m.period_quota, m.daily_used, m.hourly_used, m.period_used, m.last_daily_reset, m.last_hourly_reset, m.last_period_reset, m.priority FROM volcengine_pool_accounts a JOIN volcengine_pool_account_mapping m ON a.id = m.account_id WHERE m.pool_id = ? AND m.account_id = ?"),
     )
     .bind(pool_id)
     .bind(account_id)
@@ -378,6 +398,16 @@ pub async fn mark_failed(
     ))
     .bind(error)
     .bind(&now)
+    .bind(account_id)
+    .execute(&state.db.pool)
+    .await
+    .ok();
+
+    // 同时更新该卡池下的映射状态，以便重置逻辑能识别并恢复它
+    sqlx::query(&state.db.format_query(
+        "UPDATE volcengine_pool_account_mapping SET status = 'disabled' WHERE pool_id = ? AND account_id = ?",
+    ))
+    .bind(pool_id)
     .bind(account_id)
     .execute(&state.db.pool)
     .await

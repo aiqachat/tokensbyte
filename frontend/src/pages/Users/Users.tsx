@@ -218,7 +218,7 @@ const Users: React.FC = () => {
             const referrer = allUsers.find(u => u.id === record.referred_by || u.uid === record.referred_by || u.username === record.referred_by);
             return (
               <Text type="secondary" style={{ fontSize: '12px', marginTop: 4 }}>
-                推荐人: {referrer ? `${referrer.username} (UID: ${referrer.uid})` : record.referred_by}
+                推荐人: {referrer ? `${referrer.uid} ${referrer.nickname ? `(${referrer.nickname})` : `(${referrer.username})`}` : record.referred_by}
               </Text>
             );
           })()}

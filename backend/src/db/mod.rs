@@ -99,6 +99,33 @@ impl Database {
         }
     }
 
+    pub async fn get_user_display_name(&self, id_or_val: &str) -> String {
+        if id_or_val.is_empty() || id_or_val == "无" {
+            return "无".to_string();
+        }
+        let row: Option<(String, Option<String>, String)> = sqlx::query_as(&self.format_query(
+            "SELECT uid, nickname, username FROM users WHERE id = ? OR uid = ? OR username = ? LIMIT 1"
+        ))
+        .bind(id_or_val)
+        .bind(id_or_val)
+        .bind(id_or_val)
+        .fetch_optional(&self.pool)
+        .await
+        .ok()
+        .flatten();
+
+        if let Some((uid, nickname, username)) = row {
+            if let Some(nick) = nickname {
+                if !nick.is_empty() {
+                    return format!("{} ({})", uid, nick);
+                }
+            }
+            format!("{} ({})", uid, username)
+        } else {
+            id_or_val.to_string()
+        }
+    }
+
     pub async fn seed_admin(&self, config: &AppConfig) -> anyhow::Result<()> {
         // Check if admin exists
         let exists_count: i64 = sqlx::query_scalar(

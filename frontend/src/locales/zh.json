@@ -5,6 +5,7 @@
     "ok": "确定",
     "refresh": "刷新",
     "all": "全部",
+    "count": "生成数量",
     "manage": "管理",
     "select_placeholder": "请选择",
     "close": "关闭",
@@ -372,6 +373,7 @@
     "recharge_type_commission": "邀请返佣",
     "recharge_type_alipay": "支付宝充值",
     "recharge_type_wechat": "微信充值",
+    "recharge_type_bonuspay": "BonusPay充值",
     "recharge_type_gift": "赠送金",
     "recharge_type_other": "其它"
   },

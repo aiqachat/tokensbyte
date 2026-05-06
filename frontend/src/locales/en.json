@@ -5,6 +5,7 @@
     "ok": "OK",
     "refresh": "Refresh",
     "all": "All",
+    "count": "Quantity",
     "manage": "Manage",
     "select_placeholder": "Select",
     "close": "Close",
@@ -371,6 +372,7 @@
     "recharge_type_commission": "Invite Commission",
     "recharge_type_alipay": "Alipay",
     "recharge_type_wechat": "WeChat Pay",
+    "recharge_type_bonuspay": "BonusPay",
     "recharge_type_other": "Other"
   },
   "marketing": {
