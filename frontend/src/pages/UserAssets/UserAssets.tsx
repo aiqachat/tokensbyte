@@ -485,7 +485,7 @@ const UserAssets: React.FC = () => {
   const handleSubmitReview = async (assetId: number) => {
     try {
       setSubmittingReview(assetId);
-      await request.post(`/assets/user/submit-review/${assetId}`, {});
+      await request.post(`/assets/user/submit-review/${assetId}`, {}, { skipErrorHandler: true } as any);
       message.success('已提交审核，请等待审核结果');
       fetchAssets();
     } catch (error: any) {
@@ -510,19 +510,24 @@ const UserAssets: React.FC = () => {
     setBatchProgress({ action: 'submit', total: needReviewIds.length, done: 0, failed: 0, active: true });
     let successCount = 0;
     let failCount = 0;
+    const errorMessages = new Set<string>();
     for (const id of needReviewIds) {
       try {
-        await request.post(`/assets/user/submit-review/${id}`, { skipErrorHandler: true });
+        await request.post(`/assets/user/submit-review/${id}`, {}, { skipErrorHandler: true } as any);
         successCount++;
-      } catch {
+      } catch (e: any) {
         failCount++;
+        const errMsg = e?.response?.data?.error?.message || '审核失败';
+        errorMessages.add(errMsg);
       }
       setBatchProgress({ action: 'submit', total: needReviewIds.length, done: successCount, failed: failCount, active: true });
     }
     if (failCount === 0) {
       message.success(`已成功提交 ${successCount} 个素材审核`);
+    } else if (successCount === 0) {
+      message.error(Array.from(errorMessages).join('；'));
     } else {
-      message.warning(`提交完成：${successCount} 成功，${failCount} 失败`);
+      message.warning(`提交完成：${successCount} 成功，${failCount} 失败` + (errorMessages.size > 0 ? `（${Array.from(errorMessages).join('；')}）` : ''));
     }
     setSelectedAssetIds(new Set());
     fetchAssets();

@@ -178,7 +178,7 @@ pub async fn task_status(
             let image_count = crate::relay::usage_extractor::count_response_images(&get_resp_str);
 
             let cat_hint = if category.is_empty() { None } else { Some(category.as_str()) };
-            let db_model = proxy::find_active_model(&state, &model_name, cat_hint).await;
+            let db_model = proxy::find_active_model_exact(&state, &model_name, cat_hint, Some(&channel)).await;
 
             let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
                 if let Some(rule_id) = m.billing_rule_id {

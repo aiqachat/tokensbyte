@@ -80,7 +80,7 @@ pub async fn image_generations(
         return Err(AppError::UpstreamError(display_err));
     }
 
-    let db_model = proxy::find_active_model(&state, model, Some("图片")).await;
+    let db_model = proxy::find_active_model_exact(&state, model, Some("图片"), Some(&channel)).await;
 
     let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
         if let Some(rule_id) = m.billing_rule_id {

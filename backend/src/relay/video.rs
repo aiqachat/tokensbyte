@@ -104,7 +104,7 @@ pub async fn video_generations(
         return Err(AppError::UpstreamError(display_err));
     }
 
-    let db_model = proxy::find_active_model(&state, model, Some("视频")).await;
+    let db_model = proxy::find_active_model_exact(&state, model, Some("视频"), Some(&channel)).await;
 
     let _db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
         if let Some(rule_id) = m.billing_rule_id {
@@ -284,7 +284,7 @@ pub async fn video_generations_status(
             let usage = crate::relay::usage_extractor::parse_usage(&get_resp_str);
             let image_count = crate::relay::usage_extractor::count_response_images(&get_resp_str);
 
-            let db_model = proxy::find_active_model(&state, &model_name, Some("视频")).await;
+            let db_model = proxy::find_active_model_exact(&state, &model_name, Some("视频"), Some(&channel)).await;
 
             let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
                 if let Some(rule_id) = m.billing_rule_id {

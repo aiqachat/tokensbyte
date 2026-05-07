@@ -162,7 +162,7 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
         .bind(&body).bind(log_id).execute(&state.db.pool).await;
 
     if task_status == "succeeded" {
-        settle_success(state, log_id, &model_name, &body, &resp_json, &url, &category).await;
+        settle_success(state, log_id, &model_name, &body, &resp_json, &url, &category, &channel).await;
         Ok("任务已成功落地并计费".to_string())
     } else {
         settle_failure(state, log_id, &model_name, &task_id, &url, &category).await;
@@ -171,11 +171,11 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
 }
 
 /// 任务成功：提取 token、计费、余额结算
-async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &str, resp_json: &serde_json::Value, poll_url: &str, category: &str) {
+async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &str, resp_json: &serde_json::Value, poll_url: &str, category: &str, channel: &crate::models::Channel) {
     let usage = super::usage_extractor::parse_usage(body);
 
     let cat_hint = if category.is_empty() { None } else { Some(category) };
-    let db_model = super::proxy::find_active_model(state, model_name, cat_hint).await;
+    let db_model = super::proxy::find_active_model_exact(state, model_name, cat_hint, Some(channel)).await;
 
     let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
         if let Some(rule_id) = m.billing_rule_id {
