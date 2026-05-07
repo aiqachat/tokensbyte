@@ -40,14 +40,15 @@ const BASE64_MIME_EXT: &[(&str, &str)] = &[
 /// - http/https URL：下载资源 → SHA-256 哈希去重 → CreateAsset
 /// - data:base64：解码 → SHA-256 哈希去重 → TOS 临时上传 → CreateAsset → 删除临时文件
 /// - 已是 asset:// 前缀的跳过
-/// - 转换失败时静默跳过，保持原始值不变
-/// 返回值为转换过程日志，记录每个素材的转换结果（成功/失败及原因）
+/// - 转换失败时记录失败原因，由调用方决定是否拦截
+/// 返回值: (转换日志, 失败原因列表)
 pub async fn convert_content_urls(
     state: &AppState,
     user_id: &str,
     body: &mut serde_json::Value,
-) -> Vec<String> {
+) -> (Vec<String>, Vec<String>) {
     let mut logs: Vec<String> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
 
     // 加载 volcengine 审核配置（素材资产管理插件）
     let mut volc_config = match crate::api::plugins::get_volc_config(state, "asset_manager").await {
@@ -55,14 +56,14 @@ pub async fn convert_content_urls(
         None => {
             tracing::debug!("[AssetConvert] 素材资产管理插件未配置审核凭证，跳过素材转换");
             logs.push("素材转换跳过: 未配置审核凭证".to_string());
-            return logs;
+            return (logs, errors);
         }
     };
 
     // 获取 content 数组（可变引用）
     let content_arr = match body.get_mut("content").and_then(|c| c.as_array_mut()) {
         Some(arr) => arr,
-        None => return logs,
+        None => return (logs, errors),
     };
 
     let client = crate::services::volcengine::VolcClient::new(volc_config.clone())
@@ -72,7 +73,8 @@ pub async fn convert_content_urls(
     // 确保有可用的 Group ID，如果没有则尝试自动创建并保存
     if !ensure_group_id(state, &client, &mut volc_config).await {
         logs.push("素材转换失败: 无法获取或创建素材组ID".to_string());
-        return logs;
+        errors.push("素材转换失败: 无法获取或创建素材组ID".to_string());
+        return (logs, errors);
     }
 
     // 预加载 TOS 配置（base64 场景需要）
@@ -107,7 +109,7 @@ pub async fn convert_content_urls(
     }
 
     if tasks.is_empty() {
-        return logs;
+        return (logs, errors);
     }
 
     // 并发处理所有素材转换任务，大幅缩短多资源场景总耗时
@@ -147,11 +149,17 @@ pub async fn convert_content_urls(
                 logs.push(format!("[{}] {} ✓ {}", asset_type, url_short, asset_ref));
             }
             Err(reason) => {
-                logs.push(format!("[{}] {} ✗ 转换失败，保持原始URL: {}", asset_type, url_short, reason));
+                // 提取火山引擎错误中的 Message 字段用于日志摘要，完整错误由 errors 传递
+                let brief = reason.find('{').and_then(|i| serde_json::from_str::<serde_json::Value>(&reason[i..]).ok())
+                    .and_then(|j| j.pointer("/ResponseMetadata/Error/Message").or_else(|| j.pointer("/Error/Message"))
+                        .and_then(|v| v.as_str()).map(|s| s.to_string()))
+                    .unwrap_or_else(|| reason.clone());
+                logs.push(format!("[{}] {} ✗ 转换失败: {}", asset_type, url_short, brief));
+                errors.push(reason);
             }
         }
     }
-    logs
+    (logs, errors)
 }
 
 /// 处理网络 URL 资源：下载 → SHA-256 哈希 → 去重查询 → CreateAsset
@@ -467,7 +475,7 @@ async fn create_asset(
         }
     }
 
-    let asset_id = asset_id_res.map_err(|e| format!("CreateAsset API 调用失败: {}", e))?.id;
+    let asset_id = asset_id_res.map_err(|e| format!("素材转换失败: {}", e))?.id;
 
     // 视频/音频资源处理时间较长，动态调整轮询超时
     // Image: 60s, Audio: 120s, Video: 180s（视频文件体积大，火山端处理更耗时）
