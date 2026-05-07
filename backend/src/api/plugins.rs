@@ -652,7 +652,6 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p","1080p"], "default": "720p"},
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
-                {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
                 {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false},
                 {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
@@ -670,7 +669,6 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p"], "default": "720p"},
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
-                {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
                 {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false},
                 {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
@@ -685,7 +683,8 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "params": [
                 {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "3072x3072", "1728x2304", "2592x3456", "2304x1728", "3456x2592", "2848x1600", "4096x2304", "1600x2848", "2304x4096", "2496x1664", "3744x2496", "1664x2496", "2496x3744", "3136x1344", "4704x2016", "2K", "3K", "4K"], "default": "2048x2048"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
-                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false},
+                {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
             ]
         }),
         json!({
@@ -695,8 +694,7 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "高质量 AI 图片生成，支持 doubao-seedream-4.5 模型",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "4096x4096", "1728x2304", "3520x4704", "2304x1728", "4704x3520", "2848x1600", "5504x3040", "1600x2848", "3040x5504", "2496x1664", "4992x3328", "1664x2496", "3328x4992", "3136x1344", "6240x2656"], "default": "2048x2048"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "4096x4096", "2304x1728", "1728x2304", "3520x4704", "2304x1728", "4704x3520", "2848x1600", "5504x3040", "1600x2848", "3040x5504", "2496x1664", "4992x3328", "1664x2496", "3328x4992", "3136x1344", "6240x2656", "2K", "4K"], "default": "2048x2048"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]

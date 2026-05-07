@@ -1040,7 +1040,7 @@ const VOLCENGINE_CONTENT_PASSTHROUGH_KEYS: &[&str] = &[
     "resolution",        // 分辨率，如 "480p", "720p", "1080p"
     // 视频控制
     "duration",          // 视频时长（秒），如 5, 10
-    "fps",               // 帧率
+    "camera_fixed",      // 是否固定摄像头
     "seed",              // 随机种子
     // 音频/水印/末帧
     "generate_audio",    // 是否生成音频 (bool)
