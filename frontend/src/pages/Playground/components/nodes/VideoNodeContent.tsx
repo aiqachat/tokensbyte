@@ -1,8 +1,9 @@
 /**
  * 视频类型节点内容
- * 包含原生的视频播放控件
+ * 默认状态下透明拖拽层覆盖视频，保证与图片节点一致的拖拽体验。
+ * 双击节点可激活视频播放控件进行播放操作。
  */
-import React from 'react';
+import React, { useRef } from 'react';
 import { Typography } from 'antd';
 
 const { Text } = Typography;
@@ -26,6 +27,9 @@ const getFullUrl = (url: string) => {
 
 const VideoNodeContent: React.FC<Props> = React.memo(({ resultData, node }) => {
   const { setNodes } = useCanvas();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const dragStart = useRef({ x: 0, y: 0 });
+
   const rawUrl = resultData?.content?.video_url || resultData?.final_result?.video_url || resultData?.video_url;
   const videoUrl = getFullUrl(rawUrl);
 
@@ -47,6 +51,7 @@ const VideoNodeContent: React.FC<Props> = React.memo(({ resultData, node }) => {
     ? (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           <video
+            ref={videoRef}
             src={videoUrl}
             controls
             loop
@@ -54,6 +59,39 @@ const VideoNodeContent: React.FC<Props> = React.memo(({ resultData, node }) => {
             controlsList="nopictureinpicture"
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             onLoadedMetadata={handleLoadedMetadata}
+          />
+          {/* 
+            智能拖拽层：
+            覆盖视频上半部分（避开底部 60px 的原生控制条）。
+            既能捕获 mousedown 冒泡实现拖拽，又能通过点击实现快捷播放/暂停。
+          */}
+          <div
+            onMouseDown={(e) => {
+              dragStart.current = { x: e.clientX, y: e.clientY };
+            }}
+            onClick={(e) => {
+              const dx = Math.abs(e.clientX - dragStart.current.x);
+              const dy = Math.abs(e.clientY - dragStart.current.y);
+              // 如果偏移量极小，认为是点击而不是拖拽
+              if (dx < 5 && dy < 5) {
+                if (videoRef.current) {
+                  if (videoRef.current.paused) {
+                    videoRef.current.play();
+                  } else {
+                    videoRef.current.pause();
+                  }
+                }
+              }
+            }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 60, // 为原生控件（如进度条、音量、全屏）留出足够的交互空间
+              cursor: 'grab',
+              zIndex: 1,
+            }}
           />
         </div>
       )

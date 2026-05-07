@@ -281,19 +281,54 @@ async fn record_and_bill_inner(
     let filter_content = |content: Option<String>, respect_log_flag: bool| -> Option<String> {
         let text = content?;
         if respect_log_flag && enable_log == 0 { return None; }
-        // 1. 标准 data URI (兼容各类 data:协议 长尾内容)
-        let re1 = Regex::new(r"data:[^;]+;base64,[A-Za-z0-9+/=\s]{100,}").unwrap();
-        let text = re1.replace_all(&text, "\"base64数据\"").to_string();
-        // 2. JSON 转义 data URI (兼容反斜杠)
-        let re2 = Regex::new(r"data:[^;]+;base64,[A-Za-z0-9+/=\\s]{100,}").unwrap();
-        let text = re2.replace_all(&text, "\"base64数据\"").to_string();
-        // 3. 纯 base64 长串 (>200 字符的连续 base64)
-        let re3 = Regex::new(r#""[A-Za-z0-9+/]{200,}={0,2}""#).unwrap();
-        Some(re3.replace_all(&text, "\"base64数据\"").to_string())
+        // ── Base64 脱敏规则（共2条互补，确保覆盖所有 base64 格式） ──
+        //
+        // 规则 1: data URI 格式 (data:image/png;base64,...  /  data:video/mp4;base64,...  /  data:audio/mp3;base64,... 等)
+        //   正则匹配范围：JSON 值引号**内部**的 data URI 字符串
+        //   替换值：不含引号（因为外围引号由 JSON 结构提供），保证替换后 JSON 合法
+        //   示例：  "url": "data:audio/mp3;base64,SGVsbG8..."  →  "url": "base64数据"
+        let re_data_uri = Regex::new(r"data:[^;]+;base64,[A-Za-z0-9+/=]{100,}").unwrap();
+        let text = re_data_uri.replace_all(&text, "base64数据").to_string();
+        //
+        // 规则 2: 纯 base64 长串 (无 data: 前缀，如某些 AI 模型返回的 b64_json 字段)
+        //   正则匹配范围：含首尾引号的整个 JSON 字符串值 "base64长串"
+        //   替换值：含引号（因为正则本身匹配了引号，需要保持结构对称）
+        //   示例：  "b64_json": "iVBORw0KGgo...=="  →  "b64_json": "base64数据"
+        let re_raw_b64 = Regex::new(r#""[A-Za-z0-9+/]{200,}={0,2}""#).unwrap();
+        Some(re_raw_b64.replace_all(&text, "\"base64数据\"").to_string())
     };
 
-    let req_content = filter_content(request_content, true);       // 受上下文记录开关控制
-    let upstream_req = filter_content(upstream_req_content, true); // 受上下文记录开关控制
+    // ── 计费特征快照 ──
+    // 在 filter_content 过滤之前，从原始 request_content 提取计费特征并序列化为 JSON。
+    // 该快照独立于 enable_log 开关，确保异步任务 GET 轮询结算时始终有完整的计费参数。
+    // 同时合并 upstream_req_content 的特征（转发规则可能修改了 duration/resolution 等参数）。
+    let billing_features_json: Option<String> = {
+        let mut feat = request_content.as_ref()
+            .and_then(|rc| serde_json::from_str::<serde_json::Value>(rc).ok())
+            .map(|json| crate::relay::usage_extractor::extract_request_features(&json));
+        // 合并 upstream_req_content 的特征（如 asset_convert 后修改的参数）
+        if let Some(upstream_feat) = upstream_req_content.as_ref()
+            .and_then(|uc| serde_json::from_str::<serde_json::Value>(uc).ok())
+            .map(|json| crate::relay::usage_extractor::extract_request_features(&json))
+        {
+            if let Some(ref mut f) = feat {
+                if f.duration_seconds.is_none() { f.duration_seconds = upstream_feat.duration_seconds; }
+                if f.resolution.is_none() { f.resolution = upstream_feat.resolution; }
+                if f.mode.is_none() { f.mode = upstream_feat.mode; }
+                if f.sound.is_none() { f.sound = upstream_feat.sound; }
+                if upstream_feat.has_video { f.has_video = true; }
+                if upstream_feat.has_audio { f.has_audio = true; }
+                if upstream_feat.has_image_ref { f.has_image_ref = true; }
+            } else {
+                feat = Some(upstream_feat);
+            }
+        }
+        feat.and_then(|f| serde_json::to_string(&f).ok())
+    };
+
+    // request_content / upstream_req_content 恢复尊重 enable_log 开关（计费不再依赖它们）
+    let req_content = filter_content(request_content, true);
+    let upstream_req = filter_content(upstream_req_content, true);
     
     // 灵活处理 response_content 的存储
     let resp_content = if enable_log == 0 {
@@ -511,8 +546,8 @@ async fn record_and_bill_inner(
         };
 
         sqlx::query(&state.db.format_query(
-            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type, billing_pid, forward_eid) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type, billing_pid, forward_eid, billing_features) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ))
         .bind(&token.user_id)
         .bind(channel_id)
@@ -536,6 +571,7 @@ async fn record_and_bill_inner(
         .bind(&final_action_type)
         .bind(&billing_pid)
         .bind(&forward_eid)
+        .bind(&billing_features_json)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

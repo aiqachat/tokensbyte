@@ -145,17 +145,18 @@ pub async fn video_generations_status(
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
 
     // 从日志中查找原始渠道信息
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, ''), billing_detail FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
+    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, ''), billing_detail, COALESCE(billing_features, '') FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
     let mut db_log_id: Option<i64> = None;
     let mut original_request: Option<String> = None;
+    let mut billing_features_str: Option<String> = None;
     let mut already_billed = false;
-    let log_row: Option<(i64, i64, String, String, String, Option<String>)> = sqlx::query_as(&log_query)
+    let log_row: Option<(i64, i64, String, String, String, Option<String>, String)> = sqlx::query_as(&log_query)
         .bind(format!("%{}%", task_id))
         .fetch_optional(&state.db.pool)
         .await
         .unwrap_or(None);
 
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _, req_content, b_detail)) = log_row {
+    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _, req_content, b_detail, bf_str)) = log_row {
         db_log_id = Some(l_id);
         model_name = m_name;
         if let Some(detail) = b_detail {
@@ -164,6 +165,7 @@ pub async fn video_generations_status(
             }
         }
         if !req_content.is_empty() { original_request = Some(req_content); }
+        if !bf_str.is_empty() { billing_features_str = Some(bf_str); }
         if let Ok(Some(mut ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
             .bind(cid)
             .fetch_optional(&state.db.pool)
@@ -265,21 +267,32 @@ pub async fn video_generations_status(
                 } else { None }
             } else { None };
 
-            let mut features = crate::relay::usage_extractor::extract_request_features(&resp_json);
-            // 从原始请求补充分辨率、视频输入、时长信息（GET 响应通常不含这些字段）
-            if let Some(ref req_str) = original_request {
-                if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(req_str) {
-                    let req_feat = crate::relay::usage_extractor::extract_request_features(&req_json);
-                    if features.resolution.is_none() { features.resolution = req_feat.resolution; }
-                    if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
-                    if req_feat.has_video { features.has_video = true; }
-                    if req_feat.has_audio { features.has_audio = true; }
-                    if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
-                    if features.mode.is_none() { features.mode = req_feat.mode; }
-                    if features.sound.is_none() { features.sound = req_feat.sound; }
+            // 统一提取计费特征：优先从 billing_features 快照恢复（不依赖 request_content）
+            let resp_features = crate::relay::usage_extractor::extract_request_features(&resp_json);
+            let mut features = if let Some(ref bf_str) = billing_features_str {
+                let mut f = serde_json::from_str::<crate::relay::usage_extractor::ExtractedFeatures>(bf_str)
+                    .unwrap_or_default();
+                if f.resolution.is_none() { f.resolution = resp_features.resolution; }
+                if f.duration_seconds.is_none() { f.duration_seconds = resp_features.duration_seconds; }
+                f
+            } else {
+                // 旧数据兜底：从响应 + request_content 重新提取
+                let mut f = resp_features;
+                if let Some(ref req_str) = original_request {
+                    if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(req_str) {
+                        let req_feat = crate::relay::usage_extractor::extract_request_features(&req_json);
+                        if f.resolution.is_none() { f.resolution = req_feat.resolution; }
+                        if f.duration_seconds.is_none() { f.duration_seconds = req_feat.duration_seconds; }
+                        if req_feat.has_video { f.has_video = true; }
+                        if req_feat.has_audio { f.has_audio = true; }
+                        if f.service_tier.is_none() { f.service_tier = req_feat.service_tier; }
+                        if f.mode.is_none() { f.mode = req_feat.mode; }
+                        if f.sound.is_none() { f.sound = req_feat.sound; }
+                    }
                 }
-            }
-            // 从可灵终态响应提取实际视频时长
+                f
+            };
+            // 从可灵终态响应提取实际视频时长（覆盖请求中的预期值）
             if let Some(kling_dur) = crate::relay::usage_extractor::extract_kling_video_duration(&resp_json) {
                 features.duration_seconds = Some(kling_dur);
             }
@@ -315,23 +328,23 @@ pub async fn video_generations_status(
 
                     // 2. 余额与配额结算
                     if cost > 0.0 || pre_deduction > 0.0 {
-                        // 更新用户余额与配额
+                        // 更新用户余额（差额）与配额（实际消费）
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(apply_balance).bind(&token.user_id)
+                        )).bind(apply_balance).bind(cost).bind(&token.user_id)
                         .execute(&mut *tx).await;
 
                         // 更新 Token 配额及使用时间
                         let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE api_tokens SET quota_used = quota_used + ?, last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(&now_str).bind(token.id)
+                        )).bind(cost).bind(&now_str).bind(token.id)
                         .execute(&mut *tx).await;
 
-                        // 更新渠道配额 (修复遗留问题)
+                        // 更新渠道配额
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(channel.id)
+                        )).bind(cost).bind(channel.id)
                         .execute(&mut *tx).await;
                     }
 

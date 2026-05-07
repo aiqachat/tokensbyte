@@ -785,12 +785,22 @@ fn build_dashscope_image_body(model: &str, body: &serde_json::Value) -> serde_js
         let prompt = body.get("prompt").and_then(|v| v.as_str()).unwrap_or("Generate an image");
         let mut dash_content = Vec::new();
         
-        // 支持顶层 image 参数 (OpenAI 扩展支持，兼容字符串或数组)
+        // 支持顶层 image / image_urls 参数 (OpenAI 扩展支持，兼容字符串或数组)
         // 确保图片先于文本内容
         if let Some(img_val) = body.get("image") {
             if let Some(url) = img_val.as_str() {
                 dash_content.push(serde_json::json!({ "image": url }));
             } else if let Some(arr) = img_val.as_array() {
+                for item in arr {
+                    if let Some(url) = item.as_str() {
+                        dash_content.push(serde_json::json!({ "image": url }));
+                    }
+                }
+            }
+        }
+        // image_urls 数组补充（仅当 image 未提供时生效，避免重复注入）
+        if body.get("image").is_none() {
+            if let Some(arr) = body.get("image_urls").and_then(|v| v.as_array()) {
                 for item in arr {
                     if let Some(url) = item.as_str() {
                         dash_content.push(serde_json::json!({ "image": url }));
@@ -894,7 +904,7 @@ fn build_dashscope_video_body(model: &str, body: &serde_json::Value) -> serde_js
     // ── media 数组构建 ──
     // 支持两种传入方式：
     //   1) body.media 已是 DashScope 格式数组 → 直接透传
-    //   2) body.images / body.image_url / body.videos → 自动构建 media
+    //   2) body.images / image_url / image_urls / body.videos → 自动构建 media
     if let Some(media) = body.get("media").filter(|v| v.is_array()) {
         input["media"] = media.clone();
     } else {
@@ -905,26 +915,41 @@ fn build_dashscope_video_body(model: &str, body: &serde_json::Value) -> serde_js
             media.push(serde_json::json!({ "type": "first_frame", "url": url }));
         }
 
-        // images 数组：按数量智能推断 type
+        // image_urls 数组 → 按数量智能推断 type（仅当 image_url 未使用时生效）
+        if media.is_empty() {
+            if let Some(arr) = body.get("image_urls").and_then(|v| v.as_array()) {
+                let defaults = infer_image_default_roles(arr.len());
+                for (i, item) in arr.iter().enumerate() {
+                    if let Some(url) = item.as_str() {
+                        let role = defaults.get(i).copied().unwrap_or("reference_image");
+                        media.push(serde_json::json!({ "type": role, "url": url }));
+                    }
+                }
+            }
+        }
+
+        // images 数组：按数量智能推断 type（仅当 image_url / image_urls 均未注入时）
         //   1 张 → first_frame，2 张 → first_frame + last_frame，3+ 张 → reference_image
-        if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
-            let defaults = infer_image_default_roles(arr.len());
-            for (i, item) in arr.iter().enumerate() {
-                let default_type = defaults.get(i).copied().unwrap_or("reference_image");
-                match item {
-                    serde_json::Value::String(url) => {
-                        media.push(serde_json::json!({ "type": default_type, "url": url }));
-                    }
-                    serde_json::Value::Object(obj) => {
-                        let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                        let t = obj.get("type").and_then(|v| v.as_str())
-                            .or_else(|| obj.get("role").and_then(|v| v.as_str()))
-                            .unwrap_or(default_type);
-                        if !url.is_empty() {
-                            media.push(serde_json::json!({ "type": t, "url": url }));
+        if media.is_empty() {
+            if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
+                let defaults = infer_image_default_roles(arr.len());
+                for (i, item) in arr.iter().enumerate() {
+                    let default_type = defaults.get(i).copied().unwrap_or("reference_image");
+                    match item {
+                        serde_json::Value::String(url) => {
+                            media.push(serde_json::json!({ "type": default_type, "url": url }));
                         }
+                        serde_json::Value::Object(obj) => {
+                            let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                            let t = obj.get("type").and_then(|v| v.as_str())
+                                .or_else(|| obj.get("role").and_then(|v| v.as_str()))
+                                .unwrap_or(default_type);
+                            if !url.is_empty() {
+                                media.push(serde_json::json!({ "type": t, "url": url }));
+                            }
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
@@ -1048,7 +1073,10 @@ fn build_volcengine_content_body(model: &str, body: &serde_json::Value) -> serde
         //   1 张 → first_frame（首帧）
         //   2 张 → first_frame + last_frame（首尾帧）
         //   3+ 张 → 全部 reference_image（参考图）
-        if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
+        // 合并 images 和 image_urls 两个来源（image_urls 仅在 images 未提供时使用）
+        let image_arr = body.get("images").and_then(|v| v.as_array())
+            .or_else(|| body.get("image_urls").and_then(|v| v.as_array()));
+        if let Some(arr) = image_arr {
             let defaults = infer_image_default_roles(arr.len());
             for (i, item) in arr.iter().enumerate() {
                 let (url, role) = parse_media_item(item, defaults.get(i).copied().unwrap_or("reference_image"));
@@ -1096,6 +1124,11 @@ fn build_volcengine_content_body(model: &str, body: &serde_json::Value) -> serde
         serde_json::json!(parts)
     };
 
+    // ── 后处理：多模态视频请求中，为缺失 role 的 image_url 自动补充 role ──
+    // 火山方舟 API 要求：当 content 中同时包含 video_url 或 audio_url 时，
+    // 所有 image_url 元素必须携带 role 字段（如 reference_image），否则提交任务会被拒绝。
+    let content = ensure_image_roles_for_multimodal(content);
+
     // ── 组装请求体 ──
     let mut result = serde_json::json!({
         "model": model,
@@ -1142,6 +1175,56 @@ fn infer_image_default_roles(count: usize) -> Vec<&'static str> {
         2 => vec!["first_frame", "last_frame"],
         _ => vec!["reference_image"; count],
     }
+}
+
+/// 火山方舟多模态视频生成 role 修正。
+/// 当 content 数组中同时包含 video_url 或 audio_url（参考媒体）时，
+/// 火山 API 明确禁止 first_frame / last_frame 与参考媒体混用，
+/// 所有 image_url 的 role 必须统一为 reference_image。
+/// 此函数会：
+///   1. 为缺失 role 的 image_url 补充 role = "reference_image"
+///   2. 将错误的 first_frame / last_frame 纠正为 reference_image
+fn ensure_image_roles_for_multimodal(content: serde_json::Value) -> serde_json::Value {
+    let arr = match content.as_array() {
+        Some(a) => a,
+        None => return content,
+    };
+
+    // 检测是否包含 video/audio 参考媒体
+    let has_video_or_audio = arr.iter().any(|item| {
+        let t = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        t == "video_url" || t == "audio_url"
+    });
+    if !has_video_or_audio {
+        return content;
+    }
+
+    // 收集需要修正 role 的 image_url 索引：
+    // - 缺失 role
+    // - role 为 first_frame / last_frame（与参考媒体冲突）
+    let fix_indices: Vec<usize> = arr.iter().enumerate()
+        .filter(|(_, item)| {
+            if item.get("type").and_then(|v| v.as_str()) != Some("image_url") {
+                return false;
+            }
+            match item.get("role").and_then(|v| v.as_str()) {
+                None | Some("") => true,
+                _ => false, // 已有明确 role，不修改
+            }
+        })
+        .map(|(i, _)| i)
+        .collect();
+
+    if fix_indices.is_empty() {
+        return content;
+    }
+
+    let mut patched = arr.clone();
+    for &idx in &fix_indices {
+        patched[idx]["role"] = serde_json::json!("reference_image");
+    }
+
+    serde_json::json!(patched)
 }
 
 // ── 通用密钥脱敏 ──────────────────────────────────────────────
@@ -1212,7 +1295,7 @@ fn build_kling_body(model: &str, body: &serde_json::Value, category: &str) -> se
         result.insert("mode".to_string(), serde_json::json!("std"));
     }
 
-    // 视频：OpenAI 兼容 images 数组 → 可灵官方 image / image_tail / image_list
+    // 视频：OpenAI 兼容 images / image_urls 数组 → 可灵官方 image / image_tail / image_list
     // 仅在未使用官方参数时生效，避免覆盖原生调用
     // 精确模式：元素含 role 字段（如 reference_image）时，保留结构走 multi-image2video
     // 简单模式：纯 URL 按数量自动分发（1-2 张 → image2video，3+ 张 → multi-image2video）
@@ -1221,7 +1304,10 @@ fn build_kling_body(model: &str, body: &serde_json::Value, category: &str) -> se
         && !result.contains_key("image_tail")
         && !result.contains_key("image_list")
     {
-        if let Some(images) = body.get("images").and_then(|v| v.as_array()) {
+        // 合并 images 和 image_urls 两个来源（image_urls 仅在 images 未提供时使用）
+        let images = body.get("images").and_then(|v| v.as_array())
+            .or_else(|| body.get("image_urls").and_then(|v| v.as_array()));
+        if let Some(images) = images {
             let use_multi = images.iter().any(|item|
                 item.get("role").and_then(|r| r.as_str()) == Some("reference_image")
             );
@@ -1273,10 +1359,16 @@ fn build_kling_body(model: &str, body: &serde_json::Value, category: &str) -> se
         }
     }
 
-    // OpenAI 兼容：image 字段归一化
+    // OpenAI 兼容：image / image_urls 字段归一化
     // 可灵图片图生图要求 image 为 URL 字符串，但 OpenAI 兼容格式可能传入数组
     // 如 [{"url": "https://..."}, ...] → 取首元素的 url 作为可灵 image 参数
     if category == "图片" {
+        // image_urls → image 归一化（仅当 image 未提供时）
+        if !result.contains_key("image") {
+            if let Some(first_url) = body.get("image_urls").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|u| u.as_str()) {
+                result.insert("image".to_string(), serde_json::json!(first_url));
+            }
+        }
         if let Some(img_val) = result.get("image").cloned() {
             if let Some(arr) = img_val.as_array() {
                 if let Some(first) = arr.first() {

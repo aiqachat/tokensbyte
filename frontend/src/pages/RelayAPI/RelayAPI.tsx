@@ -140,6 +140,13 @@ const RelayAPI: React.FC = () => {
                   <Descriptions.Item label="image (选填)">
                     <Text>参考图 URL (OpenAI 协议扩展)。阿里百炼模型自动将其封装进 <Text code>input.messages</Text> 用于图生图或参考生图模式。</Text>
                   </Descriptions.Item>
+                  <Descriptions.Item label="image_urls (选填)">
+                    <Text>参考图 URL 数组 — 效果与 <Text code>image</Text> 相同，用于兼容其他 OpenAI 平台的参数命名。支持传入多张图片 URL。</Text>
+                    <br />
+                    <Text type="secondary">示例：<Text code>{`["https://example.com/a.png", "https://example.com/b.png"]`}</Text></Text>
+                    <br />
+                    <Text type="secondary">⚠️ 当 <Text code>image</Text> 和 <Text code>image_urls</Text> 同时传入时，以 <Text code>image</Text> 为准</Text>
+                  </Descriptions.Item>
                   <Descriptions.Item label="prompt_extend (选填)">true/false — 阿里百炼特有：是否启用提示词智能改写（默认 false）</Descriptions.Item>
                   <Descriptions.Item label="stream (选填)">true/false — 部分原生支持流式的模型（如 Gemini）可启用，网关自动解析 SSE 流提取图像</Descriptions.Item>
                   <Descriptions.Item label="web_search (选填)">true/false — 联网搜索，转换规则同聊天接口</Descriptions.Item>
