@@ -59,9 +59,26 @@ pub async fn video_generations(
     let mut asset_convert_log: Option<String> = None;
     let is_asset_convert_req = body.get("asset_convert").and_then(|v| v.as_bool()).unwrap_or(false);
     if resolved.asset_convert || is_asset_convert_req {
-        let convert_logs = super::asset_convert::convert_content_urls(&state, &token.user_id, &mut upstream_body).await;
+        let (convert_logs, convert_errors) = super::asset_convert::convert_content_urls(&state, &token.user_id, &mut upstream_body).await;
         if !convert_logs.is_empty() {
             asset_convert_log = Some(format!("素材转换: {}", convert_logs.join(" | ")));
+        }
+        // 素材转换失败时直接拦截，不再继续调用上游接口
+        if !convert_errors.is_empty() {
+            let full_err = convert_errors.join("; ");
+            // 提取火山引擎错误中的 Message 字段作为用户可读信息
+            let user_msg = convert_errors.iter()
+                .filter_map(|e| e.find('{').and_then(|i| serde_json::from_str::<serde_json::Value>(&e[i..]).ok())
+                    .and_then(|j| j.pointer("/ResponseMetadata/Error/Message").or_else(|| j.pointer("/Error/Message"))
+                        .and_then(|v| v.as_str()).map(|s| s.to_string())))
+                .next()
+                .unwrap_or_else(|| full_err.clone());
+            let latency_ms = start_time.elapsed().as_millis() as u32;
+            let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
+            proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, 400,
+                &ep, Some(&full_err), latency_ms, 0,
+                Some(request_content_str.clone()), None, Some(upstream_body.to_string()), asset_convert_log.clone()).await;
+            return Err(AppError::BadRequest(format!("素材转换失败: {}", user_msg)));
         }
     }
 
