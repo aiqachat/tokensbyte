@@ -89,7 +89,7 @@ pub async fn api_key_middleware(
             None => {
                 // Ignore noise for common public paths
                 if !path.ends_with("/health") && !path.ends_with("favicon.ico") {
-                    crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Missing Authorization Header").await;
+                    crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Missing Authorization Header", None).await;
                 }
                 return AppError::Unauthorized.into_response();
             }
@@ -98,13 +98,13 @@ pub async fn api_key_middleware(
     let api_key = match auth_header.strip_prefix("Bearer ") {
         Some(k) => k,
         None => {
-            crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Invalid Bearer Token Format").await;
+            crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Invalid Bearer Token Format", None).await;
             return AppError::Unauthorized.into_response();
         }
     };
 
     // Look up the API token
-    let token: crate::models::ApiToken = match sqlx::query_as::<sqlx::Any, crate::models::ApiToken>(
+    let token: crate::models::ApiToken = match sqlx::query_as::<_, crate::models::ApiToken>(
         &state.db.format_query("SELECT * FROM api_tokens WHERE token_key = ?")
     )
     .bind(api_key)
@@ -112,11 +112,11 @@ pub async fn api_key_middleware(
     .await {
         Ok(Some(t)) if t.is_active != 0 => t,
         Ok(Some(t)) => {
-            crate::relay::proxy::record_error_log(&state, &t.user_id, None, "unknown", 403, &path, "Token disabled").await;
+            crate::relay::proxy::record_error_log(&state, &t.user_id, None, "unknown", 403, &path, "Token disabled", None).await;
             return AppError::Forbidden("Token disabled".to_string()).into_response();
         },
         Ok(None) => {
-            crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Invalid API Key").await;
+            crate::relay::proxy::record_error_log(&state, "unknown", None, "unknown", 401, &path, "Invalid API Key", None).await;
             return AppError::Unauthorized.into_response();
         },
         Err(e) => return AppError::Internal(format!("Database error: {}", e)).into_response(),
@@ -124,13 +124,13 @@ pub async fn api_key_middleware(
 
     // Check expiry
     if token.is_expired() {
-        crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 403, &path, "Token expired").await;
+        crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 403, &path, "Token expired", None).await;
         return AppError::Forbidden("Token expired".to_string()).into_response();
     }
 
-    // Check quota
-    if !token.has_quota() {
-        crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 403, &path, "Token quota exceeded").await;
+    // Check quota (allow GET requests for task polling even if quota is exceeded)
+    if !token.has_quota() && request.method() != axum::http::Method::GET {
+        crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 403, &path, "Token quota exceeded", None).await;
         return AppError::Forbidden("Quota exceeded".to_string()).into_response();
     }
 
@@ -154,7 +154,7 @@ pub async fn api_key_middleware(
         }
         if !is_allowed {
             let msg = format!("IP {} not whitelisted", client_ip);
-            crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 403, &path, &msg).await;
+            crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 403, &path, &msg, None).await;
             return AppError::Forbidden(msg).into_response();
         }
     }
@@ -162,7 +162,7 @@ pub async fn api_key_middleware(
     // Check Rate Limits
     if token.rps_limit > 0 {
         if !state.rate_limiter.check(token.id, token.rps_limit) {
-            crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 429, &path, "Rate limit exceeded").await;
+            crate::relay::proxy::record_error_log(&state, &token.user_id, None, "unknown", 429, &path, "Rate limit exceeded", None).await;
             return AppError::TooManyRequests("Rate limit exceeded".to_string()).into_response();
         }
     }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense } from 'react';
-import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined } from '@ant-design/icons';
+import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App, Segmented } from 'antd';
+import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined, MessageOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
@@ -97,6 +97,10 @@ const PluginConfigInner: React.FC = () => {
   const [defaultMaxFilesPerFolder, setDefaultMaxFilesPerFolder] = useState<number>(100);
   const [levelApiEnabled, setLevelApiEnabled] = useState<Record<string, boolean>>({});
   const [defaultApiEnabled, setDefaultApiEnabled] = useState<boolean>(true);
+  const [levelMaxProjects, setLevelMaxProjects] = useState<Record<string, number>>({});
+  const [defaultMaxProjects, setDefaultMaxProjects] = useState<number>(3);
+  const [levelMaxAssets, setLevelMaxAssets] = useState<Record<string, number>>({});
+  const [defaultMaxAssets, setDefaultMaxAssets] = useState<number>(10);
 
   // 管理员分组（系统增强插件使用）
   const [adminGroups, setAdminGroups] = useState<{id: number; name: string; description?: string}[]>([]);
@@ -142,19 +146,27 @@ const PluginConfigInner: React.FC = () => {
   const [pgSchemes, setPgSchemes] = useState<any[]>([]);
   const [savingPlayground, setSavingPlayground] = useState(false);
   const [pgSearchKeyword, setPgSearchKeyword] = useState('');
+  const [pgTypeFilter, setPgTypeFilter] = useState('chat');
+  const [pgSchemeTypeFilter, setPgSchemeTypeFilter] = useState('all');
   const [pgSchemeDrawerVisible, setPgSchemeDrawerVisible] = useState(false);
   const [pgCurrentId, setPgCurrentId] = useState<number | null>(null);
   const [pgSelectedSchemeId, setPgSelectedSchemeId] = useState<string>('');
+  const [pgDefaultModelMids, setPgDefaultModelMids] = useState<Record<string, string>>({});
 
   // ====== 模型广场管理 (Model Marketplace) 配置 ======
   const [mpModels, setMpModels] = useState<any[]>([]);
   const [savingMarketplace, setSavingMarketplace] = useState(false);
   const [mpSearchKeyword, setMpSearchKeyword] = useState('');
+  const [mpProviderFilter, setMpProviderFilter] = useState<string>('all');
+  const [mpTypeFilter, setMpTypeFilter] = useState<string>('all');
+  const [mpStatusFilter, setMpStatusFilter] = useState<string>('all'); // 'all' | 'enabled' | 'disabled'
+  const [mpDisplayMode, setMpDisplayMode] = useState<'whitelist' | 'blacklist'>('whitelist');
 
   const fetchMarketplaceConfig = async () => {
     try {
       const res = await (request.get(`/plugins/${name}/marketplace-models`) as Promise<any>);
       if (res.models) setMpModels(res.models);
+      if (res.display_mode) setMpDisplayMode(res.display_mode);
     } catch (e) {
       console.error(e);
     }
@@ -170,6 +182,7 @@ const PluginConfigInner: React.FC = () => {
     try {
       setSavingMarketplace(true);
       const payload = {
+        display_mode: mpDisplayMode,
         models: mpModels.map(m => ({
           id: m.id,
           enabled: m.mp_enabled,
@@ -202,6 +215,7 @@ const PluginConfigInner: React.FC = () => {
       const res = await (request.get(`/plugins/${name}/playground-config`) as Promise<any>);
       if (res.models) setPgModels(res.models);
       if (res.schemes) setPgSchemes(res.schemes);
+      if (res.default_model_mids) setPgDefaultModelMids(res.default_model_mids);
     } catch (e) {
       console.error(e);
     }
@@ -217,6 +231,7 @@ const PluginConfigInner: React.FC = () => {
     try {
       setSavingPlayground(true);
       const payload = {
+        default_model_mids: pgDefaultModelMids,
         models: pgModels.map(m => ({
           id: m.id,
           mid: m.mid || '',
@@ -429,12 +444,12 @@ const PluginConfigInner: React.FC = () => {
 
       if (storageRes) {
         setStorageConfig(storageRes);
-        // 加载等级配额 (统一转换为 ULID key)
+        // 加载等级配额 (统一使用 ULID key 即 lv.id.toString())
         if (storageRes.level_quotas) {
           const lq: Record<string, number> = {};
           allLevels.forEach((lv: any) => {
-            const lvIdStr = lv.id.toString();
-            lq[lvIdStr] = storageRes.level_quotas[lvIdStr] ?? storageRes.level_quotas[lv.group_key];
+            const key = lv.id.toString();
+            lq[key] = storageRes.level_quotas[key] ?? storageRes.level_quotas[lv.group_key];
           });
           setLevelQuotas(lq);
         }
@@ -444,8 +459,8 @@ const PluginConfigInner: React.FC = () => {
         if (storageRes.level_max_folders) {
           const lmf: Record<string, number> = {};
           allLevels.forEach((lv: any) => {
-            const lvIdStr = lv.id.toString();
-            lmf[lvIdStr] = storageRes.level_max_folders[lvIdStr] ?? storageRes.level_max_folders[lv.group_key];
+            const key = lv.id.toString();
+            lmf[key] = storageRes.level_max_folders[key] ?? storageRes.level_max_folders[lv.group_key];
           });
           setLevelMaxFolders(lmf);
         }
@@ -455,8 +470,8 @@ const PluginConfigInner: React.FC = () => {
         if (storageRes.level_max_files_per_folder) {
           const lmfpf: Record<string, number> = {};
           allLevels.forEach((lv: any) => {
-            const lvIdStr = lv.id.toString();
-            lmfpf[lvIdStr] = storageRes.level_max_files_per_folder[lvIdStr] ?? storageRes.level_max_files_per_folder[lv.group_key];
+            const key = lv.id.toString();
+            lmfpf[key] = storageRes.level_max_files_per_folder[key] ?? storageRes.level_max_files_per_folder[lv.group_key];
           });
           setLevelMaxFilesPerFolder(lmfpf);
         }
@@ -471,10 +486,31 @@ const PluginConfigInner: React.FC = () => {
         const apiDefault = storageRes.default_api_enabled ?? true;
         const initialApiEnabled: Record<string, boolean> = {};
         allLevels.forEach((lv: any) => {
-          const lvIdStr = lv.id.toString();
-          initialApiEnabled[lvIdStr] = savedApiEnabled[lvIdStr] ?? savedApiEnabled[lv.group_key] ?? apiDefault;
+          const key = lv.id.toString();
+          initialApiEnabled[key] = savedApiEnabled[key] ?? savedApiEnabled[lv.group_key] ?? apiDefault;
         });
         setLevelApiEnabled(initialApiEnabled);
+        
+        if (storageRes.level_max_projects) {
+          const lmp: Record<string, number> = {};
+          allLevels.forEach((lv: any) => {
+            const key = lv.id.toString();
+            lmp[key] = storageRes.level_max_projects[key] ?? storageRes.level_max_projects[lv.group_key];
+          });
+          setLevelMaxProjects(lmp);
+        }
+        if (storageRes.default_max_projects != null) setDefaultMaxProjects(storageRes.default_max_projects);
+
+        if (storageRes.level_max_assets) {
+          const lma: Record<string, number> = {};
+          allLevels.forEach((lv: any) => {
+            const key = lv.id.toString();
+            lma[key] = storageRes.level_max_assets[key] ?? storageRes.level_max_assets[lv.group_key];
+          });
+          setLevelMaxAssets(lma);
+        }
+        if (storageRes.default_max_assets != null) setDefaultMaxAssets(storageRes.default_max_assets);
+
         // 延迟设置表单值，等待 Tabs 内的 Form 组件渲染完毕
         setTimeout(() => {
           storageForm.setFieldsValue({
@@ -545,7 +581,11 @@ const PluginConfigInner: React.FC = () => {
         level_max_files_per_folder: levelMaxFilesPerFolder,
         default_max_files_per_folder: defaultMaxFilesPerFolder,
         level_api_enabled: levelApiEnabled,
-        default_api_enabled: defaultApiEnabled });
+        default_api_enabled: defaultApiEnabled,
+        level_max_projects: levelMaxProjects,
+        default_max_projects: defaultMaxProjects,
+        level_max_assets: levelMaxAssets,
+        default_max_assets: defaultMaxAssets });
       message.success('配置已保存');
     } catch (error) {
       message.error('保存失败');
@@ -733,7 +773,7 @@ const PluginConfigInner: React.FC = () => {
                       </Text>
                     </div>
                   </div>
-                  {showLimits && (
+                  {showLimits && name === 'asset_manager' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, marginLeft: 24, flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, whiteSpace: 'nowrap' }}>存储空间</Text>
@@ -774,6 +814,7 @@ const PluginConfigInner: React.FC = () => {
                       </div>
                     </div>
                   )}
+
                 </div>
               );
             })}
@@ -782,7 +823,87 @@ const PluginConfigInner: React.FC = () => {
         )}
       </div>
 
-      {isAllLevels && (name !== 'team_marketing' && name !== 'playground' && name !== 'model_marketplace') && (
+      {isAllLevels && name === 'playground' && (
+        <div style={{
+          background: _isLight ? '#fff' : '#141414', borderRadius: 8,
+          border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16 }}>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>资源配额管理</Text><br />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>全局默认的用户体验中心配额（对所有用户生效），可按等级单独覆盖</Text>
+          <Divider style={{ borderColor: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
+          
+          {/* 表头 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '0 14px 8px', alignItems: 'center' }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11 }}>等级</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>存储空间</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>项目限制</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, textAlign: 'center' }}>每个项目素材</Text>
+          </div>
+
+          {/* 全局默认行 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '10px 14px', borderRadius: 6, border: '1px solid rgba(22,119,255,0.3)', background: 'rgba(22,119,255,0.04)', marginBottom: 8, alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13, fontWeight: 500 }}>全局默认</Text>
+              <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>默认值</Tag>
+            </div>
+            <InputNumber size="small" min={1} max={10240}
+              value={defaultQuota} onChange={(val) => setDefaultQuota(val ?? 100)}
+              style={{ width: '100%' }}
+              addonAfter="MB"
+            />
+            <InputNumber size="small" min={1} max={1000}
+              value={defaultMaxProjects} onChange={(val) => setDefaultMaxProjects(val ?? 3)}
+              style={{ width: '100%' }}
+              addonAfter="个"
+            />
+            <InputNumber size="small" min={1} max={1000}
+              value={defaultMaxAssets} onChange={(val) => setDefaultMaxAssets(val ?? 10)}
+              style={{ width: '100%' }}
+              addonAfter="个"
+            />
+          </div>
+
+          {/* 按等级覆盖 */}
+          {levels.length > 0 && (
+            <>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', margin: '12px 0 8px' }}>按等级单独设置（覆盖全局默认值）</Text>
+              {levels.map(lv => (
+                <div key={lv.id.toString()}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr repeat(3, 140px)', gap: 8, padding: '8px 14px', borderRadius: 6, border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)', background: 'transparent', marginBottom: 6, alignItems: 'center' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>
+                      {lv.name}
+                      <span style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12, marginLeft: 6 }}>
+                        (ULID: {lv.id.toString().padStart(4, '0')})
+                      </span>
+                    </Text>
+                  </div>
+                  <InputNumber size="small" min={1} max={10240}
+                    value={levelQuotas[lv.id.toString()] ?? defaultQuota}
+                    onChange={(val) => setLevelQuotas(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultQuota }))}
+                    style={{ width: '100%' }}
+                    addonAfter="MB"
+                  />
+                  <InputNumber size="small" min={1} max={1000}
+                    value={levelMaxProjects[lv.id.toString()] ?? defaultMaxProjects}
+                    onChange={(val) => setLevelMaxProjects(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultMaxProjects }))}
+                    style={{ width: '100%' }}
+                    addonAfter="个"
+                  />
+                  <InputNumber size="small" min={1} max={1000}
+                    value={levelMaxAssets[lv.id.toString()] ?? defaultMaxAssets}
+                    onChange={(val) => setLevelMaxAssets(prev => ({ ...prev, [lv.id.toString()]: val ?? defaultMaxAssets }))}
+                    style={{ width: '100%' }}
+                    addonAfter="个"
+                  />
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {isAllLevels && name === 'asset_manager' && (
         <div style={{
           background: _isLight ? '#fff' : '#141414', borderRadius: 8,
           border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: '20px', marginBottom: 16 }}>
@@ -1350,8 +1471,28 @@ const PluginConfigInner: React.FC = () => {
     </div>
   );
 
-  // ====== 体验中心 (Playground) 统一模型管理 Tab ======
+  // 辅助函数：将 type_name 映射到 type key
+  const getPgTypeKey = (typeName: string) => {
+    if (typeName.includes('视频')) return 'video';
+    if (typeName.includes('图片')) return 'image';
+    return 'chat';
+  };
+
+  // 获取所有可用的类型 tab
+  const pgTypeCategories = (() => {
+    const typeSet = new Set<string>();
+    pgModels.forEach(m => typeSet.add(getPgTypeKey(m.type_name || '')));
+    const order = ['chat', 'image', 'video'];
+    return order.filter(t => typeSet.has(t));
+  })();
+
+  const pgTypeLabelMap: Record<string, string> = { chat: '对话', image: '图片', video: '视频' };
+
   const filteredPgModels = pgModels.filter(m => {
+    const t = m.type_name || '';
+    const typeKey = getPgTypeKey(t);
+    if (typeKey !== pgTypeFilter) return false;
+    
     if (!pgSearchKeyword) return true;
     const kw = pgSearchKeyword.toLowerCase();
     return m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid?.toLowerCase()?.includes(kw);
@@ -1366,6 +1507,12 @@ const PluginConfigInner: React.FC = () => {
         <div>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{name}</Text>
           <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
+          {(() => {
+            const scheme = pgSchemes.find(s => s.id === record.pg_scheme_id);
+            return scheme ? (
+              <div style={{ fontSize: 11, color: '#1677ff', marginTop: 2 }}>已挂载流：{scheme.name}</div>
+            ) : null;
+          })()}
         </div>
       ) },
     {
@@ -1404,6 +1551,21 @@ const PluginConfigInner: React.FC = () => {
         );
       } },
     {
+      title: '默认',
+      key: 'pg_default',
+      width: 60,
+      align: 'center' as const,
+      render: (_: any, record: any) => {
+        const typeKey = getPgTypeKey(record.type_name || '');
+        return (
+          <Radio
+            checked={pgDefaultModelMids[typeKey] === record.mid}
+            onChange={() => setPgDefaultModelMids(prev => ({ ...prev, [typeKey]: record.mid }))}
+            disabled={!record.pg_enabled}
+          />
+        );
+      } },
+    {
       title: '操作',
       key: 'action',
       width: 80,
@@ -1426,17 +1588,51 @@ const PluginConfigInner: React.FC = () => {
           <div>
             <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>可体验模型列表</Text>
             <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
-              开启体验开关并绑定方案后，用户即可在体验中心使用该模型。已开启 {pgModels.filter(m => m.pg_enabled).length} / {pgModels.length} 个模型
+              开启体验开关并绑定方案后，用户即可在体验中心使用该模型。选中"默认"列后，用户打开体验中心将自动加载对应类型的默认模型。
             </Text>
           </div>
-          <Input
-            placeholder="搜索模型..."
-            value={pgSearchKeyword}
-            onChange={e => setPgSearchKeyword(e.target.value)}
-            style={{ width: 220 }}
-            allowClear
-          />
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <Input
+              placeholder="搜索模型..."
+              value={pgSearchKeyword}
+              onChange={e => setPgSearchKeyword(e.target.value)}
+              style={{ width: 220 }}
+              allowClear
+            />
+          </div>
         </div>
+
+        <Tabs
+          activeKey={pgTypeFilter}
+          onChange={key => setPgTypeFilter(key)}
+          items={pgTypeCategories.map(typeKey => {
+            const typeModels = pgModels.filter(m => getPgTypeKey(m.type_name || '') === typeKey);
+            const enabledCount = typeModels.filter(m => m.pg_enabled).length;
+            const defaultMid = pgDefaultModelMids[typeKey];
+            const defaultModel = defaultMid ? typeModels.find(m => m.mid === defaultMid) : null;
+            return {
+              key: typeKey,
+              label: (
+                <span>
+                  {pgTypeLabelMap[typeKey] || typeKey}
+                  <span style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', marginLeft: 6 }}>
+                    {enabledCount}/{typeModels.length}
+                  </span>
+                </span>
+              ),
+            };
+          })}
+        />
+
+        {/* 当前类型默认模型提示 */}
+        {pgDefaultModelMids[pgTypeFilter] && (() => {
+          const dm = pgModels.find(m => m.mid === pgDefaultModelMids[pgTypeFilter]);
+          return dm ? (
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 6, background: 'rgba(22,119,255,0.06)', border: '1px solid rgba(22,119,255,0.15)', fontSize: 12 }}>
+              <Text style={{ color: '#1677ff' }}>当前{pgTypeLabelMap[pgTypeFilter]}类型默认模型：<Text strong style={{ color: '#1677ff' }}>{dm.name}</Text></Text>
+            </div>
+          ) : null;
+        })()}
 
         <Table
           dataSource={filteredPgModels}
@@ -1530,16 +1726,30 @@ const PluginConfigInner: React.FC = () => {
               管理内置和自定义的体验方案。每个方案定义了可配置的参数模板，绑定到模型后用户侧会动态展示。
             </Text>
           </div>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAddScheme}>新增方案</Button>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <Radio.Group value={pgSchemeTypeFilter} onChange={e => setPgSchemeTypeFilter(e.target.value)}>
+              <Radio.Button value="all">全部</Radio.Button>
+              <Radio.Button value="chat">对话</Radio.Button>
+              <Radio.Button value="image">图片</Radio.Button>
+              <Radio.Button value="video">视频</Radio.Button>
+            </Radio.Group>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleAddScheme}>新增方案</Button>
+          </div>
         </div>
 
         {(() => {
           const typeGroups: Record<string, { label: string; icon: React.ReactNode; color: string; schemes: { scheme: any; idx: number }[] }> = {
             video: { label: '视频生成方案', icon: <VideoCameraOutlined />, color: '#1677ff', schemes: [] },
             image: { label: '图片生成方案', icon: <PictureOutlined />, color: '#52c41a', schemes: [] },
+            chat: { label: '聊天对话方案', icon: <MessageOutlined />, color: '#722ed1', schemes: [] },
             other: { label: '其他方案', icon: <AppstoreOutlined />, color: '#faad14', schemes: [] } };
           schemeList.forEach((scheme, idx) => {
-            const key = scheme.type === 'video' ? 'video' : scheme.type === 'image' ? 'image' : 'other';
+            if (pgSchemeTypeFilter !== 'all') {
+              if (pgSchemeTypeFilter === 'chat' && scheme.type !== 'chat') return;
+              if (pgSchemeTypeFilter === 'video' && scheme.type !== 'video') return;
+              if (pgSchemeTypeFilter === 'image' && scheme.type !== 'image') return;
+            }
+            const key = scheme.type === 'video' ? 'video' : scheme.type === 'image' ? 'image' : scheme.type === 'chat' ? 'chat' : 'other';
             typeGroups[key].schemes.push({ scheme, idx });
           });
           const activeGroups = Object.entries(typeGroups).filter(([, g]) => g.schemes.length > 0);
@@ -1720,11 +1930,32 @@ const PluginConfigInner: React.FC = () => {
   );
 
   // ====== 模型广场管理 模型列表 Tab ======
+  // 提取供应商和类型的唯一列表，用于筛选下拉
+  const mpProviderOptions = Array.from(new Set(mpModels.map(m => m.provider_name).filter(Boolean)));
+  const mpTypeOptions = Array.from(new Set(mpModels.map(m => m.type_name).filter(Boolean)));
+
   const filteredMpModels = mpModels.filter(m => {
-    if (!mpSearchKeyword) return true;
-    const kw = mpSearchKeyword.toLowerCase();
-    return m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid?.toLowerCase()?.includes(kw) || m.provider_name?.toLowerCase()?.includes(kw);
+    // 关键词搜索
+    if (mpSearchKeyword) {
+      const kw = mpSearchKeyword.toLowerCase();
+      const matchText = m.name.toLowerCase().includes(kw) || m.model_id.toLowerCase().includes(kw) || m.mid?.toLowerCase()?.includes(kw) || m.provider_name?.toLowerCase()?.includes(kw);
+      if (!matchText) return false;
+    }
+    // 供应商筛选
+    if (mpProviderFilter !== 'all' && (m.provider_name || '') !== mpProviderFilter) return false;
+    // 类型筛选
+    if (mpTypeFilter !== 'all' && (m.type_name || '') !== mpTypeFilter) return false;
+    // 展示状态筛选
+    if (mpStatusFilter === 'enabled' && !m.mp_enabled) return false;
+    if (mpStatusFilter === 'disabled' && m.mp_enabled) return false;
+    return true;
   });
+
+  // 一键切换当前筛选结果的广场展示状态
+  const handleMpBatchToggle = (enabled: boolean) => {
+    const filteredIds = new Set(filteredMpModels.map(m => m.id));
+    setMpModels(prev => prev.map(m => filteredIds.has(m.id) ? { ...m, mp_enabled: enabled } : m));
+  };
 
   const mpModelColumns = [
     {
@@ -1735,6 +1966,12 @@ const PluginConfigInner: React.FC = () => {
         <div>
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 13 }}>{nameVal}</Text>
           <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>MID: {record.mid} | {record.model_id}</div>
+          {(() => {
+            const scheme = pgSchemes.find(s => s.id === record.pg_scheme_id);
+            return scheme ? (
+              <div style={{ fontSize: 11, color: '#1677ff', marginTop: 2 }}>已挂载流：{scheme.name}</div>
+            ) : null;
+          })()}
         </div>
       ) },
     {
@@ -1797,23 +2034,134 @@ const PluginConfigInner: React.FC = () => {
       ) },
   ];
 
-  const marketplaceModelTab = (
+  const marketplaceModelTab = (() => {
+    const enabledCount = mpModels.filter(m => m.mp_enabled).length;
+    const filteredEnabledCount = filteredMpModels.filter(m => m.mp_enabled).length;
+    const allFilteredEnabled = filteredMpModels.length > 0 && filteredEnabledCount === filteredMpModels.length;
+
+    return (
     <div>
       <div style={{ background: _isLight ? '#fff' : '#141414', borderRadius: 8, padding: '20px', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div>
-            <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>模型广场模型列表</Text>
-            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, display: 'block', marginTop: 4 }}>
-              开启展示开关后，该模型将在用户端模型广场中可见。数字越大排序越靠前。已展示 {mpModels.filter(m => m.mp_enabled).length} / {mpModels.length} 个模型
+        {/* 标题 + 一键开关 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 14 }}>模型广场模型列表</Text>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontSize: 12, whiteSpace: 'nowrap' }}>
+              {filteredMpModels.length === mpModels.length ? '一键全部' : `当前 ${filteredMpModels.length} 项`}
             </Text>
+            <Switch
+              checked={allFilteredEnabled}
+              onChange={(val) => handleMpBatchToggle(val)}
+              checkedChildren="全展示"
+              unCheckedChildren="全隐藏"
+            />
           </div>
-          <Input
-            placeholder="搜索模型..."
-            value={mpSearchKeyword}
-            onChange={e => setMpSearchKeyword(e.target.value)}
-            style={{ width: 220 }}
-            allowClear
+        </div>
+
+        {/* 展示模式切换 */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          marginBottom: 16, padding: '10px 14px', borderRadius: 8,
+          background: mpDisplayMode === 'blacklist'
+            ? (_isLight ? 'rgba(22,119,255,0.04)' : 'rgba(22,119,255,0.08)')
+            : (_isLight ? '#fafafa' : 'rgba(255,255,255,0.02)'),
+          border: mpDisplayMode === 'blacklist'
+            ? '1px solid rgba(22,119,255,0.2)'
+            : (_isLight ? '1px solid rgba(0,0,0,0.04)' : '1px solid rgba(255,255,255,0.04)'),
+        }}>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)', fontSize: 12, whiteSpace: 'nowrap' }}>展示模式：</Text>
+          <Segmented
+            options={[
+              { label: '手动选择展示', value: 'whitelist' },
+              { label: '默认全部展示', value: 'blacklist' },
+            ]}
+            value={mpDisplayMode}
+            onChange={(val) => setMpDisplayMode(val as 'whitelist' | 'blacklist')}
+            size="small"
           />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>
+            {mpDisplayMode === 'blacklist'
+              ? '所有模型默认在广场展示（含新添加的），仅需关闭不想展示的。'
+              : '模型默认不展示，需手动逐个开启。'}
+          </Text>
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12, marginLeft: 'auto' }}>
+            已展示 {enabledCount} / {mpModels.length}
+          </Text>
+        </div>
+
+        {/* 筛选区 */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 16,
+          marginBottom: 16, padding: '16px', borderRadius: 8,
+          background: _isLight ? '#fafafa' : 'rgba(255,255,255,0.02)',
+          border: _isLight ? '1px solid rgba(0,0,0,0.04)' : '1px solid rgba(255,255,255,0.04)',
+        }}>
+          {/* 第一行：搜索 + 供应商 */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
+            <Input
+              placeholder="搜索模型名称 / ID..."
+              value={mpSearchKeyword}
+              onChange={e => setMpSearchKeyword(e.target.value)}
+              style={{ width: 260 }}
+              allowClear
+              size="small"
+            />
+            {/* 供应商筛选 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1 }}>
+              <Text type="secondary" style={{ fontSize: 13, flexShrink: 0, marginTop: 2 }}>供应商:</Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <span 
+                  onClick={() => setMpProviderFilter('all')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpProviderFilter === 'all' ? '#1677ff' : 'transparent', color: mpProviderFilter === 'all' ? '#fff' : 'var(--text-secondary)' }}
+                >全部</span>
+                {mpProviderOptions.map(p => (
+                  <span 
+                    key={p} onClick={() => setMpProviderFilter(p)}
+                    style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpProviderFilter === p ? '#1677ff' : 'transparent', color: mpProviderFilter === p ? '#fff' : 'var(--text-secondary)' }}
+                  >{p}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 第二行：类型 + 状态 */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 32, flexWrap: 'wrap' }}>
+            {/* 类型筛选 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13, flexShrink: 0, marginTop: 2 }}>类型:</Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <span 
+                  onClick={() => setMpTypeFilter('all')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpTypeFilter === 'all' ? '#1677ff' : 'transparent', color: mpTypeFilter === 'all' ? '#fff' : 'var(--text-secondary)' }}
+                >全部</span>
+                {mpTypeOptions.map(t => (
+                  <span 
+                    key={t} onClick={() => setMpTypeFilter(t)}
+                    style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpTypeFilter === t ? '#1677ff' : 'transparent', color: mpTypeFilter === t ? '#fff' : 'var(--text-secondary)' }}
+                  >{t}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* 状态筛选 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13, flexShrink: 0, marginTop: 2 }}>状态:</Text>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <span 
+                  onClick={() => setMpStatusFilter('all')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpStatusFilter === 'all' ? '#1677ff' : 'transparent', color: mpStatusFilter === 'all' ? '#fff' : 'var(--text-secondary)' }}
+                >全部</span>
+                <span 
+                  onClick={() => setMpStatusFilter('enabled')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpStatusFilter === 'enabled' ? '#1677ff' : 'transparent', color: mpStatusFilter === 'enabled' ? '#fff' : 'var(--text-secondary)' }}
+                >已展示</span>
+                <span 
+                  onClick={() => setMpStatusFilter('disabled')}
+                  style={{ fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 12, background: mpStatusFilter === 'disabled' ? '#1677ff' : 'transparent', color: mpStatusFilter === 'disabled' ? '#fff' : 'var(--text-secondary)' }}
+                >未展示</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <Table
@@ -1821,7 +2169,7 @@ const PluginConfigInner: React.FC = () => {
           columns={mpModelColumns}
           rowKey="id"
           size="small"
-          pagination={{ pageSize: 20 }}
+          pagination={{ pageSize: 20, showTotal: (total) => `共 ${total} 项` }}
           style={{ marginBottom: 16 }}
         />
 
@@ -1832,7 +2180,9 @@ const PluginConfigInner: React.FC = () => {
         </div>
       </div>
     </div>
-  );
+    );
+  })();
+
 
   return (
 

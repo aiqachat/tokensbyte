@@ -89,15 +89,15 @@ const SettingsWidget: React.FC = React.memo(() => {
         left: settingsWidgetPos.x,
         top: settingsWidgetPos.y,
         width: 360,
-        background: 'rgba(18, 19, 21, 0.85)',
+        background: '#1e1f20',
         borderRadius: 24,
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+        border: '1px solid #444746',
+        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
         backdropFilter: 'blur(24px)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         zIndex: 1000,
         transition: 'height 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        height: isSettingsCollapsed ? 64 : Math.min(800, window.innerHeight - settingsWidgetPos.y - 24)
+        height: isSettingsCollapsed ? 48 : Math.min(800, window.innerHeight - settingsWidgetPos.y - 24)
       }}
       onWheel={(e) => e.stopPropagation()}
     >
@@ -106,8 +106,8 @@ const SettingsWidget: React.FC = React.memo(() => {
         onMouseDown={handleMouseDown}
         onDoubleClick={() => setIsSettingsCollapsed(!isSettingsCollapsed)}
         style={{
-          padding: '0 24px', height: 64, minHeight: 64,
-          borderBottom: isSettingsCollapsed ? 'none' : '1px solid rgba(255,255,255,0.05)',
+          padding: '0 24px', height: 48, minHeight: 48,
+          borderBottom: isSettingsCollapsed ? 'none' : '1px solid #444746',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           cursor: 'grab',
           background: 'rgba(255,255,255,0.02)',
@@ -134,7 +134,7 @@ const SettingsWidget: React.FC = React.memo(() => {
       {/* 可折叠内容区域 */}
       <div style={{
         flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
-        padding: '24px', gap: 24,
+        padding: '20px 24px', gap: 16,
         opacity: isSettingsCollapsed ? 0 : 1,
         transition: 'opacity 0.3s ease',
         pointerEvents: isSettingsCollapsed ? 'none' : 'auto'
@@ -149,8 +149,8 @@ const SettingsWidget: React.FC = React.memo(() => {
                 onClick={() => handleCategoryChange(cat)}
                 style={{
                   flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: 12, cursor: 'pointer',
-                  background: isActive ? '#fff' : 'transparent',
-                  color: isActive ? '#000' : 'rgba(255,255,255,0.6)',
+                  background: isActive ? 'rgba(168,199,250,0.12)' : 'transparent',
+                  color: isActive ? '#A8C7FA' : 'rgba(255,255,255,0.6)',
                   fontSize: 13, fontWeight: 500, transition: 'all 0.2s',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                 }}

@@ -1,9 +1,9 @@
-use sqlx::{Any, Transaction};
+use sqlx::{Postgres, Transaction};
 use anyhow::Result;
 
 pub async fn award_commission(
     db: &crate::db::Database,
-    tx: &mut Transaction<'_, Any>,
+    tx: &mut Transaction<'_, Postgres>,
     user_id: &str,
     recharge_id: i64,
     amount: f64,
@@ -28,7 +28,8 @@ pub async fn award_commission(
                 let commission_amount = amount * ratio;
                 if commission_amount > 0.0 {
                     // 3. Award commission
-                    sqlx::query(&db.format_query("UPDATE users SET commission_balance = commission_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                    sqlx::query(&db.format_query("UPDATE users SET commission_balance = commission_balance + ?, gift_balance = gift_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                        .bind(commission_amount)
                         .bind(commission_amount)
                         .bind(&inviter_id)
                         .execute(&mut **tx)

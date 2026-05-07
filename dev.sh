@@ -80,6 +80,12 @@ case "${choice:-1}" in
     export RUST_LOG="info"
 
     echo ""
+    echo "🧹 正在清理可能残留的后台进程与端口..."
+    # 清理占用 3000 端口和 5173 端口的进程，防止 EADDRINUSE 或由于僵尸进程导致的服务异常
+    lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+    lsof -ti:5173 | xargs kill -9 2>/dev/null || true
+    pkill -f cargo-watch 2>/dev/null || true
+
     echo "✅ 准备就绪，同时拉起后端和前端服务..."
     echo "   后端地址: http://localhost:3000"
     echo "   前端地址: http://localhost:5173"

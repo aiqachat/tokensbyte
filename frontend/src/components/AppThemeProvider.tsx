@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { ConfigProvider, theme } from 'antd';
+import { ConfigProvider, theme, App } from 'antd';
 import { useThemeStore } from '../store/theme';
 import zhCN from 'antd/locale/zh_CN';
 import enUS from 'antd/locale/en_US';
@@ -66,7 +66,9 @@ export const AppThemeProvider = ({ children }: { children: React.ReactNode }) =>
         }
       }}
     >
-      {children}
+      <App>
+        {children}
+      </App>
     </ConfigProvider>
   );
 };

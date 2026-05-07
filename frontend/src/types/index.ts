@@ -19,12 +19,16 @@ export interface User {
   permissions?: string[];
   is_active: boolean;
   level_name?: string;
+  level_id?: number;
   created_at: string;
   updated_at: string;
   register_ip?: string;
   admin_remark?: string;
   referral_history?: string;
   referred_by?: string;
+  allow_view_log_details?: number;
+  gift_balance?: number;
+  gift_used_quota?: number;
 }
 
 export interface UserLevel {
@@ -39,6 +43,7 @@ export interface UserLevel {
   marketing_enabled: number;
   is_default: number;
   max_token_count: number;
+  allow_view_log_details: number;
   description: string;
   created_at: string;
 }
@@ -128,6 +133,7 @@ export interface FinanceRechargeRecord {
 
 export interface WalletStats {
   balance: number;
+  gift_balance: number;
   total_consumption: number;
   total_calls: number;
   success_calls: number;
@@ -147,17 +153,21 @@ export interface Channel {
   models: string[];
   model_mapping: Record<string, string>;
   user_groups: string[];
+  exclude_user_groups?: string[];
   group_aid?: string;
   preset_id?: number | null;
   pool_id?: number | null;   // 关联的火山引擎卡池ID
   gptimage_pool_id?: number | null; // 关联的GPT-Image卡池ID
+  sort_order: number;
   priority: number;
   weight: number;
   status: number; // 1=active, 0=disabled
   balance?: number;
   quota_limit: number; // -1 = unlimited
   quota_used: number;
+  config?: string | any;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ApiToken {
@@ -176,6 +186,8 @@ export interface ApiToken {
   forward_rule_ids?: string;
   is_active: number | boolean;
   config?: string;
+  last_used_at?: string;
+  created_at?: string;
 }
 
 export interface Redemption {
@@ -211,6 +223,7 @@ export interface RequestLog {
   user_nickname?: string;
   user_uid?: string;
   user_group?: string;
+  user_level_name?: string;
   token_name?: string;
   token_kid?: string;
   request_content?: string;
@@ -218,6 +231,8 @@ export interface RequestLog {
   upstream_req_content?: string;
   is_stream?: number;
   billing_detail?: string;
+  billing_pid?: string;
+  forward_eid?: string;
   created_at: string;
 }
 

@@ -2,8 +2,8 @@
  * 模型全景选择器抽屉
  */
 import React, { useRef, useCallback, useEffect } from 'react';
-import { Input, Tag, Tooltip } from 'antd';
-import { CloseOutlined, SearchOutlined, DollarOutlined, AppstoreOutlined } from '@ant-design/icons';
+import { Input, Tooltip } from 'antd';
+import { CloseOutlined, SearchOutlined, AppstoreOutlined } from '@ant-design/icons';
 import { usePlayground, useCanvas } from '../context/PlaygroundContext';
 import { getCategoryIcon } from '../constants';
 
@@ -91,7 +91,7 @@ const ModelDrawer: React.FC = React.memo(() => {
       <div
         onMouseDown={handleMouseDown}
         style={{
-          padding: '0 24px', height: 64, minHeight: 64,
+          padding: '0 24px', height: 48, minHeight: 48,
           borderBottom: '1px solid rgba(255,255,255,0.05)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           cursor: 'grab',
@@ -101,7 +101,7 @@ const ModelDrawer: React.FC = React.memo(() => {
       >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <AppstoreOutlined style={{ color: '#fff', fontSize: 16 }} />
-          <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>模型选择器</span>
+          <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>选择模型</span>
         </div>
         <Tooltip title="关闭">
           <div
@@ -158,17 +158,7 @@ const ModelDrawer: React.FC = React.memo(() => {
                   </div>
                 </div>
                 <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginTop: 4 }}>ID: {model.model_id}</div>
-                {model.scheme_name && (
-                  <div style={{ marginTop: 8 }}>
-                    <Tag color="blue" style={{ borderRadius: 12, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: 'none' }}>{model.scheme_name}</Tag>
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-                  <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13, display: 'flex', alignItems: 'center' }}>
-                    <DollarOutlined style={{ marginRight: 6 }} />
-                    按量计费
-                  </div>
-                </div>
+
               </div>
             </div>
           ))

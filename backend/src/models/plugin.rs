@@ -32,6 +32,7 @@ pub struct PluginAsset {
     pub remark: Option<String>,
     pub sort_order: Option<i64>,
     pub group_id: Option<String>,
+    pub content_hash: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

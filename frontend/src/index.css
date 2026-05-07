@@ -162,3 +162,122 @@ body[data-theme='light'] .ant-radio-button-wrapper-checked:not(.ant-radio-button
   background: #e6f4ff !important;
   border-color: #1677ff !important;
 }
+
+/* 全局自定义开关样式 (Monochrome Style) */
+.ant-switch {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  min-width: 44px !important;
+  height: 24px !important;
+  line-height: 24px !important;
+}
+body[data-theme='light'] .ant-switch {
+  background-color: #d1d5db !important;
+}
+
+.ant-switch.ant-switch-checked {
+  background-color: #e5e5e5 !important;
+}
+
+.ant-switch:hover:not(.ant-switch-disabled) {
+  background-color: rgba(255, 255, 255, 0.25) !important;
+}
+body[data-theme='light'] .ant-switch:hover:not(.ant-switch-disabled) {
+  background-color: #9ca3af !important;
+}
+
+.ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
+  background-color: #f3f4f6 !important;
+}
+
+.ant-switch .ant-switch-handle {
+  width: 20px !important;
+  height: 20px !important;
+  top: 2px !important;
+  inset-inline-start: 2px !important;
+}
+
+.ant-switch.ant-switch-checked .ant-switch-handle {
+  inset-inline-start: calc(100% - 22px) !important;
+}
+
+.ant-switch .ant-switch-handle::before {
+  background-color: #ffffff !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15) !important;
+  border-radius: 50% !important;
+}
+
+/* 开关内文字颜色：根据主题和开关状态自动匹配 */
+/* 开启状态（轨道浅色 #e5e5e5）→ 文字深色 */
+.ant-switch.ant-switch-checked .ant-switch-inner,
+.ant-switch.ant-switch-checked .ant-switch-inner .ant-switch-inner-checked,
+.ant-switch.ant-switch-checked .ant-switch-inner .ant-switch-inner-unchecked {
+  color: #1a1a1a !important;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* 亮色模式 - 关闭状态（轨道浅灰 #d1d5db）→ 文字深色 */
+body[data-theme='light'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner,
+body[data-theme='light'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-checked,
+body[data-theme='light'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-unchecked {
+  color: #333 !important;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* 暗黑模式 - 关闭状态（轨道深色 rgba(255,255,255,0.15)）→ 文字浅色 */
+body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner,
+body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-checked,
+body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-unchecked {
+  color: #e8eaed !important;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* 自定义深色删除确认弹窗 */
+.dark-confirm-modal .ant-modal-content,
+.dark-confirm-modal.ant-modal-content,
+.ant-modal.dark-confirm-modal .ant-modal-content,
+.ant-modal-wrap.dark-confirm-modal .ant-modal-content {
+  background: #1e1f20 !important;
+  border: 1px solid #444746 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+}
+
+.dark-confirm-modal .ant-modal-confirm-title {
+  color: #e3e3e3 !important;
+}
+
+.dark-confirm-modal .ant-modal-confirm-content {
+  color: #c4c7c5 !important;
+}
+
+.dark-confirm-modal .ant-btn-default {
+  background: transparent !important;
+  border: 1px solid #444746 !important;
+  color: #e3e3e3 !important;
+  border-radius: 8px !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.dark-confirm-modal .ant-btn-default:hover {
+  background: rgba(255,255,255,0.08) !important;
+  border-color: #8ab4f8 !important;
+  color: #8ab4f8 !important;
+}
+
+.dark-confirm-modal .ant-btn-primary.ant-btn-dangerous {
+  background: rgba(255, 77, 79, 0.15) !important;
+  border: 1px solid rgba(255, 77, 79, 0.3) !important;
+  color: #ff4d4f !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.dark-confirm-modal .ant-btn-primary.ant-btn-dangerous:hover {
+  background: rgba(255, 77, 79, 0.25) !important;
+  border-color: rgba(255, 77, 79, 0.5) !important;
+}

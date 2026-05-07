@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { message } from 'antd';
+import i18n from '../i18n';
 
 // 全局限制同时最多显示 3 条消息
 message.config({ maxCount: 3 });
@@ -34,7 +35,13 @@ request.interceptors.response.use(
     }
     if (response) {
       const { status, data } = response;
-      const serverMsg = data?.error?.message;
+      let serverMsg = data?.error?.message;
+      
+      // Translate specific backend error messages
+      if (serverMsg === 'Account disabled') {
+        serverMsg = i18n.t('login.account_disabled');
+      }
+
       if (status === 401) {
         // 区分"业务认证失败"与"登录态过期"：
         // 当前无 token（登录/注册等未登录页面）→ 直接展示后端消息

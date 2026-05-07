@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid, Switch, theme, Spin } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined, KeyOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined, KeyOutlined, CheckOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import type { ApiToken } from '../../types';
@@ -22,6 +22,8 @@ const Tokens: React.FC = () => {
   const screens = useBreakpoint();
   const [saving, setSaving] = useState(false);
   const [enableModelFilter, setEnableModelFilter] = useState(false);
+  const [isUnlimitedQuota, setIsUnlimitedQuota] = useState(true);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
 
   // 密钥明文展示状态
   const [revealModalVisible, setRevealModalVisible] = useState(false);
@@ -45,15 +47,17 @@ const Tokens: React.FC = () => {
     fetchTokens();
   }, []);
 
-  const handleCopy = (key: string) => {
+  const handleCopy = (key: string, tokenId: number) => {
     navigator.clipboard.writeText(key);
-    message.success(t('tokens.copy_success'));
+    setCopiedId(tokenId);
+    setTimeout(() => setCopiedId(prev => prev === tokenId ? null : prev), 2000);
   };
 
   const handleAdd = () => {
     setEditingToken(null);
     form.resetFields();
     setEnableModelFilter(false);
+    setIsUnlimitedQuota(true);
     setIsModalVisible(true);
   };
 
@@ -62,6 +66,7 @@ const Tokens: React.FC = () => {
     const models = record.allowed_models ? (typeof record.allowed_models === 'string' ? JSON.parse(record.allowed_models) : record.allowed_models) : [];
     const hasModels = Array.isArray(models) && models.length > 0;
     setEnableModelFilter(hasModels);
+    setIsUnlimitedQuota(record.quota_limit < 0);
     form.setFieldsValue({
       ...record,
       allowed_models: Array.isArray(models) ? models.join('\n') : '',
@@ -169,13 +174,13 @@ const Tokens: React.FC = () => {
             {key.substring(0, 10)}<span style={{color: '#666', margin: '0 4px'}}>••••••••</span>{key.substring(key.length - 6)}
           </Text>
         )}
-        <Tooltip title={t('tokens.copy_hint')}>
+        <Tooltip title={copiedId === record.id ? '已复制!' : t('tokens.copy_hint')}>
           <Button 
             type="text" 
-            icon={<CopyOutlined />} 
+            icon={copiedId === record.id ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />} 
             size="small" 
-            onClick={() => handleCopy(isRevealed ? revealedKeys[record.id] : key)} 
-            style={{ color: '#888', marginLeft: 8 }} 
+            onClick={() => handleCopy(isRevealed ? revealedKeys[record.id] : key, record.id)} 
+            style={{ color: copiedId === record.id ? '#52c41a' : '#888', marginLeft: 8 }} 
           />
         </Tooltip>
         <Tooltip title={isRevealed ? '隐藏密钥' : '查看完整密钥'}>
@@ -246,10 +251,18 @@ const Tokens: React.FC = () => {
       ),
     },
     {
-      title: t('users.joined'),
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm:ss'),
+      title: '时间信息',
+      key: 'times',
+      render: (record: ApiToken) => (
+        <Space direction="vertical" size={2}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            创建: {dayjs(record.created_at).format('YYYY-MM-DD HH:mm')}
+          </Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            最后使用: {record.last_used_at ? record.last_used_at : '从未'}
+          </Text>
+        </Space>
+      ),
     },
     {
       title: t('common.actions'),
@@ -337,7 +350,9 @@ const Tokens: React.FC = () => {
                           {record.token_key.substring(0, 8)}••••{record.token_key.substring(record.token_key.length - 4)}
                         </Text>
                       )}
-                      <Button type="text" icon={<CopyOutlined />} size="small" onClick={() => handleCopy(revealedKeys[record.id] || record.token_key)} style={{ color: '#888' }} />
+                      <Tooltip title={copiedId === record.id ? '已复制!' : t('tokens.copy_hint')}>
+                        <Button type="text" icon={copiedId === record.id ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />} size="small" onClick={() => handleCopy(revealedKeys[record.id] || record.token_key, record.id)} style={{ color: copiedId === record.id ? '#52c41a' : '#888' }} />
+                      </Tooltip>
                       <Button 
                         type="text" 
                         icon={revealedKeys[record.id] ? <EyeInvisibleOutlined /> : <EyeOutlined />} 
@@ -356,8 +371,11 @@ const Tokens: React.FC = () => {
                   <CardRow label={t('tokens.limits')}>
                     <Text type="secondary" style={{ fontSize: 12 }}>RPS: {record.rps_limit || '∞'} / RPM: {record.rpm_limit || '∞'}</Text>
                   </CardRow>
-                  <CardRow label={t('users.joined')}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm')}</Text>
+                  <CardRow label="时间信息">
+                    <Space direction="vertical" size={2}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>创建: {dayjs(record.created_at).format('MM-DD HH:mm')}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>最后使用: {record.last_used_at ? record.last_used_at : '从未'}</Text>
+                    </Space>
                   </CardRow>
                   <CardActions>
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
@@ -393,14 +411,46 @@ const Tokens: React.FC = () => {
             <Input placeholder="e.g. Project A" />
           </Form.Item>
 
-          <Form.Item name="quota_limit" label={`${t('tokens.limit')} ${t('tokens.limit_hint')}`} initialValue={-1}>
-            <InputNumber 
-              min={-1}
-              style={{ width: '100%' }} 
-              formatter={(val) => (val === -1 || val === '-1') ? t('tokens.unlimited_quota') : `${val}`}
-              parser={(val) => (val === t('tokens.unlimited_quota') ? -1 : parseFloat(val as string) || 0) as -1}
-            />
+          <Form.Item label={t('tokens.limit')} style={{ marginBottom: isUnlimitedQuota ? 24 : 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Switch
+                checked={isUnlimitedQuota}
+                onChange={(checked) => {
+                  setIsUnlimitedQuota(checked);
+                  if (checked) {
+                    form.setFieldsValue({ quota_limit: -1 });
+                  } else {
+                    const currentVal = form.getFieldValue('quota_limit');
+                    if (currentVal < 0) {
+                      form.setFieldsValue({ quota_limit: 1000 });
+                    }
+                  }
+                }}
+              />
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#E8EAED' }}>
+                {isUnlimitedQuota ? '无限额' : '限制额度'}
+              </span>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                {isUnlimitedQuota ? '当前令牌不限制使用额度' : '开启后，额度消耗完该令牌将失效'}
+              </Text>
+            </div>
           </Form.Item>
+
+          {!isUnlimitedQuota && (
+            <Form.Item name="quota_limit" rules={[{ required: true, message: '请输入额度' }]}>
+              <InputNumber 
+                min={0}
+                style={{ width: '100%' }} 
+                placeholder="请输入限制额度"
+              />
+            </Form.Item>
+          )}
+
+          {isUnlimitedQuota && (
+            <Form.Item name="quota_limit" initialValue={-1} hidden>
+              <InputNumber />
+            </Form.Item>
+          )}
 
           <Form.Item label="选择指定模型" style={{ marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -412,11 +462,12 @@ const Tokens: React.FC = () => {
                     form.setFieldsValue({ allowed_models: '' });
                   }
                 }}
-                checkedChildren="已开启"
-                unCheckedChildren="未开启"
               />
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#E8EAED' }}>
+                {enableModelFilter ? '已开启' : '未开启'}
+              </span>
               <Text type="secondary" style={{ fontSize: 13 }}>
-                {enableModelFilter ? '仅允许请求下方指定的模型' : '不限制，可请求站内全部模型'}
+                {enableModelFilter ? '仅允许请求下方指定的模型' : '不开启，全站模型都可以使用，一般不开'}
               </Text>
             </div>
           </Form.Item>

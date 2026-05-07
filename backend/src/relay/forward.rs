@@ -10,7 +10,7 @@ use super::url_utils::join_url;
 /// 转发规则解析结果
 #[derive(Debug, Clone)]
 pub struct ResolvedForward {
-    /// 目标协议类型: "openai", "volcengine", "volcengine_chat", "gemini", "gemini_image", "anthropic"
+    /// 目标协议类型: "openai", "volcengine", "volcengine_chat", "gemini", "gemini_image", "anthropic", "kling"
     pub target_type: String,
     /// 上游路径 e.g. "/api/v3/chat/completions"
     pub upstream_path: String,
@@ -44,25 +44,15 @@ pub async fn resolve_forward_rule(
         _ => "/v1/chat/completions",
     };
 
-    // 1. 查模型获取 forward_rule_ids
-    let model_result = sqlx::query_as::<_, crate::models::Model>(
-        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-    )
-    .bind(model_id)
-    .fetch_optional(&state.db.pool)
-    .await;
-
-    let model = match model_result {
-        Ok(Some(m)) => m,
-        Ok(None) => {
-            tracing::debug!("[Forward] 模型 '{}' 在 models 表中未找到(或 is_active!=1)", model_id);
-            return None;
-        }
-        Err(e) => {
-            tracing::warn!("[Forward] 查询 models 表失败: {}", e);
+    // 1. 查模型获取 forward_rule_ids（支持同名模型按类型区分）
+    let model = match super::proxy::find_active_model(state, model_id, Some(category)).await {
+        Some(m) => m,
+        None => {
+            tracing::debug!("[Forward] 模型 '{}' 在 models 表中未找到(或 is_active!=1), category={}", model_id, category);
             return None;
         }
     };
+
 
     let rule_ids_str = model.forward_rule_ids.as_deref().unwrap_or("[]");
     let rule_ids: Vec<i64> = serde_json::from_str(rule_ids_str).unwrap_or_default();
@@ -209,7 +199,8 @@ pub async fn model_has_forward_rules(state: &AppState, model_id: &str) -> bool {
 
 // ── URL 构建 ──────────────────────────────────────────────────
 
-/// 构建上游完整 URL，支持 ${model} 变量替换
+/// 构建上游完整 URL，支持 ${model} 变量替换。
+/// 可灵模型会根据已转换的请求体动态调整路径。
 pub fn build_upstream_url(
     base_url: &str,
     resolved: &ResolvedForward,
@@ -223,6 +214,38 @@ pub fn build_upstream_url(
         format!("{}?key={}", join_url(base_url, &path), api_key)
     } else {
         join_url(base_url, &path)
+    }
+}
+
+/// 可灵动态路径解析：根据已转换的上游请求体内容动态调整端点路径。
+/// Omni 端点不受影响（由转发规则直接指定），仅对标准视频/图片端点进行自动分发。
+pub fn resolve_kling_dynamic_path(resolved: &mut ResolvedForward, upstream_body: &serde_json::Value) {
+    if resolved.target_type != "kling" { return; }
+    let path = &resolved.upstream_path;
+
+    // Omni 端点由转发规则直接指定，不做动态调整
+    if path.contains("omni-video") || path.contains("omni-image") {
+        return;
+    }
+
+    // 视频动态路由：根据请求体内容判断实际端点
+    if path.contains("text2video") || path.contains("image2video") || path.contains("multi-image2video") {
+        if upstream_body.get("image_list").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty()) {
+            resolved.upstream_path = "/v1/videos/multi-image2video".to_string();
+        } else if upstream_body.get("image").is_some() || upstream_body.get("image_tail").is_some() {
+            resolved.upstream_path = "/v1/videos/image2video".to_string();
+        } else {
+            resolved.upstream_path = "/v1/videos/text2video".to_string();
+        }
+        return;
+    }
+
+    // 图片动态路由
+    if path.contains("images") {
+        if upstream_body.get("subject_image_list").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty()) {
+            resolved.upstream_path = "/v1/images/multi-image2image".to_string();
+        }
+        // 其他情况保持转发规则原始路径（如 /v1/images/generations）
     }
 }
 
@@ -244,6 +267,12 @@ pub fn transform_request_body(
     category: &str,
 ) -> serde_json::Value {
     let mut result = match resolved.target_type.as_str() {
+        // 可灵 AI 视频/图片：将 OpenAI 兼容格式转换为可灵官方 API 格式
+        // 参考文档：https://klingai.com/document-api/apiReference
+        "kling" => {
+            build_kling_body(model, body, category)
+        }
+
         // 阿里百炼 DashScope 视频：OpenAI → input/parameters 格式
         // 参考文档：https://help.aliyun.com/zh/model-studio/text-to-video-api-reference
         "dashscope" if category == "视频" => {
@@ -442,7 +471,8 @@ pub fn transform_request_body(
     };
 
     // 视频模型默认参数兜底（确保上游数据与计费一致）
-    if category == "视频" {
+    // 可灵已在 build_kling_body 中处理自身默认值，此处跳过
+    if category == "视频" && resolved.target_type != "kling" {
         if resolved.target_type == "dashscope" {
             // DashScope 的 resolution/duration 在 parameters 内部
             if result.get("parameters").is_none() {
@@ -463,6 +493,20 @@ pub fn transform_request_body(
             if result.get("duration").is_none() {
                 result["duration"] = serde_json::json!(5);
             }
+        }
+    }
+
+    // 图片模型 resolution 兜底（确保分辨率计费正常）
+    // 排除已有自身分辨率管理的厂商：火山方舟、阿里、谷歌
+    if category == "图片" && !matches!(resolved.target_type.as_str(),
+        "volcengine" | "volcengine_image" | "dashscope_image" | "gemini_image"
+    ) {
+        let res_missing = match result.get("resolution").and_then(|v| v.as_str()) {
+            None => true,
+            Some(s) => s.is_empty(),
+        };
+        if res_missing {
+            result["resolution"] = serde_json::json!("1k");
         }
     }
 
@@ -498,10 +542,19 @@ pub fn build_auth_headers(resolved: &ResolvedForward, api_key: &str) -> Vec<(Str
             ("anthropic-version".to_string(), "2023-06-01".to_string()),
         ],
         "query_key" => vec![], // key 已在 URL 中
-        _ => vec![(
-            "Authorization".to_string(),
-            format!("Bearer {}", api_key),
-        )],
+        _ => {
+            // 可灵 JWT 自动生成：api_key 格式为 "access_key:secret_key"
+            if resolved.target_type == "kling" {
+                if let Some(token) = generate_kling_jwt(api_key) {
+                    vec![("Authorization".to_string(), format!("Bearer {}", token))]
+                } else {
+                    tracing::warn!("[Kling Auth] JWT 生成失败，将直接使用 api_key 作为 Bearer Token");
+                    vec![("Authorization".to_string(), format!("Bearer {}", api_key))]
+                }
+            } else {
+                vec![("Authorization".to_string(), format!("Bearer {}", api_key))]
+            }
+        }
     };
     // DashScope 异步视频任务需要 X-DashScope-Async: enable
     if resolved.target_type == "dashscope" || resolved.target_type == "dashscope_image" {
@@ -608,6 +661,24 @@ pub fn infer_forward_from_base_url(base_url: &str, category: &str) -> ResolvedFo
             auth_type: "x-api-key".to_string(),
             asset_convert: false,
             poll_path: None,
+        }
+    } else if url_lower.contains("klingai.com") {
+        match category {
+            "视频" => ResolvedForward {
+                target_type: "kling".to_string(),
+                upstream_path: "/v1/videos/text2video".to_string(),
+                auth_type: "bearer".to_string(),
+                asset_convert: false,
+                poll_path: None,
+            },
+            "图片" => ResolvedForward {
+                target_type: "kling".to_string(),
+                upstream_path: "/v1/images/generations".to_string(),
+                auth_type: "bearer".to_string(),
+                asset_convert: false,
+                poll_path: None,
+            },
+            _ => default_openai_forward("/v1/chat/completions"),
         }
     } else {
         default_openai_forward(match category {
@@ -728,12 +799,22 @@ fn build_dashscope_image_body(model: &str, body: &serde_json::Value) -> serde_js
         let prompt = body.get("prompt").and_then(|v| v.as_str()).unwrap_or("Generate an image");
         let mut dash_content = Vec::new();
         
-        // 支持顶层 image 参数 (OpenAI 扩展支持，兼容字符串或数组)
+        // 支持顶层 image / image_urls 参数 (OpenAI 扩展支持，兼容字符串或数组)
         // 确保图片先于文本内容
         if let Some(img_val) = body.get("image") {
             if let Some(url) = img_val.as_str() {
                 dash_content.push(serde_json::json!({ "image": url }));
             } else if let Some(arr) = img_val.as_array() {
+                for item in arr {
+                    if let Some(url) = item.as_str() {
+                        dash_content.push(serde_json::json!({ "image": url }));
+                    }
+                }
+            }
+        }
+        // image_urls 数组补充（仅当 image 未提供时生效，避免重复注入）
+        if body.get("image").is_none() {
+            if let Some(arr) = body.get("image_urls").and_then(|v| v.as_array()) {
                 for item in arr {
                     if let Some(url) = item.as_str() {
                         dash_content.push(serde_json::json!({ "image": url }));
@@ -837,7 +918,7 @@ fn build_dashscope_video_body(model: &str, body: &serde_json::Value) -> serde_js
     // ── media 数组构建 ──
     // 支持两种传入方式：
     //   1) body.media 已是 DashScope 格式数组 → 直接透传
-    //   2) body.images / body.image_url / body.videos → 自动构建 media
+    //   2) body.images / image_url / image_urls / body.videos → 自动构建 media
     if let Some(media) = body.get("media").filter(|v| v.is_array()) {
         input["media"] = media.clone();
     } else {
@@ -848,26 +929,41 @@ fn build_dashscope_video_body(model: &str, body: &serde_json::Value) -> serde_js
             media.push(serde_json::json!({ "type": "first_frame", "url": url }));
         }
 
-        // images 数组：按数量智能推断 type
+        // image_urls 数组 → 按数量智能推断 type（仅当 image_url 未使用时生效）
+        if media.is_empty() {
+            if let Some(arr) = body.get("image_urls").and_then(|v| v.as_array()) {
+                let defaults = infer_image_default_roles(arr.len());
+                for (i, item) in arr.iter().enumerate() {
+                    if let Some(url) = item.as_str() {
+                        let role = defaults.get(i).copied().unwrap_or("reference_image");
+                        media.push(serde_json::json!({ "type": role, "url": url }));
+                    }
+                }
+            }
+        }
+
+        // images 数组：按数量智能推断 type（仅当 image_url / image_urls 均未注入时）
         //   1 张 → first_frame，2 张 → first_frame + last_frame，3+ 张 → reference_image
-        if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
-            let defaults = infer_image_default_roles(arr.len());
-            for (i, item) in arr.iter().enumerate() {
-                let default_type = defaults.get(i).copied().unwrap_or("reference_image");
-                match item {
-                    serde_json::Value::String(url) => {
-                        media.push(serde_json::json!({ "type": default_type, "url": url }));
-                    }
-                    serde_json::Value::Object(obj) => {
-                        let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                        let t = obj.get("type").and_then(|v| v.as_str())
-                            .or_else(|| obj.get("role").and_then(|v| v.as_str()))
-                            .unwrap_or(default_type);
-                        if !url.is_empty() {
-                            media.push(serde_json::json!({ "type": t, "url": url }));
+        if media.is_empty() {
+            if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
+                let defaults = infer_image_default_roles(arr.len());
+                for (i, item) in arr.iter().enumerate() {
+                    let default_type = defaults.get(i).copied().unwrap_or("reference_image");
+                    match item {
+                        serde_json::Value::String(url) => {
+                            media.push(serde_json::json!({ "type": default_type, "url": url }));
                         }
+                        serde_json::Value::Object(obj) => {
+                            let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                            let t = obj.get("type").and_then(|v| v.as_str())
+                                .or_else(|| obj.get("role").and_then(|v| v.as_str()))
+                                .unwrap_or(default_type);
+                            if !url.is_empty() {
+                                media.push(serde_json::json!({ "type": t, "url": url }));
+                            }
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
         }
@@ -991,7 +1087,10 @@ fn build_volcengine_content_body(model: &str, body: &serde_json::Value) -> serde
         //   1 张 → first_frame（首帧）
         //   2 张 → first_frame + last_frame（首尾帧）
         //   3+ 张 → 全部 reference_image（参考图）
-        if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
+        // 合并 images 和 image_urls 两个来源（image_urls 仅在 images 未提供时使用）
+        let image_arr = body.get("images").and_then(|v| v.as_array())
+            .or_else(|| body.get("image_urls").and_then(|v| v.as_array()));
+        if let Some(arr) = image_arr {
             let defaults = infer_image_default_roles(arr.len());
             for (i, item) in arr.iter().enumerate() {
                 let (url, role) = parse_media_item(item, defaults.get(i).copied().unwrap_or("reference_image"));
@@ -1038,6 +1137,11 @@ fn build_volcengine_content_body(model: &str, body: &serde_json::Value) -> serde
 
         serde_json::json!(parts)
     };
+
+    // ── 后处理：多模态视频请求中，为缺失 role 的 image_url 自动补充 role ──
+    // 火山方舟 API 要求：当 content 中同时包含 video_url 或 audio_url 时，
+    // 所有 image_url 元素必须携带 role 字段（如 reference_image），否则提交任务会被拒绝。
+    let content = ensure_image_roles_for_multimodal(content);
 
     // ── 组装请求体 ──
     let mut result = serde_json::json!({
@@ -1087,6 +1191,56 @@ fn infer_image_default_roles(count: usize) -> Vec<&'static str> {
     }
 }
 
+/// 火山方舟多模态视频生成 role 修正。
+/// 当 content 数组中同时包含 video_url 或 audio_url（参考媒体）时，
+/// 火山 API 明确禁止 first_frame / last_frame 与参考媒体混用，
+/// 所有 image_url 的 role 必须统一为 reference_image。
+/// 此函数会：
+///   1. 为缺失 role 的 image_url 补充 role = "reference_image"
+///   2. 将错误的 first_frame / last_frame 纠正为 reference_image
+fn ensure_image_roles_for_multimodal(content: serde_json::Value) -> serde_json::Value {
+    let arr = match content.as_array() {
+        Some(a) => a,
+        None => return content,
+    };
+
+    // 检测是否包含 video/audio 参考媒体
+    let has_video_or_audio = arr.iter().any(|item| {
+        let t = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        t == "video_url" || t == "audio_url"
+    });
+    if !has_video_or_audio {
+        return content;
+    }
+
+    // 收集需要修正 role 的 image_url 索引：
+    // - 缺失 role
+    // - role 为 first_frame / last_frame（与参考媒体冲突）
+    let fix_indices: Vec<usize> = arr.iter().enumerate()
+        .filter(|(_, item)| {
+            if item.get("type").and_then(|v| v.as_str()) != Some("image_url") {
+                return false;
+            }
+            match item.get("role").and_then(|v| v.as_str()) {
+                None | Some("") => true,
+                _ => false, // 已有明确 role，不修改
+            }
+        })
+        .map(|(i, _)| i)
+        .collect();
+
+    if fix_indices.is_empty() {
+        return content;
+    }
+
+    let mut patched = arr.clone();
+    for &idx in &fix_indices {
+        patched[idx]["role"] = serde_json::json!("reference_image");
+    }
+
+    serde_json::json!(patched)
+}
+
 // ── 通用密钥脱敏 ──────────────────────────────────────────────
 
 /// 对字符串中的 API 密钥进行脱敏处理
@@ -1105,4 +1259,172 @@ pub fn mask_key_in_string(text: &str, api_key: &str) -> String {
         }
     };
     text.replace(api_key, &masked)
+}
+
+// ── 可灵 AI 请求体构建器 ──────────────────────────────────────
+//
+// 将 OpenAI 兼容格式转换为可灵官方 API 格式。
+// - model → model_name（可灵官方字段名）
+// - 白名单驱动参数透传，扩展时追加一行即可
+// - 直通模式：body 已含 model_name → 原样透传，仅补充默认值
+// 参考文档：https://klingai.com/document-api/apiReference
+
+/// 可灵视频接口透传参数白名单
+const KLING_VIDEO_PASSTHROUGH_KEYS: &[&str] = &[
+    "model_name", "prompt", "negative_prompt", "duration", "mode", "sound",
+    "aspect_ratio", "image", "image_tail", "image_list", "video_list",
+    "type", "multi_shot", "multi_prompt", "callback_url", "external_task_id",
+    "cfg_scale", "camera_control",
+];
+
+/// 可灵图片接口透传参数白名单
+const KLING_IMAGE_PASSTHROUGH_KEYS: &[&str] = &[
+    "model_name", "prompt", "negative_prompt", "n", "aspect_ratio", "resolution",
+    "image", "image_list", "element_list", "subject_image_list", "image_fidelity",
+    "series_amount", "callback_url", "external_task_id", "image_reference",
+];
+
+fn build_kling_body(model: &str, body: &serde_json::Value, category: &str) -> serde_json::Value {
+    let keys = if category == "图片" { &KLING_IMAGE_PASSTHROUGH_KEYS[..] } else { &KLING_VIDEO_PASSTHROUGH_KEYS[..] };
+
+    let mut result = serde_json::Map::new();
+
+    // model_name：优先使用请求体中已有的（官方原生调用），否则从 model 转换
+    if let Some(mn) = body.get("model_name").and_then(|v| v.as_str()) {
+        result.insert("model_name".to_string(), serde_json::json!(mn));
+    } else {
+        result.insert("model_name".to_string(), serde_json::json!(model));
+    }
+
+    // 白名单驱动透传（跳过 model_name，已处理）
+    for &key in keys {
+        if key == "model_name" { continue; }
+        if let Some(val) = body.get(key) {
+            result.insert(key.to_string(), val.clone());
+        }
+    }
+
+    // 视频 mode 默认兜底 std
+    if category != "图片" && !result.contains_key("mode") {
+        result.insert("mode".to_string(), serde_json::json!("std"));
+    }
+
+    // 视频：OpenAI 兼容 images / image_urls 数组 → 可灵官方 image / image_tail / image_list
+    // 仅在未使用官方参数时生效，避免覆盖原生调用
+    // 精确模式：元素含 role 字段（如 reference_image）时，保留结构走 multi-image2video
+    // 简单模式：纯 URL 按数量自动分发（1-2 张 → image2video，3+ 张 → multi-image2video）
+    if category != "图片"
+        && !result.contains_key("image")
+        && !result.contains_key("image_tail")
+        && !result.contains_key("image_list")
+    {
+        // 合并 images 和 image_urls 两个来源（image_urls 仅在 images 未提供时使用）
+        let images = body.get("images").and_then(|v| v.as_array())
+            .or_else(|| body.get("image_urls").and_then(|v| v.as_array()));
+        if let Some(images) = images {
+            let use_multi = images.iter().any(|item|
+                item.get("role").and_then(|r| r.as_str()) == Some("reference_image")
+            );
+
+            if use_multi {
+                // 精确模式：保留 role 结构，全部走 image_list → multi-image2video
+                let list: Vec<serde_json::Value> = images.iter().filter_map(|item| {
+                    let url = item.get("url").and_then(|u| u.as_str())?;
+                    if url.is_empty() { return None; }
+                    let mut obj = serde_json::json!({"url": url});
+                    if let Some(role) = item.get("role").and_then(|r| r.as_str()) {
+                        obj["role"] = serde_json::json!(role);
+                    }
+                    Some(obj)
+                }).collect();
+                if !list.is_empty() {
+                    result.insert("image_list".to_string(), serde_json::Value::Array(list));
+                }
+            } else {
+                // 简单模式：纯 URL 按数量分发
+                let urls: Vec<String> = images.iter().filter_map(|item| {
+                    item.as_str().map(|s| s.to_string())
+                        .or_else(|| item.get("url").and_then(|u| u.as_str()).map(|s| s.to_string()))
+                }).filter(|s| !s.is_empty()).collect();
+
+                if urls.len() > 2 {
+                    let list: Vec<serde_json::Value> = urls.iter().map(|u| serde_json::json!(u)).collect();
+                    result.insert("image_list".to_string(), serde_json::Value::Array(list));
+                } else if !urls.is_empty() {
+                    result.insert("image".to_string(), serde_json::json!(urls[0]));
+                    if urls.len() == 2 {
+                        result.insert("image_tail".to_string(), serde_json::json!(urls[1]));
+                    }
+                }
+            }
+        }
+    }
+
+    // 图片 resolution：优先可灵官方 resolution → OpenAI size → 兜底 1k
+    if category == "图片" && !result.contains_key("resolution") {
+        let fallback = body.get("size").and_then(|v| v.as_str()).unwrap_or("1k");
+        result.insert("resolution".to_string(), serde_json::json!(fallback));
+    }
+
+    // 图片 aspect_ratio：优先可灵官方 aspect_ratio → OpenAI ratio
+    if category == "图片" && !result.contains_key("aspect_ratio") {
+        if let Some(ratio) = body.get("ratio").and_then(|v| v.as_str()) {
+            result.insert("aspect_ratio".to_string(), serde_json::json!(ratio));
+        }
+    }
+
+    // OpenAI 兼容：image / image_urls 字段归一化
+    // 可灵图片图生图要求 image 为 URL 字符串，但 OpenAI 兼容格式可能传入数组
+    // 如 [{"url": "https://..."}, ...] → 取首元素的 url 作为可灵 image 参数
+    if category == "图片" {
+        // image_urls → image 归一化（仅当 image 未提供时）
+        if !result.contains_key("image") {
+            if let Some(first_url) = body.get("image_urls").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|u| u.as_str()) {
+                result.insert("image".to_string(), serde_json::json!(first_url));
+            }
+        }
+        if let Some(img_val) = result.get("image").cloned() {
+            if let Some(arr) = img_val.as_array() {
+                if let Some(first) = arr.first() {
+                    let url_str = first.get("url").and_then(|u| u.as_str())
+                        .or_else(|| first.as_str())
+                        .unwrap_or("");
+                    if !url_str.is_empty() {
+                        result.insert("image".to_string(), serde_json::json!(url_str));
+                    } else {
+                        result.remove("image");
+                    }
+                } else {
+                    result.remove("image"); // 空数组移除
+                }
+            }
+            // 已是字符串则无需处理，直接透传
+        }
+    }
+
+    serde_json::Value::Object(result)
+}
+
+// ── 可灵 JWT 自动生成 ──────────────────────────────────────────
+//
+// 渠道 api_key 格式："{access_key}:{secret_key}"
+// 使用 HS256 算法生成 30 分钟有效期的 JWT Token。
+// 如果 api_key 不含 ":" 分隔符，视为已生成的 Token 直接返回。
+
+fn generate_kling_jwt(api_key: &str) -> Option<String> {
+    // 不含 ":" 时视为已生成的 JWT 或普通 Bearer Token，直接使用
+    let (ak, sk) = api_key.split_once(':')?;
+    if ak.is_empty() || sk.is_empty() { return None; }
+
+    let now = chrono::Utc::now().timestamp() as usize;
+    let claims = serde_json::json!({
+        "iss": ak,
+        "exp": now + 1800,
+        "nbf": now - 5
+    });
+
+    let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
+    let key = jsonwebtoken::EncodingKey::from_secret(sk.as_bytes());
+
+    jsonwebtoken::encode(&header, &claims, &key).ok()
 }

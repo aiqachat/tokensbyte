@@ -83,7 +83,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
         inset: 0,
         overflow: 'hidden',
         cursor: activeTool === 'hand' || isSpaceDown ? (isDraggingCanvas ? 'grabbing' : 'grab') : 'default',
-        background: '#222225',
+        background: '#131314',
       }}
       onMouseDown={handleCanvasMouseDownWithDeselect}
       onMouseMove={handleCanvasMouseMove}
@@ -110,11 +110,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
             onRemove={removeNode}
             onSelect={(id) => {
               setSelectedNodeId(id);
-              if (!id.startsWith('local-asset-')) {
-                setIsGenLogVisible(true);
-              } else {
-                setIsGenLogVisible(false);
-              }
+              setIsGenLogVisible(true);
             }}
             onResizeStart={handleResizeStart}
           />

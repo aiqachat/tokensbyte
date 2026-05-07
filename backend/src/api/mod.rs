@@ -116,6 +116,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let payment_public_routes: Router<Arc<AppState>> = Router::new()
         .route("/finance/pay/notify/wechat", post(pay::wechat_notify))
         .route("/finance/pay/notify/alipay", post(pay::alipay_notify))
+        .route("/finance/pay/notify/stripe", post(pay::stripe_notify))
+        .route("/finance/pay/notify/bonuspay", post(pay::bonuspay_notify))
         .with_state(state.clone());
 
     // 2. Auth APIs & Public Configs (Public)
@@ -157,6 +159,21 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/v1/services/aigc/multimodal-generation/generation", post(crate::relay::image::image_generations))
         .route("/v1/tasks/{task_id}", get(crate::relay::video::video_generations_status))
         .route("/tasks/{task_id}", get(crate::relay::task::task_status))
+        // 可灵 AI 原生视频路径
+        .route("/videos/text2video", post(crate::relay::video::video_generations))
+        .route("/videos/image2video", post(crate::relay::video::video_generations))
+        .route("/videos/multi-image2video", post(crate::relay::video::video_generations))
+        .route("/videos/omni-video", post(crate::relay::video::video_generations))
+        .route("/videos/text2video/{task_id}", get(crate::relay::video::video_generations_status))
+        .route("/videos/image2video/{task_id}", get(crate::relay::video::video_generations_status))
+        .route("/videos/multi-image2video/{task_id}", get(crate::relay::video::video_generations_status))
+        .route("/videos/omni-video/{task_id}", get(crate::relay::video::video_generations_status))
+        // 可灵 AI 原生图片路径
+        .route("/images/omni-image", post(crate::relay::image::image_generations))
+        .route("/images/multi-image2image", post(crate::relay::image::image_generations))
+        .route("/images/omni-image/{task_id}", get(crate::relay::task::task_status))
+        .route("/images/multi-image2image/{task_id}", get(crate::relay::task::task_status))
+        .route("/images/generations/{task_id}", get(crate::relay::task::task_status))
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());
 

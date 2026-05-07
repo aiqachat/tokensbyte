@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid, Select, Tooltip } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { SyncOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
+import { SyncOutlined, SearchOutlined, UserOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import useAuthStore from '../../store/auth';
+import { useThemeStore } from '../../store/theme';
 import type { RequestLog, ModelModel } from '../../types';
 import dayjs from 'dayjs';
 
@@ -14,10 +15,21 @@ const { Option } = Select;
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
+const maskUrlDomain = (url: string) => {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//***${u.pathname}${u.search}${u.hash}`;
+  } catch {
+    return url.replace(/^(https?:\/\/)[^\/]+/, '$1***');
+  }
+};
+
 const Logs: React.FC = () => {
   const { t } = useTranslation();
   const { token: themeToken } = theme.useToken();
   const { settings } = useSettingsStore();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [logs, setLogs] = useState<RequestLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,30 +78,15 @@ const Logs: React.FC = () => {
       title: t('logs.time'),
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 130,
-      render: (text: string) => <Text style={{ fontSize: 12 }}>{dayjs(text).format('MM-DD HH:mm:ss')}</Text>,
+      width: 170,
+      render: (text: string) => <Text style={{ fontSize: 12 }}>{dayjs(text).format('YYYY-MM-DD HH:mm:ss')}</Text>,
     },
     {
-      title: t('logs.model'),
-      dataIndex: 'model',
-      key: 'model',
-      render: (text: string, record: RequestLog) => (
-        <Space direction="vertical" size={0}>
-          <Tag color="blue">{text}</Tag>
-          {user?.role === 'admin' && record.channel_name && <Text type="secondary" style={{ fontSize: 11 }}>渠道: {record.channel_name}</Text>}
-        </Space>
-      ),
-    },
-    {
-      title: '令牌',
-      key: 'token_name',
-      width: 120,
-      render: (_: any, record: RequestLog) => (
-        <Space direction="vertical" size={0}>
-          <Tag color="cyan">{record.token_name || '-'}</Tag>
-          {record.token_kid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>KID: {record.token_kid}</Text>}
-        </Space>
-      ),
+      title: '渠道AID',
+      dataIndex: 'channel_group_aid',
+      key: 'channel_group_aid',
+      width: 80,
+      render: (text: string) => <Text type="secondary" style={{ fontSize: 12 }}>{text || '-'}</Text>,
     },
     user?.role === 'admin' ? {
       title: '用户',
@@ -110,11 +107,55 @@ const Logs: React.FC = () => {
       },
     } : null,
     {
-      title: '渠道AID',
-      dataIndex: 'channel_group_aid',
-      key: 'channel_group_aid',
+      title: '令牌',
+      key: 'token_name',
+      width: 120,
+      render: (_: any, record: RequestLog) => (
+        <Space direction="vertical" size={0}>
+          <Text style={{ fontSize: 12 }}>{record.token_name || '-'}</Text>
+          {record.token_kid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>KID: {record.token_kid}</Text>}
+        </Space>
+      ),
+    },
+
+    {
+      title: t('logs.status'),
+      dataIndex: 'status_code',
+      key: 'status_code',
+      width: 60,
+      render: (code: number) => <Tag color={code === 200 ? 'success' : 'error'}>{code}</Tag>,
+    },
+    {
+      title: t('logs.model'),
+      dataIndex: 'model',
+      key: 'model',
+      width: 180,
+      ellipsis: true,
+      render: (text: string, record: RequestLog) => (
+        <Space direction="vertical" size={0}>
+          <Text style={{ fontSize: 12 }}>{text}</Text>
+          {(record.billing_pid || record.forward_eid) && (
+            <Space size={4}>
+              {record.billing_pid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>PID:{record.billing_pid}</Text>}
+              {record.forward_eid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>EID:{record.forward_eid}</Text>}
+            </Space>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: t('logs.latency'),
+      dataIndex: 'latency_ms',
+      key: 'latency_ms',
       width: 80,
-      render: (text: string) => <Tag color="purple">{text || '-'}</Tag>,
+      render: (val: number) => <Text style={{ fontSize: 12 }}>{(val / 1000).toFixed(3)}s</Text>,
+    },
+    {
+      title: '类型',
+      dataIndex: 'is_stream',
+      key: 'is_stream',
+      width: 60,
+      render: (stream: number) => <Text type="secondary" style={{ fontSize: 12 }}>{stream === 1 ? '流' : '非流'}</Text>,
     },
     {
       title: t('logs.usage'),
@@ -144,27 +185,6 @@ const Logs: React.FC = () => {
           )}
         </Space>
       ),
-    },
-    {
-      title: t('logs.latency'),
-      dataIndex: 'latency_ms',
-      key: 'latency_ms',
-      width: 80,
-      render: (val: number) => <Text style={{ fontSize: 12 }}>{(val / 1000).toFixed(3)}s</Text>,
-    },
-    {
-      title: '类型',
-      dataIndex: 'is_stream',
-      key: 'is_stream',
-      width: 60,
-      render: (stream: number) => <Tag color={stream === 1 ? 'geekblue' : 'default'}>{stream === 1 ? '流' : '非流'}</Tag>,
-    },
-    {
-      title: t('logs.status'),
-      dataIndex: 'status_code',
-      key: 'status_code',
-      width: 60,
-      render: (code: number) => <Tag color={code === 200 ? 'success' : 'error'}>{code}</Tag>,
     },
   ].filter(Boolean)) as any[];
 
@@ -199,7 +219,11 @@ const Logs: React.FC = () => {
           <Descriptions.Item label="系统请求路径">
             {record.endpoint.startsWith('http') ? record.endpoint : `${window.location.origin}${record.endpoint.startsWith('/') ? '' : '/'}${record.endpoint}`}
           </Descriptions.Item>
-          {record.upstream_url && <Descriptions.Item label="真实上游地址">{record.upstream_url}</Descriptions.Item>}
+          {record.upstream_url && (
+            <Descriptions.Item label="真实上游地址">
+              {user?.role === 'admin' ? record.upstream_url : maskUrlDomain(record.upstream_url)}
+            </Descriptions.Item>
+          )}
           <Descriptions.Item label="渠道标识">{record.channel_group_aid || '-'}</Descriptions.Item>
           <Descriptions.Item label="错误信息">
             {(() => {
@@ -221,6 +245,12 @@ const Logs: React.FC = () => {
                 return <Text type="danger">{record.error_message}</Text>;
               }
             })()}
+          </Descriptions.Item>
+          <Descriptions.Item label="匹配规则">
+            <Space size={16}>
+              <Text type="secondary" style={{ fontSize: 12 }}>计费规则 (PID): {record.billing_pid ? <Typography.Text keyboard>{record.billing_pid}</Typography.Text> : '-'}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>转发规则 (EID): {record.forward_eid ? <Typography.Text keyboard>{record.forward_eid}</Typography.Text> : '-'}</Text>
+            </Space>
           </Descriptions.Item>
           <Descriptions.Item label="计费明细">
             <div>
@@ -280,7 +310,7 @@ const Logs: React.FC = () => {
   };
 
   return (
-    <Card variant="borderless">
+    <Card variant="borderless" style={{ background: _isLight ? '#fff' : 'rgba(255,255,255,0.02)', borderRadius: 12 }}>
       <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, alignItems: 'flex-start', gap: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           <SyncOutlined style={{ marginRight: 8 }} />
@@ -291,9 +321,9 @@ const Logs: React.FC = () => {
             <>
               <Select
                 showSearch
-                placeholder="筛选用户"
+                placeholder="搜索用户 (用户名/昵称/UID)"
                 allowClear
-                style={{ width: 140 }}
+                style={{ width: 220 }}
                 value={userFilter}
                 onChange={setUserFilter}
                 optionFilterProp="children"
@@ -301,7 +331,7 @@ const Logs: React.FC = () => {
                 <Option value="unknown">未知用户 (unknown)</Option>
                 {usersList.map(u => (
                   <Option key={u.id} value={u.id}>
-                    {u.username} {u.nickname ? `(${u.nickname})` : ''}
+                    {u.username} {u.nickname ? `(${u.nickname})` : ''} {u.uid ? `[UID: ${u.uid}]` : ''}
                   </Option>
                 ))}
               </Select>
@@ -362,7 +392,7 @@ const Logs: React.FC = () => {
                 title={<Tag color="blue">{record.model}</Tag>}
                 extra={<Tag color={record.status_code === 200 ? 'success' : 'error'}>{record.status_code}</Tag>}
               >
-                <CardRow label="时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm:ss')}</Text></CardRow>
+                <CardRow label="时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text></CardRow>
                 {user?.role === 'admin' && (
                   <CardRow label="用户">
                     <Space size={4}>
@@ -374,20 +404,30 @@ const Logs: React.FC = () => {
                     </Space>
                   </CardRow>
                 )}
+                {record.channel_group_aid && <CardRow label="渠道AID"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text></CardRow>}
+                {(record.billing_pid || record.forward_eid) && (
+                  <CardRow label="匹配规则">
+                    <Space size={8}>
+                      {record.billing_pid && <Text type="secondary" style={{ fontSize: 11 }}>PID:<Typography.Text keyboard style={{ fontSize: 10 }}>{record.billing_pid}</Typography.Text></Text>}
+                      {record.forward_eid && <Text type="secondary" style={{ fontSize: 11 }}>EID:<Typography.Text keyboard style={{ fontSize: 10 }}>{record.forward_eid}</Typography.Text></Text>}
+                    </Space>
+                  </CardRow>
+                )}
                 <CardRow label="令牌">
                   <Space direction="vertical" size={0} align="end">
                     <Tag color="cyan" style={{ fontSize: 11, margin: 0 }}>{record.token_name || '-'}</Tag>
                     {record.token_kid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>KID: {record.token_kid}</Text>}
                   </Space>
                 </CardRow>
-                {user?.role === 'admin' && record.channel_name && <CardRow label="渠道"><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_name}</Text></CardRow>}
+                <CardRow label="耗时"><Text style={{ fontSize: 12 }}>{(record.latency_ms / 1000).toFixed(3)}s</Text></CardRow>
+                <CardRow label="类型"><Tag color={record.is_stream === 1 ? 'geekblue' : 'default'}>{record.is_stream === 1 ? '流' : '非流'}</Tag></CardRow>
                 <CardRow label="用量">
                   <Space direction="vertical" size={0} align="end">
                     <Text type="secondary" style={{ fontSize: 12 }}>输入:{record.prompt_tokens} / 输出:{record.completion_tokens}</Text>
                     {(record.cached_tokens ?? 0) > 0 && <Text type="secondary" style={{ fontSize: 11, color: '#52c41a' }}>缓存(输入内):{record.cached_tokens}</Text>}
                   </Space>
                 </CardRow>
-                <CardRow label="费用">
+                <CardRow label="成本">
                   <Space direction="vertical" size={0} align="end">
                     {record.cost === 0
                       ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
@@ -398,8 +438,6 @@ const Logs: React.FC = () => {
                     )}
                   </Space>
                 </CardRow>
-                <CardRow label="延迟"><Text style={{ fontSize: 12 }}>{(record.latency_ms / 1000).toFixed(3)}s</Text></CardRow>
-                <CardRow label="类型"><Tag color={record.is_stream === 1 ? 'geekblue' : 'default'}>{record.is_stream === 1 ? '流' : '非流'}</Tag></CardRow>
               </MobileCard>
             );
           }}
@@ -410,26 +448,12 @@ const Logs: React.FC = () => {
           columns={columns}
           rowKey="id"
           loading={loading}
-          expandable={{ 
-            expandedRowRender, 
-            expandRowByClick: true,
-            expandIcon: ({ expanded, onExpand, record }) => (
-              <Tooltip title={expanded ? "收起详情" : "查看详细请求与响应"}>
-                <Button 
-                  type="link" 
-                  size="small" 
-                  onClick={e => {
-                    // 阻止事件冒泡，以免与 expandRowByClick 冲突导致触发两次
-                    e.stopPropagation();
-                    onExpand(record, e);
-                  }}
-                  style={{ padding: '0 4px', fontSize: 13 }}
-                >
-                  详细
-                </Button>
-              </Tooltip>
-            )
-          }}
+          expandable={
+            (user?.role === 'admin' || user?.allow_view_log_details !== 0) ? { 
+              expandedRowRender, 
+              expandRowByClick: false
+            } : undefined
+          }
           pagination={{
             total,
             current: page,

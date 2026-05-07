@@ -6,6 +6,7 @@ import { Modal, Button } from 'antd';
 import { CloseOutlined, CheckCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { usePlayground } from '../context/PlaygroundContext';
+import dayjs from 'dayjs';
 
 const TokenModal: React.FC = React.memo(() => {
   const {
@@ -22,9 +23,19 @@ const TokenModal: React.FC = React.memo(() => {
       footer={null}
       width={720}
       styles={{
-        body: { backgroundColor: '#1E1F22', padding: '24px 32px' },
-        wrapper: { backgroundColor: '#1E1F22', borderRadius: 12, padding: 0, overflow: 'hidden' },
-      }}
+        mask: { backgroundColor: 'rgba(0, 0, 0, 0.45)' },
+        body: { padding: '32px' },
+        content: { 
+          backgroundColor: 'rgba(28, 29, 31, 0.65)', 
+          backdropFilter: 'blur(32px) saturate(150%)', 
+          WebkitBackdropFilter: 'blur(32px) saturate(150%)',
+          borderRadius: 20, 
+          padding: 0, 
+          overflow: 'hidden',
+          border: '1px solid rgba(255,255,255,0.1)',
+          boxShadow: '0 32px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)'
+        },
+      } as any}
       closeIcon={<CloseOutlined style={{ color: 'rgba(255,255,255,0.45)' }} />}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
@@ -59,16 +70,14 @@ const TokenModal: React.FC = React.memo(() => {
           </svg>
         </div>
         <div>
-          <div style={{ color: '#E8EAED', fontSize: 14, fontWeight: 500, marginBottom: 4 }}>已开启滥用行为自动检测功能</div>
-          <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
-            为了保护您的安全，我们会自动停用所有已遭公开泄露的 API 密钥，以防止滥用。 <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>了解详情</span>.
-          </div>
+          <div style={{ color: '#E8EAED', fontSize: 14, fontWeight: 500, marginBottom: 4 }}>保护好您的密钥，请不要泄露</div>
         </div>
       </div>
 
       <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 40px', padding: '0 16px 12px 16px', color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
-          <div>API 密钥</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr 1.2fr 40px', padding: '0 16px 12px 16px', color: 'rgba(255,255,255,0.45)', fontSize: 13, alignItems: 'center' }}>
+          <div>API 密钥 <span style={{ fontSize: 12, opacity: 0.6, marginLeft: 8 }}>(点击已选密钥可取消选择)</span></div>
+          <div>可用额度</div>
           <div>创建时间</div>
           <div>上次使用时间</div>
           <div></div>
@@ -81,22 +90,45 @@ const TokenModal: React.FC = React.memo(() => {
         ) : (
           <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden' }}>
             {apiTokens.map((t, index) => {
-              // 简化的格式化逻辑，如果缺少字段则显示默认值
-              const createdStr = t.created_at ? new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Apr 26, 2026';
-              const usedStr = t.last_used_at ? new Date(t.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '从未';
-              const maskedKey = `...${t.token_key.substring(t.token_key.length - 11)}`;
+              // 使用数字格式日期时间
+              const createdStr = t.created_at ? dayjs(t.created_at).format('YYYY-MM-DD HH:mm:ss') : '-';
+              const usedStr = t.last_used_at ? dayjs(t.last_used_at).format('YYYY-MM-DD HH:mm:ss') : '从未';
+              // API 密码显示头尾中间省略号
+              const head = t.token_key.substring(0, 8);
+              const tail = t.token_key.substring(t.token_key.length - 6);
+              const maskedKey = `${head}......${tail}`;
+
+              // 可用额度
+              const limit = t.quota_limit;
+              const used = t.quota_used || 0;
+              let quotaText = '';
+              let isQuotaExceeded = false;
+              if (limit < 0) {
+                quotaText = '不限额度';
+              } else {
+                const remain = Math.max(0, limit - used);
+                // 简化显示：如果带小数则保留两位，如果是整数则直接显示
+                const formatNumber = (num: number) => num % 1 === 0 ? num.toString() : num.toFixed(2);
+                quotaText = `${formatNumber(remain)} / ${formatNumber(limit)}`;
+                if (remain <= 0) isQuotaExceeded = true;
+              }
 
               return (
                 <div
                   key={t.token_key}
                   onClick={() => {
-                    setSelectedTokenKey(t.token_key);
-                    localStorage.setItem('playground_saved_token', t.token_key);
+                    if (selectedTokenKey === t.token_key) {
+                      setSelectedTokenKey('');
+                      localStorage.removeItem('playground_saved_token');
+                    } else {
+                      setSelectedTokenKey(t.token_key);
+                      localStorage.setItem('playground_saved_token', t.token_key);
+                    }
                     setIsTokenModalVisible(false);
                   }}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '2fr 1fr 1fr 40px',
+                    gridTemplateColumns: '2fr 1fr 1.2fr 1.2fr 40px',
                     alignItems: 'center',
                     padding: '16px',
                     background: selectedTokenKey === t.token_key ? 'rgba(255,255,255,0.06)' : 'transparent',
@@ -113,6 +145,9 @@ const TokenModal: React.FC = React.memo(() => {
                 >
                   <div style={{ fontFamily: 'monospace', color: '#E8EAED', fontSize: 14 }}>
                     {maskedKey}
+                  </div>
+                  <div style={{ color: isQuotaExceeded ? '#ff4d4f' : 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>
+                    {quotaText}
                   </div>
                   <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14 }}>{createdStr}</div>
                   <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14 }}>{usedStr}</div>

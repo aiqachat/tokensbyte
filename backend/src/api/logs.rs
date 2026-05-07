@@ -21,12 +21,14 @@ pub async fn list_logs(
         c.group_aid as channel_group_aid, c.name as channel_name, \
         COALESCE(u.nickname, u.username) as user_nickname, \
         u.user_group, \
+        ul.name as user_level_name, \
         u.uid as user_uid, \
         t.name as token_name, \
         t.kid as token_kid \
         FROM logs l \
         LEFT JOIN channels c ON l.channel_id = c.id \
         LEFT JOIN users u ON l.user_id = u.id \
+        LEFT JOIN user_levels ul ON u.user_group = ul.group_key \
         LEFT JOIN api_tokens t ON l.token_id = t.id \
         WHERE 1=1".to_string();
     let mut binds: Vec<String> = Vec::new();
@@ -41,6 +43,11 @@ pub async fn list_logs(
             sql.push_str(" AND l.user_id = ?");
             binds.push(user_id.clone());
         }
+    }
+
+    if let Some(ref uid) = query.uid {
+        sql.push_str(" AND u.uid = ?");
+        binds.push(uid.clone());
     }
 
     if let Some(ref model) = query.model {
@@ -79,7 +86,43 @@ pub async fn list_logs(
     for val in &binds {
         logs_q = logs_q.bind(val);
     }
-    let logs = logs_q.fetch_all(&state.db.pool).await?;
+    let mut logs = logs_q.fetch_all(&state.db.pool).await?;
+
+    // 检查当前登录用户的日志详情查看权限
+    let mut allow_details = true;
+    if claims.role != "admin" {
+        let perm: Option<i32> = sqlx::query_scalar(
+            &state.db.format_query("SELECT ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
+        )
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .flatten();
+        allow_details = perm.unwrap_or(1) == 1;
+    }
+
+    if claims.role != "admin" {
+        for log in &mut logs {
+            if !allow_details {
+                log.request_content = None;
+                log.response_content = None;
+                log.upstream_req_content = None;
+            }
+            if let Some(ref upstream) = log.upstream_url {
+                if let Some(scheme_end) = upstream.find("://") {
+                    let scheme = &upstream[0..scheme_end];
+                    let rest = &upstream[scheme_end + 3..];
+                    if let Some(slash_idx) = rest.find('/') {
+                        log.upstream_url = Some(format!("{}://***{}", scheme, &rest[slash_idx..]));
+                    } else {
+                        log.upstream_url = Some(format!("{}://***", scheme));
+                    }
+                } else {
+                    log.upstream_url = Some("***".to_string());
+                }
+            }
+        }
+    }
 
     Ok(Json(LogListResponse { data: logs, total }))
 }

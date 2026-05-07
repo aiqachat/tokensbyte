@@ -12,7 +12,7 @@ pub mod asset_convert;
 pub mod task_poller;
 
 use axum::{
-    extract::{State, Extension},
+    extract::{State, Extension, OriginalUri},
     Json,
     response::{Response, IntoResponse},
 };
@@ -24,18 +24,23 @@ use crate::error::{AppError, AppResult};
 pub async fn chat_completions(
     State(state): State<Arc<AppState>>,
     Extension(token): Extension<ApiToken>,
+    OriginalUri(uri): OriginalUri,
     Json(body): Json<serde_json::Value>,
 ) -> AppResult<Response> {
     let start_time = std::time::Instant::now();
+    let raw_path = uri.path();
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
-    let model = body["model"].as_str().unwrap_or("gpt-3.5-turbo");
+    let model = body["model"].as_str()
+        .ok_or_else(|| AppError::BadRequest(
+            "Missing required parameter: model".to_string()
+        ))?;
     let is_stream = body["stream"].as_bool().unwrap_or(false);
 
 
 
     // 2. 获取用户信息
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
+    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance, Some("聊天")).await?;
 
     // 3. 选择渠道
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, "/v1/chat/completions").await?;
@@ -105,7 +110,7 @@ pub async fn chat_completions(
             let err = resp.text().await?;
             let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
             let latency_ms = start_time.elapsed().as_millis() as u32;
-            let ep = format!("/v1/chat/completions|{}", final_upstream_path);
+            let ep = format!("{}|{}", raw_path, final_upstream_path);
             proxy::record_and_bill(
                 &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
                 &ep, Some(&display_err), latency_ms, 1,
@@ -129,7 +134,8 @@ pub async fn chat_completions(
             ctx.discount, prompt_tokens, request_content_str, start_time, target_type,
             final_upstream_path,
             Some(upstream_body.to_string()),
-            pre_deduction
+            pre_deduction,
+            raw_path.to_string()
         ).await.into_response())
     } else {
         let resp = builder.json(&upstream_body).send().await?;
@@ -139,7 +145,7 @@ pub async fn chat_completions(
             let err = resp.text().await?;
             let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
             let latency_ms = start_time.elapsed().as_millis() as u32;
-            let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+            let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
             proxy::record_and_bill(
                 &state, &token, channel.id, model, 0, 0, 0, 0.0, status,
                 &ep, Some(&display_err), latency_ms, 0,
@@ -162,12 +168,7 @@ pub async fn chat_completions(
         let features = usage_extractor::extract_request_features(&body);
 
         // 计费: 联表查询 Model 及其关联的 BillingRule
-        let db_model: Option<crate::models::Model> = sqlx::query_as(
-            &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-        )
-        .bind(model)
-        .fetch_optional(&state.db.pool)
-        .await?;
+        let db_model = proxy::find_active_model(&state, model, Some("聊天")).await;
 
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {
@@ -191,7 +192,7 @@ pub async fn chat_completions(
             detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
         }
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("/v1/chat/completions|{}", resolved.upstream_path.replace("${model}", &resolved_model));
+        let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
 
         proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, model, prompt_tokens, completion_tokens, cached_tokens,
@@ -327,36 +328,50 @@ pub fn compute_cost(
                 };
                 detail_desc = "按张返回计费".to_string();
                 
-                // 兼容阿里百炼 prompt_extend 计费调整（如果配置了倍率）
-                if features.prompt_extend {
-                    if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    // 提示词扩写倍率
+                    if features.prompt_extend {
                         if let Some(m) = ext.get("prompt_extend_multiplier").and_then(|v| v.as_f64()) {
                             rate *= m;
                             detail_desc.push_str(&format!(" [提示词扩写 x{}]", m));
+                        }
+                    }
+                    // 有图倍率（区分文生图/图生图）
+                    if features.has_image_ref {
+                        if let Some(m) = ext.get("image_ref_multiplier").and_then(|v| v.as_f64()) {
+                            rate *= m;
+                            detail_desc.push_str(&format!(" [图生图 x{}]", m));
                         }
                     }
                 }
             } else if rule.billing_rule == "image_resolution" {
                 count = features.image_count.map(|c| c.max(1) as f64).unwrap_or(1.0);
                 detail_desc = format!("分辨率匹配计费(默认单价: {})", rate);
-                if let Some(res) = &features.resolution {
-                    if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
-                        for tier in tiers {
-                            if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
-                                rate = tier.rate; 
-                                detail_desc = format!("命中分辨率阶梯 {} 单价: {:.6}", res, rate);
-                                break;
-                            }
+                // resolution 兜底：缺省时默认 1k，确保阶梯匹配不会落空
+                let res = features.resolution.as_deref().unwrap_or("1k");
+                if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
+                    for tier in tiers {
+                        if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
+                            rate = tier.rate; 
+                            detail_desc = format!("命中分辨率阶梯 {} 单价: {:.6}", res, rate);
+                            break;
                         }
                     }
                 }
                 
-                // 提示词扩写倍率支持
-                if features.prompt_extend {
-                    if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    // 提示词扩写倍率
+                    if features.prompt_extend {
                         if let Some(m) = ext.get("prompt_extend_multiplier").and_then(|v| v.as_f64()) {
                             rate *= m;
                             detail_desc.push_str(&format!(" [提示词扩写 x{}]", m));
+                        }
+                    }
+                    // 有图倍率（区分文生图/图生图）
+                    if features.has_image_ref {
+                        if let Some(m) = ext.get("image_ref_multiplier").and_then(|v| v.as_f64()) {
+                            rate *= m;
+                            detail_desc.push_str(&format!(" [图生图 x{}]", m));
                         }
                     }
                 }
@@ -381,6 +396,22 @@ pub fn compute_cost(
                             }
                         }
                     }
+                }
+            } else if rule.billing_rule == "kling_video" {
+                // 可灵视频：基准秒单价 × mode倍率(std/pro/4k) × sound倍率(off/on)
+                detail_desc = format!("可灵视频按秒计费(基准: {})", rate);
+                if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
+                    let mode_key = features.mode.as_deref().unwrap_or("std");
+                    let sound_key = features.sound.as_deref().unwrap_or("off");
+
+                    let mode_mult = ext.get("mode_multipliers")
+                        .and_then(|m| m.get(mode_key)).and_then(|v| v.as_f64()).unwrap_or(1.0);
+                    let sound_mult = ext.get("sound_multipliers")
+                        .and_then(|m| m.get(sound_key)).and_then(|v| v.as_f64()).unwrap_or(1.0);
+
+                    rate *= mode_mult * sound_mult;
+                    detail_desc = format!("可灵视频(mode:{}x{} sound:{}x{} 综合单价:{})",
+                        mode_key, mode_mult, sound_key, sound_mult, rate);
                 }
             }
 

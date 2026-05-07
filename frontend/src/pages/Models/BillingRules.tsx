@@ -7,7 +7,7 @@ import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import RateDisplay from './RateDisplay';
 import { useThemeStore } from '../../store/theme';
-
+import dayjs from 'dayjs';
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
 
@@ -22,9 +22,11 @@ interface BillingRuleData {
   duration_rate: number;
   pricing_tiers: string;
   extended_config: string;
+  pid?: string;
   is_active: number;
   is_system: number;
   created_at: string;
+  updated_at: string;
 }
 
 const BillingRules: React.FC = () => {
@@ -35,6 +37,8 @@ const BillingRules: React.FC = () => {
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   
   const [items, setItems] = useState<BillingRuleData[]>([]);
+  const [filterType, setFilterType] = useState('all');
+  const [searchText, setSearchText] = useState('');
   const [loading, setLoading] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<BillingRuleData | null>(null);
@@ -81,6 +85,9 @@ const BillingRules: React.FC = () => {
       volc_offline_discount: 0.5,
       s1_online_rate: 0, s1_offline_rate: 0,
       prompt_extend_multiplier: 1,
+      image_ref_multiplier: 1,
+      kling_mode_std: 1.0, kling_mode_pro: 1.33, kling_mode_4k: 2.0,
+      kling_sound_off: 1.0, kling_sound_on: 1.5,
     });
     setIsModalVisible(true);
   };
@@ -117,6 +124,12 @@ const BillingRules: React.FC = () => {
       s1_online_rate: ext.online_rate || 0,
       s1_offline_rate: ext.offline_rate || 0,
       prompt_extend_multiplier: ext.prompt_extend_multiplier || 1,
+      image_ref_multiplier: ext.image_ref_multiplier ?? 1,
+      kling_mode_std: ext.mode_multipliers?.std ?? 1.0,
+      kling_mode_pro: ext.mode_multipliers?.pro ?? 1.33,
+      kling_mode_4k: ext.mode_multipliers?.['4k'] ?? 2.0,
+      kling_sound_off: ext.sound_multipliers?.off ?? 1.0,
+      kling_sound_on: ext.sound_multipliers?.on ?? 1.5,
       is_active: item.is_active === 1,
     });
     setIsModalVisible(true);
@@ -164,11 +177,16 @@ const BillingRules: React.FC = () => {
           online_rate: values.s1_online_rate || 0,
           offline_rate: values.s1_offline_rate || 0,
         };
+      } else if (values.billing_rule === 'kling_video') {
+        extConfig = {
+          mode_multipliers: { std: values.kling_mode_std ?? 1.0, pro: values.kling_mode_pro ?? 1.33, '4k': values.kling_mode_4k ?? 2.0 },
+          sound_multipliers: { off: values.kling_sound_off ?? 1.0, on: values.kling_sound_on ?? 1.5 },
+        };
       }
       
       // 图像模型特有：提示词扩写倍率
       if (values.billing_rule === 'per_image' || values.billing_rule === 'image_resolution') {
-        extConfig = { ...extConfig, prompt_extend_multiplier: values.prompt_extend_multiplier || 1 };
+        extConfig = { ...extConfig, prompt_extend_multiplier: values.prompt_extend_multiplier || 1, image_ref_multiplier: values.image_ref_multiplier ?? 1 };
       }
 
       // 清除表单中不应提交的临时字段
@@ -178,6 +196,9 @@ const BillingRules: React.FC = () => {
       delete values.volc_audio_rate; delete values.volc_base_rate; delete values.volc_offline_discount;
       delete values.s1_online_rate; delete values.s1_offline_rate;
       delete values.prompt_extend_multiplier;
+      delete values.image_ref_multiplier;
+      delete values.kling_mode_std; delete values.kling_mode_pro; delete values.kling_mode_4k;
+      delete values.kling_sound_off; delete values.kling_sound_on;
 
       const payload = {
         prompt_rate: 0,
@@ -222,6 +243,13 @@ const BillingRules: React.FC = () => {
       render: (text: string) => <Text strong>{text}</Text>
     },
     {
+      title: '快捷识别 (PID)',
+      dataIndex: 'pid',
+      key: 'pid',
+      width: 120,
+      render: (text: string) => <Tag color="blue">{text || '-'}</Tag>
+    },
+    {
       title: t('models.billing_type'),
       dataIndex: 'billing_type',
       key: 'billing_type',
@@ -247,6 +275,13 @@ const BillingRules: React.FC = () => {
       width: 100,
     },
     {
+      title: '最后修改时间',
+      dataIndex: 'updated_at',
+      key: 'updated_at',
+      width: 150,
+      render: (text: string) => <Text type="secondary" style={{ fontSize: 12 }}>{text ? dayjs(text).format('YYYY-MM-DD HH:mm:ss') : '-'}</Text>,
+    },
+    {
       title: t('common.actions'),
       key: 'actions',
       render: (_: any, record: BillingRuleData) => (
@@ -267,6 +302,17 @@ const BillingRules: React.FC = () => {
     },
   ];
 
+  const filteredItems = items.filter(item => {
+    if (filterType !== 'all' && item.billing_type !== filterType) return false;
+    if (searchText) {
+      const lower = searchText.toLowerCase();
+      if (!item.name?.toLowerCase().includes(lower) && !String(item.pid || '').toLowerCase().includes(lower)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
   return (
     <div>
       <Card title={screens.xs ? '计费配置' : '大模型价格配置与统一计费计算池'} extra={
@@ -274,9 +320,33 @@ const BillingRules: React.FC = () => {
           {screens.xs ? '新建' : '新建计费策略类'}
         </Button>
       }>
+        <div style={{ marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
+          <Space wrap>
+            <Text strong>筛选计费类型：</Text>
+            <Radio.Group 
+              value={filterType} 
+              onChange={e => setFilterType(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+            >
+              <Radio value="all">全部类型</Radio>
+              <Radio value="tokens">{t('models.type_tokens')}</Radio>
+              <Radio value="requests">{t('models.type_requests')}</Radio>
+              <Radio value="duration">{t('models.type_duration')}</Radio>
+            </Radio.Group>
+          </Space>
+          <Input.Search
+            placeholder="搜索名称或PID"
+            allowClear
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            style={{ width: 200 }}
+          />
+        </div>
+
         {screens.xs ? (
           <MobileCardList
-            dataSource={items}
+            dataSource={filteredItems}
             loading={loading}
             rowKey="id"
             pagination={{ pageSize: 15 }}
@@ -288,8 +358,10 @@ const BillingRules: React.FC = () => {
                   extra={<Switch checked={record.is_active === 1} disabled size="small" />}
                 >
                   <CardRow label="ID"><Text type="secondary">{record.id}</Text></CardRow>
+                  <CardRow label="PID (快捷识别)"><Tag color="blue">{record.pid || '-'}</Tag></CardRow>
                   <CardRow label="计费类型"><Tag color={colors[record.billing_type]}>{t(`models.type_${record.billing_type}`)}</Tag></CardRow>
                   <CardRow label="费率"><RateDisplay rule={record} currencySymbol={currencySymbol} /></CardRow>
+                  <CardRow label="最后修改"><Text type="secondary" style={{ fontSize: 12 }}>{record.updated_at ? dayjs(record.updated_at).format('YYYY-MM-DD HH:mm:ss') : '-'}</Text></CardRow>
                   <CardActions>
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
                     {record.is_system === 1 ? (
@@ -308,7 +380,7 @@ const BillingRules: React.FC = () => {
           />
         ) : (
           <Table
-            dataSource={items}
+            dataSource={filteredItems}
             columns={columns}
             rowKey="id"
             loading={loading}
@@ -582,11 +654,18 @@ const BillingRules: React.FC = () => {
                           </Form.Item>
                         </Col>
                         {rule === 'per_image' && (
-                          <Col span={12}>
-                            <Form.Item name="prompt_extend_multiplier" label="提示词扩写倍率" tooltip="当请求开启 prompt_extend 时，单价将乘以该倍率 (默认 1.0)">
-                              <InputNumber style={{ width: '100%' }} precision={2} step={0.1} min={0} />
-                            </Form.Item>
-                          </Col>
+                          <>
+                            <Col span={6}>
+                              <Form.Item name="prompt_extend_multiplier" label="提示词扩写倍率" tooltip="当请求开启 prompt_extend 时，单价将乘以该倍率 (默认 1.0)">
+                                <InputNumber style={{ width: '100%' }} precision={2} step={0.1} min={0} />
+                              </Form.Item>
+                            </Col>
+                            <Col span={6}>
+                              <Form.Item name="image_ref_multiplier" label="有图倍率" tooltip="当请求包含参考图（图生图）时，单价将乘以该倍率 (默认 1.0，不生效)">
+                                <InputNumber style={{ width: '100%' }} precision={2} step={0.1} min={0} />
+                              </Form.Item>
+                            </Col>
+                          </>
                         )}
                       </Row>
                     );
@@ -594,14 +673,21 @@ const BillingRules: React.FC = () => {
                 }}
               </Form.Item>
               
-              {/* 分辨率计费模式下的扩写倍率支持 */}
+              {/* 分辨率计费模式下的扩写倍率 + 有图倍率 */}
               <Form.Item noStyle shouldUpdate={(prev, curr) => prev.billing_rule !== curr.billing_rule}>
                 {({ getFieldValue }) => getFieldValue('billing_rule') === 'image_resolution' && (
-                  <div style={{ marginBottom: 24 }}>
-                    <Form.Item name="prompt_extend_multiplier" label="提示词扩写倍率" tooltip="当请求开启 prompt_extend 时，分辨率阶梯单价将乘以该倍率 (默认 1.0)">
-                      <InputNumber style={{ width: '200px' }} precision={2} step={0.1} min={0} />
-                    </Form.Item>
-                  </div>
+                  <Row gutter={16} style={{ marginBottom: 24 }}>
+                    <Col span={8}>
+                      <Form.Item name="prompt_extend_multiplier" label="提示词扩写倍率" tooltip="当请求开启 prompt_extend 时，分辨率阶梯单价将乘以该倍率 (默认 1.0)">
+                        <InputNumber style={{ width: '100%' }} precision={2} step={0.1} min={0} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="image_ref_multiplier" label="有图倍率" tooltip="当请求包含参考图（图生图）时，分辨率阶梯单价将乘以该倍率 (默认 1.0，不生效)">
+                        <InputNumber style={{ width: '100%' }} precision={2} step={0.1} min={0} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
                 )}
               </Form.Item>
             </>
@@ -613,6 +699,7 @@ const BillingRules: React.FC = () => {
                 <Radio.Group optionType="button" buttonStyle="solid">
                   <Radio value="standard">按固定时长收费 (单价/秒)</Radio>
                   <Radio value="video_resolution">按视频分辨率阶梯表</Radio>
+                  <Radio value="kling_video">可灵视频 (倍率计费)</Radio>
                 </Radio.Group>
               </Form.Item>
 
@@ -655,6 +742,28 @@ const BillingRules: React.FC = () => {
                             </>
                           )}
                         </Form.List>
+                      </div>
+                    );
+                  } else if (rule === 'kling_video') {
+                    return (
+                      <div style={{ background: _isLight ? '#fff' : '#141414', padding: '20px', borderRadius: '12px', marginBottom: 24, border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 16 }}>
+                          可灵视频按秒计费：最终价格 = 基准秒单价 × 实际时长 × mode倍率 × sound倍率 × 折扣
+                        </Text>
+                        <Form.Item name="duration_rate" label="基准秒单价" rules={[{ required: true }]}>
+                          <InputNumber style={{ width: '200px' }} precision={6} addonAfter="/ s" />
+                        </Form.Item>
+                        <Text strong style={{ fontSize: '13px', display: 'block', marginBottom: 8 }}>生成模式 (mode) 倍率</Text>
+                        <Row gutter={16} style={{ marginBottom: 16 }}>
+                          <Col span={8}><Form.Item name="kling_mode_std" label="std (标准)" style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={2} step={0.1} addonAfter="x" /></Form.Item></Col>
+                          <Col span={8}><Form.Item name="kling_mode_pro" label="pro (专业)" style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={2} step={0.1} addonAfter="x" /></Form.Item></Col>
+                          <Col span={8}><Form.Item name="kling_mode_4k" label="4k (超高清)" style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={2} step={0.1} addonAfter="x" /></Form.Item></Col>
+                        </Row>
+                        <Text strong style={{ fontSize: '13px', display: 'block', marginBottom: 8 }}>声音 (sound) 倍率</Text>
+                        <Row gutter={16}>
+                          <Col span={12}><Form.Item name="kling_sound_off" label="off (无声)" style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={2} step={0.1} addonAfter="x" /></Form.Item></Col>
+                          <Col span={12}><Form.Item name="kling_sound_on" label="on (有声)" style={{ marginBottom: 0 }}><InputNumber style={{ width: '100%' }} precision={2} step={0.1} addonAfter="x" /></Form.Item></Col>
+                        </Row>
                       </div>
                     );
                   } else {

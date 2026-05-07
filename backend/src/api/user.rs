@@ -13,7 +13,7 @@ pub async fn get_profile(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<User>> {
-    let user: User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+    let user: User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name, ul.id as level_id, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?
@@ -27,7 +27,7 @@ pub async fn update_profile(
     Extension(claims): Extension<auth::Claims>,
     Json(request): Json<ProfileUpdateRequest>,
 ) -> AppResult<Json<User>> {
-    let mut user: User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+    let mut user: User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name, ul.id as level_id, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?
@@ -333,7 +333,7 @@ pub async fn get_wallet_stats(
 ) -> AppResult<Json<WalletStats>> {
     let user_id = &claims.sub;
 
-    let balance: f64 = sqlx::query_scalar(&state.db.format_query("SELECT balance FROM users WHERE id = ?"))
+    let (balance, gift_balance): (f64, f64) = sqlx::query_as(&state.db.format_query("SELECT balance, gift_balance FROM users WHERE id = ?"))
         .bind(user_id).fetch_one(&state.db.pool).await?;
 
     let stats: (f64, i64, i64) = sqlx::query_as(
@@ -368,6 +368,7 @@ pub async fn get_wallet_stats(
 
     Ok(Json(WalletStats {
         balance,
+        gift_balance,
         total_consumption: stats.0,
         total_calls: stats.1,
         success_calls: stats.2,

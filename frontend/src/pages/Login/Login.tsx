@@ -94,9 +94,28 @@ const Login: React.FC = () => {
   // state 每次切换到微信 tab 时固定前缀+随机串，确保每次扫码有新 state
   const [wechatState] = useState(() => `wechat_${Math.random().toString(36).slice(2)}`);
 
+  // 读取 localStorage/cookie 中的邀请码，转发给注册页
+  const getStoredInviteParam = () => {
+    const params = new URLSearchParams();
+    // localStorage
+    const readLS = (key: string, param: string) => {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) { const d = JSON.parse(raw); if (Date.now() <= d.expiry) { params.set(param, d.value); return; } }
+      } catch {}
+      // fallback: cookie
+      const m = document.cookie.match(new RegExp(`(?:^|;\\s*)${key}=([^;]*)`));
+      if (m) params.set(param, decodeURIComponent(m[1]));
+    };
+    readLS('tokensbyte_affiliate_code', 'aff');
+    readLS('tokensbyte_team_invite', 'team');
+    const qs = params.toString();
+    return qs ? `/register?${qs}` : '/register';
+  };
+
   const bottomLinks = (
     <>
-      <Link to="/register" style={{ color: '#8c8c8c' }}>{t('auth.register_link')}</Link>
+      <Link to={getStoredInviteParam()} style={{ color: '#8c8c8c' }}>{t('auth.register_link')}</Link>
       <span style={{ color: '#444' }}>|</span>
       <Link to="/forgot-password" style={{ color: '#8c8c8c' }}>{t('auth.forgot_password_link')}</Link>
     </>

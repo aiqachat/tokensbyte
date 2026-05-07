@@ -33,6 +33,8 @@ pub async fn update_settings(
     if let Some(v) = request.database { save_setting(&state, "database_settings", &v).await?; }
     if let Some(v) = request.payment_wechat { save_setting(&state, "payment_wechat", &v).await?; }
     if let Some(v) = request.payment_alipay { save_setting(&state, "payment_alipay", &v).await?; }
+    if let Some(v) = request.payment_stripe { save_setting(&state, "payment_stripe", &v).await?; }
+    if let Some(v) = request.payment_bonuspay { save_setting(&state, "payment_bonuspay", &v).await?; }
     if let Some(v) = request.google_oauth { save_setting(&state, "google_oauth", &v).await?; }
     if let Some(v) = request.wechat_oauth { save_setting(&state, "wechat_oauth", &v).await?; }
     if let Some(v) = request.agreement { save_setting(&state, "agreement_settings", &v).await?; }
@@ -151,13 +153,7 @@ pub async fn backup_database(
                 Ok(Json(serde_json::json!({"success": false, "message": format!("执行备份程序异常 (系统可能未安装 postgresql-client 命令行工具): {}", e)})))
             }
         }
-    } else if db_url.starts_with("sqlite:") {
-        let path = db_url.trim_start_matches("sqlite:").split('?').next().unwrap_or("./data/tokensbyte.db");
-        let output_path = format!("data/{}.db", file_name);
-        match std::fs::copy(path, &output_path) {
-            Ok(_) => Ok(Json(serde_json::json!({"success": true, "message": format!("数据库备份成功，保存在 {}", output_path)}))),
-            Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("SQLite 复制备份失败: {}", e)}))),
-        }
+
     } else {
         Ok(Json(serde_json::json!({"success": false, "message": "不支持的数据库类型，暂无法备份"})))
     }
@@ -178,6 +174,8 @@ pub async fn load_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> 
         database: get_setting(state, "database_settings", default_database_settings()).await?,
         payment_wechat: get_setting(state, "payment_wechat", None).await?,
         payment_alipay: get_setting(state, "payment_alipay", None).await?,
+        payment_stripe: get_setting(state, "payment_stripe", None).await?,
+        payment_bonuspay: get_setting(state, "payment_bonuspay", None).await?,
         google_oauth: get_setting(state, "google_oauth", None).await?,
         wechat_oauth: get_setting(state, "wechat_oauth", None).await?,
         agreement: get_setting(state, "agreement_settings", default_agreement_settings()).await?,

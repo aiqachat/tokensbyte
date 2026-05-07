@@ -267,7 +267,7 @@ const AdvancedMarketing: React.FC = () => {
           border: '1px solid rgba(22,119,255,0.2)',
           color: '#1677ff',
         }}>
-          {name || record.user_group}
+          {name || record.user_group} {allowedLevels.find((l: any) => l.group_key === record.user_group)?.discount !== undefined ? `(${allowedLevels.find((l: any) => l.group_key === record.user_group)?.discount}x)` : ''}
         </Tag>
       ),
     },
@@ -591,7 +591,7 @@ const AdvancedMarketing: React.FC = () => {
                   <Button type="text" size="small" icon={<EditOutlined style={{ color: '#1677ff' }} />} onClick={() => openRemarkModal(record)} />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <Tag color="blue" style={{ margin: 0 }}>{record.level_name || record.user_group}</Tag>
+                  <Tag color="blue" style={{ margin: 0 }}>{record.level_name || record.user_group} {allowedLevels.find((l: any) => l.group_key === record.user_group)?.discount !== undefined ? `(${allowedLevels.find((l: any) => l.group_key === record.user_group)?.discount}x)` : ''}</Tag>
                   <div style={{ textAlign: 'right' }}>
                     <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>余额: <span style={{ color: _isLight ? '#1f2937' : '#fff', fontWeight: 500 }}>{currencySymbol}{(record.balance || 0).toFixed(2)}</span></Text>
                     <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>总充值: <span style={{ color: '#52c41a', fontWeight: 500 }}>{currencySymbol}{(record.total_recharge || 0).toFixed(2)}</span></Text>
@@ -753,7 +753,7 @@ const AdvancedMarketing: React.FC = () => {
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                         <Text strong style={{ fontSize: 15, color: _isLight ? '#1f2937' : '#fff' }}>{record.username}</Text>
                         <Tag style={{ margin: 0, borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
-                          {record.level_name || record.user_group || 'default'}
+                          {record.level_name || record.user_group || 'default'} {allowedMemberLevels.find((l: any) => l.group_key === record.user_group)?.discount !== undefined ? `(${allowedMemberLevels.find((l: any) => l.group_key === record.user_group)?.discount}x)` : ''}
                         </Tag>
                       </div>
                       <div style={{ marginBottom: 12 }}>
@@ -812,7 +812,7 @@ const AdvancedMarketing: React.FC = () => {
                     width: 100,
                     render: (name: string, record: any) => (
                       <Tag style={{ margin: 0, borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
-                        {name || record.user_group || 'default'}
+                        {name || record.user_group || 'default'} {allowedMemberLevels.find((l: any) => l.group_key === record.user_group)?.discount !== undefined ? `(${allowedMemberLevels.find((l: any) => l.group_key === record.user_group)?.discount}x)` : ''}
                       </Tag>
                     ),
                   },
@@ -985,7 +985,7 @@ const AdvancedMarketing: React.FC = () => {
                 label: (
                   <Space>
                     <TrophyOutlined style={{ color: '#faad14' }} />
-                    <span>{l.name}</span>
+                    <span>{l.name} ({l.discount !== undefined ? l.discount : 1}x)</span>
                     <Tag style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
                       ULID: {l.id?.toString().padStart(4, '0') || l.group_key}
                     </Tag>
@@ -1045,7 +1045,7 @@ const AdvancedMarketing: React.FC = () => {
                 label: (
                   <Space>
                     <TrophyOutlined style={{ color: '#1677ff' }} />
-                    <span>{l.name}</span>
+                    <span>{l.name} ({l.discount !== undefined ? l.discount : 1}x)</span>
                     <Tag style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
                       ULID: {l.id?.toString().padStart(4, '0') || l.group_key}
                     </Tag>

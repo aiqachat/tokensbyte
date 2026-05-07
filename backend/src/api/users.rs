@@ -7,7 +7,7 @@ use crate::AppState;
 use crate::models::{User, CreateUserRequest, UpdateUserRequest, UserListResponse, RechargeRequest, LoginResponse};
 use crate::error::{AppError, AppResult};
 use crate::auth;
-use sqlx::Any;
+
 
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
@@ -52,11 +52,30 @@ pub async fn create_user(
     let role = request.role.as_deref().unwrap_or("user");
     let user_group = request.user_group.as_deref().unwrap_or(request.group.as_deref().unwrap_or("default"));
     let admin_group_id = request.admin_group_id;
-    let referred_by = request.referred_by.clone().or(request.aff.clone());
+    let mut referred_by = request.referred_by.clone().or(request.aff.clone());
+    
+    // Resolve referred_by to ID if it's a UID or Username
+    if let Some(ref ref_val) = referred_by {
+        if !ref_val.trim().is_empty() {
+            let resolved_id: Option<String> = sqlx::query_scalar(&state.db.format_query(
+                "SELECT id FROM users WHERE id = ? OR uid = ? OR username = ? LIMIT 1"
+            ))
+            .bind(ref_val)
+            .bind(ref_val)
+            .bind(ref_val)
+            .fetch_optional(&state.db.pool)
+            .await?;
+            
+            if let Some(id) = resolved_id {
+                referred_by = Some(id);
+            }
+        }
+    }
 
-    let referral_history = if let Some(ref inviter) = referred_by {
+    let referral_history = if let Some(ref inviter_id) = referred_by {
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        Some(format!("[{}] 通过 {} 邀请注册\n", now, inviter))
+        let display_name = state.db.get_user_display_name(inviter_id).await;
+        Some(format!("[{}] 通过 {} 邀请注册\n", now, display_name))
     } else {
         None
     };
@@ -111,17 +130,36 @@ pub async fn update_user(
     if let Some(wechat_id) = request.wechat_id { user.wechat_id = Some(wechat_id); }
     if let Some(role) = request.role { user.role = role; }
     if let Some(balance) = request.balance { user.balance = balance; }
+    if let Some(gift_balance) = request.gift_balance { user.gift_balance = gift_balance; }
+    if let Some(gift_used_quota) = request.gift_used_quota { user.gift_used_quota = gift_used_quota; }
     if let Some(user_group) = request.user_group { user.user_group = user_group; }
     if let Some(is_active) = request.is_active { user.is_active = is_active; }
     if let Some(admin_remark) = request.admin_remark { user.admin_remark = Some(admin_remark); }
     let old_referred_by = user.referred_by.clone();
 
     if let Some(referred_by) = request.referred_by { 
-        let new_ref = if referred_by.trim().is_empty() { None } else { Some(referred_by.clone()) }; 
+        let mut new_ref = if referred_by.trim().is_empty() { None } else { Some(referred_by.clone()) }; 
+        
+        // Resolve referred_by to ID if it's a UID or Username
+        if let Some(ref ref_val) = new_ref {
+            let resolved_id: Option<String> = sqlx::query_scalar(&state.db.format_query(
+                "SELECT id FROM users WHERE id = ? OR uid = ? OR username = ? LIMIT 1"
+            ))
+            .bind(ref_val)
+            .bind(ref_val)
+            .bind(ref_val)
+            .fetch_optional(&state.db.pool)
+            .await?;
+            
+            if let Some(id) = resolved_id {
+                new_ref = Some(id);
+            }
+        }
+
         if old_referred_by != new_ref {
             let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-            let old_str = old_referred_by.unwrap_or_else(|| "无".to_string());
-            let new_str = new_ref.clone().unwrap_or_else(|| "无".to_string());
+            let old_str = state.db.get_user_display_name(&old_referred_by.unwrap_or_else(|| "无".to_string())).await;
+            let new_str = state.db.get_user_display_name(&new_ref.clone().unwrap_or_else(|| "无".to_string())).await;
             let msg = format!("[{}] 推荐人从 {} 变更为 {}\n", now, old_str, new_str);
             let mut hist = user.referral_history.clone().unwrap_or_default();
             hist.push_str(&msg);
@@ -135,7 +173,7 @@ pub async fn update_user(
     sqlx::query(
         &state.db.format_query(r#"UPDATE users SET username = ?, email = ?, password_hash = ?, 
            nickname = ?, mobile = ?, wechat_id = ?,
-           role = ?, balance = ?, user_group = ?, is_active = ?, admin_remark = ?, referred_by = ?, referral_history = ?, updated_at = CURRENT_TIMESTAMP
+           role = ?, balance = ?, gift_balance = ?, gift_used_quota = ?, user_group = ?, is_active = ?, admin_remark = ?, referred_by = ?, referral_history = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&user.username)
@@ -146,6 +184,8 @@ pub async fn update_user(
     .bind(&user.wechat_id)
     .bind(&user.role)
     .bind(user.balance)
+    .bind(user.gift_balance)
+    .bind(user.gift_used_quota)
     .bind(&user.user_group)
     .bind(user.is_active)
     .bind(&user.admin_remark)
@@ -243,25 +283,41 @@ pub async fn recharge_user(
     .await?
     .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
-    let new_balance = user.balance + request.amount;
     let remark = request.remark.unwrap_or_else(|| "Administrator Adjustment".to_string());
+    let is_gift = request.wallet_type == "gift";
 
-    sqlx::query(&state.db.format_query("UPDATE users SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
-        .bind(new_balance)
-        .bind(&id)
-        .execute(&mut *tx)
-        .await?;
+    if is_gift {
+        // 赠送钱包操作
+        let new_gift = user.gift_balance + request.amount;
+        sqlx::query(&state.db.format_query("UPDATE users SET gift_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+            .bind(new_gift)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
+    } else {
+        // 系统钱包操作
+        let new_balance = user.balance + request.amount;
+        sqlx::query(&state.db.format_query("UPDATE users SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+            .bind(new_balance)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
+    }
 
-    let recharge_id: i64 = sqlx::query_scalar::<Any, i64>(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'manual', ?) RETURNING id"))
+    let recharge_type = if is_gift { "gift" } else { "manual" };
+    let recharge_id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, ?, ?) RETURNING id"))
         .bind(&id)
         .bind(request.amount)
+        .bind(recharge_type)
         .bind(&remark)
         .fetch_one(&mut *tx)
         .await?;
 
-    // Award commission if user has inviter
-    if let Err(e) = crate::services::affiliate::award_commission(&state.db, &mut tx, &id, recharge_id, request.amount).await {
-        tracing::error!("Failed to award commission for recharge {}: {}", recharge_id, e);
+    // 系统钱包才奖励佣金，赠送钱包不计入佣金范围
+    if !is_gift {
+        if let Err(e) = crate::services::affiliate::award_commission(&state.db, &mut tx, &id, recharge_id, request.amount).await {
+            tracing::error!("Failed to award commission for recharge {}: {}", recharge_id, e);
+        }
     }
 
     tx.commit().await?;

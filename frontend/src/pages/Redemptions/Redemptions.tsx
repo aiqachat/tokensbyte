@@ -165,10 +165,12 @@ const Redemptions: React.FC = () => {
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
         onOk={() => form.submit()}
+        okText={t('common.ok')}
+        cancelText={t('common.cancel')}
       >
         <Form form={form} layout="vertical" onFinish={handleCreate} initialValues={{ count: 1, quota: 10 }}>
           <Form.Item name="name" label={t('redemptions.name')} rules={[{ required: true }]}>
-            <Input placeholder="e.g. Summer Recharge 2026" />
+            <Input placeholder={t('redemptions.name')} />
           </Form.Item>
           <Form.Item name="count" label={t('common.count')} rules={[{ required: true }]}>
             <InputNumber min={1} max={100} style={{ width: '100%' }} />

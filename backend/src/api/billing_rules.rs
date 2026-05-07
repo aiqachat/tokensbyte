@@ -31,7 +31,7 @@ pub async fn create_rule(
     let pricing_tiers_str = serde_json::to_string(&req.pricing_tiers.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
     let extended_config_str = serde_json::to_string(&req.extended_config.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
     
-    let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM billing_rules WHERE name = ?"))
+    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM billing_rules WHERE name = ?"))
         .bind(&req.name)
         .fetch_optional(&state.db.pool)
         .await?;
@@ -40,10 +40,16 @@ pub async fn create_rule(
         return Err(crate::error::AppError::Conflict("该费用规则名称已存在".to_string()));
     }
 
-    let id_i32 = sqlx::query(
+    let mut pid_val = req.pid.clone().unwrap_or_default();
+    if pid_val.is_empty() {
+        use rand::Rng;
+        pid_val = format!("6{:04}", rand::thread_rng().gen_range(0..10000));
+    }
+
+    let id_i64 = sqlx::query(
         &state.db.format_query(r#"INSERT INTO billing_rules 
-            (name, billing_type, prompt_rate, completion_rate, cached_rate, fixed_rate, duration_rate, billing_rule, pricing_tiers, extended_config, is_active) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"#)
+            (name, billing_type, prompt_rate, completion_rate, cached_rate, fixed_rate, duration_rate, billing_rule, pricing_tiers, extended_config, is_active, pid) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"#)
     )
     .bind(&req.name)
     .bind(&req.billing_type)
@@ -56,12 +62,13 @@ pub async fn create_rule(
     .bind(&pricing_tiers_str)
     .bind(&extended_config_str)
     .bind(req.is_active)
+    .bind(&pid_val)
     .fetch_one(&state.db.pool)
     .await?
-    .get::<i32, _>("id");
+    .get::<i64, _>("id");
 
     let rule = sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ?"))
-        .bind(id_i32)
+        .bind(id_i64)
         .fetch_one(&state.db.pool)
         .await?;
 
@@ -70,7 +77,7 @@ pub async fn create_rule(
 
 pub async fn update_rule(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
     Json(mut req): Json<UpdateBillingRuleRequest>,
 ) -> AppResult<Json<BillingRule>> {
     if let Some(name) = &mut req.name {
@@ -78,7 +85,7 @@ pub async fn update_rule(
         if name.is_empty() {
             return Err(crate::error::AppError::BadRequest("规则名称不能为空".to_string()));
         }
-        let exists: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM billing_rules WHERE name = ? AND id != ?"))
+        let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM billing_rules WHERE name = ? AND id != ?"))
             .bind(&*name)
             .bind(id)
             .fetch_optional(&state.db.pool)
@@ -121,6 +128,9 @@ pub async fn update_rule(
     if let Some(active) = req.is_active {
         sqlx::query(&state.db.format_query("UPDATE billing_rules SET is_active = ? WHERE id = ?")).bind(active).bind(id).execute(&state.db.pool).await?;
     }
+    if let Some(pid) = &req.pid {
+        sqlx::query(&state.db.format_query("UPDATE billing_rules SET pid = ? WHERE id = ?")).bind(pid).bind(id).execute(&state.db.pool).await?;
+    }
 
     sqlx::query(&state.db.format_query("UPDATE billing_rules SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;
 
@@ -134,7 +144,7 @@ pub async fn update_rule(
 
 pub async fn delete_rule(
     State(state): State<Arc<AppState>>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     let rule: Option<BillingRule> = sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ?"))
         .bind(id)

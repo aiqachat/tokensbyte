@@ -125,6 +125,10 @@ pub struct ConfigRequest {
     pub default_max_files_per_folder: Option<i64>,              // 默认每文件夹文件上限
     pub level_api_enabled: Option<HashMap<String, bool>>,      // 每个等级的 API 接口开放状态
     pub default_api_enabled: Option<bool>,                     // 默认 API 接口开放状态
+    pub level_max_projects: Option<HashMap<String, i64>>,      // 每个等级的项目数量上限
+    pub default_max_projects: Option<i64>,                     // 默认项目数量上限
+    pub level_max_assets: Option<HashMap<String, i64>>,        // 每个等级的素材数量上限
+    pub default_max_assets: Option<i64>,                       // 默认素材数量上限
 }
 
 /// 管理员：配置插件的开放等级
@@ -198,6 +202,30 @@ async fn update_plugin_config(
     // 保存默认 API 访问开关
     if let Some(dae) = payload.default_api_enabled {
         upsert_config(&state, &name, "api_enabled", if dae { "true" } else { "false" }).await?;
+    }
+
+    // 保存每个等级的项目上限
+    if let Some(ref level_mp) = payload.level_max_projects {
+        for (level_key, val) in level_mp {
+            let config_key = format!("max_projects_{}", level_key);
+            upsert_config(&state, &name, &config_key, &val.to_string()).await?;
+        }
+    }
+
+    if let Some(dmp) = payload.default_max_projects {
+        upsert_config(&state, &name, "default_max_projects", &dmp.to_string()).await?;
+    }
+
+    // 保存每个等级的素材上限
+    if let Some(ref level_ma) = payload.level_max_assets {
+        for (level_key, val) in level_ma {
+            let config_key = format!("max_assets_{}", level_key);
+            upsert_config(&state, &name, &config_key, &val.to_string()).await?;
+        }
+    }
+
+    if let Some(dma) = payload.default_max_assets {
+        upsert_config(&state, &name, "default_max_assets", &dma.to_string()).await?;
     }
 
     Ok(Json(json!({ "message": "ok" })))
@@ -283,6 +311,8 @@ async fn get_storage_config(
     let mut level_max_folders = serde_json::Map::new();
     let mut level_max_files = serde_json::Map::new();
     let mut level_api_enabled = serde_json::Map::new();
+    let mut level_max_projects = serde_json::Map::new();
+    let mut level_max_assets = serde_json::Map::new();
     for (k, v) in &configs {
         if let Some(level_key) = k.strip_prefix("quota_") {
             let mb: i64 = v.parse().unwrap_or(100);
@@ -296,6 +326,12 @@ async fn get_storage_config(
         } else if let Some(level_key) = k.strip_prefix("api_enabled_") {
             let val = v == "true";
             level_api_enabled.insert(level_key.to_string(), serde_json::Value::Bool(val));
+        } else if let Some(level_key) = k.strip_prefix("max_projects_") {
+            let val: i64 = v.parse().unwrap_or(3);
+            level_max_projects.insert(level_key.to_string(), serde_json::Value::Number(val.into()));
+        } else if let Some(level_key) = k.strip_prefix("max_assets_") {
+            let val: i64 = v.parse().unwrap_or(30);
+            level_max_assets.insert(level_key.to_string(), serde_json::Value::Number(val.into()));
         }
     }
 
@@ -304,6 +340,8 @@ async fn get_storage_config(
     let default_max_folders: i64 = configs.get("max_folders").and_then(|v| v.parse().ok()).unwrap_or(20);
     let default_max_files_per_folder: i64 = configs.get("max_files_per_folder").and_then(|v| v.parse().ok()).unwrap_or(100);
     let default_api_enabled: bool = configs.get("api_enabled").map(|v| v == "true").unwrap_or(true);
+    let default_max_projects: i64 = configs.get("default_max_projects").and_then(|v| v.parse().ok()).unwrap_or(3);
+    let default_max_assets: i64 = configs.get("default_max_assets").and_then(|v| v.parse().ok()).unwrap_or(30);
 
     Ok(Json(json!({
         "tos_access_key": configs.get("tos_access_key").cloned().unwrap_or_default(),
@@ -323,6 +361,10 @@ async fn get_storage_config(
         "default_max_files_per_folder": default_max_files_per_folder,
         "level_api_enabled": level_api_enabled,
         "default_api_enabled": default_api_enabled,
+        "level_max_projects": level_max_projects,
+        "default_max_projects": default_max_projects,
+        "level_max_assets": level_max_assets,
+        "default_max_assets": default_max_assets,
     })))
 }
 
@@ -513,7 +555,7 @@ pub async fn get_tos_config(state: &AppState, plugin_name: &str) -> Option<TosCo
 
 #[derive(serde::Serialize, sqlx::FromRow)]
 pub struct PluginApiLog {
-    pub id: i32,
+    pub id: i64,
     pub user_id: String,
     pub plugin_name: String,
     pub api_endpoint: String,
@@ -606,7 +648,7 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "description": "支持多种分辨率和时长，适合高品质视频生成",
             "params": [
                 {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["21:9","16:9","4:3","1:1","3:4","9:16","adaptive"], "default": "16:9"},
-                {"key": "duration", "label": "视频时长", "type": "select", "options": [-1,5,10], "default": 5, "unit": "秒", "hint": "-1 表示由模型智能选择"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [-1,5,10,15], "default": 5, "unit": "秒", "hint": "-1 表示由模型智能选择"},
                 {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p","1080p"], "default": "720p"},
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
@@ -624,7 +666,7 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "description": "快速生成，参数精简，适合快速预览",
             "params": [
                 {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["21:9","16:9","4:3","1:1","3:4","9:16","adaptive"], "default": "16:9"},
-                {"key": "duration", "label": "视频时长", "type": "select", "options": [-1,5,10], "default": 5, "unit": "秒", "hint": "-1 表示由模型智能选择"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [-1,5,10,15], "default": 5, "unit": "秒", "hint": "-1 表示由模型智能选择"},
                 {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p"], "default": "720p"},
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
@@ -641,10 +683,8 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "高质量 AI 图片生成，支持 doubao-seedream-5.0-lite 模型",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "3072x3072", "1728x2304", "2592x3456", "2304x1728", "3456x2592", "2848x1600", "4096x2304", "1600x2848", "2304x4096", "2496x1664", "3744x2496", "1664x2496", "2496x3744", "3136x1344", "4704x2016"], "default": "2048x2048"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "3072x3072", "1728x2304", "2592x3456", "2304x1728", "3456x2592", "2848x1600", "4096x2304", "1600x2848", "2304x4096", "2496x1664", "3744x2496", "1664x2496", "2496x3744", "3136x1344", "4704x2016", "2K", "3K", "4K"], "default": "2048x2048"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
-                {"key": "guidance_scale", "label": "引导强度", "type": "select", "options": [3,5,7,9,12], "default": 7},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
@@ -658,7 +698,6 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
                 {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "4096x4096", "1728x2304", "3520x4704", "2304x1728", "4704x3520", "2848x1600", "5504x3040", "1600x2848", "3040x5504", "2496x1664", "4992x3328", "1664x2496", "3328x4992", "3136x1344", "6240x2656"], "default": "2048x2048"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
-                {"key": "guidance_scale", "label": "引导强度", "type": "select", "options": [3,5,7,9,12], "default": 7},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
@@ -669,10 +708,8 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "高质量 AI 图片生成，支持 doubao-seedream-4.0 模型",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1024x1024", "2048x2048", "4096x4096", "864x1152", "1728x2304", "3520x4704", "1152x864", "2304x1728", "4704x3520", "1312x736", "2848x1600", "5504x3040", "736x1312", "1600x2848", "3040x5504", "832x1248", "1664x2496", "3328x4992", "1248x832", "2496x1664", "4992x3328", "1568x672", "3136x1344", "6240x2656"], "default": "1024x1024"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1024x1024", "2048x2048", "4096x4096", "864x1152", "1728x2304", "3520x4704", "1152x864", "2304x1728", "4704x3520", "1312x736", "2848x1600", "5504x3040", "736x1312", "1600x2848", "3040x5504", "832x1248", "1664x2496", "3328x4992", "1248x832", "2496x1664", "4992x3328", "1568x672", "3136x1344", "6240x2656", "1K", "2K", "4K"], "default": "1024x1024"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
-                {"key": "guidance_scale", "label": "引导强度", "type": "select", "options": [3,5,7,9,12], "default": 7},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
@@ -686,7 +723,7 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "description": "支持文生视频和图生视频，可生成音频，适用于 doubao-seedance-1-0-pro 系列模型",
             "params": [
                 {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["21:9","16:9","4:3","1:1","3:4","9:16","adaptive"], "default": "16:9"},
-                {"key": "duration", "label": "视频时长", "type": "select", "options": [-1,5,10], "default": 5, "unit": "秒", "hint": "-1 表示由模型智能选择"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [-1,5,10,12], "default": 5, "unit": "秒", "hint": "-1 表示由模型智能选择"},
                 {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
                 {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
@@ -753,7 +790,7 @@ async fn load_schemes_from_db(state: &AppState, plugin_name: &str) -> Vec<serde_
 /// 每个模型的体验配置（启用状态 + 绑定方案）
 #[derive(Deserialize)]
 pub struct PlaygroundModelConfig {
-    pub id: i32,
+    pub id: i64,
     pub enabled: bool,
     pub scheme_id: Option<String>,
 }
@@ -761,6 +798,7 @@ pub struct PlaygroundModelConfig {
 #[derive(Deserialize)]
 pub struct PlaygroundConfigRequest {
     pub models: Vec<PlaygroundModelConfig>,
+    pub default_model_mids: Option<serde_json::Value>, // {"chat": "mid1", "image": "mid2", "video": "mid3"}
 }
 
 /// 管理员：获取体验中心配置（返回全部模型 + 每个模型的启用/方案信息）
@@ -816,9 +854,15 @@ async fn get_playground_config(
         }));
     }
 
+    // 读取每个类型的默认模型
+    let default_model_mids: serde_json::Value = configs.get("pg_default_model_mids")
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or(json!({}));
+
     Ok(Json(json!({
         "models": model_list,
         "schemes": load_schemes_from_db(&state, &name).await,
+        "default_model_mids": default_model_mids,
     })))
 }
 
@@ -835,6 +879,11 @@ async fn save_playground_config(
         .await?;
     if role != "admin" {
         return Err(AppError::Unauthorized);
+    }
+
+    // 保存每个类型的默认模型
+    if let Some(ref mids) = payload.default_model_mids {
+        upsert_config(&state, &name, "pg_default_model_mids", &mids.to_string()).await?;
     }
 
     for mc in &payload.models {
@@ -950,8 +999,14 @@ async fn get_playground_public_config(
         }));
     }
 
+    // 读取每个类型的默认模型
+    let default_model_mids: serde_json::Value = configs.get("pg_default_model_mids")
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or(json!({}));
+
     Ok(Json(json!({
         "models": enabled_models,
+        "default_model_mids": default_model_mids,
     })))
 }
 
@@ -986,12 +1041,20 @@ async fn get_marketplace_models(
         &state.db.format_query("SELECT * FROM model_types ORDER BY sort_order ASC")
     ).fetch_all(&state.db.pool).await?;
 
+    // 读取展示模式: whitelist（默认隐藏，手动开启）或 blacklist（默认展示，手动排除）
+    let display_mode = configs.get("mp_display_mode").map(|s| s.as_str()).unwrap_or("whitelist");
+    let is_blacklist = display_mode == "blacklist";
+
     let mut model_list = Vec::new();
     for m in &models {
         let config_key = format!("mp_model_id_{}", m.id);
         let model_conf: serde_json::Value = configs.get(&config_key)
             .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or(json!({"enabled": false, "sort_order": 0, "description": ""}));
+            .unwrap_or(json!({"sort_order": 0, "description": ""}));
+
+        // 在黑名单模式下，没有配置的模型默认展示 (enabled=true)
+        let default_enabled = is_blacklist;
+        let mp_enabled = model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(default_enabled);
 
         let provider_name = m.provider_id
             .and_then(|pid| providers.iter().find(|p| p.id == pid))
@@ -1013,7 +1076,7 @@ async fn get_marketplace_models(
             "type_id": m.type_id,
             "type_name": type_name,
             "is_active": m.is_active,
-            "mp_enabled": model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+            "mp_enabled": mp_enabled,
             "mp_sort_order": model_conf.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0),
             "mp_description": model_conf.get("description").and_then(|v| v.as_str()).unwrap_or(""),
         }));
@@ -1021,12 +1084,13 @@ async fn get_marketplace_models(
 
     Ok(Json(json!({
         "models": model_list,
+        "display_mode": display_mode,
     })))
 }
 
 #[derive(Deserialize)]
 pub struct MarketplaceModelConfig {
-    pub id: i32,
+    pub id: i64,
     pub enabled: bool,
     pub sort_order: Option<i64>,
     pub description: Option<String>,
@@ -1035,6 +1099,7 @@ pub struct MarketplaceModelConfig {
 #[derive(Deserialize)]
 pub struct MarketplaceConfigRequest {
     pub models: Vec<MarketplaceModelConfig>,
+    pub display_mode: Option<String>, // "whitelist" or "blacklist"
 }
 
 /// 管理员：保存模型广场配置
@@ -1050,6 +1115,11 @@ async fn save_marketplace_models(
         .await?;
     if role != "admin" {
         return Err(AppError::Unauthorized);
+    }
+
+    // 保存展示模式
+    if let Some(ref mode) = payload.display_mode {
+        upsert_config(&state, &name, "mp_display_mode", mode).await?;
     }
 
     for mc in &payload.models {
@@ -1093,19 +1163,21 @@ pub async fn get_marketplace_public(
 
     // 2. 用户等级权限校验
     if plugin.allowed_levels != "all" {
-        let user_info: Option<(String, Option<i64>)> = sqlx::query_as(
-            &state.db.format_query("SELECT u.user_group, ul.id as level_id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
+        let user_info: Option<(String, String, Option<i64>)> = sqlx::query_as(
+            &state.db.format_query("SELECT u.role, u.user_group, ul.id as level_id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
         )
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?;
 
-        let (user_group, user_level_id) = user_info.unwrap_or_else(|| ("default".to_string(), Some(0)));
-        let allowed: Vec<&str> = plugin.allowed_levels.split(',').collect();
-        let level_id_str = user_level_id.unwrap_or(0).to_string();
+        let (role, user_group, user_level_id) = user_info.unwrap_or_else(|| ("user".to_string(), "default".to_string(), Some(0)));
+        if role != "admin" {
+            let allowed: Vec<&str> = plugin.allowed_levels.split(',').collect();
+            let level_id_str = user_level_id.unwrap_or(0).to_string();
 
-        if !allowed.contains(&user_group.as_str()) && !allowed.contains(&level_id_str.as_str()) {
-            return Err(AppError::Forbidden("您当前的用户等级无权访问模型广场".to_string()));
+            if !allowed.contains(&user_group.as_str()) && !allowed.contains(&level_id_str.as_str()) {
+                return Err(AppError::Forbidden("您当前的用户等级无权访问模型广场".to_string()));
+            }
         }
     }
 
@@ -1138,14 +1210,20 @@ pub async fn get_marketplace_public(
         &state.db.format_query("SELECT * FROM billing_rules WHERE is_active = 1")
     ).fetch_all(&state.db.pool).await?;
 
+    // 读取展示模式
+    let display_mode = configs.get("mp_display_mode").map(|s| s.as_str()).unwrap_or("whitelist");
+    let is_blacklist = display_mode == "blacklist";
+
     let mut marketplace_models: Vec<serde_json::Value> = Vec::new();
     for m in &models {
         let config_key = format!("mp_model_id_{}", m.id);
         let model_conf: serde_json::Value = configs.get(&config_key)
             .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or(json!({"enabled": false, "sort_order": 0, "description": ""}));
+            .unwrap_or(json!({"sort_order": 0, "description": ""}));
 
-        let is_enabled = model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        // 黑名单模式：没有配置的模型默认展示；白名单模式：没有配置的模型默认隐藏
+        let default_enabled = is_blacklist;
+        let is_enabled = model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(default_enabled);
         if !is_enabled { continue; }
 
         let sort_order = model_conf.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -1168,10 +1246,12 @@ pub async fn get_marketplace_public(
                 "name": b.name,
                 "prompt_rate": b.prompt_rate,
                 "completion_rate": b.completion_rate,
+                "cached_rate": b.cached_rate,
                 "fixed_rate": b.fixed_rate,
                 "duration_rate": b.duration_rate,
                 "pricing_tiers": b.pricing_tiers,
                 "billing_rule": b.billing_rule,
+                "extended_config": b.extended_config,
             }))
             .unwrap_or(json!(null));
 
@@ -1208,11 +1288,11 @@ pub async fn get_marketplace_public(
         sb.cmp(&sa)
     });
 
-    let active_provider_ids: std::collections::HashSet<i32> = marketplace_models.iter()
-        .filter_map(|m| m.get("provider_id").and_then(|v| v.as_i64()).map(|v| v as i32))
+    let active_provider_ids: std::collections::HashSet<i64> = marketplace_models.iter()
+        .filter_map(|m| m.get("provider_id").and_then(|v| v.as_i64()))
         .collect();
-    let active_type_ids: std::collections::HashSet<i32> = marketplace_models.iter()
-        .filter_map(|m| m.get("type_id").and_then(|v| v.as_i64()).map(|v| v as i32))
+    let active_type_ids: std::collections::HashSet<i64> = marketplace_models.iter()
+        .filter_map(|m| m.get("type_id").and_then(|v| v.as_i64()))
         .collect();
 
     let provider_list: Vec<serde_json::Value> = providers.iter()

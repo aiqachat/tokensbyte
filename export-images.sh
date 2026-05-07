@@ -29,6 +29,13 @@ echo "📦 开始构建 Docker 镜像..."
 echo ""
 
 # 构建镜像
+# 如果在 Mac (尤其是 Apple Silicon) 上构建用于 Linux 服务器的镜像，需要指定目标架构
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    echo "🍎 检测到 Mac 环境，正在设置构建架构为 linux/amd64..."
+    echo "💡 这将确保镜像能在大多数云服务器 (x86_64) 上运行，避免 'exec format error' 错误"
+    export DOCKER_DEFAULT_PLATFORM=linux/amd64
+fi
+
 docker compose build
 
 if [ $? -ne 0 ]; then
@@ -172,7 +179,7 @@ cat > "$OUTPUT_DIR/UPLOAD-GUIDE.txt" << EOF
 📦 导出时间: $(date '+%Y-%m-%d %H:%M:%S')
 
 📁 需要上传的文件:
-$(ls -lh "$OUTPUT_DIR"/*${TIMESTAMP}.tar | xargs -I {} basename {})
+$(ls -1 "$OUTPUT_DIR"/*${TIMESTAMP}.tar | xargs -n 1 basename)
 - import-images.sh (导入脚本)
 - docker-compose.yml (部署配置)
 - .env.example (环境变量模板)

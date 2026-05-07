@@ -18,21 +18,26 @@ pub async fn video_generations(
 ) -> AppResult<Response> {
     let start_time = std::time::Instant::now();
     let raw_path = uri.path();
-    // 归一化：将 /api/video... 和 /api/videos... 路由归一化为 /v1/ 前缀
-    // 避免破坏阿里原生路径 /api/v1/services/...
-    let entry_path = if raw_path.starts_with("/api/video") || raw_path.starts_with("/api/videos") {
-        format!("/v1/{}", &raw_path[5..])
+    // 归一化
+    // - /v1/videos/text2video|image2video|multi-image2video|omni-video → /v1/video/generations
+    let entry_path = if raw_path.starts_with("/v1/videos/") {
+        // 可灵原生视频路径归一化（匹配转发规则的 path_rewrite.old）
+        "/v1/video/generations".to_string()
     } else {
         raw_path.to_string()
     };
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
-    let model = body["model"].as_str().unwrap_or("video-gen");
+    let model = body["model"].as_str()
+        .or_else(|| body["model_name"].as_str())
+        .ok_or_else(|| AppError::BadRequest(
+            "Missing required parameter: model".to_string()
+        ))?;
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance).await?;
+    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance, Some("视频")).await?;
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, &entry_path).await?;
 
     // 解析转发规则
-    let resolved = match forward::resolve_forward_rule(&state, model, "视频", &entry_path).await {
+    let mut resolved = match forward::resolve_forward_rule(&state, model, "视频", &entry_path).await {
         Some(r) => r,
         None => {
             if forward::model_has_forward_rules(&state, model).await {
@@ -45,6 +50,8 @@ pub async fn video_generations(
     };
 
     let mut upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "视频");
+    // 可灵动态路径：根据请求体内容调整实际端点（text2video/image2video/multi-image2video）
+    forward::resolve_kling_dynamic_path(&mut resolved, &upstream_body);
     let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
     let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
 
@@ -73,20 +80,14 @@ pub async fn video_generations(
         let err = resp.text().await?;
         let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("{}|{}", entry_path, resolved.upstream_path.replace("${model}", &resolved_model));
+        let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
         proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, status,
             &ep, Some(&display_err), latency_ms, 0,
             Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()), asset_convert_log.clone()).await;
         return Err(AppError::UpstreamError(display_err));
     }
 
-    let db_model: Option<crate::models::Model> = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-    )
-    .bind(model)
-    .fetch_optional(&state.db.pool)
-    .await
-    .unwrap_or(None);
+    let db_model = proxy::find_active_model(&state, model, Some("视频")).await;
 
     let _db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
         if let Some(rule_id) = m.billing_rule_id {
@@ -111,7 +112,7 @@ pub async fn video_generations(
     // 视频是异步任务：POST 只记录日志（cost=预扣费），不执行多余结算预扣费
     // 真正的 token 和差值结算在 GET 轮询成功后执行
     let latency_ms = start_time.elapsed().as_millis() as u32;
-    let ep = format!("{}|{}", entry_path, resolved.upstream_path.replace("${model}", &resolved_model));
+    let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
     let billing_detail = if pre_deduction > 0.0 {
         if let Some(ref acl) = asset_convert_log {
             format!("异步任务预扣费冻结 | {}", acl)
@@ -125,9 +126,9 @@ pub async fn video_generations(
             "异步任务处理中(冻结)".to_string()
         }
     };
-    proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200,
+    proxy::record_and_bill_with_category(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200,
         &ep, None, latency_ms, 0,
-        Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail)).await;
+        Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail), Some("视频")).await;
 
     Ok(Response::builder()
         .header("Content-Type", "application/json")
@@ -142,21 +143,22 @@ pub async fn video_generations_status(
     Path(task_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> AppResult<Response> {
-    let mut model_name = params.get("model").map(|s| s.as_str()).unwrap_or("video-gen").to_string();
+    let mut model_name = params.get("model").map(|s| s.as_str()).unwrap_or("").to_string();
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
 
     // 从日志中查找原始渠道信息
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, ''), billing_detail FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
+    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, ''), billing_detail, COALESCE(billing_features, '') FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
     let mut db_log_id: Option<i64> = None;
     let mut original_request: Option<String> = None;
+    let mut billing_features_str: Option<String> = None;
     let mut already_billed = false;
-    let log_row: Option<(i64, i64, String, String, String, Option<String>)> = sqlx::query_as(&log_query)
+    let log_row: Option<(i64, i64, String, String, String, Option<String>, String)> = sqlx::query_as(&log_query)
         .bind(format!("%{}%", task_id))
         .fetch_optional(&state.db.pool)
         .await
         .unwrap_or(None);
 
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _, req_content, b_detail)) = log_row {
+    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _, req_content, b_detail, bf_str)) = log_row {
         db_log_id = Some(l_id);
         model_name = m_name;
         if let Some(detail) = b_detail {
@@ -165,6 +167,7 @@ pub async fn video_generations_status(
             }
         }
         if !req_content.is_empty() { original_request = Some(req_content); }
+        if !bf_str.is_empty() { billing_features_str = Some(bf_str); }
         if let Ok(Some(mut ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
             .bind(cid)
             .fetch_optional(&state.db.pool)
@@ -187,6 +190,13 @@ pub async fn video_generations_status(
     } else {
         None
     };
+
+    // 模型名不可为空：查询参数和日志均无法确定模型时，直接拦截
+    if model_name.is_empty() {
+        return Err(AppError::BadRequest(
+            "Missing model parameter and cannot infer from task_id".to_string()
+        ));
+    }
 
     let (channel, _) = if let Some(ch) = channel_opt {
         (ch, "".to_string())
@@ -235,12 +245,13 @@ pub async fn video_generations_status(
         let resp_json: serde_json::Value = serde_json::from_str(&get_resp_str).unwrap_or(serde_json::json!({}));
         let raw_status = resp_json.get("status")
             .or_else(|| resp_json.get("data").and_then(|d| d.get("status")))
+            .or_else(|| resp_json.get("data").and_then(|d| d.get("task_status")))
             .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
             .or_else(|| resp_json.get("output").and_then(|o| o.get("task_status")))
             .and_then(|s| s.as_str()).unwrap_or("");
         let task_status_str = raw_status.to_lowercase();
         let task_status = match task_status_str.as_str() {
-            "completed" | "succeeded" | "success" => "succeeded",
+            "completed" | "succeeded" | "succeed" | "success" => "succeeded",
             "failed" | "canceled" | "cancelled" | "unknown" => "failed",
             _ => task_status_str.as_str(),
         };
@@ -256,9 +267,7 @@ pub async fn video_generations_status(
             let usage = crate::relay::usage_extractor::parse_usage(&get_resp_str);
             let image_count = crate::relay::usage_extractor::count_response_images(&get_resp_str);
 
-            let db_model: Option<crate::models::Model> = sqlx::query_as(
-                &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-            ).bind(&model_name).fetch_optional(&state.db.pool).await.unwrap_or(None);
+            let db_model = proxy::find_active_model(&state, &model_name, Some("视频")).await;
 
             let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
                 if let Some(rule_id) = m.billing_rule_id {
@@ -267,17 +276,34 @@ pub async fn video_generations_status(
                 } else { None }
             } else { None };
 
-            let mut features = crate::relay::usage_extractor::extract_request_features(&resp_json);
-            // 从原始请求补充分辨率、视频输入、时长信息（GET 响应通常不含这些字段）
-            if let Some(ref req_str) = original_request {
-                if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(req_str) {
-                    let req_feat = crate::relay::usage_extractor::extract_request_features(&req_json);
-                    if features.resolution.is_none() { features.resolution = req_feat.resolution; }
-                    if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
-                    if req_feat.has_video { features.has_video = true; }
-                    if req_feat.has_audio { features.has_audio = true; }
-                    if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
+            // 统一提取计费特征：优先从 billing_features 快照恢复（不依赖 request_content）
+            let resp_features = crate::relay::usage_extractor::extract_request_features(&resp_json);
+            let mut features = if let Some(ref bf_str) = billing_features_str {
+                let mut f = serde_json::from_str::<crate::relay::usage_extractor::ExtractedFeatures>(bf_str)
+                    .unwrap_or_default();
+                if f.resolution.is_none() { f.resolution = resp_features.resolution; }
+                if f.duration_seconds.is_none() { f.duration_seconds = resp_features.duration_seconds; }
+                f
+            } else {
+                // 旧数据兜底：从响应 + request_content 重新提取
+                let mut f = resp_features;
+                if let Some(ref req_str) = original_request {
+                    if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(req_str) {
+                        let req_feat = crate::relay::usage_extractor::extract_request_features(&req_json);
+                        if f.resolution.is_none() { f.resolution = req_feat.resolution; }
+                        if f.duration_seconds.is_none() { f.duration_seconds = req_feat.duration_seconds; }
+                        if req_feat.has_video { f.has_video = true; }
+                        if req_feat.has_audio { f.has_audio = true; }
+                        if f.service_tier.is_none() { f.service_tier = req_feat.service_tier; }
+                        if f.mode.is_none() { f.mode = req_feat.mode; }
+                        if f.sound.is_none() { f.sound = req_feat.sound; }
+                    }
                 }
+                f
+            };
+            // 从可灵终态响应提取实际视频时长（覆盖请求中的预期值）
+            if let Some(kling_dur) = crate::relay::usage_extractor::extract_kling_video_duration(&resp_json) {
+                features.duration_seconds = Some(kling_dur);
             }
             // 视频 duration 兜底
             if features.duration_seconds.is_none() {
@@ -311,29 +337,30 @@ pub async fn video_generations_status(
 
                     // 2. 余额与配额结算
                     if cost > 0.0 || pre_deduction > 0.0 {
-                        // 更新用户余额与配额
+                        // 更新用户余额（差额）与配额（实际消费）
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(apply_balance).bind(&token.user_id)
+                        )).bind(apply_balance).bind(cost).bind(&token.user_id)
                         .execute(&mut *tx).await;
 
-                        // 更新 Token 配额
+                        // 更新 Token 配额及使用时间
+                        let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                         let _ = sqlx::query(&state.db.format_query(
-                            "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(token.id)
+                            "UPDATE api_tokens SET quota_used = quota_used + ?, last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(cost).bind(&now_str).bind(token.id)
                         .execute(&mut *tx).await;
 
-                        // 更新渠道配额 (修复遗留问题)
+                        // 更新渠道配额
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(channel.id)
+                        )).bind(cost).bind(channel.id)
                         .execute(&mut *tx).await;
                     }
 
                     let _ = tx.commit().await;
 
-                    tracing::info!("[Video Success Billing] log_id={}, model={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}", 
-                        log_id, model_name, cost, pre_deduction, apply_balance);
+                    tracing::info!("[Video Success Billing] log_id={}, model={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}, url={}", 
+                        log_id, model_name, cost, pre_deduction, apply_balance, url);
                 }
                 Err(e) => {
                     tracing::error!("[Video Billing] 启动事务失败: {:?}", e);
@@ -373,7 +400,7 @@ pub async fn video_generations_status(
                     .execute(&mut *tx).await;
 
                     let _ = tx.commit().await;
-                    tracing::info!("[Video Failure Billing] log_id={} failed, refunded pre_deduction={:.6}", log_id, pre_deduction);
+                    tracing::info!("[Video Failure Billing] log_id={} failed, refunded pre_deduction={:.6}, url={}", log_id, pre_deduction, url);
                 }
                 Err(e) => {
                     tracing::error!("[Video Failure Billing] 启动事务失败: {:?}", e);

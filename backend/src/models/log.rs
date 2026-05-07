@@ -39,11 +39,20 @@ pub struct RequestLog {
     #[sqlx(default)]
     pub user_group: Option<String>,
     #[sqlx(default)]
+    pub user_level_name: Option<String>,
+    #[sqlx(default)]
     pub user_uid: Option<String>,
     #[sqlx(default)]
     pub channel_name: Option<String>,
     #[sqlx(default)]
     pub billing_detail: Option<String>,
+    #[sqlx(default)]
+    pub billing_pid: Option<String>,
+    #[sqlx(default)]
+    pub forward_eid: Option<String>,
+    /// POST 阶段提取的计费特征快照 (JSON)，独立于 enable_log 开关
+    #[sqlx(default)]
+    pub billing_features: Option<String>,
     pub created_at: String,
 }
 
@@ -58,6 +67,7 @@ pub struct LogQuery {
     pub status: Option<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
+    pub uid: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

@@ -58,13 +58,13 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
 
 /// 执行单条任务的同步轮询（支持手动或定时调用）
 pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Result<String> {
-    let row: Option<(String, i64, String)> = sqlx::query_as(
+    let row: Option<(String, i64, String, String)> = sqlx::query_as(
         &state.db.format_query(
-            "SELECT response_content, channel_id, model FROM logs WHERE id = ?"
+            "SELECT response_content, channel_id, model, COALESCE(endpoint, '') FROM logs WHERE id = ?"
         )
     ).bind(log_id).fetch_optional(&state.db.pool).await?;
 
-    let (resp_content, channel_id, model_name) = match row {
+    let (resp_content, channel_id, model_name, endpoint) = match row {
         Some(r) => r,
         None => return Err(anyhow::anyhow!("任务记录不存在")),
     };
@@ -79,14 +79,24 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
         None => return Err(anyhow::anyhow!("渠道不存在或已被删除")),
     };
 
-    let category: String = sqlx::query_scalar(
-        &state.db.format_query(
-            "SELECT COALESCE(t.name, '') FROM models m \
-             LEFT JOIN model_types t ON m.type_id = t.id \
-             WHERE m.model_id = ? LIMIT 1"
-        )
-    ).bind(&model_name).fetch_optional(&state.db.pool).await
-        .unwrap_or(None).unwrap_or_default();
+    let mut category = if endpoint.contains("/video/") || endpoint.contains("/videos/") || endpoint.contains("/v1/video") {
+        "视频".to_string()
+    } else if endpoint.contains("/image/") || endpoint.contains("/images/") || endpoint.contains("/v1/image") {
+        "图片".to_string()
+    } else {
+        String::new()
+    };
+
+    if category.is_empty() {
+        category = sqlx::query_scalar(
+            &state.db.format_query(
+                "SELECT COALESCE(t.name, '') FROM models m \
+                 LEFT JOIN model_types t ON m.type_id = t.id \
+                 WHERE m.model_id = ? LIMIT 1"
+            )
+        ).bind(&model_name).fetch_optional(&state.db.pool).await
+            .unwrap_or(None).unwrap_or_default();
+    }
 
     let entry_path = match category.as_str() {
         "视频" => "/v1/video/generations",
@@ -129,14 +139,16 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
     // 提取任务状态：兼容根节点、data 节点、final_result 节点、output.task_status（DashScope）
     let raw_status = resp_json.get("status")
         .or_else(|| resp_json.get("data").and_then(|d| d.get("status")))
+        .or_else(|| resp_json.get("data").and_then(|d| d.get("task_status")))
         .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
         .or_else(|| resp_json.get("output").and_then(|o| o.get("task_status")))
         .and_then(|s| s.as_str()).unwrap_or("");
     // 将各种厂商返回的状态统一转化为全小写并归一化
     // DashScope 会返回 SUCCEEDED / FAILED / CANCELED / UNKNOWN
+    // 可灵返回 succeed（不带 ed）
     let task_status_str = raw_status.to_lowercase();
     let task_status = match task_status_str.as_str() {
-        "completed" | "succeeded" | "success" => "succeeded",
+        "completed" | "succeeded" | "succeed" | "success" => "succeeded",
         "failed" | "canceled" | "cancelled" | "unknown" => "failed",
         _ => task_status_str.as_str(),
     };
@@ -150,21 +162,20 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
         .bind(&body).bind(log_id).execute(&state.db.pool).await;
 
     if task_status == "succeeded" {
-        settle_success(state, log_id, &model_name, &body, &resp_json).await;
+        settle_success(state, log_id, &model_name, &body, &resp_json, &url, &category).await;
         Ok("任务已成功落地并计费".to_string())
     } else {
-        settle_failure(state, log_id, &model_name, &task_id).await;
+        settle_failure(state, log_id, &model_name, &task_id, &url, &category).await;
         Ok("任务已失败，预扣费已退回".to_string())
     }
 }
 
 /// 任务成功：提取 token、计费、余额结算
-async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &str, resp_json: &serde_json::Value) {
+async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &str, resp_json: &serde_json::Value, poll_url: &str, category: &str) {
     let usage = super::usage_extractor::parse_usage(body);
 
-    let db_model: Option<crate::models::Model> = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1"),
-    ).bind(model_name).fetch_optional(&state.db.pool).await.unwrap_or(None);
+    let cat_hint = if category.is_empty() { None } else { Some(category) };
+    let db_model = super::proxy::find_active_model(state, model_name, cat_hint).await;
 
     let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
         if let Some(rule_id) = m.billing_rule_id {
@@ -199,39 +210,66 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
         }
     } else { 1.0 };
 
-    // 从原始请求补充计费特征（分辨率、视频输入等 GET 响应通常不含这些字段）
+    // 从原始请求补充计费特征：优先从 billing_features 快照恢复（1次查询替代原来的2次）
     let mut features = super::usage_extractor::extract_request_features(resp_json);
-    // 优先从转换后请求体（upstream_req_content）补充 duration（含兜底默认值）
-    if let Ok(Some(upstream_str)) = sqlx::query_scalar::<_, String>(
-        &state.db.format_query("SELECT COALESCE(upstream_req_content, '') FROM logs WHERE id = ?")
+    if let Ok(Some(bf_str)) = sqlx::query_scalar::<_, String>(
+        &state.db.format_query("SELECT COALESCE(billing_features, '') FROM logs WHERE id = ?")
     ).bind(log_id).fetch_optional(&state.db.pool).await {
-        if !upstream_str.is_empty() {
-            if let Ok(upstream_json) = serde_json::from_str::<serde_json::Value>(&upstream_str) {
-                let upstream_feat = super::usage_extractor::extract_request_features(&upstream_json);
-                if features.duration_seconds.is_none() { features.duration_seconds = upstream_feat.duration_seconds; }
-                if features.resolution.is_none() { features.resolution = upstream_feat.resolution; }
+        if !bf_str.is_empty() {
+            if let Ok(saved_feat) = serde_json::from_str::<super::usage_extractor::ExtractedFeatures>(&bf_str) {
+                // 新数据：直接使用 POST 阶段快照，仅合并响应中的补充信息
+                if features.resolution.is_none() { features.resolution = saved_feat.resolution; }
+                if features.duration_seconds.is_none() { features.duration_seconds = saved_feat.duration_seconds; }
+                if features.mode.is_none() { features.mode = saved_feat.mode; }
+                if features.sound.is_none() { features.sound = saved_feat.sound; }
+                if saved_feat.has_image_ref { features.has_image_ref = true; }
+                if saved_feat.has_video { features.has_video = true; }
+                if saved_feat.has_audio { features.has_audio = true; }
+                if features.service_tier.is_none() { features.service_tier = saved_feat.service_tier; }
+            }
+        } else {
+            // 旧数据兜底：从 upstream_req_content + request_content 提取（2次额外 SQL 查询）
+            if let Ok(Some(upstream_str)) = sqlx::query_scalar::<_, String>(
+                &state.db.format_query("SELECT COALESCE(upstream_req_content, '') FROM logs WHERE id = ?")
+            ).bind(log_id).fetch_optional(&state.db.pool).await {
+                if !upstream_str.is_empty() {
+                    if let Ok(upstream_json) = serde_json::from_str::<serde_json::Value>(&upstream_str) {
+                        let upstream_feat = super::usage_extractor::extract_request_features(&upstream_json);
+                        if features.duration_seconds.is_none() { features.duration_seconds = upstream_feat.duration_seconds; }
+                        if features.resolution.is_none() { features.resolution = upstream_feat.resolution; }
+                        if features.mode.is_none() { features.mode = upstream_feat.mode; }
+                        if features.sound.is_none() { features.sound = upstream_feat.sound; }
+                        if upstream_feat.has_image_ref { features.has_image_ref = true; }
+                        if upstream_feat.has_video { features.has_video = true; }
+                        if upstream_feat.has_audio { features.has_audio = true; }
+                    }
+                }
+            }
+            if let Ok(Some(req_str)) = sqlx::query_scalar::<_, String>(
+                &state.db.format_query("SELECT COALESCE(request_content, '') FROM logs WHERE id = ?")
+            ).bind(log_id).fetch_optional(&state.db.pool).await {
+                if !req_str.is_empty() {
+                    if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(&req_str) {
+                        let req_feat = super::usage_extractor::extract_request_features(&req_json);
+                        if features.resolution.is_none() { features.resolution = req_feat.resolution; }
+                        if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
+                        if req_feat.has_video { features.has_video = true; }
+                        if req_feat.has_audio { features.has_audio = true; }
+                        if req_feat.has_image_ref { features.has_image_ref = true; }
+                        if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
+                        if features.mode.is_none() { features.mode = req_feat.mode; }
+                        if features.sound.is_none() { features.sound = req_feat.sound; }
+                    }
+                }
             }
         }
     }
-    if let Ok(Some(req_str)) = sqlx::query_scalar::<_, String>(
-        &state.db.format_query("SELECT COALESCE(request_content, '') FROM logs WHERE id = ?")
-    ).bind(log_id).fetch_optional(&state.db.pool).await {
-        if !req_str.is_empty() {
-            if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(&req_str) {
-                let req_feat = super::usage_extractor::extract_request_features(&req_json);
-                if features.resolution.is_none() { features.resolution = req_feat.resolution; }
-                if features.duration_seconds.is_none() { features.duration_seconds = req_feat.duration_seconds; }
-                if req_feat.has_video { features.has_video = true; }
-                if req_feat.has_audio { features.has_audio = true; }
-                if features.service_tier.is_none() { features.service_tier = req_feat.service_tier; }
-            }
-        }
+    // 从可灵终态响应提取实际视频时长（覆盖请求体中的预期值）
+    if let Some(kling_dur) = super::usage_extractor::extract_kling_video_duration(resp_json) {
+        features.duration_seconds = Some(kling_dur);
     }
     // 视频模型 duration 兜底：确保按秒计费时不为 0
-    let category_name: String = sqlx::query_scalar(
-        &state.db.format_query("SELECT COALESCE(t.name, '') FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? LIMIT 1")
-    ).bind(model_name).fetch_optional(&state.db.pool).await.unwrap_or(None).unwrap_or_default();
-    if category_name == "视频" && features.duration_seconds.is_none() {
+    if category == "视频" && features.duration_seconds.is_none() {
         features.duration_seconds = Some(5.0);
     }
     // 异步任务终态如果是图片，使用前面已提取的图片数量进行计费
@@ -258,25 +296,26 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
             // 2. 余额结算
             if let Some(ref final_uid) = user_id {
                 if cost > 0.0 || pre_deduction > 0.0 {
-                    // 更新用户余额与配额
+                    // 更新用户余额（差额）与配额（实际消费）
                     let _ = sqlx::query(&state.db.format_query(
                         "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                    )).bind(apply_balance).bind(apply_balance).bind(final_uid)
+                    )).bind(apply_balance).bind(cost).bind(final_uid)
                     .execute(&mut *tx).await;
 
-                    // 更新 Token 配额
+                    // 更新 Token 配额及使用时间
                     if let Some(tid) = token_id {
+                        let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                         let _ = sqlx::query(&state.db.format_query(
-                            "UPDATE api_tokens SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(tid)
+                            "UPDATE api_tokens SET quota_used = quota_used + ?, last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        )).bind(cost).bind(&now_str).bind(tid)
                         .execute(&mut *tx).await;
                     }
 
-                    // 更新渠道配额 (修复遗漏)
+                    // 更新渠道配额
                     if let Some(cid) = channel_id {
                         let _ = sqlx::query(&state.db.format_query(
                             "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(cid)
+                        )).bind(cost).bind(cid)
                         .execute(&mut *tx).await;
                     }
                 }
@@ -284,8 +323,8 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
 
             let _ = tx.commit().await;
 
-            tracing::info!("[TaskPoller Success] log_id={}, model={}, tokens={}, cost={:.6}, applied={:.6}",
-                log_id, model_name, usage.total, cost, apply_balance);
+            tracing::info!("[TaskPoller Success] log_id={}, model={}, tokens={}, cost={:.6}, applied={:.6}, url={}",
+                log_id, model_name, usage.total, cost, apply_balance, poll_url);
         }
         Err(e) => {
             tracing::error!("[TaskPoller Success Billing] 启动事务失败: {:?}", e);
@@ -294,7 +333,7 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
 }
 
 /// 任务失败：退回预扣费并标记
-async fn settle_failure(state: &AppState, log_id: i64, _model_name: &str, _task_id: &str) {
+async fn settle_failure(state: &AppState, log_id: i64, _model_name: &str, _task_id: &str, poll_url: &str, _category: &str) {
     // 获取原始预扣费与关键 ID
     let log_data: Option<(f64, String, Option<i64>, Option<i64>)> = sqlx::query_as(
         &state.db.format_query("SELECT cost, user_id, token_id, channel_id FROM logs WHERE id = ?")
@@ -343,7 +382,7 @@ async fn settle_failure(state: &AppState, log_id: i64, _model_name: &str, _task_
             .execute(&mut *tx).await;
 
             let _ = tx.commit().await;
-            tracing::info!("[TaskPoller Failure] log_id={} failed, refunded pre_deduction={:.6}", log_id, pre_deduction);
+            tracing::info!("[TaskPoller Failure] log_id={} failed, refunded pre_deduction={:.6}, url={}", log_id, pre_deduction, poll_url);
         }
         Err(e) => {
             tracing::error!("[TaskPoller Failure Billing] 启动事务失败: {:?}", e);
