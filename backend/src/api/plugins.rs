@@ -684,6 +684,7 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "3072x3072", "1728x2304", "2592x3456", "2304x1728", "3456x2592", "2848x1600", "4096x2304", "1600x2848", "2304x4096", "2496x1664", "3744x2496", "1664x2496", "2496x3744", "3136x1344", "4704x2016", "2K", "3K", "4K"], "default": "2048x2048"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false},
+                {"key": "output_format", "label": "输出格式", "type": "select", "options": ["png","jpeg"], "default": "jpeg"},
                 {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
             ]
         }),
@@ -726,7 +727,6 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
                 {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
                 {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
-                {"key": "image_url", "label": "参考图片 URL", "type": "input", "default": "", "placeholder": "可选，填入图片链接可实现图生视频"},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
@@ -737,11 +737,11 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "OpenAI 最新旗舰图像生成模型，支持 4K 高清输出、精准文字渲染、思维推理能力，适用于 gpt-image-2 模型",
             "params": [
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1024x1024","1024x1536","1536x1024","auto"], "default": "1024x1024"},
+                {"key": "size", "label": "画面比例", "type": "select", "options": ["auto","1:1","3:2","2:3","4:3","3:4","5:4","4:5","16:9","9:16","2:1","1:2","21:9","9:21"], "default": "1:1"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["1k","2k","4k"], "default": "1k"},
                 {"key": "quality", "label": "图片质量", "type": "select", "options": ["auto","low","medium","high"], "default": "auto"},
                 {"key": "output_format", "label": "输出格式", "type": "select", "options": ["png","jpeg","webp"], "default": "png"},
-                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
-                {"key": "background", "label": "背景", "type": "select", "options": ["auto","transparent","opaque"], "default": "auto"}
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4], "default": 1, "unit": "张"},
             ]
         }),
         json!({
