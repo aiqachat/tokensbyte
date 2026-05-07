@@ -15,6 +15,7 @@ pub struct BonuspayClient {
 /// getAddress 响应中的 wallet 信息
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct CustomerWallet {
     pub address: Option<String>,
     pub cashier_url: Option<String>,
