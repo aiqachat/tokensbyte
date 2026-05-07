@@ -32,11 +32,17 @@ pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult
     Ok(UserContext { user_group: g, level_id: l_id.to_string(), balance: b + gb, discount: d })
 }
 
-/// 统一折扣优先级：模型全站折扣（启用时）> 用户等级折扣
+/// 统一折扣策略：折扣限价（启用时）取 MAX(模型限价, 等级折扣)，保证折扣不低于模型限价
 pub fn resolve_discount(db_model: Option<&crate::models::Model>, level_discount: f64) -> (f64, &'static str) {
     if let Some(m) = db_model {
         if m.site_discount_enabled == 1 {
-            return (m.site_discount, "模型全站折扣");
+            if level_discount < m.site_discount {
+                // 等级折扣低于模型限价，使用模型限价
+                return (m.site_discount, "折扣限价");
+            } else {
+                // 等级折扣 >= 模型限价，使用等级折扣
+                return (level_discount, "等级折扣");
+            }
         }
     }
     (level_discount, "等级折扣")

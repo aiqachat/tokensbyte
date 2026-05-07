@@ -249,7 +249,7 @@ const Models: React.FC = () => {
             {(record.pre_deduction ?? 0) > 0 && <Text style={{ fontSize: '11px', color: '#faad14' }}>预扣: {currencySymbol}{record.pre_deduction}</Text>}
             {record.site_discount_enabled === 1 && (
               <Tag color="volcano" bordered={false} style={{ fontSize: '10px', marginTop: 2, padding: '0 4px', lineHeight: '16px' }}>
-                {Number(record.site_discount || 1).toFixed(2) === '1.00' ? '全站 1.00 倍率(不打折)' : `全站 ${Number(record.site_discount || 1).toFixed(2)} 倍率`}
+                {`折扣限价 ${Number(record.site_discount || 1).toFixed(2)} 倍率`}
               </Tag>
             )}
           </Space>
@@ -384,7 +384,7 @@ const Models: React.FC = () => {
                     {record.site_discount_enabled === 1 && (
                       <div>
                         <Tag color="volcano" bordered={false} style={{ fontSize: '10px', margin: 0, padding: '0 4px', lineHeight: '16px' }}>
-                          {Number(record.site_discount || 1).toFixed(2) === '1.00' ? '全站 1.00 倍率(不打折)' : `全站 ${Number(record.site_discount || 1).toFixed(2)} 倍率`}
+                          {`折扣限价 ${Number(record.site_discount || 1).toFixed(2)} 倍率`}
                         </Tag>
                       </div>
                     )}
@@ -497,7 +497,7 @@ const Models: React.FC = () => {
                  </Form.Item>
              </Col>
              <Col span={6}>
-                 <Form.Item name="site_discount_enabled" label="全站折扣" valuePropName="checked" initialValue={false}>
+                 <Form.Item name="site_discount_enabled" label="折扣限价" valuePropName="checked" initialValue={false}>
                     <Switch checkedChildren="开启" unCheckedChildren="关闭" />
                  </Form.Item>
              </Col>
@@ -510,7 +510,7 @@ const Models: React.FC = () => {
 
           <Form.Item noStyle shouldUpdate={(prev: any, cur: any) => prev.site_discount_enabled !== cur.site_discount_enabled}>
             {({ getFieldValue }: any) => getFieldValue('site_discount_enabled') ? (
-              <Form.Item name="site_discount" label="全站折扣倍率（0.8=八折，1.2=加价20%，优先级高于用户等级折扣）" initialValue={1.0}>
+              <Form.Item name="site_discount" label="折扣限价倍率（设置后折扣不低于此值，如 0.9 = 最低九折，等级折扣高于此值时仍使用等级折扣）" initialValue={1.0}>
                 <InputNumber style={{ width: '100%' }} precision={2} step={0.1} min={0.01} />
               </Form.Item>
             ) : null}
