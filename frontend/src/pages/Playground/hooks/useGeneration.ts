@@ -325,6 +325,7 @@ export const useGeneration = () => {
         setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, taskData: { ...(n.taskData || {}), task_id: taskId, poll_endpoint: pollEndpoint, ...res } } : n));
         setTaskPollingNodes(prev => [...prev, newNodeId]);
         pollTaskStatus(newNodeId, taskId, currentModel.model_id, pollEndpoint);
+        setGenerating(false); // 解除全局生成锁，允许用户继续点击 Run 并行生成
       } else {
           let completedNodesToPersist: CanvasNode[] = [];
           setNodes(prev => {
@@ -381,7 +382,6 @@ export const useGeneration = () => {
       if (attempts >= maxAttempts) {
         setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, status: 'error', resultData: { message: '生成超时，请稍后在日志中查看结果' } } : n));
         setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
-        setGenerating(false);
         return;
       }
       attempts++;
@@ -425,12 +425,10 @@ export const useGeneration = () => {
             persistAsset(nodeToPersist, normalizedResult, currentModel);
           }
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
-          setGenerating(false);
           return;
         } else if (['failed', 'fail', 'error'].includes(taskStatus)) {
           setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, status: 'error', resultData: { message: res?.error?.message || '生成失败', ...res } } : n));
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
-          setGenerating(false);
           return;
         }
         setTimeout(poll, 5000);
