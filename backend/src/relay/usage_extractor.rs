@@ -81,13 +81,8 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
     let sources = [body as &Value, body.get("final_result").unwrap_or(body)];
     for src in &sources {
         if resolution.is_none() {
-            if let Some(res) = src.get("resolution").and_then(|r| r.as_str()) {
+            if let Some(res) = src.get("resolution").and_then(|r| r.as_str()).filter(|s| !s.is_empty()) {
                 resolution = Some(res.to_string());
-            }
-        }
-        if resolution.is_none() {
-            if let Some(size) = src.get("size").and_then(|s| s.as_str()) {
-                resolution = Some(size.to_string());
             }
         }
         if duration_seconds.is_none() {
@@ -100,7 +95,7 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
     // DashScope 格式：从 parameters 内提取 resolution/duration
     if let Some(params) = body.get("parameters") {
         if resolution.is_none() {
-            if let Some(res) = params.get("resolution").and_then(|r| r.as_str()) {
+            if let Some(res) = params.get("resolution").and_then(|r| r.as_str()).filter(|s| !s.is_empty()) {
                 resolution = Some(res.to_string());
             }
         }

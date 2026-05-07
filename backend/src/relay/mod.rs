@@ -344,14 +344,14 @@ pub fn compute_cost(
             } else if rule.billing_rule == "image_resolution" {
                 count = features.image_count.map(|c| c.max(1) as f64).unwrap_or(1.0);
                 detail_desc = format!("分辨率匹配计费(默认单价: {})", rate);
-                if let Some(res) = &features.resolution {
-                    if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
-                        for tier in tiers {
-                            if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
-                                rate = tier.rate; 
-                                detail_desc = format!("命中分辨率阶梯 {} 单价: {:.6}", res, rate);
-                                break;
-                            }
+                // resolution 兜底：缺省时默认 1k，确保阶梯匹配不会落空
+                let res = features.resolution.as_deref().unwrap_or("1k");
+                if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
+                    for tier in tiers {
+                        if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
+                            rate = tier.rate; 
+                            detail_desc = format!("命中分辨率阶梯 {} 单价: {:.6}", res, rate);
+                            break;
                         }
                     }
                 }
