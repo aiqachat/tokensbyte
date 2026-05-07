@@ -30,7 +30,10 @@ pub async fn chat_completions(
     let start_time = std::time::Instant::now();
     let raw_path = uri.path();
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
-    let model = body["model"].as_str().unwrap_or("gpt-3.5-turbo");
+    let model = body["model"].as_str()
+        .ok_or_else(|| AppError::BadRequest(
+            "Missing required parameter: model".to_string()
+        ))?;
     let is_stream = body["stream"].as_bool().unwrap_or(false);
 
 
@@ -344,14 +347,14 @@ pub fn compute_cost(
             } else if rule.billing_rule == "image_resolution" {
                 count = features.image_count.map(|c| c.max(1) as f64).unwrap_or(1.0);
                 detail_desc = format!("分辨率匹配计费(默认单价: {})", rate);
-                if let Some(res) = &features.resolution {
-                    if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
-                        for tier in tiers {
-                            if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
-                                rate = tier.rate; 
-                                detail_desc = format!("命中分辨率阶梯 {} 单价: {:.6}", res, rate);
-                                break;
-                            }
+                // resolution 兜底：缺省时默认 1k，确保阶梯匹配不会落空
+                let res = features.resolution.as_deref().unwrap_or("1k");
+                if let Ok(tiers) = serde_json::from_str::<Vec<ResolutionTier>>(&rule.pricing_tiers) {
+                    for tier in tiers {
+                        if tier.enabled && tier.resolution.eq_ignore_ascii_case(res) {
+                            rate = tier.rate; 
+                            detail_desc = format!("命中分辨率阶梯 {} 单价: {:.6}", res, rate);
+                            break;
                         }
                     }
                 }

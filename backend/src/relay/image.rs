@@ -24,7 +24,9 @@ pub async fn image_generations(
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
     let model = body["model"].as_str()
         .or_else(|| body["model_name"].as_str())
-        .unwrap_or("dall-e-3");
+        .ok_or_else(|| AppError::BadRequest(
+            "Missing required parameter: model".to_string()
+        ))?;
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance, Some("图片")).await?;
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, request_path).await?;

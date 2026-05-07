@@ -496,6 +496,20 @@ pub fn transform_request_body(
         }
     }
 
+    // 图片模型 resolution 兜底（确保分辨率计费正常）
+    // 排除已有自身分辨率管理的厂商：火山方舟、阿里、谷歌
+    if category == "图片" && !matches!(resolved.target_type.as_str(),
+        "volcengine" | "volcengine_image" | "dashscope_image" | "gemini_image"
+    ) {
+        let res_missing = match result.get("resolution").and_then(|v| v.as_str()) {
+            None => true,
+            Some(s) => s.is_empty(),
+        };
+        if res_missing {
+            result["resolution"] = serde_json::json!("1k");
+        }
+    }
+
     // 统一后处理：web_search 联网搜索参数转换
     convert_web_search(&mut result, body, &resolved.target_type);
     result

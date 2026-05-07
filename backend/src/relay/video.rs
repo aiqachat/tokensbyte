@@ -29,7 +29,9 @@ pub async fn video_generations(
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
     let model = body["model"].as_str()
         .or_else(|| body["model_name"].as_str())
-        .unwrap_or("video-gen");
+        .ok_or_else(|| AppError::BadRequest(
+            "Missing required parameter: model".to_string()
+        ))?;
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
     let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance, Some("视频")).await?;
     let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, &entry_path).await?;
@@ -141,7 +143,7 @@ pub async fn video_generations_status(
     Path(task_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> AppResult<Response> {
-    let mut model_name = params.get("model").map(|s| s.as_str()).unwrap_or("video-gen").to_string();
+    let mut model_name = params.get("model").map(|s| s.as_str()).unwrap_or("").to_string();
     let ctx = proxy::get_user_context(&state, &token.user_id).await?;
 
     // 从日志中查找原始渠道信息
@@ -188,6 +190,13 @@ pub async fn video_generations_status(
     } else {
         None
     };
+
+    // 模型名不可为空：查询参数和日志均无法确定模型时，直接拦截
+    if model_name.is_empty() {
+        return Err(AppError::BadRequest(
+            "Missing model parameter and cannot infer from task_id".to_string()
+        ));
+    }
 
     let (channel, _) = if let Some(ch) = channel_opt {
         (ch, "".to_string())
