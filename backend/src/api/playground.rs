@@ -112,7 +112,7 @@ async fn create_project(
     Json(payload): Json<CreateProjectRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
     // 获取用户 UID 和 User Level ID
-    let user_info: (String, i64) = sqlx::query_as(&state.db.format_query("SELECT u.uid, ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+    let user_info: (String, i64) = sqlx::query_as(&state.db.format_query("SELECT u.uid, COALESCE(ul.id, 0) FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_one(&state.db.pool)
         .await?;
@@ -450,7 +450,7 @@ async fn persist_asset(
 
     // --- 后端硬性校验配额 ---
     let configs = load_plugin_configs_pub(&state, "playground").await.unwrap_or_default();
-    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT COALESCE(ul.id, 0) FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_one(&state.db.pool)
         .await
@@ -636,7 +636,7 @@ async fn storage_stats(
 
     // 获取用户的存储配额（从 plugin_configs 查询）
     let configs = load_plugin_configs_pub(&state, "playground").await.unwrap_or_default();
-    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT COALESCE(ul.id, 0) FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_one(&state.db.pool)
         .await
@@ -775,7 +775,7 @@ async fn upload_reference(
 
     // --- 后端硬性校验配额 ---
     let configs = load_plugin_configs_pub(&state, "playground").await.unwrap_or_default();
-    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT ul.id FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+    let user_level_id: i64 = sqlx::query_scalar(&state.db.format_query("SELECT COALESCE(ul.id, 0) FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_one(&state.db.pool)
         .await

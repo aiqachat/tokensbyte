@@ -30,7 +30,10 @@ pub async fn chat_completions(
     let start_time = std::time::Instant::now();
     let raw_path = uri.path();
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
-    let model = body["model"].as_str().unwrap_or("gpt-3.5-turbo");
+    let model = body["model"].as_str()
+        .ok_or_else(|| AppError::BadRequest(
+            "Missing required parameter: model".to_string()
+        ))?;
     let is_stream = body["stream"].as_bool().unwrap_or(false);
 
 

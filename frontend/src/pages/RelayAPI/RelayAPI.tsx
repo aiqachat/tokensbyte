@@ -124,7 +124,7 @@ const RelayAPI: React.FC = () => {
                   <span style={{ marginLeft: 16 }}><Text type="secondary">轮询查询异步图片结果（针对 Midjourney 等带 task_id 响应的模型）</Text></span>
                 </div>
                 <Descriptions column={1} bordered size="small">
-                  <Descriptions.Item label="model (必填)">模型名称，如 "dall-e-3"、"gemini-2.0-flash"、"seedream-5.0-lite"。未传时默认 "dall-e-3"</Descriptions.Item>
+                  <Descriptions.Item label="model (必填)">模型名称，如 "dall-e-3"、"gemini-2.0-flash"、"seedream-5.0-lite"</Descriptions.Item>
                   <Descriptions.Item label="prompt (必填)">图像生成的提示词描述文本</Descriptions.Item>
                   <Descriptions.Item label="n (选填)">
                     <Text>生成图片数量（默认 1）。网关自动转换为上游厂商原生参数：</Text>
