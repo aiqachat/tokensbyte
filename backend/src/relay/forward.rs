@@ -339,8 +339,9 @@ pub fn transform_request_body(
             fwd
         }
 
-        // Gemini 图片：prompt → contents 格式
+        // Gemini 图片：prompt → contents 格式，支持图生图/多图生图
         // 参考 Google Gemini API: generationConfig.candidateCount / imageConfig
+        // 图片 inline_data 格式: https://ai.google.dev/api/caching?hl=zh-cn#Blob
         "gemini_image" => {
             let prompt = body["prompt"]
                 .as_str()
@@ -357,22 +358,58 @@ pub fn transform_request_body(
                 }
             }
 
-            // size / ratio → imageConfig
-            let has_size = body.get("size").and_then(|v| v.as_str());
-            let has_ratio = body.get("ratio").and_then(|v| v.as_str());
-            if has_size.is_some() || has_ratio.is_some() {
-                let mut img_cfg = serde_json::Map::new();
-                if let Some(s) = has_size {
-                    img_cfg.insert("imageSize".to_string(), serde_json::json!(s));
+            // imageConfig 构建：imageSize 优先级 size → resolution → 兜底 "1k"
+            let mut img_cfg = serde_json::Map::new();
+            let image_size = body.get("size").and_then(|v| v.as_str())
+                .or_else(|| body.get("resolution").and_then(|v| v.as_str()))
+                .unwrap_or("1k");
+            img_cfg.insert("imageSize".to_string(), serde_json::json!(image_size));
+            if let Some(r) = body.get("ratio").and_then(|v| v.as_str()) {
+                img_cfg.insert("aspectRatio".to_string(), serde_json::json!(r));
+            }
+            gen_config["imageConfig"] = serde_json::Value::Object(img_cfg);
+
+            // ── 图生图/多图生图：提取图片转为 Gemini inline_data 格式 ──
+            // 支持来源：image（字符串或数组）、image_urls（数组）
+            // 数据格式：data:image/png;base64,... → {mime_type, data}
+            let mut image_parts: Vec<serde_json::Value> = Vec::new();
+
+            // 来源 1: image 字段（字符串或数组）
+            if let Some(img_val) = body.get("image") {
+                if let Some(url) = img_val.as_str() {
+                    if let Some(v) = parse_data_uri_to_inline_data(url) {
+                        image_parts.push(serde_json::json!({"inline_data": v}));
+                    }
+                } else if let Some(arr) = img_val.as_array() {
+                    for item in arr {
+                        if let Some(url) = item.as_str() {
+                            if let Some(v) = parse_data_uri_to_inline_data(url) {
+                                image_parts.push(serde_json::json!({"inline_data": v}));
+                            }
+                        }
+                    }
                 }
-                if let Some(r) = has_ratio {
-                    img_cfg.insert("aspectRatio".to_string(), serde_json::json!(r));
+            }
+            // 来源 2: image_urls（仅当 image 字段不存在时）
+            if body.get("image").is_none() {
+                if let Some(arr) = body.get("image_urls").and_then(|v| v.as_array()) {
+                    for item in arr {
+                        if let Some(url) = item.as_str() {
+                            if let Some(v) = parse_data_uri_to_inline_data(url) {
+                                image_parts.push(serde_json::json!({"inline_data": v}));
+                            }
+                        }
+                    }
                 }
-                gen_config["imageConfig"] = serde_json::Value::Object(img_cfg);
             }
 
+            // 构建 contents：文本 prompt + 图片 inline_data（如有）
+            let mut parts: Vec<serde_json::Value> = Vec::new();
+            parts.push(serde_json::json!({"text": prompt}));
+            parts.append(&mut image_parts);
+
             serde_json::json!({
-                "contents": [{"parts": [{"text": prompt}]}],
+                "contents": [{"parts": parts}],
                 "generationConfig": gen_config
             })
         }
@@ -918,18 +955,37 @@ fn build_dashscope_video_body(model: &str, body: &serde_json::Value) -> serde_js
     // ── media 数组构建 ──
     // 支持两种传入方式：
     //   1) body.media 已是 DashScope 格式数组 → 直接透传
-    //   2) body.images / image_url / image_urls / body.videos → 自动构建 media
+    //   2) body.images / image_urls / body.videos → 自动构建 media
     if let Some(media) = body.get("media").filter(|v| v.is_array()) {
         input["media"] = media.clone();
     } else {
         let mut media = Vec::new();
 
-        // 单图快捷字段 image_url → first_frame
-        if let Some(url) = body.get("image_url").and_then(|v| v.as_str()) {
-            media.push(serde_json::json!({ "type": "first_frame", "url": url }));
+        // images 数组（优先）：按数量智能推断 type
+        //   1 张 → first_frame，2 张 → first_frame + last_frame，3+ 张 → reference_image
+        if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
+            let defaults = infer_image_default_roles(arr.len());
+            for (i, item) in arr.iter().enumerate() {
+                let default_type = defaults.get(i).copied().unwrap_or("reference_image");
+                match item {
+                    serde_json::Value::String(url) => {
+                        media.push(serde_json::json!({ "type": default_type, "url": url }));
+                    }
+                    serde_json::Value::Object(obj) => {
+                        let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                        let t = obj.get("type").and_then(|v| v.as_str())
+                            .or_else(|| obj.get("role").and_then(|v| v.as_str()))
+                            .unwrap_or(default_type);
+                        if !url.is_empty() {
+                            media.push(serde_json::json!({ "type": t, "url": url }));
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
 
-        // image_urls 数组 → 按数量智能推断 type（仅当 image_url 未使用时生效）
+        // image_urls 数组（回退）：仅当 images 未提供时生效
         if media.is_empty() {
             if let Some(arr) = body.get("image_urls").and_then(|v| v.as_array()) {
                 let defaults = infer_image_default_roles(arr.len());
@@ -937,32 +993,6 @@ fn build_dashscope_video_body(model: &str, body: &serde_json::Value) -> serde_js
                     if let Some(url) = item.as_str() {
                         let role = defaults.get(i).copied().unwrap_or("reference_image");
                         media.push(serde_json::json!({ "type": role, "url": url }));
-                    }
-                }
-            }
-        }
-
-        // images 数组：按数量智能推断 type（仅当 image_url / image_urls 均未注入时）
-        //   1 张 → first_frame，2 张 → first_frame + last_frame，3+ 张 → reference_image
-        if media.is_empty() {
-            if let Some(arr) = body.get("images").and_then(|v| v.as_array()) {
-                let defaults = infer_image_default_roles(arr.len());
-                for (i, item) in arr.iter().enumerate() {
-                    let default_type = defaults.get(i).copied().unwrap_or("reference_image");
-                    match item {
-                        serde_json::Value::String(url) => {
-                            media.push(serde_json::json!({ "type": default_type, "url": url }));
-                        }
-                        serde_json::Value::Object(obj) => {
-                            let url = obj.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                            let t = obj.get("type").and_then(|v| v.as_str())
-                                .or_else(|| obj.get("role").and_then(|v| v.as_str()))
-                                .unwrap_or(default_type);
-                            if !url.is_empty() {
-                                media.push(serde_json::json!({ "type": t, "url": url }));
-                            }
-                        }
-                        _ => {}
                     }
                 }
             }
@@ -1040,7 +1070,7 @@ const VOLCENGINE_CONTENT_PASSTHROUGH_KEYS: &[&str] = &[
     "resolution",        // 分辨率，如 "480p", "720p", "1080p"
     // 视频控制
     "duration",          // 视频时长（秒），如 5, 10
-    "fps",               // 帧率
+    "camera_fixed",      // 是否固定摄像头
     "seed",              // 随机种子
     // 音频/水印/末帧
     "generate_audio",    // 是否生成音频 (bool)
@@ -1157,6 +1187,120 @@ fn build_volcengine_content_body(model: &str, body: &serde_json::Value) -> serde
     }
 
     result
+}
+
+// ── Gemini 图片格式转换工具 ─────────────────────────────────────
+
+/// 解析 data URI 为 Gemini inline_data 格式 {mime_type, data}。
+/// 支持 `data:image/png;base64,xxxx` 和纯 base64 字符串（默认 image/png）。
+fn parse_data_uri_to_inline_data(input: &str) -> Option<serde_json::Value> {
+    if input.starts_with("data:") {
+        // data:image/png;base64,xxxx
+        let rest = input.strip_prefix("data:")?;
+        let (meta, data) = rest.split_once(',')?;
+        let mime = meta.split(';').next().unwrap_or("image/png");
+        Some(serde_json::json!({
+            "mime_type": mime,
+            "data": data
+        }))
+    } else if input.len() > 100 && !input.starts_with("http") {
+        // 无前缀纯 base64 → 默认 image/png
+        Some(serde_json::json!({
+            "mime_type": "image/png",
+            "data": input
+        }))
+    } else {
+        None // HTTP URL 需要异步下载，同步函数不处理
+    }
+}
+
+/// 异步下载 HTTP 图片并转为 Gemini inline_data 格式。
+async fn download_image_to_inline_data(
+    client: &reqwest::Client,
+    url: &str,
+) -> Option<serde_json::Value> {
+    let resp = client.get(url)
+        .timeout(std::time::Duration::from_secs(15))
+        .send().await.ok()?;
+    if !resp.status().is_success() { return None; }
+    let content_type = resp.headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/png")
+        .to_string();
+    let mime = content_type.split(';').next().unwrap_or("image/png").trim();
+    let bytes = resp.bytes().await.ok()?;
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Some(serde_json::json!({
+        "mime_type": mime,
+        "data": b64
+    }))
+}
+
+/// 在转发前异步处理 Gemini 图片请求中的 HTTP URL。
+/// transform_request_body 是同步函数无法下载远程图片，此函数作为异步后处理步骤：
+/// 遍历已构建的 upstream_body.contents[].parts，找到 HTTP URL 的文本 part，
+/// 下载后替换为 inline_data 格式。同时使用内存级 URL 去重缓存避免重复下载。
+pub async fn resolve_gemini_http_images(
+    client: &reqwest::Client,
+    original_body: &serde_json::Value,
+    upstream_body: &mut serde_json::Value,
+) {
+    // 收集所有需要下载的 HTTP URL（来自 image / image_urls）
+    let mut http_urls: Vec<String> = Vec::new();
+    if let Some(img_val) = original_body.get("image") {
+        if let Some(url) = img_val.as_str() {
+            if url.starts_with("http") { http_urls.push(url.to_string()); }
+        } else if let Some(arr) = img_val.as_array() {
+            for item in arr {
+                if let Some(url) = item.as_str() {
+                    if url.starts_with("http") { http_urls.push(url.to_string()); }
+                }
+            }
+        }
+    }
+    if original_body.get("image").is_none() {
+        if let Some(arr) = original_body.get("image_urls").and_then(|v| v.as_array()) {
+            for item in arr {
+                if let Some(url) = item.as_str() {
+                    if url.starts_with("http") { http_urls.push(url.to_string()); }
+                }
+            }
+        }
+    }
+
+    if http_urls.is_empty() { return; }
+
+    // URL 去重（内存级缓存，避免相同 URL 重复下载）
+    let mut cache: std::collections::HashMap<String, serde_json::Value> = std::collections::HashMap::new();
+    let mut unique_urls: Vec<String> = Vec::new();
+    for url in &http_urls {
+        if !cache.contains_key(url) && !unique_urls.contains(url) {
+            unique_urls.push(url.clone());
+        }
+    }
+    for url in &unique_urls {
+        if let Some(data) = download_image_to_inline_data(client, url).await {
+            cache.insert(url.clone(), data);
+        }
+    }
+
+    if cache.is_empty() { return; }
+
+    // 将下载结果注入到 upstream_body 的 contents[0].parts 中
+    if let Some(contents) = upstream_body.get_mut("contents").and_then(|c| c.as_array_mut()) {
+        if let Some(first_content) = contents.first_mut() {
+            if let Some(parts) = first_content.get_mut("parts").and_then(|p| p.as_array_mut()) {
+                // 追加所有下载成功的 inline_data（按原始 URL 顺序）
+                for url in &http_urls {
+                    if let Some(data) = cache.get(url) {
+                        parts.push(serde_json::json!({"inline_data": data}));
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ── 辅助函数 ──────────────────────────────────────────────────

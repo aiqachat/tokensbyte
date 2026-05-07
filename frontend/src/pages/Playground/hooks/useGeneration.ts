@@ -216,10 +216,13 @@ export const useGeneration = () => {
         }
       } : n));
 
-      // 2. 收集用于 AI 接口的 base64 或 URL
+      // 2. 收集用于 AI 接口的 URL（优先使用已上传的桶 URL）
       const resolvedAssetsForAI = await Promise.all(uploadedAssets.map(async (item) => {
-        // 如果已经上传到永久存储且模型支持 URL，可以直接传 URL。
-        // 但为了最大限度保证成功率，本地新上传的建议还是传 base64 (部分 AI 模型不直接抓取动态 URL)
+        // 已成功上传到桶的附件，直接使用永久 URL（避免视频等大文件 base64 导致上游接口失败）
+        if ((item as any).isUploaded && item.fullUrl) {
+          return { url: item.fullUrl, type: item.asset.asset_type };
+        }
+        // 未上传成功的本地文件，回退为 base64（仅适用于小文件如图片）
         if (item.file) {
           const b64 = await new Promise<string>((resolve) => {
             const reader = new FileReader();

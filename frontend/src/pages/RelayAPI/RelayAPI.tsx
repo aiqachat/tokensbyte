@@ -35,6 +35,8 @@ const RelayAPI: React.FC = () => {
     { label: '可灵多图生图 (提交)', path: '/v1/images/multi-image2image', method: 'POST', type: 'kling' },
     { label: '可灵 Omni 图片 (提交)', path: '/v1/images/omni-image', method: 'POST', type: 'kling' },
     { label: '可灵图片 (查询)', path: '/v1/images/{endpoint}/{task_id}', method: 'GET', type: 'kling' },
+    { label: '令牌余额查询', path: '/v1/balance', method: 'GET', type: 'openai' },
+    { label: '用户余额查询', path: '/v1/user/balance', method: 'GET', type: 'openai' },
   ];
 
   const errorCodes = [
@@ -224,6 +226,26 @@ const RelayAPI: React.FC = () => {
                   <Descriptions.Item label={<Text code>web_search</Text>}>true/false — 是否启用联网搜索（转换规则同聊天）</Descriptions.Item>
                   <Descriptions.Item label={<Text code>callback_url</Text>}>任务完成回调地址（URL）</Descriptions.Item>
                 </Descriptions>
+
+                <Divider />
+
+                {/* ── 余额查询 ── */}
+                <Title level={5}>余额查询接口 (Balance)</Title>
+                <div style={codeStyle}>
+                  <Text code>GET /v1/balance</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">查询当前令牌（API Key）的剩余额度和已使用额度</Text></span>
+                  <br />
+                  <Text code>GET /v1/user/balance</Text>
+                  <span style={{ marginLeft: 16 }}><Text type="secondary">查询令牌所属用户的账户总余额</Text></span>
+                </div>
+                <Descriptions column={1} bordered size="small">
+                  <Descriptions.Item label="鉴权方式"><Text code>Authorization: Bearer sk-xxx</Text> — 使用您的 API Key 进行认证</Descriptions.Item>
+                  <Descriptions.Item label="success">请求是否成功（boolean）</Descriptions.Item>
+                  <Descriptions.Item label="remain_balance">剩余可用额度。无限额度时返回 <Text code>-1</Text></Descriptions.Item>
+                  <Descriptions.Item label="used_balance">已使用额度</Descriptions.Item>
+                  <Descriptions.Item label="unlimited_quota"><Text code>true</Text> 表示该令牌/用户不受额度限制，可无限使用</Descriptions.Item>
+                </Descriptions>
+                <Alert message="令牌余额 vs 用户余额：/v1/balance 返回的是单个 API Key 的配额消耗情况；/v1/user/balance 返回的是该 Key 所属用户账户的总体余额（含系统余额和赠送余额）。" type="info" showIcon style={{ marginTop: 16, borderRadius: 8 }} />
               </Card>
             )
           },

@@ -45,7 +45,11 @@ pub async fn image_generations(
         }
     };
 
-    let upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "图片");
+    let mut upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "图片");
+    // Gemini 图生图异步处理：下载 HTTP 图片 URL 转 base64 注入 inline_data
+    if resolved.target_type == "gemini_image" {
+        forward::resolve_gemini_http_images(&state.http_client, &body, &mut upstream_body).await;
+    }
     // 可灵动态路径：根据请求体内容调整实际端点（generations/multi-image2image）
     forward::resolve_kling_dynamic_path(&mut resolved, &upstream_body);
     let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);

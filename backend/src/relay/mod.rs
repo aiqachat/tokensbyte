@@ -10,6 +10,7 @@ pub mod forward;
 pub mod usage_extractor;
 pub mod asset_convert;
 pub mod task_poller;
+pub mod balance;
 
 use axum::{
     extract::{State, Extension, OriginalUri},

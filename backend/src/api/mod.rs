@@ -174,6 +174,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/images/omni-image/{task_id}", get(crate::relay::task::task_status))
         .route("/images/multi-image2image/{task_id}", get(crate::relay::task::task_status))
         .route("/images/generations/{task_id}", get(crate::relay::task::task_status))
+        // 余额查询
+        .route("/balance", get(crate::relay::balance::token_balance))
+        .route("/user/balance", get(crate::relay::balance::user_balance))
         .layer(axum_middleware::from_fn_with_state(state.clone(), api_key_middleware))
         .with_state(state.clone());
 
