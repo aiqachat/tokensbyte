@@ -34,7 +34,22 @@ export const useGeneration = () => {
 
       if (assetType === 'image') {
         const imageData = resultData?.data?.[0] || resultData?.content?.image_url;
-        const rawUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
+        let rawUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
+
+        // Gemini 原生格式回退：从 candidates[0].content.parts[0].inlineData 提取 base64
+        if (!rawUrl && resultData?.candidates) {
+          const parts = resultData.candidates[0]?.content?.parts;
+          if (parts) {
+            for (const part of parts) {
+              const inline = part.inlineData || part.inline_data;
+              if (inline?.data) {
+                rawUrl = inline.data; // 纯 base64 数据，不含 data: 前缀
+                break;
+              }
+            }
+          }
+        }
+
         const isUrl = rawUrl && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('/'));
         if (isUrl) {
           sourceUrl = rawUrl;
@@ -327,23 +342,44 @@ export const useGeneration = () => {
         pollTaskStatus(newNodeId, taskId, currentModel.model_id, pollEndpoint);
         setGenerating(false); // 解除全局生成锁，允许用户继续点击 Run 并行生成
       } else {
+          // 归一化 Gemini 原生响应为 data[] 格式，方便后续统一处理多图裂变和持久化
+          let normalizedRes = res;
+          if (!normalizedRes.data && normalizedRes.candidates) {
+            const images: any[] = [];
+            for (const candidate of normalizedRes.candidates) {
+              const parts = candidate?.content?.parts;
+              if (parts) {
+                for (const part of parts) {
+                  const inline = part.inlineData || part.inline_data;
+                  if (inline?.data) {
+                    const mime = inline.mimeType || inline.mime_type || 'image/png';
+                    images.push({ url: `data:${mime};base64,${inline.data}`, b64_json: inline.data });
+                  }
+                }
+              }
+            }
+            if (images.length > 0) {
+              normalizedRes = { ...normalizedRes, data: images };
+            }
+          }
+
           let completedNodesToPersist: CanvasNode[] = [];
           setNodes(prev => {
             let updated = [...prev];
             const mainNodeIndex = updated.findIndex(n => n.id === newNodeId);
             if (mainNodeIndex >= 0) {
-              updated[mainNodeIndex] = { ...updated[mainNodeIndex], status: 'completed' as const, resultData: res };
+              updated[mainNodeIndex] = { ...updated[mainNodeIndex], status: 'completed' as const, resultData: normalizedRes };
               
               // 如果返回了多张图 (如 Seedream n>1)，裂变出额外的节点
-              if (res.data && Array.isArray(res.data) && res.data.length > 1) {
-                const extraNodes = res.data.slice(1).map((imgObj: any, idx: number) => {
+              if (normalizedRes.data && Array.isArray(normalizedRes.data) && normalizedRes.data.length > 1) {
+                const extraNodes = normalizedRes.data.slice(1).map((imgObj: any, idx: number) => {
                   return {
                     ...updated[mainNodeIndex],
                     id: `${newNodeId}-ext-${idx}`,
                     x: updated[mainNodeIndex].x + (updated[mainNodeIndex].width + 5) * (idx + 1),
                     y: updated[mainNodeIndex].y,
                     zIndex: updated[mainNodeIndex].zIndex + idx + 1,
-                    resultData: { ...res, data: [imgObj] }
+                    resultData: { ...normalizedRes, data: [imgObj] }
                   };
                 });
                 updated.push(...extraNodes);
@@ -415,15 +451,36 @@ export const useGeneration = () => {
               normalizedResult = { ...res, data: imageUrls.map((u: string) => ({ url: u })) };
             }
           }
-          let nodeToPersist: CanvasNode | undefined;
+          let completedNodesToPersist: CanvasNode[] = [];
           setNodes(prev => {
-            const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: normalizedResult } : n);
-            nodeToPersist = updated.find(n => n.id === nodeId);
+            let updated = [...prev];
+            const mainNodeIndex = updated.findIndex(n => n.id === nodeId);
+            if (mainNodeIndex >= 0) {
+              updated[mainNodeIndex] = { ...updated[mainNodeIndex], status: 'completed' as const, resultData: normalizedResult };
+              
+              // 如果返回了多张图，裂变出额外的节点
+              if (normalizedResult.data && Array.isArray(normalizedResult.data) && normalizedResult.data.length > 1) {
+                const extraNodes = normalizedResult.data.slice(1).map((imgObj: any, idx: number) => {
+                  return {
+                    ...updated[mainNodeIndex],
+                    id: `${nodeId}-ext-${idx}`,
+                    x: updated[mainNodeIndex].x + (updated[mainNodeIndex].width + 5) * (idx + 1),
+                    y: updated[mainNodeIndex].y,
+                    zIndex: updated[mainNodeIndex].zIndex + idx + 1,
+                    resultData: { ...normalizedResult, data: [imgObj] }
+                  };
+                });
+                updated.push(...extraNodes);
+              }
+            }
+            completedNodesToPersist = updated.filter(n => n.id === nodeId || n.id.startsWith(`${nodeId}-ext-`));
             return updated;
           });
-          if (nodeToPersist) {
-            persistAsset(nodeToPersist, normalizedResult, currentModel);
+          
+          for (const node of completedNodesToPersist) {
+            persistAsset(node, node.resultData, currentModel);
           }
+          
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
           return;
         } else if (['failed', 'fail', 'error'].includes(taskStatus)) {

@@ -41,6 +41,16 @@ const formatRelativeTime = (dateStr?: string) => {
   return `${diffDays} 天前`;
 };
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+const getFullUrl = (url: string) => {
+  if (!url) return '';
+  if (url.startsWith('blob:') || url.startsWith('data:')) return url;
+  if (!url.startsWith('http') && !url.startsWith('/')) return `https://${url}`;
+  if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
+  return url;
+};
+
 const GenerationLogWidget: React.FC = React.memo(() => {
   const { nodes, setNodes, selectedNodeId, setSelectedNodeId } = useCanvas();
   const {
@@ -65,13 +75,38 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     if (!node?.resultData) return '';
     if (node.type === 'image') {
       const imgData = node.resultData?.data?.[0] || node.resultData?.content?.image_url;
-      return typeof imgData === 'string' ? imgData : imgData?.url || '';
+      let rawUrl = typeof imgData === 'string' ? imgData : imgData?.url || imgData?.b64_json || '';
+
+      // Gemini 原生格式回退：从 candidates[0].content.parts[0].inlineData 提取 base64
+      if (!rawUrl && node.resultData?.candidates) {
+        const parts = node.resultData.candidates[0]?.content?.parts;
+        if (parts) {
+          for (const part of parts) {
+            const inline = part.inlineData || part.inline_data;
+            if (inline?.data) {
+              const mime = inline.mimeType || inline.mime_type || 'image/png';
+              rawUrl = `data:${mime};base64,${inline.data}`;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!rawUrl) return '';
+      if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
+        return rawUrl;
+      }
+      // 如果是一长串 base64 但没有 data: 前缀
+      if (rawUrl.length > 100 && !rawUrl.startsWith('http') && !rawUrl.startsWith('/')) {
+        return `data:image/png;base64,${rawUrl}`;
+      }
+      return getFullUrl(rawUrl);
     }
     if (node.type === 'video') {
-      return node.resultData?.content?.video_url
+      return getFullUrl(node.resultData?.content?.video_url
         || node.resultData?.final_result?.video_url
         || node.resultData?.video_url
-        || '';
+        || '');
     }
     return '';
   }, []);

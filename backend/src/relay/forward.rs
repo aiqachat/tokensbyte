@@ -380,15 +380,24 @@ pub fn transform_request_body(
                 }
             }
 
-            // imageConfig 构建：imageSize 优先级 size → resolution → 兜底 "1k"
+            // imageConfig 构建
             let mut img_cfg = serde_json::Map::new();
-            let image_size = body.get("size").and_then(|v| v.as_str())
-                .or_else(|| body.get("resolution").and_then(|v| v.as_str()))
-                .unwrap_or("1k");
-            img_cfg.insert("imageSize".to_string(), serde_json::json!(image_size));
-            if let Some(r) = body.get("ratio").and_then(|v| v.as_str()) {
+            let size_str = body.get("size").and_then(|v| v.as_str()).unwrap_or("");
+            let size_is_ratio = size_str.contains(':');
+
+            // 比例优先级：ratio > size(含':') 
+            let aspect_ratio = body.get("ratio").and_then(|v| v.as_str())
+                .or_else(|| if size_is_ratio { Some(size_str) } else { None });
+            if let Some(r) = aspect_ratio {
                 img_cfg.insert("aspectRatio".to_string(), serde_json::json!(r));
             }
+
+            // 分辨率优先级：resolution > size(不含':') > 兜底 "1k"
+            let image_size = body.get("resolution").and_then(|v| v.as_str())
+                .or_else(|| if !size_is_ratio && !size_str.is_empty() { Some(size_str) } else { None })
+                .unwrap_or("1k");
+            img_cfg.insert("imageSize".to_string(), serde_json::json!(image_size));
+
             gen_config["imageConfig"] = serde_json::Value::Object(img_cfg);
 
             // ── 图生图/多图生图：提取图片转为 Gemini inline_data 格式 ──
@@ -430,10 +439,19 @@ pub fn transform_request_body(
             parts.push(serde_json::json!({"text": prompt}));
             parts.append(&mut image_parts);
 
-            serde_json::json!({
+            let mut result = serde_json::json!({
                 "contents": [{"parts": parts}],
                 "generationConfig": gen_config
-            })
+            });
+
+            // Google Search 搜索增强工具
+            let gs = body.get("google_search").and_then(|v| v.as_bool()).unwrap_or(false);
+            let gis = body.get("google_image_search").and_then(|v| v.as_bool()).unwrap_or(false);
+            if gs || gis {
+                result["tools"] = serde_json::json!([{"google_search": {}}]);
+            }
+
+            result
         }
 
         // Gemini 聊天：messages → contents 格式
