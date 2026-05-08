@@ -134,7 +134,7 @@ TokensByte 是一款面向企业级应用的 LLM API 网关，致力于解决多
 | Docker | 20.10+ | 容器化部署 |
 | Docker Compose | 2.x | 多容器编排 |
 | Nginx | 1.25+ | 反向代理和静态资源服务 |
-| PostgreSQL | 15+ | 主数据库，存储业务数据 |
+| PostgreSQL | 16+ | 主数据库，存储业务数据 |
 | GitHub Actions | - | CI/CD 自动化流程 |
 
 ---

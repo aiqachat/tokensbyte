@@ -24,8 +24,10 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-tokensapi}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    # 可选：暴露端口到宿主机，方便本地工具连接（如 pgAdmin, DBeaver 等）
+    # 如需暴露，取消下面两行注释
+    # ports:
+    #   - "${POSTGRES_PORT:-5432}:5432"
     networks:
       - tokensbyte-network
     restart: always
@@ -53,8 +55,7 @@ services:
       - RUST_LOG=${RUST_LOG:-info}
     volumes:
       - ./data:/app/data
-    ports:
-      - "${BACKEND_PORT:-3000}:3000"
+    # 不暴露端口到宿主机，仅通过前端 nginx 反向代理访问
     networks:
       - tokensbyte-network
     depends_on:
