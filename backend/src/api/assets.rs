@@ -1305,7 +1305,18 @@ async fn submit_virtual_portrait_review(
 
     let asset_res: crate::services::volcengine::CreateAssetResponse = client.call_api(
         "ark", "cn-beijing", "CreateAsset", "2024-01-01", create_req
-    ).await.map_err(|e| AppError::Internal(format!("提交审核失败: {}", e)))?;
+    ).await.map_err(|e| {
+        let raw = format!("{}", e);
+        // 提取火山引擎错误中的 Message 字段，作为用户可读的错误摘要
+        let brief = raw.find('{')
+            .and_then(|i| serde_json::from_str::<serde_json::Value>(&raw[i..]).ok())
+            .and_then(|j| j.pointer("/ResponseMetadata/Error/Message")
+                .or_else(|| j.pointer("/Error/Message"))
+                .and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| raw.clone());
+        tracing::warn!("素材审核提交失败 (asset_id={}): {}", id, raw);
+        AppError::BadRequest(format!("素材审核失败: {}", brief))
+    })?;
 
     let volc_asset_id = asset_res.id;
 

@@ -124,5 +124,5 @@ pub async fn list_logs(
         }
     }
 
-    Ok(Json(LogListResponse { data: logs, total }))
+    Ok(Json(LogListResponse { data: logs, total, allow_details }))
 }

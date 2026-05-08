@@ -282,13 +282,14 @@ export const useGeneration = () => {
       } else if (schemeType === 'image' || currentModel.type_name.includes('图片')) {
         endpoint = '/v1/images/generations';
         const allImageUrls = resolvedAssetsForAI.filter(a => a.type === 'image').map(a => a.url);
-        const firstImage = allImageUrls[0] || paramValues.image_url;
-        if (firstImage) {
-           body.image = firstImage;
-           body.image_url = firstImage;
+        const finalImageUrls = allImageUrls.length > 0 ? allImageUrls : (paramValues.image_url ? [paramValues.image_url] : []);
+        
+        if (finalImageUrls.length > 0) {
+           body.image = finalImageUrls.length > 1 ? finalImageUrls : finalImageUrls[0];
            // image_urls: 数组格式，兼容其他 OpenAI 平台
-           body.image_urls = allImageUrls.length > 0 ? allImageUrls : [firstImage];
+           body.image_urls = finalImageUrls;
         }
+        delete body.image_url;
       } else {
         endpoint = '/v1/chat/completions';
         const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
@@ -324,6 +325,7 @@ export const useGeneration = () => {
         setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, taskData: { ...(n.taskData || {}), task_id: taskId, poll_endpoint: pollEndpoint, ...res } } : n));
         setTaskPollingNodes(prev => [...prev, newNodeId]);
         pollTaskStatus(newNodeId, taskId, currentModel.model_id, pollEndpoint);
+        setGenerating(false); // 解除全局生成锁，允许用户继续点击 Run 并行生成
       } else {
           let completedNodesToPersist: CanvasNode[] = [];
           setNodes(prev => {
@@ -380,7 +382,6 @@ export const useGeneration = () => {
       if (attempts >= maxAttempts) {
         setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, status: 'error', resultData: { message: '生成超时，请稍后在日志中查看结果' } } : n));
         setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
-        setGenerating(false);
         return;
       }
       attempts++;
@@ -424,12 +425,10 @@ export const useGeneration = () => {
             persistAsset(nodeToPersist, normalizedResult, currentModel);
           }
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
-          setGenerating(false);
           return;
         } else if (['failed', 'fail', 'error'].includes(taskStatus)) {
           setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, status: 'error', resultData: { message: res?.error?.message || '生成失败', ...res } } : n));
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
-          setGenerating(false);
           return;
         }
         setTimeout(poll, 5000);

@@ -87,7 +87,7 @@ pub async fn handle_chat_stream(
             total_completion_tokens = 1; // 至少为 1 以防异常
         }
         
-        let db_model = crate::relay::proxy::find_active_model(&state, &model, Some("聊天")).await;
+        let db_model = crate::relay::proxy::find_active_model_exact(&state, &model, Some("聊天"), Some(&channel)).await;
 
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {
@@ -197,7 +197,7 @@ pub async fn handle_image_stream(
             tracing::info!("[Image Stream Fallback] model={}, prompt={}, completion={}", model, total_prompt_tokens, total_completion_tokens);
         }
 
-        let db_model = crate::relay::proxy::find_active_model(&state, &model, Some("图片")).await;
+        let db_model = crate::relay::proxy::find_active_model_exact(&state, &model, Some("图片"), Some(&channel)).await;
 
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {
@@ -314,7 +314,7 @@ pub async fn handle_native_stream(
              completion_tokens = (full_response_text.len() as f64 / 4.0).ceil() as i32;
         }
 
-        let db_model = crate::relay::proxy::find_active_model(&state, &model, None).await;
+        let db_model = crate::relay::proxy::find_active_model_exact(&state, &model, None, Some(&channel)).await;
 
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {

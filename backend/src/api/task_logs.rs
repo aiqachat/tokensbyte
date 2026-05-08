@@ -105,7 +105,7 @@ pub async fn list_task_logs(
             log.response_content = None;
         }
     }
-    Ok(Json(TaskLogListResponse { data, total }))
+    Ok(Json(TaskLogListResponse { data, total, allow_details }))
 }
 
 /// 手动同步单个任务日志状态

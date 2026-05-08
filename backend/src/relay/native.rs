@@ -133,7 +133,7 @@ pub async fn gemini_proxy(
         let usage = crate::relay::usage_extractor::parse_usage(&response_content_str);
 
         // 查询模型与计费规则
-        let db_model = proxy::find_active_model(&state, model, None).await;
+        let db_model = proxy::find_active_model_exact(&state, model, None, Some(&channel)).await;
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {
                 sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
