@@ -10,6 +10,7 @@
 import React, { createContext, useContext, useState, useMemo, useCallback, useRef } from 'react';
 import type { CanvasNode, CanvasTransform, ActiveTool, Point, PlaygroundModel, SchemeParam, PlaygroundProject } from '../types';
 import request from '../../../utils/request';
+import { extractImageUrl, extractVideoUrl } from '../utils/resultExtractor';
 
 // ============================================================
 // Canvas Context — 高频交互状态
@@ -263,13 +264,10 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
           let savedResultData = n.resultData;
           if (n.status === 'completed' && n.resultData) {
             if (n.type === 'image') {
-              const imgData = n.resultData?.data?.[0] || n.resultData?.content?.image_url;
-              const url = typeof imgData === 'string' ? imgData : imgData?.url;
+              const url = extractImageUrl(n.resultData);
               savedResultData = url ? { data: [{ url }] } : null;
             } else if (n.type === 'video') {
-              const videoUrl = n.resultData?.content?.video_url
-                || n.resultData?.final_result?.video_url
-                || n.resultData?.video_url;
+              const videoUrl = extractVideoUrl(n.resultData);
               const lastFrameUrl = n.resultData?.last_frame_url || n.resultData?.final_result?.last_frame_url || n.resultData?.content?.last_frame_url;
               savedResultData = videoUrl ? { content: { video_url: videoUrl, last_frame_url: lastFrameUrl } } : null;
             } else {
@@ -383,35 +381,40 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
                 }
               }
               const fixedNodes = canvasData.nodes.map((n: any) => {
-                let match = null;
-                // Find matching asset by prompt
-                const matches = assetGroup.get(n.taskData?.prompt || '');
-                if (matches && matches.length > 0) {
-                  // Only consume the match if we actually need it (for resultData or missing model info)
-                  if ((n.status === 'completed' && !n.resultData) || n.status === 'loading' || !n.taskData?.model_id) {
-                    match = matches.shift();
-                  }
-                }
+                // 检测节点是否需要从 assets 回填
+                const needsFix = (() => {
+                  if (n.status === 'loading') return true;
+                  if (!n.taskData?.model_id) return true;
+                  if (n.status !== 'completed') return false;
+                  if (!n.resultData) return true;
+                  // resultData 存在但无法提取有效 URL 也需要回填
+                  if (n.type === 'image' && !extractImageUrl(n.resultData)) return true;
+                  if (n.type === 'video' && !extractVideoUrl(n.resultData)) return true;
+                  return false;
+                })();
 
-                if (match) {
-                  return {
-                    ...n,
-                    status: 'completed',
-                    taskData: {
-                      ...n.taskData,
-                      created_at: match.created_at || n.taskData?.created_at,
-                      model_id: match.model_id || n.taskData?.model_id,
-                      model_name: match.model_name || n.taskData?.model_name,
-                      file_size: match.file_size || n.taskData?.file_size,
-                      width: match.width || n.taskData?.width,
-                      height: match.height || n.taskData?.height,
-                    },
-                    resultData: n.resultData || (match.asset_type === 'image'
-                      ? { data: [{ url: match.file_url }] }
-                      : { content: { video_url: match.file_url } }),
-                  };
-                }
-                return n;
+                if (!needsFix) return n;
+
+                const matches = assetGroup.get(n.taskData?.prompt || '');
+                const match = matches && matches.length > 0 ? matches.shift() : null;
+                if (!match || !match.file_url) return n;
+
+                return {
+                  ...n,
+                  status: 'completed',
+                  taskData: {
+                    ...n.taskData,
+                    created_at: match.created_at || n.taskData?.created_at,
+                    model_id: match.model_id || n.taskData?.model_id,
+                    model_name: match.model_name || n.taskData?.model_name,
+                    file_size: match.file_size || n.taskData?.file_size,
+                    width: match.width || n.taskData?.width,
+                    height: match.height || n.taskData?.height,
+                  },
+                  resultData: match.asset_type === 'image'
+                    ? { data: [{ url: match.file_url }] }
+                    : { content: { video_url: match.file_url } },
+                };
               });
 
               // 补充 canvas_data 中缺失但 assets 表中存在的记录
@@ -592,11 +595,10 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
           let savedResultData = n.resultData;
           if (n.status === 'completed' && n.resultData) {
             if (n.type === 'image') {
-              const imgData = n.resultData?.data?.[0] || n.resultData?.content?.image_url;
-              const url = typeof imgData === 'string' ? imgData : imgData?.url;
+              const url = extractImageUrl(n.resultData);
               savedResultData = url ? { data: [{ url }] } : null;
             } else if (n.type === 'video') {
-              const videoUrl = n.resultData?.content?.video_url || n.resultData?.final_result?.video_url || n.resultData?.video_url;
+              const videoUrl = extractVideoUrl(n.resultData);
               const lastFrameUrl = n.resultData?.last_frame_url || n.resultData?.final_result?.last_frame_url || n.resultData?.content?.last_frame_url;
               savedResultData = videoUrl ? { content: { video_url: videoUrl, last_frame_url: lastFrameUrl } } : null;
             }

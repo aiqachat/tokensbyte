@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid, Select, Tooltip } from 'antd';
+import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid, Select, Tooltip, DatePicker, message } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { SyncOutlined, SearchOutlined, UserOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
+import { SyncOutlined, SearchOutlined, UserOutlined, DownOutlined, UpOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
@@ -11,6 +11,7 @@ import type { RequestLog, ModelModel } from '../../types';
 import dayjs from 'dayjs';
 
 const { Option } = Select;
+const { RangePicker } = DatePicker;
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -43,6 +44,8 @@ const Logs: React.FC = () => {
   const [usersList, setUsersList] = useState<any[]>([]);
   const [channelsList, setChannelsList] = useState<any[]>([]);
   const [allowDetails, setAllowDetails] = useState(true);
+  const [dateRange, setDateRange] = useState<[any, any] | null>(null);
+  const [exporting, setExporting] = useState(false);
   const { user } = useAuthStore();
   const screens = useBreakpoint();
 
@@ -53,13 +56,20 @@ const Logs: React.FC = () => {
     }
   }, [user]);
 
+  const buildParams = useCallback(() => {
+    const params: any = { model: modelFilter || undefined };
+    if (userFilter) params.user_id = userFilter;
+    if (channelFilter) params.channel_id = channelFilter;
+    if (statusFilter) params.status = statusFilter;
+    if (dateRange?.[0]) params.start_date = dateRange[0].startOf('day').toISOString();
+    if (dateRange?.[1]) params.end_date = dateRange[1].endOf('day').toISOString();
+    return params;
+  }, [modelFilter, userFilter, channelFilter, statusFilter, dateRange]);
+
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { page, per_page: pageSize, model: modelFilter || undefined };
-      if (userFilter) params.user_id = userFilter;
-      if (channelFilter) params.channel_id = channelFilter;
-      if (statusFilter) params.status = statusFilter;
+      const params = { ...buildParams(), page, per_page: pageSize };
       const resp = await (request.get('/logs', { params }) as unknown as Promise<{ data: RequestLog[]; total: number; allow_details?: boolean }>);
       setLogs(resp.data);
       setTotal(resp.total);
@@ -71,7 +81,48 @@ const Logs: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, modelFilter, userFilter, channelFilter, statusFilter]);
+  }, [page, pageSize, buildParams]);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const params = buildParams();
+      const resp = await request.get('/logs/export', {
+        params,
+        responseType: 'blob',
+        skipErrorHandler: true,
+      } as any) as any;
+      // 如果返回的是 JSON 错误（blob mimetype 为 application/json），解析提示
+      if (resp instanceof Blob && resp.type?.includes('json')) {
+        const text = await resp.text();
+        const json = JSON.parse(text);
+        message.error(json.error || '导出失败');
+        return;
+      }
+      const blob = resp instanceof Blob ? resp : new Blob([resp], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `usage_logs_${dayjs().format('YYYYMMDDHHmmss')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      message.success('导出成功');
+    } catch (e: any) {
+      // 尝试从 axios 错误响应中提取后端消息
+      if (e?.response?.data) {
+        try {
+          const blob = e.response.data;
+          const text = blob instanceof Blob ? await blob.text() : JSON.stringify(blob);
+          const json = JSON.parse(text);
+          message.error(json.error || '导出失败');
+        } catch { message.error('导出失败'); }
+      } else {
+        message.error('导出失败');
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     fetchLogs();
@@ -385,7 +436,17 @@ const Logs: React.FC = () => {
             onPressEnter={fetchLogs}
             style={{ width: screens.xs ? '100%' : 140 }}
           />
+          <RangePicker
+            value={dateRange}
+            onChange={(vals) => setDateRange(vals as [any, any] | null)}
+            style={{ width: screens.xs ? '100%' : undefined }}
+          />
           <Button icon={<SyncOutlined />} onClick={fetchLogs}>{t('common.refresh')}</Button>
+          {user?.role === 'admin' && (
+            <Tooltip title="根据当前筛选条件导出 CSV（上限10万条）">
+              <Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExport}>导出</Button>
+            </Tooltip>
+          )}
         </Space>
       </div>
 

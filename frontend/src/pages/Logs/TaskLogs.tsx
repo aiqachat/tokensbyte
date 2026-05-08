@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Tag, Button, Space, Typography, DatePicker, Input, Select, Row, Col, Form, message, Grid, Descriptions, Card } from 'antd';
+import { Table, Tag, Button, Space, Typography, DatePicker, Input, Select, Row, Col, Form, message, Grid, Descriptions, Card, Tooltip } from 'antd';
 import MobileCardList, { MobileCard, CardRow } from '../../components/MobileCardList';
-import { SyncOutlined, ReloadOutlined, SearchOutlined, MessageOutlined, PictureOutlined, VideoCameraOutlined, ToolOutlined } from '@ant-design/icons';
+import { SyncOutlined, ReloadOutlined, SearchOutlined, MessageOutlined, PictureOutlined, VideoCameraOutlined, ToolOutlined, DownloadOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
@@ -114,6 +114,7 @@ const TaskLogs: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [allowDetails, setAllowDetails] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [form] = Form.useForm();
   const screens = useBreakpoint();
 
@@ -154,6 +155,50 @@ const TaskLogs: React.FC = () => {
   };
 
   useEffect(() => { fetchLogs(); }, []);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const v = form.getFieldsValue();
+      const params: any = {};
+      if (v.action_type) params.action_type = v.action_type;
+      if (v.model) params.model = v.model;
+      if (v.dateRange?.[0]) params.start_date = v.dateRange[0].startOf('day').toISOString();
+      if (v.dateRange?.[1]) params.end_date = v.dateRange[1].endOf('day').toISOString();
+      const resp = await request.get('/task_logs/export', {
+        params,
+        responseType: 'blob',
+        skipErrorHandler: true,
+      } as any) as any;
+      if (resp instanceof Blob && resp.type?.includes('json')) {
+        const text = await resp.text();
+        const json = JSON.parse(text);
+        message.error(json.error || '导出失败');
+        return;
+      }
+      const blob = resp instanceof Blob ? resp : new Blob([resp], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `task_logs_${dayjs().format('YYYYMMDDHHmmss')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      message.success('导出成功');
+    } catch (e: any) {
+      if (e?.response?.data) {
+        try {
+          const blob = e.response.data;
+          const text = blob instanceof Blob ? await blob.text() : JSON.stringify(blob);
+          const json = JSON.parse(text);
+          message.error(json.error || '导出失败');
+        } catch { message.error('导出失败'); }
+      } else {
+        message.error('导出失败');
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // ── 展开行：详细信息 ─────────────────────────────────────────
   const expandedRowRender = (record: TaskLog) => (
@@ -327,6 +372,11 @@ const TaskLogs: React.FC = () => {
           <Space>
             <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>查询</Button>
             <Button onClick={() => { form.resetFields(); fetchLogs(1, pageSize); }}>重置</Button>
+            {isAdmin && (
+              <Tooltip title="根据当前筛选条件导出 CSV（上限10万条）">
+                <Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExport}>导出</Button>
+              </Tooltip>
+            )}
           </Space>
         </Form.Item>
       </Form>

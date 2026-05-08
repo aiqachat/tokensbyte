@@ -765,10 +765,10 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "阿里云通义万相系列原生/代理通道配置，支持多尺寸、多样式图像生成及提示词扩写功能",
             "params": [
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1024*1024", "768*1024", "1024*768", "768*768", "1280*720", "720*1280"], "default": "1024*1024"},
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1280*1280", "1104*1472", "1472*1104", "960*1696", "1696*960", "2048*2048"], "default": "1280*1280"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4], "default": 1, "unit": "张"},
-                {"key": "style", "label": "图片风格", "type": "select", "options": ["<auto>", "photography", "portrait", "3d cartoon", "anime", "oil painting", "watercolor", "sketch", "chinese painting", "flat illustration"], "default": "<auto>", "hint": "<auto>为默认风格"},
-                {"key": "prompt_extend", "label": "提示词扩写", "type": "switch", "default": false, "description": "由模型自动丰富提示词细节以获得更好的生成效果"}
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false},
+                {"key": "prompt_extend", "label": "提示词扩写", "type": "switch", "default": false, "description": "由模型自动丰富提示词细节以获得更好的生成效果"},
             ]
         }),
         json!({
@@ -778,7 +778,11 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "阿里云通义万相视频生成配置，支持多种画面尺寸，适用于视频生成模型",
             "params": [
-                {"key": "size", "label": "画面尺寸", "type": "select", "options": ["1280*720", "720*1280", "1024*1024"], "default": "1280*720"}
+                {"key": "ratio", "label": "画面尺寸", "type": "select", "options": ["1:1", "16:9", "9:16", "4:3", "3:4"], "default": "1:1"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["720P","1080P"], "default": "720P"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [3, 5, 10, 15], "default": 5, "unit": "秒"},
+                {"key": "prompt_extend", "label": "提示词扩写", "type": "switch", "default": false},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
         json!({
@@ -791,7 +795,6 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "ratio", "label": "画面比例", "type": "select", "options": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"], "default": "1:1"},
                 {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["1k","2k","4k"], "default": "1k"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4,5,6,7,8,9], "default": 1, "unit": "张"},
-                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
         json!({
@@ -802,10 +805,9 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "description": "快手可灵原生/代理视频生成配置，支持文生视频与图生视频，包含多种模式、时长及音频控制",
             "params": [
                 {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1"], "default": "16:9", "hint": "文生视频时生效"},
-                {"key": "duration", "label": "视频时长", "type": "select", "options": [5, 10], "default": 5, "unit": "秒"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [3, 5, 10, 15], "default": 5, "unit": "秒"},
                 {"key": "mode", "label": "生成模式", "type": "select", "options": ["std", "pro", "4k"], "default": "std", "hint": "std:标准 pro:专业 4k:超高清 (不同模式计费可能不同)"},
                 {"key": "sound", "label": "音频效果", "type": "select", "options": ["off", "on"], "default": "off", "description": "是否同时生成匹配画面的音频"},
-                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         })
     ]

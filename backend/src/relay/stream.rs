@@ -22,6 +22,7 @@ pub async fn handle_chat_stream(
     upstream_path: String,
     upstream_req_content: Option<String>,
     pre_deducted: f64,
+    pre_deduct_gift: f64,
     entry_endpoint: String,
 ) -> impl IntoResponse {
     let (tx, rx) = mpsc::channel(100);
@@ -113,7 +114,7 @@ pub async fn handle_chat_stream(
         let ep = format!("{}|{}", entry_endpoint, upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens, total_cached_tokens,
-            cost, pre_deducted, 200, &ep, None, latency_ms, 1,
+            cost, pre_deducted, pre_deduct_gift, 200, &ep, None, latency_ms, 1,
             Some(request_content_str), Some(raw_response_text), upstream_req_content, Some(detail)
         ).await;
     });
@@ -144,6 +145,7 @@ pub async fn handle_image_stream(
     upstream_path: String,
     upstream_req_content: Option<String>,
     pre_deducted: f64,
+    pre_deduct_gift: f64,
     entry_endpoint: String,
 ) -> impl IntoResponse {
     let (tx, rx) = mpsc::channel(100);
@@ -227,7 +229,7 @@ pub async fn handle_image_stream(
         let ep = format!("{}|{}", entry_endpoint, upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, total_prompt_tokens, total_completion_tokens, 0,
-            cost, pre_deducted, 200, &ep, None, latency_ms, 1,
+            cost, pre_deducted, pre_deduct_gift, 200, &ep, None, latency_ms, 1,
             Some(request_content_str), Some(full_response_text), upstream_req_content, Some(detail)
         ).await;
     });
@@ -254,6 +256,7 @@ pub async fn handle_native_stream(
     upstream_path: String,
     upstream_req_content: Option<String>,
     pre_deducted: f64,
+    pre_deduct_gift: f64,
     entry_endpoint: String,
 ) -> impl IntoResponse {
     let (tx, rx) = mpsc::channel(100);
@@ -343,7 +346,7 @@ pub async fn handle_native_stream(
         let ep = format!("{}|{}", entry_endpoint, upstream_path);
         crate::relay::proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, &model, prompt_tokens, completion_tokens, cached_tokens,
-            cost, pre_deducted, 200, &ep, None, latency_ms, 1,
+            cost, pre_deducted, pre_deduct_gift, 200, &ep, None, latency_ms, 1,
             Some(request_content_str), Some(full_response_text), upstream_req_content, Some(detail)
         ).await;
     });

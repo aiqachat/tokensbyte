@@ -256,32 +256,18 @@ export const useGeneration = () => {
         const audioAssets = resolvedAssetsForAI.filter(a => a.type === 'audio');
 
         if (currentModel.endpoint || true) { // Default to full multi-modal payload format for all video endpoints
-          const contentArr: any[] = [{ type: 'text', text: prompt.trim() }];
-          
-          if (imageAssets.length === 1) {
-            contentArr.push({ type: 'image_url', image_url: { url: imageAssets[0].url } });
-          } else if (imageAssets.length === 2) {
-            contentArr.push({ type: 'image_url', image_url: { url: imageAssets[0].url }, role: 'first_frame' });
-            contentArr.push({ type: 'image_url', image_url: { url: imageAssets[1].url }, role: 'last_frame' });
-          } else {
-            imageAssets.forEach(img => {
-              contentArr.push({ type: 'image_url', image_url: { url: img.url }, role: 'reference_image' });
-            });
-          }
-          videoAssets.forEach(vid => {
-            contentArr.push({ type: 'video_url', video_url: { url: vid.url }, role: 'reference_video' });
-          });
-          audioAssets.forEach(aud => {
-            contentArr.push({ type: 'audio_url', audio_url: { url: aud.url }, role: 'reference_audio' });
-          });
+          const imageUrls = imageAssets.map(a => a.url);
+          const videoUrls = videoAssets.map(a => a.url);
+          const audioUrls = audioAssets.map(a => a.url);
 
           // Fallback for single image param
-          if (imageAssets.length === 0 && paramValues.image_url) {
-            contentArr.push({ type: 'image_url', image_url: { url: paramValues.image_url } });
+          if (imageUrls.length === 0 && paramValues.image_url) {
+            imageUrls.push(paramValues.image_url);
           }
 
-          body.content = contentArr;
-          delete body.prompt;
+          if (imageUrls.length > 0) body.images = imageUrls;
+          if (videoUrls.length > 0) body.videos = videoUrls;
+          if (audioUrls.length > 0) body.audios = audioUrls;
         }
         delete body.image_url;
       } else if (schemeType === 'image' || currentModel.type_name.includes('图片')) {

@@ -185,13 +185,13 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
     } else { None };
 
     // 获取原始预扣费与关键关联 ID（用于结算和折扣查询）
-    let log_data: Option<(f64, String, Option<i64>, Option<i64>)> = sqlx::query_as(
-        &state.db.format_query("SELECT cost, user_id, token_id, channel_id FROM logs WHERE id = ?")
+    let log_data: Option<(f64, f64, String, Option<i64>, Option<i64>)> = sqlx::query_as(
+        &state.db.format_query("SELECT cost, pre_deduct_gift, user_id, token_id, channel_id FROM logs WHERE id = ?")
     ).bind(log_id).fetch_optional(&state.db.pool).await.unwrap_or(None);
 
-    let (pre_deduction, uid, token_id, channel_id) = match log_data {
+    let (pre_deduction, pre_deduct_gift, uid, token_id, channel_id) = match log_data {
         Some(d) => d,
-        None => (0.0, "".to_string(), None, None),
+        None => (0.0, 0.0, "".to_string(), None, None),
     };
     let user_id = if uid.is_empty() { None } else { Some(uid) };
 
@@ -288,35 +288,53 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
     match state.db.pool.begin().await {
         Ok(mut tx) => {
             // 1. 更新日志计费
-            let _ = sqlx::query(&state.db.format_query(
+            sqlx::query(&state.db.format_query(
                 "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
             )).bind(usage.prompt).bind(usage.completion).bind(0_i32).bind(cost).bind(&detail).bind(log_id)
-            .execute(&mut *tx).await;
+            .execute(&mut *tx).await.ok();
 
-            // 2. 余额结算
+            // 2. 余额结算（差额更新，修复双重计数）
             if let Some(ref final_uid) = user_id {
-                if cost > 0.0 || pre_deduction > 0.0 {
-                    // 更新用户余额（差额）与配额（实际消费）
-                    let _ = sqlx::query(&state.db.format_query(
-                        "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                    )).bind(apply_balance).bind(cost).bind(final_uid)
-                    .execute(&mut *tx).await;
+                if apply_balance > 0.0 {
+                    // 补扣差额：先扣赠送，不足扣系统
+                    sqlx::query(&state.db.format_query(
+                        "UPDATE users SET \
+                         balance = CASE WHEN gift_balance >= ? THEN balance ELSE balance - (? - gift_balance) END, \
+                         gift_balance = CASE WHEN gift_balance >= ? THEN gift_balance - ? ELSE 0 END, \
+                         used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                    )).bind(apply_balance).bind(apply_balance).bind(apply_balance).bind(apply_balance)
+                    .bind(apply_balance).bind(final_uid)
+                    .execute(&mut *tx).await.ok();
+                } else if apply_balance < 0.0 {
+                    // 退款：实际费用按先扣赠送原则分配，退还各钱包多扣部分
+                    let refund = -apply_balance;
+                    let gift_cost = cost.min(pre_deduct_gift);
+                    let gift_refund = pre_deduct_gift - gift_cost;
+                    let balance_refund = refund - gift_refund;
+                    sqlx::query(&state.db.format_query(
+                        "UPDATE users SET balance = balance + ?, gift_balance = gift_balance + ?, \
+                         used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                    )).bind(balance_refund).bind(gift_refund)
+                    .bind(apply_balance).bind(final_uid)
+                    .execute(&mut *tx).await.ok();
+                }
 
-                    // 更新 Token 配额及使用时间
+                if apply_balance != 0.0 {
+                    // 令牌配额：差额更新
                     if let Some(tid) = token_id {
                         let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-                        let _ = sqlx::query(&state.db.format_query(
+                        sqlx::query(&state.db.format_query(
                             "UPDATE api_tokens SET quota_used = quota_used + ?, last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(cost).bind(&now_str).bind(tid)
-                        .execute(&mut *tx).await;
+                        )).bind(apply_balance).bind(&now_str).bind(tid)
+                        .execute(&mut *tx).await.ok();
                     }
 
-                    // 更新渠道配额
+                    // 渠道配额：差额更新
                     if let Some(cid) = channel_id {
-                        let _ = sqlx::query(&state.db.format_query(
+                        sqlx::query(&state.db.format_query(
                             "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(cost).bind(cid)
-                        .execute(&mut *tx).await;
+                        )).bind(apply_balance).bind(cid)
+                        .execute(&mut *tx).await.ok();
                     }
                 }
             }
@@ -332,16 +350,16 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
     }
 }
 
-/// 任务失败：退回预扣费并标记
+/// 任务失败：按预扣费钱包来源精准退还
 async fn settle_failure(state: &AppState, log_id: i64, _model_name: &str, _task_id: &str, poll_url: &str, _category: &str) {
-    // 获取原始预扣费与关键 ID
-    let log_data: Option<(f64, String, Option<i64>, Option<i64>)> = sqlx::query_as(
-        &state.db.format_query("SELECT cost, user_id, token_id, channel_id FROM logs WHERE id = ?")
+    // 获取原始预扣费、赠送钱包拆分与关键 ID
+    let log_data: Option<(f64, f64, String, Option<i64>, Option<i64>)> = sqlx::query_as(
+        &state.db.format_query("SELECT cost, pre_deduct_gift, user_id, token_id, channel_id FROM logs WHERE id = ?")
     ).bind(log_id).fetch_optional(&state.db.pool).await.unwrap_or(None);
 
-    let (pre_deduction, uid, token_id, channel_id) = match log_data {
+    let (pre_deduction, pre_deduct_gift, uid, token_id, channel_id) = match log_data {
         Some(d) => d,
-        None => (0.0, "".to_string(), None, None),
+        None => (0.0, 0.0, "".to_string(), None, None),
     };
 
     let detail = if pre_deduction > 0.0 {
@@ -353,33 +371,35 @@ async fn settle_failure(state: &AppState, log_id: i64, _model_name: &str, _task_
     match state.db.pool.begin().await {
         Ok(mut tx) => {
             if pre_deduction > 0.0 {
-                // 退回用户余额与配额
-                let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE users SET balance = balance + ?, used_quota = used_quota - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                )).bind(pre_deduction).bind(pre_deduction).bind(&uid)
-                .execute(&mut *tx).await;
+                // 精准退还到对应钱包
+                let balance_refund = pre_deduction - pre_deduct_gift;
+                sqlx::query(&state.db.format_query(
+                    "UPDATE users SET balance = balance + ?, gift_balance = gift_balance + ?, \
+                     used_quota = used_quota - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                )).bind(balance_refund).bind(pre_deduct_gift).bind(pre_deduction).bind(&uid)
+                .execute(&mut *tx).await.ok();
 
                 // 退回 Token 配额
                 if let Some(tid) = token_id {
-                    let _ = sqlx::query(&state.db.format_query(
+                    sqlx::query(&state.db.format_query(
                         "UPDATE api_tokens SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
                     )).bind(pre_deduction).bind(tid)
-                    .execute(&mut *tx).await;
+                    .execute(&mut *tx).await.ok();
                 }
 
-                // 退回渠道配额 (修复遗漏)
+                // 退回渠道配额
                 if let Some(cid) = channel_id {
-                    let _ = sqlx::query(&state.db.format_query(
+                    sqlx::query(&state.db.format_query(
                         "UPDATE channels SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
                     )).bind(pre_deduction).bind(cid)
-                    .execute(&mut *tx).await;
+                    .execute(&mut *tx).await.ok();
                 }
             }
 
-            let _ = sqlx::query(&state.db.format_query(
+            sqlx::query(&state.db.format_query(
                 "UPDATE logs SET status_code = 400, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
             )).bind(detail).bind(log_id)
-            .execute(&mut *tx).await;
+            .execute(&mut *tx).await.ok();
 
             let _ = tx.commit().await;
             tracing::info!("[TaskPoller Failure] log_id={} failed, refunded pre_deduction={:.6}, url={}", log_id, pre_deduction, poll_url);

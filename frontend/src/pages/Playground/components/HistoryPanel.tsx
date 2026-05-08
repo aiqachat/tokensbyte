@@ -14,17 +14,9 @@ import {
 import { usePlayground, useCanvas } from '../context/PlaygroundContext';
 import type { PlaygroundProject, PlaygroundAsset } from '../types';
 import request from '../../../utils/request';
+import { getFullUrl, getResultDisplayUrl } from '../utils/resultExtractor';
 
 const { Text } = Typography;
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
-const getFullUrl = (url: string) => {
-  if (!url) return '';
-  if (!url.startsWith('http') && !url.startsWith('/')) return `https://${url}`;
-  if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
-  return url;
-};
 
 /** 格式化时间分组 */
 const formatDateGroup = (dateStr: string): string => {
@@ -259,17 +251,7 @@ const HistoryPanel: React.FC = () => {
     .filter(n => n.status === 'completed' && (n.type === 'image' || n.type === 'video'))
     .reverse()
     .map(n => {
-      let url = '';
-      if (n.type === 'image') {
-        const raw = n.resultData?.data?.[0] || n.resultData?.content?.image_url;
-        url = typeof raw === 'string' ? raw : raw?.url || raw?.b64_json;
-      } else {
-        url = n.resultData?.content?.video_url || n.resultData?.final_result?.video_url || n.resultData?.video_url;
-      }
-      const isUrl = url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'));
-      const isBase64 = !isUrl && url && url.length > 100;
-      const finalUrl = isBase64 ? (url.startsWith('data:') ? url : `data:image/png;base64,${url}`) : getFullUrl(url);
-
+      const finalUrl = getResultDisplayUrl(n.type, n.resultData);
       return {
         id: n.id,
         title: n.taskData?.prompt || (n.type === 'image' ? 'AI 图像生成' : 'AI 视频生成'),

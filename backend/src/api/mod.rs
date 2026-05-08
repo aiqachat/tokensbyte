@@ -85,6 +85,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/tokens/{id}/reveal", post(tokens::reveal_token))
         .route("/channel-configs", get(channel_configs::list_channel_configs))
         .route("/logs", get(logs::list_logs))
+        .route("/logs/export", get(logs::export_logs))
         .route("/redemptions/redeem", post(redemptions::redeem_code))
         
         .route("/user/profile", get(user::get_profile).put(user::update_profile))
@@ -98,6 +99,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/user/unbind/{bind_type}", post(user::unbind_third_party))
         .route("/task_logs", get(task_logs::list_task_logs))
         .route("/task_logs/{id}/sync", post(task_logs::sync_task_log))
+        .route("/task_logs/export", get(task_logs::export_task_logs))
         .route("/finance/pay/create", post(pay::create_order))
         .route("/finance/pay/status/{out_trade_no}", get(pay::check_status))
         .route("/system/about", get(settings::system_about))

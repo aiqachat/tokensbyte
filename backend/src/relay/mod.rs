@@ -124,11 +124,15 @@ pub async fn chat_completions(
         let prompt_tokens = estimate_prompt_tokens(&body);
 
 
-        if pre_deduction > 0.0 {
-            if let Err(e) = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
-                tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+        let pre_deduct_gift = if pre_deduction > 0.0 {
+            match proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
+                Ok(split) => split.gift,
+                Err(e) => {
+                    tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+                    0.0
+                }
             }
-        }
+        } else { 0.0 };
 
         Ok(stream::handle_chat_stream(
             state, token, channel, model.to_string(), resp,
@@ -136,6 +140,7 @@ pub async fn chat_completions(
             final_upstream_path,
             Some(upstream_body.to_string()),
             pre_deduction,
+            pre_deduct_gift,
             raw_path.to_string()
         ).await.into_response())
     } else {
@@ -181,9 +186,15 @@ pub async fn chat_completions(
         } else { None };
 
         let pre_deduction = db_model.as_ref().map(|m| m.pre_deduction).unwrap_or(0.0);
-        if pre_deduction > 0.0 {
-            let _ = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await;
-        }
+        let pre_deduct_gift = if pre_deduction > 0.0 {
+            match proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
+                Ok(split) => split.gift,
+                Err(e) => {
+                    tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+                    0.0
+                }
+            }
+        } else { 0.0 };
 
         let (final_discount, discount_source) = proxy::resolve_discount(db_model.as_ref(), ctx.discount);
 
@@ -197,7 +208,7 @@ pub async fn chat_completions(
 
         proxy::record_and_bill_with_prededuction(
             &state, &token, channel.id, model, prompt_tokens, completion_tokens, cached_tokens,
-            quota_used, pre_deduction, 200, &ep, None, latency_ms, 0,
+            quota_used, pre_deduction, pre_deduct_gift, 200, &ep, None, latency_ms, 0,
             Some(request_content_str), Some(response_content_str.clone()), Some(upstream_body.to_string()),
             Some(detail)
         ).await;

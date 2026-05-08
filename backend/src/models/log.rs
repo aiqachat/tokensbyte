@@ -53,6 +53,9 @@ pub struct RequestLog {
     /// POST 阶段提取的计费特征快照 (JSON)，独立于 enable_log 开关
     #[sqlx(default)]
     pub billing_features: Option<String>,
+    /// 预扣费中从赠送余额扣除的金额，用于退款时精准归还
+    #[sqlx(default)]
+    pub pre_deduct_gift: f64,
     pub created_at: String,
 }
 

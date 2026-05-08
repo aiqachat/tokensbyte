@@ -33,6 +33,18 @@ export function extractImageUrl(resultData: any): string {
   // 阿里云 DashScope: output.results[0].url
   const dr = resultData?.output?.results?.[0];
   if (dr) { const u = typeof dr === 'string' ? dr : dr?.url; if (u) return u; }
+  
+  // 阿里云 wan2.6 / OpenAI Chat 兼容格式: choices[0].message.content[x].image
+  const choices = resultData?.output?.choices || resultData?.choices;
+  if (choices?.[0]?.message?.content) {
+    const content = choices[0].message.content;
+    if (Array.isArray(content)) {
+      const imgObj = content.find((c: any) => c.type === 'image' || c.image_url || c.image);
+      if (imgObj) {
+        return imgObj.image || (imgObj.image_url?.url || imgObj.image_url);
+      }
+    }
+  }
   // Gemini: candidates[0].content.parts[].inlineData
   if (resultData?.candidates) {
     for (const part of resultData.candidates[0]?.content?.parts || []) {

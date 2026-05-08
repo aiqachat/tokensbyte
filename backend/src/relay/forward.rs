@@ -927,8 +927,8 @@ fn build_dashscope_image_body(model: &str, body: &serde_json::Value) -> serde_js
         params.insert("size".to_string(), serde_json::json!(size.replace("x", "*")));
     }
 
-    // style/quality/prompt_extend
-    let passthrough = ["style", "quality", "prompt_extend", "seed"];
+    // style/quality/prompt_extend/watermark
+    let passthrough = ["style", "quality", "prompt_extend", "watermark", "seed"];
     for &key in &passthrough {
         if let Some(val) = body.get(key) {
             params.insert(key.to_string(), val.clone());
@@ -1405,10 +1405,9 @@ fn ensure_image_roles_for_multimodal(content: serde_json::Value) -> serde_json::
             if item.get("type").and_then(|v| v.as_str()) != Some("image_url") {
                 return false;
             }
-            match item.get("role").and_then(|v| v.as_str()) {
-                None | Some("") => true,
-                _ => false, // 已有明确 role，不修改
-            }
+            // 在有多模态视频/音频参考的场景下，图片只能作为 reference_image
+            // 无论它原本是不是 first_frame / last_frame，都必须强制覆盖
+            true
         })
         .map(|(i, _)| i)
         .collect();
@@ -1458,7 +1457,8 @@ const KLING_VIDEO_PASSTHROUGH_KEYS: &[&str] = &[
     "model_name", "prompt", "negative_prompt", "duration", "mode", "sound",
     "aspect_ratio", "image", "image_tail", "image_list", "video_list",
     "type", "multi_shot", "multi_prompt", "callback_url", "external_task_id",
-    "cfg_scale", "camera_control",
+    "cfg_scale", "camera_control", "shot_type", "multi_prompt", "element_list",
+    "voice_list"
 ];
 
 /// 可灵图片接口透传参数白名单
@@ -1466,6 +1466,7 @@ const KLING_IMAGE_PASSTHROUGH_KEYS: &[&str] = &[
     "model_name", "prompt", "negative_prompt", "n", "aspect_ratio", "resolution",
     "image", "image_list", "element_list", "subject_image_list", "image_fidelity",
     "series_amount", "callback_url", "external_task_id", "image_reference",
+    "result_type", "series_amount", "watermark_info"
 ];
 
 fn build_kling_body(model: &str, body: &serde_json::Value, category: &str) -> serde_json::Value {
@@ -1485,6 +1486,13 @@ fn build_kling_body(model: &str, body: &serde_json::Value, category: &str) -> se
         if key == "model_name" { continue; }
         if let Some(val) = body.get(key) {
             result.insert(key.to_string(), val.clone());
+        }
+    }
+
+    // 兼容 OpenAI 的 ratio -> aspect_ratio (可灵官方参数名为 aspect_ratio)
+    if !result.contains_key("aspect_ratio") {
+        if let Some(ratio) = body.get("ratio") {
+            result.insert("aspect_ratio".to_string(), ratio.clone());
         }
     }
 

@@ -1226,6 +1226,8 @@ macro_rules! pg_migration_blocks {
         "COMMENT ON COLUMN logs.cached_tokens IS '缓存命中的Token数量(属于输入的子集)'",
         "ALTER TABLE logs ADD COLUMN IF NOT EXISTS billing_features TEXT",
         "COMMENT ON COLUMN logs.billing_features IS 'POST阶段提取的计费特征快照(JSON)，独立于enable_log开关，确保异步任务结算时始终有完整计费参数'",
+        "ALTER TABLE logs ADD COLUMN IF NOT EXISTS pre_deduct_gift DOUBLE PRECISION NOT NULL DEFAULT 0",
+        "COMMENT ON COLUMN logs.pre_deduct_gift IS '预扣费中从赠送余额扣除的金额，用于退款时精准归还到对应钱包'",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS remark TEXT",
         "COMMENT ON COLUMN users.remark IS '推广用户备注'",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_history TEXT DEFAULT ''",

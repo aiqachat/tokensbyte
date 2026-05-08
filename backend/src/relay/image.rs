@@ -92,11 +92,15 @@ pub async fn image_generations(
         } else { None }
     } else { None };
 
-    if pre_deduction > 0.0 {
-        if let Err(e) = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
-            tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+    let pre_deduct_gift = if pre_deduction > 0.0 {
+        match proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
+            Ok(split) => split.gift,
+            Err(e) => {
+                tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+                0.0
+            }
         }
-    }
+    } else { 0.0 };
 
     let is_upstream_stream = upstream_resp.headers()
         .get("content-type")
@@ -112,6 +116,7 @@ pub async fn image_generations(
             resolved.upstream_path.replace("${model}", &resolved_model),
             Some(upstream_body.to_string()),
             pre_deduction,
+            pre_deduct_gift,
             raw_path.to_string()
         ).await.into_response())
     } else {
@@ -135,7 +140,8 @@ pub async fn image_generations(
             } else {
                 "异步任务处理中(冻结)".to_string()
             };
-            proxy::record_and_bill_with_category(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200,
+            proxy::record_and_bill_with_category(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction,
+                pre_deduct_gift, 200,
                 &ep, None, latency_ms, 0,
                 Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail), Some("图片")).await;
         } else {
@@ -157,7 +163,8 @@ pub async fn image_generations(
                 detail.push_str(&format!(" | 模型映射: {} ➞ {}", model, resolved_model));
             }
 
-            proxy::record_and_bill_with_category(&state, &token, channel.id, model, p_tokens, c_tokens, 0, cost, pre_deduction, 200,
+            proxy::record_and_bill_with_category(&state, &token, channel.id, model, p_tokens, c_tokens, 0, cost, pre_deduction,
+                pre_deduct_gift, 200,
                 &ep, None, latency_ms, 0,
                 Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(detail), Some("图片")).await;
         }

@@ -164,20 +164,44 @@ pub async fn select_channel_for_model(
 
 use super::url_utils::join_url;
 
-pub async fn pre_deduct(state: &Arc<AppState>, user_id: &str, amount: f64) -> Result<(), sqlx::Error> {
-    if amount > 0.0 {
-        sqlx::query(&state.db.format_query(
-            "UPDATE users SET 
-             balance = CASE WHEN gift_balance >= ? THEN balance ELSE balance - (? - gift_balance) END,
-             gift_balance = CASE WHEN gift_balance >= ? THEN gift_balance - ? ELSE 0 END 
-             WHERE id = ?"
-        ))
-            .bind(amount).bind(amount).bind(amount).bind(amount)
-            .bind(user_id)
-            .execute(&state.db.pool)
-            .await?;
+/// 预扣费钱包拆分记录
+#[allow(dead_code)]
+pub struct PreDeductSplit {
+    pub gift: f64,    // 从赠送余额扣除的金额
+    pub balance: f64, // 从系统余额扣除的金额
+}
+
+#[allow(dead_code)]
+impl PreDeductSplit {
+    pub fn zero() -> Self { Self { gift: 0.0, balance: 0.0 } }
+    pub fn total(&self) -> f64 { self.gift + self.balance }
+}
+
+/// 事务化预扣费：FOR UPDATE 锁行防并发，精确记录双钱包扣除比例
+pub async fn pre_deduct(state: &Arc<AppState>, user_id: &str, amount: f64) -> Result<PreDeductSplit, sqlx::Error> {
+    if amount <= 0.0 {
+        return Ok(PreDeductSplit::zero());
     }
-    Ok(())
+    let mut tx = state.db.pool.begin().await?;
+    let (bal, gift): (f64, f64) = sqlx::query_as(
+        &state.db.format_query("SELECT balance, gift_balance FROM users WHERE id = ? FOR UPDATE")
+    ).bind(user_id).fetch_one(&mut *tx).await?;
+
+    if bal + gift < amount {
+        tx.rollback().await?;
+        return Err(sqlx::Error::RowNotFound);
+    }
+    // 对齐精度（避免浮点运算产生 0.19999999999999996 之类的值）
+    let gift_deducted = (amount.min(gift) * 1_000_000.0).round() / 1_000_000.0;
+    let balance_deducted = ((amount - gift_deducted) * 1_000_000.0).round() / 1_000_000.0;
+
+    sqlx::query(&state.db.format_query(
+        "UPDATE users SET balance = balance - ?, gift_balance = gift_balance - ? WHERE id = ?"
+    )).bind(balance_deducted).bind(gift_deducted).bind(user_id)
+    .execute(&mut *tx).await?;
+    tx.commit().await?;
+
+    Ok(PreDeductSplit { gift: gift_deducted, balance: balance_deducted })
 }
 
 
@@ -219,7 +243,7 @@ pub async fn record_and_bill(
     request_content: Option<String>, response_content: Option<String>, upstream_req_content: Option<String>,
     billing_detail: Option<String>,
 ) {
-    record_and_bill_inner(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail, None).await;
+    record_and_bill_inner(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, 0.0, 0.0, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail, None).await;
 }
 
 pub async fn record_and_bill_with_prededuction(
@@ -232,6 +256,7 @@ pub async fn record_and_bill_with_prededuction(
     cached_tokens: i32,
     cost: f64,
     pre_deducted: f64,
+    pre_deduct_gift: f64,
     status_code: u16,
     endpoint: &str,
     error_msg: Option<&str>,
@@ -242,18 +267,19 @@ pub async fn record_and_bill_with_prededuction(
     upstream_req_content: Option<String>,
     billing_detail: Option<String>,
 ) {
-    record_and_bill_inner(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, pre_deducted, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail, None).await;
+    record_and_bill_inner(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, pre_deducted, pre_deduct_gift, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail, None).await;
 }
 
 /// 带 category 参数的计费记录入口（同名模型按类型精准匹配）
 pub async fn record_and_bill_with_category(
     state: &Arc<AppState>, token: &ApiToken, channel_id: i64, model_name: &str,
     prompt_tokens: i32, completion_tokens: i32, cached_tokens: i32, cost: f64, pre_deducted: f64,
+    pre_deduct_gift: f64,
     status_code: u16, endpoint: &str, error_msg: Option<&str>, latency_ms: u32, is_stream: i32,
     request_content: Option<String>, response_content: Option<String>, upstream_req_content: Option<String>,
     billing_detail: Option<String>, category: Option<&str>,
 ) {
-    record_and_bill_inner(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, pre_deducted, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail, category).await;
+    record_and_bill_inner(state, token, channel_id, model_name, prompt_tokens, completion_tokens, cached_tokens, cost, pre_deducted, pre_deduct_gift, status_code, endpoint, error_msg, latency_ms, is_stream, request_content, response_content, upstream_req_content, billing_detail, category).await;
 }
 
 async fn record_and_bill_inner(
@@ -266,6 +292,7 @@ async fn record_and_bill_inner(
     cached_tokens: i32,
     cost: f64,
     pre_deducted: f64,
+    pre_deduct_gift: f64,
     status_code: u16,
     endpoint: &str,
     error_msg: Option<&str>,
@@ -525,13 +552,17 @@ async fn record_and_bill_inner(
                 .execute(&mut *tx)
                 .await?;
             } else if apply_balance < 0.0 {
-                // 如果是退款（pre_deducted 过多），统一退回到主余额
+                // 退款：实际费用按先扣赠送原则分配，退还各钱包多扣部分
                 let refund = -apply_balance;
+                let gift_cost = cost.min(pre_deduct_gift); // 赠送钱包应承担的最终费用
+                let gift_refund = pre_deduct_gift - gift_cost; // 退还赠送钱包的多扣部分
+                let balance_refund = refund - gift_refund; // 剩余退还系统钱包
                 sqlx::query(&state.db.format_query(
-                    "UPDATE users SET balance = balance + ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    "UPDATE users SET balance = balance + ?, gift_balance = gift_balance + ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 ))
-                .bind(refund)
-                .bind(cost) // cost happens to be actual cost, so used_quota increases by cost. But pre_deducted was taken. Wait, if we pre_deducted 10, actual cost 2, apply_balance is -8, refund is 8. used_quota increases by 2. This is correct.
+                .bind(balance_refund)
+                .bind(gift_refund)
+                .bind(cost)
                 .bind(&token.user_id)
                 .execute(&mut *tx)
                 .await?;
@@ -589,8 +620,8 @@ async fn record_and_bill_inner(
         };
 
         sqlx::query(&state.db.format_query(
-            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type, billing_pid, forward_eid, billing_features) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type, billing_pid, forward_eid, billing_features, pre_deduct_gift) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ))
         .bind(&token.user_id)
         .bind(channel_id)
@@ -615,6 +646,7 @@ async fn record_and_bill_inner(
         .bind(&billing_pid)
         .bind(&forward_eid)
         .bind(&billing_features_json)
+        .bind(pre_deduct_gift)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;

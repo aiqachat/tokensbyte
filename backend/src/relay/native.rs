@@ -111,18 +111,22 @@ pub async fn gemini_proxy(
         return Err(AppError::UpstreamError(err));
     }
 
-
     // 预扣费
-    if pre_deduction > 0.0 {
-        if let Err(e) = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
-            tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+    let pre_deduct_gift = if pre_deduction > 0.0 {
+        match proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
+            Ok(split) => split.gift,
+            Err(e) => {
+                tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+                0.0
+            }
         }
-    }
+    } else { 0.0 };
 
     if action.starts_with("streamGenerateContent") || is_stream == 1 {
         Ok(crate::relay::stream::handle_native_stream(
             state, token.clone(), channel.clone(), model.to_string(), resp, ctx.discount,
             request_content_str.clone(), start_time, endpoint.clone(), Some(request_content_str), pre_deduction,
+            pre_deduct_gift,
             endpoint
         ).await.into_response())
     } else {
@@ -158,7 +162,7 @@ pub async fn gemini_proxy(
         tracing::info!("[Gemini] model={}, prompt={}, completion={}, cost={:.6}", model, usage.prompt, usage.completion, cost);
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
-        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, usage.cached, cost, pre_deduction, 200, &endpoint, None, latency_ms, is_stream, Some(request_content_str.clone()), Some(response_content_str), Some(request_content_str), Some(detail)).await;
+        proxy::record_and_bill_with_prededuction(&state, &token, channel.id, model, usage.prompt, usage.completion, usage.cached, cost, pre_deduction, pre_deduct_gift, 200, &endpoint, None, latency_ms, is_stream, Some(request_content_str.clone()), Some(response_content_str), Some(request_content_str), Some(detail)).await;
         Ok(Response::builder()
             .header("Content-Type", "application/json")
             .body(axum::body::Body::from(data))

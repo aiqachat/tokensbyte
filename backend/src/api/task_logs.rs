@@ -1,26 +1,18 @@
 use axum::{
     extract::{Query, State, Extension},
     Json,
+    response::{IntoResponse, Response},
 };
+use axum::http::{header, StatusCode};
 use std::sync::Arc;
 use crate::AppState;
 use crate::auth;
 use crate::models::{TaskLog, TaskLogQuery, TaskLogListResponse};
-use crate::error::AppResult;
+use crate::error::{AppResult, AppError};
 use crate::relay::task_poller::sync_single_task;
 
-/// 任务日志列表 — 基于 logs 表构建任务视图
-/// 管理员看全部，普通用户只看自己的
-/// 仅返回成功(200)的记录，失败记录在使用日志中查看
-pub async fn list_task_logs(
-    State(state): State<Arc<AppState>>,
-    Extension(claims): Extension<auth::Claims>,
-    Query(query): Query<TaskLogQuery>,
-) -> AppResult<Json<TaskLogListResponse>> {
-    let page = query.page.unwrap_or(1);
-    let per_page = query.per_page.unwrap_or(20).min(100);
-    let offset = (page - 1) * per_page;
-
+/// 构建任务日志公共 WHERE 子句与绑定参数
+fn build_task_log_where(claims: &auth::Claims, query: &TaskLogQuery) -> (String, Vec<String>) {
     let mut where_clause = " WHERE l.status_code = 200".to_string();
     let mut binds: Vec<String> = Vec::new();
 
@@ -59,6 +51,23 @@ pub async fn list_task_logs(
         let end_str = if e.contains('T') { e.clone() } else { format!("{} 23:59:59", e) };
         binds.push(end_str);
     }
+
+    (where_clause, binds)
+}
+
+/// 任务日志列表 — 基于 logs 表构建任务视图
+/// 管理员看全部，普通用户只看自己的
+/// 仅返回成功(200)的记录，失败记录在使用日志中查看
+pub async fn list_task_logs(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+    Query(query): Query<TaskLogQuery>,
+) -> AppResult<Json<TaskLogListResponse>> {
+    let page = query.page.unwrap_or(1);
+    let per_page = query.per_page.unwrap_or(20).min(100);
+    let offset = (page - 1) * per_page;
+
+    let (where_clause, binds) = build_task_log_where(&claims, &query);
 
     // 总数查询（无需 JOIN，仅依赖 logs 表条件）
     let count_sql = state.db.format_query(&format!(
@@ -130,3 +139,80 @@ pub async fn sync_task_log(
         Err(e) => Err(crate::error::AppError::Internal(e.to_string())),
     }
 }
+
+/// 导出任务日志 CSV（仅超管可用，上限 100,000 条）
+const TASK_EXPORT_LIMIT: i64 = 100_000;
+
+pub async fn export_task_logs(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+    Query(query): Query<TaskLogQuery>,
+) -> Result<Response, AppError> {
+    if claims.role != "admin" {
+        return Err(AppError::Forbidden("仅超级管理员可导出数据".to_string()));
+    }
+
+    let (where_clause, binds) = build_task_log_where(&claims, &query);
+
+    // 先查总数
+    let count_sql = state.db.format_query(&format!(
+        "SELECT COUNT(*) FROM logs l{}", where_clause
+    ));
+    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
+    for v in &binds { cq = cq.bind(v); }
+    let total = cq.fetch_one(&state.db.pool).await?;
+
+    if total > TASK_EXPORT_LIMIT {
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("当前筛选条件下共 {} 条数据，超出单次导出上限 {} 条，请缩小时间范围或增加筛选条件后重试", total, TASK_EXPORT_LIMIT)
+            })),
+        ).into_response());
+    }
+
+    let data_sql = state.db.format_query(&format!(
+        "SELECT l.id, l.user_id, l.model, l.prompt_tokens, l.completion_tokens, l.cached_tokens, \
+         l.cost, l.latency_ms, l.status_code, l.action_type, l.task_id, \
+         l.billing_detail, l.created_at, \
+         c.name as channel_name, c.group_aid as channel_group_aid, \
+         COALESCE(u.nickname, u.username) as user_nickname \
+         FROM logs l \
+         LEFT JOIN channels c ON l.channel_id = c.id \
+         LEFT JOIN users u ON l.user_id = u.id \
+         {} ORDER BY l.created_at DESC LIMIT {}",
+        where_clause, TASK_EXPORT_LIMIT
+    ));
+
+    let rows: Vec<(i64, String, String, i32, i32, i32, f64, i32, i32, Option<String>, Option<String>, Option<String>, String, Option<String>, Option<String>, Option<String>)> = {
+        let mut q = sqlx::query_as(&data_sql);
+        for v in &binds { q = q.bind(v); }
+        q.fetch_all(&state.db.pool).await?
+    };
+
+    let mut csv = String::from("\u{FEFF}ID,用户ID,用户昵称,模型,类型,任务ID,输入Tokens,输出Tokens,缓存Tokens,费用,耗时(ms),状态码,渠道,渠道AID,计费明细,时间\n");
+    for r in &rows {
+        csv.push_str(&format!(
+            "{},{},\"{}\",\"{}\",\"{}\",\"{}\",{},{},{},{:.6},{},{},\"{}\",\"{}\",\"{}\",\"{}\"\n",
+            r.0, r.1,
+            r.15.as_deref().unwrap_or("-").replace('"', "\"\""),
+            r.2.replace('"', "\"\""),
+            r.9.as_deref().unwrap_or("-"),
+            r.10.as_deref().unwrap_or("-"),
+            r.3, r.4, r.5, r.6, r.7, r.8,
+            r.13.as_deref().unwrap_or("-").replace('"', "\"\""),
+            r.14.as_deref().unwrap_or("-"),
+            r.11.as_deref().unwrap_or("").replace('"', "\"\""),
+            r.12,
+        ));
+    }
+
+    let filename = format!("task_logs_{}.csv", chrono::Local::now().format("%Y%m%d_%H%M%S"));
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/csv; charset=utf-8")
+        .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
+        .body(axum::body::Body::from(csv))
+        .unwrap())
+}
+
