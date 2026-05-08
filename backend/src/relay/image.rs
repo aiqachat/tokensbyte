@@ -119,9 +119,10 @@ pub async fn image_generations(
         let response_content_str = String::from_utf8_lossy(&data).to_string();
         let resp_json: serde_json::Value = serde_json::from_str(&response_content_str).unwrap_or(serde_json::json!({}));
         
-        // 健壮的异步任务判定：支持根节点、data 对象、以及 data 数组格式
+        // 健壮的异步任务判定：支持根节点、data 对象、output 对象（阿里等），以及 data 数组格式
         let is_async = resp_json.get("task_id").is_some() 
             || resp_json.get("data").and_then(|d| d.get("task_id")).is_some()
+            || resp_json.get("output").and_then(|o| o.get("task_id")).is_some()
             || resp_json.get("data").and_then(|d| d.as_array()).and_then(|a| a.first()).and_then(|f| f.get("task_id")).is_some();
 
         let latency_ms = start_time.elapsed().as_millis() as u32;
