@@ -371,7 +371,6 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
           try {
             const canvasData = JSON.parse(res.project.canvas_data);
             if (canvasData?.nodes?.length > 0) {
-              // 回填缺失的 resultData
               // 回填缺失的 resultData (分组匹配以支持同 prompt 多次生成)
               const assetGroup = new Map<string, any[]>();
               for (const a of assets) {
@@ -422,14 +421,20 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
               const existingAssetIds = new Set(
                 fixedNodes.map((n: any) => n.id).filter((id: string) => id.startsWith('asset-'))
               );
-              // 同时收集已有节点的 file_url 用于去重
+              // 同时收集已有节点的 URL 用于去重
               const existingUrls = new Set<string>();
               fixedNodes.forEach((n: any) => {
-                const url = n.resultData?.data?.[0]?.url || n.resultData?.content?.video_url;
-                if (url) existingUrls.add(url);
+                if (n.type === 'image') {
+                  const url = extractImageUrl(n.resultData);
+                  if (url) existingUrls.add(url);
+                } else if (n.type === 'video') {
+                  const url = extractVideoUrl(n.resultData);
+                  if (url) existingUrls.add(url);
+                }
               });
               const missingAssets = assets.filter((a: any) => {
                 if (a.asset_type !== 'image' && a.asset_type !== 'video') return false;
+                if (!a.file_url) return false;
                 // 按 asset ID 匹配
                 if (existingAssetIds.has(`asset-${a.id}`)) return false;
                 // 按 URL 去重（避免同一图片以不同节点 ID 重复出现）
