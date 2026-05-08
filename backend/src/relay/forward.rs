@@ -91,8 +91,13 @@ pub async fn resolve_forward_rule(
         category_matched
     };
 
-    // 4. 严格匹配：兼容 OpenAI 默认路径与厂商官方原生路径
+    // 4. 按精确度打分匹配：当模型绑定了多条规则时，优先选择与请求路径最精确匹配的规则
+    //    评分策略：
+    //    3 分 — 请求路径精确匹配 path_rewrite.new（原生厂商路径命中）
+    //    2 分 — OpenAI 请求 + 规则为纯透传(old==new)，即不做路径转换的 OpenAI 通道
+    //    1 分 — OpenAI 请求 + 规则为转换型(old≠new)，即可接受 OpenAI 入口但会转换路径的厂商规则
     let mut best: Option<&crate::models::ForwardRule> = None;
+    let mut best_score: u8 = 0;
     for rule in &candidates {
         if let Ok(config) = serde_json::from_str::<serde_json::Value>(&rule.config_json) {
             let pr = config.get("path_rewrite");
@@ -104,17 +109,34 @@ pub async fn resolve_forward_rule(
             let req_clean = request_path.trim_start_matches('/');
             let openai_clean = openai_path.trim_start_matches('/');
 
-            // 1. 如果用户是通过标准 OpenAI 接口发起请求，验证规则是否兼容该接口
             let is_openai_req = req_clean == openai_clean || req_clean.ends_with(openai_clean);
             let rule_supports_openai = old_clean.is_empty() || old_clean == openai_clean || openai_clean.ends_with(old_clean);
 
-            // 2. 如果用户是通过厂商官方接口 (原生路径) 发起请求，依次验证 path_rewrite.new 和 path_rewrite.old
+            // 原生路径精确命中 path_rewrite.new（如请求 /api/v3/images/generations 精确匹配火山规则的 new）
             let match_new = !new_clean.is_empty() && (req_clean == new_clean || req_clean.ends_with(new_clean));
+            // 原生路径匹配 path_rewrite.old
             let match_old = !old_clean.is_empty() && (req_clean == old_clean || req_clean.ends_with(old_clean));
 
-            if (is_openai_req && rule_supports_openai) || match_new || match_old {
+            let score = if !is_openai_req && match_new {
+                // 非 OpenAI 请求路径精确命中厂商原生 new 路径
+                3
+            } else if !is_openai_req && match_old {
+                // 非 OpenAI 请求路径匹配 old 路径
+                3
+            } else if is_openai_req && rule_supports_openai && old_clean == new_clean {
+                // OpenAI 请求 + 规则为纯透传型（old == new，不做路径转换）
+                2
+            } else if is_openai_req && rule_supports_openai {
+                // OpenAI 请求 + 规则为转换型（old ≠ new，会转发到厂商路径）
+                1
+            } else {
+                0
+            };
+
+            if score > best_score {
+                best_score = score;
                 best = Some(rule);
-                break;
+                if score == 3 { break; } // 最高分无需继续遍历
             }
         }
     }
