@@ -25,8 +25,24 @@ const getFullUrl = (url: string) => {
 
 const ImageNodeContent: React.FC<Props> = React.memo(({ resultData, node }) => {
   const { setNodes } = useCanvas();
+  // 提取图片数据：兼容 OpenAI data[] 和 Gemini candidates[].content.parts[].inlineData
   const imageData = resultData?.data?.[0] || resultData?.content?.image_url;
-  const rawUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
+  let rawUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
+
+  // Gemini 原生格式回退：从 candidates[0].content.parts[0].inlineData 提取 base64
+  if (!rawUrl && resultData?.candidates) {
+    const parts = resultData.candidates[0]?.content?.parts;
+    if (parts) {
+      for (const part of parts) {
+        const inline = part.inlineData || part.inline_data;
+        if (inline?.data) {
+          const mime = inline.mimeType || inline.mime_type || 'image/png';
+          rawUrl = `data:${mime};base64,${inline.data}`;
+          break;
+        }
+      }
+    }
+  }
   
   let finalUrl = '';
   if (rawUrl) {

@@ -605,7 +605,10 @@ const BillingRules: React.FC = () => {
                       <div style={{ 
                         background: _isLight ? '#fff' : '#141414', padding: '20px', borderRadius: '12px', marginBottom: '24px', border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030'
                       }}>
-                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>图片分辨率计费配置</Title>
+                        <Title level={5} style={{ marginBottom: 6, fontSize: '14px', color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>图片分辨率计费配置</Title>
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 16, lineHeight: '1.5' }}>
+                          匹配说明：系统会自动忽略大小写（例如 1K 和 1k 等效），并且自动将包含星号的乘式（如 1024*1024）转换为统一的 1024x1024 格式；若仅传递纯数字（如 720）则会自动追加 "p" 后缀匹配 720p。此处配置的匹配名称推荐统一写标准小写形式（如 1k, 1024x1024, 720p）。
+                        </Text>
                         <Form.List name="pricing_tiers" initialValue={[]}>
                           {(fields, { add, remove }) => (
                             <>
@@ -710,7 +713,10 @@ const BillingRules: React.FC = () => {
                   if (rule === 'video_resolution') {
                     return (
                       <div style={{ background: _isLight ? '#fff' : '#141414', padding: '20px', borderRadius: '12px', marginBottom: '24px', border: _isLight ? '1px solid #e8e8e8' : '1px solid #303030' }}>
-                        <Title level={5} style={{ marginBottom: 16, fontSize: '14px', color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>视频分辨率计费组合包</Title>
+                        <Title level={5} style={{ marginBottom: 6, fontSize: '14px', color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>视频分辨率计费组合包</Title>
+                        <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: 16, lineHeight: '1.5' }}>
+                          匹配说明：系统会自动忽略大小写（例如 4K 和 4k 等效），并且自动将包含星号的乘式（如 1920*1080）转换为统一的 1920x1080 格式；若仅传递纯数字（如 1080）则会自动追加 "p" 后缀匹配 1080p。此处配置的匹配名称推荐统一写标准小写形式（如 720p, 1080p, 4k）。
+                        </Text>
                         <Form.List name="pricing_tiers" initialValue={[]}>
                           {(fields, { add, remove }) => (
                             <>

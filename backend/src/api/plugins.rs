@@ -749,10 +749,13 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "name": "Gemini 3.1 Flash 图片生成方案",
             "type": "image",
             "is_system": true,
-            "description": "Google Gemini 原生多模态图像生成，支持文生图和图片编辑，适用于 gemini-3.1-flash-image-preview 模型",
+            "description": "Google Gemini 原生多模态图像生成，支持文生图和图生图(最多14张参考图)，最高 4K 分辨率，支持极端宽高比和 Google 搜索增强",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","16:9","9:16","4:3","3:4"], "default": "1:1"},
-                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"}
+                {"key": "size", "label": "画面比例", "type": "select", "options": ["1:1","3:2","2:3","4:3","3:4","16:9","9:16","5:4","4:5","21:9","1:4","4:1","1:8","8:1"], "default": "1:1"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["1k","2k","4k"], "default": "1k"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4], "default": 1, "unit": "张"},
+                {"key": "google_search", "label": "搜索增强", "type": "switch", "default": false, "description": "搜索网络文字信息辅助生成图片"},
+                {"key": "google_image_search", "label": "图片搜索增强", "type": "switch", "default": false, "description": "搜索参考图片辅助生成，适合需要视觉参考的场景"}
             ]
         }),
     ]
