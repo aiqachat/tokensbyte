@@ -385,6 +385,7 @@ macro_rules! pg_migration_blocks {
             upstream_type TEXT NOT NULL DEFAULT 'other',
             config TEXT,
             eid TEXT DEFAULT '',
+            is_system INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (now()::text),
             updated_at TEXT NOT NULL DEFAULT (now()::text)
         )"#
