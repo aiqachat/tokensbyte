@@ -8,6 +8,7 @@ import axios from 'axios';
 import type { CanvasNode } from '../types';
 import { useCanvas } from '../context/PlaygroundContext';
 import { usePlayground } from '../context/PlaygroundContext';
+import { extractImageUrl, extractVideoUrl } from '../utils/resultExtractor';
 
 export const useGeneration = () => {
   const { canvasTransform, setCanvasTransform, nodes, setNodes, maxZIndex, setMaxZIndex } = useCanvas();
@@ -33,23 +34,12 @@ export const useGeneration = () => {
       const assetType = node.type;
 
       if (assetType === 'image') {
-        const imageData = resultData?.data?.[0] || resultData?.content?.image_url;
-        let rawUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
-
-        // Gemini 原生格式回退：从 candidates[0].content.parts[0].inlineData 提取 base64
-        if (!rawUrl && resultData?.candidates) {
-          const parts = resultData.candidates[0]?.content?.parts;
-          if (parts) {
-            for (const part of parts) {
-              const inline = part.inlineData || part.inline_data;
-              if (inline?.data) {
-                rawUrl = inline.data; // 纯 base64 数据，不含 data: 前缀
-                break;
-              }
-            }
-          }
+        let rawUrl = extractImageUrl(resultData);
+        // 去掉 data:...;base64, 前缀，只留纯 base64（持久化接口需要）
+        if (rawUrl.startsWith('data:')) {
+          const commaIdx = rawUrl.indexOf(',');
+          if (commaIdx > 0) rawUrl = rawUrl.substring(commaIdx + 1);
         }
-
         const isUrl = rawUrl && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('/'));
         if (isUrl) {
           sourceUrl = rawUrl;
@@ -59,7 +49,7 @@ export const useGeneration = () => {
           sourceUrl = rawUrl;
         }
       } else if (assetType === 'video') {
-        sourceUrl = resultData?.content?.video_url || resultData?.final_result?.video_url || resultData?.video_url || '';
+        sourceUrl = extractVideoUrl(resultData);
       }
 
       if (!sourceUrl && !base64Data) return;
@@ -410,7 +400,7 @@ export const useGeneration = () => {
       setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, status: 'error', resultData: { message: errMsg } } : n));
       setGenerating(false);
     }
-  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets, apiTokens, nodes.length]);
+  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, generating, setTaskPollingNodes, attachedAssets, apiTokens, nodes.length, storageStats]);
 
   /** 轮询异步任务状态（视频/图片） */
   const pollTaskStatus = useCallback((nodeId: string, taskId: string, modelId: string, pollEndpointTemplate?: string) => {
@@ -442,22 +432,28 @@ export const useGeneration = () => {
 
         const res = await axios.get(buildPollUrl(), { headers }).then(r => r.data);
 
-        // 兼容多种异步响应格式：
-        // 视频: { status: 'succeeded', content: { video_url } }
-        // GPT Image /v1/tasks: { data: { status: 'completed', result: { images: [{ url: [...] }] } } }
-        const rawStatus = res?.status || res?.data?.status || res?.final_result?.status || (Array.isArray(res?.data) && res.data[0]?.status) || '';
+        // 兼容多种异步响应格式的状态字段:
+        // 火山: { status: 'succeeded' }, GPT: { data: { status: 'completed' } }
+        // 可灵: { data: { task_status: 'succeed' } }, 阿里云: { output: { task_status: 'SUCCEEDED' } }
+        const rawStatus = res?.status || res?.data?.status || res?.data?.task_status
+          || res?.output?.task_status || res?.final_result?.status
+          || (Array.isArray(res?.data) && res.data[0]?.status) || '';
         const taskStatus = String(rawStatus).toLowerCase();
         const isCompleted = ['succeeded', 'completed', 'success', 'succeed'].includes(taskStatus);
 
         if (isCompleted) {
-          // 标准化结果：将 GPT Image tasks 响应转换为 ImageNodeContent 可识别的格式
+          // 标准化结果：统一转为 ImageNodeContent / VideoNodeContent 可识别的格式
           let normalizedResult = res;
-          const taskResult = res?.data?.result || res?.result;
+          const taskResult = res?.data?.result || res?.data?.task_result || res?.result;
           if (taskResult?.images && Array.isArray(taskResult.images)) {
-            // GPT Image: result.images[0].url 是数组
             const imageUrls = taskResult.images.flatMap((img: any) => Array.isArray(img.url) ? img.url : [img.url]).filter(Boolean);
             if (imageUrls.length > 0) {
               normalizedResult = { ...res, data: imageUrls.map((u: string) => ({ url: u })) };
+            }
+          } else if (taskResult?.videos && Array.isArray(taskResult.videos)) {
+            const videoUrl = taskResult.videos[0]?.url;
+            if (videoUrl) {
+              normalizedResult = { ...res, content: { video_url: videoUrl } };
             }
           }
           let completedNodesToPersist: CanvasNode[] = [];

@@ -788,8 +788,10 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "快手可灵原生/代理图像生成配置，支持多比例及参考图",
             "params": [
-                {"key": "aspect_ratio", "label": "画面比例", "type": "select", "options": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"], "default": "1:1"},
-                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4,5,6,7,8,9], "default": 1, "unit": "张"}
+                {"key": "ratio", "label": "画面比例", "type": "select", "options": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"], "default": "1:1"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["1k","2k","4k"], "default": "1k"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4,5,6,7,8,9], "default": 1, "unit": "张"},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
         json!({
@@ -799,10 +801,11 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "快手可灵原生/代理视频生成配置，支持文生视频与图生视频，包含多种模式、时长及音频控制",
             "params": [
-                {"key": "aspect_ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1"], "default": "16:9", "hint": "文生视频时生效"},
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1"], "default": "16:9", "hint": "文生视频时生效"},
                 {"key": "duration", "label": "视频时长", "type": "select", "options": [5, 10], "default": 5, "unit": "秒"},
                 {"key": "mode", "label": "生成模式", "type": "select", "options": ["std", "pro", "4k"], "default": "std", "hint": "std:标准 pro:专业 4k:超高清 (不同模式计费可能不同)"},
-                {"key": "sound", "label": "音频效果", "type": "select", "options": ["off", "on"], "default": "off", "description": "是否同时生成匹配画面的音频"}
+                {"key": "sound", "label": "音频效果", "type": "select", "options": ["off", "on"], "default": "off", "description": "是否同时生成匹配画面的音频"},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         })
     ]

@@ -9,29 +9,19 @@ import { Typography } from 'antd';
 const { Text } = Typography;
 
 import { useCanvas } from '../../context/PlaygroundContext';
+import { getResultDisplayUrl } from '../../utils/resultExtractor';
 
 interface Props {
   resultData: any;
   node: any;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
-const getFullUrl = (url: string) => {
-  if (!url) return '';
-  if (url.startsWith('blob:') || url.startsWith('data:')) return url;
-  if (!url.startsWith('http') && !url.startsWith('/')) return `https://${url}`;
-  if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
-  return url;
-};
-
 const VideoNodeContent: React.FC<Props> = React.memo(({ resultData, node }) => {
   const { setNodes } = useCanvas();
   const videoRef = useRef<HTMLVideoElement>(null);
   const dragStart = useRef({ x: 0, y: 0 });
 
-  const rawUrl = resultData?.content?.video_url || resultData?.final_result?.video_url || resultData?.video_url;
-  const videoUrl = getFullUrl(rawUrl);
+  const videoUrl = getResultDisplayUrl('video', resultData);
 
   const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
