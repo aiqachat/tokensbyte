@@ -52,12 +52,12 @@ fn build_log_where(claims: &auth::Claims, query: &LogQuery) -> (String, Vec<Stri
 
     if let Some(ref s) = query.start_date {
         sql.push_str(" AND l.created_at::timestamptz >= ?::timestamptz");
-        let start_str = if s.contains('T') { s.clone() } else { format!("{} 00:00:00", s) };
+        let start_str = if s.contains('T') { s.clone() } else { format!("{} 00:00:00+08:00", s) };
         binds.push(start_str);
     }
     if let Some(ref e) = query.end_date {
         sql.push_str(" AND l.created_at::timestamptz <= ?::timestamptz");
-        let end_str = if e.contains('T') { e.clone() } else { format!("{} 23:59:59", e) };
+        let end_str = if e.contains('T') { e.clone() } else { format!("{} 23:59:59+08:00", e) };
         binds.push(end_str);
     }
 
@@ -211,6 +211,7 @@ pub async fn export_logs(
     let mut csv = String::from("\u{FEFF}ID,用户ID,用户昵称,UID,模型,输入Tokens,输出Tokens,缓存Tokens,费用,耗时(ms),状态码,类型,渠道,计费明细,请求路径,时间\n");
     for r in &rows {
         let stream_label = match r.10 { Some(1) => "流", _ => "非流" };
+        let formatted_time = format_db_time(&r.12);
         csv.push_str(&format!(
             "{},{},\"{}\",\"{}\",\"{}\",{},{},{},{:.6},{},{},{},\"{}\",\"{}\",\"{}\",\"{}\"\n",
             r.0, r.1,
@@ -222,7 +223,7 @@ pub async fn export_logs(
             r.13.as_deref().unwrap_or("-").replace('"', "\"\""),
             r.11.as_deref().unwrap_or("").replace('"', "\"\""),
             r.9.replace('"', "\"\""),
-            r.12,
+            formatted_time,
         ));
     }
 
@@ -235,3 +236,21 @@ pub async fn export_logs(
         .unwrap())
 }
 
+/// 将数据库存储的时间字符串格式化为可读的北京时间
+/// 输入: "2026-05-08 08:05:56.328607+00" 或类似格式
+/// 输出: "2026-05-08 16:05:56"
+pub fn format_db_time(raw: &str) -> String {
+    use chrono::{DateTime, FixedOffset, Utc};
+    // 尝试解析为带时区的时间
+    if let Ok(dt) = DateTime::parse_from_str(raw.trim(), "%Y-%m-%d %H:%M:%S%.f%#z") {
+        let shanghai = FixedOffset::east_opt(8 * 3600).unwrap();
+        return dt.with_timezone(&shanghai).format("%Y-%m-%d %H:%M:%S").to_string();
+    }
+    // 尝试 RFC3339 / ISO8601
+    if let Ok(dt) = raw.trim().parse::<DateTime<Utc>>() {
+        let shanghai = FixedOffset::east_opt(8 * 3600).unwrap();
+        return dt.with_timezone(&shanghai).format("%Y-%m-%d %H:%M:%S").to_string();
+    }
+    // 无法解析则截断微秒和时区部分返回原始值
+    raw.split('.').next().unwrap_or(raw).to_string()
+}

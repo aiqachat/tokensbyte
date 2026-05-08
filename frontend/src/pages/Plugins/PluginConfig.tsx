@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense } from 'react';
-import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App, Segmented } from 'antd';
-import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined, MessageOutlined } from '@ant-design/icons';
+import { Typography, Switch, Button, Checkbox, Divider, Spin, Tag, Tabs, Input, InputNumber, Form, Space, Alert, Select, Table, Drawer, Radio, App, Segmented, Modal } from 'antd';
+import { ArrowLeftOutlined, SaveOutlined, PictureOutlined, AppstoreOutlined, CloudServerOutlined, ApiOutlined, CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SendOutlined, TeamOutlined, ExperimentOutlined, SettingOutlined, VideoCameraOutlined, PlusOutlined, DeleteOutlined, EditOutlined, ShopOutlined, MessageOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import type { Plugin } from '../../types';
@@ -264,6 +264,7 @@ const PluginConfigInner: React.FC = () => {
 
   // ====== 体验方案配置 Tab ======
   const [schemeList, setSchemeList] = useState<any[]>([]);
+  const [defaultSchemeList, setDefaultSchemeList] = useState<any[]>([]);
   const [savingSchemes, setSavingSchemes] = useState(false);
   const [schemeEditVisible, setSchemeEditVisible] = useState(false);
   const [editingScheme, setEditingScheme] = useState<any>(null);
@@ -273,6 +274,7 @@ const PluginConfigInner: React.FC = () => {
     try {
       const res = await (request.get(`/plugins/${name}/playground-schemes`) as Promise<any>);
       if (res.schemes) setSchemeList(res.schemes);
+      if (res.defaults) setDefaultSchemeList(res.defaults);
     } catch (e) {
       console.error(e);
     }
@@ -321,6 +323,24 @@ const PluginConfigInner: React.FC = () => {
   const handleDeleteScheme = (index: number) => {
     setSchemeList(prev => prev.filter((_, i) => i !== index));
     message.success('方案已删除，请点击保存生效');
+  };
+
+  const handleResetScheme = (id: string, idx: number) => {
+    Modal.confirm({
+      title: '确认重置',
+      content: '是否将该内置方案重置为初始默认参数？该操作将在您点击"保存全部方案"后生效。',
+      onOk: () => {
+        const def = defaultSchemeList.find(s => s.id === id);
+        if (def) {
+          const newList = [...schemeList];
+          newList[idx] = JSON.parse(JSON.stringify(def));
+          setSchemeList(newList);
+          message.success('已重置为默认参数，请记得保存配置');
+        } else {
+          message.error('无法获取内置默认参数');
+        }
+      }
+    });
   };
 
   const handleSaveEditingScheme = () => {
@@ -1787,6 +1807,9 @@ const PluginConfigInner: React.FC = () => {
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                       <Button type="text" icon={<EditOutlined />} onClick={() => handleEditScheme(scheme, idx)} style={{ color: '#1677ff' }}>编辑</Button>
+                      {scheme.is_system && (
+                        <Button type="text" icon={<ReloadOutlined />} onClick={() => handleResetScheme(scheme.id, idx)} style={{ color: '#faad14' }}>重置</Button>
+                      )}
                       <Button type="text" icon={<DeleteOutlined />} onClick={() => handleDeleteScheme(idx)} danger disabled={!!scheme.is_system}>删除</Button>
                     </div>
                   </div>
