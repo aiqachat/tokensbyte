@@ -74,6 +74,7 @@ pub struct LogQuery {
 pub struct LogListResponse {
     pub data: Vec<RequestLog>,
     pub total: i64,
+    pub allow_details: bool,
 }
 
 #[derive(Debug, Serialize)]

@@ -42,6 +42,7 @@ const Logs: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [usersList, setUsersList] = useState<any[]>([]);
   const [channelsList, setChannelsList] = useState<any[]>([]);
+  const [allowDetails, setAllowDetails] = useState(true);
   const { user } = useAuthStore();
   const screens = useBreakpoint();
 
@@ -59,9 +60,12 @@ const Logs: React.FC = () => {
       if (userFilter) params.user_id = userFilter;
       if (channelFilter) params.channel_id = channelFilter;
       if (statusFilter) params.status = statusFilter;
-      const resp = await (request.get('/logs', { params }) as unknown as Promise<{ data: RequestLog[]; total: number }>);
+      const resp = await (request.get('/logs', { params }) as unknown as Promise<{ data: RequestLog[]; total: number; allow_details?: boolean }>);
       setLogs(resp.data);
       setTotal(resp.total);
+      if (resp.allow_details !== undefined) {
+        setAllowDetails(resp.allow_details);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -449,7 +453,7 @@ const Logs: React.FC = () => {
           rowKey="id"
           loading={loading}
           expandable={
-            (user?.role === 'admin' || user?.allow_view_log_details !== 0) ? { 
+            allowDetails ? { 
               expandedRowRender, 
               expandRowByClick: false
             } : undefined

@@ -113,6 +113,7 @@ const TaskLogs: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [allowDetails, setAllowDetails] = useState(true);
   const [form] = Form.useForm();
   const screens = useBreakpoint();
 
@@ -129,6 +130,9 @@ const TaskLogs: React.FC = () => {
       const res = await (request.get('/task_logs', { params }) as any);
       setData(res.data);
       setTotal(res.total);
+      if (res.allow_details !== undefined) {
+        setAllowDetails(res.allow_details);
+      }
       setPage(current);
       setPageSize(size);
     } catch (e) {
@@ -398,7 +402,7 @@ const TaskLogs: React.FC = () => {
           rowKey="id"
           loading={loading}
           expandable={
-            (isAdmin || user?.allow_view_log_details !== 0) 
+            allowDetails 
               ? { expandedRowRender, expandRowByClick: false } 
               : undefined
           }

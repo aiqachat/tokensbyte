@@ -169,7 +169,7 @@ pub async fn chat_completions(
         let features = usage_extractor::extract_request_features(&body);
 
         // 计费: 联表查询 Model 及其关联的 BillingRule
-        let db_model = proxy::find_active_model(&state, model, Some("聊天")).await;
+        let db_model = proxy::find_active_model_exact(&state, model, Some("聊天"), Some(&channel)).await;
 
         let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
             if let Some(rule_id) = m.billing_rule_id {

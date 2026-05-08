@@ -32,11 +32,17 @@ pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult
     Ok(UserContext { user_group: g, level_id: l_id.to_string(), balance: b + gb, discount: d })
 }
 
-/// 统一折扣优先级：模型全站折扣（启用时）> 用户等级折扣
+/// 统一折扣策略：折扣限价（启用时）取 MAX(模型限价, 等级折扣)，保证折扣不低于模型限价
 pub fn resolve_discount(db_model: Option<&crate::models::Model>, level_discount: f64) -> (f64, &'static str) {
     if let Some(m) = db_model {
         if m.site_discount_enabled == 1 {
-            return (m.site_discount, "模型全站折扣");
+            if level_discount < m.site_discount {
+                // 等级折扣低于模型限价，使用模型限价
+                return (m.site_discount, "折扣限价");
+            } else {
+                // 等级折扣 >= 模型限价，使用等级折扣
+                return (level_discount, "等级折扣");
+            }
         }
     }
     (level_discount, "等级折扣")
@@ -46,28 +52,65 @@ pub fn resolve_discount(db_model: Option<&crate::models::Model>, level_discount:
 
 /// 按 model_id 查找活跃模型，可选传入 category 以区分同名但不同类型的模型。
 /// category: Some("图片") / Some("视频") / Some("聊天") / None（不限类型）
-pub async fn find_active_model(state: &AppState, model_id: &str, category: Option<&str>) -> Option<crate::models::Model> {
-    if let Some(cat) = category {
-        let result: Option<crate::models::Model> = sqlx::query_as(
-            &state.db.format_query(
-                "SELECT m.* FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? AND m.is_active = 1 AND t.name = ? LIMIT 1"
-            ),
+pub async fn find_active_model_exact(
+    state: &AppState, 
+    model_id: &str, 
+    category: Option<&str>, 
+    channel: Option<&crate::models::Channel>
+) -> Option<crate::models::Model> {
+    let cat_filter = if let Some(cat) = category {
+        format!(" AND t.name = '{}'", cat)
+    } else {
+        String::new()
+    };
+
+    // 1. 获取所有匹配的活跃模型候选
+    let sql = format!(
+        "SELECT m.* FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? AND m.is_active = 1{}",
+        cat_filter
+    );
+    let mut candidates: Vec<crate::models::Model> = sqlx::query_as(&state.db.format_query(&sql))
+        .bind(model_id)
+        .fetch_all(&state.db.pool)
+        .await
+        .unwrap_or_default();
+
+    // 如果指定类型未命中，回退到不限类型（兼容未配置 type 的旧模型）
+    if candidates.is_empty() && category.is_some() {
+        candidates = sqlx::query_as(
+            &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1")
         )
         .bind(model_id)
-        .bind(cat)
-        .fetch_optional(&state.db.pool)
+        .fetch_all(&state.db.pool)
         .await
-        .unwrap_or(None);
-        // 如果指定类型未命中，回退到不限类型（兼容未配置 type 的旧模型）
-        if result.is_some() { return result; }
+        .unwrap_or_default();
     }
-    sqlx::query_as(
-        &state.db.format_query("SELECT * FROM models WHERE model_id = ? AND is_active = 1 LIMIT 1"),
-    )
-    .bind(model_id)
-    .fetch_optional(&state.db.pool)
-    .await
-    .unwrap_or(None)
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    // 2. 如果提供了渠道，且存在多个候选模型，尝试精确匹配渠道包含的 mid
+    if let Some(ch) = channel {
+        let ch_models = ch.get_models(); // 可能是 mid 数组，也可能是旧版的 model_id 数组
+        if !ch_models.is_empty() {
+            // 优先匹配 mid
+            if let Some(exact) = candidates.iter().find(|m| ch_models.contains(&m.mid)) {
+                return Some(exact.clone());
+            }
+            // 兜底匹配 model_id
+            if let Some(exact) = candidates.iter().find(|m| ch_models.contains(&m.model_id)) {
+                return Some(exact.clone());
+            }
+        }
+    }
+
+    // 3. 默认返回第一个（如果没有渠道要求，或渠道匹配失败）
+    Some(candidates.into_iter().next().unwrap())
+}
+
+pub async fn find_active_model(state: &AppState, model_id: &str, category: Option<&str>) -> Option<crate::models::Model> {
+    find_active_model_exact(state, model_id, category, None).await
 }
 
 // ── Access Check ────────────────────────────────────────────────

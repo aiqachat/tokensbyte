@@ -16,9 +16,9 @@ pub struct Model {
     pub forward_rule_ids: Option<String>,
     pub enable_log_content: i32,
     #[sqlx(default)]
-    pub site_discount: f64,         // 全站折扣倍率（1.0=原价）
+    pub site_discount: f64,         // 折扣限价倍率（开启时折扣不低于此值，1.0=原价）
     #[sqlx(default)]
-    pub site_discount_enabled: i32, // 全站折扣开关（0=关，1=开，开启后优先于等级折扣）
+    pub site_discount_enabled: i32, // 折扣限价开关（0=关，1=开，开启后取 MAX(限价, 等级折扣)）
     #[sqlx(default)]
     pub logo: Option<String>,
     pub created_at: String,

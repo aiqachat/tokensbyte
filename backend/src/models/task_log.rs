@@ -52,4 +52,5 @@ pub struct TaskLogQuery {
 pub struct TaskLogListResponse {
     pub data: Vec<TaskLog>,
     pub total: i64,
+    pub allow_details: bool,
 }
