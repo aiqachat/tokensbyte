@@ -18,6 +18,7 @@ pub struct ChannelConfig {
 #[derive(Debug, Deserialize)]
 pub struct CreateChannelConfigRequest {
     pub name: String,
+    #[serde(default)]
     pub provider_type: String,
     pub base_url: String,
     pub api_key: String,

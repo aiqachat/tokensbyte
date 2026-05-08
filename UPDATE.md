@@ -1,5 +1,12 @@
 # 更新日志
 
+## 2026-05-08
+
+### 修复问题
+- 🔧 修复添加上游渠道配置预设时报 "Request failed" 的问题
+  - 根因：前端表单中"服务商类型"字段非必填，未填写时 JSON 请求体中缺少 `provider_type` 字段，导致后端 serde 反序列化失败（该字段定义为必填 `String`）
+  - 修复：为 `CreateChannelConfigRequest` 的 `provider_type` 字段添加 `#[serde(default)]`，缺失时默认为空字符串
+
 ## 2026-04-28
 
 ### 文档整合与优化
