@@ -330,10 +330,19 @@ export const useGeneration = () => {
         headers
       }).then(r => r.data);
 
-      // 检测异步任务响应：视频端点 或 图片端点返回了 task_id (如 GPT Image 2)
+      // 检测异步任务响应：视频端点 或 图片端点返回了 task_id
       const isVideoEndpoint = endpoint.includes('video') || endpoint.includes('contents/generations');
-      const asyncTaskId = res?.id || res?.data?.task_id || (Array.isArray(res?.data) && res.data[0]?.task_id);
-      if (asyncTaskId && (isVideoEndpoint || (Array.isArray(res?.data) && res.data[0]?.task_id))) {
+      const asyncTaskId = res?.task_id || res?.data?.task_id || res?.output?.task_id || res?.id || (Array.isArray(res?.data) && res.data[0]?.task_id);
+      
+      const isAsyncTask = asyncTaskId && (
+        isVideoEndpoint 
+        || res?.task_id 
+        || res?.data?.task_id 
+        || res?.output?.task_id
+        || (Array.isArray(res?.data) && res.data[0]?.task_id)
+      );
+
+      if (isAsyncTask) {
         const taskId = asyncTaskId;
         // 为图片异步任务自动构造轮询端点
         const pollEndpoint = currentModel.poll_endpoint || `/v1/tasks/${taskId}`;
