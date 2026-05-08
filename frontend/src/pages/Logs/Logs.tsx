@@ -127,7 +127,11 @@ const Logs: React.FC = () => {
       dataIndex: 'status_code',
       key: 'status_code',
       width: 60,
-      render: (code: number) => <Tag color={code === 200 ? 'success' : 'error'}>{code}</Tag>,
+      render: (code: number, record: RequestLog) => {
+        const isRefunded = record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败');
+        const displayCode = isRefunded ? 400 : code;
+        return <Tag color={displayCode === 200 ? 'success' : 'error'}>{displayCode}</Tag>;
+      },
     },
     {
       title: t('logs.model'),
@@ -180,7 +184,7 @@ const Logs: React.FC = () => {
       width: 90,
       render: (val: number, record: RequestLog) => (
         <Space direction="vertical" size={0}>
-          {val === 0
+          {val === 0 || record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败')
             ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
             : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{val.toFixed(4)}</Text>
           }
@@ -214,9 +218,9 @@ const Logs: React.FC = () => {
     const codeBorder = themeToken.colorBorderSecondary;
 
     return (
-      <div style={{ 
-        padding: 16, background: panelBg, borderRadius: 8, 
-        maxWidth: screens.xs ? 'calc(100vw - 64px)' : 'calc(100vw - 320px)', 
+      <div style={{
+        padding: 16, background: panelBg, borderRadius: 8,
+        maxWidth: screens.xs ? 'calc(100vw - 64px)' : 'calc(100vw - 320px)',
         overflowX: 'auto', boxSizing: 'border-box'
       }}>
         <Descriptions size="small" column={1} labelStyle={{ width: '100px', color: themeToken.colorTextSecondary }} contentStyle={{ wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
@@ -231,7 +235,12 @@ const Logs: React.FC = () => {
           <Descriptions.Item label="渠道标识">{record.channel_group_aid || '-'}</Descriptions.Item>
           <Descriptions.Item label="错误信息">
             {(() => {
-              if (!record.error_message) return <Text type="secondary">无</Text>;
+              if (!record.error_message) {
+                if (record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败')) {
+                  return <Text type="danger">查看下方的响应结果</Text>;
+                }
+                return <Text type="secondary">无</Text>;
+              }
               try {
                 const parsed = JSON.parse(record.error_message);
                 return (
@@ -264,7 +273,9 @@ const Logs: React.FC = () => {
                 <Text type="secondary" style={{ fontSize: 12 }}>{costFormula}</Text>
               )}
               <br />
-              <Text strong style={{ fontSize: 13, textDecoration: record.billing_detail?.includes('退回') ? 'line-through' : 'none' }}>实际扣费: {currencySymbol}{record.cost.toFixed(6)}</Text>
+              <Text strong style={{ fontSize: 13, textDecoration: record.billing_detail?.includes('退回') ? 'line-through' : 'none' }}>
+                {record.billing_detail?.includes('退回') ? '预扣费' : '实际扣费'}: {currencySymbol}{record.cost.toFixed(6)}
+              </Text>
               {record.billing_detail?.includes('退回') && <Text type="danger" style={{ fontSize: 13, marginLeft: 8 }}>已全额退回</Text>}
               <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>（优先扣令牌配额，不足扣用户余额）</Text>
             </div>
@@ -394,7 +405,7 @@ const Logs: React.FC = () => {
             return (
               <MobileCard
                 title={<Tag color="blue">{record.model}</Tag>}
-                extra={<Tag color={record.status_code === 200 ? 'success' : 'error'}>{record.status_code}</Tag>}
+                extra={<Tag color={(record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败') ? 400 : record.status_code) === 200 ? 'success' : 'error'}>{record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败') ? 400 : record.status_code}</Tag>}
               >
                 <CardRow label="时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text></CardRow>
                 {user?.role === 'admin' && (
@@ -433,7 +444,7 @@ const Logs: React.FC = () => {
                 </CardRow>
                 <CardRow label="成本">
                   <Space direction="vertical" size={0} align="end">
-                    {record.cost === 0
+                    {record.cost === 0 || record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败')
                       ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
                       : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{record.cost.toFixed(4)}</Text>
                     }
@@ -453,8 +464,8 @@ const Logs: React.FC = () => {
           rowKey="id"
           loading={loading}
           expandable={
-            allowDetails ? { 
-              expandedRowRender, 
+            allowDetails ? {
+              expandedRowRender,
               expandRowByClick: false
             } : undefined
           }

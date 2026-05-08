@@ -8,6 +8,7 @@ import axios from 'axios';
 import type { CanvasNode } from '../types';
 import { useCanvas } from '../context/PlaygroundContext';
 import { usePlayground } from '../context/PlaygroundContext';
+import { extractImageUrl, extractVideoUrl } from '../utils/resultExtractor';
 
 export const useGeneration = () => {
   const { canvasTransform, setCanvasTransform, nodes, setNodes, maxZIndex, setMaxZIndex } = useCanvas();
@@ -33,8 +34,12 @@ export const useGeneration = () => {
       const assetType = node.type;
 
       if (assetType === 'image') {
-        const imageData = resultData?.data?.[0] || resultData?.content?.image_url;
-        const rawUrl = typeof imageData === 'string' ? imageData : imageData?.url || imageData?.b64_json;
+        let rawUrl = extractImageUrl(resultData);
+        // 去掉 data:...;base64, 前缀，只留纯 base64（持久化接口需要）
+        if (rawUrl.startsWith('data:')) {
+          const commaIdx = rawUrl.indexOf(',');
+          if (commaIdx > 0) rawUrl = rawUrl.substring(commaIdx + 1);
+        }
         const isUrl = rawUrl && (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('/'));
         if (isUrl) {
           sourceUrl = rawUrl;
@@ -44,7 +49,7 @@ export const useGeneration = () => {
           sourceUrl = rawUrl;
         }
       } else if (assetType === 'video') {
-        sourceUrl = resultData?.content?.video_url || resultData?.final_result?.video_url || resultData?.video_url || '';
+        sourceUrl = extractVideoUrl(resultData);
       }
 
       if (!sourceUrl && !base64Data) return;
@@ -315,10 +320,19 @@ export const useGeneration = () => {
         headers
       }).then(r => r.data);
 
-      // 检测异步任务响应：视频端点 或 图片端点返回了 task_id (如 GPT Image 2)
+      // 检测异步任务响应：视频端点 或 图片端点返回了 task_id
       const isVideoEndpoint = endpoint.includes('video') || endpoint.includes('contents/generations');
-      const asyncTaskId = res?.id || res?.data?.task_id || (Array.isArray(res?.data) && res.data[0]?.task_id);
-      if (asyncTaskId && (isVideoEndpoint || (Array.isArray(res?.data) && res.data[0]?.task_id))) {
+      const asyncTaskId = res?.task_id || res?.data?.task_id || res?.output?.task_id || res?.id || (Array.isArray(res?.data) && res.data[0]?.task_id);
+      
+      const isAsyncTask = asyncTaskId && (
+        isVideoEndpoint 
+        || res?.task_id 
+        || res?.data?.task_id 
+        || res?.output?.task_id
+        || (Array.isArray(res?.data) && res.data[0]?.task_id)
+      );
+
+      if (isAsyncTask) {
         const taskId = asyncTaskId;
         // 为图片异步任务自动构造轮询端点
         const pollEndpoint = currentModel.poll_endpoint || `/v1/tasks/${taskId}`;
@@ -327,23 +341,44 @@ export const useGeneration = () => {
         pollTaskStatus(newNodeId, taskId, currentModel.model_id, pollEndpoint);
         setGenerating(false); // 解除全局生成锁，允许用户继续点击 Run 并行生成
       } else {
+          // 归一化 Gemini 原生响应为 data[] 格式，方便后续统一处理多图裂变和持久化
+          let normalizedRes = res;
+          if (!normalizedRes.data && normalizedRes.candidates) {
+            const images: any[] = [];
+            for (const candidate of normalizedRes.candidates) {
+              const parts = candidate?.content?.parts;
+              if (parts) {
+                for (const part of parts) {
+                  const inline = part.inlineData || part.inline_data;
+                  if (inline?.data) {
+                    const mime = inline.mimeType || inline.mime_type || 'image/png';
+                    images.push({ url: `data:${mime};base64,${inline.data}`, b64_json: inline.data });
+                  }
+                }
+              }
+            }
+            if (images.length > 0) {
+              normalizedRes = { ...normalizedRes, data: images };
+            }
+          }
+
           let completedNodesToPersist: CanvasNode[] = [];
           setNodes(prev => {
             let updated = [...prev];
             const mainNodeIndex = updated.findIndex(n => n.id === newNodeId);
             if (mainNodeIndex >= 0) {
-              updated[mainNodeIndex] = { ...updated[mainNodeIndex], status: 'completed' as const, resultData: res };
+              updated[mainNodeIndex] = { ...updated[mainNodeIndex], status: 'completed' as const, resultData: normalizedRes };
               
               // 如果返回了多张图 (如 Seedream n>1)，裂变出额外的节点
-              if (res.data && Array.isArray(res.data) && res.data.length > 1) {
-                const extraNodes = res.data.slice(1).map((imgObj: any, idx: number) => {
+              if (normalizedRes.data && Array.isArray(normalizedRes.data) && normalizedRes.data.length > 1) {
+                const extraNodes = normalizedRes.data.slice(1).map((imgObj: any, idx: number) => {
                   return {
                     ...updated[mainNodeIndex],
                     id: `${newNodeId}-ext-${idx}`,
                     x: updated[mainNodeIndex].x + (updated[mainNodeIndex].width + 5) * (idx + 1),
                     y: updated[mainNodeIndex].y,
                     zIndex: updated[mainNodeIndex].zIndex + idx + 1,
-                    resultData: { ...res, data: [imgObj] }
+                    resultData: { ...normalizedRes, data: [imgObj] }
                   };
                 });
                 updated.push(...extraNodes);
@@ -365,7 +400,7 @@ export const useGeneration = () => {
       setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, status: 'error', resultData: { message: errMsg } } : n));
       setGenerating(false);
     }
-  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, setTaskPollingNodes, attachedAssets, apiTokens, nodes.length]);
+  }, [currentModel, prompt, paramValues, selectedTokenKey, canvasTransform, maxZIndex, setNodes, setMaxZIndex, setGenerating, generating, setTaskPollingNodes, attachedAssets, apiTokens, nodes.length, storageStats]);
 
   /** 轮询异步任务状态（视频/图片） */
   const pollTaskStatus = useCallback((nodeId: string, taskId: string, modelId: string, pollEndpointTemplate?: string) => {
@@ -397,33 +432,60 @@ export const useGeneration = () => {
 
         const res = await axios.get(buildPollUrl(), { headers }).then(r => r.data);
 
-        // 兼容多种异步响应格式：
-        // 视频: { status: 'succeeded', content: { video_url } }
-        // GPT Image /v1/tasks: { data: { status: 'completed', result: { images: [{ url: [...] }] } } }
-        const rawStatus = res?.status || res?.data?.status || res?.final_result?.status || (Array.isArray(res?.data) && res.data[0]?.status) || '';
+        // 兼容多种异步响应格式的状态字段:
+        // 火山: { status: 'succeeded' }, GPT: { data: { status: 'completed' } }
+        // 可灵: { data: { task_status: 'succeed' } }, 阿里云: { output: { task_status: 'SUCCEEDED' } }
+        const rawStatus = res?.status || res?.data?.status || res?.data?.task_status
+          || res?.output?.task_status || res?.final_result?.status
+          || (Array.isArray(res?.data) && res.data[0]?.status) || '';
         const taskStatus = String(rawStatus).toLowerCase();
         const isCompleted = ['succeeded', 'completed', 'success', 'succeed'].includes(taskStatus);
 
         if (isCompleted) {
-          // 标准化结果：将 GPT Image tasks 响应转换为 ImageNodeContent 可识别的格式
+          // 标准化结果：统一转为 ImageNodeContent / VideoNodeContent 可识别的格式
           let normalizedResult = res;
-          const taskResult = res?.data?.result || res?.result;
+          const taskResult = res?.data?.result || res?.data?.task_result || res?.result;
           if (taskResult?.images && Array.isArray(taskResult.images)) {
-            // GPT Image: result.images[0].url 是数组
             const imageUrls = taskResult.images.flatMap((img: any) => Array.isArray(img.url) ? img.url : [img.url]).filter(Boolean);
             if (imageUrls.length > 0) {
               normalizedResult = { ...res, data: imageUrls.map((u: string) => ({ url: u })) };
             }
+          } else if (taskResult?.videos && Array.isArray(taskResult.videos)) {
+            const videoUrl = taskResult.videos[0]?.url;
+            if (videoUrl) {
+              normalizedResult = { ...res, content: { video_url: videoUrl } };
+            }
           }
-          let nodeToPersist: CanvasNode | undefined;
+          let completedNodesToPersist: CanvasNode[] = [];
           setNodes(prev => {
-            const updated = prev.map(n => n.id === nodeId ? { ...n, status: 'completed' as const, resultData: normalizedResult } : n);
-            nodeToPersist = updated.find(n => n.id === nodeId);
+            let updated = [...prev];
+            const mainNodeIndex = updated.findIndex(n => n.id === nodeId);
+            if (mainNodeIndex >= 0) {
+              updated[mainNodeIndex] = { ...updated[mainNodeIndex], status: 'completed' as const, resultData: normalizedResult };
+              
+              // 如果返回了多张图，裂变出额外的节点
+              if (normalizedResult.data && Array.isArray(normalizedResult.data) && normalizedResult.data.length > 1) {
+                const extraNodes = normalizedResult.data.slice(1).map((imgObj: any, idx: number) => {
+                  return {
+                    ...updated[mainNodeIndex],
+                    id: `${nodeId}-ext-${idx}`,
+                    x: updated[mainNodeIndex].x + (updated[mainNodeIndex].width + 5) * (idx + 1),
+                    y: updated[mainNodeIndex].y,
+                    zIndex: updated[mainNodeIndex].zIndex + idx + 1,
+                    resultData: { ...normalizedResult, data: [imgObj] }
+                  };
+                });
+                updated.push(...extraNodes);
+              }
+            }
+            completedNodesToPersist = updated.filter(n => n.id === nodeId || n.id.startsWith(`${nodeId}-ext-`));
             return updated;
           });
-          if (nodeToPersist) {
-            persistAsset(nodeToPersist, normalizedResult, currentModel);
+          
+          for (const node of completedNodesToPersist) {
+            persistAsset(node, node.resultData, currentModel);
           }
+          
           setTaskPollingNodes(prev => prev.filter(id => id !== nodeId));
           return;
         } else if (['failed', 'fail', 'error'].includes(taskStatus)) {

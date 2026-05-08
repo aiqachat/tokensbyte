@@ -22,6 +22,7 @@ import { MessageCircle } from 'lucide-react';
 import { useCanvas, usePlayground } from '../context/PlaygroundContext';
 import ImageEditorModal from './ImageEditorModal';
 import VideoEditorModal from './VideoEditorModal';
+import { getResultDisplayUrl } from '../utils/resultExtractor';
 
 const { Text } = Typography;
 
@@ -62,18 +63,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
 
   /** 获取节点的结果URL */
   const getResultUrl = useCallback((node: any): string => {
-    if (!node?.resultData) return '';
-    if (node.type === 'image') {
-      const imgData = node.resultData?.data?.[0] || node.resultData?.content?.image_url;
-      return typeof imgData === 'string' ? imgData : imgData?.url || '';
-    }
-    if (node.type === 'video') {
-      return node.resultData?.content?.video_url
-        || node.resultData?.final_result?.video_url
-        || node.resultData?.video_url
-        || '';
-    }
-    return '';
+    return getResultDisplayUrl(node?.type, node?.resultData);
   }, []);
 
   // 自动探测生成结果的文件元信息

@@ -749,12 +749,65 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "name": "Gemini 3.1 Flash 图片生成方案",
             "type": "image",
             "is_system": true,
-            "description": "Google Gemini 原生多模态图像生成，支持文生图和图片编辑，适用于 gemini-3.1-flash-image-preview 模型",
+            "description": "Google Gemini 原生多模态图像生成，支持文生图和图生图(最多14张参考图)，最高 4K 分辨率，支持极端宽高比和 Google 搜索增强",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","16:9","9:16","4:3","3:4"], "default": "1:1"},
-                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"}
+                {"key": "size", "label": "画面比例", "type": "select", "options": ["1:1","3:2","2:3","4:3","3:4","16:9","9:16","5:4","4:5","21:9","1:4","4:1","1:8","8:1"], "default": "1:1"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["1k","2k","4k"], "default": "1k"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4], "default": 1, "unit": "张"},
+                {"key": "google_search", "label": "搜索增强", "type": "switch", "default": false, "description": "搜索网络文字信息辅助生成图片"},
+                {"key": "google_image_search", "label": "图片搜索增强", "type": "switch", "default": false, "description": "搜索参考图片辅助生成，适合需要视觉参考的场景"}
             ]
         }),
+        json!({
+            "id": "dashscope_image",
+            "name": "阿里云 (DashScope) 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "阿里云通义万相系列原生/代理通道配置，支持多尺寸、多样式图像生成及提示词扩写功能",
+            "params": [
+                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1024*1024", "768*1024", "1024*768", "768*768", "1280*720", "720*1280"], "default": "1024*1024"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4], "default": 1, "unit": "张"},
+                {"key": "style", "label": "图片风格", "type": "select", "options": ["<auto>", "photography", "portrait", "3d cartoon", "anime", "oil painting", "watercolor", "sketch", "chinese painting", "flat illustration"], "default": "<auto>", "hint": "<auto>为默认风格"},
+                {"key": "prompt_extend", "label": "提示词扩写", "type": "switch", "default": false, "description": "由模型自动丰富提示词细节以获得更好的生成效果"}
+            ]
+        }),
+        json!({
+            "id": "dashscope_video",
+            "name": "阿里云 (DashScope) 视频生成方案",
+            "type": "video",
+            "is_system": true,
+            "description": "阿里云通义万相视频生成配置，支持多种画面尺寸，适用于视频生成模型",
+            "params": [
+                {"key": "size", "label": "画面尺寸", "type": "select", "options": ["1280*720", "720*1280", "1024*1024"], "default": "1280*720"}
+            ]
+        }),
+        json!({
+            "id": "kling_image",
+            "name": "可灵 (Kling) 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "快手可灵原生/代理图像生成配置，支持多比例及参考图",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "select", "options": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"], "default": "1:1"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["1k","2k","4k"], "default": "1k"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4,5,6,7,8,9], "default": 1, "unit": "张"},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        }),
+        json!({
+            "id": "kling_video",
+            "name": "可灵 (Kling) 视频生成方案",
+            "type": "video",
+            "is_system": true,
+            "description": "快手可灵原生/代理视频生成配置，支持文生视频与图生视频，包含多种模式、时长及音频控制",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1"], "default": "16:9", "hint": "文生视频时生效"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [5, 10], "default": 5, "unit": "秒"},
+                {"key": "mode", "label": "生成模式", "type": "select", "options": ["std", "pro", "4k"], "default": "std", "hint": "std:标准 pro:专业 4k:超高清 (不同模式计费可能不同)"},
+                {"key": "sound", "label": "音频效果", "type": "select", "options": ["off", "on"], "default": "off", "description": "是否同时生成匹配画面的音频"},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        })
     ]
 }
 

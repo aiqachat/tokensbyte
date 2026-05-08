@@ -377,7 +377,7 @@ async fn settle_failure(state: &AppState, log_id: i64, _model_name: &str, _task_
             }
 
             let _ = sqlx::query(&state.db.format_query(
-                "UPDATE logs SET cost = 0, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
+                "UPDATE logs SET status_code = 400, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
             )).bind(detail).bind(log_id)
             .execute(&mut *tx).await;
 
