@@ -395,6 +395,8 @@ macro_rules! pg_migration_blocks {
 
     exec_ignore!(pool,
         "ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '聊天'",
+        "ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS eid TEXT DEFAULT ''",
     );
 
 
@@ -425,7 +427,7 @@ macro_rules! pg_migration_blocks {
             ('阿里百炼 DashScope 图片生成', 'dashscope', '将标准图片生成请求（/v1/images/generations）转换为阿里百炼 DashScope 格式', '{"mode":"transform","target_type":"dashscope_image","path_rewrite":{"old":"/v1/images/generations","new":"/api/v1/services/aigc/multimodal-generation/generation"},"auth_type":"bearer"}', '图片', 1),
         ) AS t(name, rule_type, description, config_json, category, is_system)
         WHERE NOT EXISTS (SELECT 1 FROM forward_rules WHERE name = t.name)
-    "#).execute(pool).await.ok();
+    "#).execute(pool).await.unwrap_or_else(|e| { tracing::warn!("Seed forward_rules insert error (may be OK if already seeded): {}", e); Default::default() });
 
 
     // Billing Rules table
@@ -477,8 +479,6 @@ macro_rules! pg_migration_blocks {
         .await?;
 
     exec_ignore!(pool,
-        "ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS is_system INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE forward_rules ADD COLUMN IF NOT EXISTS eid TEXT DEFAULT ''",
         "UPDATE forward_rules SET eid = '1' || floor(random() * 9000 + 1000)::text WHERE eid = '' OR eid IS NULL",
         "ALTER TABLE billing_rules ADD COLUMN IF NOT EXISTS pid TEXT DEFAULT ''",
         "UPDATE billing_rules SET pid = '6' || floor(random() * 9000 + 1000)::text WHERE pid = '' OR pid IS NULL",
@@ -1247,7 +1247,7 @@ macro_rules! pg_migration_blocks {
             ('可灵 Omni 图片 (kling-v3-omni/image-o1)', 'kling', '将图片生成请求转发到可灵 Omni 图片端点', '{"mode":"transform","target_type":"kling","path_rewrite":{"old":"/v1/images/generations","new":"/v1/images/omni-image"},"auth_type":"bearer"}', '图片', 1)
         ) AS t(name, rule_type, description, config_json, category, is_system)
         WHERE NOT EXISTS (SELECT 1 FROM forward_rules WHERE name = t.name)
-    "#).execute(pool).await.ok();
+    "#).execute(pool).await.unwrap_or_else(|e| { tracing::warn!("Seed kling forward_rules insert error: {}", e); Default::default() });
 
     // 可灵视频计费规则（按秒计费 + mode(std/pro/4k) × sound(off/on) 倍率）
     sqlx::query(r#"
@@ -1257,7 +1257,7 @@ macro_rules! pg_migration_blocks {
             ('可灵视频官方计费', 'duration', 0.10, 'kling_video', '{"mode_multipliers":{"std":1.0,"pro":1.33,"4k":2.0},"sound_multipliers":{"off":1.0,"on":1.5}}', 1)
         ) AS t(name, billing_type, duration_rate, billing_rule, extended_config, is_system)
         WHERE NOT EXISTS (SELECT 1 FROM billing_rules WHERE name = t.name)
-    "#).execute(pool).await.ok();
+    "#).execute(pool).await.unwrap_or_else(|e| { tracing::warn!("Seed kling billing_rules insert error: {}", e); Default::default() });
 
     // ─── channels 表增加 exclude_user_groups 字段（不支持的用户等级，黑名单模式） ───
     exec_ignore!(pool,
