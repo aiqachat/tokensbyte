@@ -459,8 +459,8 @@ const PromptInput: React.FC = React.memo(() => {
                 style={{ display: 'flex', alignItems: 'flex-start', gap: 10, overflowX: 'auto' }}
               >
                 {group.items.map((entry, idx) => (
-                  <div 
-                    key={entry.item.asset.id} 
+                  <div
+                    key={entry.item.asset.id}
                     draggable
                     onDragStart={(e) => {
                       setDraggedAssetIndex(entry.origIndex);
@@ -484,7 +484,7 @@ const PromptInput: React.FC = React.memo(() => {
                       setDraggedAssetIndex(null);
                     }}
                     onDragEnd={() => setDraggedAssetIndex(null)}
-                    style={{ 
+                    style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0,
                       opacity: draggedAssetIndex === entry.origIndex ? 0.4 : 1,
                       cursor: 'grab'
@@ -909,7 +909,7 @@ const PromptInput: React.FC = React.memo(() => {
                         case 'first_frame': return '首帧';
                         case 'first_last_frame': return '首尾帧';
                         case 'reference_image': return '参考图';
-                        default: return '图片(自动)';
+                        default: return '自动';
                       }
                     })()}
                   </span>
