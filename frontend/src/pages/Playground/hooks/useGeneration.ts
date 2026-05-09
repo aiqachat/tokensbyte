@@ -266,16 +266,30 @@ export const useGeneration = () => {
             : userRole;
 
           const imageUrls: any[] = [];
-          imageAssets.forEach(a => {
-            if (effectiveRole === 'first_last_frame') {
-              imageUrls.push({ url: a.url, role: 'first_frame' });
-              imageUrls.push({ url: a.url, role: 'last_frame' });
-            } else if (effectiveRole) {
-              imageUrls.push({ url: a.url, role: effectiveRole });
-            } else {
-              imageUrls.push(a.url); // Let backend infer
+          if (effectiveRole === 'first_last_frame') {
+            if (imageAssets.length === 1) {
+              imageUrls.push({ url: imageAssets[0].url, role: 'first_frame' });
+              imageUrls.push({ url: imageAssets[0].url, role: 'last_frame' });
+            } else if (imageAssets.length >= 2) {
+              imageAssets.forEach((a, idx) => {
+                if (idx === 0) {
+                  imageUrls.push({ url: a.url, role: 'first_frame' });
+                } else if (idx === imageAssets.length - 1) {
+                  imageUrls.push({ url: a.url, role: 'last_frame' });
+                } else {
+                  imageUrls.push({ url: a.url, role: 'reference_image' });
+                }
+              });
             }
-          });
+          } else {
+            imageAssets.forEach(a => {
+              if (effectiveRole) {
+                imageUrls.push({ url: a.url, role: effectiveRole });
+              } else {
+                imageUrls.push(a.url); // Let backend infer
+              }
+            });
+          }
 
           // Fallback for single image param
           if (imageUrls.length === 0 && paramValues.image_url) {
