@@ -80,7 +80,11 @@ pub async fn api_key_middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let path = request.uri().path().to_string();
+    let path = request
+        .extensions()
+        .get::<axum::extract::OriginalUri>()
+        .map(|uri| uri.path().to_string())
+        .unwrap_or_else(|| request.uri().path().to_string());
     // 余额查询等轻量只读接口无需记录错误日志
     let skip_log = path.ends_with("/balance");
     let auth_header = match request
