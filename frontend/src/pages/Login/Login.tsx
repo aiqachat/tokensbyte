@@ -28,6 +28,7 @@ const Login: React.FC = () => {
   useEffect(() => {
     const token = searchParams.get('token');
     const isImpersonate = searchParams.get('impersonate') === '1';
+    const redirectTo = searchParams.get('redirect') || '/';
     
     if (token) {
       setToken(token, isImpersonate);
@@ -36,17 +37,17 @@ const Login: React.FC = () => {
           setUser(res, isImpersonate); 
           if (isImpersonate) {
             // 直接跳原生的 href，避免 React Router navigate 延迟导致拦截器误判
-            window.location.href = '/';
+            window.location.href = redirectTo;
           } else {
-            navigate('/'); 
+            navigate(redirectTo); 
           }
         })
         .catch((e) => {
           console.error("Auto login failed:", e);
           if (isImpersonate) {
-            window.location.href = '/';
+            window.location.href = redirectTo;
           } else {
-            navigate('/');
+            navigate(redirectTo);
           }
         });
     }

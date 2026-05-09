@@ -181,11 +181,20 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ isUserEnd = false }) 
     label: <Link to={isUserEnd ? '/' : '/admin0755/dashboard'}>{isUserEnd ? '控制面板' : t('menu.dashboard')}</Link>,
   });
 
+  // 代理登录模式下，新标签页无法继承 sessionStorage 中的用户 token，
+  // 需通过 Login 页面中转传递 token，确保创作中心使用正确的用户身份
+  const isImpersonating = !!sessionStorage.getItem('token');
   if (isUserEnd && isPluginVisibleForUser('playground')) {
     menuItems.push({
       key: '/playground',
       icon: <ExperimentOutlined style={{ fontSize: '18px' }} />,
-      label: <Link to="/playground" target="_blank">{t('menu.playground')}</Link>,
+      label: isImpersonating
+        ? <a onClick={(e) => {
+            e.preventDefault();
+            const impToken = sessionStorage.getItem('token');
+            window.open(`${window.location.origin}/login?token=${impToken}&impersonate=1&redirect=/playground`, '_blank');
+          }}>{t('menu.playground')}</a>
+        : <Link to="/playground" target="_blank">{t('menu.playground')}</Link>,
     });
   }
 
