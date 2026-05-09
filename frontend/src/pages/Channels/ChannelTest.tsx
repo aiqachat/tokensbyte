@@ -44,7 +44,12 @@ const ChannelTest: React.FC = () => {
                 ]);
                 
                 const modMap: Record<string, any> = {};
-                modelsResp.data.forEach(m => { modMap[m.model_id] = m; });
+                modelsResp.data.forEach(m => { 
+                    modMap[String(m.model_id)] = m; 
+                    if (m.mid) {
+                        modMap[String(m.mid)] = m;
+                    }
+                });
                 setGlobalModels(modMap);
 
                 const rMap: Record<number, any> = {};
@@ -59,7 +64,7 @@ const ChannelTest: React.FC = () => {
                     
                     target.models.forEach(m => {
                         initialStatuses[m] = { status: 'idle' };
-                        const gModel = modMap[m];
+                        const gModel = modMap[String(m)];
                         if (gModel && gModel.forward_rule_ids) {
                             try {
                                 const rIds = JSON.parse(gModel.forward_rule_ids);
@@ -88,7 +93,10 @@ const ChannelTest: React.FC = () => {
         setActiveModelLog(model);
         setTestStatuses(prev => ({ ...prev, [model]: { status: 'testing', timestamp: new Date().toISOString() } }));
         try {
-            const resp = await (request.post(`/channels/${channelId}/test`, { model, forward_rule_id: ruleId }) as unknown as Promise<{ success: boolean; err_msg?: string; latency?: number; request_data?: any; response_data?: any; curl_command?: string }>);
+            const gModel = globalModels[String(model)];
+            const actualModelId = gModel ? gModel.model_id : model;
+
+            const resp = await (request.post(`/channels/${channelId}/test`, { model: actualModelId, forward_rule_id: ruleId }) as unknown as Promise<{ success: boolean; err_msg?: string; latency?: number; request_data?: any; response_data?: any; curl_command?: string }>);
             if (resp.success) {
                 setTestStatuses(prev => ({ 
                     ...prev, 
@@ -161,7 +169,18 @@ const ChannelTest: React.FC = () => {
                                     title: '接入模型',
                                     dataIndex: 'model',
                                     key: 'model',
-                                    render: (text) => <Text strong>{text}</Text>
+                                    render: (text) => {
+                                        const gModel = globalModels[String(text)];
+                                        if (gModel) {
+                                            return (
+                                                <Space direction="vertical" size={0}>
+                                                    <Text strong>{gModel.name || gModel.model_id}</Text>
+                                                    <Tag color="blue" style={{ fontSize: 10, margin: 0, marginTop: 4 }}>{gModel.model_id}</Tag>
+                                                </Space>
+                                            );
+                                        }
+                                        return <Text strong>{text}</Text>;
+                                    }
                                 },
                                 {
                                     title: '探测状态',
@@ -178,7 +197,7 @@ const ChannelTest: React.FC = () => {
                                     title: '操作',
                                     key: 'action',
                                     render: (_, record) => {
-                                        const gModel = globalModels[record.model];
+                                        const gModel = globalModels[String(record.model)];
                                         let ruleOptions: {label: string, value: number}[] = [];
                                         if (gModel && gModel.forward_rule_ids) {
                                             try {
@@ -243,7 +262,7 @@ const ChannelTest: React.FC = () => {
                                 fontSize: 13,
                             }}>
                                 <div style={{ marginBottom: 16, color: '#4ec9b0', fontWeight: 'bold' }}>
-                                    {`[${activeLogData?.timestamp || '队列外'}]`} 【Target】: {activeModelLog}
+                                    {`[${activeLogData?.timestamp || '队列外'}]`} 【Target】: {globalModels[String(activeModelLog)]?.model_id || activeModelLog}
                                 </div>
                                 
                                 {activeLogData?.status === 'idle' && (
