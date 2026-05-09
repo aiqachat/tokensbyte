@@ -16,7 +16,6 @@ interface ClassificationFilterProps {
   onTypeChange: (id: number | null) => void;
   onManageProviders: () => void;
   onManageTypes: () => void;
-  totalModels: number;
 }
 
 const ClassificationFilter: React.FC<ClassificationFilterProps> = ({
@@ -28,7 +27,6 @@ const ClassificationFilter: React.FC<ClassificationFilterProps> = ({
   onTypeChange,
   onManageProviders,
   onManageTypes,
-  totalModels,
 }) => {
   const { t } = useTranslation();
   const { themeMode } = useThemeStore();
@@ -59,7 +57,7 @@ const ClassificationFilter: React.FC<ClassificationFilterProps> = ({
             transition: 'all 0.2s',
           }}
         >
-          {t('common.all')} <span style={{ opacity: 0.6, marginLeft: 4 }}>{totalModels}</span>
+          {t('common.all')} <span style={{ opacity: 0.6, marginLeft: 4 }}>{items.reduce((acc, item) => acc + item.count, 0)}</span>
         </div>
         {items.map(item => (
           <div

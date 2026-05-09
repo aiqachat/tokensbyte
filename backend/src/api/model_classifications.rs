@@ -215,34 +215,74 @@ pub async fn delete_type(
     Ok(Json(serde_json::json!({ "success": true })))
 }
 
-// --- Combined metadata with counts ---
+#[derive(Debug, serde::Deserialize)]
+pub struct StatsQuery {
+    pub provider_id: Option<i64>,
+    pub type_id: Option<i64>,
+    pub search: Option<String>,
+}
 
 pub async fn get_classifications_stats(
     State(state): State<Arc<AppState>>,
+    axum::extract::Query(query): axum::extract::Query<StatsQuery>,
 ) -> AppResult<Json<ClassificationsResponse>> {
     // Get providers with model counts
-    let providers = sqlx::query_as(
-        &state.db.format_query(r#"SELECT p.id, p.name, p.is_system, COUNT(m.id) as count 
+    let mut p_sql = r#"SELECT p.id, p.name, p.is_system, COUNT(m.id) as count 
            FROM model_providers p 
-           LEFT JOIN models m ON p.id = m.provider_id 
-           WHERE p.is_active = 1
-           GROUP BY p.id, p.name 
-           ORDER BY p.sort_order ASC, p.id ASC"#)
-    )
-    .fetch_all(&state.db.pool)
-    .await?;
+           LEFT JOIN models m ON p.id = m.provider_id"#.to_string();
+    
+    let mut p_conds = vec![];
+    if query.type_id.is_some() {
+        p_conds.push("m.type_id = ?");
+    }
+    if query.search.is_some() {
+        p_conds.push("(m.name ILIKE ? OR m.model_id ILIKE ? OR m.mid = ?)");
+    }
+    if !p_conds.is_empty() {
+        p_sql.push_str(" AND ");
+        p_sql.push_str(&p_conds.join(" AND "));
+    }
+    p_sql.push_str(" WHERE p.is_active = 1 GROUP BY p.id, p.name ORDER BY p.sort_order ASC, p.id ASC");
+
+    let formatted_p_sql = state.db.format_query(&p_sql);
+    let mut pq = sqlx::query_as::<_, crate::models::ClassificationCount>(&formatted_p_sql);
+    if let Some(tid) = query.type_id {
+        pq = pq.bind(tid);
+    }
+    if let Some(ref kw) = query.search {
+        let like = format!("%{}%", kw);
+        pq = pq.bind(like.clone()).bind(like).bind(kw);
+    }
+    let providers = pq.fetch_all(&state.db.pool).await?;
 
     // Get types with model counts
-    let types = sqlx::query_as(
-        &state.db.format_query(r#"SELECT t.id, t.name, t.is_system, COUNT(m.id) as count 
+    let mut t_sql = r#"SELECT t.id, t.name, t.is_system, COUNT(m.id) as count 
            FROM model_types t 
-           LEFT JOIN models m ON t.id = m.type_id 
-           WHERE t.is_active = 1
-           GROUP BY t.id, t.name 
-           ORDER BY t.sort_order ASC, t.id ASC"#)
-    )
-    .fetch_all(&state.db.pool)
-    .await?;
+           LEFT JOIN models m ON t.id = m.type_id"#.to_string();
+    
+    let mut t_conds = vec![];
+    if query.provider_id.is_some() {
+        t_conds.push("m.provider_id = ?");
+    }
+    if query.search.is_some() {
+        t_conds.push("(m.name ILIKE ? OR m.model_id ILIKE ? OR m.mid = ?)");
+    }
+    if !t_conds.is_empty() {
+        t_sql.push_str(" AND ");
+        t_sql.push_str(&t_conds.join(" AND "));
+    }
+    t_sql.push_str(" WHERE t.is_active = 1 GROUP BY t.id, t.name ORDER BY t.sort_order ASC, t.id ASC");
+
+    let formatted_t_sql = state.db.format_query(&t_sql);
+    let mut tq = sqlx::query_as::<_, crate::models::ClassificationCount>(&formatted_t_sql);
+    if let Some(pid) = query.provider_id {
+        tq = tq.bind(pid);
+    }
+    if let Some(ref kw) = query.search {
+        let like = format!("%{}%", kw);
+        tq = tq.bind(like.clone()).bind(like).bind(kw);
+    }
+    let types = tq.fetch_all(&state.db.pool).await?;
 
     Ok(Json(ClassificationsResponse { providers, types }))
 }

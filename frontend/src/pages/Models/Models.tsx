@@ -58,10 +58,22 @@ const Models: React.FC = () => {
     }
   };
 
+  const fetchStats = async () => {
+    try {
+      const params: any = {};
+      if (selectedProvider) params.provider_id = selectedProvider;
+      if (selectedType) params.type_id = selectedType;
+      if (searchKeyword.trim()) params.search = searchKeyword.trim();
+      
+      const stats = await (request.get('/classifications/stats', { params }) as any);
+      setClassStats(stats);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const fetchClassifications = async () => {
     try {
-      const stats = await (request.get('/classifications/stats') as any);
-      setClassStats(stats);
       
       const providers = await (request.get('/model-providers') as any);
       setAllProviders(providers.filter((p: any) => p.is_active));
@@ -81,9 +93,11 @@ const Models: React.FC = () => {
 
   useEffect(() => {
     fetchModels();
+    fetchStats();
   }, [selectedProvider, selectedType, searchKeyword]);
 
   useEffect(() => {
+    fetchStats();
     fetchClassifications();
   }, []);
 
@@ -122,6 +136,7 @@ const Models: React.FC = () => {
       await request.delete(`/models/${id}`);
       message.success(t('common.success'));
       fetchModels();
+      fetchStats();
       fetchClassifications();
     } catch (e) {
       console.error(e);
@@ -145,6 +160,7 @@ const Models: React.FC = () => {
       message.success(t('common.success'));
       setIsModalVisible(false);
       fetchModels();
+      fetchStats();
       fetchClassifications();
     } catch (e) {
       console.error(e);
@@ -280,8 +296,6 @@ const Models: React.FC = () => {
     },
   ];
 
-  const totalModelsCount = classStats.providers.reduce((acc, curr) => acc + curr.count, 0);
-
   return (
     <Card variant="borderless">
         <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 16, gap: 12 }}>
@@ -295,7 +309,7 @@ const Models: React.FC = () => {
               onChange={e => setSearchKeyword(e.target.value)}
               style={{ width: 240 }}
             />
-            <Button icon={<SyncOutlined />} onClick={() => { fetchModels(); fetchClassifications(); }}>{t('common.refresh')}</Button>
+            <Button icon={<SyncOutlined />} onClick={() => { fetchModels(); fetchStats(); fetchClassifications(); }}>{t('common.refresh')}</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('models.add_model')}</Button>
           </Space>
         </div>
@@ -315,7 +329,6 @@ const Models: React.FC = () => {
         onTypeChange={setSelectedType}
         onManageProviders={() => setIsProviderManagerVisible(true)}
         onManageTypes={() => setIsTypeManagerVisible(true)}
-        totalModels={totalModelsCount}
       />
 
       {screens.xs ? (
@@ -522,14 +535,14 @@ const Models: React.FC = () => {
         type="provider"
         visible={isProviderManagerVisible}
         onClose={() => setIsProviderManagerVisible(false)}
-        onUpdate={fetchClassifications}
+        onUpdate={() => { fetchStats(); fetchClassifications(); }}
       />
 
       <ClassificationManager
         type="type"
         visible={isTypeManagerVisible}
         onClose={() => setIsTypeManagerVisible(false)}
-        onUpdate={fetchClassifications}
+        onUpdate={() => { fetchStats(); fetchClassifications(); }}
       />
     </Card>
   );
