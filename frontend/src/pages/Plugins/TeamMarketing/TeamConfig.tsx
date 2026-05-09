@@ -184,8 +184,30 @@ const TeamConfig: React.FC = () => {
 
   const copyInviteLink = (inviteCode: string) => {
     const link = `${window.location.origin}/register?team=${inviteCode}`;
-    navigator.clipboard.writeText(link);
-    message.success('邀请链接已复制到剪贴板');
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(() => {
+          message.success('邀请链接已复制到剪贴板');
+        }).catch(() => { throw new Error(); });
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = link;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          message.success('邀请链接已复制到剪贴板');
+        } finally {
+          textArea.remove();
+        }
+      }
+    } catch (e) {
+      message.error('复制失败，请手动选择复制');
+    }
   };
 
   const selectOptions = userOptions.map(u => ({

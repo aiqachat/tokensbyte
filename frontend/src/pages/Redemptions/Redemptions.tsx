@@ -63,8 +63,30 @@ const Redemptions: React.FC = () => {
                     icon={<CopyOutlined />} 
                     size="small"
                     onClick={() => {
-                      navigator.clipboard.writeText(code);
-                      message.success(t('common.copied'));
+                      try {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                          navigator.clipboard.writeText(code).then(() => {
+                            message.success(t('common.copied'));
+                          });
+                        } else {
+                          const textArea = document.createElement("textarea");
+                          textArea.value = code;
+                          textArea.style.position = "fixed";
+                          textArea.style.left = "-999999px";
+                          textArea.style.top = "-999999px";
+                          document.body.appendChild(textArea);
+                          textArea.focus();
+                          textArea.select();
+                          try {
+                            document.execCommand('copy');
+                            message.success(t('common.copied'));
+                          } finally {
+                            textArea.remove();
+                          }
+                        }
+                      } catch (e) {
+                        message.error('复制失败，请手动选择复制');
+                      }
                     }}
                   />
                 </div>

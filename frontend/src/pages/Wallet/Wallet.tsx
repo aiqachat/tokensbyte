@@ -55,8 +55,33 @@ const Wallet: React.FC = () => {
 
   const copyInviteLink = () => {
     const link = `${window.location.origin}/register?aff=${user?.uid}`;
-    navigator.clipboard.writeText(link);
-    message.success('邀请链接已复制到剪贴板');
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(() => {
+          message.success('邀请链接已复制到剪贴板');
+        }).catch(() => {
+          throw new Error('Clipboard write failed');
+        });
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = link;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          message.success('邀请链接已复制到剪贴板');
+        } finally {
+          textArea.remove();
+        }
+      }
+    } catch (e) {
+      console.error('Failed to copy text: ', e);
+      message.error('复制失败，请手动选择复制');
+    }
   };
 
   const [searchParams, setSearchParams] = useSearchParams();

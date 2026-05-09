@@ -47,10 +47,32 @@ const Tokens: React.FC = () => {
     fetchTokens();
   }, []);
 
-  const handleCopy = (key: string, tokenId: number) => {
-    navigator.clipboard.writeText(key);
-    setCopiedId(tokenId);
-    setTimeout(() => setCopiedId(prev => prev === tokenId ? null : prev), 2000);
+  const handleCopy = async (key: string, tokenId: number) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(key);
+      } else {
+        // Fallback for non-secure contexts (HTTP) or older browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = key;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          document.execCommand('copy');
+        } finally {
+          textArea.remove();
+        }
+      }
+      setCopiedId(tokenId);
+      setTimeout(() => setCopiedId(prev => prev === tokenId ? null : prev), 2000);
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+      message.error('复制失败，请手动选择复制');
+    }
   };
 
   const handleAdd = () => {

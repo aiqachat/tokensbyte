@@ -114,14 +114,39 @@ const AdvancedMarketing: React.FC = () => {
 
   const copyTeamInviteLink = (inviteCode: string) => {
     const link = `${window.location.origin}/register?aff=${user?.uid}&team=${inviteCode}`;
-    navigator.clipboard.writeText(link);
-    message.success('团队邀请链接已复制');
+    copyToClipboard(link, '团队邀请链接已复制');
   };
 
   const copyMyInviteLink = () => {
     const link = `${window.location.origin}/register?aff=${user?.uid}`;
-    navigator.clipboard.writeText(link);
-    message.success('推广邀请链接已复制到剪贴板');
+    copyToClipboard(link, '推广邀请链接已复制到剪贴板');
+  };
+
+  const copyToClipboard = (text: string, successMsg: string) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          message.success(successMsg);
+        }).catch(() => { throw new Error(); });
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          message.success(successMsg);
+        } finally {
+          textArea.remove();
+        }
+      }
+    } catch (e) {
+      message.error('复制失败，请手动选择复制');
+    }
   };
 
   const fetchAllowedLevels = async () => {
