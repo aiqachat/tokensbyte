@@ -53,6 +53,7 @@ const PromptInput: React.FC = React.memo(() => {
   const [isVideoPreviewOpen, setIsVideoPreviewOpen] = useState(false);
   const [editingAssetIndex, setEditingAssetIndex] = useState<number | null>(null);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -834,6 +835,7 @@ const PromptInput: React.FC = React.memo(() => {
           {isVideoModel && hasImage && (
             <Dropdown
               trigger={['click']}
+              onOpenChange={setIsRoleDropdownOpen}
               menu={{
                 items: [
                   { key: 'auto', label: '自动' },
@@ -846,7 +848,7 @@ const PromptInput: React.FC = React.memo(() => {
                 }
               }}
             >
-              <Tooltip placement="bottom" title="指定附加图片的类型用途（受约束时自动锁定参考图）">
+              <Tooltip open={isRoleDropdownOpen ? false : undefined} placement="bottom" title="指定附加图片的类型用途（受约束时自动锁定参考图）">
                 <div
                   style={{
                     display: 'flex',
