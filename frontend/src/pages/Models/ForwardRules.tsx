@@ -4,6 +4,7 @@ import MobileCardList, { MobileCard, CardRow, CardActions } from '../../componen
 import { PlusOutlined, EditOutlined, DeleteOutlined, CodeOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import { useThemeStore } from '../../store/theme';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -254,12 +255,21 @@ const ForwardRules: React.FC = () => {
     },
   ];
 
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
+
   const CText: React.FC<{children: React.ReactNode}> = ({ children }) => (
-    <span style={{ background: '#252526', color: '#ce9178', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>{children}</span>
+    <span style={{ 
+      background: _isLight ? 'rgba(0,0,0,0.06)' : '#252526', 
+      color: _isLight ? '#cf222e' : '#ce9178', 
+      padding: '2px 6px', 
+      borderRadius: 4, 
+      fontFamily: 'monospace' 
+    }}>{children}</span>
   );
 
   const helpContent = (
-    <div style={{ maxWidth: 500, color: 'rgba(255, 255, 255, 0.85)' }}>
+    <div style={{ maxWidth: 500, color: _isLight ? 'rgba(0, 0, 0, 0.85)' : 'rgba(255, 255, 255, 0.85)' }}>
       <p>高级转发规则（Forward Rules）用于底层<strong>路由重写</strong>与<strong>协议转换</strong>，赋予系统对接所有非标准 OpenAI 接口的自定义能力。</p>
       <p>当您接入特殊的第三方模型 API（如 Google 官方、Anthropic 等）而他们不使用标准的 <CText>/v1/chat/completions</CText> 路径时，您可以通过该规则将标准的接入请求转换为特定格式发往上游。</p>
       <div style={{ marginTop: 8 }}>
