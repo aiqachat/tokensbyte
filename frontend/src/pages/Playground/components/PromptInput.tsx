@@ -804,7 +804,7 @@ const PromptInput: React.FC = React.memo(() => {
 
           {/* 联网搜索开关 */}
           {currentModel?.params?.some((p: any) => p.key === 'web_search') && (
-            <Tooltip title="开启后允许模型使用联网搜索能力">
+            <Tooltip placement="bottom" title="开启后允许模型使用联网搜索能力">
               <div
                 style={{
                   display: 'flex',
@@ -846,7 +846,7 @@ const PromptInput: React.FC = React.memo(() => {
                 }
               }}
             >
-              <Tooltip title="指定附加图片的类型用途（受约束时自动锁定参考图）">
+              <Tooltip placement="bottom" title="指定附加图片的类型用途（受约束时自动锁定参考图）">
                 <div
                   style={{
                     display: 'flex',
