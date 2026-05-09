@@ -250,7 +250,7 @@ export const useGeneration = () => {
 
       let endpoint = '';
       if (schemeType === 'video' || currentModel.type_name.includes('视频')) {
-        endpoint = currentModel.endpoint || '/v1/video/generations';
+        endpoint = '/v1/video/generations';
         const imageAssets = resolvedAssetsForAI.filter(a => a.type === 'image');
         const videoAssets = resolvedAssetsForAI.filter(a => a.type === 'video');
         const audioAssets = resolvedAssetsForAI.filter(a => a.type === 'audio');
@@ -351,8 +351,8 @@ export const useGeneration = () => {
 
       if (isAsyncTask) {
         const taskId = asyncTaskId;
-        // 为图片异步任务自动构造轮询端点
-        const pollEndpoint = currentModel.poll_endpoint || `/v1/tasks/${taskId}`;
+        // 为异步任务自动构造统一的 OpenAI 轮询端点
+        const pollEndpoint = `/v1/tasks/${taskId}`;
         setNodes(prev => prev.map(n => n.id === newNodeId ? { ...n, taskData: { ...(n.taskData || {}), task_id: taskId, poll_endpoint: pollEndpoint, ...res } } : n));
         setTaskPollingNodes(prev => [...prev, newNodeId]);
         pollTaskStatus(newNodeId, taskId, currentModel.model_id, pollEndpoint);
@@ -526,7 +526,7 @@ export const useGeneration = () => {
         const m = models.find(mod => mod.model_id === n.taskData?.model_id);
         if (m) {
           setTaskPollingNodes(prev => [...prev, n.id]);
-          pollTaskStatus(n.id, n.taskData.task_id, m.model_id, m.poll_endpoint);
+          pollTaskStatus(n.id, n.taskData.task_id, m.model_id, `/v1/tasks/${n.taskData.task_id}`);
         }
       }
     });
