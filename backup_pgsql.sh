@@ -5,13 +5,13 @@
 
 ########################## 配置项 - 请根据实际情况修改 ##########################
 # Docker容器名称
-DOCKER_CONTAINER_NAME="pgsql"
+DOCKER_CONTAINER_NAME="tokensbyte-postgres"
 # 数据库用户名
-DB_USER="postgres"
+DB_USER="tokensapi"
 # 数据库密码（留空则使用容器默认认证方式）
 DB_PASSWORD=""
 # 数据库名称
-DB_NAME="postgres"
+DB_NAME="tokensapi"
 # 备份文件保留天数（0表示不自动删除）
 RETENTION_DAYS=7
 ##############################################################################
