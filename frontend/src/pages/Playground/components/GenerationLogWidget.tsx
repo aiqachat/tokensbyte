@@ -23,6 +23,7 @@ import { useCanvas, usePlayground } from '../context/PlaygroundContext';
 import ImageEditorModal from './ImageEditorModal';
 import VideoEditorModal from './VideoEditorModal';
 import { getResultDisplayUrl } from '../utils/resultExtractor';
+import { useThemeStore } from '../../../store/theme';
 
 const { Text } = Typography;
 
@@ -48,6 +49,8 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     isGenLogVisible, setIsGenLogVisible,
     setPrompt, setAttachedAssets, storageStats,
   } = usePlayground();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorImageUrl, setEditorImageUrl] = useState('');
@@ -324,10 +327,10 @@ const GenerationLogWidget: React.FC = React.memo(() => {
         left: 24,
         top: 80,
         width: 320,
-        background: '#1e1f20',
+        background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
         borderRadius: 24,
-        border: '1px solid #444746',
-        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+        border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746',
+        boxShadow: _isLight ? '0 4px 20px rgba(0,0,0,0.08)' : '0 4px 6px rgba(0,0,0,0.3)',
         backdropFilter: 'blur(24px)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         zIndex: 1000,
@@ -338,9 +341,9 @@ const GenerationLogWidget: React.FC = React.memo(() => {
       {/* 标题栏 */}
       <div style={{
         padding: '0 12px', height: 48, minHeight: 48,
-        borderBottom: '1px solid #444746',
+        borderBottom: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid #444746',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        background: 'rgba(255,255,255,0.02)',
+        background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
         userSelect: 'none',
       }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -351,27 +354,27 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 24, height: 24, borderRadius: 4, cursor: 'pointer',
-                  color: 'rgba(255,255,255,0.6)', transition: 'all 0.2s',
+                  color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.6)', transition: 'all 0.2s',
                   marginLeft: -4, marginRight: 2
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = _isLight ? '#000' : '#fff'; e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
               >
                 <ArrowLeftOutlined style={{ fontSize: 13 }} />
               </div>
             </Tooltip>
           )}
-          <MessageCircle size={16} style={{ color: '#fff' }} />
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>
+          <MessageCircle size={16} style={{ color: _isLight ? '#333' : '#fff' }} />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>
             {selectedNode ? '素材详情' : `项目创作记录 (${nodes.length}/${storageStats?.max_assets || 10})`}
           </Text>
         </div>
         <Tooltip title="关闭">
           <div
-            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,0.5)', borderRadius: 4, transition: 'all 0.2s' }}
+            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)', borderRadius: 4, transition: 'all 0.2s' }}
             onClick={handleClose}
-            onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.5)'; e.currentTarget.style.background = 'transparent'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = _isLight ? '#000' : '#fff'; e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)'; e.currentTarget.style.background = 'transparent'; }}
           >
             <CloseOutlined />
           </div>
@@ -385,7 +388,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
         {!selectedNode ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {nodes.length === 0 ? (
-              <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', padding: '40px 0', fontSize: 13 }}>
+              <div style={{ textAlign: 'center', color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', padding: '40px 0', fontSize: 13 }}>
                 暂无创作记录
               </div>
             ) : (
@@ -403,11 +406,11 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                     onClick={() => setSelectedNodeId(node.id)}
                     style={{
                       display: 'flex', gap: 12, padding: 12, borderRadius: 12,
-                      background: 'rgba(255,255,255,0.03)', border: '1px solid #444746',
+                      background: _isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid #444746',
                       cursor: 'pointer', transition: 'all 0.2s',
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)'; }}
                   >
                     {/* 缩略图 */}
                     <div style={{
@@ -429,7 +432,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                     </div>
                     {/* 详情 */}
                     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4 }}>
-                      <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <Text style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {node.taskData?.prompt || '无提示词'}
                       </Text>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -451,11 +454,11 @@ const GenerationLogWidget: React.FC = React.memo(() => {
           <>
         {/* 提示词区块 */}
         <div style={{
-          background: 'rgba(0,0,0,0.3)', borderRadius: 14, padding: '14px 16px',
+          background: _isLight ? 'rgba(0,0,0,0.03)' : 'rgba(0,0,0,0.3)', borderRadius: 14, padding: '14px 16px',
           marginBottom: 12, position: 'relative',
         }}>
           <Text style={{
-            color: 'rgba(255,255,255,0.8)', fontSize: 14, lineHeight: '22px',
+            color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.8)', fontSize: 14, lineHeight: '22px',
             wordBreak: 'break-word', display: 'block',
             paddingRight: selectedNode.taskData?.prompt ? 28 : 0,
           }}>
@@ -483,12 +486,12 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                 }}
                 style={{
                   position: 'absolute', top: 12, right: 12,
-                  fontSize: 14, color: 'rgba(255,255,255,0.3)',
+                  fontSize: 14, color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)',
                   cursor: 'pointer', transition: 'color 0.2s',
                   lineHeight: 1,
                 }}
-                onMouseEnter={(e: any) => e.currentTarget.style.color = '#fff'}
-                onMouseLeave={(e: any) => e.currentTarget.style.color = 'rgba(255,255,255,0.3)'}
+                onMouseEnter={(e: any) => e.currentTarget.style.color = _isLight ? '#000' : '#fff'}
+                onMouseLeave={(e: any) => e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)'}
               >
                 <CopyOutlined />
               </span>
@@ -556,31 +559,31 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                   borderRadius: '50%',
                   fontSize: 16,
                   cursor: btn.disabled ? 'not-allowed' : 'pointer',
-                  background: btn.danger ? 'rgba(255,77,79,0.08)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${btn.danger ? 'rgba(255,77,79,0.15)' : '#444746'}`,
+                  background: btn.danger ? (_isLight ? 'rgba(255,77,79,0.1)' : 'rgba(255,77,79,0.08)') : (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)'),
+                  border: `1px solid ${btn.danger ? 'rgba(255,77,79,0.15)' : (_isLight ? 'rgba(0,0,0,0.08)' : '#444746')}`,
                   color: btn.disabled
-                    ? 'rgba(255,255,255,0.2)'
+                    ? (_isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)')
                     : btn.danger
                     ? '#ff4d4f'
-                    : 'rgba(255,255,255,0.65)',
+                    : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)'),
                   transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                   userSelect: 'none',
                   flexShrink: 0,
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                  boxShadow: _isLight ? '0 2px 4px rgba(0,0,0,0.02)' : '0 2px 6px rgba(0,0,0,0.05)',
                 }}
                 onMouseEnter={(e) => {
                   if (btn.disabled) return;
-                  e.currentTarget.style.background = btn.danger ? 'rgba(255,77,79,0.15)' : 'rgba(255,255,255,0.1)';
-                  e.currentTarget.style.color = btn.danger ? '#ff7875' : '#fff';
+                  e.currentTarget.style.background = btn.danger ? 'rgba(255,77,79,0.15)' : (_isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)');
+                  e.currentTarget.style.color = btn.danger ? '#ff7875' : (_isLight ? '#000' : '#fff');
                   e.currentTarget.style.transform = 'translateY(-2px)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.boxShadow = _isLight ? '0 4px 12px rgba(0,0,0,0.06)' : '0 4px 12px rgba(0,0,0,0.15)';
                 }}
                 onMouseLeave={(e) => {
                   if (btn.disabled) return;
-                  e.currentTarget.style.background = btn.danger ? 'rgba(255,77,79,0.08)' : 'rgba(255,255,255,0.04)';
-                  e.currentTarget.style.color = btn.danger ? '#ff4d4f' : 'rgba(255,255,255,0.65)';
+                  e.currentTarget.style.background = btn.danger ? (_isLight ? 'rgba(255,77,79,0.1)' : 'rgba(255,77,79,0.08)') : (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)');
+                  e.currentTarget.style.color = btn.danger ? '#ff4d4f' : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)');
                   e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.05)';
+                  e.currentTarget.style.boxShadow = _isLight ? '0 2px 4px rgba(0,0,0,0.02)' : '0 2px 6px rgba(0,0,0,0.05)';
                 }}
               >
                 {btn.icon}
@@ -592,11 +595,11 @@ const GenerationLogWidget: React.FC = React.memo(() => {
         {/* 参考素材区块 */}
         {(selectedNode.taskData?.attached_urls?.length > 0 || selectedNode.taskData?.attached_url) && (
           <div style={{
-            background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: '12px 14px',
+            background: _isLight ? 'rgba(0,0,0,0.03)' : 'rgba(0,0,0,0.2)', borderRadius: 12, padding: '12px 14px',
             marginBottom: 16,
-            border: '1px solid rgba(255,255,255,0.06)',
+            border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
           }}>
-            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 10 }}>参考素材</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 10 }}>参考素材</Text>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {selectedNode.taskData?.attached_urls ? (
                 selectedNode.taskData.attached_urls.map((url: string, i: number) => {
@@ -608,7 +611,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                         src={url}
                         style={{
                           width: 56, height: 56, borderRadius: 10, objectFit: 'cover',
-                          border: '1px solid rgba(255,255,255,0.1)', background: '#000'
+                          border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)', background: '#000'
                         }}
                         muted
                         preload="metadata"
@@ -623,7 +626,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                       alt={`参考素材 ${i + 1}`}
                       style={{
                         width: 56, height: 56, borderRadius: 10, objectFit: 'cover',
-                        border: '1px solid rgba(255,255,255,0.1)',
+                        border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)',
                       }}
                     />
                   );
@@ -638,7 +641,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                         src={singleUrl}
                         style={{
                           width: 56, height: 56, borderRadius: 10, objectFit: 'cover',
-                          border: '1px solid rgba(255,255,255,0.1)', background: '#000'
+                          border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)', background: '#000'
                         }}
                         muted
                         preload="metadata"
@@ -659,7 +662,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                 })()
               )}
             </div>
-            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 10, display: 'block' }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 10, display: 'block' }}>
               已作为生成模型的输入参考
             </Text>
           </div>
@@ -667,42 +670,42 @@ const GenerationLogWidget: React.FC = React.memo(() => {
 
         {/* 模型信息卡 */}
         <div style={{
-          background: 'rgba(255,255,255,0.03)', borderRadius: 14, padding: '14px 16px',
-          border: '1px solid rgba(255,255,255,0.06)',
+          background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)', borderRadius: 14, padding: '14px 16px',
+          border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
           marginBottom: 16,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {typeIcon}
-              <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500 }}>{typeLabel}</Text>
+              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500 }}>{typeLabel}</Text>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {status?.icon}
               <Text style={{ color: status?.color, fontSize: 12, fontWeight: 500 }}>{status?.label}</Text>
             </div>
           </div>
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '0 0 10px 0' }} />
+          <div style={{ height: 1, background: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)', margin: '0 0 10px 0' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {!isLocalAsset && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>模型</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 500 }}>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>模型</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 500 }}>
                   {selectedNode.taskData?.model_name || '未知'}
                 </Text>
               </div>
             )}
             {!isLocalAsset && selectedNode.taskData?.model_id && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>Model ID</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontFamily: 'monospace' }}>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>Model ID</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.5)', fontSize: 11, fontFamily: 'monospace' }}>
                   {selectedNode.taskData.model_id}
                 </Text>
               </div>
             )}
             {selectedNode.taskData?.created_at && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>创建时间</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>创建时间</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>
                   {new Date(selectedNode.taskData.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')}
                 </Text>
               </div>
@@ -710,32 +713,32 @@ const GenerationLogWidget: React.FC = React.memo(() => {
             {/* 文件详细信息 */}
             {((mediaInfo?.width && mediaInfo?.height) || (selectedNode.taskData?.width && selectedNode.taskData?.height)) && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>分辨率</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>分辨率</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>
                   {mediaInfo?.width || selectedNode.taskData.width} × {mediaInfo?.height || selectedNode.taskData.height}
                 </Text>
               </div>
             )}
             {selectedNode.taskData?.file_format && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>文件格式</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, textTransform: 'uppercase' }}>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>文件格式</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.5)', fontSize: 12, textTransform: 'uppercase' }}>
                   {selectedNode.taskData.file_format.split('/').pop()}
                 </Text>
               </div>
             )}
             {(mediaInfo?.fileSize || selectedNode.taskData?.file_size) && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>文件大小</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>文件大小</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>
                   {mediaInfo?.fileSize || (typeof selectedNode.taskData.file_size === 'number' ? formatBytes(selectedNode.taskData.file_size) : selectedNode.taskData.file_size)}
                 </Text>
               </div>
             )}
             {mediaInfo?.duration != null && mediaInfo.duration > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>视频时长</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>视频时长</Text>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>
                   {mediaInfo.duration < 60
                     ? `${mediaInfo.duration.toFixed(1)} 秒`
                     : `${Math.floor(mediaInfo.duration / 60)}:${String(Math.round(mediaInfo.duration % 60)).padStart(2, '0')}`

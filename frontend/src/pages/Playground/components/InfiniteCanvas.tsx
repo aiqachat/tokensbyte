@@ -15,6 +15,7 @@ import { useCanvasInteraction } from '../hooks/useCanvasInteraction';
 import CanvasNode from './nodes/CanvasNode';
 import CanvasParticles from './CanvasParticles';
 import type { CanvasParticlesHandle } from './CanvasParticles';
+import { useThemeStore } from '../../../store/theme';
 
 const { Title, Text } = Typography;
 
@@ -26,6 +27,8 @@ const InfiniteCanvas: React.FC = React.memo(() => {
     draggingNodeId,
   } = useCanvas();
   const { loading, currentModel, setIsGenLogVisible } = usePlayground();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const particlesRef = React.useRef<CanvasParticlesHandle>(null);
 
   const {
@@ -83,7 +86,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
         inset: 0,
         overflow: 'hidden',
         cursor: activeTool === 'hand' || isSpaceDown ? (isDraggingCanvas ? 'grabbing' : 'grab') : 'default',
-        background: '#131314',
+        background: _isLight ? '#e8e9ec' : '#131314',
       }}
       onMouseDown={handleCanvasMouseDownWithDeselect}
       onMouseMove={handleCanvasMouseMove}
@@ -91,7 +94,7 @@ const InfiniteCanvas: React.FC = React.memo(() => {
       onMouseLeave={handleCanvasMouseUp}
     >
       {/* 动态粒子背景层 */}
-      <CanvasParticles ref={particlesRef} />
+      {!_isLight && <CanvasParticles ref={particlesRef} />}
 
       {/* 变换层 */}
       <div className="transform-layer" style={{
@@ -124,11 +127,11 @@ const InfiniteCanvas: React.FC = React.memo(() => {
             width: window.innerWidth, height: window.innerHeight,
             pointerEvents: 'none', opacity: 0.8
           }}>
-            <CompassOutlined style={{ fontSize: 64, color: 'rgba(255,255,255,0.03)', marginBottom: 24 }} />
-            <Title level={1} style={{ color: 'rgba(255,255,255,0.15)', letterSpacing: '2px', margin: '0 0 16px 0', fontWeight: 600 }}>
+            <CompassOutlined style={{ fontSize: 64, color: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.03)', marginBottom: 24 }} />
+            <Title level={1} style={{ color: _isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.15)', letterSpacing: '2px', margin: '0 0 16px 0', fontWeight: 600 }}>
               {currentModel ? currentModel.name : '无限创作空间'}
             </Title>
-            <Text style={{ color: 'rgba(255,255,255,0.15)', fontSize: 16, maxWidth: 440, textAlign: 'center', lineHeight: 1.6, fontWeight: 300 }}>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.15)', fontSize: 16, maxWidth: 440, textAlign: 'center', lineHeight: 1.6, fontWeight: 300 }}>
               {currentModel
                 ? '拖滑视图，无限蔓延。你可以在这里将所有的创意编织流转成多模态宇宙。'
                 : '请在侧边栏选择模型体验，生成的内容将汇聚在无限画布中。'}

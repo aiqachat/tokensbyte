@@ -9,6 +9,7 @@ import {
   StarFilled, StarOutlined
 } from '@ant-design/icons';
 import { useCanvas, usePlayground } from '../context/PlaygroundContext';
+import { useThemeStore } from '../../../store/theme';
 
 const FloatingToolbar: React.FC = React.memo(() => {
   const { 
@@ -19,6 +20,8 @@ const FloatingToolbar: React.FC = React.memo(() => {
     isResourceWidgetVisible, setIsResourceWidgetVisible,
     isSettingsWidgetVisible, setIsSettingsWidgetVisible
   } = usePlayground();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -146,10 +149,10 @@ const FloatingToolbar: React.FC = React.memo(() => {
     <div style={{
       position: 'absolute', right: 24, top: '50%', transform: 'translateY(-50%)',
       display: 'flex', flexDirection: 'column', gap: 8,
-      background: '#1e1f20', backdropFilter: 'blur(12px)',
+      background: _isLight ? 'rgba(255,255,255,0.85)' : '#1e1f20', backdropFilter: 'blur(12px)',
       padding: '10px 6px', borderRadius: 32,
-      border: '1px solid #444746',
-      boxShadow: '0 4px 6px rgba(0,0,0,0.3)', zIndex: 1000
+      border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746',
+      boxShadow: _isLight ? '0 4px 12px rgba(0,0,0,0.08)' : '0 4px 6px rgba(0,0,0,0.3)', zIndex: 1000
     }} onWheel={(e) => e.stopPropagation()}>
       <Tooltip title="指针工具 (V)" placement="left">
         <Button
@@ -163,8 +166,8 @@ const FloatingToolbar: React.FC = React.memo(() => {
           }
           style={{
             width: 32, height: 32, minWidth: 32,
-            background: activeTool === 'pointer' ? 'rgba(168,199,250,0.12)' : 'transparent',
-            color: activeTool === 'pointer' ? '#A8C7FA' : '#E3E3E3',
+            background: activeTool === 'pointer' ? (_isLight ? 'rgba(22,119,255,0.1)' : 'rgba(168,199,250,0.12)') : 'transparent',
+            color: activeTool === 'pointer' ? (_isLight ? '#1677ff' : '#A8C7FA') : (_isLight ? '#333' : '#E3E3E3'),
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}
         />
@@ -177,13 +180,13 @@ const FloatingToolbar: React.FC = React.memo(() => {
               <path d="M4 9V5a1 1 0 0 1 1-1h4 M15 4h4a1 1 0 0 1 1 1v4 M4 15v4a1 1 0 0 0 1 1h4 M16 20h-2 M20 16v-2 M17 17h6 M20 14v6" />
             </svg>
           }
-          style={{ width: 32, height: 32, minWidth: 32, color: 'rgba(255,255,255,0.8)', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: 32, height: 32, minWidth: 32, color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         />
       </Tooltip>
 
       <Tooltip title="画笔编辑 (P) - 即将开放" placement="left">
         <Button shape="circle" type="text" icon={<EditOutlined style={{ fontSize: 16 }} />}
-          style={{ width: 32, height: 32, minWidth: 32, color: 'rgba(255,255,255,0.8)', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: 32, height: 32, minWidth: 32, color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         />
       </Tooltip>
 
@@ -199,8 +202,8 @@ const FloatingToolbar: React.FC = React.memo(() => {
           }
           style={{
             width: 32, height: 32, minWidth: 32,
-            background: activeTool === 'hand' ? 'rgba(168,199,250,0.12)' : 'transparent',
-            color: activeTool === 'hand' ? '#A8C7FA' : '#E3E3E3',
+            background: activeTool === 'hand' ? (_isLight ? 'rgba(22,119,255,0.1)' : 'rgba(168,199,250,0.12)') : 'transparent',
+            color: activeTool === 'hand' ? (_isLight ? '#1677ff' : '#A8C7FA') : (_isLight ? '#333' : '#E3E3E3'),
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}
         />
@@ -209,11 +212,11 @@ const FloatingToolbar: React.FC = React.memo(() => {
       <Tooltip title="插入图片/视频/声音" placement="left">
         <Button shape="circle" type="text" icon={<PictureOutlined style={{ fontSize: 16 }} />}
           onClick={() => fileInputRef.current?.click()}
-          style={{ width: 32, height: 32, minWidth: 32, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: 32, height: 32, minWidth: 32, color: _isLight ? '#333' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         />
       </Tooltip>
 
-      <div style={{ height: 1, background: '#444746', margin: '4px 6px' }} />
+      <div style={{ height: 1, background: _isLight ? 'rgba(0,0,0,0.1)' : '#444746', margin: '4px 6px' }} />
 
       <Tooltip title="一键重排素材" placement="left">
         <Button shape="circle" type="text"
@@ -226,7 +229,7 @@ const FloatingToolbar: React.FC = React.memo(() => {
               <rect x="3" y="14" width="7" height="7"></rect>
             </svg>
           }
-          style={{ width: 32, height: 32, minWidth: 32, color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: 32, height: 32, minWidth: 32, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         />
       </Tooltip>
       <Tooltip title="模型选择器" placement="left">
@@ -242,8 +245,8 @@ const FloatingToolbar: React.FC = React.memo(() => {
           icon={isSettingsWidgetVisible ? <StarFilled style={{ fontSize: 16 }} /> : <StarOutlined style={{ fontSize: 16 }} />}
           style={{
             width: 32, height: 32, minWidth: 32,
-            background: isSettingsWidgetVisible ? 'rgba(168,199,250,0.12)' : 'transparent',
-            color: isSettingsWidgetVisible ? '#A8C7FA' : '#E3E3E3',
+            background: isSettingsWidgetVisible ? (_isLight ? 'rgba(22,119,255,0.1)' : 'rgba(168,199,250,0.12)') : 'transparent',
+            color: isSettingsWidgetVisible ? (_isLight ? '#1677ff' : '#A8C7FA') : (_isLight ? '#333' : '#E3E3E3'),
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}
         />
@@ -265,8 +268,8 @@ const FloatingToolbar: React.FC = React.memo(() => {
           }
           style={{
             width: 32, height: 32, minWidth: 32,
-            background: isResourceWidgetVisible ? 'rgba(168,199,250,0.12)' : 'transparent',
-            color: isResourceWidgetVisible ? '#A8C7FA' : '#E3E3E3',
+            background: isResourceWidgetVisible ? (_isLight ? 'rgba(22,119,255,0.1)' : 'rgba(168,199,250,0.12)') : 'transparent',
+            color: isResourceWidgetVisible ? (_isLight ? '#1677ff' : '#A8C7FA') : (_isLight ? '#333' : '#E3E3E3'),
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}
         />

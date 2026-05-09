@@ -29,8 +29,9 @@ import './Playground.css';
  */
 const PlaygroundLayout: React.FC = () => {
   const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   return (
-    <div className="playground-root" style={{ height: '100vh', width: '100vw', overflow: 'hidden', background: '#1E1E20', position: 'relative' }}>
+    <div className="playground-root" style={{ height: '100vh', width: '100vw', overflow: 'hidden', background: _isLight ? '#f0f1f3' : '#1E1E20', position: 'relative' }}>
 
       {/* ═══════════ Layer 1: 无限画布层 (Canvas Layer) ═══════════ */}
       {/* 画布视口容器 — 包含画布 + 固定位置面板，保证鼠标事件冒泡链完整 */}
@@ -67,12 +68,12 @@ const Playground: React.FC = () => {
 
   return (
     <ConfigProvider theme={{
-      
+      algorithm: themeMode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
       token: {
-        colorPrimary: '#fff',
+        colorPrimary: themeMode === 'dark' ? '#fff' : '#1677ff',
         borderRadius: 12,
-        colorBgContainer: '#1E1F22',
-        colorBorder: 'rgba(255,255,255,0.08)'
+        colorBgContainer: themeMode === 'dark' ? '#1E1F22' : '#fff',
+        colorBorder: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'
       }
     }}>
       <PlaygroundProvider projectId={numericProjectId}>

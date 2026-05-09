@@ -11,6 +11,7 @@ import { useCanvas } from '../context/PlaygroundContext';
 import { usePlayground } from '../context/PlaygroundContext';
 import { getCategoryIcon } from '../constants';
 import ParamControl from './ParamControl';
+import { useThemeStore } from '../../../store/theme';
 
 const { Text } = Typography;
 
@@ -22,6 +23,8 @@ const SettingsWidget: React.FC = React.memo(() => {
     categories, activeCategory, handleCategoryChange,
     currentModel, setIsModelDrawerVisible,
   } = usePlayground();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
 
   // --- 高性能拖拽：全部通过 ref + DOM 操作，零 React re-render ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -89,10 +92,10 @@ const SettingsWidget: React.FC = React.memo(() => {
         left: settingsWidgetPos.x,
         top: settingsWidgetPos.y,
         width: 360,
-        background: '#1e1f20',
+        background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
         borderRadius: 24,
-        border: '1px solid #444746',
-        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+        border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746',
+        boxShadow: _isLight ? '0 4px 20px rgba(0,0,0,0.08)' : '0 4px 6px rgba(0,0,0,0.3)',
         backdropFilter: 'blur(24px)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         zIndex: 1000,
@@ -107,24 +110,24 @@ const SettingsWidget: React.FC = React.memo(() => {
         onDoubleClick={() => setIsSettingsCollapsed(!isSettingsCollapsed)}
         style={{
           padding: '0 24px', height: 48, minHeight: 48,
-          borderBottom: isSettingsCollapsed ? 'none' : '1px solid #444746',
+          borderBottom: isSettingsCollapsed ? 'none' : (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid #444746'),
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           cursor: 'grab',
-          background: 'rgba(255,255,255,0.02)',
+          background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
           userSelect: 'none',
         }}
       >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <AppstoreOutlined style={{ color: '#fff', fontSize: 16 }} />
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500, userSelect: 'none' }}>模型选择器</Text>
+          <AppstoreOutlined style={{ color: _isLight ? '#333' : '#fff', fontSize: 16 }} />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500, userSelect: 'none' }}>模型选择器</Text>
         </div>
         <Tooltip title="关闭">
           <div
             className="close-btn"
-            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
+            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)' }}
             onClick={() => setIsSettingsWidgetVisible(false)}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
-            onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255,255,255,0.5)'}
+            onMouseEnter={(e) => e.currentTarget.style.color = _isLight ? '#000' : '#fff'}
+            onMouseLeave={(e) => e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)'}
           >
             <CloseOutlined />
           </div>
@@ -140,7 +143,7 @@ const SettingsWidget: React.FC = React.memo(() => {
         pointerEvents: isSettingsCollapsed ? 'none' : 'auto'
       }}>
         {/* 类别切换器 */}
-        <div style={{ display: 'flex', gap: 4, background: 'rgba(0,0,0,0.3)', padding: 4, borderRadius: 16 }}>
+        <div style={{ display: 'flex', gap: 4, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.3)', padding: 4, borderRadius: 16 }}>
           {categories.map(cat => {
             const isActive = activeCategory === cat;
             return (
@@ -149,8 +152,8 @@ const SettingsWidget: React.FC = React.memo(() => {
                 onClick={() => handleCategoryChange(cat)}
                 style={{
                   flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: 12, cursor: 'pointer',
-                  background: isActive ? 'rgba(168,199,250,0.12)' : 'transparent',
-                  color: isActive ? '#A8C7FA' : 'rgba(255,255,255,0.6)',
+                  background: isActive ? (_isLight ? 'rgba(22,119,255,0.1)' : 'rgba(168,199,250,0.12)') : 'transparent',
+                  color: isActive ? (_isLight ? '#1677ff' : '#A8C7FA') : (_isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.6)'),
                   fontSize: 13, fontWeight: 500, transition: 'all 0.2s',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                 }}
@@ -167,20 +170,20 @@ const SettingsWidget: React.FC = React.memo(() => {
             onClick={() => setIsModelDrawerVisible(true)}
             className="studio-model-card"
             style={{
-              background: '#202124', borderRadius: 16, padding: '16px',
-              border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer',
+              background: _isLight ? '#f4f5f7' : '#202124', borderRadius: 16, padding: '16px',
+              border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', cursor: 'pointer',
               transition: 'all 0.2s ease', position: 'relative'
             }}
           >
-            <div style={{ color: '#E8eaed', fontSize: 17, fontWeight: 500, marginBottom: 8, paddingRight: 24 }}>
+            <div style={{ color: _isLight ? '#1f2937' : '#E8eaed', fontSize: 17, fontWeight: 500, marginBottom: 8, paddingRight: 24 }}>
               {currentModel?.name || '选择模型...'}
             </div>
-            <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 13, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
               {currentModel?.scheme_name
                 ? `${currentModel.scheme_name} · ${currentModel.model_id}`
                 : '选择适合的生成模型来处理你的工作流需求。'}
             </div>
-            <div style={{ position: 'absolute', right: 16, top: 16, color: 'rgba(255,255,255,0.4)' }}><DownOutlined /></div>
+            <div style={{ position: 'absolute', right: 16, top: 16, color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.4)' }}><DownOutlined /></div>
           </div>
         </div>
 
@@ -191,13 +194,13 @@ const SettingsWidget: React.FC = React.memo(() => {
 
         {currentModel && (!currentModel.params || currentModel.params.length === 0) && (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>该模型未绑定体验方案，无可配置参数</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 13 }}>该模型未绑定体验方案，无可配置参数</Text>
           </div>
         )}
 
         {!currentModel && (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>请先选择一个模型</Text>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 13 }}>请先选择一个模型</Text>
           </div>
         )}
       </div>

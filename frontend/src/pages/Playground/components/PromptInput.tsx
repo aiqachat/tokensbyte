@@ -21,6 +21,7 @@ import AssetPickerModal from './AssetPickerModal';
 import ImageEditorModal from './ImageEditorModal';
 import VideoEditorModal from './VideoEditorModal';
 import type { PluginAsset } from '../../../types';
+import { useThemeStore } from '../../../store/theme';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -47,6 +48,8 @@ const PromptInput: React.FC = React.memo(() => {
     paramValues, setParamValues,
   } = usePlayground();
   const { handleGenerate } = useGeneration();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [isFocused, setIsFocused] = useState(false);
   const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false);
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
@@ -372,28 +375,28 @@ const PromptInput: React.FC = React.memo(() => {
           transform: 'translateX(-50%)',
           width: 'calc(100% - 48px)',
           maxWidth: 720,
-          background: '#1e1f20',
+          background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
           backdropFilter: 'blur(20px)',
           borderRadius: 24,
-          border: '1px solid #444746',
+          border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+          boxShadow: _isLight ? '0 4px 12px rgba(0,0,0,0.06)' : '0 4px 6px rgba(0,0,0,0.3)',
           zIndex: 1000,
           padding: '24px 20px 12px 20px',
         }}
       >
-        <div style={{ height: 20, background: 'rgba(255,255,255,0.04)', borderRadius: 10, width: '30%', marginBottom: 28, animation: 'promptPulse 1.5s infinite' }} />
+        <div style={{ height: 20, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 10, width: '30%', marginBottom: 28, animation: 'promptPulse 1.5s infinite' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ height: 30, width: 100, background: 'rgba(255,255,255,0.04)', borderRadius: 8, animation: 'promptPulse 1.5s infinite' }} />
-            <div style={{ height: 30, width: 140, background: 'rgba(255,255,255,0.04)', borderRadius: 8, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 30, width: 100, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 8, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 30, width: 140, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 8, animation: 'promptPulse 1.5s infinite' }} />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ height: 32, width: 32, background: 'rgba(255,255,255,0.04)', borderRadius: 10, animation: 'promptPulse 1.5s infinite' }} />
-            <div style={{ height: 32, width: 32, background: 'rgba(255,255,255,0.04)', borderRadius: 10, animation: 'promptPulse 1.5s infinite' }} />
-            <div style={{ height: 32, width: 80, background: 'rgba(255,255,255,0.04)', borderRadius: 14, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 32, width: 32, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 10, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 32, width: 32, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 10, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 32, width: 80, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 14, animation: 'promptPulse 1.5s infinite' }} />
           </div>
         </div>
         <style>{`
@@ -415,16 +418,16 @@ const PromptInput: React.FC = React.memo(() => {
         transform: 'translateX(-50%)',
         width: 'calc(100% - 48px)',
         maxWidth: 720,
-        background: '#1e1f20',
+        background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
         backdropFilter: 'blur(20px)',
         borderRadius: 24,
-        border: `1px solid ${isFocused ? '#A8C7FA' : '#444746'}`,
+        border: `1px solid ${isFocused ? (_isLight ? '#1677ff' : '#A8C7FA') : (_isLight ? 'rgba(0,0,0,0.1)' : '#444746')}`,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
         boxShadow: isFocused
-          ? '0 4px 6px rgba(0,0,0,0.3), 0 0 0 1px #A8C7FA'
-          : '0 4px 6px rgba(0,0,0,0.3)',
+          ? (_isLight ? '0 4px 12px rgba(0,0,0,0.06), 0 0 0 1px #1677ff' : '0 4px 6px rgba(0,0,0,0.3), 0 0 0 1px #A8C7FA')
+          : (_isLight ? '0 4px 12px rgba(0,0,0,0.06)' : '0 4px 6px rgba(0,0,0,0.3)'),
         zIndex: 1000,
         transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
       }}
@@ -617,8 +620,8 @@ const PromptInput: React.FC = React.memo(() => {
             setTimeout(() => setMentionOpen(false), 200);
           }}
           style={{
-            color: renderRichPrompt ? 'transparent' : '#E8EAED',
-            caretColor: '#E8EAED',
+            color: renderRichPrompt ? 'transparent' : (_isLight ? '#1f2937' : '#E8EAED'),
+            caretColor: _isLight ? '#1f2937' : '#E8EAED',
             resize: 'none',
             padding: attachedAssets.length > 0 ? '8px 20px 8px 20px' : '18px 20px 8px 20px',
             fontSize: 15,
@@ -632,7 +635,10 @@ const PromptInput: React.FC = React.memo(() => {
         />
         <style>{`
           .prompt-textarea .ant-input {
-            caret-color: #E8EAED !important;
+            caret-color: ${_isLight ? '#1f2937' : '#E8EAED'} !important;
+          }
+          .prompt-textarea .ant-input::placeholder {
+            color: ${_isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.3)'} !important;
           }
           .mention-inline-thumb {
             position: absolute;
@@ -757,25 +763,25 @@ const PromptInput: React.FC = React.memo(() => {
                 minWidth: tokenName ? 'auto' : 30,
                 height: 30,
                 padding: tokenName ? '0 10px' : 0,
-                background: tokenName ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.15)',
+                background: tokenName ? (_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)') : (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)'),
+                border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.15)',
                 borderRadius: 8,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                color: tokenName ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.65)',
+                color: tokenName ? (_isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)') : (_isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.65)'),
                 fontSize: 13,
                 fontWeight: 500,
                 whiteSpace: 'nowrap',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+                e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = tokenName ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.06)';
+                e.currentTarget.style.background = tokenName ? (_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)') : (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)');
               }}
             >
               {!tokenName ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.65)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.65)' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M7 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z" />
                     <circle cx="7" cy="12" r="1.5" fill="currentColor" stroke="none" />
@@ -806,12 +812,12 @@ const PromptInput: React.FC = React.memo(() => {
                 gap: 5,
                 height: 30,
                 padding: '0 10px',
-                background: 'rgba(255, 255, 255, 0.1)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: _isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.1)',
+                border: _isLight ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: 8,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                color: '#fff',
+                color: _isLight ? '#1f2937' : '#fff',
                 fontSize: 13,
                 fontWeight: 500,
                 whiteSpace: 'nowrap',
@@ -820,12 +826,12 @@ const PromptInput: React.FC = React.memo(() => {
                 textOverflow: 'ellipsis',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
+                e.currentTarget.style.background = _isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.18)';
+                e.currentTarget.style.borderColor = _isLight ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.35)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                e.currentTarget.style.background = _isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = _isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.2)';
               }}
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -844,12 +850,12 @@ const PromptInput: React.FC = React.memo(() => {
                   gap: 5,
                   height: 30,
                   padding: '0 10px',
-                  background: paramValues.web_search ? 'rgba(82, 196, 26, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                  border: `1px solid ${paramValues.web_search ? 'rgba(82, 196, 26, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                  background: paramValues.web_search ? 'rgba(82, 196, 26, 0.15)' : (_isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)'),
+                  border: `1px solid ${paramValues.web_search ? 'rgba(82, 196, 26, 0.3)' : (_isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)')}`,
                   borderRadius: 8,
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  color: paramValues.web_search ? '#52c41a' : 'rgba(255, 255, 255, 0.45)',
+                  color: paramValues.web_search ? '#52c41a' : (_isLight ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.45)'),
                   fontSize: 13,
                   fontWeight: 500,
                   whiteSpace: 'nowrap',
@@ -887,12 +893,12 @@ const PromptInput: React.FC = React.memo(() => {
                     gap: 5,
                     height: 30,
                     padding: '0 10px',
-                    background: paramValues.image_role ? 'rgba(22, 119, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${paramValues.image_role ? 'rgba(22, 119, 255, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                    background: paramValues.image_role ? (_isLight ? 'rgba(22, 119, 255, 0.15)' : 'rgba(22, 119, 255, 0.15)') : (_isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)'),
+                    border: `1px solid ${paramValues.image_role ? (_isLight ? 'rgba(22, 119, 255, 0.3)' : 'rgba(22, 119, 255, 0.3)') : (_isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)')}`,
                     borderRadius: 8,
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
-                    color: paramValues.image_role ? '#1677ff' : 'rgba(255, 255, 255, 0.45)',
+                    color: paramValues.image_role ? '#1677ff' : (_isLight ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.45)'),
                     fontSize: 13,
                     fontWeight: 500,
                     whiteSpace: 'nowrap',
@@ -933,19 +939,19 @@ const PromptInput: React.FC = React.memo(() => {
                 width: 32,
                 height: 32,
                 borderRadius: 10,
-                background: 'rgba(255, 255, 255, 0.04)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
+                background: _isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.04)',
+                border: _isLight ? '1px solid rgba(0, 0, 0, 0.08)' : '1px solid rgba(255, 255, 255, 0.08)',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                color: 'rgba(255,255,255,0.65)',
+                color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                e.currentTarget.style.color = '#fff';
+                e.currentTarget.style.background = _isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.color = _isLight ? '#000' : '#fff';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-                e.currentTarget.style.color = 'rgba(255,255,255,0.65)';
+                e.currentTarget.style.background = _isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.04)';
+                e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)';
               }}
             >
               <AudioOutlined style={{ fontSize: 16 }} />
@@ -968,19 +974,19 @@ const PromptInput: React.FC = React.memo(() => {
                   width: 32,
                   height: 32,
                   borderRadius: 10,
-                  background: attachedAssets.length > 0 ? 'rgba(22,119,255,0.15)' : 'rgba(255, 255, 255, 0.04)',
-                  border: attachedAssets.length > 0 ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: attachedAssets.length > 0 ? 'rgba(22,119,255,0.15)' : (_isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.04)'),
+                  border: attachedAssets.length > 0 ? '1px solid rgba(22,119,255,0.3)' : (_isLight ? '1px solid rgba(0, 0, 0, 0.08)' : '1px solid rgba(255, 255, 255, 0.08)'),
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  color: attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.65)',
+                  color: attachedAssets.length > 0 ? '#1677ff' : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)'),
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.25)' : 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : '#fff';
+                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.25)' : (_isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.1)');
+                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : (_isLight ? '#000' : '#fff');
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.15)' : 'rgba(255, 255, 255, 0.04)';
-                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.65)';
+                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.15)' : (_isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.04)');
+                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)');
                 }}
               >
                 <PlusCircleOutlined style={{ fontSize: 16 }} />
@@ -1004,14 +1010,14 @@ const PromptInput: React.FC = React.memo(() => {
               cursor: currentModel && prompt.trim() && !generating ? 'pointer' : 'not-allowed',
               transition: 'all 0.2s ease',
               background: currentModel && prompt.trim() && !generating
-                ? 'rgba(255, 255, 255, 0.15)'
+                ? (_isLight ? '#1677ff' : 'rgba(255, 255, 255, 0.15)')
                 : 'transparent',
               border: currentModel && prompt.trim() && !generating
                 ? '1px solid transparent'
-                : '1px solid rgba(255, 255, 255, 0.08)',
+                : (_isLight ? '1px solid rgba(0, 0, 0, 0.08)' : '1px solid rgba(255, 255, 255, 0.08)'),
               color: currentModel && prompt.trim() && !generating
                 ? '#fff'
-                : 'rgba(255, 255, 255, 0.25)',
+                : (_isLight ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.25)'),
               fontSize: 15,
               fontWeight: 500,
               whiteSpace: 'nowrap',
@@ -1020,12 +1026,12 @@ const PromptInput: React.FC = React.memo(() => {
             }}
             onMouseEnter={(e) => {
               if (currentModel && prompt.trim() && !generating) {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.22)';
+                e.currentTarget.style.background = _isLight ? '#4096ff' : 'rgba(255, 255, 255, 0.22)';
               }
             }}
             onMouseLeave={(e) => {
               if (currentModel && prompt.trim() && !generating) {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.background = _isLight ? '#1677ff' : 'rgba(255, 255, 255, 0.15)';
               }
             }}
           >

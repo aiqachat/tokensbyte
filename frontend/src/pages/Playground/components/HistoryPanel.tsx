@@ -15,6 +15,7 @@ import { usePlayground, useCanvas } from '../context/PlaygroundContext';
 import type { PlaygroundProject, PlaygroundAsset } from '../types';
 import request from '../../../utils/request';
 import { getFullUrl, getResultDisplayUrl } from '../utils/resultExtractor';
+import { useThemeStore } from '../../../store/theme';
 
 const { Text } = Typography;
 
@@ -35,6 +36,8 @@ const formatDateGroup = (dateStr: string): string => {
 const HistoryPanel: React.FC = () => {
   const [position, setPosition] = useState({ x: 24, y: 80 });
   const [activeTab, setActiveTab] = useState<'my' | 'shared'>('my');
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [searchKeyword, setSearchKeyword] = useState('');
   const [hoveredProjectId, setHoveredProjectId] = useState<number | null>(null);
   const { modal, message: appMessage } = App.useApp();
@@ -208,10 +211,10 @@ const HistoryPanel: React.FC = () => {
   const handleDeleteProject = useCallback((e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
     modal.confirm({
-      title: <span style={{ color: '#E3E3E3' }}>确认删除此项目？</span>,
+      title: <span style={{ color: _isLight ? '#1f2937' : '#E3E3E3' }}>确认删除此项目？</span>,
       content: <span style={{ color: 'rgba(255,77,79,0.8)' }}>警告：此操作为物理删除，删除后该项目下的所有内容和数据将永久丢失，无法恢复！</span>,
-      wrapClassName: 'dark-confirm-modal',
-      className: 'dark-confirm-modal',
+      wrapClassName: _isLight ? '' : 'dark-confirm-modal',
+      className: _isLight ? '' : 'dark-confirm-modal',
       okText: '确定删除',
       okType: 'danger',
       cancelText: '取消',
@@ -287,11 +290,11 @@ const HistoryPanel: React.FC = () => {
         width: 320,
         height: 'auto',
         maxHeight: 'calc(100vh - 180px)',
-        background: 'rgba(26, 27, 30, 0.95)',
+        background: _isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(26, 27, 30, 0.95)',
         backdropFilter: 'blur(20px)',
         borderRadius: 20,
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
+        boxShadow: _isLight ? '0 12px 40px rgba(0,0,0,0.08)' : '0 24px 60px rgba(0,0,0,0.5)',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 100,
@@ -317,8 +320,8 @@ const HistoryPanel: React.FC = () => {
           style={{
             flex: 1, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
             gap: 8, borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: 'pointer',
-            background: activeTab === 'my' ? 'rgba(255,255,255,0.1)' : 'transparent',
-            color: activeTab === 'my' ? '#fff' : 'rgba(255,255,255,0.45)',
+            background: activeTab === 'my' ? (_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)') : 'transparent',
+            color: activeTab === 'my' ? (_isLight ? '#000' : '#fff') : (_isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)'),
             transition: 'all 0.2s'
           }}
         >
@@ -330,8 +333,8 @@ const HistoryPanel: React.FC = () => {
           style={{
             flex: 1, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
             gap: 8, borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: 'pointer',
-            background: activeTab === 'shared' ? 'rgba(255,255,255,0.1)' : 'transparent',
-            color: activeTab === 'shared' ? '#fff' : 'rgba(255,255,255,0.45)',
+            background: activeTab === 'shared' ? (_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)') : 'transparent',
+            color: activeTab === 'shared' ? (_isLight ? '#000' : '#fff') : (_isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)'),
             transition: 'all 0.2s'
           }}
         >
@@ -366,11 +369,11 @@ const HistoryPanel: React.FC = () => {
           value={searchKeyword}
           onChange={(e) => setSearchKeyword(e.target.value)}
           style={{
-            background: 'rgba(255,255,255,0.05)',
+            background: _isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)',
             borderRadius: 12,
             height: 40,
             fontSize: 14,
-            color: '#fff',
+            color: _isLight ? '#000' : '#fff',
             paddingLeft: 12,
           }}
         />
@@ -386,7 +389,7 @@ const HistoryPanel: React.FC = () => {
             {/* 当前会话生成历史 */}
             {sessionHistory.length > 0 && (
               <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: 12 }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', marginBottom: 12 }}>
                   当前会话
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -398,7 +401,7 @@ const HistoryPanel: React.FC = () => {
                         padding: '8px', borderRadius: 12,
                         cursor: 'pointer', transition: 'all 0.2s',
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                      onMouseEnter={(e) => e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
                       <div style={{
@@ -417,10 +420,10 @@ const HistoryPanel: React.FC = () => {
                         )}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 500, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: 14, fontWeight: 500, color: _isLight ? '#333' : '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {item.title}
                         </div>
-                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                           {item.type === 'video' ? <VideoCameraOutlined /> : <PictureOutlined />}
                           <span>{item.date}</span>
                         </div>
@@ -434,7 +437,7 @@ const HistoryPanel: React.FC = () => {
             {/* 项目列表 */}
             {groupedProjects.map((group, idx) => (
               <div key={idx} style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: 12 }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', marginBottom: 12 }}>
                   {group.group}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -451,7 +454,7 @@ const HistoryPanel: React.FC = () => {
                       }}
                       onMouseEnter={(e) => {
                         setHoveredProjectId(project.id);
-                        if (project.id !== currentProjectId) e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                        if (project.id !== currentProjectId) e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)';
                       }}
                       onMouseLeave={(e) => {
                         setHoveredProjectId(null);
@@ -492,14 +495,14 @@ const HistoryPanel: React.FC = () => {
                           </div>
                         ) : (
                           <>
-                            <div style={{ fontSize: 14, fontWeight: 500, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontSize: 14, fontWeight: 500, color: _isLight ? '#333' : '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {project.name}
                             </div>
-                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 2, fontFamily: 'monospace' }}>
+                            <div style={{ fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)', marginTop: 2, fontFamily: 'monospace' }}>
                               ID: {project.id}
                             </div>
 
-                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                            <div style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', marginTop: 2 }}>
                               {new Date(project.updated_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
                             </div>
                           </>
@@ -519,11 +522,11 @@ const HistoryPanel: React.FC = () => {
                               style={{
                                 width: 26, height: 26, borderRadius: 6,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: 'rgba(255,255,255,0.4)', cursor: 'pointer',
+                                color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', cursor: 'pointer',
                                 transition: 'all 0.15s',
                               }}
-                              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#fff'; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = _isLight ? '#000' : '#fff'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)'; }}
                             >
                               <EditOutlined style={{ fontSize: 12 }} />
                             </div>
@@ -552,7 +555,7 @@ const HistoryPanel: React.FC = () => {
             ))}
 
             {projects.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.25)' }}>
+              <div style={{ textAlign: 'center', padding: '40px 0', color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)' }}>
                 <AppstoreOutlined style={{ fontSize: 32, display: 'block', marginBottom: 12 }} />
                 <div style={{ fontSize: 14 }}>暂无项目</div>
                 <div style={{ fontSize: 12, marginTop: 4 }}>点击右上角 + 创建新项目</div>
@@ -572,17 +575,17 @@ const HistoryPanel: React.FC = () => {
       {storageStats && (
         <div style={{
           padding: '16px 20px',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
-          background: 'rgba(0,0,0,0.2)',
+          borderTop: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
+          background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(0,0,0,0.2)',
           flexShrink: 0,
         }}>
           {/* 存储空间进度条 */}
           <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
               <span>存储空间</span>
               <span>{storageStats.total_size_mb ? storageStats.total_size_mb.toFixed(2) : 0} MB / {storageStats.quota_mb} MB</span>
             </div>
-            <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{ height: 6, background: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{ 
                 height: '100%', 
                 width: `${storageStats.usage_percent || 0}%`, 
@@ -594,11 +597,11 @@ const HistoryPanel: React.FC = () => {
           
           {/* 项目限制 */}
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
               <span>创建项目数量</span>
               <span>{projects.length} / {storageStats.max_projects} 个</span>
             </div>
-            <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{ height: 6, background: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{ 
                 height: '100%', 
                 width: `${Math.min((projects.length / (storageStats.max_projects || 1)) * 100, 100)}%`, 

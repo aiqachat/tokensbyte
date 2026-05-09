@@ -6,6 +6,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useCanvas } from '../context/PlaygroundContext';
 import { useCanvasInteraction } from '../hooks/useCanvasInteraction';
+import { useThemeStore } from '../../../store/theme';
 
 /** 检测是否为 Mac 系统 */
 const isMac = (): boolean => {
@@ -33,6 +34,8 @@ const ZoomIndicator: React.FC = React.memo(() => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const percent = Math.round(canvasTransform.scale * 100);
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
 
   const modKey = getModKey();
   const shiftKey = getShiftKey();
@@ -128,11 +131,11 @@ const ZoomIndicator: React.FC = React.memo(() => {
             bottom: 52,
             right: 0,
             minWidth: 240,
-            background: 'rgba(28, 30, 34, 0.96)',
+            background: _isLight ? 'rgba(255,255,255,0.96)' : 'rgba(28, 30, 34, 0.96)',
             backdropFilter: 'blur(20px)',
             borderRadius: 12,
-            border: '1px solid rgba(255,255,255,0.08)',
-            boxShadow: '0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)',
+            border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
+            boxShadow: _isLight ? '0 12px 40px rgba(0,0,0,0.12)' : '0 12px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)',
             padding: '6px 0',
             animation: 'zoomMenuFadeIn 0.18s ease-out',
           }}
@@ -147,7 +150,7 @@ const ZoomIndicator: React.FC = React.memo(() => {
                   justifyContent: 'space-between',
                   padding: '10px 16px',
                   cursor: 'pointer',
-                  color: 'rgba(255,255,255,0.85)',
+                  color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)',
                   fontSize: 14,
                   fontWeight: 400,
                   lineHeight: '20px',
@@ -156,7 +159,7 @@ const ZoomIndicator: React.FC = React.memo(() => {
                   margin: '0 4px',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.07)';
+                  e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.07)';
                   e.currentTarget.style.borderRadius = '6px';
                 }}
                 onMouseLeave={(e) => {
@@ -166,7 +169,7 @@ const ZoomIndicator: React.FC = React.memo(() => {
               >
                 <span>{item.label}</span>
                 <span style={{
-                  color: 'rgba(255,255,255,0.35)',
+                  color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)',
                   fontSize: 13,
                   fontWeight: 400,
                   letterSpacing: '0.5px',
@@ -180,7 +183,7 @@ const ZoomIndicator: React.FC = React.memo(() => {
               {item.dividerAfter && (
                 <div style={{
                   height: 1,
-                  background: 'rgba(255,255,255,0.06)',
+                  background: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)',
                   margin: '4px 12px',
                 }} />
               )}
@@ -200,14 +203,14 @@ const ZoomIndicator: React.FC = React.memo(() => {
           minWidth: 72,
           height: 40,
           padding: '0 16px',
-          background: open ? 'rgba(30, 32, 36, 0.95)' : 'rgba(20, 21, 23, 0.85)',
+          background: open ? (_isLight ? 'rgba(240,241,243,0.95)' : 'rgba(30, 32, 36, 0.95)') : (_isLight ? 'rgba(255,255,255,0.85)' : 'rgba(20, 21, 23, 0.85)'),
           backdropFilter: 'blur(12px)',
           borderRadius: 20,
-          border: `1px solid ${open ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)'}`,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+          border: `1px solid ${open ? (_isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)') : (_isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)')}`,
+          boxShadow: _isLight ? '0 4px 16px rgba(0,0,0,0.08)' : '0 4px 16px rgba(0,0,0,0.4)',
           cursor: 'pointer',
           transition: 'all 0.2s ease',
-          color: open ? '#fff' : 'rgba(255,255,255,0.7)',
+          color: open ? (_isLight ? '#000' : '#fff') : (_isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.7)'),
           fontSize: 14,
           fontWeight: 500,
           letterSpacing: '0.5px',
@@ -215,16 +218,16 @@ const ZoomIndicator: React.FC = React.memo(() => {
         }}
         onMouseEnter={(e) => {
           if (!open) {
-            e.currentTarget.style.background = 'rgba(30, 32, 36, 0.95)';
-            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
-            e.currentTarget.style.color = '#fff';
+            e.currentTarget.style.background = _isLight ? 'rgba(240,241,243,0.95)' : 'rgba(30, 32, 36, 0.95)';
+            e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)';
+            e.currentTarget.style.color = _isLight ? '#000' : '#fff';
           }
         }}
         onMouseLeave={(e) => {
           if (!open) {
-            e.currentTarget.style.background = 'rgba(20, 21, 23, 0.85)';
-            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
-            e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
+            e.currentTarget.style.background = _isLight ? 'rgba(255,255,255,0.85)' : 'rgba(20, 21, 23, 0.85)';
+            e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
+            e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.7)';
           }
         }}
       >

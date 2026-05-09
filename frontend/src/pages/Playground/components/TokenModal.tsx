@@ -7,12 +7,15 @@ import { CloseOutlined, CheckCircleOutlined, PlusOutlined } from '@ant-design/ic
 import { useNavigate } from 'react-router-dom';
 import { usePlayground } from '../context/PlaygroundContext';
 import dayjs from 'dayjs';
+import { useThemeStore } from '../../../store/theme';
 
 const TokenModal: React.FC = React.memo(() => {
   const {
     isTokenModalVisible, setIsTokenModalVisible,
     apiTokens, selectedTokenKey, setSelectedTokenKey,
   } = usePlayground();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const navigate = useNavigate();
 
   return (
@@ -26,27 +29,27 @@ const TokenModal: React.FC = React.memo(() => {
         mask: { backgroundColor: 'rgba(0, 0, 0, 0.45)' },
         body: { padding: '32px' },
         content: { 
-          backgroundColor: 'rgba(28, 29, 31, 0.65)', 
+          backgroundColor: _isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(28, 29, 31, 0.65)', 
           backdropFilter: 'blur(32px) saturate(150%)', 
           WebkitBackdropFilter: 'blur(32px) saturate(150%)',
           borderRadius: 20, 
           padding: 0, 
           overflow: 'hidden',
-          border: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: '0 32px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)'
+          border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)',
+          boxShadow: _isLight ? '0 12px 40px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.5)' : '0 32px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)'
         },
       } as any}
-      closeIcon={<CloseOutlined style={{ color: 'rgba(255,255,255,0.45)' }} />}
+      closeIcon={<CloseOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }} />}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h2 style={{ fontSize: 20, margin: 0, color: '#E8EAED', fontWeight: 600 }}>关联API密钥</h2>
+        <h2 style={{ fontSize: 20, margin: 0, color: _isLight ? '#1f2937' : '#E8EAED', fontWeight: 600 }}>关联API密钥</h2>
         <Button 
           onClick={() => {
             setIsTokenModalVisible(false);
             navigate('/tokens');
           }}
           style={{
-            background: '#E8EAED', color: '#000', border: 'none', borderRadius: 6, fontWeight: 500, padding: '4px 16px', height: 32
+            background: _isLight ? '#f0f0f0' : '#E8EAED', color: '#000', border: 'none', borderRadius: 6, fontWeight: 500, padding: '4px 16px', height: 32
           }}
         >
           创建密钥
@@ -54,15 +57,15 @@ const TokenModal: React.FC = React.memo(() => {
       </div>
 
       <div style={{
-        background: 'rgba(255,255,255,0.02)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
+        border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
         borderRadius: 8,
         padding: '16px',
         display: 'flex',
         gap: 12,
         marginBottom: 24
       }}>
-        <div style={{ color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>
+        <div style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.85)', marginTop: 2 }}>
           <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
             <line x1="12" y1="9" x2="12" y2="13" />
@@ -70,12 +73,12 @@ const TokenModal: React.FC = React.memo(() => {
           </svg>
         </div>
         <div>
-          <div style={{ color: '#E8EAED', fontSize: 14, fontWeight: 500, marginBottom: 4 }}>保护好您的密钥，请不要泄露</div>
+          <div style={{ color: _isLight ? '#1f2937' : '#E8EAED', fontSize: 14, fontWeight: 500, marginBottom: 4 }}>保护好您的密钥，请不要泄露</div>
         </div>
       </div>
 
       <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr 1.2fr 40px', padding: '0 16px 12px 16px', color: 'rgba(255,255,255,0.45)', fontSize: 13, alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr 1.2fr 40px', padding: '0 16px 12px 16px', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 13, alignItems: 'center' }}>
           <div>API 密钥 <span style={{ fontSize: 12, opacity: 0.6, marginLeft: 8 }}>(点击已选密钥可取消选择)</span></div>
           <div>可用额度</div>
           <div>创建时间</div>
@@ -84,11 +87,11 @@ const TokenModal: React.FC = React.memo(() => {
         </div>
 
         {apiTokens.length === 0 ? (
-          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)', padding: '40px 20px' }}>
+          <div style={{ textAlign: 'center', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', padding: '40px 20px' }}>
             <span style={{ fontSize: 14 }}>暂无可用的接口密钥</span>
           </div>
         ) : (
-          <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden' }}>
             {apiTokens.map((t, index) => {
               // 使用数字格式日期时间
               const createdStr = t.created_at ? dayjs(t.created_at).format('YYYY-MM-DD HH:mm:ss') : '-';
@@ -131,29 +134,29 @@ const TokenModal: React.FC = React.memo(() => {
                     gridTemplateColumns: '2fr 1fr 1.2fr 1.2fr 40px',
                     alignItems: 'center',
                     padding: '16px',
-                    background: selectedTokenKey === t.token_key ? 'rgba(255,255,255,0.06)' : 'transparent',
-                    borderBottom: index < apiTokens.length - 1 ? '1px solid rgba(255,255,255,0.08)' : 'none',
+                    background: selectedTokenKey === t.token_key ? (_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)') : 'transparent',
+                    borderBottom: index < apiTokens.length - 1 ? (_isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)') : 'none',
                     cursor: 'pointer',
                     transition: 'background 0.2s',
                   }}
                   onMouseEnter={(e) => {
-                    if (selectedTokenKey !== t.token_key) e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                    if (selectedTokenKey !== t.token_key) e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)';
                   }}
                   onMouseLeave={(e) => {
                     if (selectedTokenKey !== t.token_key) e.currentTarget.style.background = 'transparent';
                   }}
                 >
-                  <div style={{ fontFamily: 'monospace', color: '#E8EAED', fontSize: 14 }}>
+                  <div style={{ fontFamily: 'monospace', color: _isLight ? '#1f2937' : '#E8EAED', fontSize: 14 }}>
                     {maskedKey}
                   </div>
-                  <div style={{ color: isQuotaExceeded ? '#ff4d4f' : 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>
+                  <div style={{ color: isQuotaExceeded ? '#ff4d4f' : (_isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)'), fontSize: 14, fontWeight: 500 }}>
                     {quotaText}
                   </div>
-                  <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14 }}>{createdStr}</div>
-                  <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 14 }}>{usedStr}</div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', color: 'rgba(255,255,255,0.45)' }}>
+                  <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 14 }}>{createdStr}</div>
+                  <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 14 }}>{usedStr}</div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
                     {selectedTokenKey === t.token_key ? (
-                      <CheckCircleOutlined style={{ color: '#fff', fontSize: 16 }} />
+                      <CheckCircleOutlined style={{ color: _isLight ? '#1677ff' : '#fff', fontSize: 16 }} />
                     ) : (
                       <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ cursor: 'not-allowed' }}>
                         <polyline points="3 6 5 6 21 6"></polyline>

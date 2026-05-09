@@ -2,12 +2,15 @@ import React, { useRef, useCallback, useEffect, useMemo } from 'react';
 import { Typography, Tooltip } from 'antd';
 import { FolderOpenOutlined, CloseOutlined } from '@ant-design/icons';
 import { useCanvas, usePlayground } from '../context/PlaygroundContext';
+import { useThemeStore } from '../../../store/theme';
 
 const { Text } = Typography;
 
 const ResourceManagerWidget: React.FC = React.memo(() => {
   const { resourceWidgetPos, setResourceWidgetPos, nodes, setNodes, maxZIndex, setMaxZIndex } = useCanvas();
   const { isResourceWidgetVisible, setIsResourceWidgetVisible } = usePlayground();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
 
   const handleRestoreNode = useCallback((id: string) => {
     const newZ = maxZIndex + 1;
@@ -89,10 +92,10 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
         left: resourceWidgetPos.x,
         top: resourceWidgetPos.y,
         width: 320,
-        background: '#1e1f20',
+        background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
         borderRadius: 24,
-        border: '1px solid #444746',
-        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+        border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746',
+        boxShadow: _isLight ? '0 4px 20px rgba(0,0,0,0.08)' : '0 4px 6px rgba(0,0,0,0.3)',
         backdropFilter: 'blur(24px)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         zIndex: 1000,
@@ -106,24 +109,24 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
         onMouseDown={handleMouseDown}
         style={{
           padding: '0 24px', height: 48, minHeight: 48,
-          borderBottom: '1px solid #444746',
+          borderBottom: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid #444746',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           cursor: 'grab',
-          background: 'rgba(255,255,255,0.02)',
+          background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
           userSelect: 'none',
         }}
       >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <FolderOpenOutlined style={{ color: '#fff', fontSize: 16 }} />
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>资源管理器</Text>
+          <FolderOpenOutlined style={{ color: _isLight ? '#333' : '#fff', fontSize: 16 }} />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>资源管理器</Text>
         </div>
         <Tooltip title="关闭">
           <div
             className="close-btn"
-            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
+            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)' }}
             onClick={() => setIsResourceWidgetVisible(false)}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
-            onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255,255,255,0.5)'}
+            onMouseEnter={(e) => e.currentTarget.style.color = _isLight ? '#000' : '#fff'}
+            onMouseLeave={(e) => e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)'}
           >
             <CloseOutlined />
           </div>
@@ -135,7 +138,7 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
         flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px'
       }}>
         {resources.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.3)' }}>
+          <div style={{ textAlign: 'center', padding: '40px 0', color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }}>
             暂无生成的资源
           </div>
         ) : (
@@ -160,7 +163,7 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
                   style={{ 
                     position: 'relative', width: '100%', height: '100%',
                     background: '#000', borderRadius: 12, overflow: 'hidden', 
-                    border: '1px solid #444746', cursor: 'pointer',
+                    border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center'
                   }}
                 >

@@ -26,12 +26,11 @@ export const RESOLUTION_MAP: Record<string, Record<string, string>> = {
 
 /** 获取类别对应的图标 */
 export const getCategoryIcon = (cat: string, isActive: boolean, size = 16) => {
-  const color = isActive ? '#000' : 'rgba(255,255,255,0.45)';
-  if (cat === 'video' || cat.includes('视频')) return React.createElement(VideoCameraOutlined, { style: { color, fontSize: size } });
-  if (cat === 'image' || cat.includes('图片')) return React.createElement(PictureOutlined, { style: { color, fontSize: size } });
-  if (cat === 'chat' || cat.includes('聊天')) return React.createElement(MessageOutlined, { style: { color, fontSize: size } });
-  if (cat === 'audio' || cat.includes('音频')) return React.createElement(AudioOutlined, { style: { color, fontSize: size } });
-  return React.createElement(CompassOutlined, { style: { color, fontSize: size } });
+  if (cat === 'video' || cat.includes('视频')) return React.createElement(VideoCameraOutlined, { style: { fontSize: size } });
+  if (cat === 'image' || cat.includes('图片')) return React.createElement(PictureOutlined, { style: { fontSize: size } });
+  if (cat === 'chat' || cat.includes('聊天')) return React.createElement(MessageOutlined, { style: { fontSize: size } });
+  if (cat === 'audio' || cat.includes('音频')) return React.createElement(AudioOutlined, { style: { fontSize: size } });
+  return React.createElement(CompassOutlined, { style: { fontSize: size } });
 };
 
 /** 获取类别的中文标签 */

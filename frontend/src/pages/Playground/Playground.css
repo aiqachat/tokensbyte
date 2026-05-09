@@ -1,4 +1,6 @@
-/* Playground 极致黑暗控制台高级覆盖样式 */
+/* Playground 深色控制台高级覆盖样式 */
+
+/* === 下拉菜单 === */
 .dark-select-dropdown {
     background-color: #1A1C20 !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -16,14 +18,14 @@
     color: #fff !important;
 }
 
-/* TextArea focus */
+/* === TextArea 聚焦 === */
 .playground-root .ant-input:focus,
 .playground-root .ant-input-focused {
     border-color: transparent !important;
     box-shadow: none !important;
 }
 
-/* AI Studio Modal 弹窗深度订制 */
+/* === AI Studio Modal 弹窗深度订制 === */
 .studio-model-modal-wrap .ant-modal-content {
     background-color: #17181C !important;
     border: 1px solid rgba(255,255,255,0.08) !important;
@@ -53,20 +55,15 @@
     border-color: rgba(255,255,255,0.3) !important;
 }
 
-/* 隐藏自带的边框颜色，接管自定义的高级光效设计 */
+/* === Radio 按钮组 — 自动适配主题 === */
 .playground-root .ant-radio-button-wrapper {
-    color: rgba(255,255,255,0.4) !important;
     transition: all 0.2s !important;
 }
-.playground-root .ant-radio-button-wrapper-checked {
-    color: #fff !important;
-}
-
 .playground-root .ant-radio-button-wrapper::before {
     display: none !important; /* 隐藏单选按钮间的默认竖线 */
 }
 
-/* Prompt Assets Scrollbar */
+/* === Prompt Assets Scrollbar === */
 .prompt-assets-scroll::-webkit-scrollbar {
     height: 6px;
 }
@@ -74,9 +71,18 @@
     background: transparent;
 }
 .prompt-assets-scroll::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(128,128,128,0.2);
     border-radius: 4px;
 }
 .prompt-assets-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(128,128,128,0.3);
+}
+/* === Light Confirm Modal === */
+.light-confirm-modal .ant-modal-content {
+    background-color: #ffffff !important;
+}
+.light-confirm-modal .ant-modal-title,
+.light-confirm-modal .ant-modal-confirm-title,
+.light-confirm-modal .ant-modal-confirm-content {
+    color: rgba(0,0,0,0.85) !important;
 }

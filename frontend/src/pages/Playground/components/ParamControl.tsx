@@ -7,6 +7,7 @@ import { Typography, Select, Input, InputNumber, Switch, Slider } from 'antd';
 import type { SchemeParam } from '../types';
 import { RESOLUTION_MAP } from '../constants';
 import { usePlayground } from '../context/PlaygroundContext';
+import { useThemeStore } from '../../../store/theme';
 
 const { Text } = Typography;
 
@@ -16,6 +17,8 @@ const SliderControl: React.FC<{
   value: any;
   onChange: (v: number) => void;
 }> = React.memo(({ param, value, onChange }) => {
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const min = param.min ?? 0;
   const max = param.max ?? 100;
   const step = param.step ?? 1;
@@ -64,7 +67,7 @@ const SliderControl: React.FC<{
 
   return (
     <div>
-      <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+      <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <Slider
           style={{ flex: 1 }}
@@ -85,9 +88,9 @@ const SliderControl: React.FC<{
           onChange={handleInputChange}
           style={{
             width: 68,
-            background: '#222',
+            background: _isLight ? '#fff' : '#222',
             borderRadius: 8,
-            borderColor: 'rgba(255,255,255,0.12)',
+            borderColor: _isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)',
             textAlign: 'center',
             fontFamily: 'monospace',
             fontSize: 13,
@@ -95,7 +98,7 @@ const SliderControl: React.FC<{
           controls={false}
         />
       </div>
-      {param.hint && <Text style={{ display: 'block', marginTop: 4, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{param.hint}</Text>}
+      {param.hint && <Text style={{ display: 'block', marginTop: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.3)' }}>{param.hint}</Text>}
     </div>
   );
 });
@@ -107,6 +110,8 @@ interface Props {
 
 const ParamControl: React.FC<Props> = React.memo(({ param }) => {
   const { paramValues, setParamValues } = usePlayground();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const value = paramValues[param.key] ?? param.default;
 
   // resolution + select 动态追加像素标注
@@ -114,12 +119,12 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
     const currentRatio = paramValues['ratio'] || '';
     return (
       <div key={param.key}>
-        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <Select
           style={{ width: '100%' }} size="large"
           value={value}
           onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))}
-          popupClassName="dark-select-dropdown"
+          popupClassName={_isLight ? '' : 'dark-select-dropdown'}
           options={param.options.map(opt => {
             const res = String(opt);
             const pixels = RESOLUTION_MAP[res]?.[currentRatio];
@@ -133,7 +138,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
   if (param.type === 'radio' && param.options) {
     return (
       <div key={param.key}>
-        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <div style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {param.options.map(opt => {
             const isActive = value === opt;
@@ -144,10 +149,10 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
                 style={{
                   width: 64, height: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer',
-                  background: isActive ? '#33373E' : '#17181A',
+                  background: isActive ? (_isLight ? '#e6f4ff' : '#33373E') : (_isLight ? '#f5f5f5' : '#17181A'),
                   borderRadius: 12,
-                  border: isActive ? '1.5px solid rgba(255,255,255,0.35)' : '1.5px solid transparent',
-                  color: isActive ? '#fff' : 'rgba(255,255,255,0.45)',
+                  border: isActive ? (_isLight ? '1.5px solid #1677ff' : '1.5px solid rgba(255,255,255,0.35)') : '1.5px solid transparent',
+                  color: isActive ? (_isLight ? '#1677ff' : '#fff') : (_isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)'),
                   transition: 'all 0.2s',
                   fontSize: 12, fontWeight: 500,
                 }}
@@ -183,15 +188,15 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
   if (param.type === 'select' && param.options) {
     return (
       <div key={param.key}>
-        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <Select
           style={{ width: '100%' }} size="large"
           value={value}
           onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))}
-          popupClassName="dark-select-dropdown"
+          popupClassName={_isLight ? '' : 'dark-select-dropdown'}
           options={param.options.map(opt => ({ label: `${opt}${param.unit ? ' ' + param.unit : ''}`, value: opt }))}
         />
-        {param.hint && <Text style={{ display: 'block', marginTop: 4, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{param.hint}</Text>}
+        {param.hint && <Text style={{ display: 'block', marginTop: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.3)' }}>{param.hint}</Text>}
       </div>
     );
   }
@@ -199,16 +204,16 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
   if (param.type === 'number') {
     return (
       <div key={param.key}>
-        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <InputNumber
           size="large"
-          style={{ width: '100%', background: '#17181A' }}
+          style={{ width: '100%', background: _isLight ? '#fff' : '#17181A' }}
           value={value}
           min={param.min ?? undefined}
           max={param.max ?? undefined}
           onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))}
         />
-        {param.hint && <Text style={{ display: 'block', marginTop: 4, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{param.hint}</Text>}
+        {param.hint && <Text style={{ display: 'block', marginTop: 4, fontSize: 11, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.3)' }}>{param.hint}</Text>}
       </div>
     );
   }
@@ -216,7 +221,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
   if (param.type === 'switch') {
     return (
       <div key={param.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <Switch
           checked={!!value}
           onChange={(v) => setParamValues(prev => ({ ...prev, [param.key]: v }))}
@@ -232,13 +237,13 @@ const ParamControl: React.FC<Props> = React.memo(({ param }) => {
   if (param.type === 'input') {
     return (
       <div key={param.key}>
-        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
+        <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
         <Input
           size="large"
           value={value || ''}
           onChange={(e) => setParamValues(prev => ({ ...prev, [param.key]: e.target.value }))}
           placeholder={param.placeholder || ''}
-          style={{ background: '#17181A', borderColor: 'rgba(255,255,255,0.08)' }}
+          style={{ background: _isLight ? '#fff' : '#17181A', borderColor: _isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.08)' }}
         />
       </div>
     );

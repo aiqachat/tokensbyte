@@ -50,6 +50,7 @@ const formatDateGroup = (dateStr: string): string => {
 
 const PlaygroundHome: React.FC = () => {
   const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const navigate = useNavigate();
   const { modal, message: appMessage } = App.useApp();
   const { user, logout } = useAuthStore();
@@ -179,10 +180,10 @@ const PlaygroundHome: React.FC = () => {
     }
 
     modal.confirm({
-      title: <span style={{ color: '#E3E3E3' }}>确认删除此项目？</span>,
+      title: <span style={{ color: themeMode === 'dark' ? '#E3E3E3' : '#1f2937' }}>确认删除此项目？</span>,
       content: <span style={{ color: 'rgba(255,77,79,0.8)' }}>警告：此操作为物理删除，删除后该项目下的所有内容和数据将永久丢失，无法恢复！</span>,
-      wrapClassName: 'dark-confirm-modal',
-      className: 'dark-confirm-modal',
+      wrapClassName: themeMode === 'dark' ? 'dark-confirm-modal' : 'light-confirm-modal',
+      className: themeMode === 'dark' ? 'dark-confirm-modal' : 'light-confirm-modal',
       okText: '确定删除',
       okType: 'danger',
       cancelText: '取消',
@@ -236,12 +237,12 @@ const PlaygroundHome: React.FC = () => {
     }}>
       <div style={{
         height: '100vh', width: '100vw', display: 'flex',
-        background: '#1E1E20',
+        background: themeMode === 'light' ? '#f5f5f5' : '#1E1E20',
         color: themeMode === 'light' ? '#1f2937' : '#fff',
         overflow: 'hidden',
         position: 'relative',
       }}>
-        <CanvasParticles />
+        {themeMode === 'dark' && <CanvasParticles />}
 
         <style>{`
           @keyframes pgSpin {
@@ -306,21 +307,21 @@ const PlaygroundHome: React.FC = () => {
           <div style={{
             position: 'absolute', inset: 0, zIndex: 9999,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(0, 0, 0, 0.75)',
+            background: _isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(0, 0, 0, 0.75)',
             backdropFilter: 'blur(12px)',
           }}>
             <div style={{
-              background: 'rgba(30, 30, 34, 0.95)',
+              background: _isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(30, 30, 34, 0.95)',
               border: '1px solid rgba(255, 77, 79, 0.3)',
               borderRadius: 24,
               padding: '48px 40px',
               maxWidth: 460,
               textAlign: 'center',
-              boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+              boxShadow: _isLight ? '0 12px 40px rgba(0,0,0,0.1)' : '0 24px 60px rgba(0,0,0,0.5)',
             }}>
               <ExclamationCircleOutlined style={{ fontSize: 48, color: '#ff4d4f', marginBottom: 20 }} />
-              <h2 style={{ color: '#fff', fontSize: 20, fontWeight: 600, margin: '0 0 12px' }}>创作中心暂不可用</h2>
-              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, lineHeight: 1.8, margin: '0 0 8px' }}>
+              <h2 style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 20, fontWeight: 600, margin: '0 0 12px' }}>创作中心暂不可用</h2>
+              <p style={{ color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)', fontSize: 14, lineHeight: 1.8, margin: '0 0 8px' }}>
                 请正确配置系统存储（火山引擎 TOS 对象存储）后再使用创作中心。
               </p>
               <p style={{ color: 'rgba(255,77,79,0.8)', fontSize: 13, lineHeight: 1.6, margin: '0 0 28px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
@@ -331,12 +332,12 @@ const PlaygroundHome: React.FC = () => {
                   onClick={() => navigate('/')}
                   style={{
                     padding: '8px 24px', borderRadius: 12, cursor: 'pointer',
-                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                    color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: 500,
+                    background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)', border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)',
+                    color: _isLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: 500,
                     transition: 'all 0.2s',
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                  onMouseEnter={e => e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)'}
+                  onMouseLeave={e => e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)'}
                 >
                   返回首页
                 </div>
@@ -419,8 +420,10 @@ const PlaygroundHome: React.FC = () => {
               value={searchKeyword}
               onChange={e => setSearchKeyword(e.target.value)}
               style={{
-                background: themeMode === 'dark' ? '#27272a' : 'rgba(0,0,0,0.04)', borderRadius: 20,
-                height: 40, fontSize: 14, color: themeMode === 'dark' ? '#fff' : '#000',
+                background: themeMode === 'dark' ? '#27272a' : '#fff', 
+                border: themeMode === 'dark' ? 'none' : '1px solid rgba(0,0,0,0.1)',
+                borderRadius: 20,
+                height: 40, fontSize: 14, color: themeMode === 'dark' ? '#fff' : '#1f2937',
                 flex: 1
               }}
             />
@@ -509,8 +512,9 @@ const PlaygroundHome: React.FC = () => {
                           onBlur={() => handleRename(project.id)}
                           onClick={e => e.stopPropagation()}
                           style={{
-                            background: '#131314', border: '1px solid rgba(255,255,255,0.2)',
-                            color: '#fff', borderRadius: 6, height: 26, fontSize: 13,
+                            background: themeMode === 'dark' ? '#131314' : '#fff',
+                            border: themeMode === 'dark' ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(0,0,0,0.15)',
+                            color: themeMode === 'dark' ? '#fff' : '#000', borderRadius: 6, height: 26, fontSize: 13,
                           }}
                         />
                       ) : (
@@ -582,18 +586,18 @@ const PlaygroundHome: React.FC = () => {
                   }}>
                     <div style={{
                       width: 40, height: 40, borderRadius: 6, flexShrink: 0,
-                      background: 'rgba(255,255,255,0.06)',
+                      background: themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
                     }} />
                     <div style={{ flex: 1 }}>
                       <div style={{
                         height: 14, borderRadius: 4, marginBottom: 8,
                         width: `${70 + i * 8}%`,
-                        background: 'rgba(255,255,255,0.06)',
+                        background: themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
                       }} />
                       <div style={{
                         height: 10, borderRadius: 4,
                         width: '50%',
-                        background: 'rgba(255,255,255,0.04)',
+                        background: themeMode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
                       }} />
                     </div>
                   </div>
@@ -602,7 +606,7 @@ const PlaygroundHome: React.FC = () => {
             )}
 
             {!loading && !initializing && projects.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '60px 20px', color: 'rgba(255,255,255,0.3)' }}>
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: themeMode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)' }}>
                 <div style={{ fontSize: 14 }}>暂无项目</div>
               </div>
             )}
@@ -668,13 +672,13 @@ const PlaygroundHome: React.FC = () => {
             <div style={{ textAlign: 'center', animation: 'pgFadeIn 0.4s ease' }}>
               <div style={{
                 width: 48, height: 48, borderRadius: '50%',
-                border: '3px solid rgba(255,255,255,0.06)',
+                border: themeMode === 'dark' ? '3px solid rgba(255,255,255,0.06)' : '3px solid rgba(0,0,0,0.06)',
                 borderTopColor: 'rgba(22,119,255,0.7)',
                 animation: 'pgSpin 0.8s linear infinite',
                 margin: '0 auto 24px',
               }} />
               <div key={initPhase} style={{
-                fontSize: 15, fontWeight: 500, color: 'rgba(255,255,255,0.5)',
+                fontSize: 15, fontWeight: 500, color: themeMode === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
                 animation: 'pgFadeIn 0.3s ease',
                 letterSpacing: '0.3px',
               }}>
@@ -749,8 +753,9 @@ const PlaygroundHome: React.FC = () => {
                     autoFocus
                     style={{
                       fontSize: 22, fontWeight: 700, textAlign: 'center',
-                      background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.2)',
-                      color: '#fff', borderRadius: 10, height: 42, maxWidth: 320,
+                      background: themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : '#fff',
+                      border: themeMode === 'dark' ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(0,0,0,0.15)',
+                      color: themeMode === 'dark' ? '#fff' : '#000', borderRadius: 10, height: 42, maxWidth: 320,
                     }}
                   />
                 </div>
@@ -783,11 +788,11 @@ const PlaygroundHome: React.FC = () => {
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 10,
                   padding: '10px 28px', borderRadius: 12,
-                  background: themeMode === 'dark' ? '#f4f4f5' : '#18181b',
+                  background: themeMode === 'dark' ? '#f4f4f5' : '#1677ff',
                   color: themeMode === 'dark' ? '#18181b' : '#fff', 
                   fontSize: 15, fontWeight: 500,
                   cursor: 'pointer', transition: 'all 0.2s ease',
-                  boxShadow: themeMode === 'dark' ? '0 4px 12px rgba(255,255,255,0.05)' : '0 4px 12px rgba(0,0,0,0.1)',
+                  boxShadow: themeMode === 'dark' ? '0 4px 12px rgba(255,255,255,0.05)' : '0 4px 12px rgba(22,119,255,0.25)',
                 }}
                 onMouseEnter={e => {
                   e.currentTarget.style.transform = 'translateY(-1px)';
@@ -809,7 +814,7 @@ const PlaygroundHome: React.FC = () => {
             <Popover
               placement="topRight"
               trigger="click"
-              overlayInnerStyle={{ padding: 8, background: '#232326', border: '1px solid #3f3f46', borderRadius: 16 }}
+              overlayInnerStyle={{ padding: 8, background: themeMode === 'dark' ? '#232326' : '#fff', border: themeMode === 'dark' ? '1px solid #3f3f46' : '1px solid rgba(0,0,0,0.1)', borderRadius: 16 }}
               arrow={false}
               content={
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: 140 }}>
@@ -818,10 +823,11 @@ const PlaygroundHome: React.FC = () => {
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
-                      background: themePref === 'light' ? 'rgba(255,255,255,0.06)' : 'transparent',
-                      color: themePref === 'light' ? '#fff' : '#e4e4e7', transition: 'all 0.2s',
+                      background: themePref === 'light' ? (themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)') : 'transparent',
+                      color: themeMode === 'dark' ? (themePref === 'light' ? '#fff' : '#e4e4e7') : (themePref === 'light' ? '#000' : '#666'),
+                      transition: 'all 0.2s',
                     }}
-                    onMouseEnter={e => { if (themePref !== 'light') e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                    onMouseEnter={e => { if (themePref !== 'light') e.currentTarget.style.background = themeMode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'; }}
                     onMouseLeave={e => { if (themePref !== 'light') e.currentTarget.style.background = 'transparent'; }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -840,10 +846,11 @@ const PlaygroundHome: React.FC = () => {
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
-                      background: themePref === 'system' ? 'rgba(255,255,255,0.06)' : 'transparent',
-                      color: themePref === 'system' ? '#fff' : '#e4e4e7', transition: 'all 0.2s',
+                      background: themePref === 'system' ? (themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)') : 'transparent',
+                      color: themeMode === 'dark' ? (themePref === 'system' ? '#fff' : '#e4e4e7') : (themePref === 'system' ? '#000' : '#666'),
+                      transition: 'all 0.2s',
                     }}
-                    onMouseEnter={e => { if (themePref !== 'system') e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                    onMouseEnter={e => { if (themePref !== 'system') e.currentTarget.style.background = themeMode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'; }}
                     onMouseLeave={e => { if (themePref !== 'system') e.currentTarget.style.background = 'transparent'; }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -858,10 +865,11 @@ const PlaygroundHome: React.FC = () => {
                     style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
-                      background: themePref === 'dark' ? 'rgba(255,255,255,0.06)' : 'transparent',
-                      color: themePref === 'dark' ? '#fff' : '#e4e4e7', transition: 'all 0.2s',
+                      background: themePref === 'dark' ? (themeMode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)') : 'transparent',
+                      color: themeMode === 'dark' ? (themePref === 'dark' ? '#fff' : '#e4e4e7') : (themePref === 'dark' ? '#000' : '#666'),
+                      transition: 'all 0.2s',
                     }}
-                    onMouseEnter={e => { if (themePref !== 'dark') e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                    onMouseEnter={e => { if (themePref !== 'dark') e.currentTarget.style.background = themeMode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'; }}
                     onMouseLeave={e => { if (themePref !== 'dark') e.currentTarget.style.background = 'transparent'; }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -876,16 +884,16 @@ const PlaygroundHome: React.FC = () => {
               <div
                 style={{
                   width: 38, height: 38, borderRadius: '50%',
-                  background: 'rgba(255,255,255,0.15)',
-                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: themeMode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)',
+                  border: themeMode === 'dark' ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
                   backdropFilter: 'blur(10px)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: '#fff', cursor: 'pointer',
+                  color: themeMode === 'dark' ? '#fff' : '#333', cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                  boxShadow: themeMode === 'dark' ? '0 4px 12px rgba(0,0,0,0.2)' : '0 4px 12px rgba(0,0,0,0.08)'
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+                onMouseEnter={e => e.currentTarget.style.background = themeMode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.12)'}
+                onMouseLeave={e => e.currentTarget.style.background = themeMode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)'}
               >
                 {themePref === 'light' ? <SunOutlined style={{ fontSize: 16 }} /> : themePref === 'dark' ? <MoonOutlined style={{ fontSize: 16 }} /> : <DesktopOutlined style={{ fontSize: 16 }} />}
               </div>
@@ -896,8 +904,8 @@ const PlaygroundHome: React.FC = () => {
         <style>{`
           .pg-scroll::-webkit-scrollbar { width: 4px; }
           .pg-scroll::-webkit-scrollbar-track { background: transparent; }
-          .pg-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
-          .pg-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+          .pg-scroll::-webkit-scrollbar-thumb { background: ${themeMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}; border-radius: 4px; }
+          .pg-scroll::-webkit-scrollbar-thumb:hover { background: ${themeMode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}; }
           .ant-input-textarea-focus { box-shadow: none !important; }
         `}</style>
       </div>
