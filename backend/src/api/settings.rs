@@ -78,10 +78,12 @@ pub async fn verify_database(
 ) -> AppResult<Json<serde_json::Value>> {
     if settings.db_type == "postgres" {
         let ssl_mode = if settings.ssl_mode { "require" } else { "disable" };
-        let url = format!(
-            "postgres://{}:{}@{}:{}/{}?sslmode={}",
-            settings.username, settings.password, settings.host, settings.port, settings.database, ssl_mode
-        );
+        let mut url = format!("postgres://{}", urlencoding::encode(&settings.username));
+        if !settings.password.is_empty() {
+            url.push_str(&format!(":{}", urlencoding::encode(&settings.password)));
+        }
+        url.push_str(&format!("@{}:{}/{}?sslmode={}", settings.host, settings.port, settings.database, ssl_mode));
+
         match PgPoolOptions::new()
             .max_connections(1)
             .acquire_timeout(std::time::Duration::from_secs(5))
@@ -102,10 +104,12 @@ pub async fn initialize_database(
 ) -> AppResult<Json<serde_json::Value>> {
     if settings.db_type == "postgres" {
         let ssl_mode = if settings.ssl_mode { "require" } else { "disable" };
-        let url = format!(
-            "postgres://{}:{}@{}:{}/{}?sslmode={}",
-            settings.username, settings.password, settings.host, settings.port, settings.database, ssl_mode
-        );
+        let mut url = format!("postgres://{}", urlencoding::encode(&settings.username));
+        if !settings.password.is_empty() {
+            url.push_str(&format!(":{}", urlencoding::encode(&settings.password)));
+        }
+        url.push_str(&format!("@{}:{}/{}?sslmode={}", settings.host, settings.port, settings.database, ssl_mode));
+
         match PgPoolOptions::new().max_connections(1).connect(&url).await {
             Ok(pool) => {
                 if let Err(e) = crate::db::migrations::run_pg(&pool).await {
@@ -123,6 +127,38 @@ pub async fn initialize_database(
 pub async fn backup_database(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<serde_json::Value>> {
+    // 尝试寻找备份脚本的位置，适应不同的后台启动路径（backend 目录或项目根目录）
+    let script_path = if std::path::Path::new("../backup_pgsql.sh").exists() {
+        Some("../backup_pgsql.sh")
+    } else if std::path::Path::new("backup_pgsql.sh").exists() {
+        Some("backup_pgsql.sh")
+    } else {
+        None
+    };
+    
+    // 如果存在用户的自定义备份脚本，优先执行脚本
+    if let Some(path) = script_path {
+        let output = std::process::Command::new("bash")
+            .arg(path)
+            .output();
+
+        return match output {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                // 提取脚本输出的最后几行作为关键信息返回，避免过长
+                let msg = stdout.lines().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+                Ok(Json(serde_json::json!({"success": true, "message": format!("备份成功:\n{}", msg)})))
+            }
+            Ok(out) => {
+                let err_str = String::from_utf8_lossy(&out.stderr);
+                Ok(Json(serde_json::json!({"success": false, "message": format!("备份脚本执行失败:\n{}", err_str)})))
+            }
+            Err(e) => {
+                Ok(Json(serde_json::json!({"success": false, "message": format!("执行备份脚本异常: {}", e)})))
+            }
+        };
+    }
+
     let db_url = &state.config.database_url;
     let now = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
     let file_name = format!("tb{}", now);
