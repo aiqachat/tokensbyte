@@ -225,7 +225,7 @@ export const useGeneration = () => {
       const resolvedAssetsForAI = await Promise.all(uploadedAssets.map(async (item) => {
         // 已成功上传到桶的附件，直接使用永久 URL（避免视频等大文件 base64 导致上游接口失败）
         if ((item as any).isUploaded && item.fullUrl) {
-          return { url: item.fullUrl, type: item.asset.asset_type };
+          return { url: item.fullUrl, type: item.asset.asset_type, options: item.options };
         }
         // 未上传成功的本地文件，回退为 base64（仅适用于小文件如图片）
         if (item.file) {
@@ -234,9 +234,9 @@ export const useGeneration = () => {
             reader.onloadend = () => resolve(reader.result as string);
             reader.readAsDataURL(item.file!);
           });
-          return { url: b64, type: item.asset.asset_type };
+          return { url: b64, type: item.asset.asset_type, options: item.options };
         }
-        return { url: item.fullUrl, type: item.asset.asset_type };
+        return { url: item.fullUrl, type: item.asset.asset_type, options: item.options };
       }));
 
       const schemeType = currentModel.scheme_type || '';
@@ -256,9 +256,26 @@ export const useGeneration = () => {
         const audioAssets = resolvedAssetsForAI.filter(a => a.type === 'audio');
 
         if (currentModel.endpoint || true) { // Default to full multi-modal payload format for all video endpoints
-          const imageUrls = imageAssets.map(a => a.url);
           const videoUrls = videoAssets.map(a => a.url);
           const audioUrls = audioAssets.map(a => a.url);
+          
+          const hasVideoOrAudio = videoUrls.length > 0 || audioUrls.length > 0;
+          const userRole = paramValues.image_role;
+          const effectiveRole = hasVideoOrAudio && userRole !== 'reference_image' && userRole !== undefined
+            ? 'reference_image'
+            : userRole;
+
+          const imageUrls: any[] = [];
+          imageAssets.forEach(a => {
+            if (effectiveRole === 'first_last_frame') {
+              imageUrls.push({ url: a.url, role: 'first_frame' });
+              imageUrls.push({ url: a.url, role: 'last_frame' });
+            } else if (effectiveRole) {
+              imageUrls.push({ url: a.url, role: effectiveRole });
+            } else {
+              imageUrls.push(a.url); // Let backend infer
+            }
+          });
 
           // Fallback for single image param
           if (imageUrls.length === 0 && paramValues.image_url) {

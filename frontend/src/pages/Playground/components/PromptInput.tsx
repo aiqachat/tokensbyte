@@ -277,6 +277,17 @@ const PromptInput: React.FC = React.memo(() => {
     return found;
   }, [prompt, assetMap]);
 
+  const hasVideoOrAudio = attachedAssets.some(a => {
+    const ext = a.asset.file_name?.split('.').pop()?.toLowerCase() || '';
+    return a.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext) ||
+           a.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+  });
+  const hasImage = attachedAssets.some(a => {
+    const ext = a.asset.file_name?.split('.').pop()?.toLowerCase() || '';
+    return a.asset.asset_type === 'image' || ['jpg','jpeg','png','webp','gif'].includes(ext);
+  });
+  const isVideoModel = currentModel?.scheme_type === 'video' || currentModel?.type_name?.includes('视频');
+
   // 使用 ref 追踪最新的 attachedAssets
   const attachedAssetsRef = useRef(attachedAssets);
   attachedAssetsRef.current = attachedAssets;
@@ -817,6 +828,61 @@ const PromptInput: React.FC = React.memo(() => {
                 <span>联网搜索</span>
               </div>
             </Tooltip>
+          )}
+
+          {/* 图片角色选择器 */}
+          {isVideoModel && hasImage && (
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'auto', label: '自动' },
+                  { key: 'first_frame', label: '首帧', disabled: hasVideoOrAudio },
+                  { key: 'first_last_frame', label: '首尾帧', disabled: hasVideoOrAudio },
+                  { key: 'reference_image', label: '参考图' },
+                ],
+                onClick: (e) => {
+                  setParamValues(prev => ({ ...prev, image_role: e.key === 'auto' ? undefined : e.key }));
+                }
+              }}
+            >
+              <Tooltip title="指定附加图片的类型用途（受约束时自动锁定参考图）">
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    height: 30,
+                    padding: '0 10px',
+                    background: paramValues.image_role ? 'rgba(22, 119, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                    border: `1px solid ${paramValues.image_role ? 'rgba(22, 119, 255, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    color: paramValues.image_role ? '#1677ff' : 'rgba(255, 255, 255, 0.45)',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <PictureOutlined style={{ fontSize: 13 }} />
+                  <span>
+                    {(() => {
+                      const effectiveRole = hasVideoOrAudio && paramValues.image_role !== 'reference_image' && paramValues.image_role !== undefined
+                        ? 'reference_image' 
+                        : paramValues.image_role;
+                      
+                      switch(effectiveRole) {
+                        case 'first_frame': return '首帧';
+                        case 'first_last_frame': return '首尾帧';
+                        case 'reference_image': return '参考图';
+                        default: return '图片(自动)';
+                      }
+                    })()}
+                  </span>
+                </div>
+              </Tooltip>
+            </Dropdown>
           )}
 
         </div>

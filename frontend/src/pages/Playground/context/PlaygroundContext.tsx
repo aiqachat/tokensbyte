@@ -112,7 +112,7 @@ interface PlaygroundContextValue {
   createProject: (name?: string) => Promise<number | null>;
   saveCanvasState: () => Promise<void>;
   // 素材附件
-  attachedAssets: { asset: any; fullUrl: string; file?: File }[];
+  attachedAssets: { asset: any; fullUrl: string; file?: File; options?: { role?: string } }[];
   setAttachedAssets: React.Dispatch<React.SetStateAction<{ asset: any; fullUrl: string; file?: File }[]>>;
   // 存储统计
   storageStats: any;
@@ -150,7 +150,7 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
   const [isResourceWidgetVisible, setIsResourceWidgetVisible] = useState(false);
   const [isSettingsWidgetVisible, setIsSettingsWidgetVisible] = useState(false);
   const [isGenLogVisible, setIsGenLogVisible] = useState(false);
-  const [attachedAssets, setAttachedAssets] = useState<{ asset: any; fullUrl: string; file?: File }[]>([]);
+  const [attachedAssets, setAttachedAssets] = useState<{ asset: any; fullUrl: string; file?: File; options?: { role?: string } }[]>([]);
 
   // --- 项目管理 ---
   const [projects, setProjects] = useState<PlaygroundProject[]>([]);
