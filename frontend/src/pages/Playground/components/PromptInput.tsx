@@ -54,6 +54,7 @@ const PromptInput: React.FC = React.memo(() => {
   const [editingAssetIndex, setEditingAssetIndex] = useState<number | null>(null);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+  const [draggedAssetIndex, setDraggedAssetIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -160,8 +161,8 @@ const PromptInput: React.FC = React.memo(() => {
     const counts: Record<string, number> = { image: 0, video: 0, audio: 0 };
     attachedAssets.forEach((assetItem) => {
       const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
-      const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
-      const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+      const isVideo = assetItem.asset.asset_type === 'video' || ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext);
+      const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext);
       const typeKey = isAudio ? 'audio' : isVideo ? 'video' : 'image';
       counts[typeKey]++;
       const label = typeKey === 'audio' ? `声音${counts[typeKey]}` : typeKey === 'video' ? `视频${counts[typeKey]}` : `图${counts[typeKey]}`;
@@ -203,8 +204,8 @@ const PromptInput: React.FC = React.memo(() => {
     const counts: Record<string, number> = { image: 0, video: 0, audio: 0 };
     attachedAssets.forEach((assetItem) => {
       const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
-      const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
-      const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+      const isVideo = assetItem.asset.asset_type === 'video' || ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext);
+      const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext);
       const typeKey = isAudio ? 'audio' : isVideo ? 'video' : 'image';
       counts[typeKey]++;
       const label = typeKey === 'audio' ? `声音${counts[typeKey]}` : typeKey === 'video' ? `视频${counts[typeKey]}` : `图${counts[typeKey]}`;
@@ -232,7 +233,7 @@ const PromptInput: React.FC = React.memo(() => {
       if (match && assetMap[match[1]]) {
         const info = assetMap[match[1]];
         const hasPlaceholder = parts[i + 1] === '\u200B \u3000 \u200B';
-        
+
         result.push(
           <span key={i} style={{ color: '#60a5fa', fontWeight: 500 }}>
             {part}
@@ -252,7 +253,7 @@ const PromptInput: React.FC = React.memo(() => {
             )}
           </span>
         );
-        
+
         if (hasPlaceholder) {
           i++; // 跳过占位符部分
         }
@@ -280,12 +281,12 @@ const PromptInput: React.FC = React.memo(() => {
 
   const hasVideoOrAudio = attachedAssets.some(a => {
     const ext = a.asset.file_name?.split('.').pop()?.toLowerCase() || '';
-    return a.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext) ||
-           a.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+    return a.asset.asset_type === 'video' || ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext) ||
+      a.asset.asset_type === 'audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext);
   });
   const hasImage = attachedAssets.some(a => {
     const ext = a.asset.file_name?.split('.').pop()?.toLowerCase() || '';
-    return a.asset.asset_type === 'image' || ['jpg','jpeg','png','webp','gif'].includes(ext);
+    return a.asset.asset_type === 'image' || ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
   });
   const isVideoModel = currentModel?.scheme_type === 'video' || currentModel?.type_name?.includes('视频');
 
@@ -437,8 +438,8 @@ const PromptInput: React.FC = React.memo(() => {
 
         attachedAssets.forEach((assetItem, index) => {
           const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
-          const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
-          const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+          const isVideo = assetItem.asset.asset_type === 'video' || ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext);
+          const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext);
           const typeKey = isAudio ? 'audio' : isVideo ? 'video' : 'image';
           const typeLabel = isAudio ? '声音' : isVideo ? '视频' : '图';
           if (!typeMap[typeKey]) {
@@ -458,7 +459,37 @@ const PromptInput: React.FC = React.memo(() => {
                 style={{ display: 'flex', alignItems: 'flex-start', gap: 10, overflowX: 'auto' }}
               >
                 {group.items.map((entry, idx) => (
-                  <div key={entry.item.asset.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                  <div 
+                    key={entry.item.asset.id} 
+                    draggable
+                    onDragStart={(e) => {
+                      setDraggedAssetIndex(entry.origIndex);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (draggedAssetIndex === null || draggedAssetIndex === entry.origIndex) return;
+                      // 仅允许互换位置
+                      setAttachedAssets(prev => {
+                        const newAssets = [...prev];
+                        const temp = newAssets[draggedAssetIndex];
+                        newAssets[draggedAssetIndex] = newAssets[entry.origIndex];
+                        newAssets[entry.origIndex] = temp;
+                        return newAssets;
+                      });
+                      setDraggedAssetIndex(null);
+                    }}
+                    onDragEnd={() => setDraggedAssetIndex(null)}
+                    style={{ 
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0,
+                      opacity: draggedAssetIndex === entry.origIndex ? 0.4 : 1,
+                      cursor: 'grab'
+                    }}
+                  >
                     <div style={{
                       position: 'relative',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -805,7 +836,7 @@ const PromptInput: React.FC = React.memo(() => {
 
           {/* 联网搜索开关 */}
           {currentModel?.params?.some((p: any) => p.key === 'web_search') && (
-            <Tooltip placement="bottom" title="开启后允许模型使用联网搜索能力">
+            <Tooltip title="开启后允许模型使用联网搜索能力">
               <div
                 style={{
                   display: 'flex',
@@ -848,7 +879,7 @@ const PromptInput: React.FC = React.memo(() => {
                 }
               }}
             >
-              <Tooltip open={isRoleDropdownOpen ? false : undefined} placement="bottom" title="指定附加图片的类型用途（受约束时自动锁定参考图）">
+              <Tooltip open={isRoleDropdownOpen ? false : undefined} title="指定图片的类型用途（受约束时自动锁定参考图）">
                 <div
                   style={{
                     display: 'flex',
@@ -871,10 +902,10 @@ const PromptInput: React.FC = React.memo(() => {
                   <span>
                     {(() => {
                       const effectiveRole = hasVideoOrAudio && paramValues.image_role !== 'reference_image' && paramValues.image_role !== undefined
-                        ? 'reference_image' 
+                        ? 'reference_image'
                         : paramValues.image_role;
-                      
-                      switch(effectiveRole) {
+
+                      switch (effectiveRole) {
                         case 'first_frame': return '首帧';
                         case 'first_last_frame': return '首尾帧';
                         case 'reference_image': return '参考图';
@@ -959,66 +990,66 @@ const PromptInput: React.FC = React.memo(() => {
 
           {/* 运行按钮 */}
           <div
-          onClick={() => {
-            if (currentModel && prompt.trim() && !generating) {
-              handleGenerate();
-            }
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '6px 16px',
-            borderRadius: 14,
-            cursor: currentModel && prompt.trim() && !generating ? 'pointer' : 'not-allowed',
-            transition: 'all 0.2s ease',
-            background: currentModel && prompt.trim() && !generating
-              ? 'rgba(255, 255, 255, 0.15)'
-              : 'transparent',
-            border: currentModel && prompt.trim() && !generating
-              ? '1px solid transparent'
-              : '1px solid rgba(255, 255, 255, 0.08)',
-            color: currentModel && prompt.trim() && !generating
-              ? '#fff'
-              : 'rgba(255, 255, 255, 0.25)',
-            fontSize: 15,
-            fontWeight: 500,
-            whiteSpace: 'nowrap',
-            userSelect: 'none',
-            flexShrink: 0,
-          }}
-          onMouseEnter={(e) => {
-            if (currentModel && prompt.trim() && !generating) {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.22)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (currentModel && prompt.trim() && !generating) {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-            }
-          }}
-        >
-          {generating ? (
-            <>
-              <ThunderboltOutlined style={{ fontSize: 14, animation: 'pulse 1s infinite' }} />
-              <span>生成中...</span>
-            </>
-          ) : (
-            <>
-              <span>Run</span>
-              <span style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 15,
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                fontWeight: 400,
-              }}>
-                {modSymbol} ↵
-              </span>
-            </>
-          )}
-        </div>
+            onClick={() => {
+              if (currentModel && prompt.trim() && !generating) {
+                handleGenerate();
+              }
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 16px',
+              borderRadius: 14,
+              cursor: currentModel && prompt.trim() && !generating ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+              background: currentModel && prompt.trim() && !generating
+                ? 'rgba(255, 255, 255, 0.15)'
+                : 'transparent',
+              border: currentModel && prompt.trim() && !generating
+                ? '1px solid transparent'
+                : '1px solid rgba(255, 255, 255, 0.08)',
+              color: currentModel && prompt.trim() && !generating
+                ? '#fff'
+                : 'rgba(255, 255, 255, 0.25)',
+              fontSize: 15,
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+              userSelect: 'none',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              if (currentModel && prompt.trim() && !generating) {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.22)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (currentModel && prompt.trim() && !generating) {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+              }
+            }}
+          >
+            {generating ? (
+              <>
+                <ThunderboltOutlined style={{ fontSize: 14, animation: 'pulse 1s infinite' }} />
+                <span>生成中...</span>
+              </>
+            ) : (
+              <>
+                <span>Run</span>
+                <span style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 15,
+                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  fontWeight: 400,
+                }}>
+                  {modSymbol} ↵
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
