@@ -50,3 +50,9 @@ yarn-error.log*
 /tmp/
 docker-images/
 backup/
+
+# Exclude specific toolings and workflows
+.antigravity/
+.github/workflows/
+.qoder/
+.sync/
