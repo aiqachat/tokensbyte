@@ -44,6 +44,31 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
   const { themeMode, toggleTheme } = useThemeStore();
   const { settings } = useSettingsStore();
   const enableThemeToggle = settings?.site?.enable_theme_toggle !== false;
+  const enableMultilingual = settings?.site?.enable_multilingual !== false;
+
+  const langNameMap: Record<string, string> = {
+    zh: '简体中文', en: 'English', ja: '日本語', ko: '한국어',
+    fr: 'Français', de: 'Deutsch', es: 'Español', pt: 'Português',
+    ru: 'Русский', ar: 'العربية',
+  };
+
+  const supportedLanguages = settings?.site?.supported_languages?.length ? settings.site.supported_languages : ['zh', 'en'];
+  const implementedLangs = i18n.options.resources ? Object.keys(i18n.options.resources) : ['zh', 'en'];
+
+  const langItems = supportedLanguages
+    .filter(lng => implementedLangs.includes(lng))
+    .map(lng => ({
+      key: lng,
+      label: langNameMap[lng] || lng,
+      onClick: () => {
+        i18n.changeLanguage(lng);
+        localStorage.setItem('i18nextLng', lng);
+      },
+    }));
+
+  const getLanguageLabel = () => {
+    return langNameMap[i18n.language] || i18n.language.toUpperCase();
+  };
   const renderIconBtn = (method: AuthMethodOption) => {
     const isActive = activeMethod === method.key;
     const { brandColor } = method;
@@ -116,19 +141,16 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
             />
           </Tooltip>
           )}
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'zh', label: '简体中文', onClick: () => { i18n.changeLanguage('zh'); localStorage.setItem('i18nextLng', 'zh'); } },
-                { key: 'en', label: 'English', onClick: () => { i18n.changeLanguage('en'); localStorage.setItem('i18nextLng', 'en'); } },
-              ]
-            }}
-            placement="bottomRight"
-          >
-            <Button type="text" icon={<GlobalOutlined />} style={{ color: themeMode === 'light' ? '#1f2937' : 'rgba(255,255,255,0.65)' }}>
-              {i18n.language === 'zh' ? '中文' : 'EN'}
-            </Button>
-          </Dropdown>
+          {enableMultilingual && (
+            <Dropdown
+              menu={{ items: langItems }}
+              placement="bottomRight"
+            >
+              <Button type="text" icon={<GlobalOutlined />} style={{ color: themeMode === 'light' ? '#1f2937' : 'rgba(255,255,255,0.65)' }}>
+                {getLanguageLabel()}
+              </Button>
+            </Dropdown>
+          )}
         </div>
 
         <Card style={{
@@ -177,6 +199,23 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
             </>
           )}
         </Card>
+
+        {settings?.site?.copyright && (
+          <div style={{
+            position: 'absolute',
+            bottom: 16,
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+          }}>
+            <Text style={{
+              color: themeMode === 'light' ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.3)',
+              fontSize: 12,
+            }}>
+              {settings.site.copyright}
+            </Text>
+          </div>
+        )}
       </div>
     </ConfigProvider>
   );

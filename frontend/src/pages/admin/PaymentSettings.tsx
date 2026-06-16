@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Form, Input, Button, message, Typography, Tabs, Switch, Alert, Divider, InputNumber } from 'antd';
-import { WechatOutlined, AlipayCircleOutlined, CopyOutlined, LinkOutlined, SafetyCertificateOutlined, DollarOutlined, CreditCardOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { WechatOutlined, AlipayCircleOutlined, CopyOutlined, LinkOutlined, SafetyCertificateOutlined, DollarOutlined, CreditCardOutlined, ThunderboltOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
+import { useThemeStore } from '../../store/theme';
 
 const { Title, Text, Paragraph } = Typography;
 
 const PaymentSettings: React.FC = () => {
   const { t } = useTranslation();
   const { updateStoreSettings } = useSettingsStore();
+  const { themeMode } = useThemeStore();
+  const isLight = themeMode === 'light';
   const [formCurrency] = Form.useForm();
   const [formWechat] = Form.useForm();
   const [formAlipay] = Form.useForm();
@@ -32,7 +35,7 @@ const PaymentSettings: React.FC = () => {
 
   const fetchSettings = async () => {
     try {
-      const response = await (request.get('/settings') as any);
+      const response = await (request.get('/settings/full') as any);
       if (response?.currency) formCurrency.setFieldsValue(response.currency);
       if (response?.payment_wechat) formWechat.setFieldsValue(response.payment_wechat);
       if (response?.payment_alipay) formAlipay.setFieldsValue(response.payment_alipay);
@@ -52,9 +55,11 @@ const PaymentSettings: React.FC = () => {
           currency_symbol: values.currency_symbol,
           currency_unit: values.currency_unit,
           token_ratio: values.token_ratio,
+          auxiliary_currencies: values.auxiliary_currencies || [],
         }
       };
       const updatedSettings = await (request.post('/settings', payload) as any);
+      message.destroy();
       message.success(t('settings.save_success', '货币设置保存成功'));
       updateStoreSettings(updatedSettings);
     } catch (error) {
@@ -79,6 +84,7 @@ const PaymentSettings: React.FC = () => {
         }
       };
       const updatedSettings = await (request.post('/settings', payload) as any);
+      message.destroy();
       message.success('微信支付配置保存成功');
       updateStoreSettings(updatedSettings);
     } catch (error) {
@@ -102,6 +108,7 @@ const PaymentSettings: React.FC = () => {
         }
       };
       const updatedSettings = await (request.post('/settings', payload) as any);
+      message.destroy();
       message.success('支付宝配置保存成功');
       updateStoreSettings(updatedSettings);
     } catch (error) {
@@ -124,6 +131,7 @@ const PaymentSettings: React.FC = () => {
         }
       };
       const updatedSettings = await (request.post('/settings', payload) as any);
+      message.destroy();
       message.success('Stripe 配置保存成功');
       updateStoreSettings(updatedSettings);
     } catch (error) {
@@ -148,6 +156,7 @@ const PaymentSettings: React.FC = () => {
         }
       };
       const updatedSettings = await (request.post('/settings', payload) as any);
+      message.destroy();
       message.success('BonusPay 配置保存成功');
       updateStoreSettings(updatedSettings);
     } catch (error) {
@@ -198,6 +207,42 @@ const PaymentSettings: React.FC = () => {
                 );
               }}
             </Form.Item>
+
+            <Divider>辅助货币显示设置</Divider>
+            <Form.List name="auxiliary_currencies">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map(({ key, name, ...restField }) => (
+                    <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
+                      <Form.Item {...restField} name={[name, 'code']} rules={[{ required: true, message: '代码' }]} style={{ margin: 0, flex: 1 }}>
+                        <Input placeholder="货币代码 (如 USD)" />
+                      </Form.Item>
+                      <Form.Item {...restField} name={[name, 'symbol']} rules={[{ required: true, message: '符号' }]} style={{ margin: 0, flex: 1 }}>
+                        <Input placeholder="货币符号 (如 $)" />
+                      </Form.Item>
+                      <Form.Item {...restField} name={[name, 'exchange_rate']} rules={[{ required: true, message: '汇率' }]} style={{ margin: 0, flex: 1 }}>
+                        <InputNumber style={{ width: '100%' }} min={0.0001} step={0.0001} placeholder="1主货币=?此货币汇率" />
+                      </Form.Item>
+                      <Form.Item {...restField} name={[name, 'enabled']} valuePropName="checked" style={{ margin: 0 }}>
+                        <Switch />
+                      </Form.Item>
+                      <Button danger onClick={() => remove(name)} type="text" icon={<DeleteOutlined />} />
+                    </div>
+                  ))}
+                  <Form.Item>
+                    <Button type="dashed" onClick={() => add({ enabled: true, exchange_rate: 1.0 })} block icon={<PlusOutlined />}>
+                      添加辅助货币
+                    </Button>
+                    <div style={{ marginTop: 8, fontSize: 12, color: isLight ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.45)' }}>
+                      设置后，在模型广场和后台模型列表中可切换显示不同货币价格作为参考。<br/>
+                      所有的计价都是以站点默认货币为基准（默认货币的基准就是 1，不需要再填写添加）。<br/>
+                      汇率说明：填写 1 主货币(如 CNY) 对应的此货币(如 USD) 数量，比如 1 CNY = 0.14 USD，则填写 0.14。
+                    </div>
+                  </Form.Item>
+                </>
+              )}
+            </Form.List>
+
             <Form.Item>
               <Button type="primary" htmlType="submit" loading={loadingCurrency} size="large" style={{ borderRadius: 8 }}>
                 {t('common.save', '保存设置')}
@@ -235,7 +280,7 @@ const PaymentSettings: React.FC = () => {
 
           <Form form={formWechat} layout="vertical" onFinish={onFinishWechat} autoComplete="off">
             <Form.Item label="是否启用微信支付" name="enabled" valuePropName="checked">
-              <Switch checkedChildren="已开启" unCheckedChildren="已关闭" />
+              <Switch />
             </Form.Item>
 
             <Form.Item label="商户号 (MCHID)" name="mchid" rules={[{ required: true, message: '请输入微信支付商户号' }]}
@@ -301,7 +346,7 @@ const PaymentSettings: React.FC = () => {
 
           <Form form={formAlipay} layout="vertical" onFinish={onFinishAlipay} autoComplete="off">
             <Form.Item label="是否启用支付宝" name="enabled" valuePropName="checked">
-              <Switch checkedChildren="已开启" unCheckedChildren="已关闭" />
+              <Switch />
             </Form.Item>
 
             <Form.Item label="App ID (应用ID)" name="app_id" rules={[{ required: true, message: '请输入支付宝应用 AppID' }]}
@@ -357,7 +402,7 @@ const PaymentSettings: React.FC = () => {
 
           <Form form={formStripe} layout="vertical" onFinish={onFinishStripe} autoComplete="off">
             <Form.Item label="是否启用 Stripe 支付" name="enabled" valuePropName="checked">
-              <Switch checkedChildren="已开启" unCheckedChildren="已关闭" />
+              <Switch />
             </Form.Item>
 
             <Form.Item label="Secret Key (密钥)" name="secret_key" rules={[{ required: true, message: '请输入 Stripe Secret Key' }]}
@@ -415,7 +460,7 @@ const PaymentSettings: React.FC = () => {
 
           <Form form={formBonuspay} layout="vertical" onFinish={onFinishBonuspay} autoComplete="off">
             <Form.Item label="是否启用 BonusPay" name="enabled" valuePropName="checked">
-              <Switch checkedChildren="已开启" unCheckedChildren="已关闭" />
+              <Switch />
             </Form.Item>
 
             <Form.Item label="Partner-Id (商户ID)" name="partner_id" rules={[{ required: true, message: '请输入 Partner-Id' }]}

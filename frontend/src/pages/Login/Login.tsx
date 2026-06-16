@@ -28,6 +28,7 @@ const Login: React.FC = () => {
   useEffect(() => {
     const token = searchParams.get('token');
     const isImpersonate = searchParams.get('impersonate') === '1';
+    const redirectTo = searchParams.get('redirect') || '/dashboard';
     
     if (token) {
       setToken(token, isImpersonate);
@@ -36,17 +37,17 @@ const Login: React.FC = () => {
           setUser(res, isImpersonate); 
           if (isImpersonate) {
             // 直接跳原生的 href，避免 React Router navigate 延迟导致拦截器误判
-            window.location.href = '/';
+            window.location.href = redirectTo;
           } else {
-            navigate('/'); 
+            navigate(redirectTo); 
           }
         })
         .catch((e) => {
           console.error("Auto login failed:", e);
           if (isImpersonate) {
-            window.location.href = '/';
+            window.location.href = redirectTo;
           } else {
-            navigate('/');
+            navigate(redirectTo);
           }
         });
     }
@@ -65,7 +66,7 @@ const Login: React.FC = () => {
       const res = await (request.post('/auth/login', { ...values, login_type: activeTab }) as any);
       setToken(res.token); setUser(res.user);
       message.success(t('login.welcome') + ', ' + (res.user.nickname || res.user.username));
-      navigate('/');
+      navigate('/dashboard');
     } catch (error) {
       console.error(error);
     } finally {
@@ -89,7 +90,7 @@ const Login: React.FC = () => {
   if (login?.enable_google_login)
     layoutMethods.push({ key: 'google', label: t('login.google_login'), icon: <GoogleOutlined />, onClick: () => { window.location.href = '/api/v1/auth/oauth/google'; } });
 
-  const wechatAppId = settings?.wechat_oauth?.app_id || '';
+  const wechatAppId = settings?.wechat_oauth_app_id || '';
   const wechatRedirectUri = `${window.location.origin}/api/v1/auth/oauth/wechat/callback`;
   // state 每次切换到微信 tab 时固定前缀+随机串，确保每次扫码有新 state
   const [wechatState] = useState(() => `wechat_${Math.random().toString(36).slice(2)}`);

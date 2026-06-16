@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal, Button, Typography, Space, Row, Col, QRCode, message, Spin, Result, InputNumber } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { WalletOutlined, AlipayCircleOutlined, WechatOutlined, SafetyCertificateOutlined, LockOutlined, CreditCardOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import { useThemeStore } from '../../store/theme';
+import useSettingsStore from '../../store/settings';
 
 const { Title, Text } = Typography;
 
@@ -12,9 +14,13 @@ interface RechargeModalProps {
   onSuccess: () => void;
 }
 
-const AMOUNTS = [10, 50, 100, 200, 500, 1000];
+const AMOUNTS = [20, 50, 100, 500, 1000, 5000];
 
 const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSuccess }) => {
+  const { t } = useTranslation();
+  const { settings } = useSettingsStore();
+  const currencySymbol = settings?.currency?.currency_symbol || '¥';
+  const currencyUnit = settings?.currency?.currency_unit || '元';
   const [selectedAmount, setSelectedAmount] = useState<number | null>(50);
   const [customAmount, setCustomAmount] = useState<number | null>(null);
   const [isCustom, setIsCustom] = useState(false);
@@ -50,6 +56,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
   }, [visible]);
 
   const resetState = () => {
+    clearTimer();
     setQrCodeUrl('');
     setOutTradeNo('');
     setPayStatus('idle');
@@ -69,11 +76,12 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
     setFetchingSettings(true);
     try {
       const res = await (request.get('/settings') as any);
-      let wc = false, al = false, st = false, bp = false;
-      if (res?.payment_wechat?.enabled) wc = true;
-      if (res?.payment_alipay?.enabled) al = true;
-      if (res?.payment_stripe?.enabled) st = true;
-      if (res?.payment_bonuspay?.enabled) bp = true;
+      // 公开接口返回 payment 对象，仅包含各渠道的 enabled 布尔值（不含密钥）
+      const payment = res?.payment;
+      const wc = !!payment?.wechat_enabled;
+      const al = !!payment?.alipay_enabled;
+      const st = !!payment?.stripe_enabled;
+      const bp = !!payment?.bonuspay_enabled;
       
       setWechatEnabled(wc);
       setAlipayEnabled(al);
@@ -117,6 +125,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
       message.error('充值金额不能小于 0.01 元');
       return;
     }
+    clearTimer();
     setLoading(true);
     try {
       const reqBody: any = {
@@ -127,7 +136,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
         reqBody.asset_code = assetCode;
         reqBody.network = depositNetwork;
       }
-      const res = await (request.post('/finance/pay/create', reqBody) as any);
+      const res = await (request.post('/finance/pay/create', reqBody, { skipErrorHandler: true } as any) as any);
       
       setOutTradeNo(res.out_trade_no);
       setPayStatus('paying');
@@ -145,7 +154,8 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
         window.open(res.payment_url, '_blank');
       }
     } catch (err: any) {
-      message.error(err.response?.data?.error || err.message || '获取支付信息失败');
+      const errMsg = err.response?.data?.error?.message || err.response?.data?.error || err.message || '获取支付信息失败';
+      message.error(typeof errMsg === 'object' ? JSON.stringify(errMsg) : String(errMsg));
     } finally {
       setLoading(false);
     }
@@ -193,8 +203,8 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
       <Modal open={visible} footer={null} onCancel={onCancel} centered styles={modalStyles}>
         <Result
           status="warning"
-          title="在线充值暂不可用"
-          subTitle="管理员尚未开启或正确配置在线支付功能"
+          title={t('recharge.not_available', '在线充值暂不可用')}
+          subTitle={t('recharge.not_available_desc', '管理员尚未开启或正确配置在线支付功能')}
         />
       </Modal>
     );
@@ -226,33 +236,33 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
         }}>
           <WalletOutlined style={{ fontSize: 28, color: '#fff' }} />
         </div>
-        <Title level={4} style={{ margin: 0, color: titleColor }}>钱包余额充值</Title>
+        <Title level={4} style={{ margin: 0, color: titleColor }}>{t('recharge.title', '钱包余额充值')}</Title>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 6 }}>
           <LockOutlined style={{ fontSize: 11, color: '#52c41a' }} />
-          <Text type="secondary" style={{ fontSize: 12 }}>安全加密支付通道</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('recharge.secure_channel', '安全加密支付通道')}</Text>
         </div>
       </div>
 
       {payStatus === 'success' ? (
         <Result
           status="success"
-          title="支付成功！"
-          subTitle="您的钱包余额已经更新"
+          title={t('recharge.success_title', '支付成功！')}
+          subTitle={t('recharge.success_subtitle', '您的钱包余额已经更新')}
           extra={[
-            <Button type="primary" key="done" onClick={onSuccess} style={{ borderRadius: 8 }}>完成</Button>
+            <Button type="primary" key="done" onClick={onSuccess} style={{ borderRadius: 8 }}>{t('recharge.done', '完成')}</Button>
           ]}
         />
       ) : payStatus === 'paying' && paymentMethod === 'wechat' ? (
         <div style={{ textAlign: 'center' }}>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>请使用微信扫一扫支付</Text>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>{t('recharge.wechat_scan', '请使用微信扫一扫支付')}</Text>
           <div style={{ padding: 16, background: '#fff', borderRadius: 12, display: 'inline-block', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
             <QRCode value={qrCodeUrl} size={200} color="#000000" />
           </div>
           <div style={{ marginTop: 24 }}>
-            <Title level={3} style={{ color: '#ff4d4f', margin: 0 }}>¥ {finalAmount.toFixed(2)}</Title>
-            <Text type="secondary" style={{ fontSize: 13 }}>订单号: {outTradeNo}</Text>
+            <Title level={3} style={{ color: '#ff4d4f', margin: 0 }}>{currencySymbol} {finalAmount.toFixed(2)}</Title>
+            <Text type="secondary" style={{ fontSize: 13 }}>{t('recharge.order_no', '订单号: ')}{outTradeNo}</Text>
           </div>
-          <Button style={{ marginTop: 24, borderRadius: 8 }} onClick={resetState}>返回修改</Button>
+          <Button style={{ marginTop: 24, borderRadius: 8 }} onClick={resetState}>{t('recharge.return_modify', '返回修改')}</Button>
         </div>
       ) : payStatus === 'paying' && paymentMethod === 'stripe' ? (
         <div style={{ textAlign: 'center' }}>
@@ -264,13 +274,13 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           }}>
             <CreditCardOutlined style={{ fontSize: 32, color: '#fff' }} />
           </div>
-          <Title level={4} style={{ color: '#fff', margin: '0 0 8px 0' }}>等待 Stripe 支付完成</Title>
+          <Title level={4} style={{ color: '#fff', margin: '0 0 8px 0' }}>{t('recharge.stripe_waiting', '等待 Stripe 支付完成')}</Title>
           <Text type="secondary" style={{ display: 'block', marginBottom: 20 }}>
-            请在新打开的页面完成支付，支付成功后此页面将自动更新
+            {t('recharge.stripe_desc', '请在新打开的页面完成支付，支付成功后此页面将自动更新')}
           </Text>
           <Spin size="large" />
           <div style={{ marginTop: 24 }}>
-            <Title level={3} style={{ color: '#ff4d4f', margin: 0 }}>¥ {finalAmount.toFixed(2)}</Title>
+            <Title level={3} style={{ color: '#ff4d4f', margin: 0 }}>{currencySymbol} {finalAmount.toFixed(2)}</Title>
             <Text type="secondary" style={{ fontSize: 13 }}>订单号: {outTradeNo}</Text>
           </div>
           <Button style={{ marginTop: 24, borderRadius: 8 }} onClick={resetState}>返回修改</Button>
@@ -285,22 +295,22 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           }}>
             <ThunderboltOutlined style={{ fontSize: 32, color: '#fff' }} />
           </div>
-          <Title level={4} style={{ color: titleColor, margin: '0 0 8px 0' }}>充值页面已打开</Title>
+          <Title level={4} style={{ color: titleColor, margin: '0 0 8px 0' }}>{t('recharge.bonuspay_opened', '充值页面已打开')}</Title>
           <Text type="secondary" style={{ display: 'block', marginBottom: 8, lineHeight: 1.8 }}>
-            请在新打开的 BonusPay 收银台页面完成转账。
-            <br />链上确认后余额将自动更新，您可以关闭此弹窗。
+            {t('recharge.bonuspay_desc', '请在新打开的 BonusPay 收银台页面完成转账。\\n链上确认后余额将自动更新，您可以关闭此弹窗。').split('\\n')[0]}
+            <br />{t('recharge.bonuspay_desc', '请在新打开的 BonusPay 收银台页面完成转账。\\n链上确认后余额将自动更新，您可以关闭此弹窗。').split('\\n')[1]}
           </Text>
           <div style={{
             marginTop: 16, padding: '12px 16px', borderRadius: 8,
             background: 'rgba(255, 106, 0, 0.08)', border: '1px solid rgba(255, 106, 0, 0.2)',
           }}>
             <Text style={{ fontSize: 12, color: '#ff6a00' }}>
-              💡 充值金额以实际链上到账金额为准，通常需要几分钟确认
+              {t('recharge.bonuspay_tip', '💡 充值金额以实际链上到账金额为准，通常需要几分钟确认')}
             </Text>
           </div>
           <Space style={{ marginTop: 24 }}>
-            <Button style={{ borderRadius: 8 }} onClick={resetState}>再次充值</Button>
-            <Button type="primary" style={{ borderRadius: 8, background: 'linear-gradient(135deg, #ff6a00, #ee0979)', border: 'none' }} onClick={onCancel}>关闭</Button>
+            <Button style={{ borderRadius: 8 }} onClick={resetState}>{t('recharge.recharge_again', '再次充值')}</Button>
+            <Button type="primary" style={{ borderRadius: 8, background: 'linear-gradient(135deg, #ff6a00, #ee0979)', border: 'none' }} onClick={onCancel}>{t('recharge.close', '关闭')}</Button>
           </Space>
         </div>
       ) : (
@@ -308,7 +318,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           {paymentMethod !== 'bonuspay' ? (
             <>
               {/* Amount Selection - only for fiat payment methods */}
-              <Text strong style={{ display: 'block', marginBottom: 12, color: labelColor }}>选择金额 (元)</Text>
+              <Text strong style={{ display: 'block', marginBottom: 12, color: labelColor }}>{t('recharge.select_amount', `选择金额 (${currencyUnit})`)}</Text>
               <Row gutter={[10, 10]}>
                 {AMOUNTS.map(amt => (
                   <Col span={8} key={amt}>
@@ -352,12 +362,12 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
                   gap: 8,
                 }}
               >
-                <Text style={{ color: descColor, whiteSpace: 'nowrap' }}>自定义</Text>
+                <Text style={{ color: descColor, whiteSpace: 'nowrap' }}>{t('recharge.custom', '自定义')}</Text>
                 <InputNumber
                   min={0.01}
                   max={50000}
                   precision={2}
-                  placeholder="输入金额"
+                  placeholder={t('recharge.input_amount', '输入金额')}
                   value={customAmount}
                   onChange={(val) => { setCustomAmount(val); setIsCustom(true); setSelectedAmount(null); }}
                   onFocus={handleCustomFocus}
@@ -365,7 +375,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
                   variant="borderless"
                   style={{ flex: 1, background: 'transparent' }}
                 />
-                <Text style={{ color: subColor }}>元</Text>
+                <Text style={{ color: subColor }}>{currencyUnit}</Text>
               </div>
             </>
           ) : (
@@ -385,12 +395,12 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
                 }}>
                   <ThunderboltOutlined style={{ fontSize: 24, color: '#fff' }} />
                 </div>
-                <Title level={5} style={{ color: labelColor, margin: '0 0 4px 0' }}>加密货币充值</Title>
-                <Text type="secondary" style={{ fontSize: 12 }}>充值金额以实际链上到账金额为准</Text>
+                <Title level={5} style={{ color: labelColor, margin: '0 0 4px 0' }}>{t('recharge.crypto_recharge', '加密货币充值')}</Title>
+                <Text type="secondary" style={{ fontSize: 12 }}>{t('recharge.crypto_desc', '充值金额以实际链上到账金额为准')}</Text>
               </div>
 
               {/* 币种选择 */}
-              <Text strong style={{ display: 'block', marginBottom: 8, color: labelColor, fontSize: 13 }}>充值币种</Text>
+              <Text strong style={{ display: 'block', marginBottom: 8, color: labelColor, fontSize: 13 }}>{t('recharge.recharge_currency', '充值币种')}</Text>
               <Row gutter={10} style={{ marginBottom: 16 }}>
                 {(['USDT', 'USDC'] as const).map(code => (
                   <Col span={12} key={code}>
@@ -410,7 +420,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
               </Row>
 
               {/* 网络选择 */}
-              <Text strong style={{ display: 'block', marginBottom: 8, color: labelColor, fontSize: 13 }}>充值网络</Text>
+              <Text strong style={{ display: 'block', marginBottom: 8, color: labelColor, fontSize: 13 }}>{t('recharge.recharge_network', '充值网络')}</Text>
               <Row gutter={10}>
                 {(['TRON', 'ETH', 'POLYGON'] as const).map(net => (
                   <Col span={8} key={net}>
@@ -432,7 +442,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
           )}
 
           {/* Payment Method */}
-          <Text strong style={{ display: 'block', marginTop: 24, marginBottom: 12, color: labelColor }}>支付方式</Text>
+          <Text strong style={{ display: 'block', marginTop: 24, marginBottom: 12, color: labelColor }}>{t('recharge.payment_method', '支付方式')}</Text>
           <Row gutter={12}>
             {alipayEnabled && (
               <Col flex={1}>
@@ -447,7 +457,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
                   }}
                 >
                   <AlipayCircleOutlined style={{ fontSize: 22, color: '#1677ff' }} />
-                  <Text strong style={{ color: '#1677ff', fontSize: 15 }}>支付宝</Text>
+                  <Text strong style={{ color: '#1677ff', fontSize: 15 }}>{t('recharge.alipay', '支付宝')}</Text>
                 </div>
               </Col>
             )}
@@ -464,7 +474,7 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
                   }}
                 >
                   <WechatOutlined style={{ fontSize: 22, color: '#07c160' }} />
-                  <Text strong style={{ color: '#07c160', fontSize: 15 }}>微信支付</Text>
+                  <Text strong style={{ color: '#07c160', fontSize: 15 }}>{t('recharge.wechat_pay', '微信支付')}</Text>
                 </div>
               </Col>
             )}
@@ -511,8 +521,8 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
               background: summaryBg, borderRadius: 10, border: `1px solid ${summaryBorder}`,
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             }}>
-              <Text type="secondary" style={{ fontSize: 13 }}>应付金额</Text>
-              <Title level={3} style={{ margin: 0, color: '#ff4d4f' }}>¥ {finalAmount.toFixed(2)}</Title>
+              <Text type="secondary" style={{ fontSize: 13 }}>{t('recharge.payable_amount', '应付金额')}</Text>
+              <Title level={3} style={{ margin: 0, color: '#ff4d4f' }}>{currencySymbol} {finalAmount.toFixed(2)}</Title>
             </div>
           )}
 
@@ -543,20 +553,20 @@ const RechargeModal: React.FC<RechargeModalProps> = ({ visible, onCancel, onSucc
             }}
           >
             {paymentMethod === 'bonuspay' ? (
-              <Space><ThunderboltOutlined />获取充值地址</Space>
+              <Space><ThunderboltOutlined />{t('recharge.get_address', '获取充值地址')}</Space>
             ) : paymentMethod === 'stripe' ? (
-              <Space><CreditCardOutlined />去 Stripe 支付</Space>
+              <Space><CreditCardOutlined />{t('recharge.go_stripe', '去 Stripe 支付')}</Space>
             ) : paymentMethod === 'alipay' ? (
-              <Space><AlipayCircleOutlined />去支付宝支付</Space>
+              <Space><AlipayCircleOutlined />{t('recharge.go_alipay', '去支付宝支付')}</Space>
             ) : (
-              <Space><WechatOutlined />生成微信支付码</Space>
+              <Space><WechatOutlined />{t('recharge.gen_wechat_qr', '生成微信支付码')}</Space>
             )}
           </Button>
 
           {/* Trust badge */}
           <div style={{ textAlign: 'center', marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
             <SafetyCertificateOutlined style={{ fontSize: 13, color: '#52c41a' }} />
-            <Text type="secondary" style={{ fontSize: 11 }}>资金安全保障 · 充值后即时到账 · 正规支付渠道</Text>
+            <Text type="secondary" style={{ fontSize: 11 }}>{t('recharge.trust_badge', '资金安全保障 · 充值后即时到账 · 正规支付渠道')}</Text>
           </div>
         </div>
       )}

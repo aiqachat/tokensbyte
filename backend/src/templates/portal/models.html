@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% set current_page = "models" %}
+{% block title %}{{ columns.models.title | default(value="模型数据") }} - {{ nav.logo_text | default(value="TokensByte") }}{% endblock %}
+{% block content %}
+<style>
+/* Hugging Face inspired models page layout */
+.hf-container { max-width: 1400px; margin: 0 auto; padding: 32px 24px; display: flex; gap: 32px; }
+.hf-sidebar { width: 280px; flex-shrink: 0; }
+.hf-main { flex: 1; min-width: 0; }
+.hf-header { margin-bottom: 24px; }
+.hf-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; color: var(--text-primary); }
+.hf-header p { color: var(--text-secondary); font-size: 15px; }
+
+/* Search Bar */
+.hf-search { position: relative; margin-bottom: 24px; }
+.hf-search input { width: 100%; padding: 10px 16px 10px 40px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 15px; outline: none; transition: all 0.2s; background: var(--bg-card); color: var(--text-primary); }
+.hf-search input:focus { border-color: var(--brand-primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+.hf-search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; fill: var(--text-muted); }
+
+/* Filters */
+.hf-filter-group { margin-bottom: 24px; }
+.hf-filter-title { font-size: 14px; font-weight: 600; color: var(--text-muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.hf-filter-list { list-style: none; padding: 0; margin: 0; }
+.hf-filter-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; margin: 0 -8px; border-radius: 6px; cursor: pointer; color: var(--text-secondary); font-size: 14px; transition: background 0.15s; }
+.hf-filter-item:hover { background: rgba(128,128,128,0.1); color: var(--text-primary); }
+.hf-filter-item.active { background: rgba(22, 100, 255, 0.15); color: var(--brand-secondary); font-weight: 500; }
+.hf-filter-count { font-size: 12px; color: var(--text-muted); background: rgba(128,128,128,0.08); padding: 2px 8px; border-radius: 999px; }
+.hf-filter-item.active .hf-filter-count { background: rgba(22, 100, 255, 0.25); color: var(--brand-secondary); }
+
+/* Cards Grid */
+.hf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.hf-card { display: flex; flex-direction: column; padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); transition: all 0.2s; text-decoration: none; color: var(--text-primary); cursor: pointer; height: 130px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.hf-card:hover { border-color: var(--brand-secondary); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.hf-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.hf-card-icon { width: 32px; height: 32px; background: transparent; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.hf-card-title { font-weight: 600; font-size: 15px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.hf-card-meta { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-muted); margin-top: auto; }
+.hf-card-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; background: rgba(128,128,128,0.1); color: var(--text-secondary); font-size: 12px; font-weight: 500; border: 1px solid var(--border-color); }
+.hf-card-provider { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); }
+.hf-card-provider svg { width: 14px; height: 14px; fill: currentColor; }
+.hf-empty { text-align: center; padding: 60px 0; color: var(--text-muted); }
+
+.hf-copy-btn { color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; transition: background 0.2s, color 0.2s; cursor: pointer; flex-shrink: 0; }
+.hf-copy-btn:hover { background: rgba(128,128,128,0.15); color: var(--text-primary); }
+
+@media(max-width: 768px) {
+    .hf-container { flex-direction: column; }
+    .hf-sidebar { width: 100%; }
+}
+</style>
+
+<div class="hf-container">
+    <aside class="hf-sidebar">
+        <div class="hf-filter-group">
+            <h3 class="hf-filter-title"><span data-i18n="models_filter_tasks">能力类型</span> Tasks</h3>
+            <ul class="hf-filter-list" id="filter-types">
+                <li class="hf-filter-item active" data-type="all">
+                    <span style="display:flex;align-items:center;gap:6px;" data-i18n="models_all_types">
+                        全部类型
+                    </span>
+                    <span class="hf-filter-count" id="count-all-types">0</span>
+                </li>
+            </ul>
+        </div>
+        <div class="hf-filter-group">
+            <h3 class="hf-filter-title"><span data-i18n="models_filter_providers">服务商</span> Providers</h3>
+            <ul class="hf-filter-list" id="filter-providers">
+                <li class="hf-filter-item active" data-provider="all">
+                    <span style="display:flex;align-items:center;gap:6px;" data-i18n="models_all_providers">
+                        全部服务商
+                    </span>
+                    <span class="hf-filter-count" id="count-all-providers">0</span>
+                </li>
+            </ul>
+        </div>
+    </aside>
+ 
+    <main class="hf-main">
+        <div class="hf-header">
+            <h1>
+                Models 
+                <span style="color: #9ca3af; font-weight: 400; font-size: 20px;">{{ models | length }}</span>
+            </h1>
+            <p>
+                <span data-i18n-dynamic="{{ columns.models.title | default(value="") }}" {% if not columns.models.title %}data-i18n-key="nav_models"{% endif %}>{{ columns.models.title | default(value="全部 AI 模型") }}</span>
+                <span data-i18n="models_subtitle_suffix"> - 覆盖文本、图像、视频、语音等能力</span>
+            </p>
+        </div>
+ 
+        <div class="hf-search">
+            <svg viewBox="0 0 20 20"><path d="M12.9 14.32a8 8 0 1 1 1.41-1.41l5.35 5.33-1.42 1.42-5.33-5.34zM8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z"></path></svg>
+            <input type="text" id="model-search" data-i18n-placeholder="models_search_placeholder" placeholder="Filter by name or ID...">
+        </div>
+ 
+        <div class="hf-grid" id="models-grid">
+            {% for model in models %}
+            <a href="/home/model/{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.model_id }}{% endif %}" class="hf-card" data-id="{{ model.model_id | lower }}" data-name="{{ model.model_name | lower }}" data-mid="{{ model.mid | lower }}" data-type="{{ model.model_type | default(value='综合') }}" data-provider="{{ model.provider | default(value='其他') }}" data-type-logo="{{ model.type_logo | default(value='') }}" data-provider-logo="{{ model.provider_logo | default(value='') }}">
+                <div class="hf-card-header">
+                    <div class="hf-card-icon">
+                        {% if model.logo and model.logo | length > 0 %}
+                        <img class="hf-smart-icon" src="{{ model.logo | safe }}" alt="logo" style="width: 28px; height: 28px; object-fit: contain;" onload="makeIconSmart(this)">
+                        {% else %}
+                        {% if "gpt" in model.mid %}🟢{% elif "claude" in model.mid %}🟣{% elif "gemini" in model.mid %}🔵{% elif "deepseek" in model.mid %}🐳{% else %}🤖{% endif %}
+                        {% endif %}
+                    </div>
+                    <div class="hf-card-title">{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.model_id }}{% endif %}</div>
+                </div>
+                <div style="font-family: monospace; font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ model.model_id }}</span>
+                    <span class="hf-copy-btn" data-clipboard-text="{{ model.model_id }}" title="复制模型ID">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                    </span>
+                </div>
+                <div class="hf-card-meta">
+                    <span class="hf-card-tag" data-i18n-dynamic="{{ model.model_type | default(value="综合") }}">{{ model.model_type | default(value="综合") }}</span>
+                    <div class="hf-card-provider">
+                        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
+                        <span data-i18n-dynamic="{{ model.provider | default(value="其他") }}">{{ model.provider | default(value="其他") }}</span>
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+            {% if models | length == 0 %}
+            <div class="hf-empty" style="grid-column: 1 / -1;" data-i18n="models_empty">暂无已启用的模型</div>
+            {% endif %}
+        </div>
+        <div id="no-results" class="hf-empty" style="display: none; grid-column: 1 / -1;" data-i18n="models_no_results">
+            未找到匹配的模型，请尝试其他关键词或过滤条件。
+        </div>
+    </main>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const cards = Array.from(document.querySelectorAll('.hf-card'));
+    const searchInput = document.getElementById('model-search');
+    const noResults = document.getElementById('no-results');
+    
+    const types = new Map();
+    const providers = new Map();
+    
+    cards.forEach(card => {
+        const t = card.dataset.type;
+        const p = card.dataset.provider;
+        const tLogo = card.dataset.typeLogo;
+        const pLogo = card.dataset.providerLogo;
+        
+        if (!types.has(t)) {
+            types.set(t, { count: 0, logo: tLogo });
+        }
+        types.get(t).count++;
+        
+        if (!providers.has(p)) {
+            providers.set(p, { count: 0, logo: pLogo });
+        }
+        providers.get(p).count++;
+    });
+
+    document.getElementById('count-all-types').textContent = cards.length;
+    document.getElementById('count-all-providers').textContent = cards.length;
+
+    const getSystemIcon = (key) => {
+        const lower = key.toLowerCase();
+        if (lower.includes('图片') || lower.includes('image')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
+        if (lower.includes('视频') || lower.includes('video')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>';
+        if (lower.includes('音频') || lower.includes('audio')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>';
+        if (lower.includes('聊天') || lower.includes('chat') || lower.includes('text') || lower.includes('对话')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+        if (lower.includes('embedding') || lower.includes('向量')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.12 7.04-6-4.66A2 2 0 0 0 13.88 2H10A2 2 0 0 0 8 2.82l-6 4.66A2 2 0 0 0 1 9v6a2 2 0 0 0 1 1.54l6 4.66A2 2 0 0 0 9.24 22h3.52a2 2 0 0 0 1.24-.44l6-4.66A2 2 0 0 0 23 15V9a2 2 0 0 0-1.88-1.96ZM10 2v20M2 7l10 5-10 5M22 7l-10 5 10 5M12 12v10"/></svg>';
+        return null;
+    };
+
+    const renderFilterItems = (map, containerId, dataKey) => {
+        const container = document.getElementById(containerId);
+        const sorted = Array.from(map.entries()).sort((a, b) => b[1].count - a[1].count);
+        sorted.forEach(([key, obj]) => {
+            const li = document.createElement('li');
+            li.className = 'hf-filter-item';
+            li.dataset[dataKey] = key;
+            
+            let logoHtml = null;
+            if (obj.logo && obj.logo !== '') {
+                let logoUrl = obj.logo;
+                if (!logoUrl.startsWith('http') && !logoUrl.startsWith('/')) {
+                    logoUrl = `/assets/icons/lobe/${logoUrl}.svg`;
+                }
+                logoHtml = `<img class="hf-smart-icon" src="${logoUrl}" style="width: 16px; height: 16px; object-fit: contain; border-radius: 4px;" onload="makeIconSmart(this)" onerror="this.style.display='none'">`;
+            }
+            if (!logoHtml) {
+                logoHtml = getSystemIcon(key) || '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="opacity: 0.5;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>';
+            }
+            
+            li.innerHTML = `<span style="display:flex;align-items:center;gap:6px;">${logoHtml}${key}</span><span class="hf-filter-count">${obj.count}</span>`;
+            container.appendChild(li);
+        });
+    };
+
+    renderFilterItems(types, 'filter-types', 'type');
+    renderFilterItems(providers, 'filter-providers', 'provider');
+
+    let activeType = 'all';
+    let activeProvider = 'all';
+    let searchQuery = '';
+
+    const filterCards = () => {
+        let visibleCount = 0;
+        cards.forEach(card => {
+            const matchType = activeType === 'all' || card.dataset.type === activeType;
+            const matchProvider = activeProvider === 'all' || card.dataset.provider === activeProvider;
+            const matchSearch = card.dataset.name.includes(searchQuery) || card.dataset.mid.includes(searchQuery) || (card.dataset.id && card.dataset.id.includes(searchQuery));
+            
+            if (matchType && matchProvider && matchSearch) {
+                card.style.display = 'flex';
+                visibleCount++;
+            } else {
+                card.style.display = 'none';
+            }
+        });
+        
+        noResults.style.display = visibleCount === 0 && cards.length > 0 ? 'block' : 'none';
+    };
+
+    searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value.toLowerCase().trim();
+        filterCards();
+    });
+
+    const setupFilterClick = (containerId, dataKey, setActive) => {
+        const container = document.getElementById(containerId);
+        container.addEventListener('click', (e) => {
+            const item = e.target.closest('.hf-filter-item');
+            if (!item) return;
+            
+            Array.from(container.children).forEach(child => child.classList.remove('active'));
+            item.classList.add('active');
+            
+            setActive(item.dataset[dataKey]);
+            filterCards();
+        });
+    };
+
+    setupFilterClick('filter-types', 'type', val => activeType = val);
+    setupFilterClick('filter-providers', 'provider', val => activeProvider = val);
+
+    // Initialize search query from URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryParam = urlParams.get('q');
+    if (queryParam) {
+        searchInput.value = queryParam;
+        searchQuery = queryParam.toLowerCase().trim();
+    }
+    
+    // Initial filter run
+    filterCards();
+
+    // Copy to clipboard functionality
+    document.querySelectorAll('.hf-copy-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const text = btn.getAttribute('data-clipboard-text');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="#10b981"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+                    setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                });
+            } else {
+                // Fallback for older browsers
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="#10b981"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+                    setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+                } catch (err) {
+                    console.error('Fallback: Oops, unable to copy', err);
+                }
+                document.body.removeChild(textArea);
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

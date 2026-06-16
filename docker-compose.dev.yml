@@ -4,6 +4,23 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    # 开发模式总是重新构建，避免镜像过期问题
+    pull_policy: missing
+    container_name: ${PROJECT_NAME:-tokensbyte}-backend-dev
+    ports:
+      # 开发模式暴露后端端口，方便调试和测试 API
+      - "${BACKEND_PORT:-3000}:3000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
+      - DATABASE_URL=${DATABASE_URL:-postgres://tokensapi:tokensapi@postgres:5432/tokensapi}
+      - JWT_SECRET=${JWT_SECRET:-tokensbyte-change-me-in-development}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - REGISTER_ENABLED=${REGISTER_ENABLED:-true}
+      - RUST_LOG=${RUST_LOG:-info}
+      - CARGO_TARGET_DIR=/usr/src/app/target
+      - DATA_DIR=/usr/src/app/data
     volumes:
       # 将宿主机的后台源码映射入容器内，以便感知文件变动
       - ./backend:/usr/src/app
@@ -13,8 +30,13 @@ services:
       - backend-target:/usr/src/app/target
       # 映射 Cargo 安装包目录，加速构建
       - cargo-registry:/usr/local/cargo/registry
-    environment:
-      - CARGO_TARGET_DIR=/usr/src/app/target
+      # 映射 data 目录用于存储静态资源
+      - ./data:/usr/src/app/data
+    networks:
+      - app-network
+    depends_on:
+      postgres:
+        condition: service_healthy
     # 开发模式移除内存限制，避免 Rust 编译 OOM
     deploy:
       resources:
@@ -24,6 +46,14 @@ services:
         reservations:
           memory: 512M
           cpus: '1.0'
+    # 开发环境健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: always
 
   postgres:
     # 开发模式暴露数据库端口，方便 Navicat 等工具连接
@@ -34,7 +64,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
-    pull_policy: never
+    # 开发模式总是重新构建，避免镜像过期问题
+    pull_policy: missing
+    container_name: ${PROJECT_NAME:-tokensbyte}-frontend-dev
     environment:
       # Docker 容器内代理到后端服务名；本地直接 npm run dev 时 vite.config.ts 回落到 localhost:3000
       - VITE_API_TARGET=http://backend:3000
@@ -46,8 +78,17 @@ services:
     ports: !override
       # 开发模式 Vite 运行在 5173 端口，完全覆盖生产模式的 8080:80
       - "${FRONTEND_PORT:-5173}:5173"
+    networks:
+      - app-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: always
 
 volumes:
   backend-target:
+    name: ${PROJECT_NAME:-tokensbyte}-backend-target
   cargo-registry:
+    name: ${PROJECT_NAME:-tokensbyte}-cargo-registry
   frontend-node-modules:
+    name: ${PROJECT_NAME:-tokensbyte}-frontend-node-modules

@@ -1,170 +1,299 @@
 /**
  * 模型全景选择器抽屉
  */
-import React, { useRef, useCallback, useEffect } from 'react';
-import { Input, Tooltip } from 'antd';
-import { CloseOutlined, SearchOutlined, AppstoreOutlined } from '@ant-design/icons';
-import { usePlayground, useCanvas } from '../context/PlaygroundContext';
-import { getCategoryIcon } from '../constants';
+import React from 'react';
+import { Input, Tooltip, Grid, message, Popover } from 'antd';
+import { CloseOutlined, SearchOutlined, AppstoreOutlined, InfoCircleOutlined, DollarOutlined, StarOutlined, StarFilled, CopyOutlined, BookOutlined } from '@ant-design/icons';
+import { usePlayground } from '../context/PlaygroundContext';
+import { getCategoryIcon, getCategoryLabel, getLucideCategoryIcon } from '../constants';
+import { useThemeStore } from '../../../store/theme';
+import useSettingsStore from '../../../store/settings';
+import RateDisplay from '../../Models/RateDisplay';
+
+const { useBreakpoint } = Grid;
 
 const ModelDrawer: React.FC = React.memo(() => {
   const {
     isModelDrawerVisible, setIsModelDrawerVisible,
     searchModelKeyword, setSearchModelKeyword,
     modelsInCategory, selectedMid, activeCategory,
-    handleSelectModel,
+    handleSelectModel, categories, handleCategoryChange,
+    isSettingsWidgetVisible,
+    favorites, toggleFavorite,
   } = usePlayground();
-  const { modelWidgetPos, setModelWidgetPos } = useCanvas();
+  const { themeMode } = useThemeStore();
+  const { settings } = useSettingsStore();
+  const _isLight = themeMode === 'light';
 
-  // 高性能拖拽：全部通过 ref + DOM 操作，零 React re-render
-  const containerRef = useRef<HTMLDivElement>(null);
-  const isDraggingRef = useRef(false);
-  const dragStartRef = useRef({ x: 0, y: 0 });
-  const posRef = useRef({ x: modelWidgetPos.x, y: modelWidgetPos.y });
+  const screens = useBreakpoint();
+  const isMobile = screens.md === false; // <= 768px
 
-  useEffect(() => {
-    if (!isDraggingRef.current) {
-      posRef.current = { x: modelWidgetPos.x, y: modelWidgetPos.y };
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
+
+
+  const handleCopy = (text: string) => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedId(text);
+        setTimeout(() => setCopiedId(null), 2000);
+      }).catch(() => {});
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        setCopiedId(text);
+        setTimeout(() => setCopiedId(null), 2000);
+      } catch (err) {}
+      document.body.removeChild(textarea);
     }
-  }, [modelWidgetPos]);
+  };
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('input, button, .ant-tooltip-open, .close-btn')) return;
-    
-    isDraggingRef.current = true;
-    dragStartRef.current = { x: e.clientX, y: e.clientY };
-    
-    if (containerRef.current) {
-      containerRef.current.style.transition = 'none';
-      containerRef.current.style.cursor = 'grabbing';
-    }
-
-    const handleMouseMove = (ev: MouseEvent) => {
-      if (!isDraggingRef.current || !containerRef.current) return;
-      const dx = ev.clientX - dragStartRef.current.x;
-      const dy = ev.clientY - dragStartRef.current.y;
-      dragStartRef.current = { x: ev.clientX, y: ev.clientY };
-      
-      posRef.current.x += dx;
-      posRef.current.y += dy;
-
-      containerRef.current.style.left = `${posRef.current.x}px`;
-      containerRef.current.style.top = `${posRef.current.y}px`;
-    };
-
-    const handleMouseUp = () => {
-      isDraggingRef.current = false;
-      if (containerRef.current) {
-        containerRef.current.style.cursor = 'grab';
-      }
-      setModelWidgetPos({ x: posRef.current.x, y: posRef.current.y });
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [setModelWidgetPos]);
-
-  if (!isModelDrawerVisible) return null;
+  const currencySymbol = settings?.currency?.currency_symbol || '$';
+  const formatPrice = (price: number | string | undefined | null) => {
+    if (price === undefined || price === null || price === '') return '-';
+    const num = Number(price);
+    if (isNaN(num)) return String(price);
+    return `${currencySymbol}${num}`;
+  };
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        position: 'absolute',
-        left: modelWidgetPos.x,
-        top: modelWidgetPos.y,
-        width: 440,
-        background: 'rgba(18, 19, 21, 0.85)',
-        borderRadius: 24,
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
-        backdropFilter: 'blur(24px)',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        zIndex: 1000,
-        height: Math.min(640, window.innerHeight - modelWidgetPos.y - 24)
-      }}
-      onWheel={(e) => e.stopPropagation()}
-    >
-      {/* 拖拽标题栏 */}
-      <div
-        onMouseDown={handleMouseDown}
-        style={{
-          padding: '0 24px', height: 48, minHeight: 48,
-          borderBottom: '1px solid rgba(255,255,255,0.05)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          cursor: 'grab',
-          background: 'rgba(255,255,255,0.02)',
-          userSelect: 'none',
-        }}
-      >
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <AppstoreOutlined style={{ color: '#fff', fontSize: 16 }} />
-          <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>选择模型</span>
-        </div>
-        <Tooltip title="关闭">
-          <div
-            className="close-btn"
-            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
-            onClick={() => setIsModelDrawerVisible(false)}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
-            onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255,255,255,0.5)'}
-          >
-            <CloseOutlined />
+    <>
+      <style>{`
+        .action-icon-btn {
+          width: 24px; height: 24px; border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: all 0.2s;
+          color: ${_isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.65)'};
+        }
+        .action-icon-btn:hover {
+          background: ${_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'};
+          color: ${_isLight ? 'rgba(0,0,0,0.88)' : 'rgba(255,255,255,1)'};
+        }
+      `}</style>
+      <div style={{
+      width: isModelDrawerVisible ? (isMobile ? '100vw' : 480) : 0,
+      flexShrink: 0,
+      transition: 'width 0.3s cubic-bezier(0.2, 0, 0, 1)',
+      overflow: 'hidden',
+      borderLeft: isModelDrawerVisible ? (_isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.12)') : 'none',
+      background: _isLight ? '#ffffff' : '#1e1f20',
+      display: 'flex',
+      flexDirection: 'column',
+      position: (isMobile || isSettingsWidgetVisible) ? 'absolute' : 'relative',
+      right: 0, top: 0, bottom: 0,
+      zIndex: (isMobile || isSettingsWidgetVisible) ? 2101 : 1,
+      boxShadow: (isMobile || isSettingsWidgetVisible) && isModelDrawerVisible ? (_isLight ? '-8px 0 30px rgba(0,0,0,0.05)' : '-8px 0 30px rgba(0,0,0,0.4)') : 'none',
+    }}>
+      <div style={{ width: isMobile ? '100vw' : 480, minWidth: isMobile ? '100vw' : 480, height: '100%', display: 'flex', flexDirection: 'column' }}>
+        {/* Header */}
+        <div style={{
+          padding: '16px 16px',
+          borderBottom: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid #444746',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <AppstoreOutlined style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 16 }} />
+            <span style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: 500 }}>
+              选择模型
+            </span>
           </div>
-        </Tooltip>
-      </div>
+          <Tooltip title="关闭">
+            <CloseOutlined
+              style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', cursor: 'pointer' }}
+              onClick={() => setIsModelDrawerVisible(false)}
+            />
+          </Tooltip>
+        </div>
 
-      <div style={{ padding: '16px 20px 8px 20px' }}>
-        <Input
-          size="large"
-          prefix={<SearchOutlined style={{ color: 'rgba(255,255,255,0.4)', paddingRight: 8 }} />}
-          placeholder="搜索体验模型..."
-          value={searchModelKeyword}
-          onChange={e => setSearchModelKeyword(e.target.value)}
-          style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', borderRadius: 12 }}
-        />
-      </div>
+        {/* Body */}
+        <div style={{ padding: isMobile ? '12px 8px 8px 8px' : '16px 12px 8px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* 类别切换器 */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '0 2px' }}>
+            {categories.map((cat: string) => {
+              const isActive = activeCategory === cat;
+              return (
+                <div
+                  key={cat}
+                  onClick={() => handleCategoryChange(cat)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 20,
+                    cursor: 'pointer',
+                    background: isActive
+                      ? (_isLight ? 'rgba(22,119,255,0.08)' : '#262930')
+                      : (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)'),
+                    border: isActive
+                      ? '1px solid #1677ff'
+                      : (_isLight ? '1px solid transparent' : '1px solid transparent'),
+                    color: isActive
+                      ? '#1677ff'
+                      : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.7)'),
+                    fontSize: 12,
+                    fontWeight: 500,
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6
+                  }}
+                >
+                  {getLucideCategoryIcon(cat, 16)}
+                  <span>{getCategoryLabel(cat)}</span>
+                </div>
+              );
+            })}
+          </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 20px 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {modelsInCategory.length === 0 ? (
-          <div style={{ color: 'rgba(255,255,255,0.4)', textAlign: 'center', padding: '60px 0' }}>该类别下暂无可体验的模型。</div>
-        ) : (
-          modelsInCategory.map(model => (
-            <div
-              key={model.mid}
-              onClick={() => handleSelectModel(model.mid)}
-              style={{
-                background: selectedMid === model.mid ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.02)',
-                padding: '16px 20px', borderRadius: 16,
-                border: selectedMid === model.mid ? '1px solid rgba(255,255,255,0.4)' : '1px solid rgba(255,255,255,0.05)',
-                cursor: 'pointer', display: 'flex', gap: 16, transition: 'all 0.2s ease'
-              }}
-              onMouseEnter={(e) => {
-                if (selectedMid !== model.mid) e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-              }}
-              onMouseLeave={(e) => {
-                if (selectedMid !== model.mid) e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
-              }}
-            >
-              <div style={{ fontSize: 28, padding: '4px 8px 4px 0', opacity: 0.9, color: '#fff' }}>
-                {getCategoryIcon(activeCategory, true)}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, flexWrap: 'wrap' }}>
-                    <div style={{ color: '#E8eaed', fontSize: 16, fontWeight: 500, wordBreak: 'break-word', lineHeight: 1.4 }}>{model.name}</div>
+          <Input
+            size="large"
+            prefix={<SearchOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', paddingRight: 8 }} />}
+            placeholder="搜索体验模型..."
+            value={searchModelKeyword}
+            onChange={e => setSearchModelKeyword(e.target.value)}
+            style={{ background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(0,0,0,0.3)', border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)', color: _isLight ? '#000' : '#fff', borderRadius: 12 }}
+          />
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '8px 8px 20px 8px' : '8px 12px 20px 12px', display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {modelsInCategory.length === 0 ? (
+            <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', textAlign: 'center', padding: '60px 0' }}>该类别下暂无可体验的模型。</div>
+          ) : (
+            modelsInCategory.map(model => {
+              const isSelected = selectedMid === model.mid;
+              const isPaid = !!model.billing;
+              return (
+                <div
+                  key={model.mid}
+                  onClick={() => handleSelectModel(model.mid)}
+                  style={{
+                    borderRadius: 12,
+                    padding: '6px 8px',
+                    marginBottom: 8,
+                    border: 'none',
+                    background: isSelected
+                      ? (_isLight ? 'rgba(22,119,255,0.06)' : '#262930')
+                      : (_isLight ? '#ffffff' : '#202124'),
+                    cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, transition: 'all 0.2s ease',
+                    boxShadow: isSelected
+                      ? (_isLight ? '0 4px 12px rgba(22,119,255,0.06)' : '0 4px 12px rgba(0,0,0,0.15)')
+                      : 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.background = _isLight ? '#f8f9fa' : '#2a2b2f';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.background = _isLight ? '#ffffff' : '#202124';
+                    }
+                  }}
+                >
+                  {/* 头部区：Logo + 名称 + ID */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    {/* Logo 容器 */}
+                    <div style={{
+                      width: 36, height: 36, flexShrink: 0,
+                      borderRadius: 8,
+                      background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)',
+                      border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.08)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      marginTop: 2
+                    }}>
+                      {model.logo ? (
+                        <img 
+                          src={`/assets/icons/lobe/${model.logo}.svg`} 
+                          alt={model.name} 
+                          style={{ width: 24, height: 24, objectFit: 'contain', borderRadius: 4 }} 
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: 18, opacity: 0.8, color: _isLight ? '#1677ff' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {getLucideCategoryIcon(activeCategory, 18)}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* 名称和 ID */}
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                          <div style={{ color: _isLight ? '#1f2937' : '#E8eaed', fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{model.name}</div>
+                          {/* 模型类型徽章 */}
+                          <Tooltip title={getCategoryLabel(model.scheme_type || model.type_name || 'chat')}>
+                            <div style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: 26,
+                              height: 26,
+                              borderRadius: 6,
+                              background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)',
+                              color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)',
+                              flexShrink: 0
+                            }}>
+                              {getLucideCategoryIcon(model.scheme_type || model.type_name || 'chat', 16)}
+                            </div>
+                          </Tooltip>
+                        </div>
+                        
+                        {/* 快捷操作区 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, marginLeft: 'auto' }} onClick={e => e.stopPropagation()}>
+                          <Tooltip title="收藏" placement="bottom" overlayStyle={{ zIndex: 9999 }}>
+                            <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); toggleFavorite(model.mid); }}>
+                              {favorites.includes(String(model.mid)) ? (
+                                <StarFilled style={{ fontSize: 13.5, color: _isLight ? '#000' : '#fff' }} />
+                              ) : (
+                                <StarOutlined style={{ fontSize: 13.5 }} />
+                              )}
+                            </div>
+                          </Tooltip>
+                          <Tooltip title={copiedId === model.model_id ? '已复制！' : '复制'} placement="bottom" overlayStyle={{ zIndex: 9999 }}>
+                            <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); handleCopy(model.model_id); }}>
+                              <CopyOutlined style={{ fontSize: 13.5 }} />
+                            </div>
+                          </Tooltip>
+                          <Tooltip title="开发文档" placement="bottom" overlayStyle={{ zIndex: 9999 }}>
+                            <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); window.open('/relay-api', '_blank'); }}>
+                              <BookOutlined style={{ fontSize: 13.5 }} />
+                            </div>
+                          </Tooltip>
+                        </div>
+                      </div>
+                      <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {model.model_id}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 详情区：简介 + 价格 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 4 }}>
+
+
+                    {model.billing && (
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: _isLight ? '#5f6368' : '#9aa0a6', fontSize: 13 }}>
+                        <DollarOutlined style={{ marginTop: 2, fontSize: 15 }} />
+                        <div style={{ flex: 1, lineHeight: 1.5 }}>
+                          <RateDisplay rule={model.billing} currencySymbol={currencySymbol} formatPrice={formatPrice} siteDiscount={model.global_discount} siteDiscountEnabled={model.global_discount_enabled} />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginTop: 4 }}>ID: {model.model_id}</div>
-
-              </div>
-            </div>
-          ))
-        )}
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
+    </>
   );
 });
 

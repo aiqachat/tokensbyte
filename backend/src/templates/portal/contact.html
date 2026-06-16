@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set current_page = "contact" %}
+{% block title %}{{ columns.contact.title | default(value="联系我们") }} - {{ nav.logo_text | default(value="TokensByte") }}{% endblock %}
+{% block content %}
+<section class="pg-hero">
+  <div class="wrap">
+    <h1 data-i18n-dynamic="{{ columns.contact.title | default(value="") }}" {% if not columns.contact.title %}data-i18n-key="nav_contact"{% endif %}>{{ columns.contact.title | default(value="联系我们") }}</h1>
+    <p data-i18n="contact_subtitle">欢迎联系我们获取技术支持或商务合作</p>
+  </div>
+</section>
+<section class="ct-sec">
+  <div class="wrap">
+    <div class="ct-grid">
+      <div class="ct-info">
+        {% if columns.contact.content.email %}
+        <div class="ct-item"><span class="ci">📧</span><div><strong data-i18n="contact_email">邮箱</strong><p>{{ columns.contact.content.email }}</p></div></div>
+        {% endif %}
+        {% if columns.contact.content.phone %}
+        <div class="ct-item"><span class="ci">📞</span><div><strong data-i18n="contact_phone">电话</strong><p>{{ columns.contact.content.phone }}</p></div></div>
+        {% endif %}
+        {% if columns.contact.content.address %}
+        <div class="ct-item"><span class="ci">📍</span><div><strong data-i18n="contact_address">地址</strong><p>{{ columns.contact.content.address }}</p></div></div>
+        {% endif %}
+        {% if not columns.contact.content.email and not columns.contact.content.phone and not columns.contact.content.address %}
+        <div class="ct-item"><span class="ci">💬</span><div><strong data-i18n="contact_tip">提示</strong><p data-i18n="contact_tip_desc">请在管理后台「门户管理 → 栏目管理」中填写联系信息</p></div></div>
+        {% endif %}
+      </div>
+      {% if columns.contact.content.social_links and columns.contact.content.social_links | length > 0 %}
+      <div class="soc">
+        <h3 data-i18n="contact_social">社交媒体</h3>
+        <div class="soc-grid">
+          {% for link in columns.contact.content.social_links %}
+          <a href="{{ link.value }}" target="_blank" rel="noopener" class="soc-a" data-i18n-dynamic="{{ link.platform }}">{{ link.platform }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

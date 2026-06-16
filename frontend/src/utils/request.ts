@@ -16,6 +16,9 @@ request.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    try {
+      config.headers['x-timezone'] = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch (e) {}
     return config;
   },
   (error) => {
@@ -25,6 +28,10 @@ request.interceptors.request.use(
 
 request.interceptors.response.use(
   (response) => {
+    // Blob 响应（如 CSV 导出）直接返回原始数据，不解包
+    if (response.config.responseType === 'blob') {
+      return response.data;
+    }
     return response.data;
   },
   (error) => {

@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+{% set current_page = "about" %}
+{% block title %}{{ columns.about.title | default(value="关于我们") }} - {{ nav.logo_text | default(value="TokensByte") }}{% endblock %}
+
+{% block content %}
+<style>
+/* Reset and base styles for the about page */
+.about-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding-bottom: 80px;
+}
+
+/* Hero Section */
+.hero-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3rem; /* gap-12 */
+  width: 100%;
+  padding-top: 4rem; /* pt-16 */
+}
+.hero-header {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  max-width: 56rem; /* max-w-4xl */
+  width: 100%;
+}
+.hero-title {
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: 700;
+  margin: 0;
+  width: 100%;
+  line-height: 1.2;
+}
+.hero-subtitle {
+  color: var(--text-secondary, #888);
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  padding-top: 1rem;
+  margin: 0 auto;
+  max-width: 80%;
+  line-height: 1.6;
+}
+
+/* Stats Section */
+.stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  width: 100%;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1rem;
+  max-width: 72rem; /* max-w-6xl */
+  margin: 0 auto;
+  width: 100%;
+  padding: 0 1.5rem;
+}
+@media (min-width: 640px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+}
+@media (min-width: 768px) {
+  .stats-grid { grid-template-columns: repeat(4, 1fr); gap: 1.5rem; }
+}
+.stat-card {
+  background: transparent;
+  border-radius: 0;
+  transition: none;
+  box-shadow: none;
+  border: none;
+}
+.stat-card:hover {
+  transform: none;
+  box-shadow: none;
+}
+.stat-card-inner {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+.stat-number {
+  font-size: clamp(2.5rem, 5vw, 3.5rem);
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+.stat-number.highlight {
+  color: var(--brand-primary, #6366f1);
+}
+.stat-label {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Article/Press Section */
+.press-section {
+  width: 100%;
+  max-width: 56rem; /* max-w-4xl */
+  margin: 0 auto;
+  padding: 4rem 1.5rem; /* py-16 */
+}
+.press-card {
+  display: block;
+  text-decoration: none;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 2rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+}
+.press-card:hover {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 40px rgba(99, 102, 241, 0.08);
+}
+.press-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+@media (min-width: 768px) {
+  .press-card-content { flex-direction: row; align-items: center; gap: 2rem; }
+}
+.press-icon-box {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border-radius: 0.5rem;
+  width: 5rem;
+  height: 5rem;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+.press-icon-box img,
+.press-icon-box svg {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.press-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.press-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+@media (min-width: 768px) { .press-title { font-size: 1.6rem; } }
+.press-desc {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin: 0;
+  line-height: 1.6;
+}
+@media (min-width: 768px) { .press-desc { font-size: 1rem; } }
+.press-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--brand-primary, #6366f1);
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-top: 0.5rem;
+  transition: color var(--transition-fast);
+}
+.press-card:hover .press-link {
+  text-decoration: none;
+  filter: brightness(1.2);
+}
+
+/* Investors Section */
+.investors-section {
+  width: 100%;
+  max-width: 80rem; /* max-w-[1280px] */
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+.investors-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 2rem;
+  text-align: center;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+@media (min-width: 768px) { .investors-title { font-size: 1.875rem; } }
+.investors-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+@media (min-width: 768px) {
+  .investors-grid { grid-template-columns: repeat(3, 1fr); }
+}
+.investor-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  padding: 2rem;
+  height: 10rem;
+  border-bottom: 1px solid var(--border-color);
+}
+@media (min-width: 768px) {
+  .investor-card {
+    border-bottom: none;
+    border-right: 1px solid var(--border-color);
+  }
+  .investor-card:last-child { border-right: none; }
+}
+.investor-card h3 {
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+}
+.investor-card:hover h3 {
+  opacity: 0.9;
+}
+
+/* CTA Section */
+.cta-section {
+  width: 100%;
+  max-width: 80rem;
+  margin: 0 auto;
+  padding: 5rem 1.5rem;
+}
+.cta-box {
+  border-radius: 1rem;
+  background: rgba(99, 102, 241, 0.03); /* subtle brand glow background */
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  padding: 4rem 2rem;
+  text-align: center;
+  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.7);
+}
+.cta-title {
+  font-size: 1.875rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0;
+  color: var(--text-primary);
+}
+@media (min-width: 1024px) { .cta-title { font-size: 2.5rem; } }
+.cta-desc {
+  color: var(--text-secondary);
+  max-width: 32rem;
+  margin: 1.25rem auto 0;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+.cta-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  background: var(--brand-secondary, #4f46e5);
+  color: #fff !important;
+  height: 3rem;
+  border-radius: 0.375rem;
+  margin-top: 2rem;
+  padding: 0 3rem;
+  text-decoration: none;
+  font-size: 1rem;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);
+}
+.cta-button:hover {
+  background: var(--brand-primary, #6366f1);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+}
+</style>
+
+<div class="about-container">
+  
+  <div class="hero-section">
+    <div class="hero-header">
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
+        <h1 class="hero-title">
+          <span data-i18n="about_title_prefix">关于</span>
+          <span data-i18n-dynamic="{{ nav.logo_text | default(value="TokensByte") }}">{{ nav.logo_text | default(value="TokensByte") }}</span>
+        </h1>
+        <p class="hero-subtitle" data-i18n="about_hero_subtitle">
+          作为业内领先的 AI 模型聚合服务平台，我们消除服务商锁定风险，通过更优的价格、高可用性和企业级的稳定性，为您打通全球最先进大语言模型的访问桥梁。
+        </p>
+      </div>
+    </div>
+    
+    <div class="stats-section">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-card-inner">
+            <p class="stat-number">10B+</p>
+            <p class="stat-label" data-i18n="about_stat_tokens">月均请求 Token</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-inner">
+            <p class="stat-number">10K+</p>
+            <p class="stat-label" data-i18n="about_stat_developers">全球活跃开发者</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-inner">
+            <p class="stat-number">40+</p>
+            <p class="stat-label" data-i18n="about_stat_providers">模型供应商</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-inner">
+            <p class="stat-number highlight">200+</p>
+            <p class="stat-label" data-i18n="about_stat_models">集成前沿模型</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="press-section">
+    <a href="/home/contact" class="press-card">
+      <div class="press-card-content">
+        <div class="press-icon-box">
+          <span style="font-family: Georgia, serif; font-weight: 800; font-size: 2.2rem; color: #000000; letter-spacing: -2px; line-height: 1; user-select: none;">WSJ</span>
+        </div>
+        <div class="press-text">
+          <h2 class="press-title">
+            <span data-i18n="about_press_title_prefix">统一大模型接口体验，</span>
+            <span data-i18n-dynamic="{{ nav.logo_text | default(value="TokensByte") }}">{{ nav.logo_text | default(value="TokensByte") }}</span>
+            <span data-i18n="about_press_title_suffix"> 让接入 AI 零负担</span>
+          </h2>
+          <p class="press-desc" data-i18n="about_press_desc">旨在成为开发者接入、对比、调用不同 AI 模型的首选聚合网关。只需一次接入，即可全量访问数百个前沿模型。</p>
+          <div class="press-link" data-i18n="about_press_link">联系我们洽谈合作 →</div>
+        </div>
+      </div>
+    </a>
+  </section>
+
+  <section class="investors-section">
+    <h2 class="investors-title" data-i18n="about_partners_title">受到行业领先团队的信任</h2>
+    <div class="investors-grid">
+      <div class="investor-card">
+        <!-- 占位文案替代 SVG 合作伙伴 Logo -->
+        <h3 style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); letter-spacing: 2px;">INNOVATION<span style="font-weight: 300;"> VENTURES</span></h3>
+      </div>
+      <div class="investor-card">
+        <h3 style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); letter-spacing: -1px;">GLOBAL<span style="color: var(--brand-primary);">AI</span></h3>
+      </div>
+      <div class="investor-card">
+        <h3 style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); font-family: serif; font-style: italic;">NextGen Capital</h3>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <div class="cta-box">
+      <h2 class="cta-title" data-i18n="cta_title">准备好开始构建了吗？</h2>
+      <p class="cta-desc">
+        <span data-i18n="about_cta_desc_prefix">加入数以万计的开发者，利用 </span>
+        <span data-i18n-dynamic="{{ nav.logo_text | default(value="TokensByte") }}">{{ nav.logo_text | default(value="TokensByte") }}</span>
+        <span data-i18n="about_cta_desc_suffix"> 快速部署 AI 应用。</span>
+      </p>
+      <a href="/login" class="cta-button" data-i18n="nav_register">免费注册账号</a>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

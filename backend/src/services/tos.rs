@@ -189,12 +189,12 @@ pub async fn test_connection(config: &TosConfig) -> Result<String, String> {
     }
 }
 
-/// 上传文件到 TOS
+/// 上传文件到 TOS（显式设置 x-tos-acl: default 继承桶 ACL）
 pub async fn upload_file(
     config: &TosConfig,
     object_key: &str,
     data: Vec<u8>,
-    _content_type: &str,
+    content_type: &str,
     tags: Option<&str>,
 ) -> Result<String, String> {
     let client = tos::builder::<TokioRuntime>()
@@ -209,9 +209,16 @@ pub async fn upload_file(
         .map_err(|e| format!("创建 TOS 客户端失败: {:?}", e))?;
 
     let mut input = PutObjectFromBufferInput::new_with_content(&config.bucket, object_key, data);
+    if !content_type.is_empty() {
+        input.set_content_type(content_type);
+    }
     if let Some(t) = tags {
         input.set_tagging(t);
     }
+    // 显式设置 x-tos-acl: default 继承桶 ACL（SDK 的 ACLType 枚举不含 default，故通过自定义请求头注入）
+    let mut extra_headers = std::collections::HashMap::new();
+    extra_headers.insert("x-tos-acl".to_string(), "default".to_string());
+    input.set_request_header(extra_headers);
 
     client
         .put_object_from_buffer(&input)

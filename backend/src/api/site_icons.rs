@@ -230,10 +230,11 @@ pub async fn create_icon(
     }
 
     let file_name = format!("{}.svg", payload.name.to_lowercase().replace(' ', "_"));
-    let dir = "data/assets/icons/custom";
-    tokio::fs::create_dir_all(dir).await.map_err(|e| AppError::Internal(format!("创建目录失败: {}", e)))?;
+    let data_dir = &state.config.data_dir;
+    let dir = format!("{}/assets/icons/custom", data_dir);
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| AppError::Internal(format!("创建目录失败: {}", e)))?;
     let file_path = format!("icons/custom/{}", file_name);
-    let full_path = format!("data/assets/{}", file_path);
+    let full_path = format!("{}/assets/{}", data_dir, file_path);
     tokio::fs::write(&full_path, &payload.svg_content).await
         .map_err(|e| AppError::Internal(format!("写入 SVG 文件失败: {}", e)))?;
 
@@ -291,10 +292,11 @@ pub async fn update_icon(
     let file_path = if let Some(ref svg) = payload.svg_content {
         let file_name = format!("{}.svg", name.to_lowercase().replace(' ', "_"));
         let sub_dir = if current.source == "custom" { "icons/custom" } else { "icons/lobe" };
-        let dir = format!("data/assets/{}", sub_dir);
+        let data_dir = &state.config.data_dir;
+        let dir = format!("{}/assets/{}", data_dir, sub_dir);
         tokio::fs::create_dir_all(&dir).await.map_err(|e| AppError::Internal(format!("创建目录失败: {}", e)))?;
         let fp = format!("{}/{}", sub_dir, file_name);
-        let full = format!("data/assets/{}", fp);
+        let full = format!("{}/assets/{}", data_dir, fp);
         tokio::fs::write(&full, svg).await
             .map_err(|e| AppError::Internal(format!("写入 SVG 文件失败: {}", e)))?;
         fp
@@ -336,7 +338,7 @@ pub async fn delete_icon(
     .await?;
 
     if let Some(ref icon) = icon {
-        let full = format!("data/assets/{}", icon.file_path);
+        let full = format!("{}/assets/{}", state.config.data_dir, icon.file_path);
         tokio::fs::remove_file(&full).await.ok();
     }
 
@@ -465,8 +467,9 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
     progress.log(format!("✅ GitHub API 返回成功，发现 {} 个图标目录", total_count)).await;
 
     // 2. 创建 icons/lobe 目录
-    let dir = "data/assets/icons/lobe";
-    if let Err(e) = tokio::fs::create_dir_all(dir).await {
+    let data_dir = &state.config.data_dir;
+    let dir = format!("{}/assets/icons/lobe", data_dir);
+    if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         let msg = format!("创建图标目录失败: {}", e);
         progress.fail(msg.clone()).await;
         write_sync_log(&state, 0, 0, 0, "failed", Some(&msg), &now).await;
@@ -539,7 +542,7 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
 
         let file_name = format!("{}.svg", slug);
         let file_path = format!("icons/lobe/{}", file_name);
-        let full_path = format!("data/assets/{}", file_path);
+        let full_path = format!("{}/assets/{}", data_dir, file_path);
 
         if let Err(e) = tokio::fs::write(&full_path, &svg_content).await {
             let err_msg = format!("{}: 写入文件失败 {}", original_name, e);
@@ -594,6 +597,72 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
 
     tracing::info!("{}", summary);
     Ok(())
+}
+
+/// 启动时自动检查图标文件完整性，缺失则自动恢复同步
+pub async fn auto_recover_on_startup(state: Arc<AppState>) {
+    // 检查插件是否已启用
+    let enabled: Option<i64> = sqlx::query_scalar(
+        "SELECT is_enabled FROM plugins WHERE name = 'site_icons'"
+    )
+    .fetch_optional(&state.db.pool)
+    .await
+    .ok()
+    .flatten();
+
+    if enabled != Some(1) {
+        return; // 插件未启用，跳过
+    }
+
+    // 查询数据库中 lobe-icons 来源的图标数量
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM site_icons WHERE source = 'lobe-icons'"
+    )
+    .fetch_one(&state.db.pool)
+    .await
+    .unwrap_or(0);
+
+    if total == 0 {
+        return; // 数据库中没有图标记录，无需检查
+    }
+
+    // 抽样检查前 20 个图标的文件是否存在
+    let sample_paths: Vec<String> = sqlx::query_scalar(
+        "SELECT file_path FROM site_icons WHERE source = 'lobe-icons' ORDER BY name ASC LIMIT 20"
+    )
+    .fetch_all(&state.db.pool)
+    .await
+    .unwrap_or_default();
+
+    let mut missing = 0;
+    let data_dir = &state.config.data_dir;
+    for fp in &sample_paths {
+        let full = format!("{}/assets/{}", data_dir, fp);
+        if tokio::fs::metadata(&full).await.is_err() {
+            missing += 1;
+        }
+    }
+
+    // 超过半数文件缺失，触发自动恢复同步
+    if missing > sample_paths.len() / 2 {
+        tracing::warn!(
+            "🔄 站点图标文件缺失 ({}/{} 抽样缺失, 数据库共 {} 条)，自动触发恢复同步...",
+            missing, sample_paths.len(), total
+        );
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            // 等待 5 秒让服务完全就绪
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            if let Err(e) = do_sync(state_clone).await {
+                tracing::error!("图标自动恢复同步失败: {}", e);
+            }
+        });
+    } else {
+        tracing::info!(
+            "✅ 站点图标文件完整性检查通过 ({} 条记录, {}/{} 抽样文件存在)",
+            total, sample_paths.len() - missing, sample_paths.len()
+        );
+    }
 }
 
 /// 写入同步日志到数据库

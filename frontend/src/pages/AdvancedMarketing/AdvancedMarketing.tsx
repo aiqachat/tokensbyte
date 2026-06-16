@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Table, Tag, Spin, Space, Button, Card, Statistic, Row, Col, message, Tooltip, Modal, Select, Progress, Tabs, Input, Grid, List } from 'antd';
-import { TeamOutlined, UserOutlined, DollarOutlined, ReloadOutlined, CrownOutlined, RiseOutlined, CopyOutlined, LinkOutlined, TrophyOutlined, EditOutlined } from '@ant-design/icons';
+import { Typography, Table, Tag, Spin, Space, Button, Card, Statistic, Row, Col, message, Tooltip, Modal, Select, Progress, Tabs, Input, Grid, List, Popconfirm, DatePicker, Radio, Switch } from 'antd';
+import { TeamOutlined, UserOutlined, DollarOutlined, ReloadOutlined, CrownOutlined, RiseOutlined, CopyOutlined, LinkOutlined, TrophyOutlined, EditOutlined, UserDeleteOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import useAuthStore from '../../store/auth';
 import type { ReferralUser, ReferralRecharge } from '../../types';
 import dayjs from 'dayjs';
 import { useThemeStore } from '../../store/theme';
+import WalletBalanceDisplay from '../../components/WalletBalanceDisplay';
+import WalletDetailsView from '../../components/WalletDetailsView';
 
 const { Title, Text } = Typography;
 
 const AdvancedMarketing: React.FC = () => {
+  const { t } = useTranslation('team_marketing');
   const { themeMode } = useThemeStore();
   const _isLight = themeMode === 'light';
   const { settings } = useSettingsStore();
@@ -55,6 +59,31 @@ const AdvancedMarketing: React.FC = () => {
   const [selectedMemberGroupKey, setSelectedMemberGroupKey] = useState<string>('');
   const [settingMemberLevel, setSettingMemberLevel] = useState(false);
 
+  // Search
+  const [referralSearchText, setReferralSearchText] = useState('');
+  const [teamMemberSearchText, setTeamMemberSearchText] = useState('');
+  const [walletTimeFilter, setWalletTimeFilter] = useState<'all' | 'month'>(() => {
+    return (localStorage.getItem('walletTimeFilter') as 'all' | 'month') || 'all';
+  });
+  const [selectedWalletUser, setSelectedWalletUser] = useState<any>(null);
+  const [rechargeDetailVisible, setRechargeDetailVisible] = useState(false);
+  const [rechargeDetailRange, setRechargeDetailRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
+    dayjs().startOf('month'),
+    dayjs().endOf('month'),
+  ]);
+  const [consumptionTotal, setConsumptionTotal] = useState<number>(0);
+  const [selectedPayEnabled, setSelectedPayEnabled] = useState(1);
+
+  // 充值记录缓存时间戳（30秒 TTL）
+  const rechargeCacheTime = React.useRef<Record<string, number>>({});
+  const CACHE_TTL = 30 * 1000; // 30秒
+
+  const openWalletDetails = (user: any) => {
+    setSelectedWalletUser(user);
+    const targetId = user.id || user.user_id;
+    fetchRecharges(targetId);
+  };
+
   useEffect(() => {
     fetchReferrals();
     fetchTeamOverview();
@@ -62,6 +91,21 @@ const AdvancedMarketing: React.FC = () => {
     fetchAllowedLevels();
     fetchAllowedMemberLevels();
   }, []);
+
+  useEffect(() => {
+    if (rechargeDetailVisible) {
+      const [start, end] = rechargeDetailRange;
+      const fetchStats = async () => {
+        try {
+          const res = await (request.get(`/team-marketing/my-referrals/stats?start_date=${start.toISOString()}&end_date=${end.toISOString()}`) as any);
+          if (res) setConsumptionTotal(res.total_consumption || 0);
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      fetchStats();
+    }
+  }, [rechargeDetailRange, rechargeDetailVisible]);
 
   const fetchReferrals = async () => {
     try {
@@ -100,28 +144,75 @@ const AdvancedMarketing: React.FC = () => {
   };
 
   const fetchRecharges = async (userId: string) => {
-    if (expandedRecharges[userId]) return;
+    // 30秒内缓存有效，不重复请求
+    const lastFetch = rechargeCacheTime.current[userId];
+    if (lastFetch && Date.now() - lastFetch < CACHE_TTL && expandedRecharges[userId]) return;
     try {
       setLoadingRecharges(prev => ({ ...prev, [userId]: true }));
       const res = await (request.get(`/team-marketing/referral/${userId}/recharges`) as any);
       setExpandedRecharges(prev => ({ ...prev, [userId]: res.recharges || [] }));
+      rechargeCacheTime.current[userId] = Date.now();
     } catch (e) {
-      message.error('获取充值明细失败');
+      message.error(t('recharge_failed'));
     } finally {
       setLoadingRecharges(prev => ({ ...prev, [userId]: false }));
     }
   };
 
+  const fetchAllRecharges = async () => {
+    try {
+      const res = await (request.get(`/team-marketing/my-referrals/all-recharges`) as any);
+      const recharges = res.recharges || [];
+      const grouped: Record<string, any[]> = {};
+      recharges.forEach((r: any) => {
+        if (!grouped[r.user_id]) grouped[r.user_id] = [];
+        grouped[r.user_id].push(r);
+      });
+      setExpandedRecharges(prev => ({ ...prev, ...grouped }));
+      const now = Date.now();
+      Object.keys(grouped).forEach(uid => {
+        rechargeCacheTime.current[uid] = now;
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const copyTeamInviteLink = (inviteCode: string) => {
     const link = `${window.location.origin}/register?aff=${user?.uid}&team=${inviteCode}`;
-    navigator.clipboard.writeText(link);
-    message.success('团队邀请链接已复制');
+    copyToClipboard(link, t('team_invite_copied'));
   };
 
   const copyMyInviteLink = () => {
     const link = `${window.location.origin}/register?aff=${user?.uid}`;
-    navigator.clipboard.writeText(link);
-    message.success('推广邀请链接已复制到剪贴板');
+    copyToClipboard(link, t('invite_link_copied'));
+  };
+
+  const copyToClipboard = (text: string, successMsg: string) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          message.success(successMsg);
+        }).catch(() => { throw new Error(); });
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          message.success(successMsg);
+        } finally {
+          textArea.remove();
+        }
+      }
+    } catch (e) {
+      message.error(t('copy_failed'));
+    }
   };
 
   const fetchAllowedLevels = async () => {
@@ -137,21 +228,44 @@ const AdvancedMarketing: React.FC = () => {
   const openLevelModal = (record: ReferralUser) => {
     setLevelTargetUser(record);
     setSelectedGroupKey(record.user_group);
+    setSelectedPayEnabled(record.pay_enabled);
     setLevelModalVisible(true);
   };
 
   const handleSetLevel = async () => {
-    if (!levelTargetUser || !selectedGroupKey) return;
+    if (!levelTargetUser) return;
     try {
       setSettingLevel(true);
-      const res = await (request.put(`/team-marketing/referral/${levelTargetUser.id}/level`, {
-        group_key: selectedGroupKey,
-      }) as any);
-      message.success(res.message || '用户等级设置成功');
+      const promises: Promise<any>[] = [];
+
+      const isLevelChanged = selectedGroupKey !== levelTargetUser.user_group;
+      if (isLeader && allowedLevels.length > 0 && isLevelChanged) {
+        promises.push(
+          request.put(`/team-marketing/referral/${levelTargetUser.id}/level`, {
+            group_key: selectedGroupKey,
+          })
+        );
+      }
+
+      const isPayChanged = selectedPayEnabled !== levelTargetUser.pay_enabled;
+      if (canSetPay && isPayChanged) {
+        promises.push(
+          request.put(`/team-marketing/referral/${levelTargetUser.id}/pay`, {
+            pay_enabled: selectedPayEnabled,
+          })
+        );
+      }
+
+      if (promises.length > 0) {
+        await Promise.all(promises);
+        message.success('更新成功');
+      } else {
+        message.info('数据未发生修改');
+      }
       setLevelModalVisible(false);
       fetchReferrals();
     } catch (e: any) {
-      message.error(e?.response?.data?.error?.message || '设置失败');
+      message.error(e?.response?.data?.error?.message || '更新失败');
     } finally {
       setSettingLevel(false);
     }
@@ -179,11 +293,11 @@ const AdvancedMarketing: React.FC = () => {
       const res = await (request.put(`/team-marketing/member/${memberLevelTarget.user_id}/level`, {
         group_key: selectedMemberGroupKey,
       }) as any);
-      message.success(res.message || '成员等级设置成功');
+      message.success(res.message || t('member_level_set_success'));
       setMemberLevelModalVisible(false);
       fetchTeamOverview();
     } catch (e: any) {
-      message.error(e?.response?.data?.error?.message || '设置失败');
+      message.error(e?.response?.data?.error?.message || t('level_set_failed'));
     } finally {
       setSettingMemberLevel(false);
     }
@@ -199,27 +313,63 @@ const AdvancedMarketing: React.FC = () => {
     if (!remarkTargetUser) return;
     try {
       setSettingRemark(true);
-      await (request.put(`/team-marketing/referral/${remarkTargetUser.id}/remark`, {
+      const targetId = remarkTargetUser.id || remarkTargetUser.user_id;
+      await (request.put(`/team-marketing/referral/${targetId}/remark`, {
         remark: editingRemark || null,
       }) as any);
-      message.success('备注修改成功');
+      message.success(t('remark_success'));
       setRemarkModalVisible(false);
       fetchReferrals();
+      fetchTeamOverview();
     } catch (e: any) {
-      message.error(e?.response?.data?.error?.message || '设置备注失败');
+      message.error(e?.response?.data?.error?.message || t('remark_failed'));
     } finally {
       setSettingRemark(false);
     }
   };
 
+  const handleRemoveMember = async (userId: string, username: string) => {
+    try {
+      const res = await (request.delete(`/team-marketing/member/${userId}/remove`) as any);
+      message.success(res.message || `已成功移除成员 ${username}`);
+      fetchTeamOverview();
+    } catch (e: any) {
+      message.error(e?.response?.data?.error?.message || '移除成员失败');
+    }
+  };
+
   // Stats
   const totalReferrals = referrals.length;
-  const totalRecharge = referrals.reduce((sum, r) => sum + (r.total_recharge || 0), 0);
+  const totalSystemFunds = referrals.reduce((sum, r) => sum + (r.current_month_system_recharge || 0), 0);
+  const totalGiftFunds = referrals.reduce((sum, r) => sum + (r.current_month_gift_recharge || 0), 0);
+  const totalRecharge = totalSystemFunds + totalGiftFunds;
   const activeReferrals = referrals.filter(r => r.is_active === 1).length;
+
+  const filteredReferrals = referrals.filter(r => {
+    if (!referralSearchText) return true;
+    const lowerSearch = referralSearchText.toLowerCase();
+    return (
+      (r.username && r.username.toLowerCase().includes(lowerSearch)) ||
+      (r.uid && r.uid.toString().toLowerCase().includes(lowerSearch)) ||
+      (r.remark && r.remark.toLowerCase().includes(lowerSearch))
+    );
+  });
+
+  const filterMembers = (members: any[]) => {
+    if (!teamMemberSearchText) return members || [];
+    const lowerSearch = teamMemberSearchText.toLowerCase();
+    return (members || []).filter(m => (
+      (m.username && m.username.toLowerCase().includes(lowerSearch)) ||
+      (m.uid && m.uid.toString().toLowerCase().includes(lowerSearch)) ||
+      (m.remark && m.remark.toLowerCase().includes(lowerSearch))
+    ));
+  };
+
+  const canSetPay = isLeader || (myTeamData?.teams || []).some((t: any) => t.role === 'member' && t.members_can_set_pay === 1);
 
   const columns = [
     {
-      title: '用户名',
+      title: t('username'),
       dataIndex: 'username',
       key: 'username',
       render: (username: string, record: ReferralUser) => (
@@ -227,7 +377,7 @@ const AdvancedMarketing: React.FC = () => {
           <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', display: 'block', lineHeight: 1.3 }}>{username}</Text>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
             <Text style={{ fontSize: 12, color: record.remark ? (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)') : (_isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)') }}>
-              {record.remark || '暂无备注'}
+              {record.remark || t('no_remark')}
             </Text>
             <Tooltip title="修改备注">
               <Button
@@ -243,20 +393,22 @@ const AdvancedMarketing: React.FC = () => {
       ),
     },
     {
-      title: '详细信息',
+      title: t('detail_info'),
       dataIndex: 'email',
       key: 'email',
       ellipsis: true,
       render: (email: string, record: ReferralUser) => (
         <div>
-          <Text style={{ fontSize: 13, display: 'block' }}>{email}</Text>
+          {email && !email.endsWith('@tokensbyte.local') && (
+            <Text style={{ fontSize: 13, display: 'block' }}>{email}</Text>
+          )}
           <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11 }}>UID: {record.uid}</Text>
         </div>
       ),
     },
 
     {
-      title: '用户等级',
+      title: t('user_level'),
       dataIndex: 'level_name',
       key: 'level_name',
       width: 120,
@@ -272,129 +424,92 @@ const AdvancedMarketing: React.FC = () => {
       ),
     },
     {
-      title: '状态',
+      title: t('status'),
       dataIndex: 'is_active',
       key: 'is_active',
       width: 80,
       render: (v: number) => v === 1
-        ? <Tag color="success">活跃</Tag>
-        : <Tag color="default">停用</Tag>,
+        ? <Tag color="success">{ t('active') }</Tag>
+        : <Tag color="default">{ t('inactive') }</Tag>,
     },
+
     {
-      title: '剩余额度/总额度',
+      title: (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <span>{t('wallet_balance')}</span>
+          <Select
+            size="small"
+            value={walletTimeFilter}
+            onChange={(v) => {
+              setWalletTimeFilter(v);
+              localStorage.setItem('walletTimeFilter', v);
+            }}
+            bordered={false}
+            options={[
+              { label: '全部数据', value: 'all' },
+              { label: '当月数据', value: 'month' },
+            ]}
+            style={{ width: 100, marginLeft: 8 }}
+            popupMatchSelectWidth={false}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      ),
       key: 'balance_quota',
-      width: 180,
-      render: (_: any, record: ReferralUser) => {
-        const balance = record.balance || 0;
-        const total = record.total_recharge || 0;
-        const percent = total > 0 ? Math.min((balance / total) * 100, 100) : 0;
-        return (
-          <div style={{ minWidth: 120 }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              marginBottom: 4,
-            }}>
-              <DollarOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }} />
-              <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 12, fontWeight: 500 }}>
-                {currencySymbol}{balance.toFixed(2)}
-              </Text>
-              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>/</Text>
-              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }}>
-                {currencySymbol}{total.toFixed(2)}
-              </Text>
-            </div>
-            <Progress
-              percent={percent}
-              showInfo={false}
-              size="small"
-              strokeColor={percent > 50 ? '#52c41a' : percent > 20 ? '#faad14' : '#ff4d4f'}
-              trailColor="rgba(255,255,255,0.08)"
-              style={{ margin: 0, lineHeight: 1, width: 100 }}
-            />
-          </div>
-        );
-      },
+      width: 320,
+      render: (_: any, record: ReferralUser) => (
+        <WalletBalanceDisplay 
+          record={record} 
+          onWalletClick={openWalletDetails} 
+          systemLabel={t('system_wallet')} 
+          giftLabel={t('gift_wallet')} 
+          totalRecharge={record.total_recharge}
+          monthStats={
+            walletTimeFilter === 'month'
+              ? {
+                  recharge_amount: record.current_month_system_recharge || 0,
+                  gift_amount: record.current_month_gift_recharge || 0,
+                }
+              : undefined
+          }
+        />
+      ),
     },
     {
-      title: '时间信息',
+      title: t('time_info'),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
-      render: (t: string, record: ReferralUser) => (
+      render: (timeStr: string, record: ReferralUser) => (
         <div>
-          <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>注册时间: {dayjs(t).format('YYYY/MM/DD HH:mm')}</Text>
-          <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>关联时间: {dayjs(record.updated_at).format('YYYY/MM/DD HH:mm')}</Text>
+          <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>{t('register_time')}: {dayjs(timeStr).format('YYYY/MM/DD HH:mm')}</Text>
+          <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{t('bindtime')}: {dayjs(record.updated_at).format('YYYY/MM/DD HH:mm')}</Text>
         </div>
       ),
     },
-    // 团队负责人专属：设置等级操作列
-    ...(isLeader && allowedLevels.length > 0 ? [{
-      title: '操作',
+    // 操作列：等级分配或支付权限修改
+    ...((isLeader && allowedLevels.length > 0) || canSetPay ? [{
+      title: t('actions'),
       key: 'action',
-      width: 100,
+      width: 80,
       render: (_: any, record: ReferralUser) => (
-        <Tooltip title="设置用户等级">
+        <Tooltip title="编辑推广用户">
           <Button
-            type="link"
-            size="small"
-            icon={<TrophyOutlined />}
+            icon={<EditOutlined />}
             onClick={() => openLevelModal(record)}
-            style={{ color: '#faad14', padding: 0 }}
-          >
-            设置等级
-          </Button>
+          />
         </Tooltip>
       ),
     }] : []),
   ];
 
-  const rechargeColumns = [
-    { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
-    {
-      title: '金额',
-      dataIndex: 'amount',
-      key: 'amount',
-      render: (amount: number) => (
-        <Text style={{ color: amount > 0 ? '#52c41a' : '#ff4d4f', fontWeight: 'bold' }}>
-          {amount > 0 ? '+' : ''}{currencySymbol}{Math.abs(amount).toFixed(2)}
-        </Text>
-      ),
-    },
-    {
-      title: '类型',
-      dataIndex: 'recharge_type',
-      key: 'recharge_type',
-      render: (type: string) => {
-        const typeMap: Record<string, { text: string; color: string }> = {
-          'manual': { text: '手动充值', color: 'blue' },
-          'online': { text: '在线充值', color: 'green' },
-          'transfer': { text: '奖励转入', color: 'purple' },
-          'gift': { text: '注册赠送', color: 'gold' },
-          'commission': { text: '佣金到账', color: 'cyan' },
-        };
-        const t = typeMap[type] || { text: type, color: 'default' };
-        return <Tag color={t.color}>{t.text}</Tag>;
-      },
-    },
-    {
-      title: '备注',
-      dataIndex: 'remark',
-      key: 'remark',
-      render: (text: string) => text || '-',
-    },
-    {
-      title: '时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (t: string) => <Text style={{ fontSize: 12 }}>{dayjs(t).format('YYYY/MM/DD HH:mm:ss')}</Text>,
-    },
-  ];
 
   // 判断用户是否只是成员（不是负责人）
   const memberOnlyTeams = (myTeamData?.teams || []).filter((t: any) => t.role === 'member');
 
   return (
     <div style={{ width: '100%' }}>
+      <>
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -409,8 +524,8 @@ const AdvancedMarketing: React.FC = () => {
             <TeamOutlined style={{ fontSize: 20 }} />
           </div>
           <div>
-            <Title level={4} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff', lineHeight: 1.3 }}>高级营销</Title>
-            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>查看我的推荐用户和推广数据</Text>
+            <Title level={4} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff', lineHeight: 1.3 }}>{ t('title') }</Title>
+            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>{ t('subtitle') }</Text>
           </div>
         </div>
         <Button icon={<ReloadOutlined />} onClick={() => { fetchReferrals(); fetchTeamOverview(); fetchMyTeam(); }} loading={loading}>
@@ -436,7 +551,7 @@ const AdvancedMarketing: React.FC = () => {
                     title={
             <Space>
               <TeamOutlined style={{ color: '#1677ff' }} />
-              <span style={{ color: _isLight ? '#1f2937' : '#fff' }}>我加入的团队</span>
+              <span style={{ color: _isLight ? '#1f2937' : '#fff' }}>{ t('my_teams') }</span>
             </Space>
           }
           headStyle={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
@@ -500,9 +615,18 @@ const AdvancedMarketing: React.FC = () => {
                 <Statistic
                   title={<span style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>活跃 / 推荐用户</span>}
                   value={activeReferrals}
-                  styles={{ content: { color: '#1677ff', fontSize: 22, fontWeight: 'bold' } }}
                   prefix={<TeamOutlined />}
-                  suffix={<span style={{ fontSize: 14, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>/ {totalReferrals}</span>}
+                  suffix={<span style={{ fontSize: screens.xs ? 11 : 14, color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>/ {totalReferrals}</span>}
+                  styles={{
+                    content: {
+                      color: '#1677ff',
+                      fontSize: screens.xs ? 18 : 22,
+                      fontWeight: 'bold',
+                      wordBreak: 'break-all',
+                      whiteSpace: 'normal',
+                      lineHeight: '1.2'
+                    }
+                  }}
                 />
               </Card>
             </Col>
@@ -517,12 +641,42 @@ const AdvancedMarketing: React.FC = () => {
                 justifyContent: 'center'
               }}>
                 <Statistic
-                  title={<span style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>累计充值</span>}
+                  title={<span style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>当月累计充值</span>}
                   value={totalRecharge}
                   precision={2}
-                  prefix={currencySymbol}
-                  styles={{ content: { color: '#52c41a', fontSize: 22, fontWeight: 'bold' } }}
+                  prefix={<span style={{ fontSize: screens.xs ? (totalRecharge && totalRecharge.toLocaleString().length > 12 ? 12 : 16) : 18 }}>{currencySymbol}</span>}
+                  styles={{
+                    content: {
+                      color: '#52c41a',
+                      fontSize: screens.xs
+                        ? (totalRecharge && totalRecharge.toLocaleString().length > 12 ? 13 : 18)
+                        : 22,
+                      fontWeight: 'bold',
+                      wordBreak: 'break-all',
+                      whiteSpace: 'normal',
+                      lineHeight: '1.2'
+                    }
+                  }}
                 />
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4, width: '100%', overflowWrap: 'break-word', wordBreak: 'break-all' }}>
+                  <Text style={{ fontSize: screens.xs ? 10 : 12, color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', display: 'block', lineHeight: 1.3 }}>
+                    系统资金：<span style={{ color: '#1677ff', fontWeight: 500 }}>{currencySymbol}{totalSystemFunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </Text>
+                  <Text style={{ fontSize: screens.xs ? 10 : 12, color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', display: 'block', lineHeight: 1.3 }}>
+                    赠送资金：<span style={{ color: '#faad14', fontWeight: 500 }}>🎁 {currencySymbol}{totalGiftFunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </Text>
+                  <Button
+                    type="link"
+                    size="small"
+                    style={{ padding: 0, fontSize: screens.xs ? 10 : 12, height: 'auto', color: '#52c41a' }}
+                    onClick={() => {
+                      setRechargeDetailVisible(true);
+                      fetchAllRecharges();
+                    }}
+                  >
+                    查看明细 →
+                  </Button>
+                </div>
               </Card>
             </Col>
           </Row>
@@ -541,7 +695,7 @@ const AdvancedMarketing: React.FC = () => {
               items={[
                 {
                   key: '1',
-                  label: <span><UserOutlined /> 我的推荐用户 <Tag style={{ margin: '0 0 0 8px', borderRadius: 10, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>{totalReferrals} 人</Tag></span>,
+                  label: <span><UserOutlined /> 推荐的普通用户 <Tag style={{ margin: '0 0 0 8px', borderRadius: 10, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>{totalReferrals} 人</Tag></span>,
                   children: (
                     <div style={{ paddingTop: 8 }}>
 {/* My Referrals Table */}
@@ -568,33 +722,48 @@ const AdvancedMarketing: React.FC = () => {
             />
           </Tooltip>
         </div>
+
+        {/* Search */}
+        <div style={{ marginBottom: 16 }}>
+          <Input.Search
+            placeholder="通过 UID、用户名、备注搜索推荐用户..."
+            allowClear
+            onChange={(e) => setReferralSearchText(e.target.value)}
+            style={{ maxWidth: 320 }}
+          />
+        </div>
+
         {isMobile ? (
           <List
-            dataSource={referrals}
+            dataSource={filteredReferrals}
             loading={loading}
-            pagination={{ pageSize: 10 }}
+            pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '15', '20', '50'] }}
             locale={{ emptyText: '暂无推荐用户' }}
             renderItem={record => (
               <Card size="small" style={{ marginBottom: 12, borderRadius: 8, background: _isLight ? '#fff' : '#141414', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Text strong style={{ fontSize: 15, color: _isLight ? '#1f2937' : '#fff' }}>{record.username}</Text>
-                  {record.is_active === 1 ? <Tag color="success" style={{ margin: 0 }}>活跃</Tag> : <Tag color="default" style={{ margin: 0 }}>停用</Tag>}
+                  {record.is_active === 1 ? <Tag color="success" style={{ margin: 0 }}>{ t('active') }</Tag> : <Tag color="default" style={{ margin: 0 }}>{ t('inactive') }</Tag>}
                 </div>
                 <div style={{ marginBottom: 12 }}>
-                  <Text style={{ fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', display: 'block' }}>{record.email}</Text>
+                  {record.email && !record.email.endsWith('@tokensbyte.local') && (
+                    <Text style={{ fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', display: 'block' }}>{record.email}</Text>
+                  )}
                   <Text style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>UID: {record.uid}</Text>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12, padding: '8px', background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
                   <Text style={{ fontSize: 12, color: record.remark ? (_isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)') : (_isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'), flex: 1 }}>
-                    {record.remark || '暂无备注'}
+                    {record.remark || t('no_remark')}
                   </Text>
                   <Button type="text" size="small" icon={<EditOutlined style={{ color: '#1677ff' }} />} onClick={() => openRemarkModal(record)} />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <Tag color="blue" style={{ margin: 0 }}>{record.level_name || record.user_group} {allowedLevels.find((l: any) => l.group_key === record.user_group)?.discount !== undefined ? `(${allowedLevels.find((l: any) => l.group_key === record.user_group)?.discount}x)` : ''}</Tag>
                   <div style={{ textAlign: 'right' }}>
-                    <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>余额: <span style={{ color: _isLight ? '#1f2937' : '#fff', fontWeight: 500 }}>{currencySymbol}{(record.balance || 0).toFixed(2)}</span></Text>
-                    <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>总充值: <span style={{ color: '#52c41a', fontWeight: 500 }}>{currencySymbol}{(record.total_recharge || 0).toFixed(2)}</span></Text>
+                    <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>系统: <span style={{ color: _isLight ? '#1f2937' : '#fff', fontWeight: 500 }}>{currencySymbol}{(record.balance || 0).toFixed(2)}</span><span style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}> / {currencySymbol}{((record.balance || 0) + (record.used_quota || 0)).toFixed(2)}</span></Text>
+                    {((record.gift_balance || 0) + (record.gift_used_quota || 0)) > 0 && (
+                      <Text style={{ fontSize: 12, display: 'block', color: '#faad14' }}>🎁 {currencySymbol}{(record.gift_balance || 0).toFixed(2)}<span style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}> / {currencySymbol}{((record.gift_balance || 0) + (record.gift_used_quota || 0)).toFixed(2)}</span></Text>
+                    )}
                   </div>
                 </div>
                 
@@ -629,9 +798,9 @@ const AdvancedMarketing: React.FC = () => {
                                   <Text style={{ color: r.amount > 0 ? '#52c41a' : '#ff4d4f', fontWeight: 'bold' }}>
                                     {r.amount > 0 ? '+' : ''}{currencySymbol}{Math.abs(r.amount).toFixed(2)}
                                   </Text>
-                                  <Text type="secondary" style={{ fontSize: 12 }}>{r.recharge_type}</Text>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>{{ 'manual': t('type_manual'), 'gift': t('type_registration'), 'commission': t('type_commission'), 'transfer': t('type_transfer'), 'alipay': t('type_alipay'), 'wechat': t('type_wechat'), 'redemption': t('type_redemption') }[r.recharge_type as string] || r.recharge_type}</Text>
                                 </div>
-                                <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>{r.created_at}</Text>
+                                <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>{r.created_at}{r.operator ? ` · 操作人: ${r.operator}` : ''}</Text>
                               </div>
                             </List.Item>
                           )}
@@ -645,49 +814,13 @@ const AdvancedMarketing: React.FC = () => {
           />
         ) : (
         <Table
-          dataSource={referrals}
+          dataSource={filteredReferrals}
           columns={columns}
           rowKey="id"
           loading={loading}
           size="small"
-          pagination={{ pageSize: 15, showSizeChanger: true }}
-          expandable={{
-            expandedRowRender: (record) => {
-              const recharges = expandedRecharges[record.id];
-              const isLoading = loadingRecharges[record.id];
-
-              if (isLoading || !recharges) {
-                return <div style={{ padding: 16, textAlign: 'center' }}><Spin size="small" /></div>;
-              }
-
-              if (recharges.length === 0) {
-                return (
-                  <div style={{ padding: 16, textAlign: 'center' }}>
-                    <Text type="secondary">该用户暂无充值记录</Text>
-                  </div>
-                );
-              }
-
-              return (
-                <div style={{ padding: '8px 16px', background: _isLight ? '#fafafa' : '#1a1a1a', borderRadius: 8 }}>
-                  <Text strong style={{ color: '#1677ff', display: 'block', marginBottom: 12, fontSize: 13 }}>
-                    <DollarOutlined style={{ marginRight: 4 }} />
-                    {record.username} 的充值明细（共 {recharges.length} 条）
-                  </Text>
-                  <Table
-                    dataSource={recharges}
-                    columns={rechargeColumns}
-                    rowKey="id"
-                    size="small"
-                    pagination={false}
-                  />
-                </div>
-              );
-            },
-            onExpand: (expanded, record) => {
-              if (expanded) fetchRecharges(record.id);
-            },
-          }}
+          pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '15', '20', '50'] }}
+          scroll={{ x: 'max-content' }}
           locale={{ emptyText: '暂无推荐用户' }}
         />
         )}
@@ -697,12 +830,20 @@ const AdvancedMarketing: React.FC = () => {
                 },
                 teamData?.is_leader && teamData.teams?.length > 0 ? {
                   key: '2',
-                  label: <span><CrownOutlined /> 我的团队成员</span>,
+                  label: <span><CrownOutlined /> 业务员管理</span>,
                   children: (
                     <div style={{ paddingTop: 8 }}>
 {/* Team Leader Section */}
       {teamData?.is_leader && teamData.teams?.length > 0 && (
         <div>
+          <div style={{ marginBottom: 16 }}>
+            <Input.Search
+              placeholder="通过 UID、用户名、备注搜索业务员..."
+              allowClear
+              onChange={(e) => setTeamMemberSearchText(e.target.value)}
+              style={{ maxWidth: 320 }}
+            />
+          </div>
           {teamData.teams.map((team: any) => (
             <div key={team.id} style={{ marginBottom: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -745,8 +886,8 @@ const AdvancedMarketing: React.FC = () => {
 
               {isMobile ? (
                 <List
-                  dataSource={team.members}
-                  pagination={false}
+                  dataSource={filterMembers(team.members)}
+                  pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '15', '20', '50'] }}
                   locale={{ emptyText: '暂无团队成员' }}
                   renderItem={(record: any) => (
                     <Card size="small" style={{ marginBottom: 12, borderRadius: 8, background: _isLight ? '#fff' : '#141414', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)' }}>
@@ -759,6 +900,12 @@ const AdvancedMarketing: React.FC = () => {
                       <div style={{ marginBottom: 12 }}>
                         <Text style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>UID: {record.uid}</Text>
                       </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12, padding: '8px', background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
+                        <Text style={{ fontSize: 12, color: record.remark ? (_isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)') : (_isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'), flex: 1 }}>
+                          {record.remark || t('no_remark')}
+                        </Text>
+                        <Button type="text" size="small" icon={<EditOutlined style={{ color: '#1677ff' }} />} onClick={() => openRemarkModal(record)} />
+                      </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                         <div>
                           <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>推荐人数: <span style={{ color: _isLight ? '#1f2937' : '#fff', fontWeight: 500 }}>{record.referred_count}</span></Text>
@@ -766,6 +913,7 @@ const AdvancedMarketing: React.FC = () => {
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>余额: <span style={{ color: _isLight ? '#1f2937' : '#fff', fontWeight: 500 }}>{currencySymbol}{(record.balance || 0).toFixed(2)}</span></Text>
+                          {(record.credit_limit || 0) > 0 && <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>信控: <span style={{ color: '#1677ff', fontWeight: 500 }}>{currencySymbol}{(record.credit_limit || 0).toFixed(0)}</span></Text>}
                           <Text style={{ fontSize: 12, display: 'block', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>总充值: <span style={{ color: '#52c41a', fontWeight: 500 }}>{currencySymbol}{(record.total_recharge || 0).toFixed(2)}</span></Text>
                         </div>
                       </div>
@@ -782,15 +930,38 @@ const AdvancedMarketing: React.FC = () => {
                           </Button>
                         </div>
                       )}
+                      {team.leader_can_remove_members === 1 && (
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 8, textAlign: 'center' }}>
+                          <Popconfirm
+                            title={`确定移除成员 ${record.username}？`}
+                            description={<div style={{ maxWidth: 220 }}>移除后用户不再属于此团队，<br/>用户等级恢复默认等级</div>}
+                            onConfirm={() => handleRemoveMember(record.user_id, record.username)}
+                            okText="确定移除"
+                            cancelText="取消"
+                            okButtonProps={{ danger: true }}
+                          >
+                            <Button
+                              type="link"
+                              size="small"
+                              danger
+                              icon={<UserDeleteOutlined />}
+                              style={{ padding: 0 }}
+                            >
+                              移除成员
+                            </Button>
+                          </Popconfirm>
+                        </div>
+                      )}
                     </Card>
                   )}
                 />
               ) : (
                 <Table
-                dataSource={team.members}
+                dataSource={filterMembers(team.members)}
                 rowKey="user_id"
                 size="small"
-                pagination={false}
+                pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '15', '20', '50'] }}
+                scroll={{ x: 'max-content' }}
                 columns={[
                   {
                     title: '推广员',
@@ -798,15 +969,29 @@ const AdvancedMarketing: React.FC = () => {
                     key: 'username',
                     render: (name: string, record: any) => (
                       <div>
-                        <Text strong style={{ color: _isLight ? '#1f2937' : '#fff' }}>{name}</Text>
-                        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 11, marginLeft: 8 }}>
-                          {record.uid}
+                        <Text strong style={{ color: _isLight ? '#1f2937' : '#fff', display: 'block', lineHeight: 1.3 }}>{name}</Text>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, marginBottom: 4 }}>
+                          <Text style={{ fontSize: 12, color: record.remark ? (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)') : (_isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)') }}>
+                            {record.remark || t('no_remark')}
+                          </Text>
+                          <Tooltip title="修改备注">
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<EditOutlined style={{ color: '#1677ff', fontSize: 12 }} />}
+                              onClick={(e) => { e.stopPropagation(); openRemarkModal(record); }}
+                              style={{ padding: 0, minWidth: 20, height: 20 }}
+                            />
+                          </Tooltip>
+                        </div>
+                        <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 11 }}>
+                          UID: {record.uid}
                         </Text>
                       </div>
                     ),
                   },
                   {
-                    title: '用户等级',
+                    title: t('user_level'),
                     dataIndex: 'level_name',
                     key: 'level_name',
                     width: 100,
@@ -829,39 +1014,18 @@ const AdvancedMarketing: React.FC = () => {
                     ),
                   },
                   {
-                    title: '剩余额度/总额度',
+                    title: t('wallet_balance'),
                     key: 'member_balance_quota',
-                    width: 180,
-                    render: (_: any, record: any) => {
-                      const balance = record.balance || 0;
-                      const total = record.total_recharge || 0;
-                      const percent = total > 0 ? Math.min((balance / total) * 100, 100) : 0;
-                      return (
-                        <div style={{ minWidth: 120 }}>
-                          <div style={{
-                            display: 'flex', alignItems: 'center', gap: 4,
-                            marginBottom: 4,
-                          }}>
-                            <DollarOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }} />
-                            <Text style={{ color: _isLight ? '#1f2937' : '#fff', fontSize: 12, fontWeight: 500 }}>
-                              {currencySymbol}{balance.toFixed(2)}
-                            </Text>
-                            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 12 }}>/</Text>
-                            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }}>
-                              {currencySymbol}{total.toFixed(2)}
-                            </Text>
-                          </div>
-                          <Progress
-                            percent={percent}
-                            showInfo={false}
-                            size="small"
-                            strokeColor={percent > 50 ? '#52c41a' : percent > 20 ? '#faad14' : '#ff4d4f'}
-                            trailColor="rgba(255,255,255,0.08)"
-                            style={{ margin: 0, lineHeight: 1, width: 100 }}
-                          />
-                        </div>
-                      );
-                    },
+                    width: 320,
+                    render: (_: any, record: any) => (
+                      <WalletBalanceDisplay 
+                        record={record} 
+                        onWalletClick={openWalletDetails} 
+                        systemLabel={t('system_wallet')} 
+                        giftLabel={t('gift_wallet')} 
+                        totalRecharge={record.total_recharge}
+                      />
+                    ),
                   },
                   {
                     title: '推荐用户充值',
@@ -875,22 +1039,46 @@ const AdvancedMarketing: React.FC = () => {
                       </Text>
                     ),
                   },
-                  ...(allowedMemberLevels.length > 0 ? [{
-                    title: '操作',
+                  ...(allowedMemberLevels.length > 0 || teamData?.teams?.some((t: any) => t.leader_can_remove_members === 1) ? [{
+                    title: t('actions'),
                     key: 'action',
-                    width: 100,
+                    width: allowedMemberLevels.length > 0 && teamData?.teams?.some((t: any) => t.leader_can_remove_members === 1) ? 180 : 100,
                     render: (_: any, record: any) => (
-                      <Tooltip title="设置成员等级">
-                        <Button
-                          type="link"
-                          size="small"
-                          icon={<TrophyOutlined />}
-                          onClick={() => openMemberLevelModal(record)}
-                          style={{ color: '#1677ff', padding: 0 }}
-                        >
-                          设置等级
-                        </Button>
-                      </Tooltip>
+                      <Space size={4}>
+                        {allowedMemberLevels.length > 0 && (
+                          <Tooltip title="设置成员等级">
+                            <Button
+                              type="link"
+                              size="small"
+                              icon={<TrophyOutlined />}
+                              onClick={() => openMemberLevelModal(record)}
+                              style={{ color: '#1677ff', padding: 0 }}
+                            >
+                              设置等级
+                            </Button>
+                          </Tooltip>
+                        )}
+                        {team.leader_can_remove_members === 1 && (
+                          <Popconfirm
+                            title={`确定移除成员 ${record.username}？`}
+                            description={<div style={{ maxWidth: 220 }}>移除后用户不再属于此团队，<br/>用户等级恢复默认等级</div>}
+                            onConfirm={() => handleRemoveMember(record.user_id, record.username)}
+                            okText="确定移除"
+                            cancelText="取消"
+                            okButtonProps={{ danger: true }}
+                          >
+                            <Button
+                              type="link"
+                              size="small"
+                              danger
+                              icon={<UserDeleteOutlined />}
+                              style={{ padding: 0 }}
+                            >
+                              移除
+                            </Button>
+                          </Popconfirm>
+                        )}
+                      </Space>
                     ),
                   }] : []),
                 ]}
@@ -908,6 +1096,391 @@ const AdvancedMarketing: React.FC = () => {
           </Card>
         </Col>
       </Row>
+      </>
+
+      {/* 钱包明细 Modal */}
+      <Modal
+        title={`${selectedWalletUser?.username || ''} 的钱包明细`}
+        open={!!selectedWalletUser}
+        onCancel={() => { setSelectedWalletUser(null); }}
+        footer={null}
+        width={800}
+        destroyOnClose
+      >
+        {selectedWalletUser && (() => {
+          const uid = selectedWalletUser.id || selectedWalletUser.user_id;
+          const allRecharges = expandedRecharges[uid] || [];
+          return (
+            <WalletDetailsView
+              key={uid}
+              user={selectedWalletUser}
+              recharges={allRecharges}
+              loading={loadingRecharges[uid]}
+              useReferralApi
+            />
+          );
+        })()}
+      </Modal>
+
+      {/* 推广数据明细 Modal */}
+      <Modal
+        title="推广数据明细"
+        open={rechargeDetailVisible}
+        onCancel={() => setRechargeDetailVisible(false)}
+        footer={null}
+        width={780}
+        destroyOnClose
+      >
+        {/* 日期过滤 */}
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>时间范围：</Text>
+          <Radio.Group
+            size="small"
+            buttonStyle="outline"
+            value={(() => {
+              const [s, e] = rechargeDetailRange;
+              const now = dayjs();
+              if (s.isSame(now.startOf('month'), 'day') && e.isSame(now.endOf('month'), 'day')) return 'thisMonth';
+              const lm = now.subtract(1, 'month');
+              if (s.isSame(lm.startOf('month'), 'day') && e.isSame(lm.endOf('month'), 'day')) return 'lastMonth';
+              if (s.isSame(now.startOf('year'), 'day') && e.isSame(now.endOf('year'), 'day')) return 'thisYear';
+              if (s.isSame(now.subtract(6, 'month').startOf('day'), 'day') && e.isSame(now.endOf('day'), 'day')) return 'lastHalfYear';
+              if (s.isSame(now.subtract(1, 'year').startOf('day'), 'day') && e.isSame(now.endOf('day'), 'day')) return 'lastYear';
+              if (s.isSame(dayjs('2000-01-01'), 'day') && e.isSame(now.add(10, 'year').endOf('day'), 'day')) return 'all';
+              return 'custom';
+            })()}
+            onChange={e => {
+              const now = dayjs();
+              if (e.target.value === 'thisMonth') setRechargeDetailRange([now.startOf('month'), now.endOf('month')]);
+              else if (e.target.value === 'lastMonth') { const lm = now.subtract(1,'month'); setRechargeDetailRange([lm.startOf('month'), lm.endOf('month')]); }
+              else if (e.target.value === 'thisYear') setRechargeDetailRange([now.startOf('year'), now.endOf('year')]);
+              else if (e.target.value === 'lastHalfYear') setRechargeDetailRange([now.subtract(6, 'month').startOf('day'), now.endOf('day')]);
+              else if (e.target.value === 'lastYear') setRechargeDetailRange([now.subtract(1, 'year').startOf('day'), now.endOf('day')]);
+              else if (e.target.value === 'all') setRechargeDetailRange([dayjs('2000-01-01'), now.add(10, 'year').endOf('day')]);
+            }}
+          >
+            <Radio.Button value="thisMonth">当月</Radio.Button>
+            <Radio.Button value="lastMonth">上月</Radio.Button>
+            <Radio.Button value="thisYear">当年</Radio.Button>
+            <Radio.Button value="lastHalfYear">最近半年</Radio.Button>
+            <Radio.Button value="lastYear">最近一年</Radio.Button>
+            <Radio.Button value="all">全部</Radio.Button>
+          </Radio.Group>
+          <DatePicker.RangePicker
+            size="small"
+            value={rechargeDetailRange}
+            onChange={v => { if (v && v[0] && v[1]) setRechargeDetailRange([v[0], v[1]]); }}
+            style={{ flex: 1, minWidth: 200 }}
+          />
+        </div>
+
+        {/* 三个 Tab */}
+        {(() => {
+          // 按日期范围过滤 expandedRecharges 中某用户指定钱包类型的合计
+          const calcAmount = (userId: string, walletType: string): number => {
+            const records = expandedRecharges[userId] || [];
+            const [start, end] = rechargeDetailRange;
+            return records
+              .filter(r => {
+                if ((r.wallet_type || 'system') !== walletType) return false;
+                const d = dayjs(r.created_at);
+                return (d.isAfter(start.startOf('day').subtract(1,'ms')) && d.isBefore(end.endOf('day').add(1,'ms')));
+              })
+              .reduce((sum, r) => sum + (r.amount || 0), 0);
+          };
+
+          // 累计充值Tab：展开每一条 system 钱包充值流水记录
+          const [start, end] = rechargeDetailRange;
+          const allRechargeRows: any[] = [];
+          referrals.forEach(r => {
+            const records = expandedRecharges[r.id] || [];
+            records
+              .filter(rec => {
+                if ((rec.wallet_type || 'system') !== 'system') return false;
+                const d = dayjs(rec.created_at);
+                return d.isAfter(start.startOf('day').subtract(1, 'ms')) && d.isBefore(end.endOf('day').add(1, 'ms'));
+              })
+              .forEach(rec => {
+                allRechargeRows.push({ ...rec, _username: r.username, _uid: r.uid, _rowKey: `${r.id}_${rec.id}` });
+              });
+          });
+          allRechargeRows.sort((a, b) => dayjs(b.created_at).valueOf() - dayjs(a.created_at).valueOf());
+          const allRechargeTotal = allRechargeRows.reduce((s, r) => s + (r.amount || 0), 0);
+
+          // 各Tab流水行数据（展开每条记录，按时间降序）
+          const buildRows = (walletType: string) => {
+            const rows: any[] = [];
+            referrals.forEach(r => {
+              (expandedRecharges[r.id] || [])
+                .filter(rec => {
+                  if ((rec.wallet_type || 'system') !== walletType) return false;
+                  const d = dayjs(rec.created_at);
+                  return d.isAfter(start.startOf('day').subtract(1, 'ms')) && d.isBefore(end.endOf('day').add(1, 'ms'));
+                })
+                .forEach(rec => rows.push({ ...rec, _username: r.username, _uid: r.uid, _rowKey: `${walletType}_${r.id}_${rec.id}` }));
+            });
+            return rows.sort((a, b) => dayjs(b.created_at).valueOf() - dayjs(a.created_at).valueOf());
+          };
+          const allSystemRows = buildRows('system');
+          const allGiftRows = buildRows('gift');
+          const allSystemTotal = allSystemRows.reduce((s, r) => s + (r.amount || 0), 0);
+          const allGiftTotal = allGiftRows.reduce((s, r) => s + (r.amount || 0), 0);
+          const allUsedQuotaTotal = consumptionTotal;
+
+          const isLoading = referrals.some(r => loadingRecharges[r.id]);
+          const loadedCount = referrals.filter(r => expandedRecharges[r.id] !== undefined).length;
+
+          const getLabelPrefix = () => {
+            const [s, e] = rechargeDetailRange;
+            const now = dayjs();
+            if (s.isSame(now.startOf('month'), 'day') && e.isSame(now.endOf('month'), 'day')) return '当月';
+            const lm = now.subtract(1, 'month');
+            if (s.isSame(lm.startOf('month'), 'day') && e.isSame(lm.endOf('month'), 'day')) return '上月';
+            if (s.isSame(now.startOf('year'), 'day') && e.isSame(now.endOf('year'), 'day')) return '当年';
+            if (s.isSame(now.subtract(6, 'month').startOf('day'), 'day') && e.isSame(now.endOf('day'), 'day')) return '近半年';
+            if (s.isSame(now.subtract(1, 'year').startOf('day'), 'day') && e.isSame(now.endOf('day'), 'day')) return '近一年';
+            if (s.isSame(dayjs('2000-01-01'), 'day') && e.isSame(now.add(10, 'year').endOf('day'), 'day')) return '总';
+            return '所选时间段';
+          };
+          const labelPrefix = getLabelPrefix();
+
+          const userCol = {
+            title: '用户名',
+            key: 'username',
+            render: (_: any, record: any) => (
+              <div>
+                <Text strong style={{ fontSize: 13 }}>{record.username}</Text>
+                <br />
+                <Text type="secondary" style={{ fontSize: 11 }}>UID: {record.uid}</Text>
+              </div>
+            ),
+          };
+
+          const amountCol = (title: string, key: string, color = '#52c41a') => ({
+            title,
+            key,
+            align: 'right' as const,
+            render: (_: any, record: any) => {
+              const v: number = record._amount;
+              const loaded = expandedRecharges[record.id] !== undefined;
+              if (!loaded && loadingRecharges[record.id]) return <Spin size="small" />;
+              return (
+                <Text style={{ color: v > 0 ? color : v < 0 ? '#ff4d4f' : undefined, fontWeight: 600, fontSize: 13 }}>
+                  {currencySymbol}{v.toFixed(2)}
+                </Text>
+              );
+            },
+          });
+
+          return (
+            <>
+              <div style={{ display: 'flex', gap: 24, marginBottom: 16, background: _isLight ? '#fafafa' : '#141414', padding: '12px 16px', borderRadius: 8, border: `1px solid ${_isLight ? '#f0f0f0' : '#303030'}`, flexWrap: 'wrap' }}>
+                <Statistic title={`${labelPrefix}充值合计`} value={allRechargeTotal} precision={2} prefix={currencySymbol} valueStyle={{ color: '#52c41a', fontSize: 18, fontWeight: 600 }} />
+                <Statistic title={`${labelPrefix}系统资金消费合计`} value={allUsedQuotaTotal} precision={2} prefix={currencySymbol} valueStyle={{ color: '#eb2f96', fontSize: 18, fontWeight: 600 }} />
+                <Statistic title={`${labelPrefix}系统资金合计`} value={allSystemTotal} precision={2} prefix={currencySymbol} valueStyle={{ color: '#1677ff', fontSize: 18, fontWeight: 600 }} />
+                <Statistic title={`${labelPrefix}赠送资金合计`} value={allGiftTotal} precision={2} prefix={currencySymbol} valueStyle={{ color: '#faad14', fontSize: 18, fontWeight: 600 }} />
+              </div>
+              {isLoading && (
+                <div style={{ marginBottom: 8 }}>
+                  <Text type="secondary" style={{ fontSize: 11 }}>正在加载明细数据... {loadedCount}/{referrals.length}</Text>
+                </div>
+              )}
+              <Tabs
+                size="small"
+                items={[
+                  {
+                    key: 'recharge',
+                    label: '累计充值',
+                    children: (
+                      <Table
+                        size="small"
+                        rowKey="_rowKey"
+                        pagination={false}
+                        scroll={{ y: 380 }}
+                        dataSource={allRechargeRows}
+                        locale={{ emptyText: loadedCount < referrals.length ? '数据加载中...' : '该时间段内无充值记录' }}
+                        columns={[
+                          {
+                            title: '时间',
+                            key: 'created_at',
+                            width: 150,
+                            render: (_: any, record: any) => (
+                              <Text style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>
+                                {dayjs(record.created_at).format('MM-DD HH:mm:ss')}
+                              </Text>
+                            ),
+                          },
+                          {
+                            title: '用户',
+                            key: 'user',
+                            render: (_: any, record: any) => (
+                              <div>
+                                <Text strong style={{ fontSize: 13 }}>{record._username}</Text>
+                                <br />
+                                <Text type="secondary" style={{ fontSize: 11 }}>UID: {record._uid}</Text>
+                              </div>
+                            ),
+                          },
+                          {
+                            title: '备注',
+                            key: 'remark',
+                            render: (_: any, record: any) => (
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                {record.remark || record.recharge_type || '—'}
+                              </Text>
+                            ),
+                          },
+                          {
+                            title: `金额 (${currencySymbol})`,
+                            key: 'amount',
+                            align: 'right' as const,
+                            width: 100,
+                            render: (_: any, record: any) => {
+                              const v = record.amount || 0;
+                              return (
+                                <Text style={{ color: v > 0 ? '#52c41a' : v < 0 ? '#ff4d4f' : undefined, fontWeight: 600, fontSize: 13 }}>
+                                  {v > 0 ? '+' : ''}{currencySymbol}{v.toFixed(2)}
+                                </Text>
+                              );
+                            },
+                          },
+                        ]}
+                        summary={() => (
+                          <Table.Summary fixed>
+                            <Table.Summary.Row>
+                              <Table.Summary.Cell index={0} colSpan={3}>
+                                <Text strong>合计（{allRechargeRows.length} 笔）</Text>
+                              </Table.Summary.Cell>
+                              <Table.Summary.Cell index={1} align="right">
+                                <Text strong style={{ color: allRechargeTotal >= 0 ? '#52c41a' : '#ff4d4f', fontSize: 14 }}>
+                                  {allRechargeTotal > 0 ? '+' : ''}{currencySymbol}{allRechargeTotal.toFixed(2)}
+                                </Text>
+                              </Table.Summary.Cell>
+                            </Table.Summary.Row>
+                          </Table.Summary>
+                        )}
+                      />
+                    ),
+                  },
+
+                  {
+                    key: 'system',
+                    label: '系统资金',
+                    children: (
+                      <Table
+                        size="small" rowKey="_rowKey" pagination={false} scroll={{ y: 380 }}
+                        dataSource={allSystemRows}
+                        locale={{ emptyText: loadedCount < referrals.length ? '数据加载中...' : '该时间段内无系统资金记录' }}
+                        columns={[
+                          {
+                            title: '时间', key: 'created_at', width: 150,
+                            render: (_: any, record: any) => (
+                              <Text style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>
+                                {dayjs(record.created_at).format('MM-DD HH:mm:ss')}
+                              </Text>
+                            ),
+                          },
+                          {
+                            title: '用户', key: 'user',
+                            render: (_: any, record: any) => (
+                              <div>
+                                <Text strong style={{ fontSize: 13 }}>{record._username}</Text>
+                                <br />
+                                <Text type="secondary" style={{ fontSize: 11 }}>UID: {record._uid}</Text>
+                              </div>
+                            ),
+                          },
+                          {
+                            title: '备注', key: 'remark',
+                            render: (_: any, record: any) => (
+                              <Text type="secondary" style={{ fontSize: 12 }}>{record.remark || record.recharge_type || '—'}</Text>
+                            ),
+                          },
+                          {
+                            title: `金额 (${currencySymbol})`, key: 'amount', align: 'right' as const, width: 100,
+                            render: (_: any, record: any) => {
+                              const v = record.amount || 0;
+                              return <Text style={{ color: v > 0 ? '#1677ff' : v < 0 ? '#ff4d4f' : undefined, fontWeight: 600, fontSize: 13 }}>{v > 0 ? '+' : ''}{currencySymbol}{v.toFixed(2)}</Text>;
+                            },
+                          },
+                        ]}
+                        summary={() => (
+                          <Table.Summary fixed>
+                            <Table.Summary.Row>
+                              <Table.Summary.Cell index={0} colSpan={3}><Text strong>合计（{allSystemRows.length} 笔）</Text></Table.Summary.Cell>
+                              <Table.Summary.Cell index={1} align="right">
+                                <Text strong style={{ color: allSystemTotal >= 0 ? '#1677ff' : '#ff4d4f', fontSize: 14 }}>
+                                  {allSystemTotal > 0 ? '+' : ''}{currencySymbol}{allSystemTotal.toFixed(2)}
+                                </Text>
+                              </Table.Summary.Cell>
+                            </Table.Summary.Row>
+                          </Table.Summary>
+                        )}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'gift',
+                    label: '赠送资金',
+                    children: (
+                      <Table
+                        size="small" rowKey="_rowKey" pagination={false} scroll={{ y: 380 }}
+                        dataSource={allGiftRows}
+                        locale={{ emptyText: loadedCount < referrals.length ? '数据加载中...' : '该时间段内无赠送记录' }}
+                        columns={[
+                          {
+                            title: '时间', key: 'created_at', width: 150,
+                            render: (_: any, record: any) => (
+                              <Text style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}>
+                                {dayjs(record.created_at).format('MM-DD HH:mm:ss')}
+                              </Text>
+                            ),
+                          },
+                          {
+                            title: '用户', key: 'user',
+                            render: (_: any, record: any) => (
+                              <div>
+                                <Text strong style={{ fontSize: 13 }}>{record._username}</Text>
+                                <br />
+                                <Text type="secondary" style={{ fontSize: 11 }}>UID: {record._uid}</Text>
+                              </div>
+                            ),
+                          },
+                          {
+                            title: '备注', key: 'remark',
+                            render: (_: any, record: any) => (
+                              <Text type="secondary" style={{ fontSize: 12 }}>{record.remark || record.recharge_type || '—'}</Text>
+                            ),
+                          },
+                          {
+                            title: `金额 (${currencySymbol})`, key: 'amount', align: 'right' as const, width: 100,
+                            render: (_: any, record: any) => {
+                              const v = record.amount || 0;
+                              return <Text style={{ color: v > 0 ? '#faad14' : v < 0 ? '#ff4d4f' : undefined, fontWeight: 600, fontSize: 13 }}>{v > 0 ? '+' : ''}{currencySymbol}{v.toFixed(2)}</Text>;
+                            },
+                          },
+                        ]}
+                        summary={() => (
+                          <Table.Summary fixed>
+                            <Table.Summary.Row>
+                              <Table.Summary.Cell index={0} colSpan={3}><Text strong>合计（{allGiftRows.length} 笔）</Text></Table.Summary.Cell>
+                              <Table.Summary.Cell index={1} align="right">
+                                <Text strong style={{ color: allGiftTotal >= 0 ? '#faad14' : '#ff4d4f', fontSize: 14 }}>
+                                  {allGiftTotal > 0 ? '+' : ''}{currencySymbol}{allGiftTotal.toFixed(2)}
+                                </Text>
+                              </Table.Summary.Cell>
+                            </Table.Summary.Row>
+                          </Table.Summary>
+                        )}
+                      />
+                    ),
+                  },
+                ]}
+              />
+            </>
+          );
+        })()}
+      </Modal>
 
       {/* Set Remark Modal */}
       <Modal
@@ -943,58 +1516,100 @@ const AdvancedMarketing: React.FC = () => {
       <Modal
         title={
           <Space>
-            <TrophyOutlined style={{ color: '#faad14' }} />
-            <span>设置用户等级</span>
+            <EditOutlined style={{ color: '#1677ff' }} />
+            <span>编辑推广用户</span>
           </Space>
         }
         open={levelModalVisible}
         onCancel={() => setLevelModalVisible(false)}
         onOk={handleSetLevel}
         confirmLoading={settingLevel}
-        okText="确认设置"
+        okText="确认修改"
         width={480}
         destroyOnClose
       >
         {levelTargetUser && (
-          <div style={{ marginTop: 16 }}>
+          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{
-              padding: '12px 16px', marginBottom: 16,
+              padding: '12px 16px',
               background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)',
               borderRadius: 8,
               border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4
             }}>
               <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13 }}>
                 目标用户：<Text strong style={{ color: _isLight ? '#1f2937' : '#fff' }}>{levelTargetUser.username}</Text>
                 <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11, marginLeft: 8 }}>UID: {levelTargetUser.uid}</Text>
               </Text>
-              <br />
-              <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }}>
-                当前等级：<Tag style={{ margin: '0 0 0 4px', borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
+              {selectedPayEnabled === 0 && (
+                <div style={{ marginTop: 2 }}>
+                  <Tag color="error" style={{ margin: 0 }}>关闭支付</Tag>
+                </div>
+              )}
+            </div>
+
+            {/* 等级设置 */}
+            {isLeader && allowedLevels.length > 0 ? (
+              <div>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 8 }}>
+                  选择新等级：
+                </Text>
+                <Select
+                  value={selectedGroupKey}
+                  onChange={setSelectedGroupKey}
+                  options={allowedLevels.map((l: any) => ({
+                    value: l.group_key,
+                    label: (
+                      <Space>
+                        <TrophyOutlined style={{ color: '#faad14' }} />
+                        <span>{l.name} ({l.discount !== undefined ? l.discount : 1}x)</span>
+                        <Tag style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
+                          ULID: {l.id?.toString().padStart(4, '0') || l.group_key}
+                        </Tag>
+                      </Space>
+                    ),
+                  }))}
+                  style={{ width: '100%' }}
+                  placeholder="选择用户等级"
+                />
+              </div>
+            ) : (
+              <div>
+                <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 4 }}>
+                  用户当前等级：
+                </Text>
+                <Tag style={{ margin: 0, borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
                   {levelTargetUser.level_name || levelTargetUser.user_group}
                 </Tag>
-              </Text>
-            </div>
-            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block', marginBottom: 8 }}>
-              选择新等级：
-            </Text>
-            <Select
-              value={selectedGroupKey}
-              onChange={setSelectedGroupKey}
-              options={allowedLevels.map((l: any) => ({
-                value: l.group_key,
-                label: (
-                  <Space>
-                    <TrophyOutlined style={{ color: '#faad14' }} />
-                    <span>{l.name} ({l.discount !== undefined ? l.discount : 1}x)</span>
-                    <Tag style={{ margin: 0, borderRadius: 4, fontSize: 11, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
-                      ULID: {l.id?.toString().padStart(4, '0') || l.group_key}
-                    </Tag>
-                  </Space>
-                ),
-              }))}
-              style={{ width: '100%' }}
-              placeholder="选择用户等级"
-            />
+              </div>
+            )}
+
+            {/* 支付设置 */}
+            {canSetPay ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderTop: `1px solid ${_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'}` }}>
+                <div>
+                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block' }}>
+                    在线支付权限
+                  </Text>
+                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 11 }}>允许或禁止该用户进行在线余额充值</Text>
+                </div>
+                <Switch 
+                  checked={selectedPayEnabled !== 0} 
+                  onChange={(c) => setSelectedPayEnabled(c ? 1 : 0)} 
+                />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderTop: `1px solid ${_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'}` }}>
+                <div>
+                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13, display: 'block' }}>
+                    在线支付权限
+                  </Text>
+                </div>
+                {levelTargetUser.pay_enabled !== 0 ? <Tag color="success">允许</Tag> : <Tag color="default">禁止</Tag>}
+              </div>
+            )}
           </div>
         )}
       </Modal>
@@ -1030,7 +1645,7 @@ const AdvancedMarketing: React.FC = () => {
               <br />
               <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 12 }}>
                 当前等级：<Tag style={{ margin: '0 0 0 4px', borderRadius: 4, background: 'rgba(22,119,255,0.1)', border: '1px solid rgba(22,119,255,0.2)', color: '#1677ff' }}>
-                  {memberLevelTarget.user_group || 'default'}
+                  {memberLevelTarget.level_name || allowedMemberLevels.find((l: any) => l.group_key === memberLevelTarget.user_group)?.name || memberLevelTarget.user_group || 'default'}
                 </Tag>
               </Text>
             </div>

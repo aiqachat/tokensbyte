@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+{% set current_page = "home" %}
+{% block title %}{{ seo.meta_title | default(value="TokensByte") }} - 统一 AI 模型 API 接入平台{% endblock %}
+{% block content %}
+
+<style>
+/* Home specific styles */
+.hero {
+  position: relative;
+  padding: calc(var(--nav-height) + 80px) 0 80px;
+  min-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  overflow: hidden;
+}
+.hero-background { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+#hero-particles { position: absolute; inset: 0; z-index: 1; }
+.glow-blob { position: absolute; filter: blur(100px); opacity: 0.6; border-radius: 50%; }
+.blob-1 { top: -10%; left: 10%; width: 500px; height: 500px; background: rgba(22, 100, 255, 0.3); }
+[data-theme="light"] .blob-1 { background: rgba(99, 102, 241, 0.2); }
+.blob-2 { top: 20%; right: 10%; width: 400px; height: 400px; background: rgba(59, 130, 246, 0.25); }
+[data-theme="light"] .blob-2 { background: rgba(59, 130, 246, 0.15); }
+.noise-overlay { position: absolute; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E"); opacity: 0.03; mix-blend-mode: overlay; z-index: 2; }
+.hero-content { position: relative; z-index: 10; max-width: 800px; padding: 0 24px; display: flex; flex-direction: column; align-items: center; }
+.hero-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 16px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 9999px; font-size: 14px; font-weight: 500; color: var(--text-primary); margin-bottom: 32px; box-shadow: var(--shadow-sm); }
+.hero-title { font-size: clamp(2.5rem, 4vw, 4rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.1; margin-bottom: 24px; color: var(--text-primary); }
+.hero-subtitle { font-size: clamp(1.1rem, 2vw, 1.25rem); color: var(--text-secondary); max-width: 650px; margin-bottom: 40px; line-height: 1.6; }
+
+.api-display-container { width: 100%; max-width: 580px; margin: 0 auto 48px; }
+.api-address-box { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border-color); padding: 6px 6px 6px 24px; border-radius: 9999px; box-shadow: var(--shadow-sm); transition: all var(--transition-fast); }
+.api-address-box:hover { border-color: rgba(22, 100, 255, 0.4); box-shadow: var(--shadow-md); }
+.api-prefix { color: var(--text-muted); font-size: 14px; padding-right: 16px; border-right: 1px solid var(--border-color); margin-right: 16px; }
+#api-url-text { color: var(--text-primary); font-family: var(--font-sans); font-size: 16px; font-weight: 500; flex: 1; text-align: left; background: none; border: none; padding: 0; }
+.api-copy-btn { background: var(--brand-primary); color: #fff; border: none; padding: 10px 20px; border-radius: 9999px; font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all var(--transition-fast); position: relative; }
+.api-copy-btn:hover { filter: brightness(0.9); transform: translateY(-1px); }
+.api-copy-btn .btn-text { color: #fff; }
+.copy-tooltip { position: absolute; top: -40px; left: 50%; transform: translateX(-50%) translateY(10px); background: #10b981; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; opacity: 0; pointer-events: none; transition: all 0.2s; white-space: nowrap; }
+.api-copy-btn.copied .copy-tooltip { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+.hero-marquee-container { width: 100%; max-width: 1200px; overflow: hidden; position: relative; z-index: 20; }
+.hero-marquee { display: flex; overflow: hidden; --gap: 4rem; gap: var(--gap); padding: 24px 0; mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent); }
+.marquee-track { display: flex; min-width: 100%; flex-shrink: 0; align-items: center; gap: var(--gap); animation: scrollMarquee 40s linear infinite; }
+.marquee-item { opacity: 0.5; transition: opacity var(--transition-fast); filter: grayscale(1); }
+.marquee-item:hover { opacity: 1; filter: grayscale(0); }
+.marquee-text { font-size: 1.25rem; font-weight: 700; white-space: nowrap; }
+@keyframes scrollMarquee { 0% { transform: translateX(0); } 100% { transform: translateX(calc(-100% - var(--gap))); } }
+
+.stats { padding: 40px 0; background: var(--bg-secondary); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); }
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; text-align: center; }
+.si b { display: block; font-size: 36px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px; letter-spacing: -1px; }
+.si span { color: var(--text-secondary); font-size: 15px; font-weight: 500; }
+@media(max-width: 768px) { .stats-row { grid-template-columns: repeat(2, 1fr); gap: 32px; } }
+
+.feat-sec { padding: 100px 0; background: var(--bg-primary); text-align: center; }
+.feat-sec h2 { font-size: 32px; font-weight: 800; color: var(--text-primary); margin-bottom: 16px; }
+.feat-sec .sub { color: var(--text-secondary); font-size: 18px; margin-bottom: 60px; }
+.feat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 32px; text-align: left; }
+.feat-card { padding: 32px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; transition: all var(--transition-normal); }
+.feat-card:hover { transform: translateY(-5px); border-color: rgba(22, 100, 255, 0.3); box-shadow: var(--shadow-lg); }
+.feat-card .ic { width: 48px; height: 48px; border-radius: 12px; background: rgba(22, 100, 255, 0.1); color: var(--brand-primary); display: flex; align-items: center; justify-content: center; margin-bottom: 24px; }
+.feat-card h3 { font-size: 20px; font-weight: 700; color: var(--text-primary); margin-bottom: 12px; }
+.feat-card p { color: var(--text-secondary); font-size: 15px; line-height: 1.6; }
+
+.qnav { padding: 0 0 100px; background: var(--bg-primary); }
+.qnav-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+.qnav-card { display: block; padding: 32px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; transition: all var(--transition-normal); position: relative; overflow: hidden; }
+.qnav-card:hover { border-color: rgba(22, 100, 255, 0.4); transform: translateY(-4px); box-shadow: var(--shadow-md); background: rgba(22, 100, 255, 0.05); }
+.qnav-card .qic { width: 40px; height: 40px; color: var(--text-primary); margin-bottom: 20px; }
+.qnav-card h3 { font-size: 22px; font-weight: 700; color: var(--text-primary); margin-bottom: 12px; }
+.qnav-card p { color: var(--text-secondary); font-size: 15px; margin-bottom: 0; }
+.qnav-card .arr { position: absolute; right: 32px; top: 32px; font-size: 24px; color: var(--brand-primary); opacity: 0; transform: translateX(-10px); transition: all var(--transition-normal); }
+.qnav-card:hover .arr { opacity: 1; transform: translateX(0); }
+
+/* CTA Banner styles */
+.cta-banner {
+  padding: 100px 0;
+  background: transparent;
+  text-align: center;
+}
+.cta-content {
+  max-width: 800px;
+  margin: 0 auto;
+  background: transparent;
+  padding: 40px 24px;
+}
+.cta-content h2 {
+  font-size: clamp(2.2rem, 4vw, 3.5rem);
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 24px;
+  letter-spacing: -0.03em;
+}
+.cta-desc {
+  font-size: clamp(1rem, 1.8vw, 1.2rem);
+  color: var(--text-secondary);
+  margin-bottom: 40px;
+  line-height: 1.6;
+}
+.cta-desc code {
+  background: #0f1015;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #3b82f6;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-size: 0.95em;
+  margin: 0 4px;
+  white-space: nowrap;
+}
+[data-theme="light"] .cta-desc code {
+  background: rgba(22, 100, 255, 0.05);
+  border: 1px solid rgba(22, 100, 255, 0.15);
+  color: #2563eb;
+}
+.cta-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+}
+.cta-actions a {
+  display: inline-block;
+  padding: 14px 36px;
+  border-radius: 9999px;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.cta-primary {
+  background: #0066ff !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(0, 102, 255, 0.2);
+}
+.cta-primary:hover {
+  background: #0052cc !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 102, 255, 0.35);
+}
+.cta-secondary-wrapper {
+  position: relative;
+  display: inline-flex;
+  border-radius: 9999px;
+}
+.cta-secondary-wrapper::before {
+  content: '';
+  position: absolute;
+  inset: 0px;
+  background: linear-gradient(90deg, #f26058 0%, #f08b29 35%, #e2aa30 70%, #829c87 100%);
+  border-radius: 9999px;
+  filter: blur(14px);
+  opacity: 0.75;
+  z-index: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+.cta-secondary-wrapper:hover::before {
+  opacity: 0.95;
+  filter: blur(18px);
+}
+.cta-secondary {
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(90deg, #f26058 0%, #f08b29 35%, #e2aa30 70%, #829c87 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.cta-secondary:hover {
+  transform: translateY(-2px);
+}
+@media(max-width: 768px) {
+  .cta-actions {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .cta-secondary-wrapper {
+    width: 100%;
+  }
+  .cta-actions a {
+    width: 100%;
+    text-align: center;
+  }
+}
+</style>
+<!-- Hero Section with Canvas Particles & Glow Blobs -->
+<header class="hero">
+  <div class="hero-background">
+    <canvas id="hero-particles"></canvas>
+    <div class="glow-blob blob-1"></div>
+    <div class="glow-blob blob-2"></div>
+    <div class="noise-overlay"></div>
+  </div>
+
+  <div class="hero-content">
+    <div class="hero-badge"><span data-i18n="hero_badge">✨ Explore Next-Gen AI</span> <span class="arrow">→</span></div>
+    <h1 class="hero-title" data-i18n-dynamic="{{ home.hero_title | default(value="") }}" {% if not home.hero_title %}data-i18n-key="hero_title"{% endif %}>{{ home.hero_title | default(value="一个接口，调用全球数百个 AI 模型") }}</h1>
+    <p class="hero-subtitle" data-i18n-dynamic="{{ home.hero_subtitle | default(value="") }}" {% if not home.hero_subtitle %}data-i18n-key="hero_subtitle"{% endif %}>{{ home.hero_subtitle | default(value="OpenAI 兼容格式，极速接入 GPT-4o、Claude、DeepSeek、Gemini 等主流模型。按量付费，零门槛开始。") }}</p>
+
+    <!-- API Base URL display card -->
+    <div class="api-display-container">
+      <div class="api-address-box">
+        <span class="api-prefix" data-i18n="api_base_url">API Base URL</span>
+        <code id="api-url-text">{{ home.api_base_url | default(value="") }}</code>
+        <button class="api-copy-btn" onclick="copyApiUrl()" aria-label="复制 API 地址">
+          <span class="btn-text" data-i18n="btn_copy">Copy URL</span> 
+          <span class="arrow">→</span>
+          <span class="copy-tooltip" data-i18n="btn_copied">Copied!</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Infinite Logo Marquee Slider -->
+  <div class="hero-marquee-container">
+    <div class="hero-marquee">
+      <!-- Track 1 -->
+      <div class="marquee-track">
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #60a5fa;">DeepSeek</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #10a37f;">OpenAI</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #d97757;">Claude</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #1a73e8;">Google Gemini</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #06b6d4;">ByteDance 豆包</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #ff5a5f;">Alibaba 千问</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #ffb020;">Tencent 混元</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #a78bfa;">Midjourney</span>
+        </div>
+      </div>
+      <!-- Track 2 (Clone for infinite effect) -->
+      <div class="marquee-track" aria-hidden="true">
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #60a5fa;">DeepSeek</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #10a37f;">OpenAI</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #d97757;">Claude</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #1a73e8;">Google Gemini</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #06b6d4;">ByteDance 豆包</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #ff5a5f;">Alibaba 千问</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #ffb020;">Tencent 混元</span>
+        </div>
+        <div class="marquee-item">
+          <span class="marquee-text" style="color: #a78bfa;">Midjourney</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Stats Section -->
+<section class="stats">
+  <div class="wrap">
+    <div class="stats-row">
+      <div class="si"><b>{{ models | length }}+</b><span data-i18n="stats_models">AI 模型</span></div>
+      <div class="si"><b>99.99%</b><span data-i18n="stats_uptime">服务可用率</span></div>
+      <div class="si"><b>&lt;80ms</b><span data-i18n="stats_latency">首字平均延迟</span></div>
+      <div class="si"><b>&infin;</b><span data-i18n="stats_concurrency">并发无上限</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- Features Section -->
+<section class="feat-sec">
+  <div class="wrap">
+    <h2 data-i18n="feat_title">为什么选择我们</h2>
+    <p class="sub" data-i18n="feat_subtitle">为开发者和企业打造的下一代极速 AI 大模型分发网关</p>
+    
+    <div class="feat-grid">
+      {% if home.features and home.features | length > 0 %}
+        {% for feat in home.features %}
+        <div class="feat-card">
+          <div class="ic">{{ feat.icon | default(value='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14H4z"/></svg>') | safe }}</div>
+          <h3 data-i18n-dynamic="{{ feat.title | default(value="") }}">{{ feat.title }}</h3>
+          <p data-i18n-dynamic="{{ feat.description | default(value="") }}">{{ feat.description }}</p>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="feat-card">
+          <div class="ic">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+          </div>
+          <h3 data-i18n="feat1_title">一键极速接入</h3>
+          <p data-i18n="feat1_desc">OpenAI 兼容 API 格式，只需修改 Base URL 和 Key，即可无缝替换至数百个主流模型，零代码成本迁移。</p>
+        </div>
+        <div class="feat-card">
+          <div class="ic">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+          </div>
+          <h3 data-i18n="feat2_title">全球模型全面覆盖</h3>
+          <p data-i18n="feat2_desc">聚合 OpenAI、Anthropic、Google Gemini、DeepSeek、字节跳动火山引擎等数十家顶级服务商的模型矩阵。</p>
+        </div>
+        <div class="feat-card">
+          <div class="ic">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14H4z"/></svg>
+          </div>
+          <h3 data-i18n="feat3_title">智能分流与高可用</h3>
+          <p data-i18n="feat3_desc">全球边缘节点路由，支持在主渠道高负载或故障时自动无感容灾重试，首字耗时降至毫秒级。</p>
+        </div>
+        <div class="feat-card">
+          <div class="ic">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <h3 data-i18n="feat4_title">极致安全数据脱敏</h3>
+          <p data-i18n="feat4_desc">支持 IP 白名单防刷保护，端到端高强度加密传输，异步任务与计费明细日志支持 Base64 数据隐私脱敏。</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<!-- Columns Section -->
+<section class="qnav">
+  <div class="wrap">
+    <div class="qnav-grid">
+      {% if columns.models.enabled | default(value=true) %}
+      <a href="/home/models" class="qnav-card">
+        <div class="qic"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+        <h3 data-i18n-dynamic="{{ columns.models.title | default(value="") }}" {% if not columns.models.title %}data-i18n-key="qnav1_title"{% endif %}>{{ columns.models.title | default(value="模型数据") }}</h3>
+        <p data-i18n="qnav1_desc">查看平台全部 AI 模型，覆盖文本、图像、视频、语音等能力</p>
+        <span class="arr">&rarr;</span>
+      </a>
+      {% endif %}
+      {% if columns.contact.enabled | default(value=true) %}
+      <a href="/home/contact" class="qnav-card">
+        <div class="qic"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg></div>
+        <h3 data-i18n-dynamic="{{ columns.contact.title | default(value="") }}" {% if not columns.contact.title %}data-i18n-key="qnav2_title"{% endif %}>{{ columns.contact.title | default(value="联系我们") }}</h3>
+        <p data-i18n="qnav2_desc">技术支持、商务合作、定制化需求</p>
+        <span class="arr">&rarr;</span>
+      </a>
+      {% endif %}
+      {% if columns.about.enabled | default(value=true) %}
+      <a href="/home/about" class="qnav-card">
+        <div class="qic"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a2 2 0 0 0 1.78 2.95h11a2 2 0 0 0 1.78-2.95l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg></div>
+        <h3 data-i18n-dynamic="{{ columns.about.title | default(value="") }}" {% if not columns.about.title %}data-i18n-key="qnav3_title"{% endif %}>{{ columns.about.title | default(value="关于我们") }}</h3>
+        <p data-i18n="qnav3_desc">了解团队愿景与技术实力</p>
+        <span class="arr">&rarr;</span>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<!-- CTA Banner Section -->
+<section class="cta-banner">
+  <div class="wrap">
+    <div class="cta-content">
+      <h2 data-i18n-dynamic="{{ home.cta_title | default(value="") }}" {% if not home.cta_title %}data-i18n-key="cta_title"{% endif %}>{{ home.cta_title | default(value="准备好开始构建了吗？") }}</h2>
+      <p class="cta-desc" data-i18n-dynamic="{{ home.cta_description | default(value="") }}" {% if not home.cta_description %}data-i18n-key="cta_description"{% endif %}>{{ home.cta_description | default(value="只需 3 分钟即可获取您的 API 密钥并开始创新。基础 URL：https://api.artsapi.com/api，零成本平滑迁移。") | safe }}</p>
+      <div class="cta-actions">
+        {% set primary_text = home.cta_primary_btn_text | default(value="开始对话") %}
+        {% set primary_link = home.cta_primary_btn_link | default(value="https://api.artsapi.com") %}
+        {% if primary_text %}
+        <a href="{{ primary_link }}" class="cta-primary" data-i18n-dynamic="{{ primary_text }}" {% if not home.cta_primary_btn_text %}data-i18n-key="cta_primary_btn_text"{% endif %}>{{ primary_text }}</a>
+        {% endif %}
+        
+        {% set secondary_text = home.cta_secondary_btn_text | default(value="阅读文档") %}
+        {% set secondary_link = home.cta_secondary_btn_link | default(value="https://docs.artsapi.com") %}
+        {% if secondary_text %}
+        <div class="cta-secondary-wrapper">
+          <a href="{{ secondary_link }}" class="cta-secondary" data-i18n-dynamic="{{ secondary_text }}" {% if not home.cta_secondary_btn_text %}data-i18n-key="cta_secondary_btn_text"{% endif %}>{{ secondary_text }}</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Connected Particles Animation & Dynamic Address Script -->
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // Resolve correct local or production API URL
+    let resolvedApiUrl = window.location.origin + '/v1';
+    const configuredUrl = "{{ home.api_base_url | default(value="") | safe }}";
+    if (configuredUrl) {
+      resolvedApiUrl = configuredUrl;
+    }
+
+    // Dynamically set correct API URL in the Hero section
+    const apiUrlText = document.getElementById('api-url-text');
+    if (apiUrlText) {
+      apiUrlText.textContent = resolvedApiUrl;
+    }
+
+    // Format CTA description: Replace any URL inside it with the resolved API Base URL, then wrap it in <code>
+    const ctaDesc = document.querySelector('.cta-desc');
+    if (ctaDesc) {
+      const urlRegex = /(https?:\/\/[^\s,，;；!！\(\)（）]+)/g;
+      ctaDesc.innerHTML = ctaDesc.innerHTML.replace(urlRegex, `<code>${resolvedApiUrl}</code>`);
+    }
+
+    // Connect Particles Logic
+    const particleCanvas = document.getElementById('hero-particles');
+    if (particleCanvas) {
+      const ctx = particleCanvas.getContext('2d');
+      const numParticles = 60;
+      let pWidth = 0;
+      let pHeight = 0;
+      let particles = [];
+
+      function resizeCanvas() {
+        const heroSection = document.querySelector('.hero');
+        pWidth = window.innerWidth;
+        pHeight = heroSection ? heroSection.offsetHeight : 500;
+        particleCanvas.width = pWidth;
+        particleCanvas.height = pHeight;
+      }
+
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+
+      class Particle {
+        constructor() {
+          this.x = Math.random() * pWidth;
+          this.y = Math.random() * pHeight;
+          this.size = Math.random() * 2 + 0.5;
+          this.speedX = (Math.random() - 0.5) * 0.8;
+          this.speedY = (Math.random() - 0.5) * 0.8;
+          this.opacity = Math.random() * 0.5 + 0.2;
+        }
+        update() {
+          this.x += this.speedX;
+          this.y += this.speedY;
+
+          if (this.x < 0) this.x = pWidth;
+          if (this.x > pWidth) this.x = 0;
+          if (this.y < 0) this.y = pHeight;
+          if (this.y > pHeight) this.y = 0;
+        }
+      }
+
+      function initParticles() {
+        particles = [];
+        for (let i = 0; i < numParticles; i++) {
+          particles.push(new Particle());
+        }
+      }
+
+      function animateParticles() {
+        ctx.clearRect(0, 0, pWidth, pHeight);
+        
+        const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+        const rgbColor = isLight ? '99, 102, 241' : '150, 180, 255'; 
+
+        for (let i = 0; i < numParticles; i++) {
+          particles[i].update();
+          ctx.fillStyle = `rgba(${rgbColor}, ${particles[i].opacity})`;
+          ctx.beginPath();
+          ctx.arc(particles[i].x, particles[i].y, particles[i].size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+        for (let i = 0; i < numParticles; i++) {
+          for (let j = i + 1; j < numParticles; j++) {
+            const dx = particles[i].x - particles[j].x;
+            const dy = particles[i].y - particles[j].y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < 120) {
+              ctx.beginPath();
+              ctx.strokeStyle = `rgba(${rgbColor}, ${0.15 * (1 - distance / 120)})`;
+              ctx.lineWidth = 0.8;
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.stroke();
+            }
+          }
+        }
+        requestAnimationFrame(animateParticles);
+      }
+
+      initParticles();
+      animateParticles();
+    }
+  });
+
+  function copyApiUrl() {
+    const apiText = document.getElementById('api-url-text').textContent;
+    const copyBtn = document.querySelector('.api-copy-btn');
+    const tooltip = copyBtn.querySelector('.copy-tooltip');
+
+    navigator.clipboard.writeText(apiText).then(() => {
+      copyBtn.classList.add('copied');
+      const btnTextEl = copyBtn.querySelector('.btn-text');
+      const oldText = btnTextEl.textContent;
+      const currentLang = document.documentElement.lang || 'zh-CN';
+      const dict = typeof locales !== 'undefined' ? (locales[currentLang] || locales['zh-CN']) : null;
+      btnTextEl.textContent = dict ? dict['btn_copied'] : '已复制!';
+      
+      setTimeout(() => {
+        copyBtn.classList.remove('copied');
+        setTimeout(() => {
+          btnTextEl.textContent = oldText;
+        }, 200);
+      }, 2000);
+    }).catch(err => {
+      console.error('无法复制: ', err);
+    });
+  }
+</script>
+{% endblock %}

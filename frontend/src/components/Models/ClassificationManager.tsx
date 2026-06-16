@@ -5,17 +5,19 @@ import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import { type ModelProvider, type ModelType } from '../../types';
 import IconPicker from '../IconPicker';
+import { Image as ImageIcon, Video, AudioLines, MessageSquare, Cuboid, ListOrdered } from 'lucide-react';
 
 interface ClassificationItem {
   id: number;
   name: string;
+  name_en?: string;
   is_active: boolean;
   is_system?: number;
   logo?: string;
 }
 
 interface ClassificationManagerProps {
-  type: 'provider' | 'type';
+  type: 'provider' | 'api_provider' | 'type';
   visible: boolean;
   onClose: () => void;
   onUpdate: () => void;
@@ -27,14 +29,15 @@ const ClassificationManager: React.FC<ClassificationManagerProps> = ({
   onClose,
   onUpdate,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isEn = i18n.language === 'en';
   const [items, setItems] = useState<ClassificationItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<ClassificationItem | null>(null);
   const [form] = Form.useForm();
 
-  const apiPath = type === 'provider' ? '/model-providers' : '/model-types';
+  const apiPath = type === 'provider' ? '/model-providers' : (type === 'api_provider' ? '/model-api-providers' : '/model-types');
 
   const fetchItems = async () => {
     setLoading(true);
@@ -97,20 +100,38 @@ const ClassificationManager: React.FC<ClassificationManagerProps> = ({
     }
   };
 
+  const renderSystemIcon = (name: string) => {
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('图片') || lowerName.includes('image')) return <ImageIcon size={18} />;
+    if (lowerName.includes('视频') || lowerName.includes('video')) return <Video size={18} />;
+    if (lowerName.includes('音频') || lowerName.includes('audio')) return <AudioLines size={18} />;
+    if (lowerName.includes('聊天') || lowerName.includes('chat') || lowerName.includes('text')) return <MessageSquare size={18} />;
+    if (lowerName.includes('embedding') || lowerName.includes('向量')) return <Cuboid size={18} />;
+    if (lowerName.includes('rerank') || lowerName.includes('排序')) return <ListOrdered size={18} />;
+    return null;
+  };
+
   const columns = [
     {
       title: 'Logo',
       dataIndex: 'logo',
       key: 'logo',
       width: 50,
-      render: (logo: string) => logo ? (
-        <img src={`/assets/icons/lobe/${logo}.svg`} alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-      ) : <span style={{ color: 'rgba(255,255,255,0.15)' }}>—</span>,
+      render: (logo: string, record: ClassificationItem) => {
+        const sysIcon = renderSystemIcon(record.name_en || record.name);
+        if (sysIcon) {
+          return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, opacity: 0.85 }}>{sysIcon}</div>;
+        }
+        return logo ? (
+          <img src={`/assets/icons/lobe/${logo}.svg`} alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        ) : <span style={{ color: 'rgba(255,255,255,0.15)' }}>—</span>;
+      },
     },
     {
       title: t('common.name'),
       dataIndex: 'name',
       key: 'name',
+      render: (_: any, record: ClassificationItem) => isEn && record.name_en ? record.name_en : record.name,
     },
     {
       title: t('models.sort_order'),
@@ -131,17 +152,16 @@ const ClassificationManager: React.FC<ClassificationManagerProps> = ({
       title: t('common.actions'),
       key: 'actions',
       render: (_: any, record: ClassificationItem) => {
-        const isBuiltin = record.is_system === 1;
         return (
           <Space>
             <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} size="small" />
-            {isBuiltin ? (
-              <Button icon={<DeleteOutlined />} danger size="small" disabled title="系统预设禁止删除" />
-            ) : (
-              <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
-                <Button icon={<DeleteOutlined />} danger size="small" />
-              </Popconfirm>
-            )}
+            <Popconfirm 
+              title={t('common.confirm_delete')} 
+              onConfirm={() => handleDelete(record.id)}
+              disabled={record.is_system === 1}
+            >
+              <Button icon={<DeleteOutlined />} danger size="small" disabled={record.is_system === 1} />
+            </Popconfirm>
           </Space>
         );
       },
@@ -152,7 +172,7 @@ const ClassificationManager: React.FC<ClassificationManagerProps> = ({
   return (
     <>
       <Modal
-        title={type === 'provider' ? t('models.manage_providers') : t('models.manage_types')}
+        title={type === 'provider' ? t('models.manage_providers') : (type === 'api_provider' ? t('models.manage_api_providers', '管理API服务商') : t('models.manage_types'))}
         open={visible}
         onCancel={onClose}
         footer={[
@@ -183,7 +203,10 @@ const ClassificationManager: React.FC<ClassificationManagerProps> = ({
       >
         <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ sort_order: 0, is_active: true }}>
           <Form.Item name="name" label={t('common.name')} rules={[{ required: true }]}>
-            <Input disabled={editingItem?.is_system === 1} />
+            <Input placeholder="例如：OpenAI" disabled={editingItem?.is_system === 1} />
+          </Form.Item>
+          <Form.Item name="name_en" label={t('common.name_en', '英文名称')}>
+            <Input placeholder="例如：OpenAI" />
           </Form.Item>
           <Form.Item name="logo" label="Logo 图标">
             <IconPicker

@@ -19,6 +19,7 @@ const sharedNodeDrag = {
   nodeId: null as string | null,
   offsetX: 0,
   offsetY: 0,
+  groupNodes: [] as { id: string, offsetX: number, offsetY: number }[],
 };
 
 /** 节点缩放最小尺寸 */
@@ -35,6 +36,7 @@ const sharedResizeDrag = {
   startNodeY: 0,
   startNodeW: 0,
   startNodeH: 0,
+  groupStartNodes: [] as {id: string, x: number, y: number, w: number, h: number}[],
 };
 
 export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasParticlesHandle> | React.MutableRefObject<CanvasParticlesHandle | null>) => {
@@ -46,6 +48,9 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
     nodes, setNodes,
     maxZIndex, setMaxZIndex,
     canvasRef,
+    selectedNodeIds, setSelectedNodeIds,
+    setSelectedNodeId,
+    setActiveTool,
   } = useCanvas();
 
   // --- Ref-based 拖拽中间状态（不触发 React 渲染） ---
@@ -59,6 +64,12 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
   // 缓存最新的 canvasTransform，在闭包中使用
   const transformRef = useRef<CanvasTransform>(canvasTransform);
   transformRef.current = canvasTransform;
+
+  const marqueeDragRef = useRef({
+    isDragging: false,
+    startX: 0, startY: 0,
+    currentX: 0, currentY: 0,
+  });
 
   /** 滚轮缩放与平移（兼容原生 WheelEvent 和 React.WheelEvent） */
   const handleWheel = useCallback((e: WheelEvent | React.WheelEvent) => {
@@ -171,8 +182,35 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       if (e.button === 1) {
         e.preventDefault();
       }
+    } else if (activeTool === 'marquee' && !isSpaceDown && e.button !== 1) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        marqueeDragRef.current = {
+          isDragging: true,
+          startX: e.clientX - rect.left,
+          startY: e.clientY - rect.top,
+          currentX: e.clientX - rect.left,
+          currentY: e.clientY - rect.top,
+        };
+        if (!e.shiftKey) {
+          setSelectedNodeIds([]);
+          setSelectedNodeId(null);
+        }
+        
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = requestAnimationFrame(() => {
+          const marqueeEl = canvasRef.current?.querySelector('.marquee-box') as HTMLElement | null;
+          if (marqueeEl) {
+            marqueeEl.style.display = 'block';
+            marqueeEl.style.left = `${marqueeDragRef.current.startX}px`;
+            marqueeEl.style.top = `${marqueeDragRef.current.startY}px`;
+            marqueeEl.style.width = `0px`;
+            marqueeEl.style.height = `0px`;
+          }
+        });
+      }
     }
-  }, [activeTool, isSpaceDown, setIsDraggingCanvas]);
+  }, [activeTool, isSpaceDown, setIsDraggingCanvas, setSelectedNodeIds, setSelectedNodeId, canvasRef]);
 
   /** 画布鼠标移动 — 全部通过 RAF + 直接 DOM 更新 */
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
@@ -204,6 +242,28 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       // 缓存最新位置供 mouseup 使用
       transformRef.current = { ...transformRef.current, x: newX, y: newY };
 
+    } else if (marqueeDragRef.current.isDragging) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        marqueeDragRef.current.currentX = e.clientX - rect.left;
+        marqueeDragRef.current.currentY = e.clientY - rect.top;
+        const { startX, startY, currentX, currentY } = marqueeDragRef.current;
+        const x = Math.min(startX, currentX);
+        const y = Math.min(startY, currentY);
+        const w = Math.abs(currentX - startX);
+        const h = Math.abs(currentY - startY);
+
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = requestAnimationFrame(() => {
+          const marqueeEl = canvasRef.current?.querySelector('.marquee-box') as HTMLElement | null;
+          if (marqueeEl) {
+            marqueeEl.style.left = `${x}px`;
+            marqueeEl.style.top = `${y}px`;
+            marqueeEl.style.width = `${w}px`;
+            marqueeEl.style.height = `${h}px`;
+          }
+        });
+      }
     } else if (sharedResizeDrag.nodeId) {
       // 节点缩放：直接操作节点 DOM 的 width/height/left/top
       const rd = sharedResizeDrag;
@@ -217,29 +277,76 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       let newH = rd.startNodeH;
 
       // 根据方向计算新的尺寸和位置
-      if (rd.direction.includes('e')) { newW = Math.max(MIN_NODE_WIDTH, rd.startNodeW + deltaX); }
-      if (rd.direction.includes('s')) { newH = Math.max(MIN_NODE_HEIGHT, rd.startNodeH + deltaY); }
+      const minW = rd.nodeId === 'group' ? 20 : MIN_NODE_WIDTH;
+      const minH = rd.nodeId === 'group' ? 20 : MIN_NODE_HEIGHT;
+
+      if (rd.direction.includes('e')) { newW = Math.max(minW, rd.startNodeW + deltaX); }
+      if (rd.direction.includes('s')) { newH = Math.max(minH, rd.startNodeH + deltaY); }
       if (rd.direction.includes('w')) {
-        const dw = Math.min(deltaX, rd.startNodeW - MIN_NODE_WIDTH);
+        const dw = Math.min(deltaX, rd.startNodeW - minW);
         newW = rd.startNodeW - dw;
         newX = rd.startNodeX + dw;
       }
       if (rd.direction.includes('n')) {
-        const dh = Math.min(deltaY, rd.startNodeH - MIN_NODE_HEIGHT);
+        const dh = Math.min(deltaY, rd.startNodeH - minH);
         newH = rd.startNodeH - dh;
         newY = rd.startNodeY + dh;
       }
 
+      const scaleX = rd.startNodeW > 0 ? newW / rd.startNodeW : 1;
+      const scaleY = rd.startNodeH > 0 ? newH / rd.startNodeH : 1;
+
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
-        const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${rd.nodeId}"]`) as HTMLElement | null;
-        if (nodeEl) {
-          nodeEl.style.left = `${newX}px`;
-          nodeEl.style.top = `${newY}px`;
-          nodeEl.style.width = `${newW}px`;
-          nodeEl.style.height = `${newH}px`;
+        if (rd.nodeId === 'group') {
+          const groupEl = canvasRef.current?.querySelector('.group-bounding-box') as HTMLElement | null;
+          if (groupEl) {
+            groupEl.style.left = `${newX}px`;
+            groupEl.style.top = `${newY}px`;
+            groupEl.style.width = `${newW}px`;
+            groupEl.style.height = `${newH}px`;
+          }
+          rd.groupStartNodes.forEach(gn => {
+            const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${gn.id}"]`) as HTMLElement | null;
+            if (nodeEl) {
+              const nx = newX + (gn.x - rd.startNodeX) * scaleX;
+              const ny = newY + (gn.y - rd.startNodeY) * scaleY;
+              const nw = gn.w * scaleX;
+              const nh = gn.h * scaleY;
+              nodeEl.style.left = `${nx}px`;
+              nodeEl.style.top = `${ny}px`;
+              nodeEl.style.width = `${nw}px`;
+              nodeEl.style.height = `${nh}px`;
+            }
+          });
+        } else {
+          const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${rd.nodeId}"]`) as HTMLElement | null;
+          if (nodeEl) {
+            nodeEl.style.left = `${newX}px`;
+            nodeEl.style.top = `${newY}px`;
+            nodeEl.style.width = `${newW}px`;
+            nodeEl.style.height = `${newH}px`;
+          }
         }
       });
+    } else if (nd.groupNodes.length > 0) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        const ct = transformRef.current;
+        const pointerX = (e.clientX - rect.left - ct.x) / ct.scale;
+        const pointerY = (e.clientY - rect.top - ct.y) / ct.scale;
+
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = requestAnimationFrame(() => {
+          nd.groupNodes.forEach(g => {
+            const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${g.id}"]`) as HTMLElement | null;
+            if (nodeEl) {
+              nodeEl.style.left = `${pointerX - g.offsetX}px`;
+              nodeEl.style.top = `${pointerY - g.offsetY}px`;
+            }
+          });
+        });
+      }
     } else if (nd.nodeId) {
       // 节点拖拽：直接操作节点 DOM
       const rect = canvasRef.current?.getBoundingClientRect();
@@ -278,22 +385,118 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       setIsDraggingCanvas(false);
     }
 
+    if (marqueeDragRef.current.isDragging) {
+      marqueeDragRef.current.isDragging = false;
+      
+      const { startX, startY, currentX, currentY } = marqueeDragRef.current;
+      const x = Math.min(startX, currentX);
+      const y = Math.min(startY, currentY);
+      const w = Math.abs(currentX - startX);
+      const h = Math.abs(currentY - startY);
+
+      // 隐藏选框
+      const marqueeEl = canvasRef.current?.querySelector('.marquee-box') as HTMLElement | null;
+      if (marqueeEl) {
+        marqueeEl.style.display = 'none';
+      }
+
+      // 计算碰撞
+      if (w > 5 && h > 5) {
+        const ct = transformRef.current;
+        // 将选框坐标转换为画布内容坐标
+        const contentBox = {
+          x: (x - ct.x) / ct.scale,
+          y: (y - ct.y) / ct.scale,
+          w: w / ct.scale,
+          h: h / ct.scale,
+        };
+
+        const newSelectedIds: string[] = [];
+        nodes.forEach(n => {
+          if (n.isHidden) return;
+          // 矩形相交检测
+          if (
+            n.x < contentBox.x + contentBox.w &&
+            n.x + n.width > contentBox.x &&
+            n.y < contentBox.y + contentBox.h &&
+            n.y + n.height > contentBox.y
+          ) {
+            newSelectedIds.push(n.id);
+          }
+        });
+
+        // 取旧的选择 + 新选择 (为了支持 shift 多选可以未来扩展)
+        setSelectedNodeIds(prev => {
+          // 如果没有按 shift, 就是 newSelectedIds
+          // 这里简化处理，直接覆盖
+          return newSelectedIds;
+        });
+        if (newSelectedIds.length === 1) {
+          setSelectedNodeId(newSelectedIds[0]);
+        } else {
+          setSelectedNodeId(null); // 多选时隐藏详情面板
+        }
+        
+        // 如果成功选中了内容，自动切换回指针工具，方便后续拖拽和缩放
+        if (newSelectedIds.length > 0) {
+          setActiveTool('pointer');
+        }
+      }
+    }
+
     if (sharedResizeDrag.nodeId) {
       // 提交最终缩放结果到 React state
       const rd = sharedResizeDrag;
-      const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${rd.nodeId}"]`) as HTMLElement | null;
-      if (nodeEl) {
-        const finalX = parseFloat(nodeEl.style.left);
-        const finalY = parseFloat(nodeEl.style.top);
-        const finalW = parseFloat(nodeEl.style.width);
-        const finalH = parseFloat(nodeEl.style.height);
-        const resizedId = rd.nodeId;
-        setNodes(prev => prev.map(n =>
-          n.id === resizedId ? { ...n, x: finalX, y: finalY, width: finalW, height: finalH } : n
-        ));
+      if (rd.nodeId === 'group') {
+        setNodes(prev => prev.map(n => {
+          const g = rd.groupStartNodes.find(gn => gn.id === n.id);
+          if (g) {
+            const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${n.id}"]`) as HTMLElement | null;
+            if (nodeEl) {
+              return { 
+                ...n, 
+                x: parseFloat(nodeEl.style.left), 
+                y: parseFloat(nodeEl.style.top),
+                width: parseFloat(nodeEl.style.width),
+                height: parseFloat(nodeEl.style.height),
+              };
+            }
+          }
+          return n;
+        }));
+      } else {
+        const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${rd.nodeId}"]`) as HTMLElement | null;
+        if (nodeEl) {
+          const finalX = parseFloat(nodeEl.style.left);
+          const finalY = parseFloat(nodeEl.style.top);
+          const finalW = parseFloat(nodeEl.style.width);
+          const finalH = parseFloat(nodeEl.style.height);
+          const resizedId = rd.nodeId;
+          setNodes(prev => prev.map(n =>
+            n.id === resizedId ? { ...n, x: finalX, y: finalY, width: finalW, height: finalH } : n
+          ));
+        }
       }
       rd.nodeId = null;
       rd.direction = '';
+    }
+
+    if (nd.groupNodes.length > 0) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        setNodes(prev => prev.map(n => {
+          const g = nd.groupNodes.find(gn => gn.id === n.id);
+          if (g) {
+            const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${n.id}"]`) as HTMLElement | null;
+            if (nodeEl) {
+              return { ...n, x: parseFloat(nodeEl.style.left), y: parseFloat(nodeEl.style.top) };
+            }
+          }
+          return n;
+        }));
+      }
+      nd.groupNodes = [];
+      setDraggingNodeId(null);
     }
 
     if (nd.nodeId) {
@@ -313,7 +516,7 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
     }
 
     cancelAnimationFrame(rafRef.current);
-  }, [canvasRef, setCanvasTransform, setIsDraggingCanvas, setNodes, setDraggingNodeId]);
+  }, [canvasRef, setCanvasTransform, setIsDraggingCanvas, setNodes, setDraggingNodeId, setActiveTool, setSelectedNodeIds, setSelectedNodeId, nodes]);
 
   /** 节点鼠标按下（启动节点拖拽并置顶） */
   const handleNodeMouseDown = useCallback((e: React.MouseEvent, nodeId: string, nodeX: number, nodeY: number) => {
@@ -326,28 +529,69 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       const ct = transformRef.current;
       const startX = (e.clientX - ct.x) / ct.scale;
       const startY = (e.clientY - ct.y) / ct.scale;
-      sharedNodeDrag.nodeId = nodeId;
-      sharedNodeDrag.offsetX = startX - nodeX;
-      sharedNodeDrag.offsetY = startY - nodeY;
+
+      if (selectedNodeIds.includes(nodeId) && selectedNodeIds.length > 1) {
+        // Dragging a group
+        sharedNodeDrag.groupNodes = selectedNodeIds.map(id => {
+          const n = nodes.find(n => n.id === id);
+          return {
+            id,
+            offsetX: startX - (n?.x || 0),
+            offsetY: startY - (n?.y || 0)
+          };
+        });
+        sharedNodeDrag.nodeId = null;
+      } else {
+        // Dragging a single node
+        sharedNodeDrag.nodeId = nodeId;
+        sharedNodeDrag.offsetX = startX - nodeX;
+        sharedNodeDrag.offsetY = startY - nodeY;
+        sharedNodeDrag.groupNodes = [];
+
+        // If clicking a new single node, select it
+        if (!selectedNodeIds.includes(nodeId) || selectedNodeIds.length > 1) {
+          setSelectedNodeIds([nodeId]);
+          setSelectedNodeId(nodeId);
+        }
+      }
     }
-  }, [activeTool, maxZIndex, setDraggingNodeId, setMaxZIndex, setNodes]);
+  }, [activeTool, maxZIndex, setDraggingNodeId, setMaxZIndex, setNodes, selectedNodeIds, nodes, setSelectedNodeIds, setSelectedNodeId]);
 
   /** 开始缩放节点 */
   const handleResizeStart = useCallback((e: React.MouseEvent, nodeId: string, direction: ResizeDirection) => {
     e.stopPropagation();
     e.preventDefault();
-    // 从当前 nodes 中找到目标节点
-    const targetNode = nodes.find(n => n.id === nodeId);
-    if (!targetNode) return;
-    sharedResizeDrag.nodeId = nodeId;
     sharedResizeDrag.direction = direction;
     sharedResizeDrag.startMouseX = e.clientX;
     sharedResizeDrag.startMouseY = e.clientY;
-    sharedResizeDrag.startNodeX = targetNode.x;
-    sharedResizeDrag.startNodeY = targetNode.y;
-    sharedResizeDrag.startNodeW = targetNode.width;
-    sharedResizeDrag.startNodeH = targetNode.height;
-  }, [nodes]);
+
+    if (nodeId === 'group') {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      const groupNodes = nodes.filter(n => selectedNodeIds.includes(n.id) && !n.isHidden);
+      if (groupNodes.length === 0) return;
+      groupNodes.forEach(n => {
+        minX = Math.min(minX, n.x);
+        minY = Math.min(minY, n.y);
+        maxX = Math.max(maxX, n.x + n.width);
+        maxY = Math.max(maxY, n.y + n.height);
+      });
+      sharedResizeDrag.nodeId = 'group';
+      sharedResizeDrag.startNodeX = minX;
+      sharedResizeDrag.startNodeY = minY;
+      sharedResizeDrag.startNodeW = maxX - minX;
+      sharedResizeDrag.startNodeH = maxY - minY;
+      sharedResizeDrag.groupStartNodes = groupNodes.map(n => ({ id: n.id, x: n.x, y: n.y, w: n.width, h: n.height }));
+    } else {
+      const targetNode = nodes.find(n => n.id === nodeId);
+      if (!targetNode) return;
+      sharedResizeDrag.nodeId = nodeId;
+      sharedResizeDrag.startNodeX = targetNode.x;
+      sharedResizeDrag.startNodeY = targetNode.y;
+      sharedResizeDrag.startNodeW = targetNode.width;
+      sharedResizeDrag.startNodeH = targetNode.height;
+      sharedResizeDrag.groupStartNodes = [];
+    }
+  }, [nodes, selectedNodeIds]);
 
   /** 移除节点 */
   const removeNode = useCallback((id: string) => {

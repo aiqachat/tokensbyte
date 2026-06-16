@@ -11,7 +11,7 @@ use crate::models::{UserLevel, CreateUserLevelRequest, UpdateUserLevelRequest, U
 pub async fn list_user_levels(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<UserLevelListResponse>> {
-    let levels: Vec<UserLevel> = sqlx::query_as(&state.db.format_query("SELECT * FROM user_levels ORDER BY discount DESC"))
+    let levels: Vec<UserLevel> = sqlx::query_as(&state.db.format_query("SELECT * FROM user_levels ORDER BY sort_order DESC, discount DESC"))
         .fetch_all(&state.db.pool)
         .await?;
     
@@ -41,8 +41,8 @@ pub async fn create_user_level(
     }
 
     let id = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO user_levels (name, group_key, discount, commission_ratio, invite_reward_inviter, invite_reward_invitee, daily_invite_limit, marketing_enabled, is_default, max_token_count, allow_view_log_details, description)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        &state.db.format_query(r#"INSERT INTO user_levels (name, group_key, discount, commission_ratio, invite_reward_inviter, invite_reward_invitee, daily_invite_limit, marketing_enabled, is_default, max_token_count, allow_view_log_details, description, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#)
     )
     .bind(&req.name)
@@ -57,6 +57,7 @@ pub async fn create_user_level(
     .bind(req.max_token_count.unwrap_or(10))
     .bind(req.allow_view_log_details.unwrap_or(1))
     .bind(req.description.unwrap_or_default())
+    .bind(req.sort_order.unwrap_or(0))
     .fetch_one(&state.db.pool)
     .await?
     .get::<i64, _>("id");
@@ -123,6 +124,9 @@ pub async fn update_user_level(
     }
     if let Some(allow_view_log_details) = req.allow_view_log_details {
         sqlx::query(&state.db.format_query("UPDATE user_levels SET allow_view_log_details = ? WHERE id = ?")).bind(allow_view_log_details).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(sort_order) = req.sort_order {
+        sqlx::query(&state.db.format_query("UPDATE user_levels SET sort_order = ? WHERE id = ?")).bind(sort_order).bind(id).execute(&state.db.pool).await?;
     }
 
     sqlx::query(&state.db.format_query("UPDATE user_levels SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;

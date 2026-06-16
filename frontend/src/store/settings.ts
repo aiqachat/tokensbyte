@@ -5,7 +5,8 @@ import { useThemeStore } from './theme';
 
 interface SettingsState {
   settings: AllSettings | null;
-  fetchSettings: () => Promise<void>;
+  /** 拉取公开设置（去重保护：已有数据时跳过请求，force=true 强制刷新） */
+  fetchSettings: (force?: boolean) => Promise<void>;
   updateStoreSettings: (settings: AllSettings) => void;
 }
 
@@ -62,16 +63,28 @@ const applySiteSettings = (site?: AllSettings['site']) => {
 const cachedTitle = localStorage.getItem('tokensbyte_site_title');
 if (cachedTitle) document.title = cachedTitle;
 
-const useSettingsStore = create<SettingsState>((set) => ({
+// 防止并发请求的锁
+let _fetchingPromise: Promise<void> | null = null;
+
+const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: null,
-  fetchSettings: async () => {
-    try {
-      const response = await (request.get('/settings') as any);
-      set({ settings: response });
-      applySiteSettings(response.site);
-    } catch (error) {
-      console.error('Failed to fetch settings:', error);
-    }
+  fetchSettings: async (force = false) => {
+    // 去重：已有数据且非强制刷新时跳过
+    if (!force && get().settings) return;
+    // 防并发：如果正在请求中，复用同一个 Promise
+    if (_fetchingPromise) return _fetchingPromise;
+    _fetchingPromise = (async () => {
+      try {
+        const response = await (request.get('/settings') as any);
+        set({ settings: response });
+        applySiteSettings(response.site);
+      } catch (error) {
+        console.error('Failed to fetch settings:', error);
+      } finally {
+        _fetchingPromise = null;
+      }
+    })();
+    return _fetchingPromise;
   },
   updateStoreSettings: (settings) => {
     set({ settings });
@@ -80,3 +93,4 @@ const useSettingsStore = create<SettingsState>((set) => ({
 }));
 
 export default useSettingsStore;
+

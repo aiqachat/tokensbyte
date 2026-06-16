@@ -1,19 +1,29 @@
-//! Relay: POST /v1/video/generations & GET /v1/video/generations/{task_id}
-//! OpenAI-compatible video generation task endpoints with forward-rule-driven protocol adaptation.
+//! Relay: POST /v1/video/generations
+//! OpenAI-compatible video generation task endpoint with forward-rule-driven protocol adaptation.
 
-use axum::{extract::{State, Extension, Path, Query, OriginalUri}, response::Response, Json};
+use axum::{extract::{State, Extension, OriginalUri}, response::Response, Json};
 use std::sync::Arc;
-use std::collections::HashMap;
 use crate::{AppState, error::{AppError, AppResult}};
 use crate::models::ApiToken;
-use super::{proxy, forward};
-use super::url_utils::join_url;
+use super::{proxy, forward, router};
+
+/// 快乐小马插件 stub（feature 关闭时使用，确保条件编译分支仍能通过类型检查）
+#[cfg(not(feature = "plugin_happyhorse"))]
+#[derive(Debug, Clone)]
+struct HappyHorseStub {
+    pub actual_model: String,
+    pub media_type: String,
+    pub routing_node: String,
+    pub custom_model_id: String,
+}
 
 /// POST /v1/video/generations — Submit a video generation task
+
 pub async fn video_generations(
     State(state): State<Arc<AppState>>,
     Extension(token): Extension<ApiToken>,
     OriginalUri(uri): OriginalUri,
+    headers: axum::http::HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> AppResult<Response> {
     let start_time = std::time::Instant::now();
@@ -27,390 +37,304 @@ pub async fn video_generations(
         raw_path.to_string()
     };
     let request_content_str = serde_json::to_string(&body).unwrap_or_default();
+    let x_log_id = headers.get("x-log-id").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
     let model = body["model"].as_str()
         .or_else(|| body["model_name"].as_str())
         .ok_or_else(|| AppError::BadRequest(
             "Missing required parameter: model".to_string()
         ))?;
-    let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-    let pre_deduction = proxy::check_access(&state, &token, model, ctx.balance, Some("视频")).await?;
-    let (channel, resolved_model) = proxy::select_channel_for_model(&state, &token, model, &ctx.user_group, &ctx.level_id, &entry_path).await?;
 
-    // 解析转发规则
-    let mut resolved = match forward::resolve_forward_rule(&state, model, "视频", &entry_path).await {
+    // Plugin: happyhorse_router 智能路由拦截（条件编译，移除 feature 后自动禁用）
+    #[cfg(feature = "plugin_happyhorse")]
+    let hh_intercept = crate::api::happyhorse_router::try_intercept(
+        &state.db.pool, model, &body,
+    ).await;
+    #[cfg(not(feature = "plugin_happyhorse"))]
+    let hh_intercept: Option<HappyHorseStub> = None;
+
+    // billing_model: 用于预扣费和计费查询的模型（普通=model，小马=actual_model）
+    // 日志和原始请求始终使用第1个模型 model
+    let billing_model = hh_intercept.as_ref().map_or(model, |r| r.actual_model.as_str());
+
+    // 1. Token 模型权限校验（渠道选择前快速拦截）
+    proxy::check_model_permission(&state, &token, billing_model, &entry_path).await?;
+
+    let ctx = proxy::get_user_context(&state, &token.user_id).await?;
+
+    // 2. 渠道选择（智能路由用 routing_node，普通用原始 model）
+    let channel_model_query = hh_intercept.as_ref().map_or(model, |r| r.routing_node.as_str());
+    let channel = proxy::select_channel_for_model(&state, &token, channel_model_query, &ctx.user_group, &ctx.level_id, &entry_path).await?;
+
+    // 3. 预扣费检查（带 channel 精确匹配同名模型的预扣费金额，同时获取 Model 供下游复用）
+    let (pre_deduction, db_model) = proxy::check_access(&state, &token, billing_model, &ctx, Some("视频"), Some(&channel)).await?;
+
+    // 转发规则（复用 db_model 避免重查 models 表）
+    let mut resolved = match forward::resolve_forward_rule(&state, billing_model, "视频", &entry_path, Some(&channel), db_model.as_ref()).await {
         Some(r) => r,
         None => {
-            if forward::model_has_forward_rules(&state, model).await {
+            if forward::model_has_forward_rules(&state, billing_model).await {
                 return Err(AppError::BadRequest(format!(
-                    "模型 '{}' 不支持当前接口，请检查模型对应的转发规则", model
+                    "模型 '{}' 不支持当前接口，请检查模型对应的转发规则", billing_model
                 )));
             }
             forward::infer_forward_from_base_url(&channel.base_url, "视频")
         }
     };
+    // 根据渠道 base_url 修正 target_type（如 APIMart 需从 "openai" 覆盖为 "apimart"）
+    forward::refine_target_type(&mut resolved, &channel.base_url);
 
-    let mut upstream_body = forward::transform_request_body(&resolved, &resolved_model, &body, "视频");
+    // 模型映射：渠道内部映射 + 模型表别名映射
+    let resolved_model_query = hh_intercept.as_ref().map_or(channel_model_query, |r| r.actual_model.as_str());
+    let (final_resolved_model, mapping_source) = router::resolve_model(&channel, resolved_model_query, db_model.as_ref());
+
+    // 查询模型计费规则（复用 db_model 避免重查 models 表）
+    let db_rule = proxy::get_model_billing_rule(&state, billing_model, Some(&channel), db_model.as_ref()).await;
+    let mut upstream_body: serde_json::Value = forward::transform_request_body(&resolved, &final_resolved_model, &body, "视频", db_rule.as_ref(), Some(&state.http_client)).await;
     // 可灵动态路径：根据请求体内容调整实际端点（text2video/image2video/multi-image2video）
     forward::resolve_kling_dynamic_path(&mut resolved, &upstream_body);
-    let url = forward::build_upstream_url(&channel.base_url, &resolved, &resolved_model, &channel.api_key);
-    let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
+    let url = forward::build_upstream_url(&channel.base_url, &resolved, &final_resolved_model, &channel.api_key);
 
-    // 素材转换：当规则启用 asset_convert 时，将 content 中的网络 URL 转换为素材 ID
+    // 【一条日志原则】请求前预记录日志（model 记录用户请求的第1个模型 ID）
+    let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &final_resolved_model));
+    // plugin_tag 构建（解耦在插件内）
+    #[cfg(feature = "plugin_happyhorse")]
+    let plugin_tag: Option<String> = hh_intercept.as_ref().map(crate::api::happyhorse_router::build_plugin_tag);
+    #[cfg(not(feature = "plugin_happyhorse"))]
+    let plugin_tag: Option<String> = None;
+
+    let pending_log_id = proxy::record_pending_log(
+        &state, &token.user_id, channel.id, token.id, model, &ep,
+        0, Some(&request_content_str),
+        Some(&url), Some(&channel),
+        Some(billing_model), plugin_tag.as_deref(),
+        Some("视频"),
+        db_model.as_ref(),
+        Some(&resolved.eid),
+        x_log_id.as_deref(),
+    ).await;
+
+    // 素材转换：仅当转发规则启用 asset_convert 时，将 content 中的网络 URL 转换为素材 ID
     let mut asset_convert_log: Option<String> = None;
-    let is_asset_convert_req = body.get("asset_convert").and_then(|v| v.as_bool()).unwrap_or(false);
-    if resolved.asset_convert || is_asset_convert_req {
-        let convert_logs = super::asset_convert::convert_content_urls(&state, &token.user_id, &mut upstream_body).await;
+    if resolved.asset_convert {
+        let (convert_logs, convert_errors) = super::asset_convert::convert_content_urls(&state, &token.user_id, &resolved.asset_convert_ns, &mut upstream_body, resolved.asset_moderation).await;
         if !convert_logs.is_empty() {
             asset_convert_log = Some(format!("素材转换: {}", convert_logs.join(" | ")));
         }
-    }
-
-    tracing::info!("[Video] model={}, target_type={}, url={}", model, resolved.target_type, url);
-
-    // 构建并发送上游请求
-    let mut builder = state.http_client.post(&url)
-        .header("Content-Type", "application/json");
-    for (k, v) in &auth_headers {
-        builder = builder.header(k, v);
-    }
-    let resp = builder.json(&upstream_body).send().await?;
-
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        let err = resp.text().await?;
-        let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
-        let latency_ms = start_time.elapsed().as_millis() as u32;
-        let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
-        proxy::record_and_bill(&state, &token, channel.id, model, 0, 0, 0, 0.0, status,
-            &ep, Some(&display_err), latency_ms, 0,
-            Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()), asset_convert_log.clone()).await;
-        return Err(AppError::UpstreamError(display_err));
-    }
-
-    let db_model = proxy::find_active_model(&state, model, Some("视频")).await;
-
-    let _db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
-        if let Some(rule_id) = m.billing_rule_id {
-            sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
-                .bind(rule_id)
-                .fetch_optional(&state.db.pool)
-                .await
-                .unwrap_or(None)
-        } else { None }
-    } else { None };
-
-    // 预扣费逻辑
-    if pre_deduction > 0.0 {
-        if let Err(e) = proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
-            tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
-        }
-    }
-
-    let data = resp.bytes().await?;
-    let response_content_str = String::from_utf8_lossy(&data).to_string();
-
-    // 视频是异步任务：POST 只记录日志（cost=预扣费），不执行多余结算预扣费
-    // 真正的 token 和差值结算在 GET 轮询成功后执行
-    let latency_ms = start_time.elapsed().as_millis() as u32;
-    let ep = format!("{}|{}", raw_path, resolved.upstream_path.replace("${model}", &resolved_model));
-    let billing_detail = if pre_deduction > 0.0 {
-        if let Some(ref acl) = asset_convert_log {
-            format!("异步任务预扣费冻结 | {}", acl)
-        } else {
-            "异步任务预扣费冻结".to_string()
-        }
-    } else {
-        if let Some(ref acl) = asset_convert_log {
-            format!("异步任务处理中(冻结) | {}", acl)
-        } else {
-            "异步任务处理中(冻结)".to_string()
-        }
-    };
-    proxy::record_and_bill_with_category(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction, 200,
-        &ep, None, latency_ms, 0,
-        Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()), Some(billing_detail), Some("视频")).await;
-
-    Ok(Response::builder()
-        .header("Content-Type", "application/json")
-        .body(axum::body::Body::from(data))
-        .unwrap())
-}
-
-/// GET /v1/video/generations/{task_id}?model=xxx — Query task status
-pub async fn video_generations_status(
-    State(state): State<Arc<AppState>>,
-    Extension(token): Extension<ApiToken>,
-    Path(task_id): Path<String>,
-    Query(params): Query<HashMap<String, String>>,
-) -> AppResult<Response> {
-    let mut model_name = params.get("model").map(|s| s.as_str()).unwrap_or("").to_string();
-    let ctx = proxy::get_user_context(&state, &token.user_id).await?;
-
-    // 从日志中查找原始渠道信息
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, ''), billing_detail, COALESCE(billing_features, '') FROM logs WHERE response_content LIKE ? ORDER BY id DESC LIMIT 1");
-    let mut db_log_id: Option<i64> = None;
-    let mut original_request: Option<String> = None;
-    let mut billing_features_str: Option<String> = None;
-    let mut already_billed = false;
-    let log_row: Option<(i64, i64, String, String, String, Option<String>, String)> = sqlx::query_as(&log_query)
-        .bind(format!("%{}%", task_id))
-        .fetch_optional(&state.db.pool)
-        .await
-        .unwrap_or(None);
-
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, _, req_content, b_detail, bf_str)) = log_row {
-        db_log_id = Some(l_id);
-        model_name = m_name;
-        if let Some(detail) = b_detail {
-            if !detail.is_empty() && !detail.contains("冻结") {
-                already_billed = true;
-            }
-        }
-        if !req_content.is_empty() { original_request = Some(req_content); }
-        if !bf_str.is_empty() { billing_features_str = Some(bf_str); }
-        if let Ok(Some(mut ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
-            .bind(cid)
-            .fetch_optional(&state.db.pool)
-            .await
-        {
-            if let Some(pid) = ch.preset_id {
-                if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
-                    .bind(pid)
-                    .fetch_optional(&state.db.pool)
-                    .await
-                {
-                    ch.base_url = preset.base_url;
-                    ch.api_key = preset.api_key;
-                }
-            }
-            Some(ch)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    // 模型名不可为空：查询参数和日志均无法确定模型时，直接拦截
-    if model_name.is_empty() {
-        return Err(AppError::BadRequest(
-            "Missing model parameter and cannot infer from task_id".to_string()
-        ));
-    }
-
-    let (channel, _) = if let Some(ch) = channel_opt {
-        (ch, "".to_string())
-    } else {
-        proxy::select_channel_for_model(&state, &token, &model_name, &ctx.user_group, &ctx.level_id, "/v1/video/generations/{task_id}").await?
-    };
-
-    // 解析转发规则决定查询路径
-    let resolved = match forward::resolve_forward_rule(&state, &model_name, "视频", "/v1/video/generations").await {
-        Some(r) => r,
-        None => forward::infer_forward_from_base_url(&channel.base_url, "视频")
-    };
-
-    let url = if resolved.target_type == "volcengine" {
-        join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id))
-    } else if let Some(ref custom_path) = resolved.poll_path {
-        let path = custom_path.replace("${task_id}", &task_id).replace("${model}", &model_name);
-        join_url(&channel.base_url, &path)
-    } else {
-        // 从 upstream_path 派生轮询路径
-        let path = resolved.upstream_path.replace("${model}", &model_name);
-        join_url(&channel.base_url, &format!("{}/{}", path.trim_end_matches('/'), task_id))
-    };
-
-    tracing::info!("GET status url: {}, using channel id: {}", url, channel.id);
-
-    let auth_headers = forward::build_auth_headers(&resolved, &channel.api_key);
-    let mut builder = state.http_client.get(&url);
-    for (k, v) in auth_headers {
-        builder = builder.header(k, v);
-    }
-    let resp = builder.send().await?;
-
-    let status = resp.status().as_u16();
-    if !resp.status().is_success() {
-        let err = resp.text().await?;
-        let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
-        return Err(AppError::UpstreamError(display_err));
-    }
-
-    let data = resp.bytes().await?;
-    let get_resp_str = String::from_utf8_lossy(&data).to_string();
-
-    if let Some(log_id) = db_log_id {
-        // 解析响应获取任务状态：兼容根节点、data 节点、final_result 节点、output.task_status（DashScope）
-        let resp_json: serde_json::Value = serde_json::from_str(&get_resp_str).unwrap_or(serde_json::json!({}));
-        let raw_status = resp_json.get("status")
-            .or_else(|| resp_json.get("data").and_then(|d| d.get("status")))
-            .or_else(|| resp_json.get("data").and_then(|d| d.get("task_status")))
-            .or_else(|| resp_json.get("final_result").and_then(|fr| fr.get("status")))
-            .or_else(|| resp_json.get("output").and_then(|o| o.get("task_status")))
-            .and_then(|s| s.as_str()).unwrap_or("");
-        let task_status_str = raw_status.to_lowercase();
-        let task_status = match task_status_str.as_str() {
-            "completed" | "succeeded" | "succeed" | "success" => "succeeded",
-            "failed" | "canceled" | "cancelled" | "unknown" => "failed",
-            _ => task_status_str.as_str(),
-        };
-
-        // 更新日志响应内容
-        let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ? WHERE id = ?"))
-            .bind(&get_resp_str)
-            .bind(log_id)
-            .execute(&state.db.pool).await;
-
-        // 任务完成时执行计费（统一交由 compute_cost 引擎处理）
-        if task_status == "succeeded" && !already_billed {
-            let usage = crate::relay::usage_extractor::parse_usage(&get_resp_str);
-            let image_count = crate::relay::usage_extractor::count_response_images(&get_resp_str);
-
-            let db_model = proxy::find_active_model(&state, &model_name, Some("视频")).await;
-
-            let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
-                if let Some(rule_id) = m.billing_rule_id {
-                    sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
-                        .bind(rule_id).fetch_optional(&state.db.pool).await.unwrap_or(None)
-                } else { None }
-            } else { None };
-
-            // 统一提取计费特征：优先从 billing_features 快照恢复（不依赖 request_content）
-            let resp_features = crate::relay::usage_extractor::extract_request_features(&resp_json);
-            let mut features = if let Some(ref bf_str) = billing_features_str {
-                let mut f = serde_json::from_str::<crate::relay::usage_extractor::ExtractedFeatures>(bf_str)
-                    .unwrap_or_default();
-                if f.resolution.is_none() { f.resolution = resp_features.resolution; }
-                if f.duration_seconds.is_none() { f.duration_seconds = resp_features.duration_seconds; }
-                f
-            } else {
-                // 旧数据兜底：从响应 + request_content 重新提取
-                let mut f = resp_features;
-                if let Some(ref req_str) = original_request {
-                    if let Ok(req_json) = serde_json::from_str::<serde_json::Value>(req_str) {
-                        let req_feat = crate::relay::usage_extractor::extract_request_features(&req_json);
-                        if f.resolution.is_none() { f.resolution = req_feat.resolution; }
-                        if f.duration_seconds.is_none() { f.duration_seconds = req_feat.duration_seconds; }
-                        if req_feat.has_video { f.has_video = true; }
-                        if req_feat.has_audio { f.has_audio = true; }
-                        if f.service_tier.is_none() { f.service_tier = req_feat.service_tier; }
-                        if f.mode.is_none() { f.mode = req_feat.mode; }
-                        if f.sound.is_none() { f.sound = req_feat.sound; }
-                    }
-                }
-                f
-            };
-            // 从可灵终态响应提取实际视频时长（覆盖请求中的预期值）
-            if let Some(kling_dur) = crate::relay::usage_extractor::extract_kling_video_duration(&resp_json) {
-                features.duration_seconds = Some(kling_dur);
-            }
-            // 视频 duration 兜底
-            if features.duration_seconds.is_none() {
-                features.duration_seconds = Some(5.0);
-            }
-            if let Some(resp_count) = image_count {
-                features.image_count = Some(resp_count);
-            }
-
-            let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount);
-            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), usage.prompt, usage.completion, 0, final_discount, &features);
-            detail.push_str(&format!(" | {}", discount_source));
-            let resolved_model = channel.resolve_model(&model_name);
-            if model_name != resolved_model {
-                detail.push_str(&format!(" | 模型映射: {} ➞ {}", model_name, resolved_model));
-            }
-
-            // 获取原始预扣费金额（存储在 logs.cost 中）
-            let pre_deduction: f64 = sqlx::query_scalar(&state.db.format_query("SELECT cost FROM logs WHERE id = ?"))
-                .bind(log_id).fetch_one(&state.db.pool).await.unwrap_or(0.0);
+        // 素材转换失败时直接拦截，不再继续调用上游接口
+        if !convert_errors.is_empty() {
+            let full_err = convert_errors.join("; ");
+            // 提取火山引擎错误中的 Message 字段作为用户可读信息，去重后拼接（避免相同原因重复展示）
+            let mut user_msgs: Vec<String> = convert_errors.iter()
+                .filter_map(|e| {
+                    // 尝试从错误字符串中提取 JSON 部分的 ResponseMetadata/Error/Message
+                    e.find('{').and_then(|i| serde_json::from_str::<serde_json::Value>(&e[i..]).ok())
+                        .and_then(|j| j.pointer("/ResponseMetadata/Error/Message")
+                            .or_else(|| j.pointer("/Error/Message"))
+                            .and_then(|v| v.as_str()).map(|s| s.to_string()))
+                })
+                .collect();
+            user_msgs.dedup();
+            let user_msg = if user_msgs.is_empty() { "素材转换失败".to_string() } else { user_msgs.join("; ") };
+            let latency_ms = start_time.elapsed().as_millis() as u32;
+            let status_code = proxy::infer_error_status_code(&full_err);
+            proxy::record_and_bill_inner(&state, &token, channel.id, model, 0, 0, 0, 0.0, 0.0, 0.0, status_code,
+                &ep, Some(&full_err), latency_ms, 0,
+                Some(request_content_str.clone()), None, None, asset_convert_log.clone(), Some("视频"), pending_log_id,
+                Some(billing_model), None, db_model.as_ref()).await;
             
-            let apply_balance = cost - pre_deduction;
-
-            match state.db.pool.begin().await {
-                Ok(mut tx) => {
-                    // 1. 更新日志（无论 cost 是否为 0，都要写入计费明细以解除冻结状态）
-                    let _ = sqlx::query(&state.db.format_query(
-                        "UPDATE logs SET prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?, cost = ?, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-                    )).bind(usage.prompt).bind(usage.completion).bind(0_i32).bind(cost).bind(detail).bind(log_id)
-                    .execute(&mut *tx).await;
-
-                    // 2. 余额与配额结算
-                    if cost > 0.0 || pre_deduction > 0.0 {
-                        // 更新用户余额（差额）与配额（实际消费）
-                        let _ = sqlx::query(&state.db.format_query(
-                            "UPDATE users SET balance = balance - ?, used_quota = used_quota + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(cost).bind(&token.user_id)
-                        .execute(&mut *tx).await;
-
-                        // 更新 Token 配额及使用时间
-                        let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-                        let _ = sqlx::query(&state.db.format_query(
-                            "UPDATE api_tokens SET quota_used = quota_used + ?, last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(cost).bind(&now_str).bind(token.id)
-                        .execute(&mut *tx).await;
-
-                        // 更新渠道配额
-                        let _ = sqlx::query(&state.db.format_query(
-                            "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(cost).bind(channel.id)
-                        .execute(&mut *tx).await;
-                    }
-
-                    let _ = tx.commit().await;
-
-                    tracing::info!("[Video Success Billing] log_id={}, model={}, cost={:.6}, pre_deducted={:.6}, applied={:.6}, url={}", 
-                        log_id, model_name, cost, pre_deduction, apply_balance, url);
-                }
-                Err(e) => {
-                    tracing::error!("[Video Billing] 启动事务失败: {:?}", e);
-                }
+            // Plugin: happyhorse_router 日志
+            #[cfg(feature = "plugin_happyhorse")]
+            if let Some(ref r) = hh_intercept {
+                crate::api::happyhorse_router::log_request(
+                    &state.db.pool, &token.user_id, &r.custom_model_id,
+                    &r.media_type, &r.actual_model, pending_log_id,
+                ).await;
             }
-        } else if task_status == "failed" && !already_billed {
-            // 任务失败：退回预扣费并标记
-            let pre_deduction: f64 = sqlx::query_scalar(&state.db.format_query("SELECT cost FROM logs WHERE id = ?"))
-                .bind(log_id).fetch_one(&state.db.pool).await.unwrap_or(0.0);
 
-            let detail = if pre_deduction > 0.0 { "任务失败，预扣费已退回" } else { "任务失败，该请求无冻结费用" };
-            match state.db.pool.begin().await {
-                Ok(mut tx) => {
-                    if pre_deduction > 0.0 {
-                        // 退回用户余额与配额
-                        let _ = sqlx::query(&state.db.format_query(
-                            "UPDATE users SET balance = balance + ?, used_quota = used_quota - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(pre_deduction).bind(pre_deduction).bind(&token.user_id)
-                        .execute(&mut *tx).await;
-
-                        // 退回 Token 配额
-                        let _ = sqlx::query(&state.db.format_query(
-                            "UPDATE api_tokens SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(pre_deduction).bind(token.id)
-                        .execute(&mut *tx).await;
-
-                        // 退回渠道配额 (修复遗漏)
-                        let _ = sqlx::query(&state.db.format_query(
-                            "UPDATE channels SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(pre_deduction).bind(channel.id)
-                        .execute(&mut *tx).await;
-                    }
-
-                    let _ = sqlx::query(&state.db.format_query(
-                        "UPDATE logs SET cost = 0, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ?"
-                    )).bind(detail).bind(log_id)
-                    .execute(&mut *tx).await;
-
-                    let _ = tx.commit().await;
-                    tracing::info!("[Video Failure Billing] log_id={} failed, refunded pre_deduction={:.6}, url={}", log_id, pre_deduction, url);
-                }
-                Err(e) => {
-                    tracing::error!("[Video Failure Billing] 启动事务失败: {:?}", e);
-                }
-            }
+            return Err(AppError::BadRequest(format!("素材转换失败: {}", user_msg)));
         }
     }
 
-    Ok(Response::builder()
-        .header("Content-Type", "application/json")
-        .body(axum::body::Body::from(get_resp_str))
-        .unwrap())
+    // 【连接保护】将上游请求+预扣费+日志记录放入独立 task，客户端断开后仍能完成
+    let model = model.to_string();
+    let billing_model = billing_model.to_string();
+    let raw_path = raw_path.to_string();
+    let (result_tx, result_rx) = tokio::sync::oneshot::channel::<Result<Response, AppError>>();
+    
+    let hh_intercept_clone = hh_intercept.clone();
+    let dm = db_model.clone();
+    // 映射日志：在 spawn 前构建（final_resolved_model 不进 spawn）
+    let mapping_detail: Option<String> = mapping_source.map(|src| format!("{}: {} ➞ {}", src, resolved_model_query, final_resolved_model));
+
+    tokio::spawn(async move {
+        let result: Result<Response, AppError> = async {
+            tracing::info!("[Video] model={}, target_type={}, url={}", model, resolved.target_type, url);
+
+            // 构建并发送上游请求（统一鉴权 + 设置请求体）
+            let builder = state.http_client.post(&url)
+                .header("Content-Type", "application/json");
+            let builder = forward::apply_request_auth(builder, &resolved, &channel.api_key, &mut upstream_body, &channel.base_url);
+            let resp = match builder.send().await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    let latency_ms = start_time.elapsed().as_millis() as u32;
+                    proxy::record_and_bill_inner(
+                        &state, &token, channel.id, &model, 0, 0, 0, 0.0, 0.0, 0.0, 502,
+                        &ep, Some(&err_msg), latency_ms, 0,
+                        Some(request_content_str.clone()), Some(err_msg.clone()), Some(upstream_body.to_string()),
+                        asset_convert_log.clone(), Some("视频"), pending_log_id,
+                        Some(&billing_model), None, dm.as_ref()
+                    ).await;
+                    // Plugin: happyhorse_router 日志
+                    #[cfg(feature = "plugin_happyhorse")]
+                    if let Some(ref r) = hh_intercept_clone {
+                        crate::api::happyhorse_router::log_request(
+                            &state.db.pool, &token.user_id, &r.custom_model_id,
+                            &r.media_type, &r.actual_model, pending_log_id,
+                        ).await;
+                    }
+                    return Err(AppError::UpstreamError(proxy::sanitize_error_message(&err_msg)));
+                }
+            };
+
+            let status = resp.status().as_u16();
+            if !resp.status().is_success() {
+                let err = resp.text().await.unwrap_or_default();
+                let display_err = if err.trim().is_empty() { format!("Upstream HTTP error {}", status) } else { err.clone() };
+                let latency_ms = start_time.elapsed().as_millis() as u32;
+                proxy::record_and_bill_inner(&state, &token, channel.id, &model, 0, 0, 0, 0.0, 0.0, 0.0, status,
+                    &ep, Some(&display_err), latency_ms, 0,
+                    Some(request_content_str.clone()), Some(err), Some(upstream_body.to_string()), asset_convert_log.clone(), Some("视频"), pending_log_id,
+                    Some(&billing_model), None, dm.as_ref()).await;
+                
+                // Plugin: happyhorse_router 日志
+                #[cfg(feature = "plugin_happyhorse")]
+                if let Some(ref r) = hh_intercept_clone {
+                    crate::api::happyhorse_router::log_request(
+                        &state.db.pool, &token.user_id, &r.custom_model_id,
+                        &r.media_type, &r.actual_model, pending_log_id,
+                    ).await;
+                }
+
+                tracing::info!("video post提交失败  {}", display_err);
+                return Err(AppError::UpstreamError(proxy::sanitize_error_message(&display_err)));
+            }
+
+            let data = resp.bytes().await.unwrap_or_default();
+            let model = &model;
+            let mut response_content_str = String::from_utf8_lossy(&data).to_string();
+
+            // 上游 body 级错误检测（腾讯云/即梦等 HTTP 200 但业务失败，在预扣费之前拦截）
+            let (converted, post_err) = forward::check_upstream_post_error(
+                &resolved.target_type, &response_content_str,
+                "video.generation"
+            );
+            response_content_str = converted;
+            if let Some(err_response) = post_err {
+                let latency_ms = start_time.elapsed().as_millis() as u32;
+                let err_text = proxy::extract_error_message(&response_content_str);
+                let err_status = proxy::infer_error_status_code(&err_text);
+                proxy::record_and_bill_inner(&state, &token, channel.id, model, 0, 0, 0, 0.0, 0.0,
+                    0.0, err_status, &ep, None, latency_ms, 0,
+                    Some(request_content_str), Some(response_content_str), Some(upstream_body.to_string()),
+                    Some("请求失败".to_string()), Some("视频"), pending_log_id, Some(&billing_model), None, dm.as_ref()).await;
+
+                // Plugin: happyhorse_router 日志
+                #[cfg(feature = "plugin_happyhorse")]
+                if let Some(ref r) = hh_intercept_clone {
+                    crate::api::happyhorse_router::log_request(
+                        &state.db.pool, &token.user_id, &r.custom_model_id,
+                        &r.media_type, &r.actual_model, pending_log_id,
+                    ).await;
+                }
+
+                return Ok(Response::builder().status(400)
+                    .header("Content-Type", "application/json")
+                    .body(axum::body::Body::from(err_response)).unwrap());
+            }
+
+            // 业务正常，执行预扣费（管理员跳过）
+            let pre_deduct_gift = if pre_deduction > 0.0 && ctx.role != "admin" {
+                match proxy::pre_deduct(&state, &token.user_id, pre_deduction).await {
+                    Ok(split) => split.gift,
+                    Err(e) => {
+                        let err_msg = match e {
+                            sqlx::Error::RowNotFound => "余额不足".to_string(),
+                            _ => format!("预扣费失败: {:?}", e),
+                        };
+                        tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+                        let latency_ms = start_time.elapsed().as_millis() as u32;
+                        proxy::record_and_bill_inner(
+                            &state, &token, channel.id, model, 0, 0, 0, 0.0, 0.0, 0.0, 403,
+                            &ep, Some(&err_msg), latency_ms, 0,
+                            Some(request_content_str.clone()), Some(err_msg.clone()), Some(upstream_body.to_string()),
+                            None, Some("视频"), pending_log_id, Some(&billing_model), None, dm.as_ref()
+                        ).await;
+                        // Plugin: happyhorse_router 日志
+                        #[cfg(feature = "plugin_happyhorse")]
+                        if let Some(ref r) = hh_intercept_clone {
+                            crate::api::happyhorse_router::log_request(
+                                &state.db.pool, &token.user_id, &r.custom_model_id,
+                                &r.media_type, &r.actual_model, pending_log_id,
+                            ).await;
+                        }
+                        return Err(if matches!(e, sqlx::Error::RowNotFound) {
+                            AppError::Forbidden("余额不足".to_string())
+                        } else {
+                            AppError::Internal(err_msg)
+                        });
+                    }
+                }
+            } else { 0.0 };
+
+            // 视频是异步任务：POST 只记录日志（cost=预扣费），真正结算在 GET 轮询成功后执行
+            let latency_ms = start_time.elapsed().as_millis() as u32;
+            let mut billing_detail = match (&asset_convert_log, pre_deduction > 0.0) {
+                (Some(acl), true) => format!("异步任务预扣费冻结 | {}", acl),
+                (None, true) => "异步任务预扣费冻结".to_string(),
+                (Some(acl), false) => format!("异步任务处理中(冻结) | {}", acl),
+                (None, false) => "异步任务处理中(冻结)".to_string(),
+            };
+            if let Some(ref md) = mapping_detail {
+                billing_detail.push_str(&format!(" | {}", md));
+            }
+            proxy::record_and_bill_inner(&state, &token, channel.id, model, 0, 0, 0, pre_deduction, pre_deduction,
+                pre_deduct_gift, 200,
+                &ep, None, latency_ms, 0,
+                Some(request_content_str), Some(response_content_str.clone()), Some(upstream_body.to_string()), Some(billing_detail), Some("视频"), pending_log_id,
+                Some(&billing_model), None, dm.as_ref()).await;
+
+            // Plugin: happyhorse_router 日志
+            #[cfg(feature = "plugin_happyhorse")]
+            if let Some(ref r) = hh_intercept_clone {
+                crate::api::happyhorse_router::log_request(
+                    &state.db.pool, &token.user_id, &r.custom_model_id,
+                    &r.media_type, &r.actual_model, pending_log_id,
+                ).await;
+            }
+
+            // 腾讯云已提前转换为 OpenAI 格式，其他厂商走 apply_format 统一转换
+            let final_response_str = if resolved.target_type == "tencent_vod_video" {
+                response_content_str
+            } else {
+                crate::relay::response_formatter::apply_format(
+                    &state.db.pool, &raw_path, "视频", &response_content_str, true, None
+                ).await
+            };
+
+            Ok(Response::builder()
+                .header("Content-Type", "application/json")
+                .body(axum::body::Body::from(final_response_str))
+                .unwrap())
+
+        }.await;
+        let _ = result_tx.send(result);
+    });
+
+    // 等待 spawned task 结果；若 handler 被 drop（客户端断开），task 继续运行
+    match result_rx.await {
+        Ok(result) => result,
+        Err(_) => Err(AppError::Internal("请求处理任务异常终止".into())),
+    }
 }

@@ -25,12 +25,22 @@ pub fn hash_password(password: &str) -> AppResult<String> {
 }
 
 /// Verify a password against a hash
+/// 支持两种哈希算法：
+/// - bcrypt ($2y$, $2b$前缀) - 迁移用户使用
+/// - Argon2 - 新用户使用
 pub fn verify_password(password: &str, hash: &str) -> AppResult<bool> {
-    let parsed_hash = PasswordHash::new(hash)
-        .map_err(|e| AppError::Internal(format!("Invalid hash: {}", e)))?;
-    Ok(Argon2::default()
-        .verify_password(password.as_bytes(), &parsed_hash)
-        .is_ok())
+    // 判断是否为bcrypt哈希
+    if hash.starts_with("$2y$") || hash.starts_with("$2b$") {
+        Ok(bcrypt::verify(password, hash)
+            .map_err(|e| AppError::Internal(format!("Bcrypt verify failed: {}", e)))?)
+    } else {
+        // 否则使用Argon2验证
+        let parsed_hash = PasswordHash::new(hash)
+            .map_err(|e| AppError::Internal(format!("Invalid hash: {}", e)))?;
+        Ok(Argon2::default()
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok())
+    }
 }
 
 /// Create a JWT token
@@ -80,3 +90,4 @@ mod hex {
         bytes.iter().map(|b| format!("{:02x}", b)).collect()
     }
 }
+

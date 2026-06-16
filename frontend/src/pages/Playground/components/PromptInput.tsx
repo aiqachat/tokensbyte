@@ -20,7 +20,12 @@ import { getCategoryLabel } from '../constants';
 import AssetPickerModal from './AssetPickerModal';
 import ImageEditorModal from './ImageEditorModal';
 import VideoEditorModal from './VideoEditorModal';
+import AudioPreviewModal from './AudioPreviewModal';
 import type { PluginAsset } from '../../../types';
+import { useThemeStore } from '../../../store/theme';
+import useAuthStore from '../../../store/auth';
+import request from '../../../utils/request';
+import { useTranslation } from 'react-i18next';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -35,6 +40,42 @@ const isMac = (): boolean => {
 };
 
 const PromptInput: React.FC = React.memo(() => {
+  const { t } = useTranslation();
+  const { user } = useAuthStore();
+  const [activePlugins, setActivePlugins] = useState<any[]>([]);
+  const [assetPickerNs, setAssetPickerNs] = useState<string>('asset_manager');
+
+  React.useEffect(() => {
+    const fetchActivePlugins = async () => {
+      try {
+        const response: any = await request.get('/plugins/active');
+        if (response && response.active_plugins) {
+          setActivePlugins(response.active_plugins);
+        }
+      } catch (error) {
+        console.error('Failed to fetch active plugins', error);
+      }
+    };
+    fetchActivePlugins();
+  }, []);
+
+  const isPluginVisibleForUser = useCallback((pluginName: string) => {
+    const plugin = activePlugins.find((p: any) => p.name === pluginName);
+    if (!plugin) return false;
+    
+    // 如果插件后端配置了“不在提示词输入窗口显示”，则隐藏（针对素材资产管理相关插件）
+    if (plugin.show_in_playground_prompt === false) return false;
+
+    if (plugin.allowed_levels === 'all' || user?.role === 'admin') return true;
+    const allowed = plugin.allowed_levels.split(',');
+    const userGroup = user?.user_group || '';
+    const levelId = user?.level_id != null ? String(user.level_id) : '';
+    return allowed.includes(userGroup) || (levelId !== '' && allowed.includes(levelId));
+  }, [activePlugins, user]);
+
+  const showAssetLibrary = isPluginVisibleForUser('asset_manager');
+  const showAssetLibraryIntl = isPluginVisibleForUser('asset_manager_intl');
+
   const {
     loading,
     prompt, setPrompt,
@@ -43,16 +84,42 @@ const PromptInput: React.FC = React.memo(() => {
     generating,
     setIsTokenModalVisible,
     setIsModelDrawerVisible,
+    isSettingsWidgetVisible, setIsSettingsWidgetVisible,
     attachedAssets, setAttachedAssets,
     paramValues, setParamValues,
+    handleSelectModel,
   } = usePlayground();
-  const { handleGenerate } = useGeneration();
+  const { handleGenerate, handleChatGenerate } = useGeneration();
+
+  const doGenerate = async () => {
+    if (!currentModel || !prompt.trim() || generating) return;
+    if (currentModel.scheme_type === 'chat') {
+      const ok = await handleChatGenerate();
+      if (ok) setPrompt('');
+    } else {
+      handleGenerate();
+    }
+  };
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
   const [isFocused, setIsFocused] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  React.useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false);
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
   const [isVideoPreviewOpen, setIsVideoPreviewOpen] = useState(false);
+  const [isAudioPreviewOpen, setIsAudioPreviewOpen] = useState(false);
   const [editingAssetIndex, setEditingAssetIndex] = useState<number | null>(null);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+  const [draggedAssetIndex, setDraggedAssetIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -65,7 +132,7 @@ const PromptInput: React.FC = React.memo(() => {
   /** 语音输入 - 聚焦输入框并提示使用系统听写 */
   const handleVoiceInput = useCallback(() => {
     // 聚焦到输入框，让系统听写可以直接输入
-    const textarea = document.querySelector('.prompt-textarea textarea') as HTMLTextAreaElement;
+    const textarea = document.querySelector('textarea.prompt-textarea, .prompt-textarea textarea') as HTMLTextAreaElement;
     if (textarea) {
       textarea.focus();
     }
@@ -125,6 +192,10 @@ const PromptInput: React.FC = React.memo(() => {
 
   const handleMenuClick: MenuProps['onClick'] = (e) => {
     if (e.key === 'asset-library') {
+      setAssetPickerNs('asset_manager');
+      setIsAssetPickerOpen(true);
+    } else if (e.key === 'asset-library-intl') {
+      setAssetPickerNs('asset_manager_intl');
       setIsAssetPickerOpen(true);
     } else if (e.key === 'local-upload') {
       fileInputRef.current?.click();
@@ -135,18 +206,33 @@ const PromptInput: React.FC = React.memo(() => {
     setAttachedAssets(prev => prev.filter((_, i) => i !== index));
   };
 
-  const dropdownItems: MenuProps['items'] = [
-    {
-      key: 'asset-library',
-      label: '从资产库选择',
-      icon: <CloudOutlined />,
-    },
-    {
+  const dropdownItems: MenuProps['items'] = React.useMemo(() => {
+    const items: MenuProps['items'] = [];
+
+    if (showAssetLibrary) {
+      items.push({
+        key: 'asset-library',
+        label: t('assets.pick_from_assets', '从素材库选择'),
+        icon: <CloudOutlined />,
+      });
+    }
+
+    if (showAssetLibraryIntl) {
+      items.push({
+        key: 'asset-library-intl',
+        label: '从资产库选择',
+        icon: <CloudOutlined />,
+      });
+    }
+
+    items.push({
       key: 'local-upload',
       label: '本地上传文件',
       icon: <UploadOutlined />,
-    },
-  ];
+    });
+
+    return items;
+  }, [showAssetLibrary, showAssetLibraryIntl, t]);
 
   const modSymbol = isMac() ? '⌘' : 'Ctrl';
   const tokenName = selectedTokenKey
@@ -159,8 +245,8 @@ const PromptInput: React.FC = React.memo(() => {
     const counts: Record<string, number> = { image: 0, video: 0, audio: 0 };
     attachedAssets.forEach((assetItem) => {
       const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
-      const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
-      const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+      const isVideo = assetItem.asset.asset_type === 'video' || ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext);
+      const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext);
       const typeKey = isAudio ? 'audio' : isVideo ? 'video' : 'image';
       counts[typeKey]++;
       const label = typeKey === 'audio' ? `声音${counts[typeKey]}` : typeKey === 'video' ? `视频${counts[typeKey]}` : `图${counts[typeKey]}`;
@@ -174,7 +260,7 @@ const PromptInput: React.FC = React.memo(() => {
   const insertMention = useCallback((label: string) => {
     const start = mentionStartRef.current;
     if (start < 0) return;
-    const textarea = document.querySelector('.prompt-textarea textarea') as HTMLTextAreaElement;
+    const textarea = document.querySelector('textarea.prompt-textarea, .prompt-textarea textarea') as HTMLTextAreaElement;
     const before = prompt.substring(0, start);
     const afterCursor = prompt.substring(textarea?.selectionStart ?? prompt.length);
     // 插入 @标签 + \u200B + 空格 + \u3000(占位) + 空格 + \u200B
@@ -202,8 +288,8 @@ const PromptInput: React.FC = React.memo(() => {
     const counts: Record<string, number> = { image: 0, video: 0, audio: 0 };
     attachedAssets.forEach((assetItem) => {
       const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
-      const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
-      const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+      const isVideo = assetItem.asset.asset_type === 'video' || ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext);
+      const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext);
       const typeKey = isAudio ? 'audio' : isVideo ? 'video' : 'image';
       counts[typeKey]++;
       const label = typeKey === 'audio' ? `声音${counts[typeKey]}` : typeKey === 'video' ? `视频${counts[typeKey]}` : `图${counts[typeKey]}`;
@@ -231,7 +317,7 @@ const PromptInput: React.FC = React.memo(() => {
       if (match && assetMap[match[1]]) {
         const info = assetMap[match[1]];
         const hasPlaceholder = parts[i + 1] === '\u200B \u3000 \u200B';
-        
+
         result.push(
           <span key={i} style={{ color: '#60a5fa', fontWeight: 500 }}>
             {part}
@@ -251,7 +337,7 @@ const PromptInput: React.FC = React.memo(() => {
             )}
           </span>
         );
-        
+
         if (hasPlaceholder) {
           i++; // 跳过占位符部分
         }
@@ -277,6 +363,17 @@ const PromptInput: React.FC = React.memo(() => {
     return found;
   }, [prompt, assetMap]);
 
+  const hasVideoOrAudio = attachedAssets.some(a => {
+    const ext = a.asset.file_name?.split('.').pop()?.toLowerCase() || '';
+    return a.asset.asset_type === 'video' || ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext) ||
+      a.asset.asset_type === 'audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext);
+  });
+  const hasImage = attachedAssets.some(a => {
+    const ext = a.asset.file_name?.split('.').pop()?.toLowerCase() || '';
+    return a.asset.asset_type === 'image' || ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+  });
+  const isVideoModel = currentModel?.scheme_type === 'video' || currentModel?.type_name?.includes('视频');
+
   // 使用 ref 追踪最新的 attachedAssets
   const attachedAssetsRef = useRef(attachedAssets);
   attachedAssetsRef.current = attachedAssets;
@@ -286,17 +383,35 @@ const PromptInput: React.FC = React.memo(() => {
     if (!mentionOpen) return;
     const start = mentionStartRef.current;
     if (start < 0) return;
-    // 取 @ 后面的文本作为过滤词
-    const afterAt = prompt.substring(start + 1);
-    const spaceIdx = afterAt.search(/[\s]/);
-    const filter = spaceIdx >= 0 ? '' : afterAt;
-    if (spaceIdx >= 0) {
-      // 用户输入了空格，关闭 mention
+    
+    const textarea = document.querySelector('textarea.prompt-textarea, .prompt-textarea textarea') as HTMLTextAreaElement;
+    const cursorPos = textarea ? textarea.selectionStart : start + 1;
+
+    // 1. 如果光标移到了 @ 前面，关闭
+    if (cursorPos < start) {
       setMentionOpen(false);
       return;
     }
-    setMentionFilter(filter);
+
+    // 2. 如果文本状态已经更新，但 start 位置不是 @，说明 @ 被删除了，或者在 @ 前面插入了其他字符
+    if (cursorPos > start && prompt.charAt(start) !== '@') {
+      setMentionOpen(false);
+      return;
+    }
+
+    // 3. 取 @ 到当前光标之间的文本作为过滤词
+    // 使用 slice 防止 cursorPos <= start 时发生字符串反向截取
+    const filterText = prompt.slice(start + 1, cursorPos);
+    
+    // 4. 如果过滤词中包含空格或换行，说明用户敲击了空格结束了输入
+    if (cursorPos > start && (filterText.includes(' ') || filterText.includes('\n'))) {
+      setMentionOpen(false);
+      return;
+    }
+    
+    setMentionFilter(filterText);
   }, [prompt, mentionOpen]);
+
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     e.stopPropagation();
@@ -340,11 +455,20 @@ const PromptInput: React.FC = React.memo(() => {
       }
     }
 
-    // ⌘+Enter 或 Ctrl+Enter 快捷发送
+    // 聊天模式：Enter 直接发送，Shift+Enter 换行
+    if (currentModel?.scheme_type === 'chat' && e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      if (currentModel && prompt.trim() && !generating) {
+        doGenerate();
+      }
+      return;
+    }
+
+    // 图片/视频模式：⌘+Enter 或 Ctrl+Enter 快捷发送
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
       if (currentModel && prompt.trim() && !generating) {
-        handleGenerate();
+        doGenerate();
       }
     }
   };
@@ -354,33 +478,33 @@ const PromptInput: React.FC = React.memo(() => {
       <div
         style={{
           position: 'absolute',
-          bottom: 24,
+          bottom: isMobile ? 'calc(12px + env(safe-area-inset-bottom, 0px))' : 24,
           left: '50%',
           transform: 'translateX(-50%)',
-          width: 'calc(100% - 48px)',
+          width: isMobile ? 'calc(100% - 24px)' : 'calc(100% - 48px)',
           maxWidth: 720,
-          background: '#1e1f20',
+          background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
           backdropFilter: 'blur(20px)',
           borderRadius: 24,
-          border: '1px solid #444746',
+          border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+          boxShadow: _isLight ? '0 4px 12px rgba(0,0,0,0.06)' : '0 4px 6px rgba(0,0,0,0.3)',
           zIndex: 1000,
-          padding: '24px 20px 12px 20px',
+          padding: isMobile ? '16px 12px 10px 12px' : '24px 20px 12px 20px',
         }}
       >
-        <div style={{ height: 20, background: 'rgba(255,255,255,0.04)', borderRadius: 10, width: '30%', marginBottom: 28, animation: 'promptPulse 1.5s infinite' }} />
+        <div style={{ height: 20, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 10, width: '30%', marginBottom: 28, animation: 'promptPulse 1.5s infinite' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ height: 30, width: 100, background: 'rgba(255,255,255,0.04)', borderRadius: 8, animation: 'promptPulse 1.5s infinite' }} />
-            <div style={{ height: 30, width: 140, background: 'rgba(255,255,255,0.04)', borderRadius: 8, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 30, width: 100, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 8, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 30, width: 140, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 8, animation: 'promptPulse 1.5s infinite' }} />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ height: 32, width: 32, background: 'rgba(255,255,255,0.04)', borderRadius: 10, animation: 'promptPulse 1.5s infinite' }} />
-            <div style={{ height: 32, width: 32, background: 'rgba(255,255,255,0.04)', borderRadius: 10, animation: 'promptPulse 1.5s infinite' }} />
-            <div style={{ height: 32, width: 80, background: 'rgba(255,255,255,0.04)', borderRadius: 14, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 32, width: 32, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 10, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 32, width: 32, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 10, animation: 'promptPulse 1.5s infinite' }} />
+            <div style={{ height: 32, width: 80, background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)', borderRadius: 14, animation: 'promptPulse 1.5s infinite' }} />
           </div>
         </div>
         <style>{`
@@ -397,21 +521,21 @@ const PromptInput: React.FC = React.memo(() => {
     <div
       style={{
         position: 'absolute',
-        bottom: 24,
+        bottom: isMobile ? 'calc(12px + env(safe-area-inset-bottom, 0px))' : 24,
         left: '50%',
         transform: 'translateX(-50%)',
-        width: 'calc(100% - 48px)',
+        width: isMobile ? 'calc(100% - 24px)' : 'calc(100% - 48px)',
         maxWidth: 720,
-        background: '#1e1f20',
+        background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
         backdropFilter: 'blur(20px)',
         borderRadius: 24,
-        border: `1px solid ${isFocused ? '#A8C7FA' : '#444746'}`,
+        border: `1px solid ${isFocused ? (_isLight ? '#1677ff' : '#A8C7FA') : (_isLight ? 'rgba(0,0,0,0.1)' : '#444746')}`,
         display: 'flex',
         flexDirection: 'column',
-        overflow: 'hidden',
+        overflow: 'visible',
         boxShadow: isFocused
-          ? '0 4px 6px rgba(0,0,0,0.3), 0 0 0 1px #A8C7FA'
-          : '0 4px 6px rgba(0,0,0,0.3)',
+          ? (_isLight ? '0 4px 12px rgba(0,0,0,0.06), 0 0 0 1px #1677ff' : '0 4px 6px rgba(0,0,0,0.3), 0 0 0 1px #A8C7FA')
+          : (_isLight ? '0 4px 12px rgba(0,0,0,0.06)' : '0 4px 6px rgba(0,0,0,0.3)'),
         zIndex: 1000,
         transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
       }}
@@ -425,8 +549,8 @@ const PromptInput: React.FC = React.memo(() => {
 
         attachedAssets.forEach((assetItem, index) => {
           const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
-          const isVideo = assetItem.asset.asset_type === 'video' || ['mp4','mov','webm','avi','mkv'].includes(ext);
-          const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3','wav','aac','flac','ogg','m4a'].includes(ext);
+          const isVideo = assetItem.asset.asset_type === 'video' || ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext);
+          const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext);
           const typeKey = isAudio ? 'audio' : isVideo ? 'video' : 'image';
           const typeLabel = isAudio ? '声音' : isVideo ? '视频' : '图';
           if (!typeMap[typeKey]) {
@@ -446,7 +570,37 @@ const PromptInput: React.FC = React.memo(() => {
                 style={{ display: 'flex', alignItems: 'flex-start', gap: 10, overflowX: 'auto' }}
               >
                 {group.items.map((entry, idx) => (
-                  <div key={entry.item.asset.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                  <div
+                    key={entry.item.asset.id}
+                    draggable
+                    onDragStart={(e) => {
+                      setDraggedAssetIndex(entry.origIndex);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (draggedAssetIndex === null || draggedAssetIndex === entry.origIndex) return;
+                      // 仅允许互换位置
+                      setAttachedAssets(prev => {
+                        const newAssets = [...prev];
+                        const temp = newAssets[draggedAssetIndex];
+                        newAssets[draggedAssetIndex] = newAssets[entry.origIndex];
+                        newAssets[entry.origIndex] = temp;
+                        return newAssets;
+                      });
+                      setDraggedAssetIndex(null);
+                    }}
+                    onDragEnd={() => setDraggedAssetIndex(null)}
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0,
+                      opacity: draggedAssetIndex === entry.origIndex ? 0.4 : 1,
+                      cursor: 'grab'
+                    }}
+                  >
                     <div style={{
                       position: 'relative',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -458,8 +612,19 @@ const PromptInput: React.FC = React.memo(() => {
                       {(() => {
                         if (group.type === 'audio') {
                           return (
-                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <AudioOutlined style={{ fontSize: 22, color: '#1677ff' }} />
+                            <div
+                              onClick={() => { setEditingAssetIndex(entry.origIndex); setIsAudioPreviewOpen(true); }}
+                              style={{ width: '100%', height: '100%', position: 'relative', cursor: 'pointer' }}
+                            >
+                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.03)' }}>
+                                <AudioOutlined style={{ fontSize: 22, color: '#1677ff' }} />
+                              </div>
+                              <div className="hover-edit-overlay" style={{
+                                position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.2s'
+                              }}>
+                                <PlayCircleOutlined style={{ fontSize: 18, color: '#fff' }} />
+                              </div>
                             </div>
                           );
                         }
@@ -538,11 +703,13 @@ const PromptInput: React.FC = React.memo(() => {
             style={{
               position: 'absolute',
               top: 0, left: 0, right: 0, bottom: 0,
-              padding: attachedAssets.length > 0 ? '8px 20px 8px 20px' : '18px 20px 8px 20px',
-              fontSize: 15,
+              padding: attachedAssets.length > 0 
+                ? (isMobile ? '6px 12px 6px 12px' : '8px 20px 8px 20px') 
+                : (isMobile ? '12px 12px 6px 12px' : '18px 20px 8px 20px'),
+              fontSize: isMobile ? 14 : 15,
               lineHeight: '1.6',
               letterSpacing: '0.2px',
-              color: '#E8EAED',
+              color: _isLight ? '#1f2937' : '#E8EAED',
               pointerEvents: 'none',
               whiteSpace: 'pre-wrap',
               wordWrap: 'break-word',
@@ -566,19 +733,28 @@ const PromptInput: React.FC = React.memo(() => {
                 : `Start typing a prompt to create ${getCategoryLabel(activeCategory)}...`
               : '请先在右侧面板选择一个模型...'
           }
-          autoSize={{ minRows: 2, maxRows: 8 }}
+          autoSize={{ minRows: 2, maxRows: isMobile ? 6 : 8 }}
           bordered={false}
           onFocus={() => setIsFocused(true)}
           onBlur={(e) => {
             setIsFocused(false);
             setTimeout(() => setMentionOpen(false), 200);
           }}
+          onScroll={(e) => {
+            const target = e.target as HTMLTextAreaElement;
+            const overlay = document.querySelector('.prompt-rich-overlay') as HTMLDivElement;
+            if (overlay) {
+              overlay.scrollTop = target.scrollTop;
+            }
+          }}
           style={{
-            color: renderRichPrompt ? 'transparent' : '#E8EAED',
-            caretColor: '#E8EAED',
+            color: renderRichPrompt ? 'transparent' : (_isLight ? '#1f2937' : '#E8EAED'),
+            caretColor: _isLight ? '#1f2937' : '#E8EAED',
             resize: 'none',
-            padding: attachedAssets.length > 0 ? '8px 20px 8px 20px' : '18px 20px 8px 20px',
-            fontSize: 15,
+            padding: attachedAssets.length > 0 
+              ? (isMobile ? '6px 12px 6px 12px' : '8px 20px 8px 20px') 
+              : (isMobile ? '12px 12px 6px 12px' : '18px 20px 8px 20px'),
+            fontSize: isMobile ? 14 : 15,
             lineHeight: '1.6',
             background: 'transparent',
             letterSpacing: '0.2px',
@@ -589,7 +765,10 @@ const PromptInput: React.FC = React.memo(() => {
         />
         <style>{`
           .prompt-textarea .ant-input {
-            caret-color: #E8EAED !important;
+            caret-color: ${_isLight ? '#1f2937' : '#E8EAED'} !important;
+          }
+          .prompt-textarea .ant-input::placeholder {
+            color: ${_isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.3)'} !important;
           }
           .mention-inline-thumb {
             position: absolute;
@@ -639,8 +818,34 @@ const PromptInput: React.FC = React.memo(() => {
               zIndex: 2000,
               boxShadow: '0 -8px 32px rgba(0,0,0,0.5)',
             }}>
-              <div style={{ padding: '4px 12px 6px', fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>
-                {hasAssets ? '引用素材' : '提示'}
+              <div style={{ 
+                padding: '4px 12px 6px', 
+                fontSize: 11, 
+                color: 'rgba(255,255,255,0.3)', 
+                fontWeight: 500,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span>{hasAssets ? '引用素材' : '提示'}</span>
+                <div 
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMentionOpen(false); }}
+                  style={{
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 20,
+                    height: 20,
+                    borderRadius: 4,
+                    marginRight: -4,
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; }}
+                >
+                  <CloseOutlined style={{ fontSize: 10 }} />
+                </div>
               </div>
               {!hasAssets ? (
                 <div style={{
@@ -697,12 +902,12 @@ const PromptInput: React.FC = React.memo(() => {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '8px 12px 12px 12px',
-          gap: 8,
+          padding: isMobile ? '4px 8px 8px 8px' : '8px 12px 12px 12px',
+          gap: isMobile ? 6 : 8,
         }}
       >
         {/* 左侧功能芯片区 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, flexWrap: 'wrap', minWidth: 0 }}>
           {/* API 密钥芯片（置于最前） */}
           <Tooltip title={tokenName ? '点击更换或取消 API 密钥' : '选择 API 密钥 (可选)'}>
             <div
@@ -714,25 +919,25 @@ const PromptInput: React.FC = React.memo(() => {
                 minWidth: tokenName ? 'auto' : 30,
                 height: 30,
                 padding: tokenName ? '0 10px' : 0,
-                background: tokenName ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.15)',
+                background: tokenName ? (_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)') : (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)'),
+                border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.15)',
                 borderRadius: 8,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                color: tokenName ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.65)',
+                color: tokenName ? (_isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)') : (_isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.65)'),
                 fontSize: 13,
                 fontWeight: 500,
                 whiteSpace: 'nowrap',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+                e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = tokenName ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.06)';
+                e.currentTarget.style.background = tokenName ? (_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)') : (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)');
               }}
             >
               {!tokenName ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.65)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.65)' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M7 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z" />
                     <circle cx="7" cy="12" r="1.5" fill="currentColor" stroke="none" />
@@ -754,40 +959,70 @@ const PromptInput: React.FC = React.memo(() => {
           </Tooltip>
 
           {/* 模型快捷切换按钮 */}
-          <Tooltip title="切换模型">
+          <Tooltip title={currentModel ? "模型属性配置" : "选择模型"}>
             <div
-              onClick={() => setIsModelDrawerVisible(true)}
+              onClick={() => {
+                if (!currentModel) {
+                  setIsModelDrawerVisible(true);
+                } else if (!isSettingsWidgetVisible) {
+                  setIsSettingsWidgetVisible(true);
+                }
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
                 height: 30,
                 padding: '0 10px',
-                background: 'rgba(255, 255, 255, 0.1)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: _isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.1)',
+                border: _isLight ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
                 borderRadius: 8,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                color: '#fff',
+                color: _isLight ? '#1f2937' : '#fff',
                 fontSize: 13,
                 fontWeight: 500,
                 whiteSpace: 'nowrap',
-                maxWidth: 180,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                maxWidth: isMobile ? 120 : 180,
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.18)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
+                e.currentTarget.style.background = _isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.18)';
+                e.currentTarget.style.borderColor = _isLight ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.35)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                e.currentTarget.style.background = _isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = _isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.2)';
               }}
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {currentModel?.name || '选择模型'}
               </span>
+              {currentModel && (
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectModel('');
+                    setIsSettingsWidgetVisible(false);
+                    setIsModelDrawerVisible(true);
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    marginLeft: 2, padding: 2, borderRadius: '50%',
+                    color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = _isLight ? '#000' : '#fff';
+                    e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  <CloseOutlined style={{ fontSize: 10 }} />
+                </div>
+              )}
             </div>
           </Tooltip>
 
@@ -801,12 +1036,12 @@ const PromptInput: React.FC = React.memo(() => {
                   gap: 5,
                   height: 30,
                   padding: '0 10px',
-                  background: paramValues.web_search ? 'rgba(82, 196, 26, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                  border: `1px solid ${paramValues.web_search ? 'rgba(82, 196, 26, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                  background: paramValues.web_search ? 'rgba(82, 196, 26, 0.15)' : (_isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)'),
+                  border: `1px solid ${paramValues.web_search ? 'rgba(82, 196, 26, 0.3)' : (_isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)')}`,
                   borderRadius: 8,
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  color: paramValues.web_search ? '#52c41a' : 'rgba(255, 255, 255, 0.45)',
+                  color: paramValues.web_search ? '#52c41a' : (_isLight ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.45)'),
                   fontSize: 13,
                   fontWeight: 500,
                   whiteSpace: 'nowrap',
@@ -819,10 +1054,66 @@ const PromptInput: React.FC = React.memo(() => {
             </Tooltip>
           )}
 
+          {/* 图片角色选择器 */}
+          {isVideoModel && hasImage && (
+            <Dropdown
+              trigger={['click']}
+              onOpenChange={setIsRoleDropdownOpen}
+              menu={{
+                items: [
+                  { key: 'auto', label: '自动' },
+                  { key: 'first_frame', label: '首帧', disabled: hasVideoOrAudio },
+                  { key: 'first_last_frame', label: '首尾帧', disabled: hasVideoOrAudio },
+                  { key: 'reference_image', label: '参考图' },
+                ],
+                onClick: (e) => {
+                  setParamValues(prev => ({ ...prev, image_role: e.key === 'auto' ? undefined : e.key }));
+                }
+              }}
+            >
+              <Tooltip open={isRoleDropdownOpen ? false : undefined} title="指定图片的类型用途（受约束时自动锁定参考图）">
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    height: 30,
+                    padding: '0 10px',
+                    background: paramValues.image_role ? (_isLight ? 'rgba(22, 119, 255, 0.15)' : 'rgba(22, 119, 255, 0.15)') : (_isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)'),
+                    border: `1px solid ${paramValues.image_role ? (_isLight ? 'rgba(22, 119, 255, 0.3)' : 'rgba(22, 119, 255, 0.3)') : (_isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)')}`,
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    color: paramValues.image_role ? '#1677ff' : (_isLight ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.45)'),
+                    fontSize: 13,
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <PictureOutlined style={{ fontSize: 13 }} />
+                  <span>
+                    {(() => {
+                      const effectiveRole = hasVideoOrAudio && paramValues.image_role !== 'reference_image' && paramValues.image_role !== undefined
+                        ? 'reference_image'
+                        : paramValues.image_role;
+
+                      switch (effectiveRole) {
+                        case 'first_frame': return '首帧';
+                        case 'first_last_frame': return '首尾帧';
+                        case 'reference_image': return '参考图';
+                        default: return '自动';
+                      }
+                    })()}
+                  </span>
+                </div>
+              </Tooltip>
+            </Dropdown>
+          )}
+
         </div>
 
         {/* 右侧操作区 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, flexShrink: 0 }}>
           {/* 语音输入按钮 */}
           <Tooltip title="语音输入">
             <div
@@ -834,33 +1125,30 @@ const PromptInput: React.FC = React.memo(() => {
                 width: 32,
                 height: 32,
                 borderRadius: 10,
-                background: 'rgba(255, 255, 255, 0.04)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
+                background: _isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.04)',
+                border: _isLight ? '1px solid rgba(0, 0, 0, 0.08)' : '1px solid rgba(255, 255, 255, 0.08)',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                color: 'rgba(255,255,255,0.65)',
+                color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                e.currentTarget.style.color = '#fff';
+                e.currentTarget.style.background = _isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.color = _isLight ? '#000' : '#fff';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-                e.currentTarget.style.color = 'rgba(255,255,255,0.65)';
+                e.currentTarget.style.background = _isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.04)';
+                e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)';
               }}
             >
               <AudioOutlined style={{ fontSize: 16 }} />
             </div>
           </Tooltip>
 
-          {/* 添加按钮 */}
-          <Dropdown
-            menu={{ items: dropdownItems, onClick: handleMenuClick }}
-            trigger={['click']}
-            placement="topLeft"
-            onOpenChange={setIsAddMenuOpen}
-          >
-            <Tooltip title="添加图片/视频/音频" placement="bottom" open={isAddMenuOpen ? false : undefined}>
+          {/* 添加按钮（聊天模式暂不可用） */}
+          {currentModel?.scheme_type !== 'chat' && (() => {
+            const isOnlyLocalUpload = dropdownItems.length === 1 && dropdownItems[0]?.key === 'local-upload';
+
+            const addButtonContent = (
               <div
                 style={{
                   display: 'flex',
@@ -869,88 +1157,145 @@ const PromptInput: React.FC = React.memo(() => {
                   width: 32,
                   height: 32,
                   borderRadius: 10,
-                  background: attachedAssets.length > 0 ? 'rgba(22,119,255,0.15)' : 'rgba(255, 255, 255, 0.04)',
-                  border: attachedAssets.length > 0 ? '1px solid rgba(22,119,255,0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: attachedAssets.length > 0 ? 'rgba(22,119,255,0.15)' : (_isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.04)'),
+                  border: attachedAssets.length > 0 ? '1px solid rgba(22,119,255,0.3)' : (_isLight ? '1px solid rgba(0, 0, 0, 0.08)' : '1px solid rgba(255, 255, 255, 0.08)'),
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  color: attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.65)',
+                  color: attachedAssets.length > 0 ? '#1677ff' : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)'),
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+                onClick={() => {
+                  if (isOnlyLocalUpload && !isMobile) {
+                    fileInputRef.current?.click();
+                  }
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.25)' : 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : '#fff';
+                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.25)' : (_isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.1)');
+                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : (_isLight ? '#000' : '#fff');
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.15)' : 'rgba(255, 255, 255, 0.04)';
-                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : 'rgba(255,255,255,0.65)';
+                  e.currentTarget.style.background = attachedAssets.length > 0 ? 'rgba(22,119,255,0.15)' : (_isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.04)');
+                  e.currentTarget.style.color = attachedAssets.length > 0 ? '#1677ff' : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)');
                 }}
               >
                 <PlusCircleOutlined style={{ fontSize: 16 }} />
+                {isOnlyLocalUpload && isMobile && (
+                  <input
+                    type="file"
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleFileChange(e);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    accept="image/*,video/*,audio/*"
+                    multiple
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      opacity: 0,
+                      cursor: 'pointer',
+                      zIndex: 10,
+                    }}
+                  />
+                )}
               </div>
-            </Tooltip>
-          </Dropdown>
+            );
+
+            if (isOnlyLocalUpload) {
+              return (
+                <Tooltip title="添加图片/视频/音频" placement="bottom">
+                  {addButtonContent}
+                </Tooltip>
+              );
+            }
+
+            return (
+              <Dropdown
+                menu={{ items: dropdownItems, onClick: handleMenuClick }}
+                trigger={['click']}
+                placement="topLeft"
+                onOpenChange={setIsAddMenuOpen}
+              >
+                <Tooltip title="添加图片/视频/音频" placement="bottom" open={isAddMenuOpen ? false : undefined}>
+                  {addButtonContent}
+                </Tooltip>
+              </Dropdown>
+            );
+          })()}
 
           {/* 运行按钮 */}
           <div
-          onClick={() => {
-            if (currentModel && prompt.trim() && !generating) {
-              handleGenerate();
-            }
-          }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '6px 16px',
-            borderRadius: 14,
-            cursor: currentModel && prompt.trim() && !generating ? 'pointer' : 'not-allowed',
-            transition: 'all 0.2s ease',
-            background: currentModel && prompt.trim() && !generating
-              ? 'rgba(255, 255, 255, 0.15)'
-              : 'transparent',
-            border: currentModel && prompt.trim() && !generating
-              ? '1px solid transparent'
-              : '1px solid rgba(255, 255, 255, 0.08)',
-            color: currentModel && prompt.trim() && !generating
-              ? '#fff'
-              : 'rgba(255, 255, 255, 0.25)',
-            fontSize: 15,
-            fontWeight: 500,
-            whiteSpace: 'nowrap',
-            userSelect: 'none',
-            flexShrink: 0,
-          }}
-          onMouseEnter={(e) => {
-            if (currentModel && prompt.trim() && !generating) {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.22)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (currentModel && prompt.trim() && !generating) {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-            }
-          }}
-        >
-          {generating ? (
-            <>
-              <ThunderboltOutlined style={{ fontSize: 14, animation: 'pulse 1s infinite' }} />
-              <span>生成中...</span>
-            </>
-          ) : (
-            <>
-              <span>Run</span>
-              <span style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 15,
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                fontWeight: 400,
-              }}>
-                {modSymbol} ↵
-              </span>
-            </>
-          )}
-        </div>
+            onClick={() => {
+              if (currentModel && prompt.trim() && !generating) {
+                doGenerate();
+              }
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: isMobile ? 0 : 8,
+              padding: isMobile ? 0 : '6px 16px',
+              width: isMobile ? 32 : 'auto',
+              height: isMobile ? 32 : 'auto',
+              borderRadius: isMobile ? 10 : 14,
+              cursor: currentModel && prompt.trim() && !generating ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+              background: currentModel && prompt.trim() && !generating
+                ? (_isLight ? '#1677ff' : 'rgba(255, 255, 255, 0.15)')
+                : 'transparent',
+              border: currentModel && prompt.trim() && !generating
+                ? '1px solid transparent'
+                : (_isLight ? '1px solid rgba(0, 0, 0, 0.08)' : '1px solid rgba(255, 255, 255, 0.08)'),
+              color: currentModel && prompt.trim() && !generating
+                ? '#fff'
+                : (_isLight ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.25)'),
+              fontSize: isMobile ? 13 : 15,
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+              userSelect: 'none',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              if (currentModel && prompt.trim() && !generating) {
+                e.currentTarget.style.background = _isLight ? '#4096ff' : 'rgba(255, 255, 255, 0.22)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (currentModel && prompt.trim() && !generating) {
+                e.currentTarget.style.background = _isLight ? '#1677ff' : 'rgba(255, 255, 255, 0.15)';
+              }
+            }}
+          >
+            {generating && (
+              <>
+                <ThunderboltOutlined style={{ fontSize: isMobile ? 15 : 14, animation: 'pulse 1s infinite' }} />
+                {!isMobile && <span>生成中...</span>}
+              </>
+            )}
+            {!generating && isMobile && (
+              <ThunderboltOutlined style={{ fontSize: 15 }} />
+            )}
+            {!generating && !isMobile && (
+              <>
+                <span>Run</span>
+                <span style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 15,
+                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  fontWeight: 400,
+                }}>
+                  {modSymbol} ↵
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -970,6 +1315,7 @@ const PromptInput: React.FC = React.memo(() => {
       <AssetPickerModal
         open={isAssetPickerOpen}
         onClose={() => setIsAssetPickerOpen(false)}
+        pluginNs={assetPickerNs}
         onSelect={(items) => {
           setAttachedAssets(prev => {
             const newTotal = prev.length + items.length;
@@ -1047,6 +1393,19 @@ const PromptInput: React.FC = React.memo(() => {
             setIsVideoPreviewOpen(false);
             setEditingAssetIndex(null);
             message.success('视频编辑已保存');
+          }}
+        />
+      )}
+
+      {/* 音频预览弹窗 */}
+      {editingAssetIndex !== null && (attachedAssets[editingAssetIndex]?.asset.asset_type === 'audio' || attachedAssets[editingAssetIndex]?.asset.file_name?.match(/\.(mp3|wav|aac|flac|ogg|m4a)$/i)) && (
+        <AudioPreviewModal
+          open={isAudioPreviewOpen}
+          audioUrl={attachedAssets[editingAssetIndex].fullUrl}
+          fileName={attachedAssets[editingAssetIndex].asset.file_name}
+          onCancel={() => {
+            setIsAudioPreviewOpen(false);
+            setEditingAssetIndex(null);
           }}
         />
       )}

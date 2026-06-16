@@ -14,7 +14,7 @@ pub async fn list_admin_groups(
     State(state): State<Arc<AppState>>,
 ) -> Response {
     let result: AppResult<Json<AdminGroupListResponse>> = (async {
-        let groups: Vec<AdminGroup> = sqlx::query_as(&state.db.format_query("SELECT * FROM admin_groups ORDER BY id DESC"))
+        let groups: Vec<AdminGroup> = sqlx::query_as(&state.db.format_query("SELECT * FROM admin_groups ORDER BY sort_order DESC, id DESC"))
             .fetch_all(&state.db.pool)
             .await?;
         
@@ -39,11 +39,12 @@ pub async fn create_admin_group(
         let permissions_json = serde_json::to_string(&request.permissions.unwrap_or_default())?;
         
         sqlx::query(
-            &state.db.format_query("INSERT INTO admin_groups (name, permissions, description) VALUES (?, ?, ?)")
+            &state.db.format_query("INSERT INTO admin_groups (name, permissions, description, sort_order) VALUES (?, ?, ?, ?)")
         )
         .bind(&request.name)
         .bind(permissions_json)
         .bind(&request.description)
+        .bind(request.sort_order.unwrap_or(0))
         .execute(&state.db.pool)
         .await?;
 
@@ -84,6 +85,14 @@ pub async fn update_admin_group(
         if let Some(description) = request.description {
             sqlx::query(&state.db.format_query("UPDATE admin_groups SET description = ? WHERE id = ?"))
                 .bind(description)
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        if let Some(sort_order) = request.sort_order {
+            sqlx::query(&state.db.format_query("UPDATE admin_groups SET sort_order = ? WHERE id = ?"))
+                .bind(sort_order)
                 .bind(id)
                 .execute(&mut *tx)
                 .await?;

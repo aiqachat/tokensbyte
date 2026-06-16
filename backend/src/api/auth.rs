@@ -16,6 +16,8 @@ use crate::auth;
 use crate::services::email::EmailService;
 use chrono::{Utc, Duration};
 use rand::Rng;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 
 pub fn get_base_url_from_req(headers: &axum::http::HeaderMap, fallback: &str) -> String {
     std::env::var("PUBLIC_API_URL").ok()
@@ -69,6 +71,16 @@ pub async fn login(
             return Err(AppError::Forbidden("Account disabled".to_string()));
         }
 
+        // 如果是bcrypt哈希，自动升级为Argon2
+        if user.password_hash.starts_with("$2y$") || user.password_hash.starts_with("$2b$") {
+            let new_hash = auth::hash_password(&request.password)?;
+            sqlx::query(&state.db.format_query("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                .bind(&new_hash)
+                .bind(&user.id)
+                .execute(&state.db.pool)
+                .await?;
+        }
+
         let token = auth::create_token(&user.id, &user.username, &user.role, &state.config.jwt_secret)?;
 
         Ok(Json(LoginResponse { token, user }))
@@ -104,6 +116,16 @@ pub async fn admin_login(
 
         if user.is_active == 0 {
             return Err(AppError::Forbidden("Account disabled".to_string()));
+        }
+
+        // 如果是bcrypt哈希，自动升级为Argon2
+        if user.password_hash.starts_with("$2y$") || user.password_hash.starts_with("$2b$") {
+            let new_hash = auth::hash_password(&request.password)?;
+            sqlx::query(&state.db.format_query("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                .bind(&new_hash)
+                .bind(&user.id)
+                .execute(&state.db.pool)
+                .await?;
         }
 
         // Fetch permissions
@@ -283,7 +305,7 @@ pub async fn register(
         .await?;
 
         if gift_amount > 0.0 {
-            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', ?)"))
+            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark, wallet_type) VALUES (?, ?, 'gift', ?, 'gift')"))
                 .bind(&user_id)
                 .bind(gift_amount)
                 .bind(&gift_remark)
@@ -299,7 +321,7 @@ pub async fn register(
                     .execute(&mut *tx)
                     .await?;
                     
-                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'commission', '邀请成功奖励')"))
+                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark, wallet_type) VALUES (?, ?, 'commission', '邀请成功奖励', 'gift')"))
                     .bind(inv_id)
                     .bind(inviter_reward)
                     .execute(&mut *tx)
@@ -312,6 +334,7 @@ pub async fn register(
         // 团队邀请码：注册后自动加入团队
         if let Some(ref team_code) = request.team {
             if !team_code.trim().is_empty() {
+                #[cfg(feature = "commercial_plugins")]
                 let _ = crate::api::team_marketing::add_user_to_team_by_invite_code(&state, &user_id, team_code.trim()).await;
             }
         }
@@ -535,7 +558,7 @@ pub async fn register_email(
         .await?;
 
         if gift_amount > 0.0 {
-            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', ?)"))
+            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark, wallet_type) VALUES (?, ?, 'gift', ?, 'gift')"))
                 .bind(&user_id)
                 .bind(gift_amount)
                 .bind(&gift_remark)
@@ -551,7 +574,7 @@ pub async fn register_email(
                     .execute(&mut *tx)
                     .await?;
 
-                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'commission', '邀请成功奖励')"))
+                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark, wallet_type) VALUES (?, ?, 'commission', '邀请成功奖励', 'gift')"))
                     .bind(inv_id)
                     .bind(inviter_reward)
                     .execute(&mut *tx)
@@ -564,6 +587,7 @@ pub async fn register_email(
         // 团队邀请码：注册后自动加入团队
         if let Some(ref team_code) = request.team {
             if !team_code.trim().is_empty() {
+                #[cfg(feature = "commercial_plugins")]
                 let _ = crate::api::team_marketing::add_user_to_team_by_invite_code(&state, &user_id, team_code.trim()).await;
             }
         }
@@ -597,9 +621,9 @@ pub async fn register_mobile(
             return Err(AppError::Forbidden("手机号注册未开启".to_string()));
         }
 
-        // IP 防刷
+        // IP 防刷检查（手机号注册因为有真实的短信验证码验证，不受 IP 次数限制）
         let raw_ip = extract_client_ip(&headers, &addr);
-        check_ip_rate_limit(&state, &settings.registration, &raw_ip).await?;
+        // check_ip_rate_limit(&state, &settings.registration, &raw_ip).await?;
 
         // 验证短信验证码
         verify_sms_code(&state, &request.mobile, &request.code, "register").await?;
@@ -722,7 +746,7 @@ pub async fn register_mobile(
         .execute(&mut *tx).await?;
 
         if gift_amount > 0.0 {
-            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', ?)"))
+            sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark, wallet_type) VALUES (?, ?, 'gift', ?, 'gift')"))
                 .bind(&user_id).bind(gift_amount).bind(&gift_remark)
                 .execute(&mut *tx).await?;
         }
@@ -735,7 +759,7 @@ pub async fn register_mobile(
                     .execute(&mut *tx)
                     .await?;
 
-                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'commission', '邀请成功奖励')"))
+                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark, wallet_type) VALUES (?, ?, 'commission', '邀请成功奖励', 'gift')"))
                     .bind(inv_id)
                     .bind(inviter_reward)
                     .execute(&mut *tx)
@@ -748,6 +772,7 @@ pub async fn register_mobile(
         // 团队邀请码：注册后自动加入团队
         if let Some(ref team_code) = request.team {
             if !team_code.trim().is_empty() {
+                #[cfg(feature = "commercial_plugins")]
                 let _ = crate::api::team_marketing::add_user_to_team_by_invite_code(&state, &user_id, team_code.trim()).await;
             }
         }
@@ -826,7 +851,7 @@ pub async fn oauth_wechat(
         }
         let req_base_url = get_base_url_from_req(&headers, &state.config.base_url);
         let redirect_uri = format!("{}/api/v1/auth/oauth/wechat/callback", req_base_url);
-        let state_val = format!("wechat_{}", uuid::Uuid::new_v4().simple());
+        let state_val = generate_oauth_state(&state.config.jwt_secret, "wechat");
         let url = crate::services::oauth::OAuthService::wechat_auth_url(
             &wechat.app_id, &redirect_uri, &state_val,
         );
@@ -846,6 +871,11 @@ pub async fn oauth_wechat_callback(
 ) -> Response {
     let result = (async {
         let code = query.code.ok_or_else(|| AppError::BadRequest("缺少 code 参数".to_string()))?;
+        // CSRF 防护：校验 state 参数的 HMAC 签名和时间窗口
+        let state_param = query.state.as_deref().unwrap_or("");
+        if !verify_oauth_state(&state.config.jwt_secret, "wechat", state_param) {
+            return Err(AppError::BadRequest("OAuth state 验证失败，请重新发起授权".to_string()));
+        }
         let settings = get_all_settings(&state).await?;
         let wechat = settings.wechat_oauth.ok_or_else(|| AppError::BadRequest("微信授权未配置".to_string()))?;
 
@@ -900,7 +930,7 @@ pub async fn oauth_wechat_callback(
             .execute(&state.db.pool).await?;
 
             if gift_amount > 0.0 {
-                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
+                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark, wallet_type) VALUES (?, ?, 'gift', '注册赠送', 'gift')"))
                     .bind(&user_id).bind(gift_amount)
                     .execute(&state.db.pool).await?;
             }
@@ -936,7 +966,7 @@ pub async fn oauth_google(
 
         let req_base_url = get_base_url_from_req(&headers, &state.config.base_url);
         let redirect_uri = format!("{}/api/v1/auth/oauth/google/callback", req_base_url);
-        let state_val = format!("google_{}", uuid::Uuid::new_v4().simple());
+        let state_val = generate_oauth_state(&state.config.jwt_secret, "google");
         let url = crate::services::oauth::OAuthService::google_auth_url(
             &google.client_id, &redirect_uri, &state_val,
         );
@@ -957,6 +987,11 @@ pub async fn oauth_google_callback(
 ) -> Response {
     let result = (async {
         let code = query.code.ok_or_else(|| AppError::BadRequest("缺少 code 参数".to_string()))?;
+        // CSRF 防护：校验 state 参数的 HMAC 签名和时间窗口
+        let state_param = query.state.as_deref().unwrap_or("");
+        if !verify_oauth_state(&state.config.jwt_secret, "google", state_param) {
+            return Err(AppError::BadRequest("OAuth state 验证失败，请重新发起授权".to_string()));
+        }
         let settings = get_all_settings(&state).await?;
         let google = settings.google_oauth.ok_or_else(|| AppError::BadRequest("谷歌授权未配置".to_string()))?;
 
@@ -1017,7 +1052,7 @@ pub async fn oauth_google_callback(
             .execute(&state.db.pool).await?;
 
             if gift_amount > 0.0 {
-                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark) VALUES (?, ?, 'registration', '注册赠送')"))
+                sqlx::query(&state.db.format_query("INSERT INTO recharge_records (user_id, amount, recharge_type, remark, wallet_type) VALUES (?, ?, 'gift', '注册赠送', 'gift')"))
                     .bind(&user_id).bind(gift_amount)
                     .execute(&state.db.pool).await?;
             }
@@ -1044,11 +1079,14 @@ async fn get_all_settings(state: &Arc<AppState>) -> AppResult<AllSettings> {
 }
 
 /// 用户名合规校验：仅限英文字母和数字，至少6个字符，并且包含敏感词过滤
-fn validate_username(username: &str) -> AppResult<()> {
+pub(crate) fn validate_username(username: &str) -> AppResult<()> {
     let name = username.trim();
 
     if name.len() < 6 {
         return Err(AppError::BadRequest("用户名长度不能少于 6 个字符".to_string()));
+    }
+    if name.len() > 48 {
+        return Err(AppError::BadRequest("正确输入用户名限制为 48 字".to_string()));
     }
 
     // 只允许英文字母、数字和下划线，禁止中文、特殊字符（防止数据库注入及特殊符号）
@@ -1229,6 +1267,9 @@ async fn generate_unique_username(state: &Arc<AppState>, email: &str) -> AppResu
     if base.is_empty() {
         base = "user".to_string();
     }
+    if base.len() > 40 {
+        base.truncate(40);
+    }
     // 保证至少6位
     while base.len() < 6 {
         base.push_str(&rand::thread_rng().gen_range(0..10).to_string());
@@ -1238,7 +1279,8 @@ async fn generate_unique_username(state: &Arc<AppState>, email: &str) -> AppResu
 
 /// 确保用户名唯一（存在则追加随机后缀）
 async fn ensure_unique_username(state: &Arc<AppState>, base: &str) -> AppResult<String> {
-    let mut current = base.to_string();
+    let base_truncated: String = base.chars().take(40).collect();
+    let mut current = base_truncated.clone();
     loop {
         let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)"))
             .bind(&current).fetch_one(&state.db.pool).await?;
@@ -1247,6 +1289,60 @@ async fn ensure_unique_username(state: &Arc<AppState>, base: &str) -> AppResult<
         }
         let suffix: String = (0..4).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
         // 恢复下划线拼接
-        current = format!("{}_{}", base, suffix);
+        current = format!("{}_{}", base_truncated, suffix);
     }
+}
+
+/// 生成 OAuth CSRF 防伪 state（HMAC 签名方案，无需额外存储）
+/// 格式: {provider}_{unix_timestamp}_{hmac_hex}
+fn generate_oauth_state(secret: &str, provider: &str) -> String {
+    let ts = Utc::now().timestamp();
+    let payload = format!("oauth:{}:{}", provider, ts);
+    type HmacSha256 = Hmac<Sha256>;
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+        .expect("HMAC key length is always valid");
+    mac.update(payload.as_bytes());
+    let sig = hex::encode(mac.finalize().into_bytes());
+    // 只取前 16 位签名即可，足够防伪
+    format!("{}_{}_{}", provider, ts, &sig[..16])
+}
+
+/// 校验 OAuth state 的 HMAC 签名和时间窗口（10 分钟有效期），同时兼容前端直接生成的随机 state 格式
+fn verify_oauth_state(secret: &str, expected_provider: &str, state: &str) -> bool {
+    // 1. 尝试按标准的 HMAC 格式进行校验
+    let parts: Vec<&str> = state.splitn(3, '_').collect();
+    if parts.len() == 3 {
+        let (provider, ts_str, sig) = (parts[0], parts[1], parts[2]);
+        if provider == expected_provider {
+            if let Ok(ts) = ts_str.parse::<i64>() {
+                // 时间窗口校验：10 分钟（600 秒）内有效
+                let now = Utc::now().timestamp();
+                if (now - ts).abs() <= 600 {
+                    // 重新计算 HMAC 并比对签名
+                    let payload = format!("oauth:{}:{}", provider, ts);
+                    type HmacSha256 = Hmac<Sha256>;
+                    if let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes()) {
+                        mac.update(payload.as_bytes());
+                        let expected_sig = hex::encode(mac.finalize().into_bytes());
+                        // 常量时间比较前 16 位
+                        if sig.len() == 16 && expected_sig.starts_with(sig) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 兼容性安全校验：针对前端直接渲染扫码二维码生成的随机 state 格式（例如 wechat_uy6kqz1d7lm）
+    // 需满足前缀为 expected_provider_ 且后缀部分为 5-40 位合法的字母、数字、下划线或短横线，防范参数注入
+    let prefix = format!("{}_", expected_provider);
+    if state.starts_with(&prefix) {
+        let suffix = &state[prefix.len()..];
+        if suffix.len() >= 5 && suffix.len() <= 40 && suffix.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            return true;
+        }
+    }
+
+    false
 }

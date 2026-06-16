@@ -18,6 +18,8 @@ interface MobileCardListProps<T> {
     pageSizeOptions?: string[];
     showTotal?: (total: number) => string;
   };
+  compact?: boolean;
+  gap?: number;
 }
 
 function MobileCardList<T extends Record<string, any>>({ 
@@ -25,7 +27,9 @@ function MobileCardList<T extends Record<string, any>>({
   loading, 
   renderCard, 
   rowKey,
-  pagination 
+  pagination,
+  compact,
+  gap
 }: MobileCardListProps<T>) {
   const [currentPage, setCurrentPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(
@@ -65,7 +69,7 @@ function MobileCardList<T extends Record<string, any>>({
 
   return (
     <div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: gap !== undefined ? gap : (compact ? 4 : 6) }}>
         {displayData.map((item, index) => (
           <div key={getKey(item, index)}>
             {renderCard(item, index)}
@@ -92,10 +96,10 @@ function MobileCardList<T extends Record<string, any>>({
 
 // ---- Reusable building blocks for card content ----
 
-export const CardRow: React.FC<{ label: string; children: React.ReactNode; style?: React.CSSProperties }> = ({ label, children, style }) => (
-  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', ...style }}>
-    <Text type="secondary" style={{ fontSize: 13, flexShrink: 0, marginRight: 8 }}>{label}</Text>
-    <div style={{ textAlign: 'right', fontSize: 13 }}>{children}</div>
+export const CardRow: React.FC<{ label: string; children: React.ReactNode; style?: React.CSSProperties; compact?: boolean }> = ({ label, children, style, compact }) => (
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: compact ? '1px 0' : '2px 0', ...style }}>
+    <Text type="secondary" style={{ fontSize: compact ? 11 : 13, flexShrink: 0, marginRight: 8 }}>{label}</Text>
+    <div style={{ textAlign: 'right', fontSize: compact ? 11 : 13 }}>{children}</div>
   </div>
 );
 
@@ -119,20 +123,23 @@ export const CardActions: React.FC<{ children: React.ReactNode }> = ({ children 
 export const MobileCard: React.FC<{ 
   title: React.ReactNode; 
   extra?: React.ReactNode; 
-  children: React.ReactNode 
-}> = ({ title, extra, children }) => {
+  children: React.ReactNode;
+  compact?: boolean;
+  style?: React.CSSProperties;
+}> = ({ title, extra, children, compact, style }) => {
   const { themeMode } = useThemeStore();
   const isLight = themeMode === 'light';
   return (
     <div style={{
       background: isLight ? '#fff' : '#1d1d1d',
       border: isLight ? '1px solid #e8e8e8' : '1px solid #303030',
-      borderRadius: 12,
-      padding: '14px 16px',
+      borderRadius: compact ? 8 : 12,
+      padding: compact ? '5px 8px' : '10px 12px',
+      ...style
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
-        {extra && <div>{extra}</div>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: compact ? 4 : 6, gap: 8 }}>
+        <div style={{ fontWeight: 600, fontSize: compact ? 13 : 14, flex: 1, minWidth: 0 }}>{title}</div>
+        {extra && <div style={{ flexShrink: 0 }}>{extra}</div>}
       </div>
       {children}
     </div>

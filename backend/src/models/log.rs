@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct RequestLog {
     pub id: i64,
+    #[sqlx(default)]
+    pub log_id: Option<String>,
     pub user_id: String,
     pub channel_id: Option<i64>,
     pub token_id: Option<i64>,
@@ -26,6 +28,8 @@ pub struct RequestLog {
     pub request_content: Option<String>,
     #[sqlx(default)]
     pub response_content: Option<String>,
+    #[sqlx(default)]
+    pub post_response: Option<String>,
     #[sqlx(default)]
     pub upstream_req_content: Option<String>,
     #[sqlx(default)]
@@ -52,50 +56,92 @@ pub struct RequestLog {
     pub forward_eid: Option<String>,
     /// POST 阶段提取的计费特征快照 (JSON)，独立于 enable_log 开关
     #[sqlx(default)]
+    #[serde(skip_serializing)]
     pub billing_features: Option<String>,
+    /// 预扣费中从赠送余额扣除的金额，用于退款时精准归还
+    #[sqlx(default)]
+    pub pre_deduct_gift: f64,
+    /// 插件标记JSON，如快乐小马的路由信息
+    #[sqlx(default)]
+    pub plugin_tag: Option<String>,
+    #[sqlx(default)]
+    pub action_type: Option<String>,
     pub created_at: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct LogQuery {
     pub page: Option<i64>,
     pub per_page: Option<i64>,
     pub user_id: Option<String>,
     pub model: Option<String>,
     pub channel_id: Option<i64>,
+    pub channel_group_aid: Option<String>,
     pub token_id: Option<i64>,
     pub status: Option<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub uid: Option<String>,
+    pub router_ep: Option<String>,
+    pub action_type: Option<String>,
+    pub log_id: Option<String>,
+    pub token_kid: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct LogListResponse {
     pub data: Vec<RequestLog>,
     pub total: i64,
+    pub allow_details: bool,
+    /// 筛选范围内的汇总统计
+    pub total_cost: f64,
+    pub success_count: i64,
+    pub fail_count: i64,
+    pub total_system_cost: Option<f64>,
+    pub total_gift_cost: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct DashboardStats {
     pub total_requests: i64,
     pub total_tokens: i64,
     pub total_cost: f64,
     pub total_users: i64,
     pub total_channels: i64,
-    pub active_tokens: i64,
+    pub total_api_tokens: i64,
     pub today_requests: i64,
+    pub today_tokens: i64,
     pub today_cost: f64,
+    pub today_active_tokens: i64,
+    pub yesterday_requests: i64,
+    pub yesterday_tokens: i64,
+    pub yesterday_cost: f64,
+    pub yesterday_active_tokens: i64,
     pub recent_logs: Vec<RequestLog>,
     pub model_stats: Vec<ModelStat>,
+    #[serde(default)]
+    pub daily_trends: Vec<DashboardDailyTrend>,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Clone)]
 pub struct ModelStat {
     pub model: String,
     pub count: i64,
-    #[sqlx(default)]
     pub total_tokens: Option<i64>,
-    #[sqlx(default)]
     pub total_cost: Option<f64>,
+    pub last_three_days: Vec<DashboardModelDailyStatInfo>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct DashboardModelDailyStatInfo {
+    pub date: String,
+    pub count: i64,
+    pub total_cost: f64,
+}
+
+#[derive(Debug, Serialize, Clone, sqlx::FromRow)]
+pub struct DashboardDailyTrend {
+    pub date: String,
+    pub requests: i64,
+    pub cost: f64,
 }

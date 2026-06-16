@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, Checkbox, Space, message, Card, Typography, Divider, Grid } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, Checkbox, Space, message, Card, Typography, Divider, Grid } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
+import dayjs from 'dayjs';
 import type { AdminGroup } from '../../types';
 
 const { Title, Text } = Typography;
@@ -36,7 +37,7 @@ const AdminGroups: React.FC = () => {
       const response = await (request.get('/admin_groups') as any);
       setGroups(response.data);
     } catch (error) {
-      message.error('获取管理员分组失败');
+      message.error('获取管理员等级失败');
     } finally {
       setLoading(false);
     }
@@ -58,6 +59,7 @@ const AdminGroups: React.FC = () => {
       name: group.name,
       description: group.description,
       permissions: group.permissions ? JSON.parse(group.permissions) : [],
+      sort_order: group.sort_order || 0,
     });
     setModalVisible(true);
   };
@@ -90,9 +92,10 @@ const AdminGroups: React.FC = () => {
   };
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
+    { title: '排序', dataIndex: 'sort_order', key: 'sort_order', width: 80 },
     { title: '名称', dataIndex: 'name', key: 'name', width: 150 },
     { title: '描述', dataIndex: 'description', key: 'description' },
+    { title: '创建时间', dataIndex: 'created_at', key: 'created_at', render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm:ss') },
     { 
       title: '操作', 
       key: 'action', 
@@ -111,7 +114,7 @@ const AdminGroups: React.FC = () => {
       title={
         <Space>
           <SafetyCertificateOutlined />
-          <span>管理员权限分组</span>
+          <span>管理员权限等级</span>
         </Space>
       }
       extra={
@@ -129,9 +132,11 @@ const AdminGroups: React.FC = () => {
           renderCard={(record: any) => (
             <MobileCard
               title={<Text strong>{record.name}</Text>}
-              extra={<Text type="secondary">ID: {record.id}</Text>}
+              extra={null}
             >
               {record.description && <CardRow label="描述"><Text type="secondary" style={{ fontSize: 12 }}>{record.description}</Text></CardRow>}
+              <CardRow label="排序"><Text type="secondary" style={{ fontSize: 12 }}>{record.sort_order || 0}</Text></CardRow>
+              <CardRow label="创建时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text></CardRow>
               <CardActions>
                 <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
                 <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)}>删除</Button>
@@ -161,6 +166,9 @@ const AdminGroups: React.FC = () => {
           </Form.Item>
           <Form.Item name="description" label="描述">
             <Input.TextArea />
+          </Form.Item>
+          <Form.Item name="sort_order" label="排序（数字越大越靠前）" initialValue={0}>
+            <InputNumber style={{ width: '100%' }} />
           </Form.Item>
           <Divider>权限配置</Divider>
           <Form.Item name="permissions" label="选择可见菜单">

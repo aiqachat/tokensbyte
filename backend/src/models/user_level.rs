@@ -23,6 +23,8 @@ pub struct UserLevel {
     #[sqlx(default)]
     pub allow_view_log_details: Option<i32>,
     pub description: String,
+    #[sqlx(default)]
+    pub sort_order: i32,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -41,6 +43,7 @@ pub struct CreateUserLevelRequest {
     pub max_token_count: Option<i64>,
     pub allow_view_log_details: Option<i32>,
     pub description: Option<String>,
+    pub sort_order: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,6 +60,7 @@ pub struct UpdateUserLevelRequest {
     pub max_token_count: Option<i64>,
     pub allow_view_log_details: Option<i32>,
     pub description: Option<String>,
+    pub sort_order: Option<i32>,
 }
 
 

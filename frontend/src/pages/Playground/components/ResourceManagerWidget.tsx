@@ -2,12 +2,16 @@ import React, { useRef, useCallback, useEffect, useMemo } from 'react';
 import { Typography, Tooltip } from 'antd';
 import { FolderOpenOutlined, CloseOutlined } from '@ant-design/icons';
 import { useCanvas, usePlayground } from '../context/PlaygroundContext';
+import { useThemeStore } from '../../../store/theme';
+import { extractVideoUrl } from '../utils/resultExtractor';
 
 const { Text } = Typography;
 
 const ResourceManagerWidget: React.FC = React.memo(() => {
   const { resourceWidgetPos, setResourceWidgetPos, nodes, setNodes, maxZIndex, setMaxZIndex } = useCanvas();
   const { isResourceWidgetVisible, setIsResourceWidgetVisible } = usePlayground();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
 
   const handleRestoreNode = useCallback((id: string) => {
     const newZ = maxZIndex + 1;
@@ -43,10 +47,10 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button, .ant-tooltip-open, .close-btn')) return;
-    
+
     isDraggingRef.current = true;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
-    
+
     if (containerRef.current) {
       containerRef.current.style.transition = 'none';
       containerRef.current.style.cursor = 'grabbing';
@@ -57,7 +61,7 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
       const dx = ev.clientX - dragStartRef.current.x;
       const dy = ev.clientY - dragStartRef.current.y;
       dragStartRef.current = { x: ev.clientX, y: ev.clientY };
-      
+
       posRef.current.x += dx;
       posRef.current.y += dy;
 
@@ -89,10 +93,10 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
         left: resourceWidgetPos.x,
         top: resourceWidgetPos.y,
         width: 320,
-        background: '#1e1f20',
+        background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
         borderRadius: 24,
-        border: '1px solid #444746',
-        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+        border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746',
+        boxShadow: _isLight ? '0 4px 20px rgba(0,0,0,0.08)' : '0 4px 6px rgba(0,0,0,0.3)',
         backdropFilter: 'blur(24px)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         zIndex: 1000,
@@ -106,24 +110,24 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
         onMouseDown={handleMouseDown}
         style={{
           padding: '0 24px', height: 48, minHeight: 48,
-          borderBottom: '1px solid #444746',
+          borderBottom: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid #444746',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           cursor: 'grab',
-          background: 'rgba(255,255,255,0.02)',
+          background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
           userSelect: 'none',
         }}
       >
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <FolderOpenOutlined style={{ color: '#fff', fontSize: 16 }} />
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>资源管理器</Text>
+          <FolderOpenOutlined style={{ color: _isLight ? '#333' : '#fff', fontSize: 16 }} />
+          <Text style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>资源管理器</Text>
         </div>
         <Tooltip title="关闭">
           <div
             className="close-btn"
-            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'rgba(255,255,255,0.5)' }}
+            style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)' }}
             onClick={() => setIsResourceWidgetVisible(false)}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
-            onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(255,255,255,0.5)'}
+            onMouseEnter={(e) => e.currentTarget.style.color = _isLight ? '#000' : '#fff'}
+            onMouseLeave={(e) => e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)'}
           >
             <CloseOutlined />
           </div>
@@ -135,7 +139,7 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
         flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px'
       }}>
         {resources.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.3)' }}>
+          <div style={{ textAlign: 'center', padding: '40px 0', color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }}>
             暂无生成的资源
           </div>
         ) : (
@@ -143,24 +147,26 @@ const ResourceManagerWidget: React.FC = React.memo(() => {
             {resources.map(res => {
               let imgUrl = '';
               let videoUrl = '';
-              
+
               if (res.type === 'image') {
-                imgUrl = typeof res.resultData?.data?.[0] === 'string' 
-                  ? res.resultData?.data?.[0] 
-                  : res.resultData?.data?.[0]?.url || res.resultData?.content?.image_url || '';
+                // OpenAI 格式: data[0].url 或 data[0] 为字符串
+                imgUrl = typeof res.resultData?.data?.[0] === 'string'
+                  ? res.resultData?.data?.[0]
+                  : res.resultData?.data?.[0]?.url || '';
               } else if (res.type === 'video') {
-                videoUrl = res.resultData?.content?.video_url || res.resultData?.final_result?.video_url || res.resultData?.video_url || '';
-                imgUrl = res.resultData?.content?.cover_image_url || res.resultData?.final_result?.cover_image_url || ''; // fallback if available
+                // 统一使用 extractVideoUrl：OpenAI 格式（data[0].url）+ 内部格式（content.video_url）
+                videoUrl = extractVideoUrl(res.resultData);
+                imgUrl = res.resultData?.data?.[0]?.cover_url || '';
               }
 
               return (
-                <div 
-                  key={res.id} 
+                <div
+                  key={res.id}
                   onClick={() => handleRestoreNode(res.id)}
-                  style={{ 
+                  style={{
                     position: 'relative', width: '100%', height: '100%',
-                    background: '#000', borderRadius: 12, overflow: 'hidden', 
-                    border: '1px solid #444746', cursor: 'pointer',
+                    background: '#000', borderRadius: 12, overflow: 'hidden',
+                    border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center'
                   }}
                 >

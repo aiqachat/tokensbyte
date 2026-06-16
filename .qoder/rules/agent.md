@@ -1,8 +1,11 @@
 ---
 trigger: always_on
 ---
-
 # Agent 协作规则
+
+## 开发流程规范
+
+1. **禁止自动编译和重启本地开发环境**。Agent 不得自行执行 `cargo run`、`cargo build`、`npm run dev`、`npm run build`、`docker compose up` 等编译/启动命令。本地开发环境由用户自行管理，Agent 只负责修改源代码文件。多个智能体可能同时并发开发，自动重启会导致服务冲突和端口占用。
 
 ## 文档管理规则
 

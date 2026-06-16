@@ -3,6 +3,7 @@ pub mod channel;
 pub mod channel_config;
 pub mod api_token;
 pub mod log;
+#[cfg(plugin_redemptions_model)]
 pub mod redemption;
 pub mod model;
 pub mod settings;
@@ -19,6 +20,7 @@ pub use channel::*;
 pub use channel_config::*;
 pub use api_token::*;
 pub use log::*;
+#[cfg(plugin_redemptions_model)]
 pub use redemption::*;
 pub use model::*;
 pub use settings::*;
@@ -36,7 +38,9 @@ pub use log::RequestLog;
 pub mod plugin;
 pub use plugin::*;
 
+#[cfg(feature = "commercial_plugins")]
 pub mod volcengine_pool;
+#[cfg(feature = "commercial_plugins")]
 pub mod gptimage_pool;
 pub mod site_icon;
 pub use site_icon::*;

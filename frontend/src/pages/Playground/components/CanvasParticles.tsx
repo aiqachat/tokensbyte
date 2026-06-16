@@ -8,6 +8,7 @@
  * - 任意缩放级别下始终布满整个浏览器视口
  */
 import React, { useRef, useEffect, useCallback } from 'react';
+import { useThemeStore } from '../../../store/theme';
 
 interface Props {
   /** 画布偏移量 */
@@ -107,9 +108,12 @@ const CanvasParticles = React.forwardRef<CanvasParticlesHandle, {}>((_, ref) => 
 
       const ox = ((offsetX % gap) + gap) % gap;
       const oy = ((offsetY % gap) + gap) % gap;
+      
+      const themeMode = useThemeStore.getState().themeMode;
+      const isLight = themeMode === 'light';
 
       // 1. 批量绘制背景静态点 (极致性能)
-      ctx.fillStyle = `rgba(255, 255, 255, ${BASE_ALPHA})`;
+      ctx.fillStyle = isLight ? `rgba(0, 0, 0, ${BASE_ALPHA * 0.4})` : `rgba(255, 255, 255, ${BASE_ALPHA})`;
       const radius = BASE_RADIUS * Math.min(Math.max(scale, 0.5), 1.2);
 
       ctx.beginPath();
@@ -153,11 +157,19 @@ const CanvasParticles = React.forwardRef<CanvasParticlesHandle, {}>((_, ref) => 
               const targetHighlightRadius = HIGHLIGHT_RADIUS * Math.min(Math.max(scale, 0.5), 1.2);
               const hRadius = radius + brightness * (targetHighlightRadius - radius);
 
-              const r = Math.round(162 + brightness * 40);
-              const g = Math.round(193 + brightness * 30);
+              let r, g, b;
+              if (isLight) {
+                r = Math.round(100 - brightness * 50);
+                g = Math.round(100 - brightness * 50);
+                b = Math.round(100 - brightness * 50);
+              } else {
+                r = Math.round(162 + brightness * 40);
+                g = Math.round(193 + brightness * 30);
+                b = 255;
+              }
 
               ctx.beginPath();
-              ctx.fillStyle = `rgba(${r}, ${g}, 255, ${alpha})`;
+              ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${isLight ? alpha * 0.5 : alpha})`;
               ctx.arc(sx, sy, hRadius, 0, Math.PI * 2);
               ctx.fill();
             }

@@ -23,6 +23,8 @@ export interface PlaygroundModel {
   mid: string;
   name: string;
   model_id: string;
+  description?: string;
+  logo?: string;
   type_name: string;
   scheme_id: string;
   scheme_name: string;
@@ -30,6 +32,11 @@ export interface PlaygroundModel {
   endpoint?: string;
   poll_endpoint?: string;
   params: SchemeParam[];
+  billing?: any;
+  global_discount?: number;
+  global_discount_enabled?: number;
+  /** 排序权重 */
+  sort_order?: number;
 }
 
 /** 画布节点定义 */
@@ -55,7 +62,7 @@ export interface CanvasTransform {
 }
 
 /** 活跃工具类型 */
-export type ActiveTool = 'pointer' | 'hand';
+export type ActiveTool = 'pointer' | 'hand' | 'marquee';
 
 /** 二维坐标 */
 export interface Point {
@@ -77,7 +84,7 @@ export interface PlaygroundProject {
 }
 
 /** 体验中心资源 */
-export interface PlaygroundAsset {
+interface PlaygroundAsset {
   id: number;
   asset_type: 'image' | 'video' | 'text' | 'audio';
   file_name: string;

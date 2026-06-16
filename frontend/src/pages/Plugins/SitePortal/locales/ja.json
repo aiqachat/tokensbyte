@@ -1,0 +1,11 @@
+{
+  "plugin_title": "サイトポータル",
+  "plugin_desc": "サイトコンテンツの基本紹介を提供",
+  "nav_management": "ナビ管理",
+  "home_management": "ホーム管理",
+  "column_management": "カラム管理",
+  "static_generation": "静的生成",
+  "other_config": "その他設定",
+  "save": "保存",
+  "preview": "プレビュー"
+}

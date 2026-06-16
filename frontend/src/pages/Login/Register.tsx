@@ -58,10 +58,10 @@ const Register: React.FC = () => {
           } else if (res.status === 'already_leader') {
             message.info('您已是该团队负责人');
           }
-          navigate('/');
+          navigate('/dashboard');
         } catch (e: any) {
           message.error(e?.response?.data?.error?.message || '加入团队失败');
-          navigate('/');
+          navigate('/dashboard');
         }
       })();
     }
@@ -109,7 +109,7 @@ const Register: React.FC = () => {
     try {
       const res = await (request.post('/auth/register', { ...values, aff, team: team || undefined }, { skipErrorHandler: true } as any) as any);
       setToken(res.token); setUser(res.user);
-      message.success(t('auth.register_success')); navigate('/');
+      message.success(t('auth.register_success')); navigate('/dashboard');
     } catch (e: any) {
       message.error(e?.response?.data?.error?.message || t('common.error'));
     } finally { setTimeout(() => setLoading(false), 800); }
@@ -122,7 +122,7 @@ const Register: React.FC = () => {
     try {
       const res = await (request.post('/auth/register-email', { email: values.email, code: values.code, password: values.password, aff, team: team || undefined }, { skipErrorHandler: true } as any) as any);
       setToken(res.token); setUser(res.user);
-      message.success(t('auth.register_success')); navigate('/');
+      message.success(t('auth.register_success')); navigate('/dashboard');
     } catch (e: any) {
       message.error(e?.response?.data?.error?.message || t('common.error'));
     } finally { setTimeout(() => setLoading(false), 800); }
@@ -135,7 +135,7 @@ const Register: React.FC = () => {
     try {
       const res = await (request.post('/auth/register-mobile', { mobile: values.mobile, code: values.code, password: values.password, aff, team: team || undefined }, { skipErrorHandler: true } as any) as any);
       setToken(res.token); setUser(res.user);
-      message.success(t('auth.register_success')); navigate('/');
+      message.success(t('auth.register_success')); navigate('/dashboard');
     } catch (e: any) {
       message.error(e?.response?.data?.error?.message || t('common.error'));
     } finally { setTimeout(() => setLoading(false), 800); }
@@ -143,8 +143,14 @@ const Register: React.FC = () => {
 
   const usernameForm = (
     <Form name="reg_username" size="large" onFinish={onFinishUsername} autoComplete="off">
-      <Form.Item name="username" rules={[{ required: true, message: t('auth.username_required') }]}>
-        <Input prefix={<UserOutlined />} placeholder={t('auth.username_placeholder')} />
+      <Form.Item 
+        name="username" 
+        rules={[
+          { required: true, message: t('auth.username_required') },
+          { max: 48, message: t('auth.username_max_length') }
+        ]}
+      >
+        <Input prefix={<UserOutlined />} placeholder={t('auth.username_placeholder')} maxLength={48} showCount />
       </Form.Item>
       <Form.Item name="password" rules={[{ required: true, message: t('auth.password_required') }]}>
         <Input.Password prefix={<LockOutlined />} placeholder={t('auth.password_placeholder')} />

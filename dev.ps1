@@ -1,11 +1,14 @@
-﻿# TokensByte 开发环境启动脚本 (Windows PowerShell)
+﻿﻿# TokensByte 开发环境启动脚本 (Windows PowerShell)
 # ──────────────────────────────────────────────────
 
 $ErrorActionPreference = "Stop"
 
+# 项目名称配置：优先使用环境变量PROJECT_NAME，否则读取当前目录名
+$ProjectName = if ($env:PROJECT_NAME) { $env:PROJECT_NAME } else { (Get-Item .).Name }
+
 Write-Host ""
 Write-Host "═══════════════════════════════════════════════════" -ForegroundColor White
-Write-Host "  🛠  TokensByte 开发环境启动器" -ForegroundColor White
+Write-Host "  🛠  $($ProjectName.ToUpper()) 开发环境启动器" -ForegroundColor White
 Write-Host "═══════════════════════════════════════════════════" -ForegroundColor White
 Write-Host ""
 Write-Host "  [1] 本地开发  (推荐，编译速度快)" -ForegroundColor Cyan
@@ -38,6 +41,8 @@ switch ($choice) {
         Write-Host "   按 Ctrl+C 停止所有服务"
         Write-Host ""
 
+        # 导出项目名环境变量
+        $env:PROJECT_NAME = $ProjectName
         docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
     }
 
@@ -47,13 +52,14 @@ switch ($choice) {
         Write-Host "🚀 正在启动本地开发环境 (数据库在 Docker 中运行)..." -ForegroundColor Cyan
 
         # 1. 启动 Docker 中的 Postgres（合并 dev.yml 以获取端口映射）
+        $env:PROJECT_NAME = $ProjectName
         docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
 
         Write-Host "⏳ 等待数据库就绪..." -ForegroundColor Yellow
         # 等待 Postgres 健康检查通过
         $maxAttempts = 30
         for ($i = 1; $i -le $maxAttempts; $i++) {
-            $result = docker exec tokensbyte-postgres pg_isready -U tokensapi 2>$null
+            $result = docker exec "${ProjectName}-postgres" pg_isready -U tokensapi 2>$null
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "✅ 数据库已就绪" -ForegroundColor Green
                 break

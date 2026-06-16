@@ -13,11 +13,16 @@ pub async fn get_profile(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<User>> {
-    let user: User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name, ul.id as level_id, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
+    let mut user: User = sqlx::query_as(&state.db.format_query("SELECT u.*, ul.name as level_name, ul.id as level_id, ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?"))
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?
         .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    // Hide placeholder email from user-facing response
+    if user.email.ends_with("@tokensbyte.local") {
+        user.email = String::new();
+    }
 
     Ok(Json(user))
 }
@@ -33,10 +38,16 @@ pub async fn update_profile(
         .await?
         .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
-    if let Some(nickname) = request.nickname { user.nickname = Some(nickname); }
+    if let Some(ref nickname) = request.nickname {
+        if nickname.chars().count() > 24 {
+            return Err(AppError::BadRequest("昵称长度最多不能超过 24 个字符".to_string()));
+        }
+        user.nickname = Some(nickname.clone());
+    }
     if let Some(email) = request.email { user.email = email; }
     if let Some(mobile) = request.mobile { user.mobile = Some(mobile); }
     if let Some(wechat_id) = request.wechat_id { user.wechat_id = Some(wechat_id); }
+    if let Some(timezone) = request.timezone { user.timezone = Some(timezone); }
     
     if let Some(password) = request.password {
         if !password.is_empty() {
@@ -53,7 +64,7 @@ pub async fn update_profile(
 
     sqlx::query(
         &state.db.format_query(r#"UPDATE users SET email = ?, password_hash = ?, nickname = ?, mobile = ?, 
-           wechat_id = ?, updated_at = CURRENT_TIMESTAMP
+           wechat_id = ?, timezone = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&user.email)
@@ -61,6 +72,7 @@ pub async fn update_profile(
     .bind(&user.nickname)
     .bind(&user.mobile)
     .bind(&user.wechat_id)
+    .bind(&user.timezone)
     .bind(&user.id)
     .execute(&state.db.pool)
     .await?;
@@ -314,17 +326,23 @@ pub async fn unbind_third_party(
         return Err(AppError::AuthFailed("密码错误".to_string()));
     }
 
-    let (column, label) = match bind_type.as_str() {
-        "wechat" => ("wechat_id", "微信"),
-        "google" => ("google_id", "谷歌"),
-        _ => return Err(AppError::BadRequest("不支持的解绑类型".to_string())),
-    };
-
-    let sql = format!("UPDATE users SET {} = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?", column);
-    sqlx::query(&state.db.format_query(&sql))
-        .bind(&claims.sub).execute(&state.db.pool).await?;
-
-    Ok(Json(serde_json::json!({"success": true, "message": format!("{}已解绑", label)})))
+    match bind_type.as_str() {
+        "wechat" => {
+            sqlx::query(&state.db.format_query("UPDATE users SET wechat_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                .bind(&claims.sub)
+                .execute(&state.db.pool)
+                .await?;
+            Ok(Json(serde_json::json!({"success": true, "message": "微信已解绑"})))
+        }
+        "google" => {
+            sqlx::query(&state.db.format_query("UPDATE users SET google_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?"))
+                .bind(&claims.sub)
+                .execute(&state.db.pool)
+                .await?;
+            Ok(Json(serde_json::json!({"success": true, "message": "谷歌已解绑"})))
+        }
+        _ => Err(AppError::BadRequest("不支持的解绑类型".to_string())),
+    }
 }
 
 pub async fn get_wallet_stats(
@@ -333,7 +351,7 @@ pub async fn get_wallet_stats(
 ) -> AppResult<Json<WalletStats>> {
     let user_id = &claims.sub;
 
-    let (balance, gift_balance): (f64, f64) = sqlx::query_as(&state.db.format_query("SELECT balance, gift_balance FROM users WHERE id = ?"))
+    let (balance, gift_balance, credit_limit, pay_enabled): (f64, f64, f64, i32) = sqlx::query_as(&state.db.format_query("SELECT balance, gift_balance, credit_limit, pay_enabled FROM users WHERE id = ?"))
         .bind(user_id).fetch_one(&state.db.pool).await?;
 
     let stats: (f64, i64, i64) = sqlx::query_as(
@@ -369,6 +387,7 @@ pub async fn get_wallet_stats(
     Ok(Json(WalletStats {
         balance,
         gift_balance,
+        credit_limit,
         total_consumption: stats.0,
         total_calls: stats.1,
         success_calls: stats.2,
@@ -378,6 +397,7 @@ pub async fn get_wallet_stats(
         commission_ratio,
         invite_reward_inviter,
         invite_reward_invitee,
+        pay_enabled: pay_enabled == 1,
     }))
 }
 

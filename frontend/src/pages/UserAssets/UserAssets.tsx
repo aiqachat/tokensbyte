@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Table, Button, Space, message, Card, Typography, Upload, Tag, Progress, Spin, Menu, Modal, Select, Form, Segmented, Input, Image, Divider, Dropdown, Checkbox } from 'antd';
+import { useTranslation } from 'react-i18next';
 import {
   UploadOutlined, CloudOutlined, FolderOutlined, FolderFilled, FileOutlined,
   PictureOutlined, VideoCameraOutlined, UserOutlined, AppstoreOutlined,
@@ -45,11 +46,12 @@ interface StorageInfo {
 }
 
 // 我的素材固定二级分类
-const MY_ASSET_SUBCATEGORIES = [
-  { key: 'my_virtual_portrait', label: '虚拟素材库', icon: <UserOutlined />, filter: { category: '虚拟人像' } },
+const MY_ASSET_SUBCATEGORIES_BASE = [
+  { key: 'my_virtual_portrait', labelKey: 'virtual_material_library', icon: <UserOutlined />, filter: { category: '虚拟人像' } },
 ];
 
-const UserAssets: React.FC = () => {
+const UserAssets: React.FC<{ pluginNs?: string }> = ({ pluginNs = 'asset_manager' }) => {
+  const { t } = useTranslation(pluginNs);
   const { themeMode } = useThemeStore();
   const isLight = themeMode === 'light';
   // 主题适配变量
@@ -75,16 +77,17 @@ const UserAssets: React.FC = () => {
 
   // 分类状态
   const PRESET_CATEGORIES = [
-    { key: '模版库', label: '模版库', children: ['参考生成', '视频编辑', '时序补全'] },
-    { key: '素材库', label: '素材库', children: ['视频', '图片', '音频'] },
-    { key: '虚拟人像库', label: '虚拟人像库', children: [] }
+    { key: '模版库', label: t('template_library'), children: [{ key: '参考生成', label: t('ref_generation') }, { key: '视频编辑', label: t('video_editing') }, { key: '时序补全', label: t('sequence_completion') }] },
+    { key: '素材库', label: t('material_library'), children: [{ key: '视频', label: t('video') }, { key: '图片', label: t('image') }, { key: '音频', label: t('audio') }] },
+    { key: '虚拟人像库', label: t('virtual_portrait_library'), children: [] }
   ];
+  const MY_ASSET_SUBCATEGORIES = MY_ASSET_SUBCATEGORIES_BASE.map(s => ({ ...s, label: t(s.labelKey) }));
   const [selectedKey, setSelectedKey] = useState<string>(() => {
     return new URLSearchParams(window.location.search).get('tab') || 'my_virtual_portrait';
   });
 
   // 资源筛选器状态
-  const [assetFilter, setAssetFilter] = useState<string>('全部类型');
+  const [assetFilter, setAssetFilter] = useState<string>('all');
 
   // 上传弹窗
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -185,7 +188,7 @@ const UserAssets: React.FC = () => {
   const fetchGroups = useCallback(async () => {
     try {
       setLoadingGroups(true);
-      const res = await (request.get('/assets/user/groups') as any);
+      const res = await (request.get('/assets/user/groups', { headers: { 'x-plugin-ns': pluginNs } }) as any);
       if (res.groups) {
         setGroups(res.groups);
         const groupParam = new URLSearchParams(window.location.search).get('group');
@@ -196,12 +199,12 @@ const UserAssets: React.FC = () => {
       }
     } catch (e) {
       console.error(e);
-      message.error('获取文件夹列表失败');
+      // 全局拦截器已统一弹出错误提示
     } finally {
       setLoadingGroups(false);
       setGroupsLoaded(true);
     }
-  }, []);
+  }, [pluginNs]);
 
   useEffect(() => {
     if (selectedKey === 'my_virtual_portrait') fetchGroups();
@@ -222,13 +225,13 @@ const UserAssets: React.FC = () => {
       await request.put(`/assets/user/${editingAsset.id}/edit`, {
         file_name: values.file_name,
         category: values.category
-      });
-      message.success('素材更新成功');
+      }, { headers: { 'x-plugin-ns': pluginNs } });
+      message.success(t('asset_update_success'));
       setIsEditModalOpen(false);
       fetchAssets();
     } catch (error) {
       console.error('更新素材失败', error);
-      message.error('更新素材失败');
+      message.error(t('asset_update_failed'));
     } finally {
       setSavingEdit(false);
     }
@@ -261,13 +264,13 @@ const UserAssets: React.FC = () => {
       const params = buildQueryParams();
       const queryStr = new URLSearchParams(params).toString();
       const url = queryStr ? `/assets/user/list?${queryStr}` : '/assets/user/list';
-      const res = await (request.get(url) as any);
+      const res = await (request.get(url, { headers: { 'x-plugin-ns': pluginNs } }) as any);
       if (res.assets) {
         setAssets(res.assets);
       }
     } catch (error) {
       console.error(error);
-      message.error('获取素材列表失败');
+      // 全局拦截器已统一弹出错误提示
     } finally {
       setLoading(false);
     }
@@ -284,7 +287,7 @@ const UserAssets: React.FC = () => {
     const timer = setInterval(async () => {
       for (const asset of processingAssets) {
         try {
-          const res = await (request.get(`/assets/user/asset-status/${asset.id}`) as any);
+          const res = await (request.get(`/assets/user/asset-status/${asset.id}`, { headers: { 'x-plugin-ns': pluginNs } }) as any);
           if (res.status && res.status !== 'processing') {
             fetchAssets();
             break;
@@ -301,7 +304,7 @@ const UserAssets: React.FC = () => {
   const fetchStorageInfo = async () => {
     try {
       setStorageLoading(true);
-      const res = await (request.get('/assets/user/storage-info') as any);
+      const res = await (request.get('/assets/user/storage-info', { headers: { 'x-plugin-ns': pluginNs } }) as any);
       if (res) {
         setStorage(res);
       }
@@ -335,7 +338,7 @@ const UserAssets: React.FC = () => {
       setLoading(true);
       const res = await request.post('/assets/user/init-real-person-verify', {
         callback_url: window.location.origin + window.location.pathname
-      }) as any;
+      }, { headers: { 'x-plugin-ns': pluginNs } }) as any;
 
       if (res.h5_link) {
         // 保存 token 到 session 供回来后查看
@@ -344,7 +347,7 @@ const UserAssets: React.FC = () => {
       }
     } catch (error) {
       console.error(error);
-      message.error('发起认证失败');
+      // 全局拦截器已统一弹出错误提示
     } finally {
       setLoading(false);
     }
@@ -362,12 +365,12 @@ const UserAssets: React.FC = () => {
       
       const completeVerify = async () => {
         try {
-          message.loading({ content: '正在完成认证...', key: 'verify' });
-          await request.post('/assets/user/complete-real-person-verify', { byted_token: token });
-          message.success({ content: '真人认证成功', key: 'verify' });
+          message.loading({ content: t('verify_in_progress'), key: 'verify' });
+          await request.post('/assets/user/complete-real-person-verify', { byted_token: token }, { headers: { 'x-plugin-ns': pluginNs } });
+          message.success({ content: t('verify_success'), key: 'verify' });
           fetchAssets();
         } catch (error) {
-          message.error({ content: '认证同步失败', key: 'verify' });
+          message.error({ content: t('verify_failed'), key: 'verify' });
         }
       };
       completeVerify();
@@ -380,15 +383,15 @@ const UserAssets: React.FC = () => {
     try {
       const vals = await groupForm.validateFields();
       setLoadingGroups(true);
-      await request.post('/assets/user/groups', vals);
-      message.success('创建组合成功');
+      await request.post('/assets/user/groups', vals, { headers: { 'x-plugin-ns': pluginNs } });
+      message.success(t('create_group_success'));
       setIsGroupModalOpen(false);
       groupForm.resetFields();
       fetchGroups();
       fetchStorageInfo();
     } catch (error: any) {
-      const msg = error?.response?.data?.error?.message || '创建失败';
-      if (!error?.errorFields) message.error(msg); // Only show message if it's not a validation error
+      // 表单验证错误由 antd 处理，API 错误由全局拦截器统一弹出
+      if (error?.errorFields) return;
     } finally {
       setLoadingGroups(false);
     }
@@ -398,7 +401,7 @@ const UserAssets: React.FC = () => {
     try {
       const values = await uploadForm.validateFields();
       if (fileList.length === 0) {
-        message.warning('请选择要上传的文件');
+        message.warning(t('select_files'));
         return;
       }
 
@@ -446,7 +449,7 @@ const UserAssets: React.FC = () => {
           formData.append('category', category);
           formData.append('asset_type', detectedType);
           if (category === '虚拟人像' && groupId) { formData.append('group_id', groupId); }
-          await request.post(api, formData, { headers: { 'Content-Type': 'multipart/form-data' }, skipErrorHandler: true } as any);
+          await request.post(api, formData, { headers: { 'Content-Type': 'multipart/form-data', 'x-plugin-ns': pluginNs }, skipErrorHandler: true } as any);
           doneCount++;
         } catch (e: any) {
           console.error(`上传 ${fileItem.name} 失败`, e);
@@ -463,11 +466,11 @@ const UserAssets: React.FC = () => {
 
       // 上传完毕 — 统一提示
       if (failCount === 0) {
-        message.success(reviewEnabled ? `全部 ${doneCount} 个文件上传成功，请提交审核` : `全部 ${doneCount} 个文件上传成功`);
+        message.success(reviewEnabled ? t('all_upload_success', { count: doneCount }) : t('all_upload_success_no_review', { count: doneCount }));
       } else if (doneCount === 0) {
         message.error(Array.from(errorMessages).join('；'));
       } else {
-        message.warning(`上传完成：${doneCount} 成功，${failCount} 失败` + (errorMessages.size > 0 ? `（${Array.from(errorMessages).join('；')}）` : ''));
+        message.warning(t('upload_partial', { success: doneCount, fail: failCount }) + (errorMessages.size > 0 ? ` (${Array.from(errorMessages).join('; ')})` : ''));
       }
       setSelectedKey('my_virtual_portrait');
       fetchAssets();
@@ -476,7 +479,7 @@ const UserAssets: React.FC = () => {
       setTimeout(() => setBatchProgress(null), 3000);
     } catch (error) {
       console.error(error);
-      message.error('上传失败');
+      message.error(t('upload_failed'));
       setBatchProgress(null);
     }
   };
@@ -485,12 +488,12 @@ const UserAssets: React.FC = () => {
   const handleSubmitReview = async (assetId: number) => {
     try {
       setSubmittingReview(assetId);
-      await request.post(`/assets/user/submit-review/${assetId}`, {});
-      message.success('已提交审核，请等待审核结果');
+      await request.post(`/assets/user/submit-review/${assetId}`, {}, { skipErrorHandler: true, headers: { 'x-plugin-ns': pluginNs } } as any);
+      message.success(t('review_submitted'));
       fetchAssets();
     } catch (error: any) {
       const rawMsg = error?.response?.data?.error?.message || '';
-      message.error(rawMsg || '提交审核失败');
+      message.error(rawMsg || t('review_submit_failed'));
     } finally {
       setSubmittingReview(null);
     }
@@ -504,25 +507,30 @@ const UserAssets: React.FC = () => {
       return asset && asset.source === 'user' && (asset.status === 'uploaded' || (asset.status === 'approved' && !asset.asset_id));
     });
     if (needReviewIds.length === 0) {
-      message.info('选中的素材中没有需要提交审核的项目');
+      message.info(t('no_review_needed'));
       return;
     }
     setBatchProgress({ action: 'submit', total: needReviewIds.length, done: 0, failed: 0, active: true });
     let successCount = 0;
     let failCount = 0;
+    const errorMessages = new Set<string>();
     for (const id of needReviewIds) {
       try {
-        await request.post(`/assets/user/submit-review/${id}`, { skipErrorHandler: true });
+        await request.post(`/assets/user/submit-review/${id}`, {}, { skipErrorHandler: true, headers: { 'x-plugin-ns': pluginNs } } as any);
         successCount++;
-      } catch {
+      } catch (e: any) {
         failCount++;
+        const errMsg = e?.response?.data?.error?.message || '审核失败';
+        errorMessages.add(errMsg);
       }
       setBatchProgress({ action: 'submit', total: needReviewIds.length, done: successCount, failed: failCount, active: true });
     }
     if (failCount === 0) {
-      message.success(`已成功提交 ${successCount} 个素材审核`);
+      message.success(t('batch_submit_success', { count: successCount }));
+    } else if (successCount === 0) {
+      message.error(Array.from(errorMessages).join('；'));
     } else {
-      message.warning(`提交完成：${successCount} 成功，${failCount} 失败`);
+      message.warning(t('batch_submit_partial', { success: successCount, fail: failCount }) + (errorMessages.size > 0 ? ` (${Array.from(errorMessages).join('; ')})` : ''));
     }
     setSelectedAssetIds(new Set());
     fetchAssets();
@@ -533,11 +541,11 @@ const UserAssets: React.FC = () => {
   const handleBatchDelete = () => {
     if (selectedAssetIds.size === 0) return;
     Modal.confirm({
-      title: '确认批量删除',
-      content: `确定要删除选中的 ${selectedAssetIds.size} 个素材吗？此操作不可恢复。`,
-      okText: '删除',
+      title: t('confirm_batch_delete'),
+      content: t('confirm_batch_delete_content', { count: selectedAssetIds.size }),
+      okText: t('delete'),
       okType: 'danger',
-      cancelText: '取消',
+      cancelText: t('cancel'),
       onOk: () => {
         const idsToDelete = Array.from(selectedAssetIds);
         setBatchProgress({ action: 'delete', total: idsToDelete.length, done: 0, failed: 0, active: true });
@@ -547,7 +555,7 @@ const UserAssets: React.FC = () => {
           let failCount = 0;
           for (const id of idsToDelete) {
             try {
-              await request.delete(`/assets/user/${id}`, { skipErrorHandler: true } as any);
+              await request.delete(`/assets/user/${id}`, { skipErrorHandler: true, headers: { 'x-plugin-ns': pluginNs } } as any);
               successCount++;
             } catch {
               failCount++;
@@ -555,9 +563,9 @@ const UserAssets: React.FC = () => {
             setBatchProgress({ action: 'delete', total: idsToDelete.length, done: successCount, failed: failCount, active: true });
           }
           if (failCount === 0) {
-            message.success(`成功删除 ${successCount} 个素材`);
+            message.success(t('batch_delete_success', { count: successCount }));
           } else {
-            message.warning(`删除完成：${successCount} 成功，${failCount} 失败`);
+            message.warning(t('batch_delete_partial', { success: successCount, fail: failCount }));
           }
           setSelectedAssetIds(new Set());
           fetchAssets();
@@ -585,14 +593,14 @@ const UserAssets: React.FC = () => {
       return cat.replace('/', ' · ');
     } else if (selectedKey.startsWith('my_')) {
       const sub = MY_ASSET_SUBCATEGORIES.find(s => s.key === selectedKey);
-      return sub ? sub.label : '未知';
+      return sub ? sub.label : t('unknown');
     }
-    return '未知';
+    return t('unknown');
   }, [selectedKey]);
 
   const columns = [
     {
-      title: '预览',
+      title: t('preview'),
       key: 'preview',
       width: 100,
       render: (_: any, record: PluginAsset) => {
@@ -614,25 +622,25 @@ const UserAssets: React.FC = () => {
       title: 'Asset ID',
       dataIndex: 'asset_id',
       key: 'asset_id',
-      render: (aid: string) => aid ? <Text code copyable>{aid}</Text> : <Text type="secondary">暂无</Text>
+      render: (aid: string) => aid ? <Text code copyable>{aid}</Text> : <Text type="secondary">{t('none_yet')}</Text>
     },
     {
-      title: '类型',
+      title: t('type'),
       key: 'asset_type',
       render: (_: any, record: PluginAsset) => (
         <Tag color={record.asset_type === 'image' ? 'blue' : 'purple'}>
-          {record.asset_type === 'image' ? '图片' : '视频'}
+          {record.asset_type === 'image' ? t('image') : t('video')}
         </Tag>
       )
     },
     {
-      title: '分类',
+      title: t('category'),
       dataIndex: 'category',
       key: 'category',
-      render: (cat: string) => <Tag color="cyan">{cat || '未分类'}</Tag>
+      render: (cat: string) => <Tag color="cyan">{cat || t('uncategorized')}</Tag>
     },
     {
-      title: '大小',
+      title: t('size'),
       key: 'size',
       render: (_: any, record: PluginAsset) => {
         if (!record.size) return <Text type="secondary">-</Text>;
@@ -642,34 +650,34 @@ const UserAssets: React.FC = () => {
       }
     },
     ...(reviewEnabled ? [{
-      title: '审核状态',
+      title: t('review_status'),
       key: 'status',
       render: (_: any, record: PluginAsset) => {
-        if (record.source === 'builtin') return <Tag color="gold">预设</Tag>;
-        if (record.status === 'uploaded' || (record.status === 'approved' && !record.asset_id)) return <Tag color="blue" icon={<SendOutlined />}>待提交审核</Tag>;
-        if (record.status === 'processing') return <Tag color="processing" icon={<LoadingOutlined spin />}>审核中</Tag>;
-        if (record.status === 'approved') return <Tag color="success" icon={<CheckCircleOutlined />}>已通过</Tag>;
+        if (record.source === 'builtin') return <Tag color="gold">{t('preset')}</Tag>;
+        if (record.status === 'uploaded' || (record.status === 'approved' && !record.asset_id)) return <Tag color="blue" icon={<SendOutlined />}>{t('pending_review')}</Tag>;
+        if (record.status === 'processing') return <Tag color="processing" icon={<LoadingOutlined spin />}>{t('reviewing')}</Tag>;
+        if (record.status === 'approved') return <Tag color="success" icon={<CheckCircleOutlined />}>{t('approved')}</Tag>;
         if (record.status === 'rejected') return (
           <>
-            <Tag color="error" icon={<CloseCircleOutlined />}>已驳回</Tag>
+            <Tag color="error" icon={<CloseCircleOutlined />}>{t('rejected')}</Tag>
             <div style={{ fontSize: '12px', color: '#ff4d4f', marginTop: 4 }}>
-              原因: {record.reject_reason || '无'}
+              {t('reason')}: {record.reject_reason || t('none_yet')}
             </div>
           </>
         );
-        if (record.status === 'pending') return <Tag color="warning">审核中</Tag>;
+        if (record.status === 'pending') return <Tag color="warning">{t('pending')}</Tag>;
         return <Tag>{record.status}</Tag>;
       }
     }] : [{
-      title: '状态',
+      title: t('status'),
       key: 'status',
       render: (_: any, record: PluginAsset) => {
-        if (record.source === 'builtin') return <Tag color="gold">预设</Tag>;
-        return <Tag color="success" icon={<CheckCircleOutlined />}>可用</Tag>;
+        if (record.source === 'builtin') return <Tag color="gold">{t('preset')}</Tag>;
+        return <Tag color="success" icon={<CheckCircleOutlined />}>{t('available')}</Tag>;
       }
     }]),
     {
-      title: '操作',
+      title: t('actions'),
       key: 'action',
       render: (_: any, record: PluginAsset) => (
         <Space size="middle">
@@ -681,7 +689,7 @@ const UserAssets: React.FC = () => {
               loading={submittingReview === record.id}
               onClick={() => handleSubmitReview(record.id)}
             >
-              提交审核
+              {t('submit_review')}
             </Button>
           )}
           {record.source === 'user' && (
@@ -709,8 +717,8 @@ const UserAssets: React.FC = () => {
         <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: panelBg, borderRadius: 12, border: panelBorder, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
           <div style={{ textAlign: 'center', color: hintText }}>
             <AppstoreOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }} />
-            <div style={{ fontSize: 16 }}>请选择一个项目以查看详情</div>
-            <div style={{ fontSize: 12, marginTop: 8 }}>支持点击文件夹或素材文件</div>
+            <div style={{ fontSize: 16 }}>{t('select_item_hint')}</div>
+            <div style={{ fontSize: 12, marginTop: 8 }}>{t('support_hint')}</div>
           </div>
         </div>
       );
@@ -724,7 +732,7 @@ const UserAssets: React.FC = () => {
           <div style={{ padding: '32px 24px', textAlign: 'center', borderBottom: panelBorder }}>
             <FolderOutlined style={{ fontSize: 64, color: '#1677ff', marginBottom: 16 }} />
             <Title level={4} style={{ margin: 0, color: mainText, wordBreak: 'break-all' }}>{g.name}</Title>
-            <Text type="secondary" style={{ display: 'block', marginTop: 8, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{g.description || '暂无描述'}</Text>
+            <Text type="secondary" style={{ display: 'block', marginTop: 8, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{g.description || t('no_description')}</Text>
           </div>
           <div style={{ padding: 24, flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -732,15 +740,15 @@ const UserAssets: React.FC = () => {
               <Text copyable={{ text: g.group_id }} style={{ color: descText }}>{g.group_id.substring(0, 16)}...</Text>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Text type="secondary">包含素材</Text>
-              <Text style={{ color: mainText, fontWeight: 500 }}>{groupAssets.length} 项</Text>
+              <Text type="secondary">{t('contains_assets')}</Text>
+              <Text style={{ color: mainText, fontWeight: 500 }}>{groupAssets.length} {t('items')}</Text>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Text type="secondary">创建时间</Text>
+              <Text type="secondary">{t('created_time')}</Text>
               <Text style={{ color: descText }}>{new Date(g.created_at).toLocaleString()}</Text>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Text type="secondary">最近更新</Text>
+              <Text type="secondary">{t('updated_time')}</Text>
               <Text style={{ color: descText }}>{g.updated_at ? new Date(g.updated_at).toLocaleString() : new Date(g.created_at).toLocaleString()}</Text>
             </div>
             <div style={{ flex: 1 }} />
@@ -755,7 +763,7 @@ const UserAssets: React.FC = () => {
                     editGroupForm.setFieldsValue({ name: g.name, description: g.description || '' });
                     setIsEditGroupModalOpen(true);
                   }}>
-                  编辑
+                  {t('edit')}
                 </Button>
                 <Button 
                   icon={<DeleteOutlined style={{ color: '#ff7875' }} />} 
@@ -769,8 +777,8 @@ const UserAssets: React.FC = () => {
                       okButtonProps: { danger: true },
                       onOk: async () => {
                         try {
-                          await (request as any).delete(`/assets/user/groups/${g.group_id}`);
-                          message.success('文件夹已删除');
+                          await (request as any).delete(`/assets/user/groups/${g.group_id}`, { headers: { 'x-plugin-ns': pluginNs } });
+                          message.success(t('folder_deleted'));
                           setSelectedRecord(null);
                           fetchGroups();
                         } catch (e: any) {
@@ -779,7 +787,7 @@ const UserAssets: React.FC = () => {
                       }
                     });
                   }}>
-                  删除
+                  {t('delete')}
                 </Button>
               </div>
               <Button 
@@ -794,7 +802,7 @@ const UserAssets: React.FC = () => {
                   fontSize: 16, 
                   fontWeight: 500
                 }}>
-                进入文件夹
+                {t('enter_folder')}
               </Button>
             </div>
           </div>
@@ -807,14 +815,14 @@ const UserAssets: React.FC = () => {
       let fullUrl = a.file_url;
       if (!fullUrl.startsWith('http') && !fullUrl.startsWith('/')) { fullUrl = `https://${fullUrl}`; } else if (fullUrl.startsWith('/')) { fullUrl = `${API_BASE_URL}${fullUrl}`; }
       
-      const sizeStr = a.size ? (a.size < 1024*1024 ? `${(a.size/1024).toFixed(1)} KB` : `${(a.size/1024/1024).toFixed(1)} MB`) : '未知';
+      const sizeStr = a.size ? (a.size < 1024*1024 ? `${(a.size/1024).toFixed(1)} KB` : `${(a.size/1024/1024).toFixed(1)} MB`) : t('unknown');
       const ext = a.file_name.split('.').pop()?.toUpperCase() || 'FILE';
       const isImage = a.asset_type === 'image' || ['JPG','JPEG','PNG','WEBP','GIF','BMP','TIFF','HEIC','HEIF'].includes(ext);
       const isVideo = a.asset_type === 'video' || ['MP4','MOV','WEBM','AVI','MKV'].includes(ext);
       const isAudio = a.asset_type === 'audio' || ['MP3','WAV','AAC','FLAC','OGG','M4A'].includes(ext);
-      const typeLabel = isImage ? `${ext} 图像` : isVideo ? `${ext} 视频` : isAudio ? `${ext} 音频` : ext;
-      const createdDate = a.created_at ? new Date(a.created_at).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
-      const updatedDate = a.updated_at ? new Date(a.updated_at).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
+      const typeLabel = isImage ? `${ext} ${t('image_type')}` : isVideo ? `${ext} ${t('video_type')}` : isAudio ? `${ext} ${t('audio_type')}` : ext;
+      const createdDate = a.created_at ? new Date(a.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
+      const updatedDate = a.updated_at ? new Date(a.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
 
       // 从文件名提取标签（下划线和短横线分割，去掉扩展名）
       const nameWithoutExt = a.file_name.replace(/\.[^/.]+$/, '');
@@ -829,12 +837,12 @@ const UserAssets: React.FC = () => {
       return (
         <div className="assets-right-panel-wrapper" style={{ width: 350, flexShrink: 0, background: panelBg, borderRadius: 12, border: panelBorderStrong, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
           {/* 顶部标题 */}
-          <div style={{ padding: '16px 20px 0', fontSize: 16, fontWeight: 600, color: mainText }}>详情</div>
+          <div style={{ padding: '16px 20px 0', fontSize: 16, fontWeight: 600, color: mainText }}>{t('details')}</div>
 
           {/* 预览区 */}
           <div style={{ margin: '16px 20px 0', borderRadius: 10, overflow: 'hidden', background: '#111', flexShrink: 0 }}>
             {isImage ? (
-              <Image src={fullUrl} alt={a.file_name} style={{ width: '100%', display: 'block' }} preview={{ mask: <span style={{ color: '#fff' }}>点击预览</span> }} />
+              <Image src={fullUrl} alt={a.file_name} style={{ width: '100%', display: 'block' }} preview={{ mask: <span style={{ color: '#fff' }}>{t('click_preview')}</span> }} />
             ) : isVideo ? (
               <video src={fullUrl} controls style={{ width: '100%', display: 'block' }} />
             ) : isAudio ? (
@@ -868,7 +876,7 @@ const UserAssets: React.FC = () => {
                     setIsEditModalOpen(true);
                   }}
                 >
-                  编辑
+                  {t('edit')}
                 </Button>
               )}
               {reviewEnabled && a.source === 'user' && (a.status === 'uploaded' || (a.status === 'approved' && !a.asset_id)) && (
@@ -878,7 +886,7 @@ const UserAssets: React.FC = () => {
                   loading={submittingReview === a.id}
                   onClick={() => handleSubmitReview(a.id)}
                 >
-                  提交审核
+                  {t('submit_review')}
                 </Button>
               )}
             </div>
@@ -894,7 +902,7 @@ const UserAssets: React.FC = () => {
                   link.click();
                 }}
               >
-                下载
+                {t('download')}
               </Button>
               <Button
                 icon={<DeleteOutlined />}
@@ -902,20 +910,20 @@ const UserAssets: React.FC = () => {
                 style={{ width: 38, height: 38, borderRadius: 8, flexShrink: 0 }}
                 onClick={() => {
                   Modal.confirm({
-                    title: '确认删除',
-                    content: `确定要删除素材「${a.file_name}」吗？此操作不可恢复。`,
-                    okText: '删除',
+                    title: t('confirm_delete'),
+                    content: t('confirm_delete_asset', { name: a.file_name }),
+                    okText: t('delete'),
                     okButtonProps: { danger: true },
-                    cancelText: '取消',
+                    cancelText: t('cancel'),
                     onOk: async () => {
                       try {
-                        await request.delete(`/assets/user/${a.id}`);
-                        message.success('素材已删除');
+                        await request.delete(`/assets/user/${a.id}`, { headers: { 'x-plugin-ns': pluginNs } });
+                        message.success(t('asset_deleted'));
                         setSelectedRecord(null);
                         fetchAssets();
                         fetchStorageInfo();
                       } catch (e) {
-                        message.error('删除失败');
+                        // 全局拦截器已统一弹出错误提示
                       }
                     }
                   });
@@ -928,15 +936,15 @@ const UserAssets: React.FC = () => {
           {reviewEnabled && a.source === 'user' && (
             <div style={{ padding: '12px 20px 0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {(a.status === 'uploaded' || (a.status === 'approved' && !a.asset_id)) ? <Tag color="blue">待提交审核</Tag> :
-                 a.status === 'processing' ? <Tag color="processing" icon={<LoadingOutlined spin />}>审核中</Tag> :
-                 a.status === 'approved' ? <Tag color="success" icon={<CheckCircleOutlined />}>已通过</Tag> :
-                 a.status === 'rejected' ? <Tag color="error" icon={<CloseCircleOutlined />}>已驳回</Tag> :
+                {(a.status === 'uploaded' || (a.status === 'approved' && !a.asset_id)) ? <Tag color="blue">{t('pending_review')}</Tag> :
+                 a.status === 'processing' ? <Tag color="processing" icon={<LoadingOutlined spin />}>{t('reviewing')}</Tag> :
+                 a.status === 'approved' ? <Tag color="success" icon={<CheckCircleOutlined />}>{t('approved')}</Tag> :
+                 a.status === 'rejected' ? <Tag color="error" icon={<CloseCircleOutlined />}>{t('rejected')}</Tag> :
                  <Tag>{a.status}</Tag>}
               </div>
               {a.status === 'rejected' && a.reject_reason && (
                 <div style={{ fontSize: 12, color: '#ff4d4f', marginTop: 6, padding: '6px 10px', background: 'rgba(255,77,79,0.08)', borderRadius: 6 }}>
-                  驳回原因：{a.reject_reason}
+                  {t('reject_reason')}：{a.reject_reason}
                 </div>
               )}
             </div>
@@ -946,30 +954,30 @@ const UserAssets: React.FC = () => {
           <div style={{ padding: '20px 20px 0' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
               <div style={{ width: 3, height: 14, borderRadius: 2, background: '#1677ff' }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: mainText }}>基础信息</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: mainText }}>{t('basic_info')}</span>
             </div>
             <div style={{ borderRadius: 10, border: panelBorderStrong, overflow: 'hidden' }}>
               <div style={infoRowStyle}>
-                <Text style={{ color: subText, fontSize: 13 }}>资产 ID</Text>
-                <Text copyable={a.asset_id ? { text: a.asset_id } : undefined} style={{ color: a.asset_id ? mainText : dimText, fontSize: 13 }}>{a.asset_id || '未生成'}</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>{t('asset_id_label')}</Text>
+                <Text copyable={a.asset_id ? { text: a.asset_id } : undefined} style={{ color: a.asset_id ? mainText : dimText, fontSize: 13 }}>{a.asset_id || t('not_generated')}</Text>
               </div>
               <div style={infoRowStyle}>
-                <Text style={{ color: subText, fontSize: 13 }}>类型</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>{t('type')}</Text>
                 <Text style={{ color: mainText, fontSize: 13 }}>{typeLabel}</Text>
               </div>
               <div style={infoRowStyle}>
-                <Text style={{ color: subText, fontSize: 13 }}>大小</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>{t('size')}</Text>
                 <Text style={{ color: mainText, fontSize: 13 }}>{sizeStr}</Text>
               </div>
               {mediaInfo?.width && mediaInfo?.height && (
                 <div style={infoRowStyle}>
-                  <Text style={{ color: subText, fontSize: 13 }}>分辨率</Text>
+                  <Text style={{ color: subText, fontSize: 13 }}>{t('resolution')}</Text>
                   <Text style={{ color: mainText, fontSize: 13 }}>{mediaInfo.width} x {mediaInfo.height}</Text>
                 </div>
               )}
               {mediaInfo?.duration != null && (
                 <div style={infoRowStyle}>
-                  <Text style={{ color: subText, fontSize: 13 }}>持续时间</Text>
+                  <Text style={{ color: subText, fontSize: 13 }}>{t('duration')}</Text>
                   <Text style={{ color: mainText, fontSize: 13 }}>
                     {mediaInfo.duration >= 3600
                       ? `${Math.floor(mediaInfo.duration / 3600)}:${String(Math.floor((mediaInfo.duration % 3600) / 60)).padStart(2, '0')}:${String(Math.floor(mediaInfo.duration % 60)).padStart(2, '0')}`
@@ -979,11 +987,11 @@ const UserAssets: React.FC = () => {
                 </div>
               )}
               <div style={infoRowStyle}>
-                <Text style={{ color: subText, fontSize: 13 }}>创建时间</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>{t('created_time')}</Text>
                 <Text style={{ color: mainText, fontSize: 13 }}>{createdDate}</Text>
               </div>
               <div style={{ ...infoRowStyle, borderBottom: 'none' }}>
-                <Text style={{ color: subText, fontSize: 13 }}>修改时间</Text>
+                <Text style={{ color: subText, fontSize: 13 }}>{t('modified_time')}</Text>
                 <Text style={{ color: mainText, fontSize: 13 }}>{updatedDate}</Text>
               </div>
             </div>
@@ -993,7 +1001,7 @@ const UserAssets: React.FC = () => {
           <div style={{ padding: '20px 20px 24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
               <div style={{ width: 3, height: 14, borderRadius: 2, background: '#faad14' }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: mainText }}>标签</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: mainText }}>{t('tags')}</span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {tags.map((tag, idx) => (
@@ -1022,7 +1030,7 @@ const UserAssets: React.FC = () => {
       <Card
         title={
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
-            <Title level={4} style={{ margin: 0 }}>我的资产库</Title>
+            <Title level={4} style={{ margin: 0 }}>{pluginNs === 'asset_manager_intl' ? '我的资产库' : '我的素材库'}</Title>
             <Spin spinning={storageLoading} size="small">
               {storage && (
                 <div className="mobile-scroll-bar" style={{
@@ -1036,13 +1044,13 @@ const UserAssets: React.FC = () => {
                 }}>
                   <div className="hide-on-mobile" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <CloudOutlined style={{ color: '#1677ff' }} />
-                    <span>文件夹: <Text style={{ color: '#1677ff', fontWeight: 600 }}>{storage.folder || '未初始化'}</Text></span>
+                    <span>{t('folder')}: <Text style={{ color: '#1677ff', fontWeight: 600 }}>{storage.folder || t('not_initialized')}</Text></span>
                   </div>
 
                   <div className="hide-on-mobile" style={{ width: 1, height: 12, background: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }} />
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>已用: <Text style={{ color: progressColor, fontWeight: 600, textShadow: `0 0 10px ${progressColor}40` }}>{usedMB.toFixed(1)} <span style={{ fontSize: 11 }}>MB</span></Text></span>
+                    <span>{t('used')}: <Text style={{ color: progressColor, fontWeight: 600, textShadow: `0 0 10px ${progressColor}40` }}>{usedMB.toFixed(1)} <span style={{ fontSize: 11 }}>MB</span></Text></span>
 
                     {!isAdmin ? (
                       <div style={{
@@ -1059,18 +1067,18 @@ const UserAssets: React.FC = () => {
                         }} />
                       </div>
                     ) : (
-                      <Tag color="cyan" bordered={false} style={{ margin: 0, borderRadius: 12 }}>∞ 无限</Tag>
+                      <Tag color="cyan" bordered={false} style={{ margin: 0, borderRadius: 12 }}>{t('unlimited')}</Tag>
                     )}
 
                     {!isAdmin && (
-                      <span>限额: <Text style={{ color: '#52c41a', fontWeight: 600 }}>{quotaMB} <span style={{ fontSize: 11 }}>MB</span></Text></span>
+                      <span>{t('quota')}: <Text style={{ color: '#52c41a', fontWeight: 600 }}>{quotaMB} <span style={{ fontSize: 11 }}>MB</span></Text></span>
                     )}
                   </div>
 
                   <div style={{ width: 1, height: 12, background: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }} />
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>文件数量: <Text style={{ color: isLight ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{storage.file_count || 0}</Text></span>
+                    <span>{t('file_count')}: <Text style={{ color: isLight ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{storage.file_count || 0}</Text></span>
                   </div>
                 </div>
               )}
@@ -1103,16 +1111,16 @@ const UserAssets: React.FC = () => {
                 )}
                 <Text style={{ color: isLight ? '#1f2937' : '#fff', fontSize: 14, fontWeight: 500 }}>
                   {batchProgress.done < batchProgress.total
-                    ? `正在${batchProgress.action === 'upload' ? '上传' : batchProgress.action === 'submit' ? '提交' : '删除'}... (${batchProgress.done}/${batchProgress.total})`
-                    : `${batchProgress.action === 'upload' ? '上传' : batchProgress.action === 'submit' ? '提交' : '删除'}完成 (${batchProgress.done}/${batchProgress.total})`
+                    ? t('in_progress', { action: batchProgress.action === 'upload' ? t('uploading') : batchProgress.action === 'submit' ? t('submitting') : t('deleting'), done: batchProgress.done, total: batchProgress.total })
+                    : t('completed', { action: batchProgress.action === 'upload' ? t('uploading') : batchProgress.action === 'submit' ? t('submitting') : t('deleting'), done: batchProgress.done, total: batchProgress.total })
                   }
                 </Text>
               </div>
               {batchProgress.failed > 0 && (
-                <Tag color="red" style={{ margin: 0 }}>{batchProgress.failed} 个失败</Tag>
+                <Tag color="red" style={{ margin: 0 }}>{t('n_failed', { count: batchProgress.failed })}</Tag>
               )}
               {batchProgress.done >= batchProgress.total && (
-                <Button type="text" size="small" onClick={() => setBatchProgress(null)} style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>关闭</Button>
+                <Button type="text" size="small" onClick={() => setBatchProgress(null)} style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{t('close')}</Button>
               )}
             </div>
             <Progress
@@ -1231,7 +1239,7 @@ const UserAssets: React.FC = () => {
               {/* 一级分类：预设分类 + 我的素材 */}
               <Segmented
                 options={[
-                  { label: '我的素材', value: 'top_my' },
+                  { label: t('my_materials', '我的素材'), value: 'top_my' },
                   ...PRESET_CATEGORIES.map(cat => ({ label: cat.label, value: `top_preset_${cat.key}` }))
                 ]}
                 value={selectedKey.startsWith('my_') ? 'top_my' : `top_preset_${selectedKey.replace('preset_', '').split('/')[0]}`}
@@ -1263,19 +1271,19 @@ const UserAssets: React.FC = () => {
                         <Dropdown
                           menu={{
                             items: [
-                              { key: '全部类型', label: '全部类型' },
-                              { key: '图片', label: '图片' },
-                              { key: '视频', label: '视频' },
-                              { key: '声音', label: '声音' },
+                              { key: 'all', label: t('all_types') },
+                              { key: 'image', label: t('image') },
+                              { key: 'video', label: t('video') },
+                              { key: 'audio', label: t('audio') },
                             ],
                             selectable: true,
-                            defaultSelectedKeys: ['全部类型'],
+                            defaultSelectedKeys: ['all'],
                             selectedKeys: [assetFilter],
                             onClick: (e) => setAssetFilter(e.key),
                           }}
                         >
                           <Button className="asset-btn-secondary">
-                            <FilterOutlined /> 筛选
+                            <FilterOutlined /> {t('filter', '筛选')}
                           </Button>
                         </Dropdown>
                         
@@ -1285,7 +1293,7 @@ const UserAssets: React.FC = () => {
                           icon={<UploadOutlined />}
                           onClick={() => {
                             if (selectedKey === 'my_virtual_portrait' && !currentGroup) {
-                              message.warning('请先选择或进入一个人物文件夹，再上传素材');
+                              message.warning(t('please_select_folder'));
                               return;
                             }
                             setIsUploadModalOpen(true);
@@ -1294,12 +1302,12 @@ const UserAssets: React.FC = () => {
                             }, 50);
                           }}
                         >
-                          上传素材
+                          {t('upload_assets', '上传素材')}
                         </Button>
 
                         {selectedKey === 'my_virtual_portrait' && (
                           <Button className="asset-btn-secondary" icon={<FolderOutlined />} onClick={() => setIsGroupModalOpen(true)}>
-                            创建素材组合
+                            {t('create_group', '创建素材组合')}
                           </Button>
                         )}
                       </div>
@@ -1315,8 +1323,8 @@ const UserAssets: React.FC = () => {
                     return (
                       <Segmented
                         options={[
-                          { label: '全部', value: '全部' },
-                          ...activeCat.children.map(child => ({ label: child, value: child }))
+                          { label: t('all', '全部'), value: '全部' },
+                          ...activeCat.children.map(child => ({ label: child.label, value: child.key }))
                         ]}
                         value={currentSecondary}
                         onChange={(val) => setSelectedKey(val === '全部' ? `preset_${currentPrimary}` : `preset_${currentPrimary}/${val}`)}
@@ -1335,17 +1343,17 @@ const UserAssets: React.FC = () => {
               <Spin spinning={loadingGroups}>
                 <div style={{ marginBottom: 32 }}>
                   <div style={{ marginBottom: 16 }}>
-                    <span style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>素材资产文件夹列表</span>
+                    <span style={{ fontSize: 16, fontWeight: 500, color: '#fff' }}>{t('folder_list_title')}</span>
                     <Text style={{ marginLeft: 10, color: hintText, fontSize: 13, wordBreak: 'break-all' }}>
-                      （已创建 {groups.length} 个素材组
+                      （{t('groups_created', { count: groups.length })}
                       {storage?.virtual_portrait_quota !== undefined && (
-                        <> / 可创建素材组 {storage.virtual_portrait_quota} 个</>
+                        <> / {t('groups_quota', { count: storage.virtual_portrait_quota })}</>
                       )}
                       ）
                     </Text>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(max(150px, calc(16.666% - 10px)), 1fr))', gap: 12 }}>
-                    {groups.length === 0 && !loadingGroups && <Text type="secondary" style={{ marginTop: 20 }}>暂无人物文件夹，请先新建以存放素材。</Text>}
+                    {groups.length === 0 && !loadingGroups && <Text type="secondary" style={{ marginTop: 20 }}>{t('no_folders_hint')}</Text>}
                     {groups.map(g => {
                       const groupAssetsCount = assets.filter(a => a.group_id === g.group_id).length;
                       const isSelected = currentGroup?.id === g.id;
@@ -1375,7 +1383,7 @@ const UserAssets: React.FC = () => {
                           </div>
                           <div style={{ overflow: 'hidden' }}>
                             <div style={{ color: isLight ? '#1f2937' : '#fff', fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</div>
-                            <div style={{ color: hintText, fontSize: 13, marginTop: 2 }}>{groupAssetsCount} 项</div>
+                            <div style={{ color: hintText, fontSize: 13, marginTop: 2 }}>{groupAssetsCount} {t('items')}</div>
                           </div>
                         </div>
                       );
@@ -1400,7 +1408,7 @@ const UserAssets: React.FC = () => {
                     <div style={{ fontSize: 16, fontWeight: 500, color: isLight ? '#1f2937' : '#fff' }}>
                       {currentGroup ? currentGroup.name : currentCategoryName}
                       <Text style={{ marginLeft: 12, color: dimText, fontSize: 13, fontWeight: 'normal' }}>
-                        共 {currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id).length : assets.length} 项
+                        {t('total_items', { count: currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id).length : assets.length })}
                       </Text>
                     </div>
                   </div>
@@ -1409,11 +1417,11 @@ const UserAssets: React.FC = () => {
                       checked={(() => {
                         const visibleAssets = (currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id) : assets)
                           .filter(a => {
-                            if (assetFilter === '全部类型') return true;
+                            if (assetFilter === 'all') return true;
                             const ext = a.file_name?.split('.').pop()?.toUpperCase() || '';
-                            if (assetFilter === '图片') return a.asset_type === 'image' || ['JPG','JPEG','PNG','WEBP','GIF','HEIC'].includes(ext);
-                            if (assetFilter === '视频') return a.asset_type === 'video' || ['MP4','MOV','WEBM','AVI','MKV'].includes(ext);
-                            if (assetFilter === '声音') return a.asset_type === 'audio' || ['MP3','WAV','AAC','FLAC','OGG','M4A'].includes(ext);
+                            if (assetFilter === 'image') return a.asset_type === 'image' || ['JPG','JPEG','PNG','WEBP','GIF','HEIC'].includes(ext);
+                            if (assetFilter === 'video') return a.asset_type === 'video' || ['MP4','MOV','WEBM','AVI','MKV'].includes(ext);
+                            if (assetFilter === 'audio') return a.asset_type === 'audio' || ['MP3','WAV','AAC','FLAC','OGG','M4A'].includes(ext);
                             return true;
                           });
                         return visibleAssets.length > 0 && visibleAssets.every(a => selectedAssetIds.has(a.id));
@@ -1421,11 +1429,11 @@ const UserAssets: React.FC = () => {
                       indeterminate={(() => {
                         const visibleAssets = (currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id) : assets)
                           .filter(a => {
-                            if (assetFilter === '全部类型') return true;
+                            if (assetFilter === 'all') return true;
                             const ext = a.file_name?.split('.').pop()?.toUpperCase() || '';
-                            if (assetFilter === '图片') return a.asset_type === 'image' || ['JPG','JPEG','PNG','WEBP','GIF','HEIC'].includes(ext);
-                            if (assetFilter === '视频') return a.asset_type === 'video' || ['MP4','MOV','WEBM','AVI','MKV'].includes(ext);
-                            if (assetFilter === '声音') return a.asset_type === 'audio' || ['MP3','WAV','AAC','FLAC','OGG','M4A'].includes(ext);
+                            if (assetFilter === 'image') return a.asset_type === 'image' || ['JPG','JPEG','PNG','WEBP','GIF','HEIC'].includes(ext);
+                            if (assetFilter === 'video') return a.asset_type === 'video' || ['MP4','MOV','WEBM','AVI','MKV'].includes(ext);
+                            if (assetFilter === 'audio') return a.asset_type === 'audio' || ['MP3','WAV','AAC','FLAC','OGG','M4A'].includes(ext);
                             return true;
                           });
                         const selectedCount = visibleAssets.filter(a => selectedAssetIds.has(a.id)).length;
@@ -1436,9 +1444,9 @@ const UserAssets: React.FC = () => {
                           .filter(a => {
                             if (assetFilter === '全部类型') return true;
                             const ext = a.file_name?.split('.').pop()?.toUpperCase() || '';
-                            if (assetFilter === '图片') return a.asset_type === 'image' || ['JPG','JPEG','PNG','WEBP','GIF','HEIC'].includes(ext);
-                            if (assetFilter === '视频') return a.asset_type === 'video' || ['MP4','MOV','WEBM','AVI','MKV'].includes(ext);
-                            if (assetFilter === '声音') return a.asset_type === 'audio' || ['MP3','WAV','AAC','FLAC','OGG','M4A'].includes(ext);
+                            if (assetFilter === 'image') return a.asset_type === 'image' || ['JPG','JPEG','PNG','WEBP','GIF','HEIC'].includes(ext);
+                            if (assetFilter === 'video') return a.asset_type === 'video' || ['MP4','MOV','WEBM','AVI','MKV'].includes(ext);
+                            if (assetFilter === 'audio') return a.asset_type === 'audio' || ['MP3','WAV','AAC','FLAC','OGG','M4A'].includes(ext);
                             return true;
                           });
                         if (e.target.checked) {
@@ -1452,11 +1460,11 @@ const UserAssets: React.FC = () => {
                         }
                       }}
                     >
-                      <span style={{ color: descText }}>全选</span>
+                      <span style={{ color: descText }}>{t('select_all')}</span>
                     </Checkbox>
                     {selectedAssetIds.size > 0 && (
                       <>
-                        <Text style={{ color: hintText, fontSize: 13 }}>已选 {selectedAssetIds.size} 项</Text>
+                        <Text style={{ color: hintText, fontSize: 13 }}>{t('selected_count', { count: selectedAssetIds.size })}</Text>
                         {reviewEnabled && (
                         <Button
                           type="primary"
@@ -1466,7 +1474,7 @@ const UserAssets: React.FC = () => {
                           onClick={handleBatchSubmitReview}
                           style={{ borderRadius: 6 }}
                         >
-                          批量提交
+                          {t('batch_submit')}
                         </Button>
                         )}
                         <Button
@@ -1477,7 +1485,7 @@ const UserAssets: React.FC = () => {
                           onClick={handleBatchDelete}
                           style={{ borderRadius: 6 }}
                         >
-                          批量删除
+                          {t('batch_delete')}
                         </Button>
                         <Button
                           type="text"
@@ -1485,7 +1493,7 @@ const UserAssets: React.FC = () => {
                           onClick={() => setSelectedAssetIds(new Set())}
                           style={{ color: hintText }}
                         >
-                          取消选择
+                          {t('cancel_selection')}
                         </Button>
                       </>
                     )}
@@ -1501,11 +1509,11 @@ const UserAssets: React.FC = () => {
 
                   {(currentGroup ? assets.filter(a => a.group_id === currentGroup.group_id) : assets)
                     .filter(a => {
-                      if (assetFilter === '全部类型') return true;
+                      if (assetFilter === 'all') return true;
                       const ext = a.file_name?.split('.').pop()?.toUpperCase() || '';
-                      if (assetFilter === '图片') return a.asset_type === 'image' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'HEIC'].includes(ext);
-                      if (assetFilter === '视频') return a.asset_type === 'video' || ['MP4', 'MOV', 'WEBM', 'AVI', 'MKV'].includes(ext);
-                      if (assetFilter === '声音') return a.asset_type === 'audio' || ['MP3', 'WAV', 'AAC', 'FLAC', 'OGG', 'M4A'].includes(ext);
+                      if (assetFilter === 'image') return a.asset_type === 'image' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'HEIC'].includes(ext);
+                      if (assetFilter === 'video') return a.asset_type === 'video' || ['MP4', 'MOV', 'WEBM', 'AVI', 'MKV'].includes(ext);
+                      if (assetFilter === 'audio') return a.asset_type === 'audio' || ['MP3', 'WAV', 'AAC', 'FLAC', 'OGG', 'M4A'].includes(ext);
                       return true;
                     })
                     .map((asset) => {
@@ -1519,7 +1527,7 @@ const UserAssets: React.FC = () => {
                     }
 
                     const ext = asset.file_name.split('.').pop()?.toUpperCase() || 'FILE';
-                    const sizeMB = asset.size ? (asset.size / 1024 / 1024).toFixed(1) + ' MB' : '未知';
+                    const sizeMB = asset.size ? (asset.size / 1024 / 1024).toFixed(1) + ' MB' : t('unknown');
                     const dateStr = asset.created_at ? new Date(asset.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
                     const isImage = asset.asset_type === 'image' || ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'HEIC'].includes(ext);
                     
@@ -1583,7 +1591,7 @@ const UserAssets: React.FC = () => {
                               color: '#fff',
                               backdropFilter: 'blur(4px)'
                             }}>
-                              {(asset.status === 'uploaded' || (asset.status === 'approved' && !asset.asset_id)) ? '待审核' : asset.status === 'processing' ? '审核中' : asset.status === 'rejected' ? '已驳回' : asset.status}
+                              {(asset.status === 'uploaded' || (asset.status === 'approved' && !asset.asset_id)) ? t('pending_review') : asset.status === 'processing' ? t('reviewing') : asset.status === 'rejected' ? t('rejected') : asset.status}
                             </div>
                           )}
                           
@@ -1645,41 +1653,41 @@ const UserAssets: React.FC = () => {
       
       {/* 创建素材组合弹窗 */}
       <Modal
-        title="创建素材资产组合"
+        title={t('create_asset_group')}
         open={isGroupModalOpen}
         onCancel={() => { setIsGroupModalOpen(false); groupForm.resetFields(); }}
         onOk={handleCreateGroup}
         confirmLoading={loadingGroups}
-        okText="创建"
-        cancelText="取消"
+        okText={t('create_btn')}
+        cancelText={t('cancel')}
       >
         <Form form={groupForm} layout="vertical">
-          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}
-            extra={<span style={{ color: dimText, fontSize: 12 }}>名称最多 64 个字符，建议使用简短易识别的名称</span>}
+          <Form.Item label={t('group_name_label')} name="name" rules={[{ required: true, message: t('group_name_required') }]}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>{t('group_name_hint')}</span>}
           >
-            <Input placeholder="输入素材资产组合名称..." maxLength={64} showCount />
+            <Input placeholder={t('group_name_placeholder')} maxLength={64} showCount />
           </Form.Item>
-          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}
-            extra={<span style={{ color: dimText, fontSize: 12 }}>描述最多 300 个字符</span>}
+          <Form.Item label={t('description')} name="description" rules={[{ required: true, message: t('description_required') }]}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>{t('description_hint')}</span>}
           >
-            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} showCount />
+            <Input.TextArea placeholder={t('description_placeholder')} maxLength={300} showCount />
           </Form.Item>
         </Form>
       </Modal>
 
       {/* 上传人物素材弹窗 */}
       <Modal
-        title="上传素材到人物文件夹"
+        title={t('upload_to_folder')}
         open={isUploadModalOpen}
         onCancel={() => { setIsUploadModalOpen(false); uploadForm.resetFields(); setFileList([]); }}
         onOk={handleCustomUpload}
         confirmLoading={uploading}
-        okText="开始上传"
+        okText={t('start_upload')}
         destroyOnClose
         width={520}
       >
         <Form form={uploadForm} layout="vertical" initialValues={{ category: '虚拟人像' }}>
-          <Form.Item label="选择文件" required>
+          <Form.Item label={t('select_file')} required>
             <Upload
               accept=".jpeg,.jpg,.png,.webp,.bmp,.tiff,.gif,.heic,.heif,.mp4,.mov,.webm,.avi,.mkv,.mp3,.wav,.aac,.flac,.ogg,.m4a"
               multiple={true}
@@ -1700,7 +1708,7 @@ const UserAssets: React.FC = () => {
 
                 if (imageExts.includes(ext)) {
                   if (sizeMB > 30) {
-                    message.error(`${file.name}: 图片不能超过 30 MB`);
+                    message.error(t('img_size_exceed', { name: file.name }));
                     return Upload.LIST_IGNORE;
                   }
                   // 图片尺寸校验
@@ -1710,12 +1718,12 @@ const UserAssets: React.FC = () => {
                       const { width, height } = img;
                       URL.revokeObjectURL(img.src);
                       if (width < 300 || width > 6000 || height < 300 || height > 6000) {
-                        message.error(`${file.name}: 宽高需在 300-6000 px，当前 ${width}x${height}`);
+                        message.error(t('img_dimension_error', { name: file.name, w: width, h: height }));
                         return reject();
                       }
                       const ratio = width / height;
                       if (ratio <= 0.4 || ratio >= 2.5) {
-                        message.error(`${file.name}: 宽高比需在 (0.4, 2.5)，当前 ${ratio.toFixed(2)}`);
+                        message.error(t('img_ratio_error', { name: file.name, ratio: ratio.toFixed(2) }));
                         return reject();
                       }
                       resolve(false);
@@ -1725,29 +1733,29 @@ const UserAssets: React.FC = () => {
                   }).catch(() => Upload.LIST_IGNORE);
                 } else if (videoExts.includes(ext)) {
                   if (sizeMB > 300) {
-                    message.error(`${file.name}: 视频不能超过 300 MB`);
+                    message.error(t('video_size_exceed', { name: file.name }));
                     return Upload.LIST_IGNORE;
                   }
                 } else if (audioExts.includes(ext)) {
                   if (sizeMB > 100) {
-                    message.error(`${file.name}: 音频不能超过 100 MB`);
+                    message.error(t('audio_size_exceed', { name: file.name }));
                     return Upload.LIST_IGNORE;
                   }
                 } else {
-                  message.error(`${file.name}: 不支持的文件格式`);
+                  message.error(t('unsupported_format', { name: file.name }));
                   return Upload.LIST_IGNORE;
                 }
                 return false;
               }}
             >
-              <Button icon={<UploadOutlined />}>选择文件（可多选）</Button>
+              <Button icon={<UploadOutlined />}>{t('select_files_btn')}</Button>
             </Upload>
             <div style={{ marginTop: 12, color: hintText, fontSize: 12, lineHeight: '20px' }}>
-              <div>• 图像：jpeg、png、webp、bmp、tiff、gif、heic/heif（≤ 30 MB，宽高 300-6000px）</div>
-              <div>• 视频：mp4、mov、webm、avi、mkv（≤ 300 MB）</div>
-              <div>• 音频：mp3、wav、aac、flac、ogg、m4a（≤ 100 MB）</div>
-              <div>• 支持混合选择多种类型文件{reviewEnabled ? '，上传后需提交审核' : ''}</div>
-              <div>• 文件名最多 64 个字符，超出部分将自动截取</div>
+              <div>• {t('upload_hint_image')}</div>
+              <div>• {t('upload_hint_video')}</div>
+              <div>• {t('upload_hint_audio')}</div>
+              <div>• {t('upload_hint_mixed')}{reviewEnabled ? t('upload_hint_review') : ''}</div>
+              <div>• {t('upload_hint_filename')}</div>
             </div>
           </Form.Item>
           <Form.Item name="category" hidden>
@@ -1758,12 +1766,12 @@ const UserAssets: React.FC = () => {
 
       {/* 编辑素材资产组合弹窗 */}
       <Modal
-        title="编辑素材资产组合"
+        title={t('edit_asset_group')}
         open={isEditGroupModalOpen}
         onCancel={() => setIsEditGroupModalOpen(false)}
         confirmLoading={savingGroup}
-        okText="保存"
-        cancelText="取消"
+        okText={t('save')}
+        cancelText={t('cancel')}
         onOk={async () => {
           try {
             const values = await editGroupForm.validateFields();
@@ -1772,52 +1780,52 @@ const UserAssets: React.FC = () => {
             await request.put(`/assets/user/groups/${editingGroup.group_id}`, {
               name: values.name,
               description: values.description,
-            });
-            message.success('素材资产组合更新成功');
+            }, { headers: { 'x-plugin-ns': pluginNs } });
+            message.success(t('group_update_success'));
             setIsEditGroupModalOpen(false);
             fetchGroups();
             // 更新右侧面板显示
             setSelectedRecord({ type: 'group', data: { ...editingGroup, name: values.name, description: values.description } });
           } catch (error: any) {
-            console.error('更新失败', error);
+            console.error('update failed', error);
           } finally {
             setSavingGroup(false);
           }
         }}
       >
         <Form form={editGroupForm} layout="vertical">
-          <Form.Item label="素材资产组合名称" name="name" rules={[{ required: true, message: '请填写素材资产组合名称' }]}
-            extra={<span style={{ color: dimText, fontSize: 12 }}>名称最多 64 个字符</span>}
+          <Form.Item label={t('group_name_label')} name="name" rules={[{ required: true, message: t('group_name_required') }]}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>{t('asset_name_hint')}</span>}
           >
-            <Input placeholder="输入素材资产组合名称..." maxLength={64} showCount />
+            <Input placeholder={t('group_name_placeholder')} maxLength={64} showCount />
           </Form.Item>
-          <Form.Item label="描述" name="description" rules={[{ required: true, message: '请填写描述' }]}
-            extra={<span style={{ color: dimText, fontSize: 12 }}>描述最多 300 个字符</span>}
+          <Form.Item label={t('description')} name="description" rules={[{ required: true, message: t('description_required') }]}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>{t('description_hint')}</span>}
           >
-            <Input.TextArea placeholder="虚拟素材资产组合简短说明..." maxLength={300} showCount />
+            <Input.TextArea placeholder={t('description_placeholder')} maxLength={300} showCount />
           </Form.Item>
         </Form>
       </Modal>
 
       {/* 修改素材信息弹窗 */}
       <Modal
-        title="修改素材信息"
+        title={t('edit_asset_info')}
         open={isEditModalOpen}
         onCancel={() => setIsEditModalOpen(false)}
         onOk={handleEditAsset}
         confirmLoading={savingEdit}
-        okText="确定"
-        cancelText="取消"
+        okText={t('confirm')}
+        cancelText={t('cancel')}
       >
         <Form form={editForm} layout="vertical">
-          <Form.Item label="素材名称" name="file_name" rules={[{ required: true, message: '请输入素材名称' }]}
-            extra={<span style={{ color: dimText, fontSize: 12 }}>名称最多 64 个字符</span>}
+          <Form.Item label={t('asset_name_label')} name="file_name" rules={[{ required: true, message: t('asset_name_required') }]}
+            extra={<span style={{ color: dimText, fontSize: 12 }}>{t('asset_name_hint')}</span>}
           >
-            <Input placeholder="输入新的素材名称" maxLength={64} showCount />
+            <Input placeholder={t('asset_name_placeholder')} maxLength={64} showCount />
           </Form.Item>
-          <Form.Item label="素材分类" name="category" rules={[{ required: true, message: '请选择分类' }]}>
-            <Select placeholder="请选择分类" disabled>
-              <Select.Option value="虚拟人像">虚拟素材库</Select.Option>
+          <Form.Item label={t('asset_category_label')} name="category" rules={[{ required: true, message: t('select_category') }]}>
+            <Select placeholder={t('select_category')} disabled>
+              <Select.Option value="虚拟人像">{t('virtual_portrait')}</Select.Option>
             </Select>
           </Form.Item>
         </Form>

@@ -1,0 +1,11 @@
+{
+  "plugin_title": "사이트 포털",
+  "plugin_desc": "사이트 콘텐츠 기본 소개 제공",
+  "nav_management": "내비 관리",
+  "home_management": "홈 관리",
+  "column_management": "컬럼 관리",
+  "static_generation": "정적 생성",
+  "other_config": "기타 설정",
+  "save": "저장",
+  "preview": "미리보기"
+}

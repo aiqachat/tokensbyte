@@ -9,6 +9,7 @@ import {
   StarFilled, StarOutlined
 } from '@ant-design/icons';
 import { useCanvas, usePlayground } from '../context/PlaygroundContext';
+import { useThemeStore } from '../../../store/theme';
 
 const FloatingToolbar: React.FC = React.memo(() => {
   const { 
@@ -17,8 +18,36 @@ const FloatingToolbar: React.FC = React.memo(() => {
   } = useCanvas();
   const { 
     isResourceWidgetVisible, setIsResourceWidgetVisible,
-    isSettingsWidgetVisible, setIsSettingsWidgetVisible
+    isSettingsWidgetVisible, setIsSettingsWidgetVisible,
+    currentModel
   } = usePlayground();
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
+
+  const isChatMode = currentModel?.scheme_type === 'chat';
+
+  const [isMobile, setIsMobile] = React.useState(window.innerWidth <= 768);
+  React.useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (isChatMode) return;
+
+      if (e.key.toLowerCase() === 'v') {
+        setActiveTool('pointer');
+      } else if (e.key.toLowerCase() === 'm') {
+        setActiveTool('marquee');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isChatMode, setActiveTool]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -144,63 +173,83 @@ const FloatingToolbar: React.FC = React.memo(() => {
 
   return (
     <div style={{
-      position: 'absolute', right: 24, top: '50%', transform: 'translateY(-50%)',
-      display: 'flex', flexDirection: 'column', gap: 8,
-      background: '#1e1f20', backdropFilter: 'blur(12px)',
-      padding: '10px 6px', borderRadius: 32,
-      border: '1px solid #444746',
-      boxShadow: '0 4px 6px rgba(0,0,0,0.3)', zIndex: 1000
+      position: 'absolute', right: isMobile ? 12 : 24, top: '50%', transform: 'translateY(-50%)',
+      display: 'flex', flexDirection: 'column', gap: isMobile ? 4 : 8,
+      background: _isLight ? 'rgba(255,255,255,0.85)' : '#1e1f20', backdropFilter: 'blur(12px)',
+      padding: isMobile ? '8px 4px' : '10px 6px', borderRadius: 32,
+      border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746',
+      boxShadow: _isLight ? '0 4px 12px rgba(0,0,0,0.08)' : '0 4px 6px rgba(0,0,0,0.3)', zIndex: 1000
     }} onWheel={(e) => e.stopPropagation()}>
       <Tooltip title="指针工具 (V)" placement="left">
         <Button
           shape="circle"
-          type={activeTool === 'pointer' ? 'primary' : 'text'}
+          type="text"
           onClick={() => setActiveTool('pointer')}
+          disabled={isChatMode}
           icon={
             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 4l7.07 16.97 2.51-7.39 7.39-2.51L4 4z"/>
             </svg>
           }
           style={{
-            width: 32, height: 32, minWidth: 32,
-            background: activeTool === 'pointer' ? 'rgba(168,199,250,0.12)' : 'transparent',
-            color: activeTool === 'pointer' ? '#A8C7FA' : '#E3E3E3',
+            width: isMobile ? 28 : 32, height: isMobile ? 28 : 32, minWidth: isMobile ? 28 : 32,
+            background: activeTool === 'pointer' && !isChatMode ? (_isLight ? '#1f2937' : '#f3f4f6') : 'transparent',
+            color: isChatMode ? (_isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)') : (activeTool === 'pointer' ? (_isLight ? '#fff' : '#1f2937') : (_isLight ? '#333' : '#E3E3E3')),
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}
         />
       </Tooltip>
 
-      <Tooltip title="选框工具 (M) - 即将开放" placement="left">
-        <Button shape="circle" type="text"
+      <Tooltip title="选框工具 (M)" placement="left">
+        <Button
+          shape="circle"
+          type="text"
+          onClick={() => setActiveTool('marquee')}
+          disabled={isChatMode}
           icon={
             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 9V5a1 1 0 0 1 1-1h4 M15 4h4a1 1 0 0 1 1 1v4 M4 15v4a1 1 0 0 0 1 1h4 M16 20h-2 M20 16v-2 M17 17h6 M20 14v6" />
             </svg>
           }
-          style={{ width: 32, height: 32, minWidth: 32, color: 'rgba(255,255,255,0.8)', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ 
+            width: isMobile ? 28 : 32, height: isMobile ? 28 : 32, minWidth: isMobile ? 28 : 32, 
+            background: activeTool === 'marquee' && !isChatMode ? (_isLight ? '#1f2937' : '#f3f4f6') : 'transparent',
+            color: isChatMode ? (_isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)') : (activeTool === 'marquee' ? (_isLight ? '#fff' : '#1f2937') : (_isLight ? '#333' : '#E3E3E3')),
+            display: 'flex', alignItems: 'center', justifyContent: 'center' 
+          }}
         />
       </Tooltip>
 
       <Tooltip title="画笔编辑 (P) - 即将开放" placement="left">
         <Button shape="circle" type="text" icon={<EditOutlined style={{ fontSize: 16 }} />}
-          style={{ width: 32, height: 32, minWidth: 32, color: 'rgba(255,255,255,0.8)', cursor: 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          disabled={isChatMode}
+          style={{ 
+            width: isMobile ? 28 : 32, height: isMobile ? 28 : 32, minWidth: isMobile ? 28 : 32, 
+            color: isChatMode ? (_isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)') : (_isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)'), 
+            cursor: 'not-allowed', 
+            display: 'flex', alignItems: 'center', justifyContent: 'center' 
+          }}
         />
       </Tooltip>
 
       <Tooltip title="抓手工具 (Space)" placement="left">
         <Button
           shape="circle"
-          type={activeTool === 'hand' ? 'primary' : 'text'}
+          type="text"
           onClick={() => setActiveTool('hand')}
+          disabled={isChatMode}
           icon={
             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0a2 2 0 0 0-2 2v0a2 2 0 0 0-2 2v10a4 4 0 0 1-8 0V7a2 2 0 0 0-4 0v11a8 8 0 0 0 16 0V11z" />
+              <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0" />
+              <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2" />
+              <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8" />
+              <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
             </svg>
           }
           style={{
-            width: 32, height: 32, minWidth: 32,
-            background: activeTool === 'hand' ? 'rgba(168,199,250,0.12)' : 'transparent',
-            color: activeTool === 'hand' ? '#A8C7FA' : '#E3E3E3',
+            width: isMobile ? 28 : 32, height: isMobile ? 28 : 32, minWidth: isMobile ? 28 : 32,
+            background: activeTool === 'hand' && !isChatMode ? (_isLight ? '#1f2937' : '#f3f4f6') : 'transparent',
+            color: isChatMode ? (_isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)') : (activeTool === 'hand' ? (_isLight ? '#fff' : '#1f2937') : (_isLight ? '#333' : '#E3E3E3')),
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}
         />
@@ -209,15 +258,21 @@ const FloatingToolbar: React.FC = React.memo(() => {
       <Tooltip title="插入图片/视频/声音" placement="left">
         <Button shape="circle" type="text" icon={<PictureOutlined style={{ fontSize: 16 }} />}
           onClick={() => fileInputRef.current?.click()}
-          style={{ width: 32, height: 32, minWidth: 32, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          disabled={isChatMode}
+          style={{ 
+            width: isMobile ? 28 : 32, height: isMobile ? 28 : 32, minWidth: isMobile ? 28 : 32, 
+            color: isChatMode ? (_isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)') : (_isLight ? '#333' : '#fff'), 
+            display: 'flex', alignItems: 'center', justifyContent: 'center' 
+          }}
         />
       </Tooltip>
 
-      <div style={{ height: 1, background: '#444746', margin: '4px 6px' }} />
+      <div style={{ height: 1, background: _isLight ? 'rgba(0,0,0,0.1)' : '#444746', margin: isMobile ? '2px 4px' : '4px 6px' }} />
 
       <Tooltip title="一键重排素材" placement="left">
         <Button shape="circle" type="text"
           onClick={handleRearrange}
+          disabled={isChatMode}
           icon={
             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="7" height="7"></rect>
@@ -226,35 +281,23 @@ const FloatingToolbar: React.FC = React.memo(() => {
               <rect x="3" y="14" width="7" height="7"></rect>
             </svg>
           }
-          style={{ width: 32, height: 32, minWidth: 32, color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        />
-      </Tooltip>
-      <Tooltip title="模型选择器" placement="left">
-        <Button
-          shape="circle"
-          type={isSettingsWidgetVisible ? 'primary' : 'text'}
-          onClick={() => {
-            if (!isSettingsWidgetVisible) {
-              setSettingsWidgetPos({ x: window.innerWidth - 440, y: 32 });
-            }
-            setIsSettingsWidgetVisible(!isSettingsWidgetVisible);
-          }}
-          icon={isSettingsWidgetVisible ? <StarFilled style={{ fontSize: 16 }} /> : <StarOutlined style={{ fontSize: 16 }} />}
-          style={{
-            width: 32, height: 32, minWidth: 32,
-            background: isSettingsWidgetVisible ? 'rgba(168,199,250,0.12)' : 'transparent',
-            color: isSettingsWidgetVisible ? '#A8C7FA' : '#E3E3E3',
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          style={{ 
+            width: isMobile ? 28 : 32, height: isMobile ? 28 : 32, minWidth: isMobile ? 28 : 32, 
+            color: isChatMode ? (_isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)') : (_isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)'), 
+            display: 'flex', alignItems: 'center', justifyContent: 'center' 
           }}
         />
       </Tooltip>
+
       <Tooltip title="资源管理器" placement="left">
         <Button
           shape="circle"
-          type={isResourceWidgetVisible ? 'primary' : 'text'}
-          onClick={() => {
+          type="text"
+          onClick={(e) => {
             if (!isResourceWidgetVisible) {
-              setResourceWidgetPos({ x: window.innerWidth - 400, y: 120 });
+              const toolbarDiv = e.currentTarget.closest('div');
+              const containerWidth = toolbarDiv?.parentElement?.clientWidth || window.innerWidth;
+              setResourceWidgetPos({ x: Math.max(20, containerWidth - 400), y: Math.max(20, (window.innerHeight - 600) / 2) });
             }
             setIsResourceWidgetVisible(!isResourceWidgetVisible);
           }}
@@ -264,9 +307,9 @@ const FloatingToolbar: React.FC = React.memo(() => {
             </svg>
           }
           style={{
-            width: 32, height: 32, minWidth: 32,
-            background: isResourceWidgetVisible ? 'rgba(168,199,250,0.12)' : 'transparent',
-            color: isResourceWidgetVisible ? '#A8C7FA' : '#E3E3E3',
+            width: isMobile ? 28 : 32, height: isMobile ? 28 : 32, minWidth: isMobile ? 28 : 32,
+            background: isResourceWidgetVisible ? (_isLight ? '#1f2937' : '#f3f4f6') : 'transparent',
+            color: isResourceWidgetVisible ? (_isLight ? '#fff' : '#1f2937') : (_isLight ? '#333' : '#E3E3E3'),
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}
         />

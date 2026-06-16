@@ -12,7 +12,7 @@ use crate::models::{BillingRule, CreateBillingRuleRequest, UpdateBillingRuleRequ
 pub async fn list_rules(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<Vec<BillingRule>>> {
-    let rules = sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules ORDER BY id DESC"))
+    let rules = sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules ORDER BY sort_order DESC, id DESC"))
         .fetch_all(&state.db.pool)
         .await?;
     Ok(Json(rules))
@@ -48,14 +48,16 @@ pub async fn create_rule(
 
     let id_i64 = sqlx::query(
         &state.db.format_query(r#"INSERT INTO billing_rules 
-            (name, billing_type, prompt_rate, completion_rate, cached_rate, fixed_rate, duration_rate, billing_rule, pricing_tiers, extended_config, is_active, pid) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"#)
+            (name, billing_type, prompt_rate, completion_rate, cached_rate, claude_cache_creation_rate, claude_cache_read_rate, fixed_rate, duration_rate, billing_rule, pricing_tiers, extended_config, is_active, pid, provider_id, type_id, pricing_type, sort_order) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"#)
     )
     .bind(&req.name)
     .bind(&req.billing_type)
     .bind(req.prompt_rate)
     .bind(req.completion_rate)
     .bind(req.cached_rate)
+    .bind(req.claude_cache_creation_rate)
+    .bind(req.claude_cache_read_rate)
     .bind(req.fixed_rate)
     .bind(req.duration_rate)
     .bind(&req.billing_rule)
@@ -63,6 +65,10 @@ pub async fn create_rule(
     .bind(&extended_config_str)
     .bind(req.is_active)
     .bind(&pid_val)
+    .bind(req.provider_id)
+    .bind(req.type_id)
+    .bind(&req.pricing_type)
+    .bind(req.sort_order.unwrap_or(0))
     .fetch_one(&state.db.pool)
     .await?
     .get::<i64, _>("id");
@@ -71,6 +77,8 @@ pub async fn create_rule(
         .bind(id_i64)
         .fetch_one(&state.db.pool)
         .await?;
+
+    crate::api::plugins::notify_marketplace_data_changed(&state).await;
 
     Ok(Json(rule))
 }
@@ -108,6 +116,12 @@ pub async fn update_rule(
     if let Some(val) = req.cached_rate {
         sqlx::query(&state.db.format_query("UPDATE billing_rules SET cached_rate = ? WHERE id = ?")).bind(val).bind(id).execute(&state.db.pool).await?;
     }
+    if let Some(val) = req.claude_cache_creation_rate {
+        sqlx::query(&state.db.format_query("UPDATE billing_rules SET claude_cache_creation_rate = ? WHERE id = ?")).bind(val).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(val) = req.claude_cache_read_rate {
+        sqlx::query(&state.db.format_query("UPDATE billing_rules SET claude_cache_read_rate = ? WHERE id = ?")).bind(val).bind(id).execute(&state.db.pool).await?;
+    }
     if let Some(val) = req.fixed_rate {
         sqlx::query(&state.db.format_query("UPDATE billing_rules SET fixed_rate = ? WHERE id = ?")).bind(val).bind(id).execute(&state.db.pool).await?;
     }
@@ -131,6 +145,18 @@ pub async fn update_rule(
     if let Some(pid) = &req.pid {
         sqlx::query(&state.db.format_query("UPDATE billing_rules SET pid = ? WHERE id = ?")).bind(pid).bind(id).execute(&state.db.pool).await?;
     }
+    if let Some(provider_id) = req.provider_id {
+        sqlx::query(&state.db.format_query("UPDATE billing_rules SET provider_id = ? WHERE id = ?")).bind(provider_id).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(type_id) = req.type_id {
+        sqlx::query(&state.db.format_query("UPDATE billing_rules SET type_id = ? WHERE id = ?")).bind(type_id).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(pricing_type) = &req.pricing_type {
+        sqlx::query(&state.db.format_query("UPDATE billing_rules SET pricing_type = ? WHERE id = ?")).bind(pricing_type).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(val) = req.sort_order {
+        sqlx::query(&state.db.format_query("UPDATE billing_rules SET sort_order = ? WHERE id = ?")).bind(val).bind(id).execute(&state.db.pool).await?;
+    }
 
     sqlx::query(&state.db.format_query("UPDATE billing_rules SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;
 
@@ -138,6 +164,8 @@ pub async fn update_rule(
         .bind(id)
         .fetch_one(&state.db.pool)
         .await?;
+
+    crate::api::plugins::notify_marketplace_data_changed(&state).await;
 
     Ok(Json(rule))
 }
@@ -165,6 +193,8 @@ pub async fn delete_rule(
         .bind(id)
         .execute(&state.db.pool)
         .await?;
+
+    crate::api::plugins::notify_marketplace_data_changed(&state).await;
 
     Ok(Json(serde_json::json!({ "success": true })))
 }

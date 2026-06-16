@@ -5,8 +5,11 @@
 
 set -e
 
+# 项目名称配置：优先使用环境变量PROJECT_NAME，否则读取当前目录名
+PROJECT_NAME=${PROJECT_NAME:-$(basename "$PWD")}
+
 echo "========================================="
-echo "  TokensByte Docker 部署脚本"
+echo "  ${PROJECT_NAME^} Docker 部署脚本"
 echo "========================================="
 echo ""
 
@@ -174,6 +177,8 @@ case $mode in
     1)
         echo ""
         echo "🚀 启动开发环境 (热重载)..."
+        # 导出项目名环境变量
+        export PROJECT_NAME="${PROJECT_NAME}"
         docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
         echo ""
         echo "✅ 开发环境已启动！"
@@ -188,6 +193,8 @@ case $mode in
     2)
         echo ""
         echo "🚀 启动生产环境..."
+        # 导出项目名环境变量
+        export PROJECT_NAME="${PROJECT_NAME}"
         docker compose up -d
         echo ""
         echo "✅ 生产环境部署完成！"

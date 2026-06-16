@@ -17,12 +17,28 @@ pub struct SiteSettings {
     pub login_subtitle: String,
     #[serde(default = "default_enable_multilingual")]
     pub enable_multilingual: bool,
+    /// 站点支持的语言列表（语言代码），如 ["zh", "en"]
+    #[serde(default = "default_supported_languages")]
+    pub supported_languages: Vec<String>,
+    /// 站点默认语言
+    #[serde(default = "default_language")]
+    pub default_language: String,
+    /// 站点默认时区
+    #[serde(default = "default_site_timezone")]
+    pub default_timezone: String,
     /// 是否允许用户切换亮色/暗色主题（关闭后用户端不显示切换按钮）
     #[serde(default = "default_true_theme")]
     pub enable_theme_toggle: bool,
     /// 站点默认主题："dark" 或 "light"
     #[serde(default = "default_theme_mode")]
     pub default_theme: String,
+    /// 版权信息，显示在登录页面底部
+    #[serde(default = "default_copyright")]
+    pub copyright: String,
+}
+
+fn default_copyright() -> String {
+    "© 2026 Tokensbyte. All rights reserved.".to_string()
 }
 
 fn default_true_theme() -> bool {
@@ -35,6 +51,18 @@ fn default_theme_mode() -> String {
 
 fn default_enable_multilingual() -> bool {
     true
+}
+
+fn default_supported_languages() -> Vec<String> {
+    vec!["zh".to_string(), "en".to_string()]
+}
+
+fn default_language() -> String {
+    "zh".to_string()
+}
+
+fn default_site_timezone() -> String {
+    iana_time_zone::get_timezone().unwrap_or_else(|_| "Asia/Shanghai".to_string())
 }
 
 /// 站点协议设置
@@ -70,6 +98,16 @@ fn default_agreement_mode() -> String {
     "link".to_string()
 }
 
+/// 辅助货币设置
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AuxiliaryCurrency {
+    pub code: String, // e.g., "USD"
+    pub symbol: String, // e.g., "$"
+    pub exchange_rate: f64, // e.g., if default is CNY and this is USD, rate could be 0.14
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
 /// 货币设置
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CurrencySettings {
@@ -77,6 +115,8 @@ pub struct CurrencySettings {
     pub currency_symbol: String,
     pub currency_unit: String,
     pub token_ratio: f64,
+    #[serde(default)]
+    pub auxiliary_currencies: Vec<AuxiliaryCurrency>,
 }
 
 /// 登录方式设置 — 控制用户端可用的登录方式
@@ -300,6 +340,56 @@ pub struct WechatOAuthSettings {
     pub app_secret: String,
 }
 
+/// 存储配置
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct StorageSettings {
+    #[serde(default)]
+    pub tos_access_key: String,
+    #[serde(default)]
+    pub tos_secret_key: String,
+    #[serde(default)]
+    pub tos_endpoint: String,
+    #[serde(default)]
+    pub tos_region: String,
+    #[serde(default)]
+    pub tos_bucket: String,
+    #[serde(default)]
+    pub tos_path_prefix: String,
+    #[serde(default)]
+    pub tos_custom_domain: String,
+    /// 使用日志详情保留天数，超期自动清理请求/响应内容，0=永不清理
+    #[serde(default = "default_log_retention_days")]
+    pub log_retention_days: i32,
+}
+
+fn default_log_retention_days() -> i32 {
+    30
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MenuItemConfig {
+    pub key: String,
+    pub label_zh: String,
+    pub label_en: String,
+    pub icon: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub sort_order: i32,
+    #[serde(default = "default_all_levels")]
+    pub allowed_levels: String,
+}
+
+fn default_all_levels() -> String {
+    "all".to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct MenuConfigSettings {
+    #[serde(default)]
+    pub items: Vec<MenuItemConfig>,
+}
+
 /// 聚合所有设置（读取）
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AllSettings {
@@ -318,6 +408,13 @@ pub struct AllSettings {
     pub google_oauth: Option<GoogleOAuthSettings>,
     pub wechat_oauth: Option<WechatOAuthSettings>,
     pub agreement: AgreementSettings,
+    pub storage: Option<StorageSettings>,
+    #[serde(default)]
+    pub menu_config: Option<MenuConfigSettings>,
+    #[serde(default, skip_deserializing)]
+    pub server_timezone: Option<String>,
+    #[serde(default, skip_deserializing)]
+    pub server_time: Option<String>,
 }
 
 /// 更新设置请求（写入）
@@ -338,4 +435,82 @@ pub struct UpdateSettingsRequest {
     pub google_oauth: Option<GoogleOAuthSettings>,
     pub wechat_oauth: Option<WechatOAuthSettings>,
     pub agreement: Option<AgreementSettings>,
+    pub storage: Option<StorageSettings>,
+    pub menu_config: Option<MenuConfigSettings>,
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 【安全原则】公开接口返回的数据结构
+//
+// 以下 PublicSettings 系列结构体用于无需认证的公开接口返回值。
+// 系统安全原则：隐私数据（密钥、密码、Secret、数据库信息等）绝不暴露到公开接口。
+// 新增设置字段时，须评估是否属于公开数据。如为隐私数据，仅添加到 AllSettings，
+// 不得添加到 PublicSettings。此原则必须被所有开发者（包括 AI）严格遵守。
+// ════════════════════════════════════════════════════════════════════════════
+
+/// 公开注册设置 — 仅暴露注册方式开关，隐藏 IP 限制、邮箱白名单等安全策略
+#[derive(Debug, Serialize, Clone)]
+pub struct PublicRegistrationSettings {
+    pub enable_username_registration: bool,
+    pub enable_email_registration: bool,
+    pub enable_mobile_registration: bool,
+    pub enable_password_recovery: bool,
+}
+
+impl From<&RegistrationSettings> for PublicRegistrationSettings {
+    fn from(r: &RegistrationSettings) -> Self {
+        Self {
+            enable_username_registration: r.enable_username_registration,
+            enable_email_registration: r.enable_email_registration,
+            enable_mobile_registration: r.enable_mobile_registration,
+            enable_password_recovery: r.enable_password_recovery,
+        }
+    }
+}
+
+/// 公开营销设置 — 仅暴露注册赠送开关，隐藏具体金额配置
+#[derive(Debug, Serialize, Clone)]
+pub struct PublicMarketingSettings {
+    pub enable_registration_gift: bool,
+}
+
+impl From<&MarketingSettings> for PublicMarketingSettings {
+    fn from(m: &MarketingSettings) -> Self {
+        Self {
+            enable_registration_gift: m.enable_registration_gift,
+        }
+    }
+}
+
+/// 公开支付状态 — 仅暴露各支付渠道的启用开关，不含任何密钥/密码/私钥
+#[derive(Debug, Serialize, Clone)]
+pub struct PublicPaymentStatus {
+    pub wechat_enabled: bool,
+    pub alipay_enabled: bool,
+    pub stripe_enabled: bool,
+    pub bonuspay_enabled: bool,
+}
+
+/// 公开设置聚合 — 仅包含前端 UI 渲染所需的安全数据
+///
+/// 【安全】不包含任何密钥、密码、Secret、数据库、支付、SMTP、短信、存储等隐私配置。
+/// OAuth 仅暴露 client_id / app_id（前端发起 OAuth 跳转必需），不暴露 secret。
+#[derive(Debug, Serialize, Clone)]
+pub struct PublicSettings {
+    pub site: SiteSettings,
+    pub currency: CurrencySettings,
+    pub login: LoginSettings,
+    pub registration: PublicRegistrationSettings,
+    pub marketing: PublicMarketingSettings,
+    /// 各支付渠道启用状态（仅布尔值，不含密钥）
+    pub payment: PublicPaymentStatus,
+    pub agreement: AgreementSettings,
+    /// 微信 OAuth app_id（前端扫码绑定/登录需要），不含 app_secret
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wechat_oauth_app_id: Option<String>,
+    /// Google OAuth client_id（前端 OAuth 跳转需要），不含 client_secret
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub google_oauth_client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_config: Option<MenuConfigSettings>,
 }

@@ -18,7 +18,7 @@ const OAuthSettings: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await (request.get('/settings') as any);
+        const res = await (request.get('/settings/full') as any);
         if (res.google_oauth) googleForm.setFieldsValue(res.google_oauth);
         if (res.wechat_oauth) wechatForm.setFieldsValue(res.wechat_oauth);
         const base = res.site?.name ? window.location.origin : window.location.origin;

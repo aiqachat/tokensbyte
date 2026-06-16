@@ -52,8 +52,8 @@ const SystemAbout: React.FC = () => {
           bordered={false}
           style={{
             marginBottom: 24,
-            background: 'linear-gradient(135deg, #1a2a4a 0%, #0d1b35 100%)',
-            border: '1px solid rgba(22, 119, 255, 0.35)',
+            background: _isLight ? 'linear-gradient(135deg, #f0f5ff 0%, #e6f4ff 100%)' : 'linear-gradient(135deg, #1a2a4a 0%, #0d1b35 100%)',
+            border: _isLight ? '1px solid rgba(22, 119, 255, 0.15)' : '1px solid rgba(22, 119, 255, 0.35)',
             borderRadius: 12,
           }}
         >
@@ -131,10 +131,10 @@ const SystemAbout: React.FC = () => {
                       marginBottom: 4,
                       background: c.is_current
                         ? 'rgba(22, 119, 255, 0.06)'
-                        : 'rgba(255,255,255,0.02)',
+                        : (_isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)'),
                       border: c.is_current
                         ? '1px solid rgba(22, 119, 255, 0.25)'
-                        : '1px solid rgba(255,255,255,0.04)',
+                        : (_isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.04)'),
                       transition: 'all 0.2s',
                     }}
                   >
@@ -156,12 +156,14 @@ const SystemAbout: React.FC = () => {
                     <div style={{
                       fontSize: 14,
                       fontWeight: c.is_current ? 600 : 400,
-                      color: c.is_current ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.75)',
+                      color: c.is_current 
+                        ? (_isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)') 
+                        : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.75)'),
                       marginBottom: 6,
                     }}>
                       {c.message || '(无提交说明)'}
                     </div>
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.38)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                       <span><UserOutlined style={{ marginRight: 4 }} />{c.author}</span>
                       <span><CalendarOutlined style={{ marginRight: 4 }} />{c.date}</span>
                     </div>

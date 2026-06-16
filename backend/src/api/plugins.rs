@@ -9,26 +9,26 @@ use tokio::sync::RwLock;
 use std::time::Instant;
 
 /// 模型广场公开数据的内存缓存（TTL 60秒）
-struct MarketplaceCache {
+pub struct MarketplaceCache {
     data: Option<serde_json::Value>,
     updated_at: Instant,
 }
 
 impl MarketplaceCache {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self { data: None, updated_at: Instant::now() }
     }
-    fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> bool {
         self.data.is_some() && self.updated_at.elapsed().as_secs() < 60
     }
-    fn invalidate(&mut self) {
+    pub fn invalidate(&mut self) {
         self.data = None;
     }
 }
 
 static MARKETPLACE_CACHE: std::sync::OnceLock<RwLock<MarketplaceCache>> = std::sync::OnceLock::new();
 
-fn get_marketplace_cache() -> &'static RwLock<MarketplaceCache> {
+pub fn get_marketplace_cache() -> &'static RwLock<MarketplaceCache> {
     MARKETPLACE_CACHE.get_or_init(|| RwLock::new(MarketplaceCache::new()))
 }
 use serde_json::json;
@@ -46,6 +46,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/", get(list_plugins))
         .route("/{name}/toggle", post(toggle_plugin))
         .route("/{name}/config", post(update_plugin_config))
+        .route("/{name}/ha-config", get(get_ha_config).post(save_ha_config))
         .route("/{name}/storage-config", get(get_storage_config).post(save_storage_config))
         .route("/{name}/moderation-config", get(get_moderation_config).post(save_moderation_config))
         .route("/{name}/playground-config", get(get_playground_config).post(save_playground_config))
@@ -79,10 +80,37 @@ async fn list_plugins(
 pub async fn get_active_plugins_public(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let plugins: Vec<Plugin> = sqlx::query_as(&state.db.format_query("SELECT * FROM plugins WHERE is_enabled = 1"))
-        .fetch_all(&state.db.pool)
-        .await?;
-    Ok(Json(json!({ "active_plugins": plugins })))
+    #[cfg(feature = "commercial_plugins")]
+    {
+        let plugins: Vec<Plugin> = sqlx::query_as(&state.db.format_query("SELECT * FROM plugins WHERE is_enabled = 1"))
+            .fetch_all(&state.db.pool)
+            .await?;
+
+        let mut enhanced_plugins = Vec::new();
+        for plugin in plugins {
+            let mut p_json = serde_json::to_value(&plugin).unwrap_or(serde_json::Value::Null);
+            if plugin.name == "asset_manager" || plugin.name == "asset_manager_intl" {
+                let config_val: Option<String> = sqlx::query_scalar(
+                    &state.db.format_query("SELECT config_value FROM plugin_configs WHERE plugin_name = ? AND config_key = 'show_in_playground_prompt'")
+                )
+                .bind(&plugin.name)
+                .fetch_optional(&state.db.pool)
+                .await?;
+                let show = config_val.unwrap_or_else(|| "false".to_string()) == "true";
+                if let Some(obj) = p_json.as_object_mut() {
+                    obj.insert("show_in_playground_prompt".to_string(), json!(show));
+                }
+            }
+            enhanced_plugins.push(p_json);
+        }
+        
+        Ok(Json(json!({ "active_plugins": enhanced_plugins })))
+    }
+    #[cfg(not(feature = "commercial_plugins"))]
+    {
+        let _ = state;
+        Ok(Json(json!({ "active_plugins": [] })))
+    }
 }
 
 #[derive(Deserialize)]
@@ -129,6 +157,7 @@ pub struct ConfigRequest {
     pub default_max_projects: Option<i64>,                     // 默认项目数量上限
     pub level_max_assets: Option<HashMap<String, i64>>,        // 每个等级的素材数量上限
     pub default_max_assets: Option<i64>,                       // 默认素材数量上限
+    pub show_in_playground_prompt: Option<bool>,               // 体验中心提示词输入窗口加载显示
 }
 
 /// 管理员：配置插件的开放等级
@@ -226,6 +255,10 @@ async fn update_plugin_config(
 
     if let Some(dma) = payload.default_max_assets {
         upsert_config(&state, &name, "default_max_assets", &dma.to_string()).await?;
+    }
+
+    if let Some(show) = payload.show_in_playground_prompt {
+        upsert_config(&state, &name, "show_in_playground_prompt", if show { "true" } else { "false" }).await?;
     }
 
     Ok(Json(json!({ "message": "ok" })))
@@ -342,6 +375,7 @@ async fn get_storage_config(
     let default_api_enabled: bool = configs.get("api_enabled").map(|v| v == "true").unwrap_or(true);
     let default_max_projects: i64 = configs.get("default_max_projects").and_then(|v| v.parse().ok()).unwrap_or(3);
     let default_max_assets: i64 = configs.get("default_max_assets").and_then(|v| v.parse().ok()).unwrap_or(30);
+    let show_in_playground_prompt: bool = configs.get("show_in_playground_prompt").map(|v| v == "true").unwrap_or(false);
 
     Ok(Json(json!({
         "tos_access_key": configs.get("tos_access_key").cloned().unwrap_or_default(),
@@ -365,6 +399,7 @@ async fn get_storage_config(
         "default_max_projects": default_max_projects,
         "level_max_assets": level_max_assets,
         "default_max_assets": default_max_assets,
+        "show_in_playground_prompt": show_in_playground_prompt,
     })))
 }
 
@@ -444,6 +479,7 @@ pub struct ModerationConfigRequest {
     pub volc_app_id: Option<String>,
     pub volc_project_name: Option<String>,
     pub volc_group_id: Option<String>,
+    pub volc_region: Option<String>,
     pub review_enabled: Option<bool>,
 }
 
@@ -482,6 +518,13 @@ async fn get_moderation_config(
         .map(|v| v == "true")
         .unwrap_or(false);
 
+    let volc_region = configs.get("volc_region").cloned().unwrap_or_else(|| "cn-beijing".to_string());
+
+    // 根据 region 生成审核请求基址（国内版 volcengineapi.com，国际版 byteplusapi.com）
+    let is_international = volc_region.starts_with("ap-");
+    let ark_api_host = if is_international { "open.byteplusapi.com" } else { "open.volcengineapi.com" };
+    let review_api_url = format!("https://{}/?Action=CreateAsset&Version=2024-01-01", ark_api_host);
+
     Ok(Json(json!({
         "volc_access_key": configs.get("volc_access_key").cloned().unwrap_or_default(),
         "volc_secret_key": sk,
@@ -489,6 +532,8 @@ async fn get_moderation_config(
         "volc_app_id": configs.get("volc_app_id").cloned().unwrap_or_default(),
         "volc_project_name": configs.get("volc_project_name").cloned().unwrap_or_else(|| "default".to_string()),
         "volc_group_id": configs.get("volc_group_id").cloned().unwrap_or_default(),
+        "volc_region": volc_region,
+        "review_api_url": review_api_url,
         "is_configured": !configs.get("volc_access_key").cloned().unwrap_or_default().is_empty(),
         "review_enabled": review_enabled,
     })))
@@ -539,10 +584,77 @@ async fn save_moderation_config(
         upsert_config(&state, &name, "review_enabled", if re { "true" } else { "false" }).await?;
     }
 
+    // region
+    if let Some(ref region) = payload.volc_region {
+        let region_val = if region.trim().is_empty() { "cn-beijing" } else { region.trim() };
+        upsert_config(&state, &name, "volc_region", region_val).await?;
+    }
+
     Ok(Json(json!({ "message": "审核配置已保存" })))
 }
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+struct HaConfigRequest {
+    pub ha_max_retries: i64,
+    pub ha_cooldown_429: i64,
+    pub ha_cooldown_network: i64,
+    pub ha_cooldown_auth: i64,
+}
+
+async fn get_ha_config(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let configs = load_plugin_configs(&state, &name).await?;
+    let ha_max_retries = configs.get("ha_max_retries").and_then(|v| v.parse::<i64>().ok()).unwrap_or(3);
+    let ha_cooldown_429 = configs.get("ha_cooldown_429").and_then(|v| v.parse::<i64>().ok()).unwrap_or(60);
+    let ha_cooldown_network = configs.get("ha_cooldown_network").and_then(|v| v.parse::<i64>().ok()).unwrap_or(300);
+    let ha_cooldown_auth = configs.get("ha_cooldown_auth").and_then(|v| v.parse::<i64>().ok()).unwrap_or(1800);
+
+    Ok(Json(json!({
+        "ha_max_retries": ha_max_retries,
+        "ha_cooldown_429": ha_cooldown_429,
+        "ha_cooldown_network": ha_cooldown_network,
+        "ha_cooldown_auth": ha_cooldown_auth,
+    })))
+}
+
+async fn save_ha_config(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    Extension(claims): Extension<auth::Claims>,
+    Json(payload): Json<HaConfigRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let role: String = sqlx::query_scalar(&state.db.format_query("SELECT role FROM users WHERE id = ?"))
+        .bind(&claims.sub)
+        .fetch_one(&state.db.pool)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::Unauthorized);
+    }
+
+    upsert_config(&state, &name, "ha_max_retries", &payload.ha_max_retries.to_string()).await?;
+    upsert_config(&state, &name, "ha_cooldown_429", &payload.ha_cooldown_429.to_string()).await?;
+    upsert_config(&state, &name, "ha_cooldown_network", &payload.ha_cooldown_network.to_string()).await?;
+    upsert_config(&state, &name, "ha_cooldown_auth", &payload.ha_cooldown_auth.to_string()).await?;
+
+    // 重新加载配置，确保内存中及时生效
+    state.load_ha_configs().await?;
+
+    Ok(Json(json!({ "message": "高可用配置已保存并重载" })))
+}
+
 /// 公开辅助：加载插件的 Volcengine 配置（供 assets 模块调用）
+#[cfg(feature = "commercial_plugins")]
 pub async fn get_volc_config(state: &AppState, plugin_name: &str) -> Option<crate::services::volcengine::VolcConfig> {
     let configs = load_plugin_configs(state, plugin_name).await.ok()?;
     crate::services::volcengine::VolcConfig::from_map(&configs)
@@ -551,6 +663,20 @@ pub async fn get_volc_config(state: &AppState, plugin_name: &str) -> Option<crat
 pub async fn get_tos_config(state: &AppState, plugin_name: &str) -> Option<TosConfig> {
     let configs = load_plugin_configs(state, plugin_name).await.ok()?;
     TosConfig::from_map(&configs)
+}
+
+pub async fn notify_marketplace_data_changed(state: &Arc<AppState>) {
+    get_marketplace_cache().write().await.invalidate();
+
+    #[cfg(feature = "plugin_site_portal")]
+    {
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::api::site_portal::auto_generate_portal_models_static(&state_clone).await {
+                tracing::error!("Failed to auto generate portal static models: {:?}", e);
+            }
+        });
+    }
 }
 
 #[derive(serde::Serialize, sqlx::FromRow)]
@@ -606,7 +732,7 @@ async fn get_plugin_api_logs(
 
     let keyword = query.keyword.as_deref().unwrap_or("").to_string();
     if !keyword.is_empty() {
-        where_clause.push_str(&format!(" AND (api_endpoint ILIKE ${p} OR user_id ILIKE ${p})", p = param_idx));
+        where_clause.push_str(&format!(" AND (api_endpoint ILIKE ${p} OR user_id ILIKE ${p} OR EXISTS (SELECT 1 FROM users u WHERE u.id = plugin_api_logs.user_id AND u.uid ILIKE ${p}))", p = param_idx));
         param_idx += 1;
     }
 
@@ -627,11 +753,29 @@ async fn get_plugin_api_logs(
     if !keyword.is_empty() { data_q = data_q.bind(format!("%{}%", keyword)); }
     let logs: Vec<PluginApiLog> = data_q.bind(page_size).bind(offset).fetch_all(&state.db.pool).await?;
 
-    Ok(Json(json!({
+    // 构建 user_id -> uid/username 映射
+    let user_ids: Vec<String> = logs.iter().map(|a| a.user_id.clone()).collect::<std::collections::HashSet<_>>().into_iter().collect();
+    let mut uid_map = serde_json::Map::new();
+    for uid_chunk in user_ids.chunks(50) {
+        let placeholders = uid_chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = state.db.format_query(&format!("SELECT id, uid, username FROM users WHERE id IN ({})", placeholders));
+        let mut q = sqlx::query_as::<_, (String, String, String)>(&sql);
+        for id in uid_chunk {
+            q = q.bind(id);
+        }
+        if let Ok(rows) = q.fetch_all(&state.db.pool).await {
+            for (id, uid, username) in rows {
+                uid_map.insert(id, serde_json::json!({"uid": uid, "username": username}));
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({
         "logs": logs,
         "total": total,
         "page": page,
-        "page_size": page_size
+        "page_size": page_size,
+        "uid_map": serde_json::Value::Object(uid_map)
     })))
 }
 
@@ -652,7 +796,6 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p","1080p"], "default": "720p"},
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
-                {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
                 {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false},
                 {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
@@ -670,7 +813,6 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
                 {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p"], "default": "720p"},
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
-                {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
                 {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false},
                 {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
@@ -683,9 +825,11 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "高质量 AI 图片生成，支持 doubao-seedream-5.0-lite 模型",
             "params": [
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "3072x3072", "1728x2304", "2592x3456", "2304x1728", "3456x2592", "2848x1600", "4096x2304", "1600x2848", "2304x4096", "2496x1664", "3744x2496", "1664x2496", "2496x3744", "3136x1344", "4704x2016", "2K", "3K", "4K"], "default": "2048x2048"},
+                {"key": "size", "label": "图片尺寸", "type": "radio", "options": ["2048x2048", "3072x3072", "1728x2304", "2592x3456", "2304x1728", "3456x2592", "2848x1600", "4096x2304", "1600x2848", "2304x4096", "2496x1664", "3744x2496", "1664x2496", "2496x3744", "3136x1344", "4704x2016", "2K", "3K", "4K"], "default": "2048x2048"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
-                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false},
+                {"key": "output_format", "label": "输出格式", "type": "select", "options": ["png","jpeg"], "default": "jpeg"},
+                {"key": "web_search", "label": "联网搜索", "type": "switch", "default": false}
             ]
         }),
         json!({
@@ -695,8 +839,7 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "高质量 AI 图片生成，支持 doubao-seedream-4.5 模型",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","3:4","4:3","16:9","9:16","3:2","2:3","21:9"], "default": "1:1"},
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["2048x2048", "4096x4096", "1728x2304", "3520x4704", "2304x1728", "4704x3520", "2848x1600", "5504x3040", "1600x2848", "3040x5504", "2496x1664", "4992x3328", "1664x2496", "3328x4992", "3136x1344", "6240x2656"], "default": "2048x2048"},
+                {"key": "size", "label": "图片尺寸", "type": "radio", "options": ["2048x2048", "4096x4096", "2304x1728", "1728x2304", "3520x4704", "2304x1728", "4704x3520", "2848x1600", "5504x3040", "1600x2848", "3040x5504", "2496x1664", "4992x3328", "1664x2496", "3328x4992", "3136x1344", "6240x2656", "2K", "4K"], "default": "2048x2048"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
@@ -708,7 +851,7 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "is_system": true,
             "description": "高质量 AI 图片生成，支持 doubao-seedream-4.0 模型",
             "params": [
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1024x1024", "2048x2048", "4096x4096", "864x1152", "1728x2304", "3520x4704", "1152x864", "2304x1728", "4704x3520", "1312x736", "2848x1600", "5504x3040", "736x1312", "1600x2848", "3040x5504", "832x1248", "1664x2496", "3328x4992", "1248x832", "2496x1664", "4992x3328", "1568x672", "3136x1344", "6240x2656", "1K", "2K", "4K"], "default": "1024x1024"},
+                {"key": "size", "label": "图片尺寸", "type": "radio", "options": ["1024x1024", "2048x2048", "4096x4096", "864x1152", "1728x2304", "3520x4704", "1152x864", "2304x1728", "4704x3520", "1312x736", "2848x1600", "5504x3040", "736x1312", "1600x2848", "3040x5504", "832x1248", "1664x2496", "3328x4992", "1248x832", "2496x1664", "4992x3328", "1568x672", "3136x1344", "6240x2656", "1K", "2K", "4K"], "default": "1024x1024"},
                 {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
@@ -718,32 +861,32 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "name": "Seedance 1.5 Pro 方案",
             "type": "video",
             "is_system": true,
-            "endpoint": "/api/v3/contents/generations/tasks",
-            "poll_endpoint": "/api/v3/contents/generations/tasks/{task_id}",
             "description": "支持文生视频和图生视频，可生成音频，适用于 doubao-seedance-1-0-pro 系列模型",
             "params": [
                 {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["21:9","16:9","4:3","1:1","3:4","9:16","adaptive"], "default": "16:9"},
                 {"key": "duration", "label": "视频时长", "type": "select", "options": [-1,5,10,12], "default": 5, "unit": "秒", "hint": "-1 表示由模型智能选择"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["480p","720p","1080p"], "default": "720p"},
                 {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
                 {"key": "generate_audio", "label": "生成音频", "type": "switch", "default": true},
                 {"key": "camera_fixed", "label": "固定摄像头", "type": "switch", "default": false},
                 {"key": "return_last_frame", "label": "返回尾帧图像", "type": "switch", "default": false},
-                {"key": "image_url", "label": "参考图片 URL", "type": "input", "default": "", "placeholder": "可选，填入图片链接可实现图生视频"},
                 {"key": "watermark", "label": "水印", "type": "switch", "default": false}
             ]
         }),
         json!({
             "id": "gpt_image_2",
-            "name": "GPT Image 2 图片生成方案",
+            "name": "GPT Image 官方图片生成方案",
             "type": "image",
             "is_system": true,
-            "description": "OpenAI 最新旗舰图像生成模型，支持 4K 高清输出、精准文字渲染、思维推理能力，适用于 gpt-image-2 模型",
+            "description": "OpenAI 最新旗舰图像生成模型，支持任意分辨率（WIDTHxHEIGHT）最高达 4K、背景透明度调节（background）、内容审核等级调整（moderation）以及流式生成（stream）等全新特性",
             "params": [
-                {"key": "size", "label": "图片尺寸", "type": "select", "options": ["1024x1024","1024x1536","1536x1024","auto"], "default": "1024x1024"},
-                {"key": "quality", "label": "图片质量", "type": "select", "options": ["auto","low","medium","high"], "default": "auto"},
-                {"key": "output_format", "label": "输出格式", "type": "select", "options": ["png","jpeg","webp"], "default": "png"},
-                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"},
-                {"key": "background", "label": "背景", "type": "select", "options": ["auto","transparent","opaque"], "default": "auto"}
+                {"key": "size", "label": "图片尺寸", "type": "radio", "options": ["auto", "1024x1024", "1536x1024", "1024x1536", "1536x864", "864x1536", "2560x1440", "1440x2560", "3840x2160", "2160x3840"], "default": "1024x1024", "hint": "支持自定义 WIDTHxHEIGHT 分辨率（如1536x864），宽高需为16的倍数且比例在1:3至3:1之间，最大支持4K"},
+                {"key": "quality", "label": "图片质量", "type": "select", "options": ["auto", "low", "medium", "high"], "default": "auto", "hint": "auto为自适应，high为最高画质，low为低画质，medium为标准画质"},
+                {"key": "output_format", "label": "输出格式", "type": "select", "options": ["png", "jpeg", "webp"], "default": "png"},
+                {"key": "output_compression", "label": "输出压缩率", "type": "slider", "default": 100, "min": 0, "max": 100, "step": 1, "hint": "仅在选择 webp 或 jpeg 格式时生效，默认 100 表示无损或最高画质"},
+                {"key": "background", "label": "背景透明度", "type": "select", "options": ["auto", "opaque"], "default": "auto", "hint": "控制背景透明属性，auto为自适应，opaque为不透明"},
+                {"key": "moderation", "label": "内容审核等级", "type": "select", "options": ["auto", "low"], "default": "auto", "hint": "设置为 low 可以降低内容审核过滤的限制度"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "default": 1, "unit": "张"}
             ]
         }),
         json!({
@@ -751,12 +894,130 @@ fn get_default_schemes() -> Vec<serde_json::Value> {
             "name": "Gemini 3.1 Flash 图片生成方案",
             "type": "image",
             "is_system": true,
-            "description": "Google Gemini 原生多模态图像生成，支持文生图和图片编辑，适用于 gemini-3.1-flash-image-preview 模型",
+            "description": "Google Gemini 原生多模态图像生成，支持文生图和图生图(最多14张参考图)，最高 4K 分辨率，支持极端宽高比和 Google 搜索增强",
             "params": [
-                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1","16:9","9:16","4:3","3:4"], "default": "1:1"},
-                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,4], "default": 1, "unit": "张"}
+                {"key": "size", "label": "画面比例", "type": "radio", "options": ["1:1","3:2","2:3","4:3","3:4","16:9","9:16","5:4","4:5","21:9","1:4","4:1","1:8","8:1"], "default": "1:1"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["1k","2k","4k"], "default": "1k"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4], "default": 1, "unit": "张"},
+                {"key": "google_search", "label": "搜索增强", "type": "switch", "default": false, "description": "搜索网络文字信息辅助生成图片"},
+                {"key": "google_image_search", "label": "图片搜索增强", "type": "switch", "default": false, "description": "搜索参考图片辅助生成，适合需要视觉参考的场景"}
             ]
         }),
+        json!({
+            "id": "dashscope_image",
+            "name": "阿里云 (DashScope) 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "阿里云通义万相系列原生/代理通道配置，支持多尺寸、多样式图像生成及提示词扩写功能",
+            "params": [
+                {"key": "size", "label": "图片尺寸", "type": "radio", "options": ["1280*1280", "1104*1472", "1472*1104", "960*1696", "1696*960", "2048*2048"], "default": "1280*1280"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4], "default": 1, "unit": "张"},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false},
+                {"key": "prompt_extend", "label": "提示词扩写", "type": "switch", "default": false, "description": "由模型自动丰富提示词细节以获得更好的生成效果"},
+            ]
+        }),
+        json!({
+            "id": "dashscope_video",
+            "name": "阿里云 (DashScope) 视频生成方案",
+            "type": "video",
+            "is_system": true,
+            "description": "阿里云通义万相视频生成配置，支持多种画面尺寸，适用于视频生成模型",
+            "params": [
+                {"key": "ratio", "label": "画面尺寸", "type": "radio", "options": ["1:1", "16:9", "9:16", "4:3", "3:4"], "default": "1:1"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["720P","1080P"], "default": "720P"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [3, 5, 10, 15], "default": 5, "unit": "秒"},
+                {"key": "prompt_extend", "label": "提示词扩写", "type": "switch", "default": false},
+                {"key": "watermark", "label": "水印", "type": "switch", "default": false}
+            ]
+        }),
+        json!({
+            "id": "kling_image",
+            "name": "可灵 (Kling) 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "快手可灵原生/代理图像生成配置，支持多比例及参考图",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9"], "default": "1:1"},
+                {"key": "resolution", "label": "输出分辨率", "type": "select", "options": ["1k","2k","4k"], "default": "1k"},
+                {"key": "n", "label": "生成数量", "type": "select", "options": [1,2,3,4,5,6,7,8,9], "default": 1, "unit": "张"},
+            ]
+        }),
+        json!({
+            "id": "kling_video",
+            "name": "可灵 (Kling) 视频生成方案",
+            "type": "video",
+            "is_system": true,
+            "description": "快手可灵原生/代理视频生成配置，支持文生视频与图生视频，包含多种模式、时长及音频控制",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["16:9","9:16","1:1"], "default": "16:9", "hint": "文生视频时生效"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [3, 5, 10, 15], "default": 5, "unit": "秒"},
+                {"key": "mode", "label": "生成模式", "type": "select", "options": ["std", "pro", "4k"], "default": "std", "hint": "std:标准 pro:专业 4k:超高清 (不同模式计费可能不同)"},
+                {"key": "sound", "label": "音频效果", "type": "select", "options": ["off", "on"], "default": "off", "description": "是否同时生成匹配画面的音频"},
+            ]
+        }),
+        // ── 聊天对话方案 ──
+        json!({
+            "id": "chat_standard",
+            "name": "标准对话方案",
+            "type": "chat",
+            "is_system": true,
+            "description": "通用 AI 对话方案，支持温度、最大回复长度、流式输出等核心参数，适用于所有聊天类模型",
+            "params": [
+                {"key": "temperature", "label": "创意度", "type": "slider", "default": 0.7, "min": 0.0, "max": 2.0, "step": 0.1, "hint": "值越高回答越有创意，越低越精确"},
+                {"key": "max_tokens", "label": "最大回复长度", "type": "select", "options": [256, 512, 1024, 2048, 4096, 8192], "default": 4096, "unit": "tokens"},
+                {"key": "stream", "label": "流式输出", "type": "switch", "default": true, "hint": "逐字输出回答，提升体验"},
+                {"key": "top_p", "label": "核采样", "type": "slider", "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05}
+            ]
+        }),
+        json!({
+            "id": "chat_creative",
+            "name": "创意写作方案",
+            "type": "chat",
+            "is_system": true,
+            "description": "适用于创意写作、故事生成等场景，预设较高创意度和更长回复",
+            "params": [
+                {"key": "temperature", "label": "创意度", "type": "slider", "default": 1.2, "min": 0.0, "max": 2.0, "step": 0.1},
+                {"key": "max_tokens", "label": "最大回复长度", "type": "select", "options": [1024, 2048, 4096, 8192, 16384], "default": 8192, "unit": "tokens"},
+                {"key": "stream", "label": "流式输出", "type": "switch", "default": true},
+                {"key": "top_p", "label": "核采样", "type": "slider", "default": 0.95, "min": 0.0, "max": 1.0, "step": 0.05}
+            ]
+        }),
+        json!({
+            "id": "chat_precise",
+            "name": "精准问答方案",
+            "type": "chat",
+            "is_system": true,
+            "description": "适用于代码生成、数据分析、精确问答等场景，预设低创意度确保回答准确",
+            "params": [
+                {"key": "temperature", "label": "创意度", "type": "slider", "default": 0.1, "min": 0.0, "max": 2.0, "step": 0.1},
+                {"key": "max_tokens", "label": "最大回复长度", "type": "select", "options": [256, 512, 1024, 2048, 4096], "default": 2048, "unit": "tokens"},
+                {"key": "stream", "label": "流式输出", "type": "switch", "default": true},
+                {"key": "top_p", "label": "核采样", "type": "slider", "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05}
+            ]
+        }),
+        json!({
+            "id": "tencent_image",
+            "name": "腾讯云 (AIGC) 图片生成方案",
+            "type": "image",
+            "is_system": true,
+            "description": "基于腾讯云点播/媒体处理 AIGC 图像生成服务，支持多模型和自定义输出配置 (AigcImageOutputConfig)",
+            "params": [
+                {"key": "size", "label": "画面比例", "type": "radio", "options": ["1024x1024", "2048x2048", "2304x1728", "2496x1664", "2560x1440", "3024x1296", "4096x4096", "4693x3520", "4992x3328", "5404x3040", "6197x2656"], "default": "1024x1024"},
+                {"key": "force_single", "label": "强制单张生成", "type": "switch", "default": false, "hint": "强制生成单张图片"},
+            ]
+        }),
+        json!({
+            "id": "tencent_video",
+            "name": "腾讯云 (AIGC) 视频生成方案",
+            "type": "video",
+            "is_system": true,
+            "description": "基于腾讯云点播/媒体处理 AIGC 视频生成服务，支持可灵、Vidu等模型和自定义输出配置 (AigcVideoOutputConfig)",
+            "params": [
+                {"key": "ratio", "label": "画面比例", "type": "radio", "options": ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"], "default": "1:1"},
+                {"key": "duration", "label": "视频时长", "type": "select", "options": [5, 10], "default": 5, "unit": "秒", "hint": "生成视频的目标时长"},
+                {"key": "seed", "label": "随机种子", "type": "number", "default": -1, "min": -1, "max": 4294967295_i64, "hint": "-1 表示随机"},
+            ]
+        })
     ]
 }
 
@@ -793,6 +1054,8 @@ pub struct PlaygroundModelConfig {
     pub id: i64,
     pub enabled: bool,
     pub scheme_id: Option<String>,
+    pub param_overrides: Option<serde_json::Value>,
+    pub sort_order: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -848,9 +1111,15 @@ async fn get_playground_config(
             "model_id": m.model_id,
             "type_id": m.type_id,
             "type_name": type_name,
+            "provider_id": m.provider_id,
+            "api_provider_id": m.api_provider_id,
             "is_active": m.is_active,
+            "global_discount": m.global_discount,
+            "global_discount_enabled": m.global_discount_enabled,
             "pg_enabled": model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
             "pg_scheme_id": model_conf.get("scheme_id").and_then(|v| v.as_str()).unwrap_or(""),
+            "pg_param_overrides": model_conf.get("param_overrides").cloned().unwrap_or(serde_json::Value::Null),
+            "pg_sort_order": model_conf.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0),
         }));
     }
 
@@ -888,10 +1157,15 @@ async fn save_playground_config(
 
     for mc in &payload.models {
         let config_key = format!("pg_model_id_{}", mc.id);
-        let val = json!({
+        let mut val = json!({
             "enabled": mc.enabled,
             "scheme_id": mc.scheme_id,
+            "sort_order": mc.sort_order.unwrap_or(0),
         });
+        // 仅在有覆写数据时才写入，保持数据精简
+        if let Some(ref overrides) = mc.param_overrides {
+            val["param_overrides"] = overrides.clone();
+        }
         upsert_config(&state, &name, &config_key, &val.to_string()).await?;
     }
 
@@ -935,6 +1209,58 @@ async fn save_playground_schemes(
     Ok(Json(json!({ "message": "体验方案已保存" })))
 }
 
+/// 将模型级参数覆写（delta）与预设方案参数合并
+/// overrides 格式: { "modify": {"key": {patch}}, "remove": ["key"], "add": [{param}] }
+fn merge_param_overrides(base_params: serde_json::Value, overrides: Option<serde_json::Value>) -> serde_json::Value {
+    let overrides = match overrides {
+        Some(v) if v.is_object() => v,
+        _ => return base_params,
+    };
+    let base_arr = match base_params.as_array() {
+        Some(a) => a.clone(),
+        None => return base_params,
+    };
+
+    // 收集需删除的 key
+    let removes: std::collections::HashSet<String> = overrides.get("remove")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    // 收集需修改的 key -> patch
+    let modifies: std::collections::HashMap<String, &serde_json::Value> = overrides.get("modify")
+        .and_then(|v| v.as_object())
+        .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v)).collect())
+        .unwrap_or_default();
+
+    // 过滤 + 合并
+    let mut result: Vec<serde_json::Value> = base_arr.into_iter()
+        .filter(|p| {
+            let key = p.get("key").and_then(|v| v.as_str()).unwrap_or("");
+            !removes.contains(key)
+        })
+        .map(|mut p| {
+            let key = p.get("key").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if let Some(patch) = modifies.get(&key) {
+                // 浅合并：patch 中的字段覆盖 base
+                if let (Some(base_obj), Some(patch_obj)) = (p.as_object_mut(), patch.as_object()) {
+                    for (k, v) in patch_obj {
+                        base_obj.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            p
+        })
+        .collect();
+
+    // 追加新增参数
+    if let Some(adds) = overrides.get("add").and_then(|v| v.as_array()) {
+        result.extend(adds.clone());
+    }
+
+    json!(result)
+}
+
 /// 公开：获取体验中心配置供前端用户使用
 /// 返回已启用的模型列表 + 各模型绑定的方案参数
 async fn get_playground_public_config(
@@ -952,6 +1278,10 @@ async fn get_playground_public_config(
         &state.db.format_query("SELECT * FROM model_types ORDER BY sort_order ASC")
     ).fetch_all(&state.db.pool).await?;
 
+    let billing_rules: Vec<crate::models::BillingRule> = sqlx::query_as(
+        &state.db.format_query("SELECT * FROM billing_rules")
+    ).fetch_all(&state.db.pool).await?;
+
     let mut enabled_models = Vec::new();
     for m in &models {
         let new_key = format!("pg_model_id_{}", m.id);
@@ -963,6 +1293,8 @@ async fn get_playground_public_config(
 
         let is_enabled = model_conf.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
         if !is_enabled { continue; }
+
+        let sort_order = model_conf.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
 
         let scheme_id = model_conf.get("scheme_id").and_then(|v| v.as_str()).unwrap_or("");
         let mut scheme = schemes.iter().find(|s| s.get("id").and_then(|v| v.as_str()) == Some(scheme_id));
@@ -985,19 +1317,53 @@ async fn get_playground_public_config(
 
         let scheme_type = scheme.and_then(|s| s.get("type")).and_then(|v| v.as_str()).unwrap_or("");
 
+        let billing_info = m.billing_rule_id
+            .and_then(|bid| billing_rules.iter().find(|b| b.id == bid))
+            .map(|b| json!({
+                "billing_type": b.billing_type,
+                "name": b.name,
+                "prompt_rate": b.prompt_rate,
+                "completion_rate": b.completion_rate,
+                "cached_rate": b.cached_rate,
+                "claude_cache_creation_rate": b.claude_cache_creation_rate,
+                "claude_cache_read_rate": b.claude_cache_read_rate,
+                "fixed_rate": b.fixed_rate,
+                "duration_rate": b.duration_rate,
+                "pricing_tiers": b.pricing_tiers,
+                "billing_rule": b.billing_rule,
+                "extended_config": b.extended_config,
+            }))
+            .unwrap_or(json!(null));
+
         enabled_models.push(json!({
             "mid": m.mid,
             "name": m.name,
             "model_id": m.model_id,
+            "description": m.description,
+            "logo": m.logo,
             "type_name": type_name,
             "scheme_id": scheme_id,
             "scheme_name": scheme.and_then(|s| s.get("name")).and_then(|v| v.as_str()).unwrap_or(""),
             "scheme_type": scheme_type,
             "endpoint": scheme.and_then(|s| s.get("endpoint")).and_then(|v| v.as_str()).unwrap_or(""),
             "poll_endpoint": scheme.and_then(|s| s.get("poll_endpoint")).and_then(|v| v.as_str()).unwrap_or(""),
-            "params": scheme.and_then(|s| s.get("params")).cloned().unwrap_or(json!([])),
+            "billing": billing_info,
+            "sort_order": sort_order,
+            "global_discount": m.global_discount,
+            "global_discount_enabled": m.global_discount_enabled,
+            "params": merge_param_overrides(
+                scheme.and_then(|s| s.get("params")).cloned().unwrap_or(json!([])),
+                model_conf.get("param_overrides").cloned(),
+            ),
         }));
     }
+
+    // 根据 sort_order 对已启用的模型进行降序排序
+    enabled_models.sort_by(|a, b| {
+        let sa = a.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
+        let sb = b.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
+        sb.cmp(&sa)
+    });
 
     // 读取每个类型的默认模型
     let default_model_mids: serde_json::Value = configs.get("pg_default_model_mids")
@@ -1042,7 +1408,7 @@ async fn get_marketplace_models(
     ).fetch_all(&state.db.pool).await?;
 
     // 读取展示模式: whitelist（默认隐藏，手动开启）或 blacklist（默认展示，手动排除）
-    let display_mode = configs.get("mp_display_mode").map(|s| s.as_str()).unwrap_or("whitelist");
+    let display_mode = configs.get("mp_display_mode").map(|s| s.as_str()).unwrap_or("blacklist");
     let is_blacklist = display_mode == "blacklist";
 
     let mut model_list = Vec::new();
@@ -1211,7 +1577,7 @@ pub async fn get_marketplace_public(
     ).fetch_all(&state.db.pool).await?;
 
     // 读取展示模式
-    let display_mode = configs.get("mp_display_mode").map(|s| s.as_str()).unwrap_or("whitelist");
+    let display_mode = configs.get("mp_display_mode").map(|s| s.as_str()).unwrap_or("blacklist");
     let is_blacklist = display_mode == "blacklist";
 
     let mut marketplace_models: Vec<serde_json::Value> = Vec::new();
@@ -1247,6 +1613,8 @@ pub async fn get_marketplace_public(
                 "prompt_rate": b.prompt_rate,
                 "completion_rate": b.completion_rate,
                 "cached_rate": b.cached_rate,
+                "claude_cache_creation_rate": b.claude_cache_creation_rate,
+                "claude_cache_read_rate": b.claude_cache_read_rate,
                 "fixed_rate": b.fixed_rate,
                 "duration_rate": b.duration_rate,
                 "pricing_tiers": b.pricing_tiers,
@@ -1275,8 +1643,12 @@ pub async fn get_marketplace_public(
             "type_name": type_name,
             "type_logo": type_logo,
             "logo": m.logo,
+            "original_id": m.original_id,
             "sort_order": sort_order,
             "description": description,
+            "model_description": m.description,
+            "global_discount": m.global_discount,
+            "global_discount_enabled": m.global_discount_enabled,
             "billing": billing_info,
             "created_at": m.created_at,
         }));
@@ -1287,6 +1659,37 @@ pub async fn get_marketplace_public(
         let sb = b.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
         sb.cmp(&sa)
     });
+
+    // 按 original_id 分组结合 type_id（如为空则用 model_id），每组保留所有变体
+    let mut grouped_map: std::collections::HashMap<String, Vec<serde_json::Value>> = std::collections::HashMap::new();
+    let mut grouped_order: Vec<String> = Vec::new();
+    for m in &marketplace_models {
+        let original_id = m.get("original_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let model_id = m.get("model_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let base_key = if !original_id.is_empty() { original_id } else { model_id.clone() };
+        let type_id = m.get("type_id").and_then(|v| v.as_i64()).unwrap_or(0);
+        let group_key = format!("{}::{}", base_key, type_id);
+        
+        if !grouped_map.contains_key(&group_key) {
+            grouped_order.push(group_key.clone());
+        }
+        grouped_map.entry(group_key).or_default().push(m.clone());
+    }
+    let grouped_models: Vec<serde_json::Value> = grouped_order.into_iter().filter_map(|group_key| {
+        let variants = grouped_map.remove(&group_key)?;
+        // 以 sort_order 最高的变体作为主展示
+        let primary = &variants[0];
+        let mut group = primary.clone();
+        group["variant_count"] = json!(variants.len());
+        group["variants"] = json!(variants);
+        // 使用 base_key 作为 group 的 model_id 标识供前端展示
+        let original_id = primary.get("original_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let model_id = primary.get("model_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let base_key = if !original_id.is_empty() { original_id } else { model_id };
+        group["model_id"] = json!(base_key);
+
+        Some(group)
+    }).collect();
 
     let active_provider_ids: std::collections::HashSet<i64> = marketplace_models.iter()
         .filter_map(|m| m.get("provider_id").and_then(|v| v.as_i64()))
@@ -1308,9 +1711,11 @@ pub async fn get_marketplace_public(
     let result = json!({
         "enabled": true,
         "models": marketplace_models,
+        "grouped_models": grouped_models,
         "providers": provider_list,
         "types": type_list,
         "total": marketplace_models.len(),
+        "group_total": grouped_models.len(),
     });
 
     // 5. 写入缓存
@@ -1322,3 +1727,18 @@ pub async fn get_marketplace_public(
 
     Ok(Json(result))
 }
+
+pub async fn is_plugin_enabled(state: &crate::AppState, name: &str) -> bool {
+    let enabled: Option<i64> = match sqlx::query_scalar(
+        &state.db.format_query("SELECT is_enabled FROM plugins WHERE name = ?")
+    )
+    .bind(name)
+    .fetch_optional(&state.db.pool)
+    .await
+    {
+        Ok(val) => val,
+        Err(_) => None,
+    };
+    enabled.unwrap_or(0) == 1
+}
+

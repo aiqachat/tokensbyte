@@ -1,0 +1,15 @@
+{
+  "plugin_title": "Site Portal",
+  "plugin_desc": "Provides a public-facing portal with static HTML generation for SEO",
+  "nav_management": "Navigation",
+  "home_management": "Home Page",
+  "column_management": "Columns",
+  "static_generation": "Static Generation",
+  "other_config": "Other Settings",
+  "save": "Save",
+  "preview": "Preview",
+  "save_success": "Configuration saved",
+  "save_failed": "Save failed",
+  "generate_success": "Generation complete",
+  "generate_failed": "Generation failed"
+}

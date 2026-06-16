@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Card, Typography, Avatar, Space, List, Button, Modal, Form, Input, message, Popconfirm } from 'antd';
+import { Card, Typography, Avatar, Space, List, Button, Modal, Form, Input, message, Popconfirm, Select } from 'antd';
 import { UserOutlined, CameraOutlined, LockOutlined, MailOutlined, MobileOutlined, WechatOutlined, GoogleOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -11,6 +11,55 @@ import { useThemeStore } from '../../store/theme';
 import WechatQR from '../../components/WechatQR';
 
 const { Title, Text } = Typography;
+
+const timezoneOptions = (() => {
+  const timezones = Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : [
+    'Asia/Shanghai', 'Asia/Tokyo', 'America/New_York', 'Europe/London'
+  ];
+  
+  const grouped: Record<string, { value: string, label: string }[]> = {};
+  
+  timezones.forEach(tz => {
+    const parts = tz.split('/');
+    if (parts.length >= 2) {
+      const group = parts[0];
+      const city = parts.slice(1).join('/').replace(/_/g, ' ');
+      
+      const date = new Date();
+      const str = date.toLocaleString('en-US', { timeZone: tz, timeZoneName: 'shortOffset' });
+      const match = str.match(/(GMT|UTC)([+-]\d{1,2}(:\d{2})?)/);
+      let offset = '';
+      if (match) {
+        offset = ` (UTC${match[2]})`;
+      } else if (str.includes('GMT') || str.includes('UTC')) {
+        offset = ' (UTC+0)';
+      }
+      
+      if (!grouped[group]) grouped[group] = [];
+      grouped[group].push({ value: tz, label: `${tz.replace(/_/g, ' ')}${offset}` });
+    }
+  });
+  
+  return Object.entries(grouped)
+    .map(([group, options]) => ({
+      label: group,
+      options: options.sort((a, b) => a.label.localeCompare(b.label))
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+})();
+
+const formatTimezoneDisplay = (tz: string) => {
+  if (!tz) return '';
+  const displayTz = tz.replace(/_/g, ' ');
+  try {
+    const date = new Date();
+    const str = date.toLocaleString('en-US', { timeZone: tz, timeZoneName: 'shortOffset' });
+    const match = str.match(/(GMT|UTC)([+-]\d{1,2}(:\d{2})?)/);
+    if (match) return `${displayTz} (UTC${match[2]})`;
+    if (str.includes('GMT') || str.includes('UTC')) return `${displayTz} (UTC+0)`;
+  } catch (e) {}
+  return displayTz;
+};
 
 const Profile: React.FC = () => {
   const { t } = useTranslation();
@@ -66,22 +115,22 @@ const Profile: React.FC = () => {
 
     switch (action) {
       case 'verified':
-        message.success('身份验证通过，请用新微信扫码绑定');
+        message.success(t('profile.wechat_verify_success', '身份验证通过，请用新微信扫码绑定'));
         setWechatBindStep('bind');
         setWechatQRKey(Date.now());
         setModalType('bind_wechat');
         setIsModalVisible(true);
         break;
       case 'verify_failed':
-        message.error('验证失败：扫码微信与当前绑定的微信不一致');
+        message.error(t('profile.wechat_verify_failed', '验证失败：扫码微信与当前绑定的微信不一致'));
         break;
       case 'bindok':
-        message.success('微信绑定成功');
+        message.success(t('profile.wechat_bind_success', '微信绑定成功'));
         setIsModalVisible(false);
         fetchProfile();
         break;
       case 'bindconflict':
-        message.error('此微信已绑定其他账号');
+        message.error(t('profile.wechat_bind_conflict', '此微信已绑定其他账号'));
         break;
     }
 
@@ -136,6 +185,10 @@ const Profile: React.FC = () => {
       // 已绑定微信 → 换绑模式（先验证）；未绑定 → 直接绑定
       setWechatBindStep(profile?.wechat_id ? 'verify' : 'bind');
       setWechatQRKey(Date.now());
+    } else if (type === 'timezone') {
+      form.setFieldsValue({ timezone: profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai' });
+    } else if (type === 'nickname') {
+      form.setFieldsValue({ nickname: profile?.nickname || '' });
     }
     setIsModalVisible(true);
   };
@@ -237,18 +290,39 @@ const Profile: React.FC = () => {
     switch (modalType) {
       case 'nickname':
         return (
-          <Form.Item name="nickname" label={t('profile.nickname')} rules={[{ required: true }]}>
+          <Form.Item
+            name="nickname"
+            label={t('profile.nickname')}
+            rules={[
+              { required: true, message: t('profile.nickname_required', '昵称不能为空') },
+              { max: 24, message: t('profile.nickname_max_length', '昵称长度最多不能超过 24 个字符') }
+            ]}
+          >
             <Input placeholder={t('profile.nickname')} />
+          </Form.Item>
+        );
+      case 'timezone':
+        return (
+          <Form.Item name="timezone" label={t('profile.timezone', '时区')} rules={[{ required: true }]}>
+            <Select 
+              showSearch 
+              placeholder={t('profile.select_timezone', '请选择时区')} 
+              options={timezoneOptions} 
+              filterOption={(input, option: any) =>
+                (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase()) ||
+                (option?.value as string ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            />
           </Form.Item>
         );
       case 'password':
         return (
           <>
-            <Form.Item name="old_password" label="原密码" rules={[{ required: true, min: 6, message: '请验证目前的登录密码' }]}>
-              <Input.Password placeholder="请输入原密码以验证身份" />
+            <Form.Item name="old_password" label={t('profile.old_password', '原密码')} rules={[{ required: true, min: 6, message: t('profile.verify_current_password', '请验证目前的登录密码') }]}>
+              <Input.Password placeholder={t('profile.enter_old_password', '请输入原密码以验证身份')} />
             </Form.Item>
             <Form.Item name="password" label={t('profile.password')} rules={[{ required: true, min: 6 }]}>
-              <Input.Password placeholder="请输入新密码" />
+              <Input.Password placeholder={t('profile.enter_new_password', '请输入新密码')} />
             </Form.Item>
             <Form.Item name="confirm" label={t('login.confirm_password')} dependencies={['password']}
               rules={[{ required: true, message: t('auth.confirm_password_required') }, ({ getFieldValue }) => ({
@@ -313,7 +387,7 @@ const Profile: React.FC = () => {
           </Form>
         );
       case 'bind_wechat': {
-        const appId = settings?.wechat_oauth?.app_id || '';
+        const appId = settings?.wechat_oauth_app_id || '';
         const redirectUri = `${window.location.origin}/api/v1/user/bind/wechat/callback`;
         const isVerifyStep = wechatBindStep === 'verify';
         const statePrefix = isVerifyStep ? 'verify_wechat_' : 'bind_wechat_';
@@ -326,7 +400,7 @@ const Profile: React.FC = () => {
               state={`${statePrefix}${profile?.id || ''}`}
             />
             <div style={{ marginTop: 8, color: '#e5e5e5', fontSize: 14 }}>
-              {isVerifyStep ? '请用当前绑定的微信扫码验证身份' : '请用新微信扫码绑定'}
+              {isVerifyStep ? t('profile.scan_current_wechat', '请用当前绑定的微信扫码验证身份') : t('profile.scan_new_wechat', '请用新微信扫码绑定')}
             </div>
             <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>"{settings?.site?.name}"</div>
           </div>
@@ -343,15 +417,16 @@ const Profile: React.FC = () => {
 
   // Modal 标题
   const getModalTitle = () => {
-    if (modalType === 'bind_wechat') return wechatBindStep === 'verify' ? '验证微信身份' : t('profile.bind_wechat');
+    if (modalType === 'bind_wechat') return wechatBindStep === 'verify' ? t('profile.verify_wechat_identity', '验证微信身份') : t('profile.bind_wechat');
     if (isBindModal) return modalType === 'bind_mobile' ? t('profile.bind_mobile_title') : t('profile.bind_email_title');
     if (modalType === 'nickname') return t('profile.modify_nickname');
+    if (modalType === 'timezone') return t('profile.timezone', '修改时区');
     if (modalType === 'password') return t('profile.modify_password');
     return '';
   };
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
       {/* Profile Header */}
       <Card style={{ marginBottom: 24, borderRadius: 16, background: cardBg, border: cardBorder }}
         styles={{ body: { padding: '32px' } }}>
@@ -369,11 +444,11 @@ const Profile: React.FC = () => {
               {(profile?.level_name || profile?.user_group) && (
                 <div style={{
                   padding: '2px 10px',
-                  background: 'linear-gradient(135deg, #FFD700 0%, #FDB931 100%)',
-                  borderRadius: '12px', color: '#fff',
-                  textShadow: '0px 1px 2px rgba(0,0,0,0.4)',
+                  background: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)',
+                  borderRadius: '12px', 
+                  color: isLight ? '#4b5563' : '#e5e5e5',
+                  border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.2)',
                   fontSize: '12px', fontWeight: 600,
-                  boxShadow: '0 2px 4px rgba(253, 185, 49, 0.3)',
                 }}>
                   {profile?.level_name || (profile?.user_group === 'default' ? t('profile.membership_default') : profile?.user_group)}
                 </div>
@@ -388,13 +463,14 @@ const Profile: React.FC = () => {
       <Card style={{ marginBottom: 24, borderRadius: 16, background: cardBg, border: cardBorder }}>
         <List itemLayout="horizontal"
           dataSource={[
-            { label: t('profile.account'), value: profile?.username },
-            { label: t('profile.nickname'), value: profile?.nickname },
+            { key: 'username', label: t('profile.account'), value: profile?.username },
+            { key: 'nickname', label: t('profile.nickname'), value: profile?.nickname },
+            { key: 'timezone', label: t('profile.timezone', '时区'), value: formatTimezoneDisplay(profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai') },
           ]}
           renderItem={(item) => (
             <List.Item style={{ borderBottom: listBorder, padding: '16px 24px' }}
-              extra={item.label === t('profile.nickname') && (
-                <Button type="link" onClick={() => handleAction('nickname')}>{t('profile.edit')}</Button>
+              extra={(item.key === 'nickname' || item.key === 'timezone') && (
+                <Button type="link" onClick={() => handleAction(item.key)}>{t('profile.edit')}</Button>
               )}>
               <div style={{ width: 120 }}><Text style={{ color: subText }}>{item.label}</Text></div>
               <div style={{ flex: 1 }}><Text style={{ color: mainText }}>{item.value || t('profile.not_set')}</Text></div>

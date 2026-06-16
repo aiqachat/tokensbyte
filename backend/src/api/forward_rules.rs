@@ -11,7 +11,7 @@ use crate::models::{ForwardRule, CreateRuleRequest, UpdateRuleRequest};
 pub async fn list_rules(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<Vec<ForwardRule>>> {
-    let rules = sqlx::query_as(&state.db.format_query("SELECT * FROM forward_rules ORDER BY id DESC"))
+    let rules = sqlx::query_as(&state.db.format_query("SELECT * FROM forward_rules ORDER BY sort_order DESC, id DESC"))
         .fetch_all(&state.db.pool)
         .await?;
     Ok(Json(rules))
@@ -47,8 +47,10 @@ pub async fn create_rule(
         eid_val = format!("1{:04}", rand::thread_rng().gen_range(0..10000));
     }
 
+    let sort_order_val = req.sort_order.unwrap_or(0);
+
     let rule = sqlx::query_as(
-        &state.db.format_query("INSERT INTO forward_rules (name, rule_type, category, description, config_json, is_active, is_system, eid) VALUES (?, ?, ?, ?, ?, ?, 0, ?) RETURNING *")
+        &state.db.format_query("INSERT INTO forward_rules (name, rule_type, category, description, config_json, is_active, is_system, eid, sort_order) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?) RETURNING *")
     )
     .bind(&req.name)
     .bind(&req.rule_type)
@@ -57,6 +59,7 @@ pub async fn create_rule(
     .bind(&config_json)
     .bind(req.is_active)
     .bind(&eid_val)
+    .bind(sort_order_val)
     .fetch_one(&state.db.pool)
     .await?;
 
@@ -111,6 +114,9 @@ pub async fn update_rule(
     }
     if let Some(active) = req.is_active {
         sqlx::query(&state.db.format_query("UPDATE forward_rules SET is_active = ? WHERE id = ?")).bind(active).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(sort_order) = req.sort_order {
+        sqlx::query(&state.db.format_query("UPDATE forward_rules SET sort_order = ? WHERE id = ?")).bind(sort_order).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(eid) = &req.eid {
         sqlx::query(&state.db.format_query("UPDATE forward_rules SET eid = ? WHERE id = ?")).bind(eid).bind(id).execute(&state.db.pool).await?;

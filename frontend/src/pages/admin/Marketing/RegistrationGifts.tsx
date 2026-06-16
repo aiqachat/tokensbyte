@@ -26,7 +26,7 @@ const RegistrationGifts: React.FC = () => {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const response = await (request.get('/settings') as any);
+      const response = await (request.get('/settings/full') as any);
       
       const marketing = response.marketing || {
         enable_registration_gift: false,

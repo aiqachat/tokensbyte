@@ -7,6 +7,8 @@ set -e
 
 OUTPUT_DIR="./docker-images"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+# 项目名称配置：优先使用环境变量PROJECT_NAME，否则读取当前目录名
+PROJECT_NAME=${PROJECT_NAME:-$(basename "$PWD")}
 
 echo "========================================="
 echo "  TokensByte Docker 镜像导出脚本"
@@ -36,6 +38,8 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     export DOCKER_DEFAULT_PLATFORM=linux/amd64
 fi
 
+# 导出项目名环境变量给docker compose使用
+export PROJECT_NAME="$PROJECT_NAME"
 docker compose build
 
 if [ $? -ne 0 ]; then
@@ -51,9 +55,9 @@ echo ""
 echo "📋 镜像信息:"
 docker compose images || docker images | grep tokensbyte || true
 
-# 使用固定镜像名
-BACKEND_IMAGE="tokensbyte-backend:latest"
-FRONTEND_IMAGE="tokensbyte-frontend:latest"
+# 使用动态镜像名
+BACKEND_IMAGE="${PROJECT_NAME}-backend:latest"
+FRONTEND_IMAGE="${PROJECT_NAME}-frontend:latest"
 
 # 验证镜像是否存在
 if ! docker images -q "$BACKEND_IMAGE" | grep -q .; then
@@ -72,14 +76,14 @@ echo "📤 开始导出镜像..."
 echo ""
 
 # 导出后端镜像
-BACKEND_FILE="$OUTPUT_DIR/tokensbyte-backend-${TIMESTAMP}.tar"
+BACKEND_FILE="$OUTPUT_DIR/${PROJECT_NAME}-backend-${TIMESTAMP}.tar"
 echo "  → 导出后端镜像到: $BACKEND_FILE"
 docker save -o "$BACKEND_FILE" "$BACKEND_IMAGE"
 BACKEND_SIZE=$(du -h "$BACKEND_FILE" | cut -f1)
 echo "    大小: $BACKEND_SIZE"
 
 # 导出前端镜像
-FRONTEND_FILE="$OUTPUT_DIR/tokensbyte-frontend-${TIMESTAMP}.tar"
+FRONTEND_FILE="$OUTPUT_DIR/${PROJECT_NAME}-frontend-${TIMESTAMP}.tar"
 echo "  → 导出前端镜像到: $FRONTEND_FILE"
 docker save -o "$FRONTEND_FILE" "$FRONTEND_IMAGE"
 FRONTEND_SIZE=$(du -h "$FRONTEND_FILE" | cut -f1)
@@ -103,16 +107,19 @@ echo "📊 总大小: $TOTAL_SIZE"
 echo ""
 
 # 生成导入脚本 (Linux/Mac)
-cat > "$OUTPUT_DIR/import-images.sh" << 'EOF'
+cat > "$OUTPUT_DIR/import-images.sh" << EOF
 #!/bin/bash
 
-# TokensByte Docker 镜像导入脚本 (Linux/Mac)
+# ${PROJECT_NAME^} Docker 镜像导入脚本 (Linux/Mac)
 # 在云服务器上运行此脚本导入镜像
 
 set -e
 
+# 项目名称配置：优先使用环境变量PROJECT_NAME，否则读取当前目录名
+PROJECT_NAME=\${PROJECT_NAME:-\$(basename "\$PWD")}
+
 echo "========================================="
-echo "  TokensByte Docker 镜像导入脚本"
+echo "  \${PROJECT_NAME^} Docker 镜像导入脚本"
 echo "========================================="
 echo ""
 
@@ -122,13 +129,13 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-echo "✅ Docker 版本: $(docker --version)"
+echo "✅ Docker 版本: \$(docker --version)"
 echo ""
 
 # 查找所有 tar 文件
-tar_files=$(ls *.tar 2>/dev/null || true)
+tar_files=\$(ls *.tar 2>/dev/null || true)
 
-if [ -z "$tar_files" ]; then
+if [ -z "\$tar_files" ]; then
     echo "❌ 错误: 当前目录未找到 .tar 镜像文件"
     echo "   请将导出的镜像文件上传到此目录"
     exit 1
@@ -139,9 +146,9 @@ echo ""
 
 # 导入每个镜像文件
 for tar_file in *.tar; do
-    if [ -f "$tar_file" ]; then
-        echo "  → 导入: $tar_file"
-        docker load -i "$tar_file"
+    if [ -f "\$tar_file" ]; then
+        echo "  → 导入: \$tar_file"
+        docker load -i "\$tar_file"
         echo ""
     fi
 done
@@ -173,7 +180,7 @@ echo ""
 # 生成传输说明
 cat > "$OUTPUT_DIR/UPLOAD-GUIDE.txt" << EOF
 ========================================
-  TokensByte 镜像上传指南
+  ${PROJECT_NAME^} 镜像上传指南
 ========================================
 
 📦 导出时间: $(date '+%Y-%m-%d %H:%M:%S')

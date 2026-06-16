@@ -8,6 +8,25 @@ use crate::auth;
 use crate::models::{ApiToken, CreateTokenRequest, UpdateTokenRequest, TokenListResponse};
 use crate::error::{AppError, AppResult};
 
+fn validate_token_name(name: &str) -> AppResult<()> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::BadRequest("令牌名称不能为空".to_string()));
+    }
+    if trimmed.chars().count() > 24 {
+        return Err(AppError::BadRequest("令牌名称长度不能超过 24 个字符".to_string()));
+    }
+
+    use std::sync::OnceLock;
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"^[\p{L}\p{N}\s]+$").unwrap());
+
+    if !re.is_match(trimmed) {
+        return Err(AppError::BadRequest("不支持标点符号".to_string()));
+    }
+    Ok(())
+}
+
 pub async fn list_tokens(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
@@ -41,6 +60,10 @@ pub async fn create_token(
     Extension(claims): Extension<auth::Claims>,
     Json(request): Json<CreateTokenRequest>,
 ) -> AppResult<Json<ApiToken>> {
+    // 校验令牌名称
+    let name_val = request.name.clone().unwrap_or_else(|| "default".to_string());
+    validate_token_name(&name_val)?;
+
     // 检查用户等级允许的最大密钥数量
     let current_count: i64 = sqlx::query_scalar(
         &state.db.format_query("SELECT COUNT(*) FROM api_tokens WHERE user_id = ?")
@@ -82,8 +105,8 @@ pub async fn create_token(
     let random_part: String = (0..3).map(|_| (b'0' + rand::random::<u8>() % 10) as char).collect();
     let kid = format!("{}{}", uid_suffix, random_part);
 
-    let sql = r#"INSERT INTO api_tokens (user_id, token_key, kid, name, quota_limit, allowed_models, allowed_ips, expires_at, is_active)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)"#;
+    let sql = r#"INSERT INTO api_tokens (user_id, token_key, kid, name, quota_limit, allowed_models, allowed_ips, expires_at, is_active, only_playground, high_availability, daily_quota_limit, weekly_quota_limit, monthly_quota_limit, rps_limit, rpm_limit)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)"#;
 
     let sql_pg = format!("{} RETURNING id", sql);
     let last_id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(&sql_pg))
@@ -95,6 +118,13 @@ pub async fn create_token(
         .bind(&models_json)
         .bind(request.allowed_ips.unwrap_or_default())
         .bind(&request.expires_at)
+        .bind(request.only_playground.unwrap_or(0))
+        .bind(request.high_availability.unwrap_or(1))
+        .bind(request.daily_quota_limit.unwrap_or(-1.0))
+        .bind(request.weekly_quota_limit.unwrap_or(-1.0))
+        .bind(request.monthly_quota_limit.unwrap_or(-1.0))
+        .bind(request.rps_limit.unwrap_or(0))
+        .bind(request.rpm_limit.unwrap_or(0))
         .fetch_one(&state.db.pool)
         .await?;
 
@@ -123,12 +153,22 @@ pub async fn update_token(
         return Err(AppError::Forbidden("Unauthorized access to token".to_string()));
     }
 
-    if let Some(name) = request.name { token.name = name; }
+    if let Some(name) = request.name {
+        validate_token_name(&name)?;
+        token.name = name;
+    }
     if let Some(quota_limit) = request.quota_limit { token.quota_limit = quota_limit; }
     if let Some(models) = request.allowed_models { token.allowed_models = serde_json::to_string(&models).unwrap_or_else(|_| "[]".to_string()); }
     if let Some(ips) = request.allowed_ips { token.allowed_ips = ips; }
     if let Some(expires) = request.expires_at { token.expires_at = Some(expires); }
     if let Some(active) = request.is_active { token.is_active = active; }
+    if let Some(only_playground) = request.only_playground { token.only_playground = only_playground; }
+    if let Some(high_availability) = request.high_availability { token.high_availability = high_availability; }
+    if let Some(daily) = request.daily_quota_limit { token.daily_quota_limit = daily; }
+    if let Some(weekly) = request.weekly_quota_limit { token.weekly_quota_limit = weekly; }
+    if let Some(monthly) = request.monthly_quota_limit { token.monthly_quota_limit = monthly; }
+    if let Some(rps) = request.rps_limit { token.rps_limit = rps; }
+    if let Some(rpm) = request.rpm_limit { token.rpm_limit = rpm; }
 
     // 如果历史令牌没有 kid，编辑保存时自动生成
     if token.kid.as_deref().unwrap_or("").is_empty() {
@@ -146,9 +186,11 @@ pub async fn update_token(
 
     sqlx::query(
         &state.db.format_query(r#"UPDATE api_tokens SET name = ?, quota_limit = ?, allowed_models = ?, allowed_ips = ?, 
-           expires_at = ?, is_active = ?, kid = ?, updated_at = CURRENT_TIMESTAMP
+           expires_at = ?, is_active = ?, kid = ?, only_playground = ?, high_availability = ?, 
+           daily_quota_limit = ?, weekly_quota_limit = ?, monthly_quota_limit = ?, 
+           rps_limit = ?, rpm_limit = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
-    )
+     )
     .bind(&token.name)
     .bind(token.quota_limit)
     .bind(&token.allowed_models)
@@ -156,6 +198,13 @@ pub async fn update_token(
     .bind(&token.expires_at)
     .bind(token.is_active)
     .bind(&token.kid)
+    .bind(token.only_playground)
+    .bind(token.high_availability)
+    .bind(token.daily_quota_limit)
+    .bind(token.weekly_quota_limit)
+    .bind(token.monthly_quota_limit)
+    .bind(token.rps_limit)
+    .bind(token.rpm_limit)
     .bind(id)
     .execute(&state.db.pool)
     .await?;

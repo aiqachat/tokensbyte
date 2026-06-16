@@ -12,6 +12,8 @@ import {
 } from '@ant-design/icons';
 import request from '../../../utils/request';
 import type { PluginAsset } from '../../../types';
+import { useThemeStore } from '../../../store/theme';
+import { useTranslation } from 'react-i18next';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -38,22 +40,26 @@ interface AssetPickerModalProps {
   open: boolean;
   onClose: () => void;
   onSelect: (items: { asset: PluginAsset; fullUrl: string }[]) => void;
+  pluginNs?: string;
 }
 
-// 分类配置
-const CATEGORY_TABS = [
-  { key: 'my_virtual_portrait', label: '我的素材', filter: { source: 'user', category: '虚拟人像' } },
-  { key: 'preset_模版库', label: '模版库', filter: { source: 'builtin', category: '模版库' } },
-  { key: 'preset_素材库', label: '素材库', filter: { source: 'builtin', category: '素材库' } },
-  { key: 'preset_虚拟人像库', label: '虚拟人像库', filter: { source: 'builtin', category: '虚拟人像库' } },
-];
+const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSelect, pluginNs = 'asset_manager' }) => {
+  const { t } = useTranslation(pluginNs);
+  const { themeMode } = useThemeStore();
+  const _isLight = themeMode === 'light';
 
-const MY_SUBCATS = [
-  { key: 'virtual', label: '虚拟人像', filter: { category: '虚拟人像' } },
-  { key: 'real', label: '真人人像', filter: { category: '真人人像' } },
-];
+  const CATEGORY_TABS = [
+    { key: 'my_virtual_portrait', label: t('assets.my_materials', '我的素材'), filter: { source: 'user', category: '虚拟人像' } },
+    { key: 'preset_模版库', label: '模版库', filter: { source: 'builtin', category: '模版库' } },
+    { key: 'preset_素材库', label: '素材库', filter: { source: 'builtin', category: '素材库' } },
+    { key: 'preset_虚拟人像库', label: '虚拟人像库', filter: { source: 'builtin', category: '虚拟人像库' } },
+  ];
 
-const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSelect }) => {
+  const MY_SUBCATS = [
+    { key: 'virtual', label: '虚拟人像', filter: { category: '虚拟人像' } },
+    { key: 'real', label: '真人人像', filter: { category: '真人人像' } },
+  ];
+
   const [activeTab, setActiveTab] = useState('my_virtual_portrait');
   const [mySubcat, setMySubcat] = useState('virtual');
   const [assets, setAssets] = useState<PluginAsset[]>([]);
@@ -67,20 +73,20 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
   // 获取存储信息
   useEffect(() => {
     if (!open) return;
-    request.get('/assets/user/storage-info')
+    request.get('/assets/user/storage-info', { headers: { 'x-plugin-ns': pluginNs } })
       .then((res: any) => { if (res) setStorage(res); })
       .catch(() => {});
-  }, [open]);
+  }, [open, pluginNs]);
 
   // 获取素材组
   const fetchGroups = useCallback(async () => {
     try {
-      const res = await (request.get('/assets/user/groups') as any);
+      const res = await (request.get('/assets/user/groups', { headers: { 'x-plugin-ns': pluginNs } }) as any);
       if (res.groups) setGroups(res.groups);
     } catch (e) {
       console.error(e);
     }
-  }, []);
+  }, [pluginNs]);
 
   // 获取素材列表
   const fetchAssets = useCallback(async () => {
@@ -99,14 +105,14 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
 
       const queryStr = new URLSearchParams(params).toString();
       const url = queryStr ? `/assets/user/list?${queryStr}` : '/assets/user/list';
-      const res = await (request.get(url) as any);
+      const res = await (request.get(url, { headers: { 'x-plugin-ns': pluginNs } }) as any);
       if (res.assets) setAssets(res.assets);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [activeTab, mySubcat]);
+  }, [activeTab, mySubcat, pluginNs]);
 
   useEffect(() => {
     if (!open) return;
@@ -197,11 +203,11 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
       centered
       destroyOnHidden
       styles={{
-        body: { padding: 0, background: '#131416', borderRadius: 16, overflow: 'hidden' },
+        body: { padding: 0, background: _isLight ? '#fff' : '#131416', borderRadius: 16, overflow: 'hidden' },
         header: { display: 'none' },
       }}
       modalRender={(node) => (
-        <div style={{ background: '#131416', borderRadius: 16, border: '1px solid rgba(255,255,255,0.08)', padding: 0 }}>
+        <div style={{ background: _isLight ? '#fff' : '#131416', borderRadius: 16, border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: 0 }}>
           {node}
         </div>
       )}
@@ -212,7 +218,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
         {/* 顶部标题栏 */}
         <div style={{
           padding: '20px 24px 16px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -224,19 +230,19 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
                 onClick={() => setCurrentGroup(null)}
                 style={{
                   width: 32, height: 32, borderRadius: 8,
-                  background: 'rgba(255,255,255,0.06)',
+                  background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', transition: 'all 0.2s',
-                  color: 'rgba(255,255,255,0.65)',
+                  color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)',
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.12)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)'; }}
               >
                 <ArrowLeftOutlined style={{ fontSize: 14 }} />
               </div>
             )}
-            <span style={{ fontSize: 18, fontWeight: 600, color: '#fff' }}>
-              {currentGroup ? currentGroup.name : '我的资产库'}
+            <span style={{ fontSize: 18, fontWeight: 600, color: _isLight ? '#1f2937' : '#fff' }}>
+              {currentGroup ? currentGroup.name : t('assets.my_assets', '我的素材库')}
             </span>
           </div>
 
@@ -245,10 +251,10 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '4px 14px',
-              background: 'rgba(255,255,255,0.04)',
+              background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)',
               borderRadius: 20,
               fontSize: 12,
-              color: 'rgba(255,255,255,0.5)',
+              color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)',
             }}>
               <CloudOutlined style={{ color: '#1677ff', fontSize: 13 }} />
               <span style={{ color: progressColor, fontWeight: 500 }}>{usedMB.toFixed(1)} MB</span>
@@ -257,7 +263,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
                   <span>/</span>
                   <span>{quotaMB} MB</span>
                   <div style={{
-                    width: 50, height: 4, background: 'rgba(255,255,255,0.08)',
+                    width: 50, height: 4, background: _isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
                     borderRadius: 2, overflow: 'hidden',
                   }}>
                     <div style={{
@@ -276,7 +282,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
         {/* 分类标签栏 */}
         <div style={{
           padding: '12px 24px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
           display: 'flex',
           flexDirection: 'column',
           gap: 10,
@@ -291,17 +297,17 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
             />
             {/* 搜索框 */}
             <Input
-              prefix={<SearchOutlined style={{ color: 'rgba(255,255,255,0.3)' }} />}
+              prefix={<SearchOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }} />}
               placeholder="搜索素材..."
               value={searchKeyword}
               onChange={e => setSearchKeyword(e.target.value)}
               allowClear
               style={{
                 width: 200,
-                background: 'rgba(255,255,255,0.04)',
-                borderColor: 'rgba(255,255,255,0.08)',
+                background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)',
+                borderColor: _isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
                 borderRadius: 8,
-                color: '#fff',
+                color: _isLight ? '#000' : '#fff',
               }}
               onKeyDown={e => e.stopPropagation()}
             />
@@ -325,7 +331,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
             {activeTab === 'my_virtual_portrait' && mySubcat === 'virtual' && !currentGroup && (
               <div style={{ marginBottom: 20 }}>
                 <div style={{
-                  fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.45)',
+                  fontSize: 13, fontWeight: 500, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)',
                   marginBottom: 10,
                 }}>
                   素材资产文件夹列表
@@ -347,35 +353,35 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
                         alignItems: 'center',
                         gap: 10,
                         padding: '14px 16px',
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.06)',
+                        background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)',
+                        border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
                         borderRadius: 12,
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.07)';
-                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+                        e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)';
+                        e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.12)';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
-                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
+                        e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)';
+                        e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)';
                       }}
                     >
                       <FolderFilled style={{ fontSize: 28, color: '#5BB8F5' }} />
                       <div style={{ minWidth: 0 }}>
                         <div style={{
-                          fontSize: 14, fontWeight: 500, color: '#fff',
+                          fontSize: 14, fontWeight: 500, color: _isLight ? '#1f2937' : '#fff',
                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         }}>{g.name}</div>
-                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
+                        <div style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>
                           {groupAssetCounts[g.group_id] || 0} 项
                         </div>
                       </div>
                     </div>
                   ))}
                   {groups.length === 0 && !loading && (
-                    <div style={{ gridColumn: '1 / -1', padding: '20px 0', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>
+                    <div style={{ gridColumn: '1 / -1', padding: '20px 0', textAlign: 'center', color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', fontSize: 13 }}>
                       暂无人物文件夹
                     </div>
                   )}
@@ -387,7 +393,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
             {(activeTab !== 'my_virtual_portrait' || mySubcat !== 'virtual' || currentGroup) && (
               filteredAssets.length === 0 && !loading ? (
                 <Empty
-                  description={<span style={{ color: 'rgba(255,255,255,0.35)' }}>暂无素材</span>}
+                  description={<span style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)' }}>暂无素材</span>}
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   style={{ marginTop: 60 }}
                 />
@@ -412,22 +418,22 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
                           position: 'relative',
                           borderRadius: 10,
                           overflow: 'hidden',
-                          border: `2px solid ${isSelected ? '#1677ff' : 'rgba(255,255,255,0.06)'}`,
+                          border: `2px solid ${isSelected ? '#1677ff' : (_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)')}`,
                           cursor: 'pointer',
                           transition: 'all 0.2s ease',
-                          background: isSelected ? 'rgba(22,119,255,0.08)' : 'rgba(255,255,255,0.02)',
+                          background: isSelected ? 'rgba(22,119,255,0.08)' : (_isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)'),
                           aspectRatio: '1',
                         }}
                         onMouseEnter={(e) => {
                           if (!isSelected) {
-                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
-                            e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                            e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)';
+                            e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
                           }
                         }}
                         onMouseLeave={(e) => {
                           if (!isSelected) {
-                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
-                            e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                            e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)';
+                            e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)';
                           }
                         }}
                       >
@@ -504,7 +510,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
             {activeTab === 'my_virtual_portrait' && mySubcat === 'virtual' && !currentGroup && filteredAssets.length > 0 && (
               <div>
                 <div style={{
-                  fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.45)',
+                  fontSize: 13, fontWeight: 500, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)',
                   marginBottom: 10,
                 }}>
                   所有虚拟人像素材
@@ -525,16 +531,16 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
                         style={{
                           position: 'relative',
                           borderRadius: 10, overflow: 'hidden',
-                          border: `2px solid ${isSelected ? '#1677ff' : 'rgba(255,255,255,0.06)'}`,
+                          border: `2px solid ${isSelected ? '#1677ff' : (_isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)')}`,
                           cursor: 'pointer', transition: 'all 0.2s ease',
-                          background: isSelected ? 'rgba(22,119,255,0.08)' : 'rgba(255,255,255,0.02)',
+                          background: isSelected ? 'rgba(22,119,255,0.08)' : (_isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)'),
                           aspectRatio: '1',
                         }}
                         onMouseEnter={(e) => {
-                          if (!isSelected) { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; }
+                          if (!isSelected) { e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)'; }
                         }}
                         onMouseLeave={(e) => {
-                          if (!isSelected) { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }
+                          if (!isSelected) { e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'; }
                         }}
                       >
                         <img
@@ -573,14 +579,14 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
         {/* 底部操作栏 */}
         <div style={{
           padding: '14px 24px',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
+          borderTop: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           flexShrink: 0,
-          background: 'rgba(0,0,0,0.15)',
+          background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(0,0,0,0.15)',
         }}>
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>
+          <div style={{ fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }}>
             {selectedAssets.length > 0 ? (
               <span>
                 已选择: <span style={{ color: '#1677ff', fontWeight: 500 }}>{selectedAssets.length} 项</span>
@@ -594,16 +600,24 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
               onClick={onClose}
               style={{
                 padding: '7px 20px', borderRadius: 8,
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: 'rgba(255,255,255,0.65)',
+                background: _isLight ? '#fff' : 'rgba(255,255,255,0.06)',
+                border: _isLight ? '1px solid #d9d9d9' : '1px solid rgba(255,255,255,0.1)',
+                color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)',
                 fontSize: 13, fontWeight: 500,
                 cursor: 'pointer', transition: 'all 0.2s',
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = _isLight ? '#f5f5f5' : 'rgba(255,255,255,0.1)';
+                if (_isLight) e.currentTarget.style.color = '#1677ff';
+                if (_isLight) e.currentTarget.style.borderColor = '#1677ff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = _isLight ? '#fff' : 'rgba(255,255,255,0.06)';
+                if (_isLight) e.currentTarget.style.color = 'rgba(0,0,0,0.65)';
+                if (_isLight) e.currentTarget.style.borderColor = '#d9d9d9';
+              }}
             >
-              取消
+              {t('common.cancel', '取消')}
             </div>
             <div
               onClick={handleConfirm}
@@ -611,8 +625,8 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
                 padding: '7px 24px', borderRadius: 8,
                 background: selectedAssets.length > 0
                   ? 'linear-gradient(135deg, #1677ff 0%, #36cfc9 100%)'
-                  : 'rgba(255,255,255,0.04)',
-                color: selectedAssets.length > 0 ? '#fff' : 'rgba(255,255,255,0.25)',
+                  : (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)'),
+                color: selectedAssets.length > 0 ? '#fff' : (_isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)'),
                 fontSize: 13, fontWeight: 500,
                 cursor: selectedAssets.length > 0 ? 'pointer' : 'not-allowed',
                 transition: 'all 0.2s',
@@ -625,7 +639,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
                 if (selectedAssets.length > 0) e.currentTarget.style.boxShadow = '0 4px 12px rgba(22,119,255,0.3)';
               }}
             >
-              确认选择
+              {t('common.ok', '确认选择')}
             </div>
           </div>
         </div>

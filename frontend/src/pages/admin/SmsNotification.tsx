@@ -15,7 +15,7 @@ const SmsNotification: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await (request.get('/settings') as any);
+        const res = await (request.get('/settings/full') as any);
         if (res.sms) form.setFieldsValue(res.sms);
       } catch { /* ignore */ }
     })();

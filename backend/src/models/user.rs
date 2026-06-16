@@ -48,6 +48,17 @@ pub struct User {
     pub gift_balance: f64,
     #[sqlx(default)]
     pub gift_used_quota: f64,
+    /// 用户模型单独折扣(JSON: {"mid": discount})，优先于等级折扣
+    #[sqlx(default)]
+    pub model_discounts: Option<String>,
+    #[sqlx(default)]
+    pub timezone: Option<String>,
+    /// 信控额度：管理员设置的信用额度
+    #[sqlx(default)]
+    pub credit_limit: f64,
+    /// 是否允许在线支付：1-允许，0-禁止
+    #[sqlx(default)]
+    pub pay_enabled: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +75,11 @@ pub struct CreateUserRequest {
     pub role: Option<String>,
     /// 团队邀请码，注册后自动加入对应团队
     pub team: Option<String>,
+    pub mobile: Option<String>,
+    pub balance: Option<f64>,
+    pub gift_balance: Option<f64>,
+    /// 是否允许在线支付
+    pub pay_enabled: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,6 +102,13 @@ pub struct UpdateUserRequest {
     pub referred_by: Option<String>,
     pub gift_balance: Option<f64>,
     pub gift_used_quota: Option<f64>,
+    /// 用户模型单独折扣(JSON: {"mid": discount})
+    pub model_discounts: Option<String>,
+    pub timezone: Option<String>,
+    /// 信控额度
+    pub credit_limit: Option<f64>,
+    /// 是否允许在线支付
+    pub pay_enabled: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,6 +119,7 @@ pub struct ProfileUpdateRequest {
     pub email: Option<String>,
     pub mobile: Option<String>,
     pub wechat_id: Option<String>,
+    pub timezone: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -105,6 +129,10 @@ pub struct RechargeRecord {
     pub amount: f64,
     pub recharge_type: String,
     pub remark: Option<String>,
+    #[sqlx(default)]
+    pub operator: Option<String>,
+    #[sqlx(default)]
+    pub wallet_type: Option<String>,
     pub created_at: String,
 }
 
@@ -121,6 +149,7 @@ pub struct RechargeRequest {
 pub struct WalletStats {
     pub balance: f64,
     pub gift_balance: f64,
+    pub credit_limit: f64,
     pub total_consumption: f64,
     pub total_calls: i64,
     pub success_calls: i64,
@@ -130,6 +159,8 @@ pub struct WalletStats {
     pub commission_ratio: f64,
     pub invite_reward_inviter: f64,
     pub invite_reward_invitee: f64,
+    /// 是否允许在线支付
+    pub pay_enabled: bool,
 }
 
 /// 用户名+密码登录（保持原有接口兼容）

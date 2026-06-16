@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct TaskLog {
     pub id: i64,
+    #[sqlx(default)]
+    pub log_id: Option<String>,
     pub user_id: String,
     pub channel_id: Option<i64>,
     pub model: String,
@@ -22,6 +24,8 @@ pub struct TaskLog {
     #[sqlx(default)]
     pub response_content: Option<String>,
     #[sqlx(default)]
+    pub post_response: Option<String>,
+    #[sqlx(default)]
     pub billing_detail: Option<String>,
     #[sqlx(default)]
     pub channel_name: Option<String>,
@@ -30,13 +34,15 @@ pub struct TaskLog {
     #[sqlx(default)]
     pub user_nickname: Option<String>,
     #[sqlx(default)]
+    pub user_uid: Option<String>,
+    #[sqlx(default)]
     pub task_id: Option<String>,
     #[sqlx(default)]
     pub action_type: Option<String>,
     pub created_at: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TaskLogQuery {
     pub page: Option<i64>,
     pub per_page: Option<i64>,
@@ -46,10 +52,12 @@ pub struct TaskLogQuery {
     pub model: Option<String>,
     pub start_date: Option<String>,
     pub end_date: Option<String>,
+    pub log_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct TaskLogListResponse {
     pub data: Vec<TaskLog>,
     pub total: i64,
+    pub allow_details: bool,
 }

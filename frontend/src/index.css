@@ -117,35 +117,42 @@ code {
 /* 全局优雅滚动条 */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(0,0,0,0.15) transparent;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }
+
 *::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
+
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
 *::-webkit-scrollbar-thumb {
-  background: rgba(0,0,0,0.12);
+  background: rgba(0, 0, 0, 0.12);
   border-radius: 10px;
   transition: background 0.3s;
 }
+
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(0,0,0,0.25);
+  background: rgba(0, 0, 0, 0.25);
 }
+
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
 
 body[data-theme='dark'] * {
-  scrollbar-color: rgba(255,255,255,0.12) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
 }
+
 body[data-theme='dark'] *::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
 }
+
 body[data-theme='dark'] *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.25);
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* 修复 Ant Design Sider 内部 children 容器不撑满高度导致底部空白 */
@@ -163,75 +170,92 @@ body[data-theme='light'] .ant-radio-button-wrapper-checked:not(.ant-radio-button
   border-color: #1677ff !important;
 }
 
-/* 全局自定义开关样式 (Monochrome Style) */
+/* 全局自定义开关样式 (统一尺寸 - Google AI Studio 风格) */
 .ant-switch {
-  background-color: rgba(255, 255, 255, 0.15) !important;
-  min-width: 44px !important;
-  height: 24px !important;
-  line-height: 24px !important;
-}
-body[data-theme='light'] .ant-switch {
-  background-color: #d1d5db !important;
-}
-
-.ant-switch.ant-switch-checked {
-  background-color: #e5e5e5 !important;
-}
-
-.ant-switch:hover:not(.ant-switch-disabled) {
-  background-color: rgba(255, 255, 255, 0.25) !important;
-}
-body[data-theme='light'] .ant-switch:hover:not(.ant-switch-disabled) {
-  background-color: #9ca3af !important;
-}
-
-.ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
-  background-color: #f3f4f6 !important;
+  min-width: 36px !important;
+  height: 20px !important;
+  line-height: 16px !important;
+  border-radius: 10px !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
 }
 
 .ant-switch .ant-switch-handle {
-  width: 20px !important;
-  height: 20px !important;
-  top: 2px !important;
-  inset-inline-start: 2px !important;
+  width: 16px !important;
+  height: 16px !important;
+  top: 0px !important;
+  inset-inline-start: 0px !important;
 }
 
 .ant-switch.ant-switch-checked .ant-switch-handle {
-  inset-inline-start: calc(100% - 22px) !important;
+  inset-inline-start: calc(100% - 16px) !important;
+}
+
+.ant-switch .ant-switch-inner {
+  display: none !important;
 }
 
 .ant-switch .ant-switch-handle::before {
-  background-color: #ffffff !important;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.15) !important;
   border-radius: 50% !important;
+  box-shadow: none !important;
 }
 
-/* 开关内文字颜色：根据主题和开关状态自动匹配 */
-/* 开启状态（轨道浅色 #e5e5e5）→ 文字深色 */
-.ant-switch.ant-switch-checked .ant-switch-inner,
-.ant-switch.ant-switch-checked .ant-switch-inner .ant-switch-inner-checked,
-.ant-switch.ant-switch-checked .ant-switch-inner .ant-switch-inner-unchecked {
-  color: #1a1a1a !important;
-  font-weight: 500;
-  font-size: 12px;
+/* ==================
+   COLORS (Dark Theme - default fallback)
+   ================== */
+.ant-switch {
+  background-color: transparent !important;
+  border: 2px solid #444746 !important;
 }
 
-/* 亮色模式 - 关闭状态（轨道浅灰 #d1d5db）→ 文字深色 */
-body[data-theme='light'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner,
-body[data-theme='light'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-checked,
-body[data-theme='light'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-unchecked {
-  color: #333 !important;
-  font-weight: 500;
-  font-size: 12px;
+.ant-switch.ant-switch-checked {
+  background-color: #e3e3e3 !important;
+  border: 2px solid #e3e3e3 !important;
 }
 
-/* 暗黑模式 - 关闭状态（轨道深色 rgba(255,255,255,0.15)）→ 文字浅色 */
-body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner,
-body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-checked,
-body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .ant-switch-inner-unchecked {
-  color: #e8eaed !important;
-  font-weight: 500;
-  font-size: 12px;
+.ant-switch:hover:not(.ant-switch-disabled) {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
+  background-color: #ffffff !important;
+}
+
+.ant-switch .ant-switch-handle::before {
+  background-color: #8e918f !important;
+}
+
+.ant-switch.ant-switch-checked .ant-switch-handle::before {
+  background-color: #1f1f1f !important;
+}
+
+/* ==================
+   COLORS (Light Theme)
+   ================== */
+body[data-theme='light'] .ant-switch {
+  background-color: #f1f3f4 !important;
+  border: 2px solid #dadce0 !important;
+}
+
+body[data-theme='light'] .ant-switch.ant-switch-checked {
+  background-color: #1f1f1f !important;
+  border: 2px solid #1f1f1f !important;
+}
+
+body[data-theme='light'] .ant-switch:hover:not(.ant-switch-disabled) {
+  background-color: #e4e7eb !important;
+}
+
+body[data-theme='light'] .ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
+  background-color: #333333 !important;
+}
+
+body[data-theme='light'] .ant-switch .ant-switch-handle::before {
+  background-color: #5f6368 !important;
+}
+
+body[data-theme='light'] .ant-switch.ant-switch-checked .ant-switch-handle::before {
+  background-color: #ffffff !important;
 }
 
 /* 自定义深色删除确认弹窗 */
@@ -242,7 +266,7 @@ body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .
   background: #1e1f20 !important;
   border: 1px solid #444746 !important;
   border-radius: 16px !important;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
 }
 
 .dark-confirm-modal .ant-modal-confirm-title {
@@ -263,7 +287,7 @@ body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .
 }
 
 .dark-confirm-modal .ant-btn-default:hover {
-  background: rgba(255,255,255,0.08) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
   border-color: #8ab4f8 !important;
   color: #8ab4f8 !important;
 }
@@ -280,4 +304,80 @@ body[data-theme='dark'] .ant-switch:not(.ant-switch-checked) .ant-switch-inner .
 .dark-confirm-modal .ant-btn-primary.ant-btn-dangerous:hover {
   background: rgba(255, 77, 79, 0.25) !important;
   border-color: rgba(255, 77, 79, 0.5) !important;
+}
+
+/* Typography Inline Edit Smooth Transition */
+.ant-typography-edit-content {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* 修复 Quill 富文本编辑器内容在亮色模式下残留深色内联背景的问题 */
+.quill-content * {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+/* 极致紧凑列表专用 */
+.compact-table .ant-table-cell {
+  padding: 4px 8px !important;
+}
+
+.compact-table .ant-table-tbody>tr>td {
+  padding: 4px 8px !important;
+}
+
+/* 当左侧菜单处于折叠（图标显示）模式时，使菜单项和子菜单项背景区域为正方形并水平居中 */
+.custom-sider .ant-menu-inline-collapsed .ant-menu-item,
+.custom-sider .ant-menu-inline-collapsed .ant-menu-submenu-title {
+  width: 46px !important;
+  height: 46px !important;
+  line-height: 46px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 8px !important;
+}
+
+/* 确保折叠状态下，菜单项的图标在正方形中居中且无多余的 inline 偏移 */
+.custom-sider .ant-menu-inline-collapsed .ant-menu-item .anticon,
+.custom-sider .ant-menu-inline-collapsed .ant-menu-submenu-title .anticon {
+  margin: 0 !important;
+  font-size: 22px !important;
+}
+
+/* 当模型广场的侧边栏折叠时，使筛选菜单项为 46px x 46px 的正方形并水平居中 */
+.custom-sider.ant-layout-sider-collapsed .mp-sidebar-item {
+  width: 46px !important;
+  height: 46px !important;
+  line-height: 46px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 8px !important;
+}
+
+/* 确保图标大小为 22px，并且无外边距偏移 */
+.custom-sider.ant-layout-sider-collapsed .mp-sidebar-item .anticon,
+.custom-sider.ant-layout-sider-collapsed .mp-sidebar-item > span {
+  margin: 0 !important;
+  font-size: 22px !important;
 }

@@ -17,7 +17,7 @@ const EmailNotification: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await (request.get('/settings') as any);
+        const res = await (request.get('/settings/full') as any);
         if (res.smtp) form.setFieldsValue(res.smtp);
       } catch { /* ignore */ }
     })();

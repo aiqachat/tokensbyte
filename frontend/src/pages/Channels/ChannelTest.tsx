@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Table, Typography, Tag, Button, Space, message, Row, Col, Divider, Select } from 'antd';
+import { Card, Table, Typography, Tag, Button, Space, message, Row, Col, Divider, Select, Tooltip } from 'antd';
 import { SyncOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
 import type { Channel } from '../../types';
@@ -32,6 +32,7 @@ const ChannelTest: React.FC = () => {
     const [selectedRules, setSelectedRules] = useState<Record<string, number>>({});
     
     const [activeModelLog, setActiveModelLog] = useState<string | null>(null);
+    const [batchTesting, setBatchTesting] = useState(false);
 
     useEffect(() => {
         const fetchChannelData = async () => {
@@ -44,7 +45,12 @@ const ChannelTest: React.FC = () => {
                 ]);
                 
                 const modMap: Record<string, any> = {};
-                modelsResp.data.forEach(m => { modMap[m.model_id] = m; });
+                modelsResp.data.forEach(m => { 
+                    modMap[String(m.model_id)] = m; 
+                    if (m.mid) {
+                        modMap[String(m.mid)] = m;
+                    }
+                });
                 setGlobalModels(modMap);
 
                 const rMap: Record<number, any> = {};
@@ -59,7 +65,7 @@ const ChannelTest: React.FC = () => {
                     
                     target.models.forEach(m => {
                         initialStatuses[m] = { status: 'idle' };
-                        const gModel = modMap[m];
+                        const gModel = modMap[String(m)];
                         if (gModel && gModel.forward_rule_ids) {
                             try {
                                 const rIds = JSON.parse(gModel.forward_rule_ids);
@@ -84,11 +90,16 @@ const ChannelTest: React.FC = () => {
         fetchChannelData();
     }, [id, navigate]);
 
-    const runSingleModelTest = async (channelId: number, model: string, ruleId?: number) => {
-        setActiveModelLog(model);
+    const runSingleModelTest = async (channelId: number, model: string, ruleId?: number, autoFocus: boolean = true) => {
+        if (autoFocus) {
+            setActiveModelLog(model);
+        }
         setTestStatuses(prev => ({ ...prev, [model]: { status: 'testing', timestamp: new Date().toISOString() } }));
         try {
-            const resp = await (request.post(`/channels/${channelId}/test`, { model, forward_rule_id: ruleId }) as unknown as Promise<{ success: boolean; err_msg?: string; latency?: number; request_data?: any; response_data?: any; curl_command?: string }>);
+            const gModel = globalModels[String(model)];
+            const actualModelId = gModel ? gModel.model_id : model;
+
+            const resp = await (request.post(`/channels/${channelId}/test`, { model: actualModelId, forward_rule_id: ruleId }) as unknown as Promise<{ success: boolean; err_msg?: string; latency?: number; request_data?: any; response_data?: any; curl_command?: string }>);
             if (resp.success) {
                 setTestStatuses(prev => ({ 
                     ...prev, 
@@ -110,11 +121,23 @@ const ChannelTest: React.FC = () => {
 
     const handleBatchTest = async () => {
         if (!channel || selectedTestModels.length === 0) return;
-        for (const modelKey of selectedTestModels) {
-            const model = modelKey as string;
-            await runSingleModelTest(channel.id, model, selectedRules[model]);
+        
+        // 自动将右侧焦点设为批量测试的第一个模型，方便运营者观察
+        setActiveModelLog(selectedTestModels[0] as string);
+        
+        setBatchTesting(true);
+        try {
+            const promises = selectedTestModels.map(modelKey => {
+                const model = modelKey as string;
+                return runSingleModelTest(channel.id, model, selectedRules[model], false);
+            });
+            await Promise.all(promises);
+            message.success('勾选模型的批量拨测已完成');
+        } catch (error) {
+            message.error('批量拨测发生异常');
+        } finally {
+            setBatchTesting(false);
         }
-        message.success('勾选模型的批量拨测已完成');
     };
 
     // UI renderer for logs
@@ -132,10 +155,10 @@ const ChannelTest: React.FC = () => {
             
             <Row gutter={24}>
                 {/* Left Panel: Models Table */}
-                <Col span={24} style={{ marginBottom: 24 }}>
+                <Col xs={24} lg={12} xl={14} style={{ marginBottom: 24 }}>
                     <Card size="small" title="模型拨测队列" extra={
-                        <Button type="primary" onClick={handleBatchTest} disabled={selectedTestModels.length === 0}>
-                            批量拨测 {selectedTestModels.length} 个模型
+                        <Button type="primary" onClick={handleBatchTest} disabled={selectedTestModels.length === 0 || batchTesting} loading={batchTesting}>
+                            {batchTesting ? '批量拨测中...' : `批量拨测 ${selectedTestModels.length} 个模型`}
                         </Button>
                     }>
                        <Table
@@ -143,7 +166,7 @@ const ChannelTest: React.FC = () => {
                             rowKey="model"
                             loading={loading}
                             pagination={false}
-                            scroll={{ y: 300 }}
+                            scroll={{ x: 'max-content', y: 'calc(100vh - 350px)' }}
                             onRow={(record) => {
                                 return {
                                     onClick: () => {
@@ -161,7 +184,18 @@ const ChannelTest: React.FC = () => {
                                     title: '接入模型',
                                     dataIndex: 'model',
                                     key: 'model',
-                                    render: (text) => <Text strong>{text}</Text>
+                                    render: (text) => {
+                                        const gModel = globalModels[String(text)];
+                                        if (gModel) {
+                                            return (
+                                                <Space direction="vertical" size={0}>
+                                                    <Text strong>{gModel.name || gModel.model_id}</Text>
+                                                    <Tag color="blue" style={{ fontSize: 10, margin: 0, marginTop: 4 }}>{gModel.model_id}</Tag>
+                                                </Space>
+                                            );
+                                        }
+                                        return <Text strong>{text}</Text>;
+                                    }
                                 },
                                 {
                                     title: '探测状态',
@@ -169,16 +203,22 @@ const ChannelTest: React.FC = () => {
                                     render: (_, record) => {
                                         const st = testStatuses[record.model];
                                         if (!st || st.status === 'idle') return <Tag color="default">未开始</Tag>;
-                                        if (st.status === 'testing') return <Tag color="processing" icon={<SyncOutlined spin />}>建立连接中</Tag>;
+                                        if (st.status === 'testing') return <Tag color="processing" icon={<SyncOutlined spin />}>拨测中</Tag>;
                                         if (st.status === 'success') return <Tag color="success">成功 ({st.latency}ms)</Tag>;
-                                        return <Tag color="error" style={{ whiteSpace: 'normal', maxWidth: 150 }}>失败: {st.message}</Tag>;
+                                        return (
+                                            <Tooltip title={st.message}>
+                                                <Tag color="error" style={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+                                                    失败: {st.message}
+                                                </Tag>
+                                            </Tooltip>
+                                        );
                                     }
                                 },
                                 {
                                     title: '操作',
                                     key: 'action',
                                     render: (_, record) => {
-                                        const gModel = globalModels[record.model];
+                                        const gModel = globalModels[String(record.model)];
                                         let ruleOptions: {label: string, value: number}[] = [];
                                         if (gModel && gModel.forward_rule_ids) {
                                             try {
@@ -223,12 +263,13 @@ const ChannelTest: React.FC = () => {
                     </Card>
                 </Col>
 
-                {/* Bottom Panel: Data Layout Rendering */}
-                <Col span={24}>
+                {/* Right Panel: Data Layout Rendering */}
+                <Col xs={24} lg={12} xl={10}>
                     <Card size="small" title={activeModelLog ? `链路解包跟踪 - ${activeModelLog}` : '链路解包跟踪'}>
                         {!activeModelLog ? (
-                            <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
-                                点击上面任一表格行，实时显示底层发出与接收的真实 Payload
+                            <div style={{ padding: 40, textAlign: 'center', color: '#666', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 'calc(100vh - 350px)' }}>
+                                <div style={{ fontSize: 16, marginBottom: 12 }}>等待查看底层链路</div>
+                                <div>请点击左侧任一模型，或发起拨测，<br/>即可实时显示底层发出与接收的真实 Payload。</div>
                             </div>
                         ) : (
                             <div style={{
@@ -236,14 +277,14 @@ const ChannelTest: React.FC = () => {
                                 color: '#d4d4d4',
                                 padding: 16,
                                 borderRadius: 8,
-                                minHeight: 450,
-                                maxHeight: 450,
+                                minHeight: 'calc(100vh - 310px)',
+                                maxHeight: 'calc(100vh - 310px)',
                                 overflowY: 'auto',
                                 fontFamily: 'monospace',
                                 fontSize: 13,
                             }}>
                                 <div style={{ marginBottom: 16, color: '#4ec9b0', fontWeight: 'bold' }}>
-                                    {`[${activeLogData?.timestamp || '队列外'}]`} 【Target】: {activeModelLog}
+                                    {`[${activeLogData?.timestamp || '队列外'}]`} 【Target】: {globalModels[String(activeModelLog)]?.model_id || activeModelLog}
                                 </div>
                                 
                                 {activeLogData?.status === 'idle' && (

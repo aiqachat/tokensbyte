@@ -1,13 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch, Grid, Segmented } from 'antd';
+import ModelSelector from '../../components/ModelSelector';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch, Grid, Segmented, Tooltip, Divider, Alert, List, Progress, Drawer, Checkbox } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseOutlined, RocketOutlined, UnorderedListOutlined, AppstoreOutlined, PlayCircleOutlined, SearchOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import type { Channel } from '../../types';
 import { useThemeStore } from '../../store/theme';
+
+// ── 插件动态加载（各插件均可独立移除，删除对应目录后自动降级，不影响主功能） ──
+type HHPluginModule = typeof import('../Plugins/HappyHorse/HappyHorseChannelPlugin');
+
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -20,6 +25,9 @@ const Channels: React.FC = () => {
   const { settings } = useSettingsStore();
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [viewMode, setViewMode] = useState<'list' | 'card'>(() => {
+    return (localStorage.getItem('channels_view_mode') as 'list' | 'card') || 'card';
+  });
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [availableUserLevels, setAvailableUserLevels] = useState<any[]>([]);
   const [presets, setPresets] = useState<any[]>([]);
@@ -33,18 +41,32 @@ const Channels: React.FC = () => {
   const navigate = useNavigate();
   const [showMapping, setShowMapping] = useState(false);
   const [activeMappingInputs, setActiveMappingInputs] = useState<string[]>([]);
+  const [modelMappingState, setModelMappingState] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const screens = useBreakpoint();
   const [isExcludeMode, setIsExcludeMode] = useState(false);
   const [activeRightPanel, setActiveRightPanel] = useState<'models' | 'levels' | 'mapping' | 'presets'>('models');
-  const [modelSearch, setModelSearch] = useState('');
+  const [presetSearchText, setPresetSearchText] = useState('');
+  const [upstreamTab, setUpstreamTab] = useState<'preset' | 'volc' | 'gptimage'>('preset');
+  /** 模型选择的桥接状态，同步 form store 与 ModelSelector 双向数据 */
+  const [channelModelMids, setChannelModelMids] = useState<string[]>([]);
+  const [selectedSubChannelAids, setSelectedSubChannelAids] = useState<any[]>([]);
+  const [haMaxRetries, setHaMaxRetries] = useState<number>(3);
+
   // useRef to hold reliable copies of models/levels outside AntD form store
   // (form store gets corrupted when model_mapping Form.Items are registered)
   const modelsRef = useRef<string[]>([]);
   const levelsRef = useRef<string[]>([]);
+  // Plugin: happyhorse_router 状态（插件可移除，移除后这些状态保持默认值，所有条件渲染自动跳过）
+  const [isHappyHorseRouting, setIsHappyHorseRouting] = useState<boolean>(false);
+  const [happyHorseConfigs, setHappyHorseConfigs] = useState<any[]>([]);
+  const [selectedRoutingNode, setSelectedRoutingNode] = useState<string | null>(null);
+  const [happyHorseEnabled, setHappyHorseEnabled] = useState<boolean>(false);
+  const [hhModule, setHhModule] = useState<HHPluginModule | null>(null);
 
-  const [statusFilter, setStatusFilter] = useState<number | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<number | 'all'>(1);
   const [searchQuery, setSearchQuery] = useState('');
+  const [configObj, setConfigObj] = useState<Record<string, any>>({});
 
   const filteredChannels = channels.filter(c => {
     let matchStatus = true;
@@ -91,10 +113,29 @@ const Channels: React.FC = () => {
     }
   };
 
+  const fetchHaMaxRetries = async () => {
+    try {
+      const res = await (request.get('/plugins/high_availability_channel/ha-config') as Promise<any>);
+      if (res && res.ha_max_retries) {
+        setHaMaxRetries(res.ha_max_retries);
+      }
+    } catch (e) {
+      console.error('加载高可用插件配置失败:', e);
+    }
+  };
+
   const fetchPresets = async () => {
     try {
       const resp = await (request.get('/channel-configs') as unknown as Promise<{ data: any[] }>);
-      setPresets(resp.data || []);
+      const data = resp.data || [];
+      const haPreset = {
+        id: -99,
+        name: '高可用虚拟渠道组',
+        provider_type: 'high_availability_group',
+        yid: 'HA',
+        rate: 1.0,
+      };
+      setPresets([haPreset, ...data]);
     } catch (e) {
       console.error(e);
     }
@@ -114,6 +155,19 @@ const Channels: React.FC = () => {
           activeMap[p.name] = true;
           if (p.name === 'volcengine_pool') hasVolcengine = true;
           if (p.name === 'gptimage_pool') hasGptImage = true;
+          // Plugin: happyhorse_router 数据加载（插件可移除）
+          if (p.name === 'happyhorse_router') {
+            setHappyHorseEnabled(true);
+            request.get('/plugins/happyhorse_router/configs').then((r: any) => {
+              const data = r?.data ?? r;
+              const list = data?.configs ?? [];
+              setHappyHorseConfigs(list);
+            }).catch(() => {});
+            // 动态加载插件 UI 模块
+            import('../Plugins/HappyHorse/HappyHorseChannelPlugin')
+              .then(mod => setHhModule(mod))
+              .catch(() => {});
+          }
         }
       });
       setActivePlugins(activeMap);
@@ -129,12 +183,15 @@ const Channels: React.FC = () => {
     }
   };
 
+
+
   useEffect(() => {
     fetchChannels();
     fetchModels();
     fetchUserLevels();
     fetchPresets();
     fetchPluginsAndPools();
+    fetchHaMaxRetries();
   }, []);
 
   const handleAdd = () => {
@@ -142,11 +199,18 @@ const Channels: React.FC = () => {
     form.resetFields();
     setShowMapping(false);
     setActiveMappingInputs([]);
+    setModelMappingState({});
     setIsExcludeMode(false);
+    setChannelModelMids([]);
     setActiveRightPanel('models');
-    setModelSearch('');
+    setPresetSearchText('');
+    setUpstreamTab('preset');
+    setConfigObj({});
+    setSelectedSubChannelAids([]);
     modelsRef.current = [];
     levelsRef.current = [];
+    setIsHappyHorseRouting(false);
+    setSelectedRoutingNode(null);
     setIsModalVisible(true);
   };
 
@@ -172,13 +236,45 @@ const Channels: React.FC = () => {
     // Sync refs (reliable source of truth for save)
     modelsRef.current = modelsForForm;
     levelsRef.current = levelIds;
+    setChannelModelMids(modelsForForm);
+
+    const hasHappyHorse = rawModels.some((m: string) => m.startsWith('ephh-'));
+    setIsHappyHorseRouting(hasHappyHorse);
+    if (hasHappyHorse) {
+      const node = rawModels.find((m: string) => m.startsWith('ephh-')) || '';
+      setSelectedRoutingNode(node);
+    } else {
+      setSelectedRoutingNode(null);
+    }
 
     const hasMapping = Object.values(mapping).some(v => v && String(v).trim());
     setShowMapping(hasMapping);
+    setModelMappingState(mapping);
     setActiveMappingInputs(Object.keys(mapping).filter(k => mapping[k] && String(mapping[k]).trim()));
     setIsExcludeMode(!!record.exclude_user_groups && record.exclude_user_groups.length > 0);
     setActiveRightPanel('models');
-    setModelSearch('');
+    setPresetSearchText('');
+    if (record.preset_id) {
+      setUpstreamTab('preset');
+    } else if ((record as any).pool_id) {
+      setUpstreamTab('volc');
+    } else if ((record as any).gptimage_pool_id) {
+      setUpstreamTab('gptimage');
+    } else {
+      setUpstreamTab('preset');
+    }
+
+
+    // 解析 config JSON 初始化存储设置状态
+    let parsedConfig: Record<string, any> = {};
+    try {
+      parsedConfig = record.config
+        ? (typeof record.config === 'string' ? JSON.parse(record.config) : record.config)
+        : {};
+    } catch { parsedConfig = {}; }
+    setConfigObj(parsedConfig);
+    const subAids = parsedConfig.sub_channels || [];
+    setSelectedSubChannelAids(subAids);
 
     form.setFieldsValue({
       name: record.name,
@@ -189,6 +285,7 @@ const Channels: React.FC = () => {
       priority: record.priority || 0,
       status: record.status ?? 1,
       weight: record.weight || 1,
+      rate: record.rate ?? 1.0,
       max_rps: (record as any).max_rps || 0,
       quota_limit: record.quota_limit ?? -1,
       quota_used: record.quota_used || 0,
@@ -232,8 +329,9 @@ const Channels: React.FC = () => {
   const handleModelsChange = (nextModels: string[]) => {
     form.setFieldsValue({ models: nextModels });
     modelsRef.current = nextModels;
+    setChannelModelMids(nextModels);
 
-    const currentMapping = form.getFieldValue('model_mapping') || {};
+    const currentMapping = modelMappingState;
     const validModelIds = new Set(nextModels.map(mid => {
       const match = availableModels.find(m => m.mid === mid);
       return match ? match.model_id : mid;
@@ -243,12 +341,13 @@ const Channels: React.FC = () => {
     const newMapping = { ...currentMapping };
     for (const key of Object.keys(newMapping)) {
       if (!validModelIds.has(key)) {
-        newMapping[key] = undefined as any;
+        delete newMapping[key];
         mappingChanged = true;
       }
     }
 
     if (mappingChanged) {
+      setModelMappingState(newMapping);
       form.setFieldsValue({ model_mapping: newMapping });
       setActiveMappingInputs(prev => prev.filter(id => validModelIds.has(id)));
     }
@@ -258,7 +357,7 @@ const Channels: React.FC = () => {
     if (submitting) return;
     setSubmitting(true);
     const finalMapping: Record<string, string> = {};
-    const currentModelMapping = form.getFieldValue('model_mapping') || values.model_mapping;
+    const currentModelMapping = modelMappingState;
     if (showMapping && currentModelMapping) {
       for (const [k, v] of Object.entries(currentModelMapping)) {
         if (v && String(v).trim()) {
@@ -267,12 +366,6 @@ const Channels: React.FC = () => {
       }
     }
 
-    // 直接以 mid 保存，后端路由层会通过 mid 反查 model_id 进行匹配
-    const selectedLevels = values.level_select || [];
-    // 处理 config
-    const configObj = editingChannel && editingChannel.config ? 
-        (typeof editingChannel.config === 'string' ? JSON.parse(editingChannel.config) : editingChannel.config) 
-        : {};
 
     // Read models and levels from refs (immune to form store corruption)
     const reliableModels = modelsRef.current;
@@ -284,7 +377,14 @@ const Channels: React.FC = () => {
       return;
     }
 
-    if (!values.preset_id && !values.pool_id && !values.gptimage_pool_id) {
+    const isHaGroup = values.provider_type === 'high_availability_group';
+    if (isHaGroup && selectedSubChannelAids.length === 0) {
+      message.error('高可用虚拟组必须至少绑定一个子渠道');
+      setSubmitting(false);
+      return;
+    }
+
+    if (!isHaGroup && !values.preset_id && !values.pool_id && !values.gptimage_pool_id) {
       message.error('请选择上游渠道（预设、火山引擎卡池或GPT Image卡池至少选其一）');
       setSubmitting(false);
       return;
@@ -292,16 +392,26 @@ const Channels: React.FC = () => {
 
     // Ensure only one upstream is used and others are explicitly cleared
     let { preset_id, pool_id, gptimage_pool_id } = values;
-    if (preset_id) {
-      pool_id = null;
-      gptimage_pool_id = null;
-    } else if (pool_id) {
-      preset_id = null;
-      gptimage_pool_id = null;
-    } else if (gptimage_pool_id) {
+    if (isHaGroup) {
       preset_id = null;
       pool_id = null;
+      gptimage_pool_id = null;
+    } else {
+      if (preset_id) {
+        pool_id = null;
+        gptimage_pool_id = null;
+      } else if (pool_id) {
+        preset_id = null;
+        gptimage_pool_id = null;
+      } else if (gptimage_pool_id) {
+        preset_id = null;
+        pool_id = null;
+      }
     }
+
+    const finalConfig = isHaGroup 
+      ? { ...configObj, sub_channels: selectedSubChannelAids }
+      : configObj;
 
     const data = {
       ...values,
@@ -310,19 +420,23 @@ const Channels: React.FC = () => {
       model_mapping: finalMapping,
       user_groups: isExcludeMode ? [] : reliableLevels,
       exclude_user_groups: isExcludeMode ? reliableLevels : [],
-      config: configObj,
+      config: finalConfig,
       sort_order: values.sort_order || 0,
       priority: values.priority || 0,
+      rate: typeof values.rate === 'number' ? values.rate : 1.0,
       preset_id,
       pool_id,
       gptimage_pool_id,
     };
     delete data.level_select;
-    delete data.models;
     data.models = reliableModels;
 
     try {
       if (editingChannel) {
+        // 密钥未修改（与加载时原值相同）或为空时不提交，防止覆盖
+        if (!data.api_key || data.api_key === (editingChannel as any).api_key) {
+          delete data.api_key;
+        }
         await request.put(`/channels/${editingChannel.id}`, data);
         message.success(t('common.success'));
       } else {
@@ -378,13 +492,30 @@ const Channels: React.FC = () => {
       render: (_: any, record: Channel) => {
         const groups = record.user_groups;
         const excludeGroups = record.exclude_user_groups;
+        const resolveName = (idStr: string) => {
+          const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
+          return lv ? lv.name : idStr;
+        };
         if (excludeGroups && excludeGroups.length > 0) {
-          return <Text type="secondary" style={{ fontSize: 13 }}>排除 {excludeGroups.length} 个等级</Text>;
+          return (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+              <Tag color="orange" style={{ borderRadius: 4, margin: 0, fontSize: 11 }}>排除模式</Tag>
+              {excludeGroups.map((id: string) => (
+                <Tag key={id} color="red" style={{ borderRadius: 4, margin: 0, fontSize: 11, opacity: 0.85 }}>{resolveName(id)}</Tag>
+              ))}
+            </div>
+          );
         }
         if (!groups || groups.length === 0) {
-          return <Text type="secondary" style={{ fontSize: 13 }}>全部允许</Text>;
+          return <Tag color="green" style={{ borderRadius: 4, margin: 0, fontSize: 11 }}>全部等级</Tag>;
         }
-        return <Text type="secondary" style={{ fontSize: 13 }}>允许 {groups.length} 个等级</Text>;
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {groups.map((id: string) => (
+              <Tag key={id} color="blue" style={{ borderRadius: 4, margin: 0, fontSize: 11 }}>{resolveName(id)}</Tag>
+            ))}
+          </div>
+        );
       },
     },
     {
@@ -401,6 +532,45 @@ const Channels: React.FC = () => {
       }
     },
     {
+      title: '使用上游',
+      key: 'upstream',
+      render: (_: any, record: Channel) => {
+        if (record.preset_id) {
+          const preset = presets.find(p => p.id === record.preset_id);
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Tag color="cyan" style={{ borderRadius: 4, margin: 0, fontSize: 11, width: 'fit-content' }}>预设渠道</Tag>
+              <Text strong style={{ fontSize: 13 }}>{preset ? preset.name : '未知预设'}</Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {preset?.yid ? `YID: ${preset.yid}` : `ID: ${record.preset_id}`}
+              </Text>
+            </div>
+          );
+        }
+        if (record.pool_id) {
+          const pool = volcenginePools.find(p => p.id === record.pool_id);
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Tag color="purple" style={{ borderRadius: 4, margin: 0, fontSize: 11, width: 'fit-content' }}>火山卡池</Tag>
+              <Text strong style={{ fontSize: 13 }}>{pool ? pool.name : '未知卡池'}</Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>ID: {record.pool_id}</Text>
+            </div>
+          );
+        }
+        if (record.gptimage_pool_id) {
+          const pool = gptImagePools.find(p => p.id === record.gptimage_pool_id);
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Tag color="blue" style={{ borderRadius: 4, margin: 0, fontSize: 11, width: 'fit-content' }}>GPT Image卡池</Tag>
+              <Text strong style={{ fontSize: 13 }}>{pool ? pool.name : '未知卡池'}</Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>ID: {record.gptimage_pool_id}</Text>
+            </div>
+          );
+        }
+        return <Text type="secondary">-</Text>;
+      }
+    },
+    {
       title: '页面排序',
       dataIndex: 'sort_order',
       key: 'sort_order',
@@ -413,6 +583,13 @@ const Channels: React.FC = () => {
       key: 'priority',
       sorter: (a: Channel, b: Channel) => (a.priority || 0) - (b.priority || 0),
       render: (priority: number) => <Text type="secondary" style={{ fontSize: 13 }}>{priority || 0}</Text>,
+    },
+    {
+      title: '倍率',
+      dataIndex: 'rate',
+      key: 'rate',
+      sorter: (a: Channel, b: Channel) => (a.rate || 0.0) - (b.rate || 0.0),
+      render: (rate: number) => <Text type="secondary" style={{ fontSize: 13 }}>{rate ?? 1.0}</Text>,
     },
     {
       title: '最后修改',
@@ -456,6 +633,12 @@ const Channels: React.FC = () => {
 
   return (
     <Card variant="borderless">
+      <style>{`
+        .channel-card-disabled {
+          opacity: 0.65;
+          filter: grayscale(20%);
+        }
+      `}</style>
       {!isModalVisible ? (
         <>
           <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
@@ -463,12 +646,23 @@ const Channels: React.FC = () => {
             <Space wrap>
               <Segmented
                 options={[
-                  { label: '全部', value: 'all' },
-                  { label: '激活', value: '1' },
-                  { label: '已禁用', value: '0' },
+                  { label: `全部 (${channels.length})`, value: 'all' },
+                  { label: `激活 (${channels.filter(c => c.status === 1).length})`, value: '1' },
+                  { label: `已禁用 (${channels.filter(c => c.status === 0).length})`, value: '0' },
                 ]}
                 value={statusFilter === 'all' ? 'all' : statusFilter.toString()}
                 onChange={(val) => setStatusFilter(val === 'all' ? 'all' : parseInt(val as string, 10))}
+              />
+              <Segmented
+                options={[
+                  { value: 'card', icon: <AppstoreOutlined /> },
+                  { value: 'list', icon: <UnorderedListOutlined /> }
+                ]}
+                value={viewMode}
+                onChange={(val) => {
+                  setViewMode(val as 'list' | 'card');
+                  localStorage.setItem('channels_view_mode', val as string);
+                }}
               />
               <Input.Search
                 placeholder="搜索 AID 或 名称"
@@ -487,7 +681,7 @@ const Channels: React.FC = () => {
               dataSource={filteredChannels}
               loading={loading}
               rowKey="id"
-              pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
+              pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], showTotal: (total) => `共 ${total} 条` }}
               renderCard={(record: any) => {
                 const used = record.quota_used || 0;
                 const limit = record.quota_limit ?? -1;
@@ -505,25 +699,69 @@ const Channels: React.FC = () => {
                   >
                     {record.group_aid && <CardRow label="AID"><Text type="secondary">{record.group_aid}</Text></CardRow>}
                     <CardRow label="支持等级">
-                      <Text type="secondary">
-                      {excludeGroups && excludeGroups.length > 0
-                        ? `排除 ${excludeGroups.length} 个等级`
-                        : (!groups || groups.length === 0)
-                          ? '全部允许'
-                          : `允许 ${groups.length} 个等级`
-                      }
-                      </Text>
+                      {excludeGroups && excludeGroups.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                          <Tag color="orange" style={{ borderRadius: 4, margin: 0, fontSize: 11 }}>排除</Tag>
+                          {excludeGroups.map((id: string) => {
+                            const lv = availableUserLevels.find((l: any) => l.id.toString() === id || l.group_key === id);
+                            return <Tag key={id} color="red" style={{ borderRadius: 4, margin: 0, fontSize: 11, opacity: 0.85 }}>{lv ? lv.name : id}</Tag>;
+                          })}
+                        </div>
+                      ) : (!groups || groups.length === 0) ? (
+                        <Tag color="green" style={{ borderRadius: 4, margin: 0, fontSize: 11 }}>全部等级</Tag>
+                      ) : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {groups.map((id: string) => {
+                            const lv = availableUserLevels.find((l: any) => l.id.toString() === id || l.group_key === id);
+                            return <Tag key={id} color="blue" style={{ borderRadius: 4, margin: 0, fontSize: 11 }}>{lv ? lv.name : id}</Tag>;
+                          })}
+                        </div>
+                      )}
                     </CardRow>
                     <CardRow label="已用/额度">
                       <Text type="secondary">
                         {currencySymbol}{used.toFixed(2)} / {limit < 0 ? '∞' : `${currencySymbol}${limit.toFixed(2)}`}
                       </Text>
                     </CardRow>
+                    <CardRow label="使用上游">
+                      {record.preset_id ? (
+                        (() => {
+                          const preset = presets.find(p => p.id === record.preset_id);
+                          return (
+                            <Space size={4}>
+                              <Tag color="cyan" style={{ borderRadius: 4, margin: 0, fontSize: 10 }}>预设</Tag>
+                              <Text style={{ fontSize: 12 }}>
+                                {preset?.name || '未知预设'} ({preset?.yid ? `YID: ${preset.yid}` : `ID: ${record.preset_id}`})
+                              </Text>
+                            </Space>
+                          );
+                        })()
+                      ) : record.pool_id ? (
+                        <Space size={4}>
+                          <Tag color="purple" style={{ borderRadius: 4, margin: 0, fontSize: 10 }}>火山</Tag>
+                          <Text style={{ fontSize: 12 }}>
+                            {volcenginePools.find(p => p.id === record.pool_id)?.name || '未知卡池'} (ID: {record.pool_id})
+                          </Text>
+                        </Space>
+                      ) : record.gptimage_pool_id ? (
+                        <Space size={4}>
+                          <Tag color="blue" style={{ borderRadius: 4, margin: 0, fontSize: 10 }}>GPT Image</Tag>
+                          <Text style={{ fontSize: 12 }}>
+                            {gptImagePools.find(p => p.id === record.gptimage_pool_id)?.name || '未知卡池'} (ID: {record.gptimage_pool_id})
+                          </Text>
+                        </Space>
+                      ) : (
+                        <Text type="secondary">-</Text>
+                      )}
+                    </CardRow>
                     <CardRow label="页面排序">
                       <Text type="secondary">{record.sort_order || 0}</Text>
                     </CardRow>
                     <CardRow label="请求优先级">
                       <Text type="secondary">{record.priority || 0}</Text>
+                    </CardRow>
+                    <CardRow label="倍率">
+                      <Text type="secondary">{record.rate ?? 1.0}</Text>
                     </CardRow>
                     <CardRow label="最后修改">
                       <Text type="secondary" style={{ fontSize: 12 }}>{new Date(record.updated_at || record.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</Text>
@@ -547,14 +785,198 @@ const Channels: React.FC = () => {
                 );
               }}
             />
-          ) : (
+          ) : viewMode === 'list' ? (
             <Table
+              size="small"
               dataSource={filteredChannels}
               columns={columns}
               rowKey="id"
               loading={loading}
-              pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
+              pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], showTotal: (total) => `共 ${total} 条` }}
               scroll={{ x: 'max-content' }}
+            />
+          ) : (
+            <List
+              grid={{ gutter: 20, xs: 1, sm: 2, md: 3, lg: 4, xl: 4, xxl: 4 }}
+              dataSource={filteredChannels}
+              loading={loading}
+              pagination={{
+                pageSize: 12,
+                showSizeChanger: true,
+                pageSizeOptions: ['12', '24', '48', '96'],
+                showTotal: (total) => `共 ${total} 个渠道`
+              }}
+              renderItem={(record: Channel) => {
+                const used = record.quota_used || 0;
+                const limit = record.quota_limit ?? -1;
+                const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+                const progressColor = percent > 85 ? '#ff4d4f' : percent > 60 ? '#faad14' : '#52c41a';
+
+                const groups = record.user_groups;
+                const excludeGroups = record.exclude_user_groups;
+                const resolveName = (idStr: string) => {
+                  const lv = availableUserLevels.find((l: any) => l.id.toString() === idStr || l.group_key === idStr);
+                  return lv ? lv.name : idStr;
+                };
+
+                return (
+                  <List.Item style={{ height: '100%' }}>
+                    <Card
+                      className={record.status === 0 ? 'channel-card-disabled' : ''}
+                      style={{
+                        background: _isLight ? 'linear-gradient(180deg, #f5f5f5 0%, #ffffff 100%)' : 'linear-gradient(180deg, #121212 0%, #1e1e1e 100%)',
+                        borderRadius: '8px',
+                        border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.08)',
+                        boxShadow: _isLight ? '0 2px 8px rgba(0,0,0,0.02)' : '0 2px 8px rgba(0,0,0,0.12)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        height: '215px',
+                      }}
+                      styles={{ body: { padding: '12px 14px', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' } }}
+                    >
+                      {/* 第 1 行：头部 */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: record.status === 1 ? (_isLight ? '#111827' : '#ffffff') : (_isLight ? '#d1d5db' : 'rgba(255,255,255,0.25)'), flexShrink: 0 }} />
+                        <Text strong style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: _isLight ? '#111827' : '#ffffff' }}>
+                          {record.name}
+                        </Text>
+                      </div>
+
+                      {/* 第 2 行：上游与支持等级 */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', overflow: 'hidden', height: 24 }}>
+                        {record.preset_id ? (
+                          (() => {
+                            const preset = presets.find(p => p.id === record.preset_id);
+                            return (
+                              <Tooltip title={preset ? `预设渠道: ${preset.name}` : '未知预设'}>
+                                <Tag color="default" style={{ borderRadius: 4, margin: 0, padding: '0 6px', fontSize: 11 }}>
+                                  预设
+                                </Tag>
+                              </Tooltip>
+                            );
+                          })()
+                        ) : record.pool_id ? (
+                          (() => {
+                            const pool = volcenginePools.find(p => p.id === record.pool_id);
+                            return (
+                              <Tooltip title={pool ? `火山卡池: ${pool.name}` : '未知卡池'}>
+                                <Tag color="default" style={{ borderRadius: 4, margin: 0, padding: '0 6px', fontSize: 11 }}>
+                                  火山
+                                </Tag>
+                              </Tooltip>
+                            );
+                          })()
+                        ) : record.gptimage_pool_id ? (
+                          (() => {
+                            const pool = gptImagePools.find(p => p.id === record.gptimage_pool_id);
+                            return (
+                              <Tooltip title={pool ? `GPT Image卡池: ${pool.name}` : '未知卡池'}>
+                                <Tag color="default" style={{ borderRadius: 4, margin: 0, padding: '0 6px', fontSize: 11 }}>
+                                  GPT
+                                </Tag>
+                              </Tooltip>
+                            );
+                          })()
+                        ) : (
+                          <Tag color="default" style={{ borderRadius: 4, margin: 0, padding: '0 6px', fontSize: 11 }}>无上游</Tag>
+                        )}
+
+                        <span style={{ color: _isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)' }}>|</span>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
+                          {excludeGroups && excludeGroups.length > 0 ? (
+                            <>
+                              <Tag color="orange" style={{ borderRadius: 4, margin: 0, padding: '0 6px', fontSize: 11 }}>排除</Tag>
+                              <Tag color="red" style={{ borderRadius: 4, margin: 0, padding: '0 6px', fontSize: 11, maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.8 }}>
+                                {resolveName(excludeGroups[0])}
+                              </Tag>
+                              {excludeGroups.length > 1 && <span style={{ fontSize: 10, opacity: 0.7 }}>+{excludeGroups.length - 1}</span>}
+                            </>
+                          ) : (!groups || groups.length === 0) ? (
+                            <Tag color="green" style={{ borderRadius: 4, margin: 0, padding: '0 6px', fontSize: 11 }}>全部等级</Tag>
+                          ) : (
+                            <>
+                              <Tag color="blue" style={{ borderRadius: 4, margin: 0, padding: '0 6px', fontSize: 11, maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {resolveName(groups[0])}
+                              </Tag>
+                              {groups.length > 1 && <span style={{ fontSize: 10, opacity: 0.7 }}>+{groups.length - 1}</span>}
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 第 3 行：排序、优先级、倍率 */}
+                      <div style={{ display: 'flex', alignItems: 'center', fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
+                        <span>排序: {record.sort_order || 0}</span>
+                        <span style={{ margin: '0 6px', opacity: 0.5 }}>·</span>
+                        <span>优先级: {record.priority || 0}</span>
+                        <span style={{ margin: '0 6px', opacity: 0.5 }}>·</span>
+                        <span>倍率: {record.rate ?? 1.0}</span>
+                      </div>
+
+                      {/* 第 4 行：消耗/额度与进度条 */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 2 }}>
+                          <span style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>消耗/额度</span>
+                          <span style={{ fontWeight: 500, color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}>
+                            {currencySymbol}{used.toFixed(1)}/{limit < 0 ? '∞' : `${currencySymbol}${limit.toFixed(0)}`}
+                          </span>
+                        </div>
+                        {limit > 0 ? (
+                          <Progress
+                            percent={percent}
+                            strokeColor={_isLight ? '#111827' : '#ffffff'}
+                            trailColor={_isLight ? '#f3f4f6' : 'rgba(255,255,255,0.08)'}
+                            strokeWidth={4}
+                            showInfo={false}
+                            style={{ margin: 0 }}
+                          />
+                        ) : (
+                          <div style={{ height: 4, borderRadius: 2, background: _isLight ? '#f3f4f6' : 'rgba(255,255,255,0.06)' }} />
+                        )}
+                      </div>
+
+                      {/* 第 5 行：底栏按钮 */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: _isLight ? '1px solid #f0f0f0' : '1px solid rgba(255,255,255,0.06)', paddingTop: 6, marginTop: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', maxWidth: '60%' }}>
+                          {record.group_aid && (
+                            <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {record.group_aid}
+                            </Text>
+                          )}
+                          {record.group_aid && <span style={{ color: _isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)', fontSize: 9 }}>|</span>}
+                          <Button
+                            type="link"
+                            size="small"
+                            icon={<PlayCircleOutlined />}
+                            onClick={() => handleTest(record)}
+                            style={{ padding: 0, fontSize: 13, height: 20, display: 'flex', alignItems: 'center', flexShrink: 0, color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)' }}
+                          >
+                            测试
+                          </Button>
+                        </div>
+                        <Space size={12}>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<EditOutlined style={{ fontSize: 14 }} />}
+                            onClick={() => handleEdit(record)}
+                            style={{ padding: 0, width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          />
+                          <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<DeleteOutlined style={{ fontSize: 14 }} />}
+                              style={{ padding: 0, width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            />
+                          </Popconfirm>
+                        </Space>
+                      </div>
+                    </Card>
+                  </List.Item>
+                );
+              }}
             />
           )}
         </>
@@ -566,7 +988,7 @@ const Channels: React.FC = () => {
               {editingChannel ? t('channels.edit_channel') : t('channels.add_channel')}
             </Title>
           </div>
-          <div style={{ maxWidth: 1200, width: '100%' }}>
+          <div style={{ maxWidth: 1600, width: '100%' }}>
             <Form form={form} layout="vertical" onFinish={handleSave} preserve={true}>
               <Row gutter={24}>
                 {/* 左侧基本配置栏 */}
@@ -592,59 +1014,151 @@ const Channels: React.FC = () => {
                       </Col>
                     </Row>
 
-                    <Form.Item shouldUpdate={(prev, curr) => prev.preset_id !== curr.preset_id || prev.pool_id !== curr.pool_id || prev.gptimage_pool_id !== curr.gptimage_pool_id} noStyle>
+                    <Form.Item name="provider_type" style={{ display: 'none' }}><Input /></Form.Item>
+                    <Form.Item name="preset_id" style={{ display: 'none' }}><Input /></Form.Item>
+                    {activePlugins['volcengine_pool'] && <Form.Item name="pool_id" style={{ display: 'none' }}><Input /></Form.Item>}
+                    {activePlugins['gptimage_pool'] && <Form.Item name="gptimage_pool_id" style={{ display: 'none' }}><Input /></Form.Item>}
+
+                    <Form.Item shouldUpdate={(prev, curr) => prev.preset_id !== curr.preset_id || prev.pool_id !== curr.pool_id || prev.gptimage_pool_id !== curr.gptimage_pool_id || prev.provider_type !== curr.provider_type} noStyle>
                       {() => {
+                        const providerType = form.getFieldValue('provider_type');
                         const currentPreset = form.getFieldValue('preset_id');
                         const currentVolcPool = form.getFieldValue('pool_id');
                         const currentGptImagePool = form.getFieldValue('gptimage_pool_id');
+                        const isActive = activeRightPanel === 'presets';
+
+                        let displayType = '无';
+                        let displayName = '未选择';
+                        let displayDetail = '';
+
+                        if (providerType === 'high_availability_group') {
+                          displayType = '高可用组';
+                          displayName = '高可用虚拟渠道组';
+                          displayDetail = `已绑定 ${selectedSubChannelAids.length} 个渠道`;
+                        } else if (currentPreset) {
+                          const preset = presets.find(p => p.id === currentPreset);
+                          displayType = '预设渠道';
+                          displayName = preset ? preset.name : '未知预设';
+                          displayDetail = preset?.yid ? `YID: ${preset.yid}` : `ID: ${currentPreset}`;
+                        } else if (currentVolcPool) {
+                          const pool = volcenginePools.find(p => p.id === currentVolcPool);
+                          displayType = '火山卡池';
+                          displayName = pool ? pool.name : '未知卡池';
+                          displayDetail = `ID: ${currentVolcPool}`;
+                        } else if (currentGptImagePool) {
+                          const pool = gptImagePools.find(p => p.id === currentGptImagePool);
+                          displayType = 'GPT Image 卡池';
+                          displayName = pool ? pool.name : '未知卡池';
+                          displayDetail = `ID: ${currentGptImagePool}`;
+                        }
 
                         return (
-                          <div style={{ marginBottom: 24, padding: 12, borderRadius: 8, background: _isLight ? '#fff' : 'rgba(255,255,255,0.02)', border: _isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.05)' }}>
-                            <Text strong style={{ display: 'block', marginBottom: 12 }}>
-                              <span style={{ color: '#ff4d4f', marginRight: 4, fontFamily: 'SimSun, sans-serif' }}>*</span>
-                              选择上游渠道
-                            </Text>
-                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                              <Form.Item name="preset_id" style={{ marginBottom: 0 }}>
-                                <Select placeholder="选择预设渠道配置" allowClear disabled={!!currentVolcPool || !!currentGptImagePool}>
-                                  {(presets || []).map(p => (
-                                    <Option key={p.id} value={p.id}>{p.name} {p.yid ? `[YID: ${p.yid}]` : `[ID: ${p.id}]`} [{p.provider_type}]</Option>
-                                  ))}
-                                </Select>
-                              </Form.Item>
-
-                              {activePlugins['volcengine_pool'] && (
-                                <Form.Item name="pool_id" style={{ marginBottom: 0 }}>
-                                  <Select placeholder="选择火山引擎卡池" allowClear disabled={!!currentPreset || !!currentGptImagePool}>
-                                    {(volcenginePools || []).map(p => (
-                                      <Option key={p.id} value={p.id}>{p.name} [{p.strategy === 'random' ? '随机' : '顺序'}]</Option>
-                                    ))}
-                                  </Select>
-                                </Form.Item>
-                              )}
-
-                              {activePlugins['gptimage_pool'] && (
-                                <Form.Item name="gptimage_pool_id" style={{ marginBottom: 0 }}>
-                                  <Select placeholder="选择 GPT Image 卡池" allowClear disabled={!!currentPreset || !!currentVolcPool}>
-                                    {(gptImagePools || []).map(p => (
-                                      <Option key={p.id} value={p.id}>{p.name} [{p.strategy === 'random' ? '随机' : '顺序'}]</Option>
-                                    ))}
-                                  </Select>
-                                </Form.Item>
-                              )}
-                            </Space>
+                          <div 
+                            onClick={() => setActiveRightPanel('presets')} 
+                            style={{ 
+                              padding: '12px 16px', 
+                              borderRadius: 8, 
+                              border: isActive ? '1px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'), 
+                              background: isActive ? (_isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)') : (_isLight ? '#fff' : 'rgba(255,255,255,0.02)'), 
+                              cursor: 'pointer', 
+                              transition: 'all 0.2s',
+                              marginBottom: 12
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Text strong={isActive} style={{ color: isActive ? 'var(--text)' : 'inherit' }}>
+                                <span style={{ color: '#ff4d4f', marginRight: 4, fontFamily: 'SimSun, sans-serif' }}>*</span>
+                                选择上游渠道
+                              </Text>
+                              <span style={{ fontSize: 12, color: isActive ? 'var(--text)' : 'var(--text-secondary)' }}>
+                                {displayType !== '无' ? (
+                                  <Tag color={providerType === 'high_availability_group' ? 'purple' : 'blue'} style={{ margin: 0, borderRadius: 4 }}>{displayType}</Tag>
+                                ) : '未选择'}
+                                <ArrowRightOutlined style={{ marginLeft: 4 }} />
+                              </span>
+                            </div>
+                            {displayType !== '无' && (
+                              <div style={{ marginTop: 8, padding: '6px 8px', background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>
+                                  {displayName}
+                                </span>
+                                <Space size={8} style={{ flexShrink: 0 }}>
+                                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{displayDetail}</span>
+                                  <Button 
+                                    type="text" 
+                                    size="small" 
+                                    icon={<CloseOutlined style={{ fontSize: 10 }} />} 
+                                    style={{ width: 20, height: 20, minWidth: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', margin: 0, padding: 0 }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedSubChannelAids([]);
+                                      setConfigObj({});
+                                      form.setFieldsValue({
+                                        preset_id: null,
+                                        pool_id: null,
+                                        gptimage_pool_id: null,
+                                        provider_type: 'custom'
+                                      });
+                                    }}
+                                  />
+                                </Space>
+                              </div>
+                            )}
                           </div>
                         );
                       }}
                     </Form.Item>
 
+
                     <Form.Item label={<Text strong>路由与范围配置</Text>} style={{ marginBottom: 0 }}>
                       <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                        {/* Plugin: happyhorse_router 路由切换+节点选择（插件可移除） */}
+                        {happyHorseEnabled && hhModule && (
+                          <hhModule.HappyHorseRouteConfig
+                            enabled={happyHorseEnabled}
+                            isRouting={isHappyHorseRouting}
+                            configs={happyHorseConfigs}
+                            selectedNode={selectedRoutingNode}
+                            onSwitchMode={(val) => {
+                              const isHH = val === 'happyhorse';
+                              setIsHappyHorseRouting(isHH);
+                              if (isHH) {
+                                const activeConfigs = happyHorseConfigs.filter((c: any) => c.is_active === 1);
+                                const defaultNode = activeConfigs[0]?.routing_node || '';
+                                setSelectedRoutingNode(defaultNode);
+                                if (defaultNode) handleModelsChange([defaultNode]);
+                              } else {
+                                setSelectedRoutingNode(null);
+                                handleModelsChange([]);
+                              }
+                            }}
+                            onSelectNode={(nodeVal) => {
+                              setSelectedRoutingNode(nodeVal);
+                              handleModelsChange([nodeVal]);
+                            }}
+                            isLight={_isLight}
+                          />
+                        )}
+
                         {/* Models */}
                         <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
-                          {() => {
+                           {() => {
                             const m = form.getFieldValue('models') || [];
                             const isActive = activeRightPanel === 'models';
+
+                            /* Plugin: happyhorse_router 左侧信息卡（插件可移除） */
+                            if (isHappyHorseRouting && hhModule) {
+                              const activeConfig = happyHorseConfigs.find((c: any) => c.routing_node === selectedRoutingNode);
+                              return (
+                                <hhModule.HappyHorseStatusCard
+                                  activeConfig={activeConfig || null}
+                                  selectedNode={selectedRoutingNode}
+                                  isLight={_isLight}
+                                  onClick={() => setActiveRightPanel('models')}
+                                />
+                              );
+                            }
+
                             return (
                               <div onClick={() => setActiveRightPanel('models')} style={{ padding: '12px 16px', borderRadius: 8, border: isActive ? '1px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'), background: isActive ? (_isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)') : (_isLight ? '#fff' : 'rgba(255,255,255,0.02)'), cursor: 'pointer', transition: 'all 0.2s' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: m.length > 0 ? 8 : 0 }}>
@@ -657,7 +1171,10 @@ const Channels: React.FC = () => {
                                       const match = availableModels.find((model: any) => model.mid === mid);
                                       return (
                                         <div key={mid} style={{ padding: '6px 8px', background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                          <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{match ? match.name : '未知模型'}</span>
+                                          <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>
+                                            {match ? match.name : '未知模型'}
+                                            {match && match.remark && <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal', marginLeft: 4 }}>({match.remark})</span>}
+                                          </span>
                                           <Space size={8} style={{ flexShrink: 0 }}>
                                             <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>MID: {match ? match.mid : mid}</span>
                                             <Button 
@@ -685,7 +1202,7 @@ const Channels: React.FC = () => {
                         {/* Model Mapping */}
                         <Form.Item shouldUpdate noStyle>
                           {() => {
-                            const mapping = form.getFieldValue('model_mapping') || {};
+                            const mapping = modelMappingState || {};
                             const mappedEntries = Object.entries(mapping).filter(([_, v]) => v && String(v).trim());
                             const isActive = activeRightPanel === 'mapping';
                             return (
@@ -699,24 +1216,25 @@ const Channels: React.FC = () => {
                                 {showMapping && mappedEntries.length > 0 && (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                     {mappedEntries.slice(0, 8).map(([k, v]) => (
-                                      <div key={k} style={{ padding: '6px 8px', background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{k}</span>
-                                        <Space size={8} style={{ flexShrink: 0 }}>
-                                          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>➔ {String(v)}</span>
-                                          <Button 
-                                            type="text" 
-                                            size="small" 
-                                            icon={<CloseOutlined style={{ fontSize: 10 }} />} 
-                                            style={{ width: 20, height: 20, minWidth: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', margin: 0, padding: 0 }}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setActiveMappingInputs(prev => prev.filter(id => id !== k));
-                                              const newMapping = { ...(form.getFieldValue('model_mapping') || {}) };
-                                              newMapping[k] = undefined as any;
-                                              form.setFieldsValue({ model_mapping: newMapping });
-                                            }}
-                                          />
-                                        </Space>
+                                      <div key={k} style={{ padding: '6px 8px', background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)', borderRadius: 4, display: 'flex', alignItems: 'center' }}>
+                                        <span style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }} title={k}>{k}</span>
+                                        <span style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8, textAlign: 'right' }} title={String(v)}>➔ {String(v)}</span>
+                                        <Button 
+                                          type="text" 
+                                          size="small" 
+                                          icon={<CloseOutlined style={{ fontSize: 10 }} />} 
+                                          style={{ width: 20, height: 20, minWidth: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', margin: 0, padding: 0, flexShrink: 0 }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveMappingInputs(prev => prev.filter(id => id !== k));
+                                            setModelMappingState(prev => {
+                                              const next = { ...prev };
+                                              delete next[k];
+                                              form.setFieldsValue({ model_mapping: next });
+                                              return next;
+                                            });
+                                          }}
+                                        />
                                       </div>
                                     ))}
                                     {mappedEntries.length > 8 && <div style={{ fontSize: 11, color: 'var(--text-secondary)', textAlign: 'center', marginTop: 2 }}>...还有 {mappedEntries.length - 8} 个</div>}
@@ -792,6 +1310,15 @@ const Channels: React.FC = () => {
                           </Form.Item>
                         </Col>
                         <Col span={12}>
+                          <Form.Item name="rate" label="倍率" initialValue={1.0}>
+                            <InputNumber
+                              min={0}
+                              step={0.1}
+                              style={{ width: '100%' }}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
                           <Form.Item name="quota_limit" label="使用额度" initialValue={-1}>
                             <InputNumber 
                               min={-1} 
@@ -802,6 +1329,42 @@ const Channels: React.FC = () => {
                           </Form.Item>
                         </Col>
                       </Row>
+
+                      {/* ─── 存储设置 ─── */}
+                      <Divider style={{ margin: '12px 0 8px' }}>存储设置</Divider>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <div>
+                          <Text strong style={{ fontSize: 13 }}>开启 TOS 资源存储</Text>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                            开启后，图片/视频响应资源自动上传到 TOS 并返回永久 URL
+                          </div>
+                        </div>
+                        <Switch
+                          checked={configObj.tos_storage_enabled || false}
+                          onChange={(v) => setConfigObj({ ...configObj, tos_storage_enabled: v, tos_storage_days: configObj.tos_storage_days ?? 1 })}
+                        />
+                      </div>
+                      {configObj.tos_storage_enabled && (
+                        <div style={{ marginTop: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <Text style={{ fontSize: 13, whiteSpace: 'nowrap' }}>存储有效期</Text>
+                            <InputNumber
+                              min={0} max={365}
+                              value={configObj.tos_storage_days ?? 1}
+                              onChange={(v) => setConfigObj({ ...configObj, tos_storage_days: v })}
+                              addonAfter="天"
+                              style={{ width: 140 }}
+                            />
+                            <Text type="secondary" style={{ fontSize: 11 }}>0 = 永久保留</Text>
+                          </div>
+                          <Alert
+                            type="info"
+                            showIcon
+                            style={{ fontSize: 12, padding: '6px 12px' }}
+                            message="使用站点「系统设置 → 存储设置」中配置的 TOS 信息。请确保已正确配置。"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Col>
@@ -811,101 +1374,334 @@ const Channels: React.FC = () => {
                   <div style={{ padding: 24, background: _isLight ? '#fff' : 'rgba(255,255,255,0.02)', border: _isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)', borderRadius: 8, minHeight: 600 }}>
                     
                     <div style={{ display: activeRightPanel === 'models' ? 'block' : 'none', animation: 'fadeIn 0.2s' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                          <Title level={4} style={{ margin: 0 }}>选择模型</Title>
-                          <Space>
-                            <Input.Search placeholder="搜索模型名称或ID" value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} style={{ width: 200 }} allowClear />
-                            <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
-                              {() => {
-                                const selected = form.getFieldValue('models') || [];
-                                
-                                const handleSelectAll = () => {
-                                  const currentSelectedMids = form.getFieldValue('models') || [];
-                                  const currentSelectedModelIds = new Set(currentSelectedMids.map((mid: string) => {
-                                    const m = availableModels.find((model: any) => model.mid === mid);
-                                    return m ? m.model_id : mid;
-                                  }));
+                      {/* Plugin: happyhorse_router 右侧详情面板（插件可移除） */}
+                      {isHappyHorseRouting && hhModule ? (() => {
+                        const activeConfig = happyHorseConfigs.find((c: any) => c.routing_node === selectedRoutingNode);
+                        return (
+                          <hhModule.HappyHorseDetailPanel
+                            activeConfig={activeConfig || null}
+                            selectedNode={selectedRoutingNode}
+                            isLight={_isLight}
+                          />
+                        );
+                      })() : (
+                        <>
+                          <Form.Item name="models" rules={[{ required: true, message: '请选择至少一个模型' }]} style={{ marginBottom: 0 }} hidden>
+                            <Select mode="multiple" />
+                          </Form.Item>
+                          <ModelSelector
+                            selectedMids={channelModelMids}
+                            onSelectionChange={handleModelsChange}
+                            onModelsLoaded={(models) => setAvailableModels(models)}
+                            allowDuplicateModelId={false}
+                            isLightTheme={_isLight}
+                            title="选择模型"
+                          />
+                        </>
+                      )}
+                    </div>
 
-                                  const newSelection = [...currentSelectedMids];
+                    <div style={{ display: activeRightPanel === 'presets' ? 'block' : 'none', animation: 'fadeIn 0.2s' }}>
+                      <Form.Item shouldUpdate={(prev, curr) => prev.provider_type !== curr.provider_type} noStyle>
+                        {() => {
+                          const providerType = form.getFieldValue('provider_type');
+                          return (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                              <Title level={4} style={{ margin: 0 }}>选择上游渠道</Title>
+                              <Button
+                                type={providerType === 'high_availability_group' ? 'primary' : 'dashed'}
+                                icon={<ApartmentOutlined />}
+                                size="small"
+                                onClick={() => {
+                                  if (providerType === 'high_availability_group') {
+                                    // 若已是高可用组，点击则取消选择
+                                    setSelectedSubChannelAids([]);
+                                    setConfigObj({});
+                                    form.setFieldsValue({
+                                      preset_id: null,
+                                      pool_id: null,
+                                      gptimage_pool_id: null,
+                                      provider_type: 'custom'
+                                    });
+                                  } else {
+                                    // 一键设置为高可用虚拟组
+                                    setSelectedSubChannelAids([]);
+                                    setConfigObj({});
+                                    form.setFieldsValue({
+                                      preset_id: -99, // 对应预设 ID
+                                      pool_id: null,
+                                      gptimage_pool_id: null,
+                                      rate: 1.0,
+                                      provider_type: 'high_availability_group'
+                                    });
+                                  }
+                                }}
+                              >
+                                {providerType === 'high_availability_group' ? '已选高可用虚拟渠道组' : '点击选择高可用虚拟渠道组'}
+                              </Button>
+                            </div>
+                          );
+                        }}
+                      </Form.Item>
 
-                                  const filteredModels = availableModels.filter(m => {
-                                    if (!modelSearch) return true;
-                                    const q = modelSearch.toLowerCase();
-                                    return m.name.toLowerCase().includes(q) || m.model_id.toLowerCase().includes(q) || m.mid.toLowerCase().includes(q);
-                                  });
+                      <Form.Item shouldUpdate={(prev, curr) => prev.preset_id !== curr.preset_id || prev.pool_id !== curr.pool_id || prev.gptimage_pool_id !== curr.gptimage_pool_id || prev.provider_type !== curr.provider_type} noStyle>
+                        {() => {
+                          const providerType = form.getFieldValue('provider_type');
+                          const currentPreset = form.getFieldValue('preset_id');
+                          const currentVolcPool = form.getFieldValue('pool_id');
+                          const currentGptImagePool = form.getFieldValue('gptimage_pool_id');
 
-                                  filteredModels.forEach(m => {
-                                    if (!currentSelectedModelIds.has(m.model_id) && !newSelection.includes(m.mid)) {
-                                      newSelection.push(m.mid);
-                                      currentSelectedModelIds.add(m.model_id);
-                                    }
-                                  });
-
-                                  handleModelsChange(newSelection);
-                                };
-
-                                return (
-                                  <>
-                                    <Button onClick={handleSelectAll}>全选</Button>
-                                    <Button onClick={() => handleModelsChange([])} disabled={selected.length === 0}>
-                                      清空
-                                    </Button>
-                                  </>
-                                );
-                              }}
-                            </Form.Item>
-                          </Space>
-                        </div>
-                        <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
-                          {() => {
-                            const selectedMids: string[] = form.getFieldValue('models') || [];
-                            const selectedModelIds = selectedMids.map(mid => {
-                              const m = availableModels.find(m => m.mid === mid);
-                              return m ? m.model_id : mid;
-                            });
-
-                            const filteredModels = availableModels.filter(m => {
-                              if (!modelSearch) return true;
-                              const q = modelSearch.toLowerCase();
-                              return m.name.toLowerCase().includes(q) || m.model_id.toLowerCase().includes(q) || m.mid.toLowerCase().includes(q);
-                            });
+                          if (providerType === 'high_availability_group') {
+                            const subCandidates = channels.filter(c => 
+                              c.provider_type !== 'high_availability_group' && 
+                              c.group_aid &&
+                              (
+                                c.name?.toLowerCase().includes(presetSearchText.toLowerCase()) || 
+                                c.group_aid.toLowerCase().includes(presetSearchText.toLowerCase())
+                              )
+                            );
 
                             return (
                               <>
-                                <Form.Item name="models" rules={[{ required: true, message: '请选择至少一个模型' }]} style={{ marginBottom: 0 }} hidden>
-                                  <Select mode="multiple" />
-                                </Form.Item>
-                                <div style={{ maxHeight: 600, overflowY: 'auto', paddingRight: 8, marginTop: 12 }}>
-                                  <Row gutter={[12, 12]}>
-                                    {filteredModels.map((m) => {
-                                      const isModelIdSelected = selectedModelIds.includes(m.model_id);
-                                      const isCurrentMidSelected = selectedMids.includes(m.mid);
-                                      const isDisabled = isModelIdSelected && !isCurrentMidSelected;
-                                      return (
-                                        <Col xs={24} sm={12} lg={12} key={m.mid}>
+                                {/* 搜索框 */}
+                                <div style={{ marginBottom: 16 }}>
+                                  <Input
+                                    placeholder="输入关键字搜索物理渠道名称或 AID..."
+                                    allowClear
+                                    prefix={<SearchOutlined style={{ color: 'var(--text-secondary)' }} />}
+                                    value={presetSearchText}
+                                    onChange={(e) => setPresetSearchText(e.target.value)}
+                                  />
+                                </div>
+
+                                <div style={{ marginBottom: 12 }}>
+                                  <Alert
+                                    message="高可用渠道多选绑定"
+                                    description={`您可以选择最多 ${haMaxRetries} 个物理渠道绑定到该虚拟组。当选满 ${haMaxRetries} 个后，其余未选渠道将被置灰不可勾选。`}
+                                    type="info"
+                                    showIcon
+                                    style={{ borderRadius: 6 }}
+                                  />
+                                </div>
+
+                                <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <Text strong>
+                                    绑定物理渠道 ({selectedSubChannelAids.length} / {haMaxRetries})
+                                  </Text>
+                                  {selectedSubChannelAids.length === 0 && (
+                                    <span style={{ color: '#ff4d4f', fontSize: 12, fontWeight: 500 }}>
+                                      请至少绑定一个渠道
+                                    </span>
+                                  )}
+                                </div>
+
+                                {subCandidates.length === 0 ? (
+                                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed #e5e4e7', borderRadius: 8 }}>
+                                    暂无可绑定的物理渠道（请先在左侧输入唯一识别码 AID）
+                                  </div>
+                                ) : (
+                                  <div style={{ 
+                                    maxHeight: '680px', 
+                                    overflowY: 'auto', 
+                                    background: _isLight ? 'rgba(0,0,0,0.01)' : 'rgba(255,255,255,0.01)', 
+                                    padding: '10px', 
+                                    borderRadius: 8, 
+                                    border: _isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)' 
+                                  }}>
+                                    <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                                      {subCandidates.map(c => {
+                                        const aid = c.group_aid || '';
+                                        const isChecked = selectedSubChannelAids.includes(aid);
+                                        const isFull = selectedSubChannelAids.length >= haMaxRetries;
+                                        const isDisabled = isFull && !isChecked;
+
+                                        return (
                                           <div 
+                                            key={aid} 
+                                            style={{ 
+                                              display: 'flex', 
+                                              alignItems: 'center', 
+                                              justifyContent: 'space-between',
+                                              padding: '10px 12px', 
+                                              borderRadius: 6,
+                                              background: isChecked ? (_isLight ? 'rgba(22,119,255,0.08)' : 'rgba(22,119,255,0.15)') : 'transparent',
+                                              border: isChecked ? '1px solid #91caff' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'),
+                                              opacity: isDisabled ? 0.5 : 1,
+                                              transition: 'all 0.15s'
+                                            }}
+                                          >
+                                            <Checkbox
+                                              checked={isChecked}
+                                              disabled={isDisabled}
+                                              onChange={(e) => {
+                                                let next = [...selectedSubChannelAids];
+                                                if (e.target.checked) {
+                                                  if (!next.includes(aid)) next.push(aid);
+                                                } else {
+                                                  next = next.filter(a => a !== aid);
+                                                }
+                                                setSelectedSubChannelAids(next);
+                                                setConfigObj(prev => ({ ...prev, sub_channels: next }));
+                                              }}
+                                              style={{ flex: 1, marginRight: 8 }}
+                                            >
+                                              <span style={{ fontWeight: 600, fontSize: 13, color: isChecked ? 'var(--text)' : 'inherit' }}>{c.name}</span>
+                                              <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }} code>{aid}</Text>
+                                            </Checkbox>
+                                            <Space size={8}>
+                                              <Tag color="orange" style={{ margin: 0, fontSize: 11, borderRadius: 4 }}>倍率: {c.rate ?? 1.0}x</Tag>
+                                              <span style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>P:{c.priority} | W:{c.weight}</span>
+                                            </Space>
+                                          </div>
+                                        );
+                                      })}
+                                    </Space>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          }
+
+                          let items: any[] = [];
+                          if (upstreamTab === 'preset') {
+                            items = presets.filter(p => 
+                              p.name?.toLowerCase().includes(presetSearchText.toLowerCase()) || 
+                              p.provider_type?.toLowerCase().includes(presetSearchText.toLowerCase()) || 
+                              String(p.id).includes(presetSearchText) ||
+                              (p.yid && String(p.yid).includes(presetSearchText))
+                            );
+                          } else if (upstreamTab === 'volc') {
+                            items = volcenginePools.filter(p => 
+                              p.name?.toLowerCase().includes(presetSearchText.toLowerCase()) || 
+                              String(p.id).includes(presetSearchText)
+                            );
+                          } else if (upstreamTab === 'gptimage') {
+                            items = gptImagePools.filter(p => 
+                              p.name?.toLowerCase().includes(presetSearchText.toLowerCase()) || 
+                              String(p.id).includes(presetSearchText)
+                            );
+                          }
+
+                          return (
+                            <>
+                              {/* 1. 如果有火山或GPT Image卡池插件，则展示 Segmented 进行切换。否则直接隐藏切换器 */}
+                              {(activePlugins['volcengine_pool'] || activePlugins['gptimage_pool']) && (
+                                <div style={{ marginBottom: 16 }}>
+                                  <Segmented
+                                    block
+                                    value={upstreamTab}
+                                    onChange={(value) => setUpstreamTab(value as any)}
+                                    options={[
+                                      { label: `预设渠道 (${presets.length})`, value: 'preset' },
+                                      ...(activePlugins['volcengine_pool'] ? [{ label: `火山卡池 (${volcenginePools.length})`, value: 'volc' }] : []),
+                                      ...(activePlugins['gptimage_pool'] ? [{ label: `GPT Image 卡池 (${gptImagePools.length})`, value: 'gptimage' }] : [])
+                                    ]}
+                                  />
+                                </div>
+                              )}
+
+                              {/* 2. 搜索框 */}
+                              <div style={{ marginBottom: 16 }}>
+                                <Input
+                                  placeholder="输入关键字搜索名称或 ID..."
+                                  allowClear
+                                  prefix={<SearchOutlined style={{ color: 'var(--text-secondary)' }} />}
+                                  value={presetSearchText}
+                                  onChange={(e) => setPresetSearchText(e.target.value)}
+                                />
+                              </div>
+
+                              {items.length === 0 ? (
+                                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                  暂无匹配的上游渠道配置
+                                </div>
+                              ) : (
+                                <div style={{ maxHeight: '680px', overflowY: 'auto', paddingRight: 4 }}>
+                                  <Row gutter={[12, 12]}>
+                                    {items.map((item) => {
+                                      let isSelected = false;
+                                      let cardTitle = item.name;
+                                      let cardSubtitle = '';
+                                      let extraTag = null;
+
+                                      if (upstreamTab === 'preset') {
+                                        isSelected = currentPreset === item.id;
+                                        cardSubtitle = item.yid ? `YID: ${item.yid} | ID: ${item.id}` : `ID: ${item.id}`;
+                                        extraTag = (
+                                          <Space size={4}>
+                                            <Tag color="default" style={{ margin: 0, fontSize: 11 }}>{item.provider_type}</Tag>
+                                            <Tag color="orange" style={{ margin: 0, fontSize: 11 }}>倍率: {item.rate ?? 1.0}</Tag>
+                                          </Space>
+                                        );
+                                      } else if (upstreamTab === 'volc') {
+                                        isSelected = currentVolcPool === item.id;
+                                        cardSubtitle = `ID: ${item.id}`;
+                                        extraTag = <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>{item.strategy === 'random' ? '随机' : '顺序'}</Tag>;
+                                      } else if (upstreamTab === 'gptimage') {
+                                        isSelected = currentGptImagePool === item.id;
+                                        cardSubtitle = `ID: ${item.id}`;
+                                        extraTag = <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>{item.strategy === 'random' ? '随机' : '顺序'}</Tag>;
+                                      }
+
+                                      return (
+                                        <Col span={24} key={item.id}>
+                                          <div
                                             onClick={() => {
-                                              if (isDisabled) return;
-                                              const next = isCurrentMidSelected ? selectedMids.filter(id => id !== m.mid) : [...selectedMids, m.mid];
-                                              handleModelsChange(next);
+                                              if (upstreamTab === 'preset') {
+                                                const isHa = item.provider_type === 'high_availability_group';
+                                                if (!isHa) {
+                                                  setSelectedSubChannelAids([]);
+                                                  setConfigObj({});
+                                                }
+                                                form.setFieldsValue({
+                                                  preset_id: item.id,
+                                                  pool_id: null,
+                                                  gptimage_pool_id: null,
+                                                  rate: item.rate ?? 1.0,
+                                                  provider_type: item.provider_type || 'custom'
+                                                });
+                                              } else {
+                                                setSelectedSubChannelAids([]);
+                                                setConfigObj({});
+                                                if (upstreamTab === 'volc') {
+                                                  form.setFieldsValue({
+                                                    preset_id: null,
+                                                    pool_id: item.id,
+                                                    gptimage_pool_id: null,
+                                                    provider_type: 'custom'
+                                                  });
+                                                } else if (upstreamTab === 'gptimage') {
+                                                  form.setFieldsValue({
+                                                    preset_id: null,
+                                                    pool_id: null,
+                                                    gptimage_pool_id: item.id,
+                                                    provider_type: 'custom'
+                                                  });
+                                                }
+                                              }
                                             }}
                                             style={{
-                                              padding: '8px 12px',
-                                              borderRadius: 6,
-                                              border: isCurrentMidSelected ? '1px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'),
-                                              background: isCurrentMidSelected ? (_isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)') : 'transparent',
-                                              cursor: isDisabled ? 'not-allowed' : 'pointer',
-                                              opacity: isDisabled ? 0.5 : 1,
+                                              padding: '12px 16px',
+                                              borderRadius: 8,
+                                              border: isSelected ? '1.5px solid var(--text)' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'),
+                                              background: isSelected ? (_isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.06)') : 'transparent',
+                                              cursor: 'pointer',
                                               display: 'flex',
+                                              justifyContent: 'space-between',
                                               alignItems: 'center',
-                                              gap: 8,
                                               transition: 'all 0.2s'
                                             }}
                                           >
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                              <div style={{ fontWeight: 500, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</div>
-                                              <div style={{ fontSize: 12, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model_id}</div>
-                                              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>MID: {m.mid}</div>
+                                            <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
+                                              <div style={{ fontWeight: 600, fontSize: 14, color: isSelected ? 'var(--text)' : 'inherit', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {cardTitle}
+                                              </div>
+                                              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                                                {cardSubtitle}
+                                              </div>
+                                            </div>
+                                            <div style={{ flexShrink: 0 }}>
+                                              {extraTag}
                                             </div>
                                           </div>
                                         </Col>
@@ -913,12 +1709,12 @@ const Channels: React.FC = () => {
                                     })}
                                   </Row>
                                 </div>
-                              </>
-                            );
-                          }}
-                        </Form.Item>
-                      </div>
-
+                              )}
+                            </>
+                          );
+                        }}
+                      </Form.Item>
+                    </div>
 
                     <div style={{ display: activeRightPanel === 'levels' ? 'block' : 'none', animation: 'fadeIn 0.2s' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
@@ -1005,16 +1801,23 @@ const Channels: React.FC = () => {
                     <div style={{ display: activeRightPanel === 'mapping' ? 'block' : 'none', animation: 'fadeIn 0.2s' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                           <Title level={4} style={{ margin: 0 }}>模型别名映射</Title>
-                          <Switch checked={showMapping} onChange={setShowMapping} checkedChildren="已开启" unCheckedChildren="未开启" />
+                          <Switch checked={showMapping} onChange={setShowMapping} />
                         </div>
                         <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>开启后可为每个模型指定上游别名，解决上下游模型名称不一致的问题。</Text>
                         
                         {showMapping ? (
                           <Form.Item shouldUpdate={(prev, curr) => prev.models !== curr.models} noStyle>
                             {() => {
-                              const selectedModels = form.getFieldValue('models') || [];
+                              // Plugin: happyhorse_router 模型别名映射适配（插件可移除）
+                              // 快乐小马模式下基于4个视频模型生成映射列表，而非 routing_node
+                              let selectedModels = form.getFieldValue('models') || [];
+                              if (isHappyHorseRouting && hhModule) {
+                                const activeConfig = happyHorseConfigs.find((c: any) => c.routing_node === selectedRoutingNode);
+                                const hhModels = hhModule.getHappyHorseMappingModels(activeConfig || null);
+                                selectedModels = hhModels.map(m => m.modelId);
+                              }
                               if (selectedModels.length === 0) {
-                                return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text)', background: _isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)', borderRadius: 8 }}>请先在左侧选择模型</div>;
+                                return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text)', background: _isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)', borderRadius: 8 }}>{isHappyHorseRouting ? '请先选择推理节点' : '请先在左侧选择模型'}</div>;
                               }
                               return (
                                 <div style={{ maxHeight: 450, overflowY: 'auto', paddingRight: 12 }}>
@@ -1023,7 +1826,7 @@ const Channels: React.FC = () => {
                                       const match = availableModels.find(m => m.mid === midOrId);
                                       const actualModelId = match ? match.model_id : midOrId;
                                       const isActive = activeMappingInputs.includes(actualModelId);
-                                      const currentMapping = form.getFieldValue('model_mapping') || {};
+                                      const currentMapping = modelMappingState;
                                       const hasValue = currentMapping[actualModelId] && String(currentMapping[actualModelId]).trim();
 
                                       return (
@@ -1057,19 +1860,26 @@ const Channels: React.FC = () => {
 
                                             {isActive && (
                                               <div style={{ marginTop: 12, display: 'flex', gap: 8, animation: 'fadeIn 0.2s' }}>
-                                                <Form.Item
-                                                  name={['model_mapping', actualModelId]}
-                                                  style={{ marginBottom: 0, flex: 1 }}
-                                                >
-                                                  <Input placeholder={`请输入上游调用的实际名称，不填则默认：${actualModelId}`} autoFocus />
-                                                </Form.Item>
+                                                <div style={{ marginBottom: 0, flex: 1 }}>
+                                                  <Input 
+                                                    placeholder={`请输入上游调用的实际名称，不填则默认：${actualModelId}`} 
+                                                    autoFocus 
+                                                    value={modelMappingState[actualModelId] || ''}
+                                                    onChange={(e) => {
+                                                      const val = e.target.value;
+                                                      setModelMappingState(prev => ({ ...prev, [actualModelId]: val }));
+                                                    }}
+                                                  />
+                                                </div>
                                                 <Button 
                                                   icon={<DeleteOutlined />} 
                                                   onClick={() => {
                                                     setActiveMappingInputs(prev => prev.filter(id => id !== actualModelId));
-                                                    const newMapping = { ...(form.getFieldValue('model_mapping') || {}) };
-                                                    newMapping[actualModelId] = undefined as any;
-                                                    form.setFieldsValue({ model_mapping: newMapping });
+                                                    setModelMappingState(prev => {
+                                                      const next = { ...prev };
+                                                      delete next[actualModelId];
+                                                      return next;
+                                                    });
                                                   }}
                                                 />
                                               </div>

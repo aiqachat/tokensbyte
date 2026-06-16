@@ -6,16 +6,19 @@ use std::sync::Arc;
 use crate::AppState;
 use crate::models::{Channel, CreateChannelRequest, UpdateChannelRequest, ChannelSafe, ChannelListResponse};
 use crate::error::AppResult;
-use crate::relay::url_utils::join_url;
+
 
 pub async fn list_channels(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::auth::Claims>>,
 ) -> AppResult<Json<ChannelListResponse>> {
+    let is_admin = claims.as_ref().map_or(false, |c| c.0.role == "admin");
+
     let channels: Vec<Channel> = sqlx::query_as(&state.db.format_query("SELECT * FROM channels ORDER BY status DESC, sort_order DESC, priority DESC, id DESC"))
         .fetch_all(&state.db.pool)
         .await?;
 
-    let safe_channels: Vec<ChannelSafe> = channels.into_iter().map(ChannelSafe::from).collect();
+    let safe_channels: Vec<ChannelSafe> = channels.into_iter().map(|ch| ChannelSafe::from_with_role(ch, is_admin)).collect();
     let total = safe_channels.len() as i64;
 
     Ok(Json(ChannelListResponse { data: safe_channels, total }))
@@ -50,8 +53,8 @@ pub async fn create_channel(
         group_aid_val = rand::thread_rng().gen_range(1000..10000).to_string(); // fallback
     }
 
-    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, exclude_user_groups, group_aid, preset_id, pool_id, gptimage_pool_id, sort_order, priority, weight, status, max_rps, quota_limit, quota_used, config)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?) RETURNING id"#;
+    let sql = r#"INSERT INTO channels (name, provider_type, base_url, api_key, models, model_mapping, user_groups, exclude_user_groups, group_aid, preset_id, pool_id, gptimage_pool_id, sort_order, priority, weight, status, max_rps, quota_limit, quota_used, config, rate)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?) RETURNING id"#;
 
     let id: i64 = sqlx::query_scalar::<_, i64>(&state.db.format_query(sql))
         .bind(&request.name)
@@ -73,6 +76,7 @@ pub async fn create_channel(
         .bind(request.quota_limit.unwrap_or(-1.0))
         .bind(request.quota_used.unwrap_or(0.0))
         .bind(&config_json)
+        .bind(request.rate)
         .fetch_one(&state.db.pool)
         .await?;
 
@@ -81,7 +85,9 @@ pub async fn create_channel(
         .fetch_one(&state.db.pool)
         .await?;
 
-    Ok(Json(ChannelSafe::from(channel)))
+    crate::api::plugins::notify_marketplace_data_changed(&state).await;
+
+    Ok(Json(ChannelSafe::from_with_role(channel, true)))
 }
 
 pub async fn update_channel(
@@ -98,7 +104,12 @@ pub async fn update_channel(
     if let Some(name) = request.name { channel.name = name; }
     if let Some(provider_type) = request.provider_type { channel.provider_type = provider_type; }
     if let Some(base_url) = request.base_url { channel.base_url = base_url; }
-    if let Some(api_key) = request.api_key { channel.api_key = api_key; }
+    if let Some(api_key) = request.api_key {
+        // 【防护】空值或含脱敏标记的值不覆盖原始密钥
+        if !api_key.is_empty() && !api_key.contains("******") {
+            channel.api_key = api_key;
+        }
+    }
     if let Some(models) = request.models { channel.models = serde_json::to_string(&models).unwrap_or_else(|_| "[]".to_string()); }
     if let Some(mapping) = request.model_mapping { channel.model_mapping = serde_json::to_string(&mapping).unwrap_or_else(|_| "{}".to_string()); }
     if let Some(user_groups) = request.user_groups { channel.user_groups = serde_json::to_string(&user_groups).unwrap_or_else(|_| "[]".to_string()); }
@@ -112,6 +123,7 @@ pub async fn update_channel(
     if let Some(quota_limit) = request.quota_limit { channel.quota_limit = quota_limit; }
     if let Some(quota_used) = request.quota_used { channel.quota_used = quota_used; }
     if let Some(config) = request.config { channel.config = serde_json::to_string(&config).unwrap_or_else(|_| "{}".to_string()); }
+    if let Some(rate) = request.rate { channel.rate = rate; }
 
     if let Some(pool_id) = request.pool_id {
         channel.pool_id = Some(pool_id);
@@ -149,7 +161,7 @@ pub async fn update_channel(
 
     sqlx::query(
         &state.db.format_query(r#"UPDATE channels SET name = ?, provider_type = ?, base_url = ?, api_key = ?, models = ?, 
-           model_mapping = ?, user_groups = ?, exclude_user_groups = ?, preset_id = ?, pool_id = ?, gptimage_pool_id = ?, sort_order = ?, priority = ?, weight = ?, status = ?, max_rps = ?, quota_limit = ?, quota_used = ?, config = ?, group_aid = ?, updated_at = CURRENT_TIMESTAMP
+           model_mapping = ?, user_groups = ?, exclude_user_groups = ?, preset_id = ?, pool_id = ?, gptimage_pool_id = ?, sort_order = ?, priority = ?, weight = ?, status = ?, max_rps = ?, quota_limit = ?, quota_used = ?, config = ?, group_aid = ?, rate = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?"#)
     )
     .bind(&channel.name)
@@ -172,6 +184,7 @@ pub async fn update_channel(
     .bind(channel.quota_used)
     .bind(&channel.config)
     .bind(&group_aid_val)
+    .bind(channel.rate)
     .bind(id)
     .execute(&state.db.pool)
     .await?;
@@ -186,7 +199,9 @@ pub async fn update_channel(
             .ok();
     }
 
-    Ok(Json(ChannelSafe::from(channel)))
+    crate::api::plugins::notify_marketplace_data_changed(&state).await;
+
+    Ok(Json(ChannelSafe::from_with_role(channel, true)))
 }
 
 pub async fn delete_channel(
@@ -197,6 +212,8 @@ pub async fn delete_channel(
         .bind(id)
         .execute(&state.db.pool)
         .await?;
+
+    crate::api::plugins::notify_marketplace_data_changed(&state).await;
 
     Ok(Json(serde_json::json!({ "success": true })))
 }
@@ -244,7 +261,11 @@ pub async fn test_channel(
         }
     };
 
+    // 计算映射后的上游模型 ID
+    let (resolved_model, _) = crate::relay::router::resolve_model(&channel, &test_model, None);
+
     // ── 处理卡池逻辑 ──
+    #[cfg(feature = "commercial_plugins")]
     if let Some(pool_id) = channel.pool_id {
         if let Some(account) = crate::services::volcengine_pool::select_account(&state, pool_id, &test_model).await {
             channel.api_key = account.api_key;
@@ -256,10 +277,19 @@ pub async fn test_channel(
 
     let start = std::time::Instant::now();
 
+    // ── 获取该测试模型关联的计费规则（复用 relay 模块已有的模型查找逻辑） ──
+    let db_model = crate::relay::proxy::find_active_model_exact(&state, &test_model, None, Some(&channel)).await;
+    let db_rule: Option<crate::models::BillingRule> = match db_model.as_ref().and_then(|m| m.billing_rule_id) {
+        Some(rule_id) => sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
+            .bind(rule_id).fetch_optional(&state.db.pool).await.unwrap_or(None),
+        None => None,
+    };
+
     // ── 解析转发规则 ──
     let mut resolved: Option<crate::relay::forward::ResolvedForward> = None;
     let mut category = "聊天".to_string();
     let mut rule_is_stream = false;
+    let mut db_forward_rule: Option<crate::models::ForwardRule> = None;
 
     if let Some(fid) = req.forward_rule_id {
         let rule: Option<crate::models::ForwardRule> = sqlx::query_as(&state.db.format_query("SELECT * FROM forward_rules WHERE id = ?"))
@@ -278,8 +308,9 @@ pub async fn test_channel(
                     .unwrap_or("/v1/chat/completions")
                     .to_string();
                 let auth_type = config.get("auth_type").and_then(|v| v.as_str()).unwrap_or("bearer").to_string();
-                resolved = Some(crate::relay::forward::ResolvedForward { target_type, upstream_path, auth_type, asset_convert: false, poll_path: None });
+                resolved = Some(crate::relay::forward::ResolvedForward { target_type, upstream_path, auth_type, asset_convert: false, asset_convert_ns: "asset_manager".to_string(), poll_path: None, asset_moderation: false, eid: r.eid.clone() });
             }
+            db_forward_rule = Some(r);
         }
     }
 
@@ -287,53 +318,44 @@ pub async fn test_channel(
     let is_image = category == "图片";
     let is_video = category == "视频";
 
-    // ── 构建测试请求体 ──
+    // ── 构建测试请求体（入参依然使用原本的模型 ID：test_model） ──
     let openai_body = if is_image {
         serde_json::json!({"model": test_model, "prompt": "Draw a picture of a cute white cat. 请画一只可爱的白色小猫。", "n": 1})
     } else if is_video {
         serde_json::json!({"model": test_model, "prompt": "A short video of a cute white cat walking"})
     } else {
         let st = rule_is_stream || fwd.upstream_path.contains("stream");
-        serde_json::json!({"model": test_model, "messages": [{"role": "user", "content": "hi"}], "stream": st, "temperature": 0.0, "max_tokens": 5})
+        serde_json::json!({"model": test_model, "messages": [{"role": "user", "content": "hi"}], "stream": st, "max_tokens": 5})
     };
 
-    let request_data = crate::relay::forward::transform_request_body(&fwd, &test_model, &openai_body, &category);
+    let mut request_data: serde_json::Value = crate::relay::forward::transform_request_body(&fwd, &resolved_model, &openai_body, &category, None, None).await;
 
-    // ── 构建 URL 和鉴权 ──
-    let endpoint = crate::relay::forward::build_upstream_url(&channel.base_url, &fwd, &test_model, &channel.api_key);
-    let auth_headers = crate::relay::forward::build_auth_headers(&fwd, &channel.api_key);
+    // ── 构建 URL ──
+    let endpoint = crate::relay::forward::build_upstream_url(&channel.base_url, &fwd, &resolved_model, &channel.api_key);
 
-    // ── 生成 cURL 命令 ──
+    // ── 发送请求（统一鉴权 + 设置请求体：覆盖所有厂商包括腾讯云 TC3 签名）──
+    let builder = state.http_client.post(&endpoint).header("Content-Type", "application/json");
+    let builder = crate::relay::forward::apply_request_auth(builder, &fwd, &channel.api_key, &mut request_data, &channel.base_url);
+
+    // ── 生成 cURL 命令（在 apply_request_auth 之后，确保 body 包含可能注入的 SubAppId 等字段）──
     let masked_endpoint = crate::relay::forward::mask_key_in_string(&endpoint, &channel.api_key);
-    let _masked_key = {
-        let cc = channel.api_key.chars().count();
-        if cc > 8 {
-            let p: String = channel.api_key.chars().take(4).collect();
-            let s: String = channel.api_key.chars().skip(cc - 4).collect();
-            format!("{}******{}", p, s)
-        } else { "******".to_string() }
-    };
-
+    let auth_headers_for_curl = crate::relay::forward::build_auth_headers(&fwd, &channel.api_key);
     let mut curl_cmd = format!("curl -X POST '{}' \\\n", masked_endpoint);
     curl_cmd.push_str("  -H 'Content-Type: application/json' \\\n");
-    for (k, v) in &auth_headers {
+    for (k, v) in &auth_headers_for_curl {
         let masked_v = crate::relay::forward::mask_key_in_string(v, &channel.api_key);
         curl_cmd.push_str(&format!("  -H '{}: {}' \\\n", k, masked_v));
     }
     let request_json = serde_json::to_string(&request_data).unwrap_or_default();
     curl_cmd.push_str(&format!("  -d '{}'", request_json.replace("'", "\\'")));
 
-    // ── 发送请求 ──
-    let mut builder = state.http_client.post(&endpoint).header("Content-Type", "application/json");
-    for (k, v) in &auth_headers {
-        builder = builder.header(k, v);
-    }
-
-    let response_res: Result<serde_json::Value, crate::error::AppError> = match builder.json(&request_data).send().await {
+    let raw_response_text;
+    let response_res: Result<serde_json::Value, crate::error::AppError> = match builder.send().await {
         Ok(r) => {
             let status = r.status();
             if status.is_success() {
                 let text = r.text().await.unwrap_or_default();
+                raw_response_text = text.clone();
                 match serde_json::from_str::<serde_json::Value>(&text) {
                     Ok(v) => Ok(v),
                     Err(_) => Ok(serde_json::json!({"status": "success", "raw": text.chars().take(500).collect::<String>()}))
@@ -341,64 +363,28 @@ pub async fn test_channel(
             } else {
                 let status_val = status.as_u16();
                 let err_body = r.text().await.unwrap_or_default();
+                raw_response_text = err_body.clone();
                 let upstream_json = serde_json::from_str::<serde_json::Value>(&err_body)
                     .unwrap_or_else(|_| serde_json::json!({"raw_error": err_body}));
                 Ok(serde_json::json!({"_upstream_status": status_val, "_upstream_error": upstream_json}))
             }
         },
-        Err(e) => Ok(serde_json::json!({"_upstream_status": 0, "_upstream_error": {"connection_error": e.to_string()}}))
-    };
-
-    // ── 火山视频异步任务轮询 ──
-    let response_res = if is_video && fwd.target_type == "volcengine" {
-        match response_res {
-            Ok(create_resp) if create_resp.get("_upstream_error").is_none() => {
-                let task_id_opt = create_resp.get("id").and_then(|v| v.as_str())
-                    .or_else(|| create_resp.get("data").and_then(|d| d.get("task_id")).and_then(|v| v.as_str()));
-                if let Some(task_id) = task_id_opt {
-                    let poll_url = join_url(&channel.base_url, &format!("/api/v3/contents/generations/tasks/{}", task_id));
-                    tracing::info!("[Channel Test] 视频任务已提交 task_id={}, 开始轮询: {}", task_id, poll_url);
-                    let mut poll_result = serde_json::json!({"status": "polling_timeout"});
-                    for attempt in 0..90 {
-                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        match state.http_client.get(&poll_url)
-                            .header("Authorization", format!("Bearer {}", channel.api_key))
-                            .send().await
-                        {
-                            Ok(pr) => {
-                                let body = pr.text().await.unwrap_or_default();
-                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
-                                    let task_status_str = v.get("status").and_then(|s| s.as_str())
-                                        .or_else(|| v.get("data").and_then(|d| d.get("status")).and_then(|s| s.as_str()))
-                                        .unwrap_or("").to_string();
-                                    tracing::info!("[Channel Test] 轮询第 {} 次, status={}", attempt + 1, task_status_str);
-                                    poll_result = v;
-                                    match task_status_str.as_str() {
-                                        "succeeded" | "success" | "failed" | "error" => break,
-                                        _ => {}
-                                    }
-                                }
-                            },
-                            Err(e) => {
-                                tracing::error!("[Channel Test] 轮询请求失败: {}", e);
-                                poll_result = serde_json::json!({"poll_error": e.to_string()});
-                                break;
-                            }
-                        }
-                    }
-                    Ok(serde_json::json!({"create_task_response": create_resp, "task_id": task_id, "final_result": poll_result}))
-                } else {
-                    tracing::warn!("[Channel Test] 无法从响应中提取 task_id，跳过轮询。响应体: {:?}", create_resp);
-                    Ok(create_resp)
-                }
-            },
-            other => other,
+        Err(e) => {
+            raw_response_text = format!("{{\"connection_error\":\"{}\"}}", e.to_string().replace('"', "\\\""));
+            Ok(serde_json::json!({"_upstream_status": 0, "_upstream_error": {"connection_error": e.to_string()}}))
         }
-    } else {
-        response_res
     };
 
-    // ── 记录日志 ──
+    // ── 响应格式转换（与 relay 保持一致，确保 task_id 可被正确提取）──
+    let response_content_for_log = if fwd.target_type.starts_with("tencent_vod") {
+        let object_type = if is_image { "image.generation" } else { "video.generation" };
+        let (converted, _) = crate::relay::task::convert_tencent_post_response(&raw_response_text, object_type);
+        converted
+    } else {
+        raw_response_text
+    };
+
+    // ── 记录日志（字段与 relay 模块对齐，确保后续功能正常读取）──
     let latency_ms = start.elapsed().as_millis() as i32;
     let mut status_code = 200;
     let mut p_tokens = 0;
@@ -423,11 +409,62 @@ pub async fn test_channel(
         None => "0".to_string(),
     };
 
-    let _ = sqlx::query(&state.db.format_query("INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cost, latency_ms, status_code, endpoint, error_message, upstream_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"))
-        .bind(user_id_str).bind(id).bind(0).bind(&test_model)
-        .bind(p_tokens).bind(c_tokens).bind(0.0).bind(latency_ms)
-        .bind(status_code).bind(&endpoint).bind(err_msg).bind(&masked_endpoint)
-        .execute(&state.db.pool).await;
+    // endpoint 格式与 relay 一致: "入口|上游路径"，便于正确推断类别
+    let ep = format!("test|{}", fwd.upstream_path.replace("${model}", &resolved_model));
+    let openai_body_str = serde_json::to_string(&openai_body).unwrap_or_default();
+    let task_id = crate::relay::task::extract_task_id(&response_content_for_log).unwrap_or_default();
+
+    // ── 预先计算渠道测试的计费明细依据（但不扣费） ──
+    let preview_usage = crate::relay::usage_extractor::UsageTokens { prompt: p_tokens, completion: c_tokens, total: 0, cached: 0, cache_creation: 0, audio_tokens: 0, audio_cached_tokens: 0, image_tokens: 0 };
+    let (_, calc_detail) = crate::relay::compute_cost(
+        db_model.as_ref(), db_rule.as_ref(), &preview_usage, 1.0,
+        &crate::relay::usage_extractor::ExtractedFeatures::default(),
+    );
+    let billing_detail = format!("[测试渠道，不扣费] {}", calc_detail);
+    let billing_pid = db_rule.as_ref().map(|r| r.pid.clone());
+    let forward_eid = db_forward_rule.as_ref().map(|r| r.eid.clone());
+
+    // ── 存入日志前对内容进行 base64 脱敏（复用 relay 模块统一脱敏逻辑） ──
+    let sanitized_req = crate::relay::proxy::sanitize_base64(&openai_body_str);
+    let sanitized_resp = crate::relay::proxy::sanitize_base64(&response_content_for_log);
+    let sanitized_upstream_req = crate::relay::proxy::sanitize_base64(&request_json);
+
+    // INSERT 返回 log_id，供轮询完成后更新终态结果
+    let log_id = sqlx::query_scalar::<_, i64>(&state.db.format_query(
+        "INSERT INTO logs (user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, \
+         cost, latency_ms, status_code, endpoint, error_message, upstream_url, \
+         request_content, response_content, upstream_req_content, billing_detail, action_type, task_id, \
+         billing_pid, forward_eid) \
+         VALUES (?, ?, 0, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
+    ))
+        .bind(&user_id_str).bind(id).bind(&test_model)
+        .bind(p_tokens).bind(c_tokens).bind(latency_ms)
+        .bind(status_code).bind(&ep).bind(&err_msg).bind(&masked_endpoint)
+        .bind(&sanitized_req).bind(&sanitized_resp)
+        .bind(&sanitized_upstream_req).bind(&billing_detail).bind(&category).bind(&task_id)
+        .bind(billing_pid).bind(forward_eid)
+        .fetch_optional(&state.db.pool).await.unwrap_or(None);
+
+    // ── 异步任务自动轮询（统一支持所有厂商：火山/腾讯云/DashScope/可灵等）──
+    let mut response_res = response_res;
+    if !task_id.is_empty() && (is_image || is_video) && status_code == 200 {
+        if let Some((final_body, _final_status)) = crate::relay::task::poll_task_result(
+            &state.http_client, &channel, &fwd, &task_id, &resolved_model, &category, 90, None,
+        ).await {
+            // 更新日志响应内容为终态结果（同样脱敏 base64）
+            if let Some(lid) = log_id {
+                let sanitized_final = crate::relay::proxy::sanitize_base64(&final_body);
+                let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ? WHERE id = ?"))
+                    .bind(&sanitized_final).bind(lid)
+                    .execute(&state.db.pool).await;
+            }
+            // 更新前端展示的响应数据为终态结果
+            response_res = match serde_json::from_str::<serde_json::Value>(&final_body) {
+                Ok(v) => Ok(v),
+                Err(_) => Ok(serde_json::json!({"raw": final_body.chars().take(500).collect::<String>()}))
+            };
+        }
+    }
 
     // ── 返回结果 ──
     match response_res {

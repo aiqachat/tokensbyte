@@ -74,8 +74,9 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
       ? 'inset 0 1px 1px rgba(255,255,255,0.6), 0 24px 48px rgba(0,0,0,0.12)'
       : 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
     avatarHoverBg: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)',
-    levelBg: isLight ? 'rgba(22, 119, 255, 0.08)' : 'rgba(22, 119, 255, 0.15)',
-    levelBorder: isLight ? 'rgba(22, 119, 255, 0.2)' : 'rgba(22, 119, 255, 0.3)',
+    levelBg: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)',
+    levelBorder: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)',
+    levelText: isLight ? '#4b5563' : '#e5e5e5',
   };
 
   const profileContent = (
@@ -94,7 +95,7 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
             {user?.level_name && (
               <span style={{ 
                 fontSize: 11, padding: '0 6px', background: tc.levelBg, 
-                color: '#1677ff', borderRadius: 4, fontWeight: 'normal', flexShrink: 0,
+                color: tc.levelText, borderRadius: 4, fontWeight: 'normal', flexShrink: 0,
                 border: `1px solid ${tc.levelBorder}`, lineHeight: '18px',
                 userSelect: 'none'
               }}>
@@ -103,7 +104,7 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
             )}
           </div>
           <div style={{ fontSize: 14, color: tc.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
-            用户 UID:{user?.uid || '-'}
+            {t('profile.uid', '用户 UID')}:{user?.uid || '-'}
           </div>
         </div>
       </div>
@@ -119,9 +120,9 @@ const UserAvatarMenu: React.FC<UserAvatarMenuProps> = ({ isUserEnd = true, agree
             }}
             className="hover-bright-btn"
             icon={<DashboardOutlined style={{ fontSize: 18 }} />}
-            onClick={() => { navigate('/'); }}
+            onClick={() => { navigate('/dashboard'); }}
           >
-            控制面板
+            {t('menu.dashboard')}
           </Button>
         )}
 

@@ -61,7 +61,7 @@ impl IntoResponse for AppError {
             }
             AppError::Database(e) => {
                 tracing::error!("Database error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e))
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal database error".to_string())
             }
             AppError::Reqwest(e) => {
                 tracing::error!("HTTP client error: {}", e);

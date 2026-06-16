@@ -349,6 +349,7 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
 
   return (
     <Modal
+      zIndex={3000}
       open={open}
       onCancel={onCancel}
       footer={null}

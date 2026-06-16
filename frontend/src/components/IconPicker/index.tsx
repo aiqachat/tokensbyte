@@ -35,9 +35,15 @@ const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = 
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
+  const [recentIcons, setRecentIcons] = useState<SiteIconItem[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchIcons = useCallback(async (p = 1, q = keyword) => {
+    if (!q.trim()) {
+      setIcons([]);
+      setTotal(0);
+      return;
+    }
     try {
       setLoading(true);
       const params: any = { page: p, size: 60 };
@@ -54,7 +60,17 @@ const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = 
   }, []);
 
   useEffect(() => {
-    if (open) fetchIcons(1, '');
+    if (open) {
+      const stored = localStorage.getItem('tokensbyte_recent_icons');
+      if (stored) {
+        try {
+          setRecentIcons(JSON.parse(stored));
+        } catch {}
+      }
+      setKeyword('');
+      setIcons([]);
+      setTotal(0);
+    }
   }, [open]);
 
   const handleSearch = (val: string) => {
@@ -65,7 +81,63 @@ const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = 
 
   const handleSelect = (icon: SiteIconItem) => {
     onChange?.({ id: icon.id, name: icon.name, title: icon.title, file_path: icon.file_path });
+    setRecentIcons(prev => {
+      const newRecent = [icon, ...prev.filter(i => i.id !== icon.id)].slice(0, 14);
+      localStorage.setItem('tokensbyte_recent_icons', JSON.stringify(newRecent));
+      return newRecent;
+    });
     setOpen(false);
+  };
+
+  const renderIconItem = (icon: SiteIconItem) => {
+    const isSelected = value === icon.name;
+    return (
+      <Tooltip key={icon.id} title={icon.title || icon.name}>
+        <div
+          onClick={() => handleSelect(icon)}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '10px 4px 6px',
+            borderRadius: 6,
+            border: isSelected
+              ? '2px solid #1677ff'
+              : isLight ? '1px solid #e8e8e8' : '1px solid rgba(255,255,255,0.08)',
+            background: isSelected ? 'rgba(22,119,255,0.08)' : (isLight ? '#fafafa' : '#141414'),
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={e => {
+            if (!isSelected) {
+              e.currentTarget.style.borderColor = 'rgba(22,119,255,0.4)';
+              e.currentTarget.style.background = 'rgba(22,119,255,0.04)';
+            }
+          }}
+          onMouseLeave={e => {
+            if (!isSelected) {
+              e.currentTarget.style.borderColor = isLight ? '#e8e8e8' : 'rgba(255,255,255,0.08)';
+              e.currentTarget.style.background = isLight ? '#fafafa' : '#141414';
+            }
+          }}
+        >
+          <img
+            src={getSvgUrl(icon)}
+            alt={icon.name}
+            style={{ width: 32, height: 32, objectFit: 'contain', marginBottom: 4 }}
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+          <Text style={{
+            color: isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)', fontSize: 10,
+            textAlign: 'center', overflow: 'hidden',
+            textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            width: '100%',
+          }}>
+            {icon.title || icon.name}
+          </Text>
+        </div>
+      </Tooltip>
+    );
   };
 
   const handleClear = (e: React.MouseEvent) => {
@@ -136,85 +208,61 @@ const IconPicker: React.FC<IconPickerProps> = ({ value, onChange, placeholder = 
           style={{ marginBottom: 16 }}
         />
 
-        {loading && icons.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
-        ) : icons.length === 0 ? (
-          <Empty description="未找到匹配的图标" style={{ padding: 40 }} />
-        ) : (
-          <>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
-              gap: 8,
-              maxHeight: 400,
-              overflow: 'auto',
-              padding: '4px 0',
-            }}>
-              {icons.map(icon => {
-                const isSelected = value === icon.name;
-                return (
-                  <Tooltip key={icon.id} title={icon.title || icon.name}>
-                    <div
-                      onClick={() => handleSelect(icon)}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        padding: '10px 4px 6px',
-                        borderRadius: 6,
-                        border: isSelected
-                          ? '2px solid #1677ff'
-                          : isLight ? '1px solid #e8e8e8' : '1px solid rgba(255,255,255,0.08)',
-                        background: isSelected ? 'rgba(22,119,255,0.08)' : (isLight ? '#fafafa' : '#141414'),
-                        cursor: 'pointer',
-                        transition: 'all 0.15s',
-                      }}
-                      onMouseEnter={e => {
-                        if (!isSelected) {
-                          e.currentTarget.style.borderColor = 'rgba(22,119,255,0.4)';
-                          e.currentTarget.style.background = 'rgba(22,119,255,0.04)';
-                        }
-                      }}
-                      onMouseLeave={e => {
-                        if (!isSelected) {
-                          e.currentTarget.style.borderColor = isLight ? '#e8e8e8' : 'rgba(255,255,255,0.08)';
-                          e.currentTarget.style.background = isLight ? '#fafafa' : '#141414';
-                        }
-                      }}
-                    >
-                      <img
-                        src={getSvgUrl(icon)}
-                        alt={icon.name}
-                        style={{ width: 32, height: 32, objectFit: 'contain', marginBottom: 4 }}
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                      <Text style={{
-                        color: isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)', fontSize: 10,
-                        textAlign: 'center', overflow: 'hidden',
-                        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        width: '100%',
-                      }}>
-                        {icon.title || icon.name}
-                      </Text>
-                    </div>
-                  </Tooltip>
-                );
-              })}
-            </div>
+        {keyword.trim() ? (
+          loading && icons.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+          ) : icons.length === 0 ? (
+            <Empty description="未找到匹配的图标" style={{ padding: 40 }} />
+          ) : (
+            <>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+                gap: 8,
+                maxHeight: 400,
+                overflow: 'auto',
+                padding: '4px 0',
+              }}>
+                {icons.map(icon => renderIconItem(icon))}
+              </div>
 
-            {total > 60 && (
-              <div style={{ textAlign: 'center', marginTop: 12 }}>
-                <Pagination
-                  current={page}
-                  total={total}
-                  pageSize={60}
-                  onChange={p => fetchIcons(p, keyword)}
-                  showSizeChanger={false}
-                  size="small"
-                />
+              {total > 60 && (
+                <div style={{ textAlign: 'center', marginTop: 12 }}>
+                  <Pagination
+                    current={page}
+                    total={total}
+                    pageSize={60}
+                    onChange={p => fetchIcons(p, keyword)}
+                    showSizeChanger={false}
+                    size="small"
+                  />
+                </div>
+              )}
+            </>
+          )
+        ) : (
+          <div>
+            {recentIcons.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>最近使用</Text>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+                  gap: 8,
+                }}>
+                  {recentIcons.map(icon => renderIconItem(icon))}
+                </div>
               </div>
             )}
-          </>
+            
+            <div style={{ padding: '40px 0', textAlign: 'center' }}>
+              <div style={{ fontSize: 48, opacity: 0.1, marginBottom: 16 }}>🔍</div>
+              <Text type="secondary" style={{ fontSize: 16 }}>输入关键词搜索图标</Text>
+              <div style={{ marginTop: 8, opacity: 0.5, fontSize: 13 }}>
+                <Text type="secondary">例如输入 gpt, claude, gemini 或者其他模型提供商名称</Text>
+              </div>
+            </div>
+          </div>
         )}
       </Modal>
     </>

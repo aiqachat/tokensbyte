@@ -133,7 +133,7 @@ ExtractedFeatures {
 ### 3.3 折扣优先级
 
 ```
-模型全站折扣(site_discount_enabled=1) > 用户等级折扣(user_levels.discount)
+折扣策略: MIN(用户模型折扣, 全站折扣, 等级折扣) → 折扣限价约束 MAX(最低折扣, 模型限价)
 ```
 
 统一通过 `proxy::resolve_discount()` 获取，禁止在各 handler 中自行计算。

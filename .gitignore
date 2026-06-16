@@ -49,6 +49,4 @@ yarn-error.log*
 .gemini/
 /tmp/
 docker-images/
-
-# Backups
 backup/

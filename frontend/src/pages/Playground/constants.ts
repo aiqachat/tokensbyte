@@ -5,8 +5,9 @@
 import React from 'react';
 import {
   VideoCameraOutlined, PictureOutlined, MessageOutlined,
-  AudioOutlined, CompassOutlined
+  AudioOutlined, CompassOutlined, StarOutlined
 } from '@ant-design/icons';
+import { Image as ImageIcon, Video as VideoIcon, MessageSquare, Mic, Compass as CompassLucide, Star as StarLucide } from 'lucide-react';
 
 /** 分辨率与比例对应的像素映射表 */
 export const RESOLUTION_MAP: Record<string, Record<string, string>> = {
@@ -24,18 +25,29 @@ export const RESOLUTION_MAP: Record<string, Record<string, string>> = {
   },
 };
 
+/** 获取类别对应的 Lucide 图标 (Shadcn UI 风格) */
+export const getLucideCategoryIcon = (cat: string, size = 16) => {
+  if (cat === '默认展示') return React.createElement(StarLucide, { size });
+  if (cat === 'video' || cat.includes('视频')) return React.createElement(VideoIcon, { size });
+  if (cat === 'image' || cat.includes('图片')) return React.createElement(ImageIcon, { size });
+  if (cat === 'chat' || cat.includes('聊天')) return React.createElement(MessageSquare, { size });
+  if (cat === 'audio' || cat.includes('音频')) return React.createElement(Mic, { size });
+  return React.createElement(CompassLucide, { size });
+};
+
 /** 获取类别对应的图标 */
 export const getCategoryIcon = (cat: string, isActive: boolean, size = 16) => {
-  const color = isActive ? '#000' : 'rgba(255,255,255,0.45)';
-  if (cat === 'video' || cat.includes('视频')) return React.createElement(VideoCameraOutlined, { style: { color, fontSize: size } });
-  if (cat === 'image' || cat.includes('图片')) return React.createElement(PictureOutlined, { style: { color, fontSize: size } });
-  if (cat === 'chat' || cat.includes('聊天')) return React.createElement(MessageOutlined, { style: { color, fontSize: size } });
-  if (cat === 'audio' || cat.includes('音频')) return React.createElement(AudioOutlined, { style: { color, fontSize: size } });
-  return React.createElement(CompassOutlined, { style: { color, fontSize: size } });
+  if (cat === '默认展示') return React.createElement(StarOutlined, { style: { fontSize: size } });
+  if (cat === 'video' || cat.includes('视频')) return React.createElement(VideoCameraOutlined, { style: { fontSize: size } });
+  if (cat === 'image' || cat.includes('图片')) return React.createElement(PictureOutlined, { style: { fontSize: size } });
+  if (cat === 'chat' || cat.includes('聊天')) return React.createElement(MessageOutlined, { style: { fontSize: size } });
+  if (cat === 'audio' || cat.includes('音频')) return React.createElement(AudioOutlined, { style: { fontSize: size } });
+  return React.createElement(CompassOutlined, { style: { fontSize: size } });
 };
 
 /** 获取类别的中文标签 */
 export const getCategoryLabel = (cat: string): string => {
+  if (cat === '默认展示') return '默认展示';
   if (cat === 'video' || cat.includes('视频')) return '视频创作';
   if (cat === 'image' || cat.includes('图片')) return '图片创作';
   if (cat === 'chat' || cat.includes('聊天')) return '聊天问答';

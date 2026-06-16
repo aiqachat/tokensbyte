@@ -7,9 +7,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$BackupFile = "tokensapi_pg15.dump"
-$OldVolume = "tokensbyte_postgres-data"
-$BackupVolume = "tokensbyte_postgres-data-backup"
+
+# 项目名称配置：优先使用环境变量PROJECT_NAME，否则读取当前目录名
+$ProjectName = if ($env:PROJECT_NAME) { $env:PROJECT_NAME } else { (Get-Item $PSScriptRoot).Name }
+$BackupFile = "${ProjectName}_tokensapi_pg15.dump"
+$OldVolume = "${ProjectName}_postgres-data"
+$BackupVolume = "${ProjectName}_postgres-data-backup"
 $ProjectDir = $PSScriptRoot
 $ComposeFile = "$ProjectDir\docker-compose.yml"
 $ComposeDevFile = "$ProjectDir\docker-compose.dev.yml"
@@ -48,6 +51,9 @@ function Get-PostgresImage {
 # ==================== 回滚模式 ====================
 if ($Rollback) {
     Write-Step "开始回滚到 PostgreSQL 15"
+    
+    # 导出项目名环境变量
+    $env:PROJECT_NAME = $ProjectName
     
     $volExists = docker volume inspect $BackupVolume 2>$null
     if (-not $volExists) {
@@ -98,6 +104,9 @@ if ($currentVer -ne 15) {
     exit 1
 }
 Write-Success "当前 PostgreSQL 版本: 15"
+
+# 导出项目名环境变量
+$env:PROJECT_NAME = $ProjectName
 
 # 检查容器运行状态
 $containers = docker compose -f $ComposeFile -f $ComposeDevFile ps --format json 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
@@ -182,7 +191,9 @@ if ($retries -ge 30) {
 Write-Success "PostgreSQL 16 已就绪"
 
 Write-Step "步骤 6/7: 恢复数据到 PG16"
-docker cp "$ProjectDir\$BackupFile" tokensbyte-postgres:/tmp/tokensapi.dump
+# 导出项目名环境变量
+$env:PROJECT_NAME = $ProjectName
+docker cp "$ProjectDir\$BackupFile" ${ProjectName}-postgres:/tmp/tokensapi.dump
 docker compose -f $ComposeFile exec -T postgres pg_restore `
     -U tokensapi -d tokensapi --no-owner --no-privileges /tmp/tokensapi.dump | Out-Null
 

@@ -14,7 +14,7 @@ const LegalPage: React.FC = () => {
 
   useEffect(() => {
     if (type !== 'terms' && type !== 'privacy') {
-      navigate('/');
+      navigate('/dashboard');
       return;
     }
 

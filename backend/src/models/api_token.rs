@@ -22,6 +22,28 @@ pub struct ApiToken {
     pub updated_at: String,
     #[sqlx(default)]
     pub last_used_at: Option<String>,
+    #[sqlx(default)]
+    pub only_playground: i64,
+    #[sqlx(default)]
+    pub high_availability: i32,
+    #[sqlx(default)]
+    pub daily_quota_limit: f64,
+    #[sqlx(default)]
+    pub daily_quota_used: f64,
+    #[sqlx(default)]
+    pub weekly_quota_limit: f64,
+    #[sqlx(default)]
+    pub weekly_quota_used: f64,
+    #[sqlx(default)]
+    pub monthly_quota_limit: f64,
+    #[sqlx(default)]
+    pub monthly_quota_used: f64,
+    #[sqlx(default)]
+    pub last_reset_day: Option<String>,
+    #[sqlx(default)]
+    pub last_reset_week: Option<String>,
+    #[sqlx(default)]
+    pub last_reset_month: Option<String>,
 }
 
 impl ApiToken {
@@ -52,6 +74,31 @@ impl ApiToken {
         }
         self.quota_used < self.quota_limit
     }
+
+    pub fn check_quota_limits(&self, now_day: &str, now_week: &str, now_month: &str) -> Result<(), String> {
+        if self.quota_limit >= 0.0 && self.quota_used >= self.quota_limit {
+            return Err("总额度已耗尽".to_string());
+        }
+        if self.daily_quota_limit >= 0.0 {
+            let used = if self.last_reset_day.as_deref().unwrap_or("") != now_day { 0.0 } else { self.daily_quota_used };
+            if used >= self.daily_quota_limit {
+                return Err("今日额度已耗尽".to_string());
+            }
+        }
+        if self.weekly_quota_limit >= 0.0 {
+            let used = if self.last_reset_week.as_deref().unwrap_or("") != now_week { 0.0 } else { self.weekly_quota_used };
+            if used >= self.weekly_quota_limit {
+                return Err("本周额度已耗尽".to_string());
+            }
+        }
+        if self.monthly_quota_limit >= 0.0 {
+            let used = if self.last_reset_month.as_deref().unwrap_or("") != now_month { 0.0 } else { self.monthly_quota_used };
+            if used >= self.monthly_quota_limit {
+                return Err("本月额度已耗尽".to_string());
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +110,11 @@ pub struct CreateTokenRequest {
     pub rps_limit: Option<i32>,
     pub rpm_limit: Option<i32>,
     pub expires_at: Option<String>,
+    pub only_playground: Option<i64>,
+    pub high_availability: Option<i32>,
+    pub daily_quota_limit: Option<f64>,
+    pub weekly_quota_limit: Option<f64>,
+    pub monthly_quota_limit: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,6 +127,11 @@ pub struct UpdateTokenRequest {
     pub rpm_limit: Option<i32>,
     pub expires_at: Option<String>,
     pub is_active: Option<i64>,
+    pub only_playground: Option<i64>,
+    pub high_availability: Option<i32>,
+    pub daily_quota_limit: Option<f64>,
+    pub weekly_quota_limit: Option<f64>,
+    pub monthly_quota_limit: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]

@@ -104,9 +104,30 @@ const UserLevels: React.FC = () => {
       },
     },
     {
+      title: '等级营销推广',
+      dataIndex: 'marketing_enabled',
+      key: 'marketing_enabled',
+      render: (val: number) => (
+        val === 1 ? <Tag color="blue">已开启</Tag> : <Tag color="default">已关闭</Tag>
+      ),
+    },
+    {
+      title: '详细日志',
+      dataIndex: 'allow_view_log_details',
+      key: 'allow_view_log_details',
+      render: (val: number) => (
+        val === 0 ? <Tag color="default">已关闭</Tag> : <Tag color="blue">已开启</Tag>
+      ),
+    },
+    {
       title: t('user_levels.description'),
       dataIndex: 'description',
       key: 'description',
+    },
+    {
+      title: '排序',
+      dataIndex: 'sort_order',
+      key: 'sort_order',
     },
     {
       title: t('user_levels.created_at'),
@@ -179,7 +200,14 @@ const UserLevels: React.FC = () => {
                   </Space>
                 </CardRow>
                 <CardRow label="返利比例"><Tag color="green">{commPercent}%</Tag></CardRow>
+                <CardRow label="等级营销推广">
+                  {record.marketing_enabled === 1 ? <Tag color="blue">已开启</Tag> : <Tag color="default">已关闭</Tag>}
+                </CardRow>
+                <CardRow label="详细日志">
+                  {record.allow_view_log_details === 0 ? <Tag color="default">已关闭</Tag> : <Tag color="blue">已开启</Tag>}
+                </CardRow>
                 {record.description && <CardRow label="说明"><Text type="secondary" style={{ fontSize: 12 }}>{record.description}</Text></CardRow>}
+                <CardRow label="排序"><Text type="secondary" style={{ fontSize: 12 }}>{record.sort_order || 0}</Text></CardRow>
                 <CardRow label="创建时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD')}</Text></CardRow>
                 <CardActions>
                   <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />

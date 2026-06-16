@@ -42,6 +42,13 @@ pub async fn create_order(
         return Err(AppError::BadRequest("金额必须大于0".to_string()));
     }
 
+    // 检查用户是否被禁止在线支付（pay_enabled 为 0 表示禁止支付，1 表示允许支付）
+    let pay_enabled: Option<i32> = sqlx::query_scalar(&state.db.format_query("SELECT pay_enabled FROM users WHERE id = ?"))
+        .bind(&claims.sub).fetch_optional(&state.db.pool).await?;
+    if pay_enabled.unwrap_or(1) == 0 {
+        return Err(AppError::Forbidden("您的在线支付功能已被管理员关闭".to_string()));
+    }
+
     let out_trade_no = format!("T{}R{}", Local::now().format("%Y%m%d%H%M%S"), &Uuid::new_v4().simple().to_string()[..8]);
 
     // 回调基地址推断：生产环境微信/支付宝回调通过前端nginx反代到后端

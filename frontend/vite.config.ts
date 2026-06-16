@@ -30,7 +30,21 @@ export default defineConfig({
       '/assets/icons/': {
         target: apiTarget,
         changeOrigin: true,
+      },
+      '/home': {
+        target: apiTarget,
+        changeOrigin: true,
+      },
+      '/portal': {
+        target: apiTarget,
+        changeOrigin: true,
       }
     }
+  },
+  optimizeDeps: {
+    include: ['react-resizable'],
+  },
+  build: {
+    assetsDir: 'static', // 避免默认的 assets 目录与前端路由 /assets 冲突，导致 Nginx 报 403
   }
 })

@@ -5,9 +5,12 @@
 
 set -e
 
+# 项目名称配置：优先使用环境变量PROJECT_NAME，否则读取当前目录名
+PROJECT_NAME=${PROJECT_NAME:-$(basename "$PWD")}
+
 echo ""
 echo "═══════════════════════════════════════════════════"
-echo "  🛠  TokensByte 开发环境启动器"
+echo "  🛠  ${PROJECT_NAME} 开发环境启动器"
 echo "═══════════════════════════════════════════════════"
 echo ""
 echo "  [1] 本地开发  (推荐，编译速度快)"
@@ -38,7 +41,9 @@ case "${choice:-1}" in
     echo "   按 Ctrl+C 停止所有服务"
     echo ""
 
-    docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+    # 导出项目名环境变量
+        export PROJECT_NAME="${PROJECT_NAME}"
+        docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
     ;;
 
   1|"")
@@ -47,12 +52,13 @@ case "${choice:-1}" in
     echo "🚀 正在启动本地开发环境 (数据库在 Docker 中运行)..."
 
     # 1. 启动 Docker 中的 Postgres（合并 dev.yml 以获取端口映射）
-    docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
+        export PROJECT_NAME="${PROJECT_NAME}"
+        docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
 
-    echo "⏳ 等待数据库就绪..."
-    # 等待 Postgres 健康检查通过
-    for i in $(seq 1 30); do
-        if docker exec tokensbyte-postgres pg_isready -U tokensapi &>/dev/null; then
+        echo "⏳ 等待数据库就绪..."
+        # 等待 Postgres 健康检查通过
+        for i in $(seq 1 30); do
+            if docker exec "${PROJECT_NAME}-postgres" pg_isready -U tokensapi &>/dev/null; then
             echo "✅ 数据库已就绪"
             break
         fi

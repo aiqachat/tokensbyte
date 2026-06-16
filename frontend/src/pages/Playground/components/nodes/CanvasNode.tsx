@@ -26,7 +26,7 @@ const RESIZE_CURSORS: Record<ResizeDirection, string> = {
 };
 
 /** 单个缩放手柄 */
-const ResizeHandle: React.FC<{
+export const ResizeHandle: React.FC<{
   direction: ResizeDirection;
   onMouseDown: (e: React.MouseEvent, dir: ResizeDirection) => void;
 }> = ({ direction, onMouseDown }) => {
@@ -69,11 +69,15 @@ interface Props {
   onRemove: (id: string) => void;
   onSelect: (id: string) => void;
   onResizeStart?: (e: React.MouseEvent, nodeId: string, direction: ResizeDirection) => void;
+  isMobile?: boolean;
+  hideResizeHandles?: boolean;
 }
 
 const CanvasNode: React.FC<Props> = React.memo(({
   node, isSelected, isDragging, activeTool,
-  onMouseDown, onRemove, onSelect, onResizeStart
+  onMouseDown, onRemove, onSelect, onResizeStart,
+  isMobile = false,
+  hideResizeHandles = false
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -87,31 +91,32 @@ const CanvasNode: React.FC<Props> = React.memo(({
     <div
       data-node-id={node.id}
       onClick={() => onSelect(node.id)}
-      onMouseDown={(e) => onMouseDown(e, node.id, node.x, node.y)}
+      onMouseDown={isMobile ? undefined : (e) => onMouseDown(e, node.id, node.x, node.y)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
-        position: 'absolute',
-        left: node.x,
-        top: node.y,
-        width: node.width,
-        height: node.height,
-        zIndex: node.zIndex,
+        position: isMobile ? 'relative' : 'absolute',
+        left: isMobile ? undefined : node.x,
+        top: isMobile ? undefined : node.y,
+        width: isMobile ? '100%' : node.width,
+        height: isMobile ? undefined : node.height,
+        aspectRatio: isMobile ? `${node.width || 480}/${node.height || 320}` : undefined,
+        zIndex: isMobile ? undefined : node.zIndex,
         background: '#1A1B1E',
-        borderRadius: 12,
-        border: `${isSelected ? '2px' : '1px'} solid ${isSelected ? '#fff' : isDragging ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.08)'}`,
+        borderRadius: 16,
+        border: `${isSelected ? '2px' : '1px'} solid ${isSelected ? '#1677ff' : isDragging ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.08)'}`,
         boxShadow: isSelected
-          ? '0 0 0 1px rgba(255,255,255,0.3), 0 8px 32px rgba(255,255,255,0.15)'
+          ? '0 0 0 1px rgba(22,119,255,0.3), 0 8px 32px rgba(22,119,255,0.2)'
           : isDragging
           ? '0 8px 32px rgba(255,255,255,0.2)'
           : '0 4px 20px rgba(0,0,0,0.4)',
         overflow: isSelected ? 'visible' : 'hidden',
         transition: isDragging ? 'none' : 'box-shadow 0.2s, border-color 0.2s',
-        cursor: activeTool === 'pointer' ? (isDragging ? 'grabbing' : 'grab') : 'default',
+        cursor: isMobile ? 'pointer' : (activeTool === 'pointer' ? (isDragging ? 'grabbing' : 'grab') : 'default'),
       }}
     >
       {/* 选中状态：缩放手柄 */}
-      {isSelected && activeTool === 'pointer' && (
+      {isSelected && !isMobile && !hideResizeHandles && activeTool === 'pointer' && (
         <>
           <ResizeHandle direction="nw" onMouseDown={handleResizeMouseDown} />
           <ResizeHandle direction="n" onMouseDown={handleResizeMouseDown} />
@@ -168,10 +173,22 @@ const CanvasNode: React.FC<Props> = React.memo(({
       }}>
         {node.status === 'loading' && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-            <LoadingOutlined style={{ fontSize: 32, color: '#fff' }} />
-            <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
-              {node.taskData?.task_id ? '生成中...' : '排队中...'}
-            </Text>
+            {(node.taskData?.poll_timeout || node.taskData?.poll_exhausted) ? (
+              /* 前端轮询已超时，但后端任务仍在处理中，定时任务会自动恢复 */
+              <>
+                <div style={{ fontSize: 28, opacity: 0.6 }}>⏳</div>
+                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, textAlign: 'center', lineHeight: '18px', padding: '0 16px' }}>
+                  仍在生成中，完成后会自动显示
+                </Text>
+              </>
+            ) : (
+              <>
+                <LoadingOutlined style={{ fontSize: 32, color: '#fff' }} />
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
+                  {node.taskData?.task_id ? '生成中...' : '排队中...'}
+                </Text>
+              </>
+            )}
           </div>
         )}
         {node.status === 'error' && (

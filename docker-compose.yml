@@ -17,17 +17,19 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: tokensbyte-postgres
+    container_name: ${PROJECT_NAME:-tokensbyte}-postgres
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-tokensapi}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-tokensapi}
       - POSTGRES_DB=${POSTGRES_DB:-tokensapi}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    # 可选：暴露端口到宿主机，方便本地工具连接（如 pgAdmin, DBeaver 等）
+    # 如需暴露，取消下面两行注释
+    # ports:
+    #   - "${POSTGRES_PORT:-5432}:5432"
     networks:
-      - tokensbyte-network
+      - app-network
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tokensapi}"]
@@ -36,12 +38,13 @@ services:
       retries: 5
 
   backend:
-    image: tokensbyte-backend:latest
+    image: ${PROJECT_NAME:-tokensbyte}-backend:latest
     build:
       context: .
       dockerfile: backend/Dockerfile
     pull_policy: never
-    container_name: tokensbyte-backend
+    container_name: ${PROJECT_NAME:-tokensbyte}-backend
+    stop_grace_period: 120s
     environment:
       - HOST=0.0.0.0
       - PORT=3000
@@ -51,12 +54,14 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - REGISTER_ENABLED=${REGISTER_ENABLED:-true}
       - RUST_LOG=${RUST_LOG:-info}
+      - DATA_DIR=/app/data
+    command: sh -c "/app/tokensbyte-server 2>&1 | tee -a /app/logs/backend.log"
     volumes:
       - ./data:/app/data
-    ports:
-      - "${BACKEND_PORT:-3000}:3000"
+      - ./logs/backend:/app/logs
+    # 不暴露端口到宿主机，仅通过前端 nginx 反向代理访问
     networks:
-      - tokensbyte-network
+      - app-network
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,16 +82,20 @@ services:
           cpus: '0.5'
 
   frontend:
-    image: tokensbyte-frontend:latest
+    image: ${PROJECT_NAME:-tokensbyte}-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
     pull_policy: never
-    container_name: tokensbyte-frontend
+    container_name: ${PROJECT_NAME:-tokensbyte}-frontend
     ports:
       - "${FRONTEND_PORT:-8080}:80"
+    environment:
+      - CLIENT_MAX_BODY_SIZE=${CLIENT_MAX_BODY_SIZE:-50m}
+    volumes:
+      - ./logs/frontend:/var/log/nginx
     networks:
-      - tokensbyte-network
+      - app-network
     depends_on:
       - backend
     restart: always
@@ -106,9 +115,10 @@ services:
           cpus: '0.25'
 
 networks:
-  tokensbyte-network:
+  app-network:
     driver: bridge
-    name: tokensbyte-network
+    name: ${PROJECT_NAME:-tokensbyte}-network
 
 volumes:
   postgres-data:
+    name: tokensbyte_postgres-data

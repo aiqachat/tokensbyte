@@ -51,6 +51,7 @@ const UserLevelEdit: React.FC = () => {
         is_default: false,
         max_token_count: 10,
         allow_view_log_details: true,
+        sort_order: 0,
       });
       return;
     }
@@ -84,12 +85,12 @@ const UserLevelEdit: React.FC = () => {
 
   const handleSave = async (values: any) => {
     setSaving(true);
-    // Convert boolean switch back to number
+    // Convert boolean switch back to number, guarding against undefined to prevent overwriting with 0
     const payload = {
       ...values,
-      marketing_enabled: values.marketing_enabled ? 1 : 0,
-      is_default: values.is_default ? 1 : 0,
-      allow_view_log_details: values.allow_view_log_details ? 1 : 0,
+      marketing_enabled: values.marketing_enabled === undefined ? undefined : (values.marketing_enabled ? 1 : 0),
+      is_default: values.is_default === undefined ? undefined : (values.is_default ? 1 : 0),
+      allow_view_log_details: values.allow_view_log_details === undefined ? undefined : (values.allow_view_log_details ? 1 : 0),
     };
     // 新建时自动生成 group_key
     if (isAdd && !payload.group_key) {
@@ -167,23 +168,30 @@ const UserLevelEdit: React.FC = () => {
               <Input.TextArea rows={4} placeholder="描述该组特权或补充信息..." />
             </Form.Item>
             <Form.Item 
+              name="sort_order" 
+              label="排序（数字越大越靠前）" 
+              extra="数字大的将显示在列表前面"
+            >
+              <InputNumber style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item 
               name="is_default" 
               label="设为默认注册等级" 
               valuePropName="checked"
               extra="开启后，新用户注册时将自动成为该等级。同一时间只能有一个默认注册等级，设置后会覆盖之前的默认等级。"
             >
-              <Switch checkedChildren="默认等级" unCheckedChildren="非默认" />
+              <Switch />
             </Form.Item>
           </TabPane>
 
-          <TabPane tab="等级营销推广" key="2">
+          <TabPane tab="等级营销推广" key="2" forceRender>
             <Form.Item 
               name="marketing_enabled" 
               label="开启专属推广模式 (高优先级)" 
               valuePropName="checked"
               extra="开启后，被邀请人注册时将不再发放站点的「全局注册好礼」，而是直接发放该等级配置的面额。邀请人也会根据日限制额度获得对应提成。"
             >
-              <Switch checkedChildren="已开启" unCheckedChildren="已关闭" />
+              <Switch />
             </Form.Item>
 
             <Form.Item 
@@ -231,7 +239,7 @@ const UserLevelEdit: React.FC = () => {
             </Form.Item>
           </TabPane>
 
-          <TabPane tab={<span><KeyOutlined /> 密钥配置</span>} key="3">
+          <TabPane tab={<span><KeyOutlined /> 密钥配置</span>} key="3" forceRender>
             <Form.Item 
               name="max_token_count" 
               label="最大密钥创建数量" 
@@ -242,14 +250,14 @@ const UserLevelEdit: React.FC = () => {
             </Form.Item>
           </TabPane>
 
-          <TabPane tab="日志配置" key="4">
+          <TabPane tab="日志配置" key="4" forceRender>
             <Form.Item 
               name="allow_view_log_details" 
               label="查看日志详情" 
               valuePropName="checked"
               extra="设置关闭后，属于当前用户等级的用户在页面的使用日志和任务日志里只能看列表信息，无法点击下拉看详细内容（同时隐藏使用日志的详情文案和任务日志的加号图标），设置开启后才能看。"
             >
-              <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+              <Switch />
             </Form.Item>
           </TabPane>
         </Tabs>

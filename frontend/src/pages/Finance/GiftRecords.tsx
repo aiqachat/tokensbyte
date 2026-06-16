@@ -17,6 +17,7 @@ interface GiftRecord {
   amount: number;
   recharge_type: string;
   remark: string | null;
+  operator: string | null;
   created_at: string;
 }
 
@@ -45,7 +46,7 @@ const GiftRecords: React.FC = () => {
           page,
           per_page: pageSize,
           user_id: search || undefined,
-          recharge_type: 'gift',
+          wallet_type: 'gift',
           start_time: dateRange?.[0] || undefined,
           end_time: dateRange?.[1] ? dateRange[1] + ' 23:59:59' : undefined,
         }
@@ -96,7 +97,10 @@ const GiftRecords: React.FC = () => {
       title: '类型',
       dataIndex: 'recharge_type',
       key: 'recharge_type',
-      render: () => <Tag color="gold">🎁 赠送金</Tag>,
+      render: (type: string) => {
+        const label = t(`finance.recharge_type_${type}`) || t('finance.recharge_type_other');
+        return <Tag color="gold">🎁 {label}</Tag>;
+      },
     },
     {
       title: t('finance.remark'),
@@ -104,11 +108,17 @@ const GiftRecords: React.FC = () => {
       key: 'remark',
       render: (text: string) => text || '-',
     },
+    {
+      title: t('finance.operator'),
+      dataIndex: 'operator',
+      key: 'operator',
+      render: (text: string) => text || '-',
+    },
   ];
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 24, alignItems: screens.xs ? 'flex-start' : 'center', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 12, alignItems: screens.xs ? 'flex-start' : 'center', gap: 16 }}>
         <Space size="small" align="center" wrap>
           <GiftOutlined style={{ fontSize: 24, color: '#faad14' }} />
           <Title level={2} style={{ margin: 0, fontSize: screens.xs ? 20 : 24 }}>{t('finance.gift_records_title')}</Title>
@@ -129,7 +139,7 @@ const GiftRecords: React.FC = () => {
             style={{ width: 240 }}
           />
           <Input
-            placeholder={t('common.search_placeholder')}
+            placeholder="搜索 用户名 / UID"
             prefix={<SearchOutlined />}
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -157,31 +167,37 @@ const GiftRecords: React.FC = () => {
             size: 'small'
           }}
           renderItem={(record) => (
-            <List.Item style={{ padding: '0 0 16px 0', border: 'none' }}>
+            <List.Item style={{ padding: '0 0 8px 0', border: 'none' }}>
               <Card
                 size="small"
                 style={{ width: '100%', borderRadius: 8, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
                 title={<Text strong>{record.username}</Text>}
-                extra={<Tag color="gold">🎁 赠送金</Tag>}
+                extra={<Tag color="gold">🎁 {t(`finance.recharge_type_${record.recharge_type}`) || t('finance.recharge_type_other')}</Tag>}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>UID</Text>
                   <Text style={{ fontSize: 12 }}>{record.uid}</Text>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>金额</Text>
                   <Text strong style={{ color: record.amount >= 0 ? '#faad14' : '#ff4d4f' }}>
                     {record.amount >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(record.amount).toFixed(2)}
                   </Text>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>时间</Text>
                   <Text style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>备注</Text>
                   <Text style={{ fontSize: 12, wordBreak: 'break-all', maxWidth: '60%', textAlign: 'right' }}>{record.remark || '-'}</Text>
                 </div>
+                {record.operator && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 0 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>操作人</Text>
+                  <Text style={{ fontSize: 12 }}>{record.operator}</Text>
+                </div>
+                )}
               </Card>
             </List.Item>
           )}
@@ -191,6 +207,7 @@ const GiftRecords: React.FC = () => {
           dataSource={data}
           columns={columns}
           rowKey="id"
+          className="compact-table"
           loading={loading}
           pagination={{
             total,
@@ -203,7 +220,7 @@ const GiftRecords: React.FC = () => {
             },
             showSizeChanger: true,
           }}
-          size="middle"
+          size="small"
           scroll={{ x: 'max-content' }}
         />
       )}

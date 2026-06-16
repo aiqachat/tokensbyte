@@ -13,6 +13,7 @@ use crate::models::{Model, CreateModelRequest, UpdateModelRequest, ModelListResp
 #[derive(Debug, serde::Deserialize)]
 pub struct ModelQuery {
     pub provider_id: Option<i64>,
+    pub api_provider_id: Option<i64>,
     pub type_id: Option<i64>,
     pub page_size: Option<i64>,
     pub search: Option<String>,   // 支持按 name / model_id / mid 搜索
@@ -25,6 +26,9 @@ pub async fn list_models(
     let mut sql = "SELECT * FROM models WHERE 1=1".to_string();
     if query.provider_id.is_some() {
         sql.push_str(" AND provider_id = ?");
+    }
+    if query.api_provider_id.is_some() {
+        sql.push_str(" AND api_provider_id = ?");
     }
     if query.type_id.is_some() {
         sql.push_str(" AND type_id = ?");
@@ -42,6 +46,9 @@ pub async fn list_models(
     if let Some(pid) = query.provider_id {
         q = q.bind(pid);
     }
+    if let Some(apid) = query.api_provider_id {
+        q = q.bind(apid);
+    }
     if let Some(tid) = query.type_id {
         q = q.bind(tid);
     }
@@ -57,6 +64,9 @@ pub async fn list_models(
     if query.provider_id.is_some() {
         count_sql.push_str(" AND provider_id = ?");
     }
+    if query.api_provider_id.is_some() {
+        count_sql.push_str(" AND api_provider_id = ?");
+    }
     if query.type_id.is_some() {
         count_sql.push_str(" AND type_id = ?");
     }
@@ -68,6 +78,9 @@ pub async fn list_models(
     let mut cq = sqlx::query_scalar::<_, i64>(&formatted_count_sql);
     if let Some(pid) = query.provider_id {
         cq = cq.bind(pid);
+    }
+    if let Some(apid) = query.api_provider_id {
+        cq = cq.bind(apid);
     }
     if let Some(tid) = query.type_id {
         cq = cq.bind(tid);
@@ -111,24 +124,41 @@ pub async fn create_model(
     };
 
     let group_ratios = serde_json::to_string(&req.group_ratios.unwrap_or_default()).unwrap_or_else(|_| "{}".to_string());
-    let forward_rule_ids = req.forward_rule_ids.map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "[]".to_string()));
+    // 过滤掉不存在或已禁用的规则 ID，防止脏数据入库
+    let forward_rule_ids: Option<String> = if let Some(ids) = req.forward_rule_ids {
+        let mut valid: Vec<i64> = Vec::new();
+        for rid in &ids {
+            let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM forward_rules WHERE id = ? AND is_active = 1)"))
+                .bind(rid).fetch_one(&state.db.pool).await.unwrap_or(false);
+            if exists { valid.push(*rid); }
+        }
+        Some(serde_json::to_string(&valid).unwrap_or_else(|_| "[]".to_string()))
+    } else { None };
     
     let pre_deduction = req.pre_deduction.unwrap_or(0.0);
     let site_discount = req.site_discount.unwrap_or(1.0);
     let site_discount_enabled = req.site_discount_enabled.unwrap_or(0);
+    let global_discount = req.global_discount.unwrap_or(1.0);
+    let global_discount_enabled = req.global_discount_enabled.unwrap_or(0);
+    
+    let original_id = req.original_id.unwrap_or_default();
+    let model_id_alias = req.model_id_alias.unwrap_or_default();
     
     let is_active = req.is_active.unwrap_or(1);
     let enable_log_content = req.enable_log_content.unwrap_or(0);
 
     let new_id = sqlx::query(
-        &state.db.format_query(r#"INSERT INTO models (mid, name, model_id, provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, site_discount, site_discount_enabled, is_active, enable_log_content, logo)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        &state.db.format_query(r#"INSERT INTO models (mid, name, model_id, original_id, model_id_alias, provider_id, api_provider_id, type_id, group_ratios, forward_rule_ids, billing_rule_id, pre_deduction, site_discount, site_discount_enabled, global_discount, global_discount_enabled, is_active, enable_log_content, logo, remark, description, feature_attributes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#)
     )
     .bind(&mid)
     .bind(&req.name)
     .bind(&req.model_id)
+    .bind(&original_id)
+    .bind(&model_id_alias)
     .bind(req.provider_id)
+    .bind(req.api_provider_id)
     .bind(req.type_id)
     .bind(&group_ratios)
     .bind(forward_rule_ids)
@@ -136,9 +166,14 @@ pub async fn create_model(
     .bind(pre_deduction)
     .bind(site_discount)
     .bind(site_discount_enabled)
+    .bind(global_discount)
+    .bind(global_discount_enabled)
     .bind(is_active)
     .bind(enable_log_content)
     .bind(&req.logo)
+    .bind(&req.remark)
+    .bind(&req.description)
+    .bind(&req.feature_attributes)
     .fetch_one(&state.db.pool)
     .await?
     .get::<i64, _>("id");
@@ -147,6 +182,8 @@ pub async fn create_model(
         .bind(new_id)
         .fetch_one(&state.db.pool)
         .await?;
+
+    crate::api::plugins::notify_marketplace_data_changed(&state).await;
 
     Ok(Json(model))
 }
@@ -205,8 +242,17 @@ pub async fn update_model(
     if let Some(model_id) = &req.model_id {
         sqlx::query(&state.db.format_query("UPDATE models SET model_id = ? WHERE id = ?")).bind(model_id).bind(id).execute(&state.db.pool).await?;
     }
+    if let Some(original_id) = &req.original_id {
+        sqlx::query(&state.db.format_query("UPDATE models SET original_id = ? WHERE id = ?")).bind(original_id).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(model_id_alias) = &req.model_id_alias {
+        sqlx::query(&state.db.format_query("UPDATE models SET model_id_alias = ? WHERE id = ?")).bind(model_id_alias).bind(id).execute(&state.db.pool).await?;
+    }
     if let Some(pid) = req.provider_id {
         sqlx::query(&state.db.format_query("UPDATE models SET provider_id = ? WHERE id = ?")).bind(pid).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(apid) = req.api_provider_id {
+        sqlx::query(&state.db.format_query("UPDATE models SET api_provider_id = ? WHERE id = ?")).bind(apid).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(tid) = req.type_id {
         sqlx::query(&state.db.format_query("UPDATE models SET type_id = ? WHERE id = ?")).bind(tid).bind(id).execute(&state.db.pool).await?;
@@ -225,7 +271,19 @@ pub async fn update_model(
         sqlx::query(&state.db.format_query("UPDATE models SET pre_deduction = ? WHERE id = ?")).bind(pd).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(rules) = &req.forward_rule_ids {
-        let rules_str = serde_json::to_string(rules).unwrap_or_else(|_| "[]".to_string());
+        // 过滤掉不存在或已禁用的规则 ID，防止脏数据入库
+        let mut valid_ids: Vec<i64> = Vec::new();
+        for rid in rules {
+            let exists: bool = sqlx::query_scalar(&state.db.format_query("SELECT EXISTS(SELECT 1 FROM forward_rules WHERE id = ? AND is_active = 1)"))
+                .bind(rid)
+                .fetch_one(&state.db.pool)
+                .await
+                .unwrap_or(false);
+            if exists {
+                valid_ids.push(*rid);
+            }
+        }
+        let rules_str = serde_json::to_string(&valid_ids).unwrap_or_else(|_| "[]".to_string());
         sqlx::query(&state.db.format_query("UPDATE models SET forward_rule_ids = ? WHERE id = ?")).bind(&rules_str).bind(id).execute(&state.db.pool).await?;
     }
     if let Some(active) = req.is_active {
@@ -240,8 +298,23 @@ pub async fn update_model(
     if let Some(sde) = req.site_discount_enabled {
         sqlx::query(&state.db.format_query("UPDATE models SET site_discount_enabled = ? WHERE id = ?")).bind(sde).bind(id).execute(&state.db.pool).await?;
     }
+    if let Some(gd) = req.global_discount {
+        sqlx::query(&state.db.format_query("UPDATE models SET global_discount = ? WHERE id = ?")).bind(gd).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(gde) = req.global_discount_enabled {
+        sqlx::query(&state.db.format_query("UPDATE models SET global_discount_enabled = ? WHERE id = ?")).bind(gde).bind(id).execute(&state.db.pool).await?;
+    }
     if let Some(ref logo) = req.logo {
         sqlx::query(&state.db.format_query("UPDATE models SET logo = ? WHERE id = ?")).bind(logo).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(ref remark) = req.remark {
+        sqlx::query(&state.db.format_query("UPDATE models SET remark = ? WHERE id = ?")).bind(remark).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(ref description) = req.description {
+        sqlx::query(&state.db.format_query("UPDATE models SET description = ? WHERE id = ?")).bind(description).bind(id).execute(&state.db.pool).await?;
+    }
+    if let Some(ref feature_attributes) = req.feature_attributes {
+        sqlx::query(&state.db.format_query("UPDATE models SET feature_attributes = ? WHERE id = ?")).bind(feature_attributes).bind(id).execute(&state.db.pool).await?;
     }
 
     sqlx::query(&state.db.format_query("UPDATE models SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")).bind(id).execute(&state.db.pool).await?;
@@ -250,6 +323,8 @@ pub async fn update_model(
         .bind(id)
         .fetch_one(&state.db.pool)
         .await?;
+
+    crate::api::plugins::notify_marketplace_data_changed(&state).await;
 
     Ok(Json(model))
 }
@@ -262,6 +337,8 @@ pub async fn delete_model(
         .bind(id)
         .execute(&state.db.pool)
         .await?;
+
+    crate::api::plugins::notify_marketplace_data_changed(&state).await;
 
     Ok(Json(serde_json::json!({ "success": true })))
 }

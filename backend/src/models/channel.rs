@@ -1,6 +1,10 @@
 #![allow(dead_code)]
 use serde::{Deserialize, Serialize};
 
+fn default_rate() -> f64 {
+    1.0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Channel {
     pub id: i64,
@@ -30,6 +34,7 @@ pub struct Channel {
     pub quota_limit: f64,      // 渠道使用最大额度（上限），-1 即代表无限额
     pub quota_used: f64,       // 该渠道累计真实消耗金额
     pub config: String,        // JSON extras
+    pub rate: f64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -74,6 +79,15 @@ impl Channel {
         model.to_string()
     }
 
+    /// 获取渠道的 TOS 存储配置：返回 Some(过期天数) 表示开启，None 表示未开启
+    pub fn tos_storage(&self) -> Option<i32> {
+        let cfg: serde_json::Value = serde_json::from_str(&self.config).ok()?;
+        if !cfg.get("tos_storage_enabled")?.as_bool()? {
+            return None;
+        }
+        Some(cfg.get("tos_storage_days").and_then(|d| d.as_i64()).unwrap_or(1) as i32)
+    }
+
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,6 +114,8 @@ pub struct CreateChannelRequest {
     pub quota_limit: Option<f64>,
     pub quota_used: Option<f64>,
     pub config: Option<serde_json::Value>,
+    #[serde(default = "default_rate")]
+    pub rate: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,6 +140,7 @@ pub struct UpdateChannelRequest {
     pub quota_limit: Option<f64>,
     pub quota_used: Option<f64>,
     pub config: Option<serde_json::Value>,
+    pub rate: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -156,22 +173,32 @@ pub struct ChannelSafe {
     pub max_rps: Option<i32>,
     pub quota_limit: f64,      // 渠道额度上限
     pub quota_used: f64,       // 当前消耗总计
+    pub rate: f64,
     pub created_at: String,
     pub updated_at: String,
+    pub config: serde_json::Value,
 }
 
-impl From<Channel> for ChannelSafe {
-    fn from(ch: Channel) -> Self {
+impl ChannelSafe {
+    /// 根据用户角色构建安全的响应数据
+    /// - 管理员：返回原文密钥，前端通过 Input.Password 眼睛图标控制显隐
+    /// - 非管理员：返回脱敏密钥，保证数据安全
+    pub fn from_with_role(ch: Channel, is_admin: bool) -> Self {
         let models = ch.get_models();
         let model_mapping = ch.get_model_mapping();
         let user_groups = ch.get_user_groups();
         let exclude_user_groups = ch.get_exclude_user_groups();
+        let key = if is_admin {
+            ch.api_key.clone()
+        } else {
+            mask_secret(&ch.api_key)
+        };
         Self {
             id: ch.id,
             name: ch.name,
             provider_type: ch.provider_type,
             base_url: ch.base_url,
-            api_key: ch.api_key,
+            api_key: key,
             models,
             model_mapping,
             user_groups,
@@ -188,9 +215,25 @@ impl From<Channel> for ChannelSafe {
             max_rps: ch.max_rps,
             quota_limit: ch.quota_limit,
             quota_used: ch.quota_used,
+            rate: ch.rate,
             created_at: ch.created_at,
             updated_at: ch.updated_at,
+            config: serde_json::from_str(&ch.config).unwrap_or(serde_json::json!({})),
         }
+    }
+}
+
+/// 脱敏工具：保留前4后4字符，中间用 ****** 替代；短于8字符则全部隐藏
+pub fn mask_secret(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() > 8 {
+        let prefix: String = chars[..4].iter().collect();
+        let suffix: String = chars[chars.len()-4..].iter().collect();
+        format!("{}******{}", prefix, suffix)
+    } else if !s.is_empty() {
+        "******".to_string()
+    } else {
+        String::new()
     }
 }
 

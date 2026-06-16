@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Tag, Button, Space, Typography, DatePicker, Input, Select, Row, Col, Form, message, Grid, Descriptions, Card } from 'antd';
+import { Table, Tag, Button, Space, Typography, DatePicker, Input, Select, Row, Col, Form, message, Grid, Descriptions, Card, Tooltip, theme, Radio, Popconfirm, Modal, Image, Carousel, Spin } from 'antd';
 import MobileCardList, { MobileCard, CardRow } from '../../components/MobileCardList';
-import { SyncOutlined, ReloadOutlined, SearchOutlined, MessageOutlined, PictureOutlined, VideoCameraOutlined, ToolOutlined } from '@ant-design/icons';
+import { RefreshCw, Search, Download, Image as ImageIcon, MessageSquare, Video, Wrench, LayoutGrid, CheckCircle2, XCircle, Cuboid, ListOrdered, Mic } from 'lucide-react';
 import request from '../../utils/request';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+dayjs.extend(utc);
 import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/auth';
 import { useThemeStore } from '../../store/theme';
@@ -14,7 +16,9 @@ const { useBreakpoint } = Grid;
 
 interface TaskLog {
   id: number;
+  log_id?: string;
   user_id: string;
+  user_uid?: string;
   channel_id: number | null;
   model: string;
   endpoint: string;
@@ -27,6 +31,7 @@ interface TaskLog {
   error_message: string | null;
   request_content: string | null;
   response_content: string | null;
+  post_response?: string | null;
   billing_detail: string | null;
   channel_name: string | null;
   channel_group_aid: string | null;
@@ -38,10 +43,15 @@ interface TaskLog {
 
 // ── 工具函数：从记录中获取任务类型（直接读取后端返回的 action_type） ──────────────────────────
 const getTaskType = (r: TaskLog) => {
-  if (r.action_type === '聊天') return { label: '聊天', color: 'blue', icon: <MessageOutlined /> };
-  if (r.action_type === '图片') return { label: '图片', color: 'purple', icon: <PictureOutlined /> };
-  if (r.action_type === '视频') return { label: '视频', color: 'orange', icon: <VideoCameraOutlined /> };
-  return { label: r.action_type || '其它', color: 'default', icon: <ToolOutlined /> };
+  // eslint-disable-next-line
+  const t = (key: string, def: string) => def; // A quick polyfill if t is not available in top level. But wait, it's better to translate in component. Let's fix this in another chunk.
+  if (r.action_type === '聊天') return { label: '聊天', color: 'blue', icon: <MessageSquare size={14} /> };
+  if (r.action_type === '图片') return { label: '图片', color: 'purple', icon: <ImageIcon size={14} /> };
+  if (r.action_type === '视频') return { label: '视频', color: 'orange', icon: <Video size={14} /> };
+  if (r.action_type === '音频') return { label: '音频', color: 'green', icon: <Mic size={14} /> };
+  if (r.action_type === '向量') return { label: '向量', color: 'cyan', icon: <Cuboid size={14} /> };
+  if (r.action_type === '排序') return { label: '排序', color: 'geekblue', icon: <ListOrdered size={14} /> };
+  return { label: r.action_type || '其它', color: 'default', icon: <Wrench size={14} /> };
 };
 
 // ── 工具函数：判断是否异步任务（后端 task_id 非空即为异步） ─────────────────
@@ -71,22 +81,7 @@ const getAsyncFinalStatus = (r: TaskLog): 'pending' | 'succeeded' | 'failed' => 
   return 'pending';
 };
 
-// ── 工具函数：从异步响应中提取完成时间戳（秒级 Unix） ─────────
-const getAsyncCompletedTs = (r: TaskLog): number | null => {
-  if (!r.response_content) return null;
-  try {
-    const v = JSON.parse(r.response_content);
-    let ts = v.updated_at ?? v.data?.updated_at ?? v.final_result?.updated_at ?? v.output?.updated_at ?? null;
-    if (typeof ts === 'number') {
-      // 兼容毫秒级时间戳（如可灵的 1777538309396），如果大于 9999999999 则视为毫秒，需转为秒
-      if (ts > 9999999999) {
-        ts = Math.floor(ts / 1000);
-      }
-      return ts;
-    }
-    return null;
-  } catch { return null; }
-};
+
 
 // ── 工具函数：获取任务 ID ──────────────────
 const getTaskId = (record: TaskLog): string => record.task_id || '-';
@@ -97,11 +92,117 @@ const fmtJson = (raw: string | null): string => {
   try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
 };
 
+// ── 工具函数：提取文本/JSON中的链接 ─────────────────────────────
+const extractUrls = (content: string | null): string[] => {
+  if (!content) return [];
+  try {
+    const urls: string[] = [];
+    const searchUrl = (obj: any) => {
+      if (typeof obj === 'string') {
+        if (obj.startsWith('http://') || obj.startsWith('https://')) {
+          urls.push(obj);
+        }
+      } else if (Array.isArray(obj)) {
+        obj.forEach(searchUrl);
+      } else if (obj !== null && typeof obj === 'object') {
+        Object.values(obj).forEach(searchUrl);
+      }
+    };
+    searchUrl(JSON.parse(content));
+    return Array.from(new Set(urls));
+  } catch {
+    // 降级使用正则匹配
+    const regex = /https?:\/\/[^"'\s\\]+/g;
+    const matches = content.match(regex);
+    if (!matches) return [];
+    return Array.from(new Set(matches.map(u => u.replace(/\\/g, ''))));
+  }
+};
+
+const CustomMedia = ({ src, type }: { src: string; type: '图片' | '视频' }) => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  return (
+    <div style={{ position: 'relative', minHeight: 150, minWidth: 200, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.05)', borderRadius: 8, padding: 8, maxWidth: '100%' }}>
+      {loading && !error && <Spin style={{ position: 'absolute' }} tip={`正在加载${type}...`} />}
+      {error ? (
+        <div style={{ textAlign: 'center', color: '#ff4d4f', padding: 16 }}>
+          <div style={{ marginBottom: 8 }}>{type}加载失败，链接可能已失效或无法直接访问：</div>
+          <a href={src} target="_blank" rel="noreferrer" style={{ wordBreak: 'break-all', fontSize: 12 }}>{src}</a>
+        </div>
+      ) : (
+        type === '图片' ? (
+          <Image 
+            src={src} 
+            style={{ maxWidth: '100%', maxHeight: '600px', objectFit: 'contain', opacity: loading ? 0 : 1, transition: 'opacity 0.3s' }}
+            onLoad={() => setLoading(false)}
+            onError={() => { setLoading(false); setError(true); }}
+          />
+        ) : (
+          <video 
+            src={src} 
+            controls 
+            style={{ maxWidth: '100%', maxHeight: '600px', opacity: loading ? 0 : 1, transition: 'opacity 0.3s' }}
+            onLoadedData={() => setLoading(false)}
+            onError={() => { setLoading(false); setError(true); }}
+          />
+        )
+      )}
+    </div>
+  );
+};
+
+const ShadcnTabs = ({ value, onChange, options, isLight, themeToken }: any) => {
+  return (
+    <div style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: '8px',
+      background: themeToken?.colorFillAlter || (isLight ? '#fafafa' : '#1d1d1d'),
+      padding: '4px',
+      height: '32px',
+    }}>
+      {options.map((opt: any) => {
+        const isActive = value === opt.value;
+        return (
+          <div
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              whiteSpace: 'nowrap',
+              borderRadius: '6px',
+              padding: '0 16px',
+              height: '100%',
+              fontSize: '14px',
+              fontWeight: 500,
+              transition: 'all 0.2s',
+              cursor: 'pointer',
+              background: isActive ? 'rgb(72, 72, 72)' : 'transparent',
+              color: isActive ? '#fff' : (themeToken?.colorTextSecondary || (isLight ? '#71717a' : '#a1a1aa')),
+              boxShadow: isActive ? '0 1px 2px 0 rgba(0, 0, 0, 0.05)' : 'none',
+              gap: '6px'
+            }}
+          >
+            {opt.icon}
+            {opt.label}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const TaskLogs: React.FC = () => {
   const { t } = useTranslation();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
   const { themeMode } = useThemeStore();
+  const { token: themeToken } = theme.useToken();
   const isLight = themeMode === 'light';
   const panelBg = isLight ? '#fafafa' : '#141414';
   const labelBg = isLight ? '#f5f5f5' : '#1a1a1a';
@@ -113,43 +214,134 @@ const TaskLogs: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [allowDetails, setAllowDetails] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [form] = Form.useForm();
   const screens = useBreakpoint();
+  const [actionTypeFilter, setActionTypeFilter] = useState<string>('视觉');
+  const [subTypeFilter, setSubTypeFilter] = useState<string | null>(null);
+
+  // 预览相关状态
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [previewType, setPreviewType] = useState<'图片' | '视频'>('图片');
+
+  const handlePreview = (record: TaskLog) => {
+    const urls = extractUrls(record.response_content);
+    if (urls.length === 0) {
+      message.warning(t('task_logs.no_media', '未找到可预览的媒体链接'));
+      return;
+    }
+    // 简单过滤掉一些明显不是媒体的链接，但如果是带签名的对象存储链接可能没有后缀，所以先全保留
+    setPreviewUrls(urls);
+    setPreviewType(record.action_type as '图片' | '视频');
+    setPreviewOpen(true);
+  };
 
   const fetchLogs = useCallback(async (current = 1, size = 20) => {
     setLoading(true);
     try {
       const v = form.getFieldsValue();
       const params: any = { page: current, per_page: size };
-      if (v.action_type) params.action_type = v.action_type;
+      if (subTypeFilter) {
+        if (subTypeFilter === '图片') params.action_type = 'image';
+        else if (subTypeFilter === '视频') params.action_type = 'video';
+        else if (subTypeFilter === '聊天') params.action_type = 'chat';
+        else if (subTypeFilter === '其它') params.action_type = 'other';
+        else params.action_type = subTypeFilter;
+      } else if (actionTypeFilter && actionTypeFilter !== '全部') {
+        if (actionTypeFilter === '视觉') params.action_type = 'vision';
+        else if (actionTypeFilter === '聊天') params.action_type = 'chat';
+        else if (actionTypeFilter === '其它') params.action_type = 'other';
+        else params.action_type = actionTypeFilter;
+      }
       if (v.model) params.model = v.model;
+      if (v.log_id) params.log_id = v.log_id;
+      if (v.user_id) params.user_id = v.user_id;
       if (v.dateRange?.[0]) params.start_date = v.dateRange[0].startOf('day').toISOString();
       if (v.dateRange?.[1]) params.end_date = v.dateRange[1].endOf('day').toISOString();
 
       const res = await (request.get('/task_logs', { params }) as any);
       setData(res.data);
       setTotal(res.total);
+      if (res.allow_details !== undefined) {
+        setAllowDetails(res.allow_details);
+      }
       setPage(current);
       setPageSize(size);
     } catch (e) {
       console.error(e);
-      message.error('获取任务日志失败');
+      message.error(t('task_logs.fetch_fail', '获取任务日志失败'));
     } finally {
       setLoading(false);
     }
-  }, [form]);
+  }, [form, actionTypeFilter, subTypeFilter]);
 
-  const handleSyncTask = async (id: number) => {
+  const handleSyncTask = async (log_id: string) => {
     try {
-      const res = await (request.post(`/task_logs/${id}/sync`) as any);
-      message.success(res.message || '任务状态已同步');
+      const res = await (request.post(`/task_logs/${log_id}/sync`) as any);
+      message.success(res.message || t('task_logs.sync_success', '任务状态已同步'));
       fetchLogs(page, pageSize);
     } catch (e) {
       console.error(e);
     }
   };
 
-  useEffect(() => { fetchLogs(); }, []);
+  const handleCancelTask = async (log_id: string) => {
+    try {
+      const res = await (request.post(`/task_logs/${log_id}/cancel`) as any);
+      message.success(res.message || t('task_logs.cancel_success', '任务已取消'));
+      fetchLogs(page, pageSize);
+    } catch (e) { console.error(e); }
+  };
+
+  useEffect(() => {
+    fetchLogs(page, pageSize);
+  }, [page, pageSize, actionTypeFilter, subTypeFilter, fetchLogs]);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const v = form.getFieldsValue();
+      const params: any = {};
+      if (v.action_type) params.action_type = v.action_type;
+      if (v.model) params.model = v.model;
+      if (v.dateRange?.[0]) params.start_date = v.dateRange[0].startOf('day').toISOString();
+      if (v.dateRange?.[1]) params.end_date = v.dateRange[1].endOf('day').toISOString();
+      const resp = await request.get('/task_logs/export', {
+        params,
+        responseType: 'blob',
+        skipErrorHandler: true,
+      } as any) as any;
+      if (resp instanceof Blob && resp.type?.includes('json')) {
+        const text = await resp.text();
+        const json = JSON.parse(text);
+        message.error(json.error || t('task_logs.export_fail', '导出失败'));
+        return;
+      }
+      const blob = resp instanceof Blob ? resp : new Blob([resp], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `task_logs_${dayjs().format('YYYYMMDDHHmmss')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      message.success(t('task_logs.export_success', '导出成功'));
+    } catch (e: any) {
+      if (e?.response?.data) {
+        try {
+          const blob = e.response.data;
+          const text = blob instanceof Blob ? await blob.text() : JSON.stringify(blob);
+          const json = JSON.parse(text);
+          message.error(json.error || t('task_logs.export_fail', '导出失败'));
+        } catch { message.error(t('task_logs.export_fail', '导出失败')); }
+      } else {
+        message.error(t('task_logs.export_fail', '导出失败'));
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // ── 展开行：详细信息 ─────────────────────────────────────────
   const expandedRowRender = (record: TaskLog) => (
@@ -158,20 +350,23 @@ const TaskLogs: React.FC = () => {
         labelStyle={{ width: 120, color: labelColor, background: labelBg }}
         contentStyle={{ background: contentBg, whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12, maxHeight: 300, overflow: 'auto' }}
       >
-        <Descriptions.Item label="Token 用量">
-          输入 {record.prompt_tokens} / 输出 {record.completion_tokens}{(record.cached_tokens ?? 0) > 0 ? ` / 缓存(输入内) ${record.cached_tokens}` : ''}
+        <Descriptions.Item label={t('task_logs.token_usage', 'Token 用量')}>
+          {t('logs.input', '输入')} {record.prompt_tokens} / {t('logs.output', '输出')} {record.completion_tokens}{(record.cached_tokens ?? 0) > 0 ? ` / ${t('logs.cache_input', '缓存(输入内)')} ${record.cached_tokens}` : ''}
         </Descriptions.Item>
-        <Descriptions.Item label="费用">
+        <Descriptions.Item label={t('task_logs.cost', '费用')}>
           {record.cost > 0 ? record.cost.toFixed(6) : '0'}
         </Descriptions.Item>
         {record.billing_detail && (
-          <Descriptions.Item label="计费明细">{fmtJson(record.billing_detail)}</Descriptions.Item>
+          <Descriptions.Item label={t('logs.billing_detail', '计费明细')}>{fmtJson(record.billing_detail)}</Descriptions.Item>
         )}
         {record.request_content && (
-          <Descriptions.Item label="请求参数">{fmtJson(record.request_content)}</Descriptions.Item>
+          <Descriptions.Item label={t('logs.req_params', '请求参数')}>{fmtJson(record.request_content)}</Descriptions.Item>
         )}
         {record.response_content && (
-          <Descriptions.Item label="响应内容">{fmtJson(record.response_content)}</Descriptions.Item>
+          <Descriptions.Item label={t('logs.resp_content', '响应内容')}>{fmtJson(record.response_content)}</Descriptions.Item>
+        )}
+        {record.post_response && (
+          <Descriptions.Item label={t('logs.post_resp_content', 'POST 提交响应')}>{fmtJson(record.post_response)}</Descriptions.Item>
         )}
       </Descriptions>
     </div>
@@ -180,71 +375,85 @@ const TaskLogs: React.FC = () => {
   // ── 表格列定义 ───────────────────────────────────────────────
   const columns: any[] = [
     {
-      title: '提交时间',
+      title: t('task_logs.submit_time', '提交时间'),
       dataIndex: 'created_at',
       key: 'submit_time',
       width: 170,
       render: (v: string, r: TaskLog) => {
-        // 异步任务 created_at 就是提交时间，同步任务需减去耗时
-        const submit = isAsyncPost(r) ? dayjs(v) : dayjs(v).subtract(r.latency_ms, 'ms');
-        return <Text style={{ fontSize: 13 }}>{submit.format('YYYY-MM-DD HH:mm:ss')}</Text>;
-      },
-    },
-    {
-      title: '结束时间',
-      dataIndex: 'created_at',
-      key: 'end_time',
-      width: 170,
-      render: (_: string, r: TaskLog) => {
-        const status = getAsyncFinalStatus(r);
-        if (status === 'pending') return <Tag color="processing" icon={<SyncOutlined spin />}>进行中</Tag>;
-        // 已结束：优先从响应体提取完成时间戳
-        const ts = getAsyncCompletedTs(r);
-        const endTime = ts ? dayjs.unix(ts) : dayjs(r.created_at);
-        return <Text style={{ fontSize: 13 }}>{endTime.format('YYYY-MM-DD HH:mm:ss')}</Text>;
-      },
-    },
-    {
-      title: '花费时间',
-      key: 'time_spent',
-      width: 100,
-      render: (_: any, r: TaskLog) => {
-        const status = getAsyncFinalStatus(r);
-        if (isAsyncPost(r)) {
-          if (status === 'pending') return <Tag color="processing">处理中...</Tag>;
-          // 异步已完成：计算从提交到完成的总耗时
-          const ts = getAsyncCompletedTs(r);
-          if (ts) {
-            const totalSec = ts - dayjs(r.created_at).unix();
-            return <Text type="secondary" style={{ background: timeBadgeBg, padding: '2px 8px', borderRadius: 4 }}>🕗 {totalSec.toFixed(1)}s</Text>;
-          }
-        }
         return (
-          <Text type="secondary" style={{ background: timeBadgeBg, padding: '2px 8px', borderRadius: 4 }}>
-            🕗 {(r.latency_ms / 1000).toFixed(1)}s
-          </Text>
+          <Space direction="vertical" size={0}>
+            <Text style={{ fontSize: 13 }}>{dayjs.utc(v).local().format('YYYY-MM-DD HH:mm:ss')}</Text>
+            {r.log_id && (
+              <Text 
+                type="secondary" 
+                style={{ fontSize: 10, fontFamily: 'monospace', maxWidth: 140 }} 
+                ellipsis={{ tooltip: r.log_id }}
+                copyable={{ text: r.log_id, tooltips: [t('logs.copy', '复制'), t('logs.copy_success', '已复制')] }}
+              >
+                {r.log_id}
+              </Text>
+            )}
+          </Space>
         );
       },
     },
     {
-      title: '渠道AID',
+      title: t('task_logs.time_spent', '花费时间'),
+      key: 'time_spent',
+      width: 100,
+      render: (_: any, r: TaskLog) => {
+        const status = getAsyncFinalStatus(r);
+        if (isAsyncPost(r) && status === 'pending') {
+          return <Tag color="processing">{t('task_logs.processing', '处理中...')}</Tag>;
+        }
+        // 统一使用 latency_ms（后端在异步任务结算时已精确更新为 CURRENT_TIMESTAMP - created_at）
+        const sec = r.latency_ms / 1000;
+        const display = sec >= 60 ? `${(sec / 60).toFixed(1)}m` : `${sec.toFixed(1)}s`;
+        return (
+          <Text type="secondary" style={{ background: timeBadgeBg, padding: '2px 8px', borderRadius: 4 }}>
+            🕗 {display}
+          </Text>
+        );
+      },
+    },
+    isAdmin ? {
+      title: t('logs.channel_aid', '渠道AID'),
       key: 'channel',
       width: 120,
       render: (_: any, r: TaskLog) => {
         return <Text type="secondary" style={{ fontSize: 12 }}>{r.channel_group_aid || '-'}</Text>;
       },
-    },
+    } : null,
     {
-      title: '类型',
+      title: t('logs.type', '类型'),
       key: 'type',
-      width: 80,
+      width: 100,
+      filters: actionTypeFilter === '视觉' ? [
+        { text: t('logs.type_image', '图片'), value: '图片' },
+        { text: t('logs.type_video', '视频'), value: '视频' },
+      ] : actionTypeFilter === '全部' ? [
+        { text: t('logs.type_image', '图片'), value: '图片' },
+        { text: t('logs.type_video', '视频'), value: '视频' },
+        { text: t('logs.type_chat', '聊天'), value: '聊天' },
+        { text: t('logs.type_audio', '音频'), value: '音频' },
+        { text: t('logs.type_embedding', '向量'), value: '向量' },
+        { text: t('logs.type_rerank', '排序'), value: '排序' },
+        { text: t('logs.type_other', '其它'), value: '其它' },
+      ] : undefined,
+      filterMultiple: false,
+      filteredValue: subTypeFilter ? [subTypeFilter] : null,
       render: (_: any, r: TaskLog) => {
-        const t = getTaskType(r);
-        return <Tag icon={t.icon} color={t.color} style={{ borderRadius: 4 }}>{t.label}</Tag>;
+        const typeInfo = getTaskType(r);
+        return (
+          <Tag color={typeInfo.color} style={{ borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 8px' }}>
+            {typeInfo.icon}
+            <span>{typeInfo.label}</span>
+          </Tag>
+        );
       },
     },
     {
-      title: '模型',
+      title: t('logs.model', '模型'),
       dataIndex: 'model',
       key: 'model',
       width: 180,
@@ -252,7 +461,7 @@ const TaskLogs: React.FC = () => {
       render: (v: string) => <Text style={{ fontSize: 12, fontFamily: 'monospace' }}>{v || '-'}</Text>,
     },
     {
-      title: '任务 ID',
+      title: t('task_logs.task_id', '任务 ID'),
       key: 'task_id',
       width: 200,
       ellipsis: true,
@@ -262,27 +471,65 @@ const TaskLogs: React.FC = () => {
       },
     },
     {
-      title: '状态',
+      title: t('task_logs.status', '状态'),
       key: 'status',
       width: 120,
       render: (_: any, r: TaskLog) => {
         const status = getAsyncFinalStatus(r);
         if (status === 'pending') {
+          // 视频任务支持取消（后端 cancel_task_log 会校验具体任务类型）
+          const canCancel = r.action_type === '视频';
           return (
             <Space>
-              <Tag color="processing">进行中</Tag>
+              <Tag color="processing">{t('task_logs.pending', '进行中')}</Tag>
               <Button 
                 type="text" 
                 size="small" 
-                icon={<SyncOutlined />} 
-                onClick={(e) => { e.stopPropagation(); handleSyncTask(r.id); }} 
-                title="手动同步状态"
+                icon={<RefreshCw size={14} />} 
+                onClick={(e) => { e.stopPropagation(); handleSyncTask(r.log_id!); }} 
+                title={t('logs.manual_sync', '手动同步状态')}
               />
+              {canCancel && (
+                <Popconfirm
+                  title={t('task_logs.confirm_cancel', '确认取消此视频任务？')}
+                  onConfirm={(e) => { e?.stopPropagation(); handleCancelTask(r.log_id!); }}
+                  onCancel={(e) => e?.stopPropagation()}
+                  okText={t('common.confirm', '确认')}
+                  cancelText={t('common.cancel', '取消')}
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<XCircle size={14} />}
+                    onClick={(e) => e.stopPropagation()}
+                    title={t('task_logs.cancel_task', '取消任务')}
+                  />
+                </Popconfirm>
+              )}
             </Space>
           );
         }
-        if (status === 'failed') return <Tag color="error">失败</Tag>;
-        return <Tag color="success">成功</Tag>;
+        
+        let statusTag = null;
+        if (status === 'failed') {
+          statusTag = <Tag color="error">{t('task_logs.fail', '失败')}</Tag>;
+        } else {
+          statusTag = <Tag color="success">{t('task_logs.success', '成功')}</Tag>;
+        }
+
+        const canPreview = (r.action_type === '图片' || r.action_type === '视频') && status === 'succeeded';
+
+        return (
+          <Space>
+            {statusTag}
+            {canPreview && (
+              <Button type="link" size="small" style={{ padding: 0 }} onClick={(e) => { e.stopPropagation(); handlePreview(r); }}>
+                {t('task_logs.preview', '预览')}
+              </Button>
+            )}
+          </Space>
+        );
       },
     },
   ];
@@ -290,41 +537,48 @@ const TaskLogs: React.FC = () => {
   // 管理员额外显示用户列
   if (isAdmin) {
     columns.splice(4, 0, {
-      title: '用户',
+      title: t('logs.user', '用户'),
       key: 'user',
       width: 120,
       render: (_: any, r: TaskLog) => (
-        <Text style={{ fontSize: 12 }}>{r.user_nickname || r.user_id}</Text>
+        <Space direction="vertical" size={0}>
+          <Text style={{ fontSize: 12 }}>{r.user_nickname || r.user_uid || r.user_id}</Text>
+          <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }} copyable={{ text: r.user_uid || r.user_id, tooltips: [t('logs.copy', '复制'), t('logs.copy_success', '已复制')] }}>
+            {r.user_uid || r.user_id}
+          </Text>
+        </Space>
       ),
     });
   }
 
   // ── 筛选栏 ───────────────────────────────────────────────────
   const filterBar = (
-    <div style={{ padding: 16, background: panelBg, borderRadius: 8, marginBottom: 16 }}>
-      <Form form={form} layout="inline" onFinish={() => fetchLogs(1, pageSize)}>
-        <Form.Item name="action_type" style={{ marginBottom: 8 }}>
-          <Select placeholder="全部类型" allowClear style={{ width: 120 }}
-            options={[
-              { label: '💬 聊天', value: 'chat' },
-              { label: '🖼️ 图片', value: 'image' },
-              { label: '🎬 视频', value: 'video' },
-              { label: '🔧 其它', value: 'other' },
-            ]}
-          />
-        </Form.Item>
-        <Form.Item name="model" style={{ marginBottom: 8 }}>
-          <Input placeholder="模型名称" allowClear style={{ width: 160 }} />
-        </Form.Item>
-        <Form.Item name="dateRange" style={{ marginBottom: 8 }}>
-          <RangePicker />
-        </Form.Item>
-        <Form.Item style={{ marginBottom: 8 }}>
-          <Space>
-            <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>查询</Button>
-            <Button onClick={() => { form.resetFields(); fetchLogs(1, pageSize); }}>重置</Button>
-          </Space>
-        </Form.Item>
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+      <Form form={form} onFinish={() => fetchLogs(1, pageSize)}>
+        <Space wrap size={[8, 8]}>
+          {isAdmin && (
+            <Form.Item name="user_id" noStyle>
+              <Input placeholder={t('task_logs.search_user_id', '搜索用户 UID/用户名')} prefix={<Search size={16} />} allowClear style={{ width: 180 }} />
+            </Form.Item>
+          )}
+          <Form.Item name="log_id" noStyle>
+            <Input placeholder={t('logs.search_log_id', '搜索日志ID')} prefix={<Search size={16} />} allowClear style={{ width: 200 }} />
+          </Form.Item>
+          <Form.Item name="model" noStyle>
+            <Input placeholder={t('task_logs.model_name', '模型名称')} prefix={<Search size={16} />} allowClear style={{ width: 180 }} />
+          </Form.Item>
+          <Form.Item name="dateRange" noStyle>
+            <RangePicker />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" icon={<Search size={16} />} style={{ borderRadius: 6 }}>{t('task_logs.query', '查询')}</Button>
+          <Button onClick={() => { form.resetFields(); fetchLogs(1, pageSize); }} style={{ borderRadius: 6 }}>{t('task_logs.reset', '重置')}</Button>
+          <Button icon={<RefreshCw size={14} />} onClick={() => fetchLogs(page, pageSize)} loading={loading} style={{ borderRadius: 6 }}>{t('common.refresh', '刷新')}</Button>
+          {isAdmin && (
+            <Tooltip title={t('logs.export_tooltip', '根据当前筛选条件导出 CSV（上限10万条）')}>
+              <Button icon={<Download size={14} />} loading={exporting} onClick={handleExport} style={{ borderRadius: 6 }}>{t('task_logs.export', '导出')}</Button>
+            </Tooltip>
+          )}
+        </Space>
       </Form>
     </div>
   );
@@ -336,69 +590,132 @@ const TaskLogs: React.FC = () => {
     const status = getAsyncFinalStatus(record);
     return (
       <MobileCard
+        compact={true}
+        style={{ background: isLight ? '#fff' : '#141414', border: 'none' }}
         title={<Space><Tag color={tp.color}>{tp.icon} {tp.label}</Tag><Text style={{ fontSize: 12, fontFamily: 'monospace' }}>{record.model}</Text></Space>}
         extra={
           status === 'pending' ? (
             <Space>
-              <Tag color="processing">进行中</Tag>
-              <Button type="text" size="small" icon={<SyncOutlined />} onClick={(e) => { e.stopPropagation(); handleSyncTask(record.id); }} />
+              <Tag color="processing">{t('task_logs.pending', '进行中')}</Tag>
+              <Button type="text" size="small" icon={<RefreshCw size={14} />} onClick={(e) => { e.stopPropagation(); handleSyncTask(record.log_id!); }} />
+              {record.action_type === '视频' && (
+                <Popconfirm
+                  title={t('task_logs.confirm_cancel', '确认取消此视频任务？')}
+                  onConfirm={(e) => { e?.stopPropagation(); handleCancelTask(record.log_id!); }}
+                  onCancel={(e) => e?.stopPropagation()}
+                  okText={t('common.confirm', '确认')}
+                  cancelText={t('common.cancel', '取消')}
+                >
+                  <Button type="text" size="small" danger icon={<XCircle size={14} />} onClick={(e) => e.stopPropagation()} />
+                </Popconfirm>
+              )}
             </Space>
-          ) : status === 'failed' ? <Tag color="error">失败</Tag> : <Tag color="success">成功</Tag>
+          ) : status === 'failed' ? (
+            <Tag color="error">{t('task_logs.fail', '失败')}</Tag>
+          ) : (
+            <Space>
+              <Tag color="success">{t('task_logs.success', '成功')}</Tag>
+              {(record.action_type === '图片' || record.action_type === '视频') && (
+                <Button type="link" size="small" style={{ padding: 0 }} onClick={(e) => { e.stopPropagation(); handlePreview(record); }}>
+                  {t('task_logs.preview', '预览')}
+                </Button>
+              )}
+            </Space>
+          )
         }
       >
-        {record.channel_group_aid && (
-          <CardRow label="渠道AID">
+        <CardRow label={t('task_logs.submit_time', '提交')}>
+          <Space direction="vertical" size={0} align="end">
+            <Text type="secondary" style={{ fontSize: 12 }}>{dayjs.utc(record.created_at).local().format('YYYY-MM-DD HH:mm:ss')}</Text>
+            {record.log_id && (
+              <Text 
+                type="secondary" 
+                style={{ fontSize: 10, fontFamily: 'monospace', maxWidth: '45vw' }} 
+                ellipsis={{ tooltip: record.log_id }}
+                copyable={{ text: record.log_id }}
+              >
+                {record.log_id}
+              </Text>
+            )}
+          </Space>
+        </CardRow>
+        {isAdmin && record.channel_group_aid && (
+          <CardRow label={t('logs.channel_aid', '渠道AID')}>
             <Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text>
           </CardRow>
         )}
-        {isAdmin && <CardRow label="用户"><Text style={{ fontSize: 12 }}>{record.user_nickname || record.user_id}</Text></CardRow>}
-        <CardRow label="提交"><Text type="secondary" style={{ fontSize: 12 }}>{(isAsyncPost(record) ? dayjs(record.created_at) : dayjs(record.created_at).subtract(record.latency_ms, 'ms')).format('YYYY-MM-DD HH:mm:ss')}</Text></CardRow>
-        <CardRow label="耗时"><Text type="secondary" style={{ fontSize: 12 }}>🕗 {(() => {
-          if (isAsyncPost(record)) {
-            if (status === 'pending') return '处理中...';
-            const ts = getAsyncCompletedTs(record);
-            if (ts) { const sec = ts - dayjs(record.created_at).unix(); return sec >= 60 ? `${(sec / 60).toFixed(1)}m` : `${sec.toFixed(1)}s`; }
-          }
-          return `${(record.latency_ms / 1000).toFixed(1)}s`;
+        {isAdmin && <CardRow label={t('logs.user', '用户')}><Space direction="vertical" size={0} align="end"><Text style={{ fontSize: 12 }}>{record.user_nickname || record.user_uid || record.user_id}</Text><Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }} copyable={{ text: record.user_uid || record.user_id }}>{record.user_uid || record.user_id}</Text></Space></CardRow>}
+        <CardRow label={t('logs.latency', '耗时')}><Text type="secondary" style={{ fontSize: 12 }}>🕗 {(() => {
+          if (isAsyncPost(record) && status === 'pending') return t('task_logs.processing', '处理中...');
+          const sec = record.latency_ms / 1000;
+          return sec >= 60 ? `${(sec / 60).toFixed(1)}m` : `${sec.toFixed(1)}s`;
         })()}</Text></CardRow>
-        {tid !== '-' && <CardRow label="任务ID"><Text style={{ fontSize: 11, fontFamily: 'monospace' }}>{tid}</Text></CardRow>}
-        {record.cost > 0 && <CardRow label="费用"><Text style={{ fontSize: 12 }}>{record.cost.toFixed(6)}</Text></CardRow>}
+        {tid !== '-' && <CardRow label={t('task_logs.task_id', '任务ID')}><Text style={{ fontSize: 11, fontFamily: 'monospace' }}>{tid}</Text></CardRow>}
+        {record.cost > 0 && <CardRow label={t('task_logs.cost', '费用')}><Text style={{ fontSize: 12 }}>{record.cost.toFixed(6)}</Text></CardRow>}
       </MobileCard>
     );
   };
 
   return (
-    <Card variant="borderless" style={{ background: isLight ? '#fff' : 'rgba(255,255,255,0.02)', borderRadius: 12 }}>
-      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
-        <Col>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            <SyncOutlined style={{ marginRight: 8 }} />
+    <Card 
+      variant="borderless" 
+      style={{ 
+        background: screens.xs ? 'transparent' : (isLight ? '#fff' : 'rgba(255,255,255,0.02)'), 
+        borderRadius: 12,
+        boxShadow: screens.xs ? 'none' : undefined
+      }} 
+      styles={{ body: { padding: screens.xs ? 0 : '16px 24px 24px' } }}
+    >
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <Typography.Title level={4} style={{ margin: 0, fontSize: 18, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <RefreshCw size={20} />
             {t('menu.task_logs', '任务日志')}
           </Typography.Title>
-        </Col>
-        <Col>
-          <Button icon={<ReloadOutlined />} onClick={() => fetchLogs(page, pageSize)} loading={loading}>刷新</Button>
-        </Col>
-      </Row>
+          <ShadcnTabs 
+            value={actionTypeFilter}
+            isLight={isLight}
+            themeToken={themeToken}
+            onChange={(v: string) => {
+              setActionTypeFilter(v);
+              setSubTypeFilter(null);
+              setPage(1);
+            }}
+            options={[
+              { value: '视觉', label: t('logs.type_vision', '视觉'), icon: <ImageIcon size={14} /> },
+              { value: '聊天', label: t('logs.type_chat', '聊天'), icon: <MessageSquare size={14} /> },
+              { value: '音频', label: t('logs.type_audio', '音频'), icon: <Mic size={14} /> },
+              { value: '向量', label: t('logs.type_embedding', '向量'), icon: <Cuboid size={14} /> },
+              { value: '排序', label: t('logs.type_rerank', '排序'), icon: <ListOrdered size={14} /> },
+              { value: '其它', label: t('logs.type_other', '其它'), icon: <Wrench size={14} /> },
+              { value: '全部', label: t('logs.type_all', '全部'), icon: <LayoutGrid size={14} /> },
+            ]}
+          />
+        </div>
+      </div>
 
-      {filterBar}
+      <div style={{ marginBottom: 16 }}>
+        {filterBar}
+      </div>
 
       {screens.xs ? (
         <MobileCardList
           dataSource={data}
           loading={loading}
           rowKey="id"
+          compact={true}
+          gap={4}
           pagination={{ current: page, pageSize, total, onChange: (p: number, s: number) => fetchLogs(p, s) }}
           renderCard={renderMobileCard}
         />
       ) : (
         <Table
-          columns={columns}
+          columns={columns.map((c: any) => c ? { ...c, align: 'center' } : null).filter(Boolean) as any}
           dataSource={data}
           rowKey="id"
           loading={loading}
           expandable={
-            (isAdmin || user?.allow_view_log_details !== 0) 
+            allowDetails 
               ? { expandedRowRender, expandRowByClick: false } 
               : undefined
           }
@@ -407,13 +724,57 @@ const TaskLogs: React.FC = () => {
             pageSize,
             total,
             showSizeChanger: true,
-            showTotal: (t) => `共 ${t} 条`,
-            onChange: (p, s) => fetchLogs(p, s),
+            showTotal: (totalCount) => t('task_logs.total_records', '共 {{total}} 条', { total: totalCount }),
+          }}
+          onChange={(pagination, filters) => {
+            const typeFilter = filters?.type;
+            const newSubFilter = (typeFilter && typeFilter.length > 0) ? (typeFilter[0] as string) : null;
+            
+            let shouldResetPage = false;
+            if (newSubFilter !== subTypeFilter) {
+              setSubTypeFilter(newSubFilter);
+              shouldResetPage = true;
+            }
+            if (shouldResetPage) {
+              setPage(1);
+            } else if (pagination.current !== page || pagination.pageSize !== pageSize) {
+              setPage(pagination.current || 1);
+              setPageSize(pagination.pageSize || 20);
+            }
           }}
           scroll={{ x: 'max-content' }}
           size="middle"
         />
       )}
+
+      {/* 媒体预览 Modal */}
+      <Modal
+        title={t('task_logs.preview_media', '媒体预览')}
+        open={previewOpen}
+        onCancel={() => { setPreviewOpen(false); setPreviewUrls([]); }}
+        footer={null}
+        width={800}
+        destroyOnClose
+        centered
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center', justifyContent: 'center' }}>
+          {previewType === '图片' ? (
+            <Image.PreviewGroup>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center', width: '100%' }}>
+                {previewUrls.map((url, idx) => (
+                  <CustomMedia key={idx} src={url} type="图片" />
+                ))}
+              </div>
+            </Image.PreviewGroup>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center', width: '100%' }}>
+              {previewUrls.map((url, idx) => (
+                <CustomMedia key={idx} src={url} type="视频" />
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
     </Card>
   );
 };
