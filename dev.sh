@@ -82,7 +82,8 @@ case "${choice:-1}" in
     fi
 
     # 4. 导出环境变量，让本地 backend 连接到 localhost
-    export DATABASE_URL="postgres://tokensapi:tokensapi@localhost:5432/tokensapi"
+    export POSTGRES_PORT=${POSTGRES_PORT:-5432}
+    export DATABASE_URL="postgres://tokensapi:tokensapi@localhost:${POSTGRES_PORT}/tokensapi"
     export RUST_LOG="info"
 
     echo ""
