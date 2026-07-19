@@ -776,12 +776,12 @@ const Channels: React.FC = () => {
         const hasPeriodic = dailyLimit >= 0 || weeklyLimit >= 0 || monthlyLimit >= 0;
         return (
           <div style={{ fontSize: 12, lineHeight: 1.6 }}>
-            <div>总: {currencySymbol}{used.toFixed(4)} / {limit < 0 ? '∞' : `${currencySymbol}${Number(limit).toFixed(4)}`}</div>
+            <div>总: {currencySymbol}{used.toFixed(6)} / {limit < 0 ? '∞' : `${currencySymbol}${Number(limit).toFixed(6)}`}</div>
             {hasPeriodic && (
               <>
-                {dailyLimit >= 0 && <div>日: {dailyUsed.toFixed(4)} / {dailyLimit}</div>}
-                {weeklyLimit >= 0 && <div>周: {weeklyUsed.toFixed(4)} / {weeklyLimit}</div>}
-                {monthlyLimit >= 0 && <div>月: {monthlyUsed.toFixed(4)} / {monthlyLimit}</div>}
+                {dailyLimit >= 0 && <div>日: {dailyUsed.toFixed(6)} / {dailyLimit}</div>}
+                {weeklyLimit >= 0 && <div>周: {weeklyUsed.toFixed(6)} / {weeklyLimit}</div>}
+                {monthlyLimit >= 0 && <div>月: {monthlyUsed.toFixed(6)} / {monthlyLimit}</div>}
               </>
             )}
           </div>
@@ -952,7 +952,7 @@ const Channels: React.FC = () => {
     if (items.length === 0) return null;
 
     const tip = (label: string, used: number, limit: number) =>
-      `${label}：${used.toFixed(4)} / ${Number(limit).toFixed(4)}`;
+      `${label}：${used.toFixed(6)} / ${Number(limit).toFixed(6)}`;
 
     return (
       <div
@@ -1266,13 +1266,13 @@ const Channels: React.FC = () => {
                     <CardRow label="已用/额度">
                       <div style={{ fontSize: 12, lineHeight: 1.6, textAlign: 'right' }}>
                         <div>
-                          总: {currencySymbol}{used.toFixed(4)} / {limit < 0 ? '∞' : `${currencySymbol}${Number(limit).toFixed(4)}`}
+                          总: {currencySymbol}{used.toFixed(6)} / {limit < 0 ? '∞' : `${currencySymbol}${Number(limit).toFixed(6)}`}
                         </div>
                         {hasPeriodic && (
                           <>
-                            {dailyLimit >= 0 && <div>日: {dailyUsed.toFixed(4)} / {Number(dailyLimit).toFixed(4)}</div>}
-                            {weeklyLimit >= 0 && <div>周: {weeklyUsed.toFixed(4)} / {Number(weeklyLimit).toFixed(4)}</div>}
-                            {monthlyLimit >= 0 && <div>月: {monthlyUsed.toFixed(4)} / {Number(monthlyLimit).toFixed(4)}</div>}
+                            {dailyLimit >= 0 && <div>日: {dailyUsed.toFixed(6)} / {Number(dailyLimit).toFixed(6)}</div>}
+                            {weeklyLimit >= 0 && <div>周: {weeklyUsed.toFixed(6)} / {Number(weeklyLimit).toFixed(6)}</div>}
+                            {monthlyLimit >= 0 && <div>月: {monthlyUsed.toFixed(6)} / {Number(monthlyLimit).toFixed(6)}</div>}
                           </>
                         )}
                       </div>

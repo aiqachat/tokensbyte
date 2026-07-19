@@ -969,10 +969,10 @@ const Users: React.FC = () => {
           {!isAdminPage && !editingUser && (
             <div style={{ display: 'flex', gap: 16 }}>
               <Form.Item name="balance" label={`系统钱包余额 (${currencySymbol})`} initialValue={0} style={{ flex: 1 }}>
-                <InputNumber style={{ width: '100%' }} precision={2} min={0} />
+                <InputNumber style={{ width: '100%' }} precision={6} min={0} />
               </Form.Item>
               <Form.Item name="gift_balance" label={`赠送钱包余额 (${currencySymbol})`} initialValue={0} style={{ flex: 1 }}>
-                <InputNumber style={{ width: '100%' }} precision={2} min={0} />
+                <InputNumber style={{ width: '100%' }} precision={6} min={0} />
               </Form.Item>
             </div>
           )}
@@ -1301,16 +1301,16 @@ const Users: React.FC = () => {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 32px' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <Text type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>系统钱包余额</Text>
-              <Text strong style={{ color: '#1677ff', fontSize: 18, fontFamily: 'monospace' }}>{currencySymbol}{(rechargingUser?.balance || 0).toFixed(4)}</Text>
+              <Text strong style={{ color: '#1677ff', fontSize: 18, fontFamily: 'monospace' }}>{currencySymbol}{(rechargingUser?.balance || 0).toFixed(6)}</Text>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <Text type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>赠送钱包余额</Text>
-              <Text strong style={{ color: '#faad14', fontSize: 18, fontFamily: 'monospace' }}>🎁 {currencySymbol}{(rechargingUser?.gift_balance || 0).toFixed(4)}</Text>
+              <Text strong style={{ color: '#faad14', fontSize: 18, fontFamily: 'monospace' }}>🎁 {currencySymbol}{(rechargingUser?.gift_balance || 0).toFixed(6)}</Text>
             </div>
             {((rechargingUser?.credit_limit || 0) > 0) && (
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <Text type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>信控额度</Text>
-                <Text strong style={{ color: '#1890ff', fontSize: 18, fontFamily: 'monospace' }}>💳 {currencySymbol}{(rechargingUser?.credit_limit || 0).toFixed(4)}</Text>
+                <Text strong style={{ color: '#1890ff', fontSize: 18, fontFamily: 'monospace' }}>💳 {currencySymbol}{(rechargingUser?.credit_limit || 0).toFixed(6)}</Text>
               </div>
             )}
           </div>
@@ -1350,9 +1350,9 @@ const Users: React.FC = () => {
                   if (isNaN(num) || !isFinite(num)) {
                     return Promise.reject(new Error('请输入有效的数字金额'));
                   }
-                  const reg = /^-?\d+(\.\d{1,4})?$/;
+                  const reg = /^-?\d+(\.\d{1,6})?$/;
                   if (!reg.test(value.toString())) {
-                    return Promise.reject(new Error('请输入正确的金额格式（最多保留四位小数，可为负数）'));
+                    return Promise.reject(new Error('请输入正确的金额格式（最多保留六位小数，可为负数）'));
                   }
                   return Promise.resolve();
                 }
@@ -1363,7 +1363,7 @@ const Users: React.FC = () => {
               style={{ width: '100%' }} 
               size="large"
               prefix={<span style={{ color: 'var(--ant-color-text-secondary)', marginRight: 4 }}>{currencySymbol}</span>}
-              placeholder="0.0000"
+              placeholder="0.000000"
             />
           </Form.Item>
           
@@ -1404,7 +1404,7 @@ const Users: React.FC = () => {
                   }}
                   onClick={() => {
                     const cur = rechargeForm.getFieldValue('amount') || 0;
-                    rechargeForm.setFieldsValue({ amount: Math.round((cur + val) * 100) / 100 });
+                    rechargeForm.setFieldsValue({ amount: Math.round((cur + val) * 1_000_000) / 1_000_000 });
                   }}
                 >
                   {rechargeActionType === 'decrease' ? '-' : '+'}{val}

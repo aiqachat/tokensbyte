@@ -94,7 +94,7 @@ const GiftRecords: React.FC = () => {
       key: 'amount',
       render: (val: number) => (
         <Text strong style={{ color: val >= 0 ? '#faad14' : '#ff4d4f' }}>
-          {val >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(val).toFixed(4)}
+          {val >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(val).toFixed(6)}
         </Text>
       ),
     },
@@ -141,7 +141,7 @@ const GiftRecords: React.FC = () => {
           <GiftOutlined style={{ fontSize: 24, color: '#faad14' }} />
           <Title level={2} style={{ margin: 0, fontSize: screens.xs ? 20 : 24 }}>{t('finance.gift_records_title')}</Title>
           <Text type="secondary" style={{ marginLeft: screens.xs ? 0 : 8 }}>
-            赠送金合计: <Text strong style={{ color: '#faad14', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(4)}</Text>
+            赠送金合计: <Text strong style={{ color: '#faad14', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(6)}</Text>
           </Text>
         </Space>
         <Space wrap style={{ width: screens.xs ? '100%' : 'auto' }}>
@@ -207,7 +207,7 @@ const GiftRecords: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>金额</Text>
                   <Text strong style={{ color: record.amount >= 0 ? '#faad14' : '#ff4d4f' }}>
-                    {record.amount >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(record.amount).toFixed(4)}
+                    {record.amount >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(record.amount).toFixed(6)}
                   </Text>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>

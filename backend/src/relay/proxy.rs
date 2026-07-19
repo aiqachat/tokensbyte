@@ -589,8 +589,8 @@ pub async fn pre_deduct(
         return Err(sqlx::Error::RowNotFound);
     }
     // 对齐精度（避免浮点运算产生 0.19999999999999996 之类的值）
-    let gift_deducted = (amount.min(gift) * 1_000_000.0).round() / 1_000_000.0;
-    let balance_deducted = ((amount - gift_deducted) * 1_000_000.0).round() / 1_000_000.0;
+    let gift_deducted = crate::money::round_money(amount.min(gift));
+    let balance_deducted = crate::money::round_money(amount - gift_deducted);
 
     sqlx::query(&state.db.format_query(
         "UPDATE users SET balance = balance - ?, gift_balance = gift_balance - ? WHERE id = ?",

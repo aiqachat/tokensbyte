@@ -711,7 +711,7 @@ pub async fn recharge_user(
     if request.amount.is_nan() || request.amount.is_infinite() {
         return Err(AppError::BadRequest("无效的金额数值".to_string()));
     }
-    let request_amount = (request.amount * 10000.0).round() / 10000.0;
+    let request_amount = crate::money::round_money(request.amount);
 
     let operator_name = claims.username.clone();
     let mut tx = state.db.pool.begin().await?;

@@ -134,7 +134,7 @@ const OrderDetails: React.FC = () => {
       dataIndex: 'amount',
       key: 'amount',
       width: 100,
-      render: (val: number) => <Text strong style={{ color: '#ff4d4f' }}>{currencySymbol}{val.toFixed(2)}</Text>,
+      render: (val: number) => <Text strong style={{ color: '#ff4d4f' }}>{currencySymbol}{val.toFixed(6)}</Text>,
     },
     {
       title: t('finance.status'),
@@ -176,7 +176,7 @@ const OrderDetails: React.FC = () => {
           <BarChartOutlined style={{ fontSize: 24, color: '#52c41a' }} />
           <Title level={2} style={{ margin: 0, fontSize: screens.xs ? 20 : 24 }}>支付订单</Title>
           <Text type="secondary" style={{ marginLeft: screens.xs ? 0 : 8 }}>
-            (已支付) 合计: <Text strong style={{ color: '#52c41a', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(2)}</Text>
+            (已支付) 合计: <Text strong style={{ color: '#52c41a', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(6)}</Text>
           </Text>
         </Space>
         <Space wrap style={{ width: screens.xs ? '100%' : 'auto' }}>
@@ -272,7 +272,7 @@ const OrderDetails: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>金额</Text>
-                    <Text strong style={{ color: '#ff4d4f' }}>{currencySymbol}{record.amount.toFixed(2)}</Text>
+                    <Text strong style={{ color: '#ff4d4f' }}>{currencySymbol}{record.amount.toFixed(6)}</Text>
                   </div>
                   {record.trade_no && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>

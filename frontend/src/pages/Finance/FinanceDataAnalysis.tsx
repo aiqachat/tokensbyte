@@ -175,12 +175,12 @@ const FinanceDataAnalysis: React.FC = () => {
                       tick={{fill: textColor}} 
                       tickLine={false} 
                       axisLine={false} 
-                      tickFormatter={(value: number) => parseFloat(Number(value).toFixed(2)).toString()}
+                      tickFormatter={(value: number) => parseFloat(Number(value).toFixed(6)).toString()}
                     />
                     <Tooltip 
                       contentStyle={{ backgroundColor: isDark ? '#1f1f1f' : '#fff', color: textColor, borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }} 
                       itemStyle={{ color: textColor }}
-                      formatter={(value: any) => parseFloat(Number(value).toFixed(4))}
+                      formatter={(value: any) => parseFloat(Number(value).toFixed(6))}
                     />
                     <Legend iconType="circle" wrapperStyle={{ paddingTop: 20 }} />
                     <Line type="monotone" dataKey="daily_system_recharge" stroke="#1677ff" strokeWidth={3} activeDot={{ r: 6 }} name={`每日系统钱包余额增加 (${currencyUnit})`} dot={false} />
@@ -208,11 +208,11 @@ const FinanceDataAnalysis: React.FC = () => {
                       tick={{fill: textColor}} 
                       tickLine={false} 
                       axisLine={false} 
-                      tickFormatter={(value: number) => parseFloat(Number(value).toFixed(2)).toString()}
+                      tickFormatter={(value: number) => parseFloat(Number(value).toFixed(6)).toString()}
                     />
                     <Tooltip 
                       contentStyle={{ backgroundColor: isDark ? '#1f1f1f' : '#fff', color: textColor, borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }} 
-                      formatter={(value: any) => parseFloat(Number(value).toFixed(2))}
+                      formatter={(value: any) => parseFloat(Number(value).toFixed(6))}
                     />
                     <Legend iconType="circle" wrapperStyle={{ paddingTop: 20 }} />
                     <Line type="monotone" dataKey="online_recharge" stroke="#52c41a" strokeWidth={3} activeDot={{ r: 6 }} name={`在线充值金额 (${currencyUnit})`} dot={false} />
@@ -239,11 +239,11 @@ const FinanceDataAnalysis: React.FC = () => {
                       tick={{fill: textColor}} 
                       tickLine={false} 
                       axisLine={false} 
-                      tickFormatter={(value: number) => parseFloat(Number(value).toFixed(4)).toString()}
+                      tickFormatter={(value: number) => parseFloat(Number(value).toFixed(6)).toString()}
                     />
                     <Tooltip 
                       contentStyle={{ backgroundColor: isDark ? '#1f1f1f' : '#fff', color: textColor, borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }} 
-                      formatter={(value: any) => parseFloat(Number(value).toFixed(4))}
+                      formatter={(value: any) => parseFloat(Number(value).toFixed(6))}
                     />
                     <Legend iconType="circle" wrapperStyle={{ paddingTop: 20 }} />
                     <Line type="monotone" dataKey="system_recharge_total" stroke="#52c41a" strokeWidth={3} activeDot={{ r: 6 }} name={`系统充值金额总和 (${currencyUnit})`} dot={false} />
@@ -465,7 +465,7 @@ const FinanceDataAnalysis: React.FC = () => {
                                 color: index === 0 ? '#F5A623' : textColor,
                                 fontSize: 14 
                               }}>
-                                {currencySymbol}{Number(item.total_cost).toFixed(4)}
+                                {currencySymbol}{Number(item.total_cost).toFixed(6)}
                               </span>
                             </div>
                           </div>
@@ -498,7 +498,7 @@ const FinanceDataAnalysis: React.FC = () => {
                                       {dateLabel}
                                     </span>
                                     <span style={{ color: index === 0 ? '#faad14' : textColor, fontFamily: 'monospace', fontWeight: 600 }}>
-                                      {currencySymbol}{day.total_cost.toFixed(2)}
+                                      {currencySymbol}{day.total_cost.toFixed(6)}
                                     </span>
                                     <span style={{ color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)', fontSize: 9 }}>
                                       ({day.count}次)

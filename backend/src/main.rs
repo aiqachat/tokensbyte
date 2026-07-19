@@ -7,6 +7,7 @@ mod db;
 mod error;
 mod middleware;
 mod models;
+mod money;
 mod providers;
 mod relay;
 mod services;

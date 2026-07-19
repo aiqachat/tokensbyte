@@ -12,17 +12,17 @@ use dashmap::DashMap;
 use crate::db::Database;
 use crate::time_system::{local_period_keys, PeriodKeys};
 
-/// f64 用量 ↔ 微单位整数，便于 AtomicU64 无锁累加（精度 1e-6）
+/// f64 用量 ↔ 微单位整数，便于 AtomicU64 无锁累加（精度与 money::MONEY_SCALE 一致：1e-6）
 fn to_micros(v: f64) -> u64 {
     if v <= 0.0 {
         0
     } else {
-        (v * 1_000_000.0).round() as u64
+        (v * crate::money::MONEY_SCALE).round() as u64
     }
 }
 
 fn from_micros(v: u64) -> f64 {
-    v as f64 / 1_000_000.0
+    v as f64 / crate::money::MONEY_SCALE
 }
 
 fn limit_opt(limit: f64) -> Option<f64> {

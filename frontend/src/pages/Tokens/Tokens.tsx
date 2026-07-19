@@ -406,9 +406,9 @@ const Tokens: React.FC = () => {
         const periodicTooltipContent = (
           <div style={{ fontSize: '12px', padding: '4px' }}>
             <div style={{ fontWeight: 600, marginBottom: '4px' }}>周期额度详情：</div>
-            <div style={{ marginBottom: '2px' }}>日限额: {record.daily_quota_limit < 0 ? '无限' : `${dailyUsed.toFixed(4)} / ${record.daily_quota_limit}`}</div>
-            <div style={{ marginBottom: '2px' }}>周限额: {record.weekly_quota_limit < 0 ? '无限' : `${weeklyUsed.toFixed(4)} / ${record.weekly_quota_limit}`}</div>
-            <div>月限额: {record.monthly_quota_limit < 0 ? '无限' : `${monthlyUsed.toFixed(4)} / ${record.monthly_quota_limit}`}</div>
+            <div style={{ marginBottom: '2px' }}>日限额: {record.daily_quota_limit < 0 ? '无限' : `${dailyUsed.toFixed(6)} / ${record.daily_quota_limit}`}</div>
+            <div style={{ marginBottom: '2px' }}>周限额: {record.weekly_quota_limit < 0 ? '无限' : `${weeklyUsed.toFixed(6)} / ${record.weekly_quota_limit}`}</div>
+            <div>月限额: {record.monthly_quota_limit < 0 ? '无限' : `${monthlyUsed.toFixed(6)} / ${record.monthly_quota_limit}`}</div>
           </div>
         );
 
@@ -416,7 +416,7 @@ const Tokens: React.FC = () => {
           <Tooltip title={periodic ? periodicTooltipContent : null}>
             <Space direction="vertical" size={2} style={{ cursor: periodic ? 'pointer' : 'default' }}>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('tokens.used')}: {record.quota_used.toFixed(4)}
+                {t('tokens.used')}: {record.quota_used.toFixed(6)}
               </Text>
               <Text style={{ fontSize: 12 }}>
                 {t('tokens.limit')}: {record.quota_limit < 0 ? t('tokens.unlimited') : record.quota_limit}
@@ -716,13 +716,13 @@ const Tokens: React.FC = () => {
                       </CardRow>
                       <CardRow label="可用限额" compact={true}>
                         <Space direction="vertical" size={0}>
-                          <Text style={{ fontSize: 12 }}>{record.quota_limit < 0 ? t('tokens.unlimited') : `${record.quota_used.toFixed(4)} / ${record.quota_limit}`}</Text>
+                          <Text style={{ fontSize: 12 }}>{record.quota_limit < 0 ? t('tokens.unlimited') : `${record.quota_used.toFixed(6)} / ${record.quota_limit}`}</Text>
                           {hasPeriodicLimits(record) && (() => {
                             const { dailyUsed, weeklyUsed, monthlyUsed } = getPeriodicUsed(record, quotaTz);
                             const parts: string[] = [];
-                            if (record.daily_quota_limit >= 0) parts.push(`日 ${dailyUsed.toFixed(2)}/${record.daily_quota_limit}`);
-                            if (record.weekly_quota_limit >= 0) parts.push(`周 ${weeklyUsed.toFixed(2)}/${record.weekly_quota_limit}`);
-                            if (record.monthly_quota_limit >= 0) parts.push(`月 ${monthlyUsed.toFixed(2)}/${record.monthly_quota_limit}`);
+                            if (record.daily_quota_limit >= 0) parts.push(`日 ${dailyUsed.toFixed(6)}/${record.daily_quota_limit}`);
+                            if (record.weekly_quota_limit >= 0) parts.push(`周 ${weeklyUsed.toFixed(6)}/${record.weekly_quota_limit}`);
+                            if (record.monthly_quota_limit >= 0) parts.push(`月 ${monthlyUsed.toFixed(6)}/${record.monthly_quota_limit}`);
                             return parts.length > 0 ? (
                               <Text type="secondary" style={{ fontSize: 11 }}>{parts.join(' · ')}</Text>
                             ) : null;
@@ -1575,12 +1575,12 @@ const QuotaProgressItem: React.FC<{
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
           <span style={{ fontSize: '11px', color: isLight ? '#71717a' : '#a1a1aa', fontWeight: 500 }}>已使用</span>
           <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace', color: isLight ? '#09090b' : '#fafafa' }}>
-            {used.toFixed(4)}
+            {used.toFixed(6)}
           </span>
           <span style={{ fontSize: '12px', color: isLight ? '#e4e4e7' : '#27272a' }}>/</span>
           <span style={{ fontSize: '11px', color: isLight ? '#71717a' : '#a1a1aa', fontWeight: 500 }}>限额</span>
           <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace', color: isLight ? '#09090b' : '#fafafa' }}>
-            {isUnlimited ? '无限' : limit.toFixed(4)}
+            {isUnlimited ? '无限' : limit.toFixed(6)}
           </span>
         </div>
 

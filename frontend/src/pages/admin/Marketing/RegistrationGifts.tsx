@@ -136,7 +136,7 @@ const RegistrationGifts: React.FC = () => {
                     label={t('marketing.fixed_amount')}
                     rules={[{ required: true }]}
                   >
-                    <InputNumber min={0} precision={2} style={{ width: '100%' }} size="large" />
+                    <InputNumber min={0} precision={6} style={{ width: '100%' }} size="large" />
                   </Form.Item>
                 )}
 
@@ -148,7 +148,7 @@ const RegistrationGifts: React.FC = () => {
                       rules={[{ required: true }]}
                       style={{ width: '100%' }}
                     >
-                      <InputNumber min={0} precision={2} style={{ width: '100%' }} size="large" />
+                      <InputNumber min={0} precision={6} style={{ width: '100%' }} size="large" />
                     </Form.Item>
                     <Form.Item
                       name="max_amount"
@@ -156,7 +156,7 @@ const RegistrationGifts: React.FC = () => {
                       rules={[{ required: true }]}
                       style={{ width: '100%' }}
                     >
-                      <InputNumber min={0} precision={2} style={{ width: '100%' }} size="large" />
+                      <InputNumber min={0} precision={6} style={{ width: '100%' }} size="large" />
                     </Form.Item>
                   </Space>
                 )}

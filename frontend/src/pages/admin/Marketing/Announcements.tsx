@@ -69,7 +69,7 @@ const NotificationSettingsForm: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [siteName, setSiteName] = useState('TokensByte');
   const [previewBalance, setPreviewBalance] = useState('88.0000');
-  const [previewThreshold, setPreviewThreshold] = useState('100.0000');
+  const [previewThreshold, setPreviewThreshold] = useState('100.000000');
   const [testEmail, setTestEmail] = useState('');
   const [testMobile, setTestMobile] = useState('');
   const [testEmailLoading, setTestEmailLoading] = useState(false);
@@ -84,7 +84,7 @@ const NotificationSettingsForm: React.FC = () => {
     () => ({
       site_name: siteName || 'TokensByte',
       balance: previewBalance || '88.0000',
-      threshold: previewThreshold || '100.0000',
+      threshold: previewThreshold || '100.000000',
     }),
     [siteName, previewBalance, previewThreshold],
   );

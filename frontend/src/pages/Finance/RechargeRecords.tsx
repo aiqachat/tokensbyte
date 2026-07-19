@@ -111,7 +111,7 @@ const RechargeRecords: React.FC = () => {
       key: 'amount',
       render: (val: number) => (
         <Text strong style={{ color: val >= 0 ? '#52c41a' : '#ff4d4f' }}>
-          {val >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(val).toFixed(4)}
+          {val >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(val).toFixed(6)}
         </Text>
       ),
     },
@@ -163,7 +163,7 @@ const RechargeRecords: React.FC = () => {
             <WalletOutlined style={{ fontSize: 24, color: '#1677ff' }} />
             <Title level={2} style={{ margin: 0, fontSize: screens.xs ? 20 : 24 }}>{t('finance.recharge_title')}</Title>
             <Text type="secondary" style={{ marginLeft: screens.xs ? 0 : 8 }}>
-              金额合计: <Text strong style={{ color: '#1677ff', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(4)}</Text>
+              金额合计: <Text strong style={{ color: '#1677ff', fontSize: 16 }}>{currencySymbol}{totalAmount.toFixed(6)}</Text>
             </Text>
         </Space>
         <Space wrap style={{ width: screens.xs ? '100%' : 'auto' }}>
@@ -247,7 +247,7 @@ const RechargeRecords: React.FC = () => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>金额</Text>
                     <Text strong style={{ color: record.amount >= 0 ? '#52c41a' : '#ff4d4f' }}>
-                      {record.amount >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(record.amount).toFixed(4)}
+                      {record.amount >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(record.amount).toFixed(6)}
                     </Text>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>

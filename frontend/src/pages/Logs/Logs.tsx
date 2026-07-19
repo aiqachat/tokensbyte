@@ -500,7 +500,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
         <Space direction="vertical" size={0}>
           {val === 0 || record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败')
             ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
-            : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{val.toFixed(4)}</Text>
+            : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{val.toFixed(6)}</Text>
           }
           {record.billing_detail?.includes('退回') && (
             <Tag color="orange" style={{ margin: 0, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}>{t('logs.refunded', '已退费')}</Tag>
@@ -768,7 +768,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
               <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.success', '成功')} <strong style={{ color: themeToken.colorText }}>{stats.success_count}</strong></Text>
               <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.fail', '失败')} <strong style={{ color: themeToken.colorText }}>{stats.fail_count}</strong></Text>
               <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.success_rate', '成功率')} <strong style={{ color: themeToken.colorText }}>{total > 0 ? ((stats.success_count / total) * 100).toFixed(1) : '0.0'}%</strong></Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.total_cost', '成本合计')} <strong style={{ color: themeToken.colorText }}>{currencySymbol}{stats.total_cost.toFixed(4)}</strong></Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.total_cost', '成本合计')} <strong style={{ color: themeToken.colorText }}>{currencySymbol}{stats.total_cost.toFixed(6)}</strong></Text>
             </Space>
           </div>
         )}
@@ -934,7 +934,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
                   <Space direction="vertical" size={0} align="end">
                     {record.cost === 0 || record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败')
                       ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
-                      : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{record.cost.toFixed(4)}</Text>
+                      : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{record.cost.toFixed(6)}</Text>
                     }
                     {record.billing_detail?.includes('退回') && (
                       <Tag color="orange" style={{ margin: 0, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}>{t('logs.refunded', '已退费')}</Tag>

@@ -279,7 +279,7 @@ const Redemptions: React.FC = () => {
       title: t('redemptions.quota'),
       dataIndex: 'quota',
       key: 'quota',
-      render: (q: number) => <Text strong>{currencySymbol}{q.toFixed(2)}</Text>,
+      render: (q: number) => <Text strong>{currencySymbol}{q.toFixed(6)}</Text>,
     },
     {
       title: isZh ? '有效期' : 'Validity',

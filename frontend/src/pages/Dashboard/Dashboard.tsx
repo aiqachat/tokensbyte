@@ -166,7 +166,7 @@ const Dashboard: React.FC = () => {
           dataMap.set(item.date, { date: item.date.slice(5) });
         }
         const entry = dataMap.get(item.date);
-        entry[item.model] = parseFloat(item.total_cost.toFixed(4));
+        entry[item.model] = parseFloat(item.total_cost.toFixed(6));
       });
     }
 
@@ -351,7 +351,7 @@ const Dashboard: React.FC = () => {
       title: t('dashboard.estimated_cost'),
       dataIndex: 'cost',
       key: 'cost',
-      render: (val: number) => <Text style={{ color: _isLight ? '#333' : '#ccc', fontSize: 13 }}>{currencySymbol}{val.toFixed(4)}</Text>,
+      render: (val: number) => <Text style={{ color: _isLight ? '#333' : '#ccc', fontSize: 13 }}>{currencySymbol}{val.toFixed(6)}</Text>,
     },
   ];
 
@@ -529,11 +529,11 @@ const Dashboard: React.FC = () => {
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
               <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 12 : 14, fontWeight: 500 }}>{costLabel}</Text>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '8px 0 0 0' }}>
-                <Title level={2} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff', fontWeight: 500, fontSize: screens.xs ? 18 : 30, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${currencySymbol}${stats?.total_cost?.toFixed(4) || 0}`}>{currencySymbol}{stats?.total_cost?.toFixed(4) || 0}</Title>
+                <Title level={2} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff', fontWeight: 500, fontSize: screens.xs ? 18 : 30, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={`${currencySymbol}${stats?.total_cost?.toFixed(6) || 0}`}>{currencySymbol}{stats?.total_cost?.toFixed(6) || 0}</Title>
                 {showDayComparison && (
                   <>
-                    <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 11 : 13 }}>{t('dashboard.today')}: {currencySymbol}{(stats?.today_cost || 0).toFixed(4)}</Text>
-                    <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 11 : 13 }}>{t('dashboard.yesterday')}: {currencySymbol}{(stats?.yesterday_cost || 0).toFixed(4)}</Text>
+                    <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 11 : 13 }}>{t('dashboard.today')}: {currencySymbol}{(stats?.today_cost || 0).toFixed(6)}</Text>
+                    <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 11 : 13 }}>{t('dashboard.yesterday')}: {currencySymbol}{(stats?.yesterday_cost || 0).toFixed(6)}</Text>
                   </>
                 )}
               </div>
@@ -622,7 +622,7 @@ const Dashboard: React.FC = () => {
                       <Text style={{ color: _isLight ? '#666' : '#888', fontSize: 12 }}>{item.prompt_tokens} / {item.completion_tokens}</Text>
                     </CardRow>
                     <CardRow compact={true} label={t('dashboard.estimated_cost')}>
-                      <Text style={{ color: _isLight ? '#333' : '#ccc', fontSize: 12, fontWeight: 500 }}>{currencySymbol}{(item.cost || 0).toFixed(4)}</Text>
+                      <Text style={{ color: _isLight ? '#333' : '#ccc', fontSize: 12, fontWeight: 500 }}>{currencySymbol}{(item.cost || 0).toFixed(6)}</Text>
                     </CardRow>
                   </MobileCard>
                 )}
@@ -733,7 +733,7 @@ const Dashboard: React.FC = () => {
                                 color: index === 0 ? '#F5A623' : (_isLight ? '#1f2937' : '#fff'),
                                 fontSize: 14 
                               }}>
-                                {currencySymbol}{Number(item.total_cost).toFixed(4)}
+                                {currencySymbol}{Number(item.total_cost).toFixed(6)}
                               </span>
                             </div>
                           </div>
@@ -766,7 +766,7 @@ const Dashboard: React.FC = () => {
                                       {dateLabel}
                                     </span>
                                     <span style={{ color: index === 0 ? '#faad14' : textColor, fontFamily: 'monospace', fontWeight: 600 }}>
-                                      {currencySymbol}{day.total_cost.toFixed(2)}
+                                      {currencySymbol}{day.total_cost.toFixed(6)}
                                     </span>
                                     <span style={{ color: !_isLight ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)', fontSize: 9 }}>
                                       ({t('dashboard.times', { count: day.count })})
@@ -895,11 +895,11 @@ const Dashboard: React.FC = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke={_isLight ? '#f0f0f0' : '#434343'} vertical={false} />
                 <XAxis dataKey="date" stroke={textColor} tick={{fill: textColor}} tickLine={false} axisLine={false} />
                 <YAxis yAxisId="left" stroke={textColor} tick={{fill: textColor}} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="right" orientation="right" stroke={textColor} tick={{fill: textColor}} tickLine={false} axisLine={false} tickFormatter={(value: number) => parseFloat(Number(value).toFixed(4)).toString()} />
+                <YAxis yAxisId="right" orientation="right" stroke={textColor} tick={{fill: textColor}} tickLine={false} axisLine={false} tickFormatter={(value: number) => parseFloat(Number(value).toFixed(6)).toString()} />
                 <Tooltip 
                   contentStyle={{ backgroundColor: isDark ? '#1f1f1f' : '#fff', color: textColor, borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }} 
                   formatter={(value: any, name: any) => [
-                    name === t('dashboard.estimated_cost') ? `${currencySymbol}${parseFloat(Number(value).toFixed(4))}` : value,
+                    name === t('dashboard.estimated_cost') ? `${currencySymbol}${parseFloat(Number(value).toFixed(6))}` : value,
                     name
                   ]}
                   cursor={{fill: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}}
@@ -999,7 +999,7 @@ const Dashboard: React.FC = () => {
                           <Statistic 
                             title={<span style={{ color: axisColor, fontSize: 13 }}>{t('dashboard.total_spend', '总花费')}</span>} 
                             value={m.total_cost} 
-                            precision={4}
+                            precision={6}
                             prefix={currencySymbol}
                             valueStyle={{ color: strokeColor, fontWeight: 600, fontSize: 22 }} 
                           />
@@ -1029,10 +1029,10 @@ const Dashboard: React.FC = () => {
                               tick={{ fontSize: 11, fill: axisColor }}
                               tickLine={false}
                               axisLine={false}
-                              tickFormatter={(value: number) => parseFloat(Number(value).toFixed(4)).toString()}
+                              tickFormatter={(value: number) => parseFloat(Number(value).toFixed(6)).toString()}
                             />
                             <Tooltip 
-                              formatter={(value: any) => [`${currencySymbol}${parseFloat(Number(value).toFixed(4))}`, t('dashboard.estimated_cost')]}
+                              formatter={(value: any) => [`${currencySymbol}${parseFloat(Number(value).toFixed(6))}`, t('dashboard.estimated_cost')]}
                               contentStyle={{
                                 backgroundColor: isDark ? '#1c1c1f' : '#fff',
                                 color: textColor,

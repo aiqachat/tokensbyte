@@ -9,11 +9,6 @@ use axum::{
 };
 use std::sync::Arc;
 
-/// 保留 4 位小数（四舍五入）
-fn round4(v: f64) -> f64 {
-    (v * 10000.0).round() / 10000.0
-}
-
 /// GET /v1/balance — 查询当前令牌（API Key）的余额
 pub async fn token_balance(
     State(_state): State<Arc<AppState>>,
@@ -23,12 +18,12 @@ pub async fn token_balance(
     let remain = if unlimited {
         -1.0
     } else {
-        round4((token.quota_limit - token.quota_used).max(0.0))
+        crate::money::round_money((token.quota_limit - token.quota_used).max(0.0))
     };
     Ok(Json(serde_json::json!({
         "success": true,
         "remain_balance": remain,
-        "used_balance": round4(token.quota_used),
+        "used_balance": crate::money::round_money(token.quota_used),
         "unlimited_quota": unlimited
     })))
 }
@@ -49,8 +44,8 @@ pub async fn user_balance(
 
     Ok(Json(serde_json::json!({
         "success": true,
-        "remain_balance": round4(balance + gift_balance + credit_limit),
-        "used_balance": round4(used_quota),
+        "remain_balance": crate::money::round_money(balance + gift_balance + credit_limit),
+        "used_balance": crate::money::round_money(used_quota),
         "unlimited_quota": false
     })))
 }

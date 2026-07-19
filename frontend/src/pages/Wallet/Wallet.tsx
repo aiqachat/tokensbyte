@@ -118,8 +118,8 @@ const Wallet: React.FC = () => {
         setRedeemFeedback({
           type: 'success',
           text: isEn
-            ? `Redeemed successfully (+${currencySymbol}${amount.toFixed(2)})`
-            : `兑换成功，已充值 ${currencySymbol}${amount.toFixed(2)}`,
+            ? `Redeemed successfully (+${currencySymbol}${amount.toFixed(6)})`
+            : `兑换成功，已充值 ${currencySymbol}${amount.toFixed(6)}`,
         });
         setRedeemCode('');
         fetchData();
@@ -196,7 +196,7 @@ const Wallet: React.FC = () => {
       },
       render: (amount: number) => (
         <Text style={{ color: mainText, fontWeight: 500 }}>
-          {amount > 0 ? '+' : '-'}{currencySymbol}{Math.abs(amount).toFixed(2)}
+          {amount > 0 ? '+' : '-'}{currencySymbol}{Math.abs(amount).toFixed(6)}
         </Text>
       ),
     },
@@ -327,7 +327,7 @@ const Wallet: React.FC = () => {
     },
   ];
 
-  const totalAvailable = ((stats?.balance || 0) + (stats?.credit_limit || 0) + (stats?.gift_balance || 0)).toFixed(2);
+  const totalAvailable = ((stats?.balance || 0) + (stats?.credit_limit || 0) + (stats?.gift_balance || 0)).toFixed(6);
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: screens.md ? '16px 0 40px 0' : '12px 0 24px 0' }}>
@@ -382,7 +382,7 @@ const Wallet: React.FC = () => {
             </div>
             <div style={{ marginTop: 8 }}>
               <Text style={{ color: subText, fontSize: 13 }}>
-                {isEn ? 'Spent: ' : '已消费: '}{currencySymbol}{(stats?.total_consumption || 0).toFixed(2)}
+                {isEn ? 'Spent: ' : '已消费: '}{currencySymbol}{(stats?.total_consumption || 0).toFixed(6)}
               </Text>
             </div>
           </Card>
@@ -399,12 +399,12 @@ const Wallet: React.FC = () => {
               <WalletOutlined style={{ color: subText }} />
             </div>
             <div style={{ fontSize: 32, fontWeight: 700, color: mainText, letterSpacing: '-0.025em', lineHeight: 1 }}>
-              {currencySymbol}{(stats?.balance || 0).toFixed(2)}
+              {currencySymbol}{(stats?.balance || 0).toFixed(6)}
             </div>
             {(stats?.credit_limit || 0) > 0 && (
               <div style={{ marginTop: 8 }}>
                 <Text style={{ color: subText, fontSize: 13 }}>
-                  {isEn ? 'Credit limit: ' : '信控金额: '}{currencySymbol}{(stats?.credit_limit || 0).toFixed(2)}
+                  {isEn ? 'Credit limit: ' : '信控金额: '}{currencySymbol}{(stats?.credit_limit || 0).toFixed(6)}
                 </Text>
               </div>
             )}
@@ -422,7 +422,7 @@ const Wallet: React.FC = () => {
               <GiftOutlined style={{ color: subText }} />
             </div>
             <div style={{ fontSize: 32, fontWeight: 700, color: mainText, letterSpacing: '-0.025em', lineHeight: 1 }}>
-              {currencySymbol}{(stats?.gift_balance || 0).toFixed(2)}
+              {currencySymbol}{(stats?.gift_balance || 0).toFixed(6)}
             </div>
             <div style={{ marginTop: 8 }}>
               <Text style={{ color: subText, fontSize: 13 }}>

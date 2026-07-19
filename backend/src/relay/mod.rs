@@ -112,14 +112,14 @@ pub fn scale_cost_by_res_mul(
 ) -> (f64, String) {
     let mult = forward::lookup_res_mul(map, resolution);
     if (mult - 1.0).abs() <= 1e-9 {
-        return (cost, detail);
+        return (crate::money::round_money(cost), detail);
     }
     let factor = format!(" * {:.2}倍(级联res_mul:{})", mult, resolution);
     let detail = match detail.find(" | ") {
         Some(idx) => format!("{}{}{}", &detail[..idx], factor, &detail[idx..]),
         None => format!("{}{}", detail, factor),
     };
-    (cost * mult, detail)
+    (crate::money::round_money(cost * mult), detail)
 }
 
 /// 计算最终的消费金额和计费详情文本（包含后置时间段倍率折算，解耦高可用插件并提炼冗余逻辑）
@@ -149,7 +149,7 @@ pub async fn calculate_relay_cost(
         final_discount
     };
 
-    let (mut cost, mut detail) = compute_cost(
+    let (mut cost, mut detail) = compute_cost_raw(
         db_model,
         db_rule.as_deref(),
         usage,
@@ -180,11 +180,23 @@ pub async fn calculate_relay_cost(
         detail.push_str(&format!(" | {}: {} ➞ {}", src, model_name, resolved_model));
     }
 
-    (cost, detail)
+    (crate::money::round_money(cost), detail)
 }
 
-/// 统一计费逻辑
+/// 统一计费逻辑（返回金额已 round 到 6 位小数）
 pub fn compute_cost(
+    db_model: Option<&crate::models::Model>,
+    db_rule: Option<&crate::models::BillingRule>,
+    usage: &usage_extractor::UsageTokens,
+    discount: f64,
+    features: &usage_extractor::ExtractedFeatures,
+) -> (f64, String) {
+    let (cost, detail) = compute_cost_raw(db_model, db_rule, usage, discount, features);
+    (crate::money::round_money(cost), detail)
+}
+
+/// 统一计费逻辑（未舍入，供内部组合后再 round）
+fn compute_cost_raw(
     _db_model: Option<&crate::models::Model>,
     db_rule: Option<&crate::models::BillingRule>,
     usage: &usage_extractor::UsageTokens,

@@ -95,12 +95,12 @@ const WalletBalanceDisplay: React.FC<WalletBalanceDisplayProps> = ({
   // 可用余额 = 系统余额 + 信控额度
   const availableBalance = balance + creditLimit;
 
-  // 格式化信控额度显示：整数不带小数，有小数则保留最多4位并去除多余零
+  // 格式化信控额度显示：整数不带小数，有小数则保留最多6位并去除多余零
   const formatCreditLimit = (val: number) => {
     if (Number.isInteger(val)) {
       return val.toString();
     }
-    return parseFloat(val.toFixed(4)).toString();
+    return parseFloat(val.toFixed(6)).toString();
   };
 
   return (
@@ -121,10 +121,10 @@ const WalletBalanceDisplay: React.FC<WalletBalanceDisplayProps> = ({
           {creditLimit > 0 && (
             <Tooltip title={
               <div style={{ fontSize: 12, lineHeight: '20px' }}>
-                <div>系统余额: {currencySymbol}{balance.toFixed(4)}</div>
-                <div>信控额度: {currencySymbol}{creditLimit.toFixed(4)}</div>
+                <div>系统余额: {currencySymbol}{balance.toFixed(6)}</div>
+                <div>信控额度: {currencySymbol}{creditLimit.toFixed(6)}</div>
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.2)', marginTop: 4, paddingTop: 4, fontWeight: 500 }}>
-                  可用余额: {currencySymbol}{availableBalance.toFixed(4)}
+                  可用余额: {currencySymbol}{availableBalance.toFixed(6)}
                 </div>
               </div>
             }>
@@ -137,11 +137,11 @@ const WalletBalanceDisplay: React.FC<WalletBalanceDisplayProps> = ({
         <div style={{ lineHeight: 1.2, marginBottom: 4 }}>
           <div style={{ fontSize: 12, fontWeight: 500 }}>
             <span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 11, marginRight: 4 }}>余额</span>
-            {currencySymbol}{balance.toFixed(4)}
+            {currencySymbol}{balance.toFixed(6)}
           </div>
           <div style={{ fontSize: 11, marginTop: 2, color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
             <span style={{ marginRight: 4 }}>{labelPrefix}</span>
-            {currencySymbol}{displayTotal.toFixed(4)}
+            {currencySymbol}{displayTotal.toFixed(6)}
           </div>
         </div>
         <Progress 
@@ -162,11 +162,11 @@ const WalletBalanceDisplay: React.FC<WalletBalanceDisplayProps> = ({
         <div style={{ lineHeight: 1.2, marginBottom: 4, opacity: displayGiftTotal > 0 || gift > 0 ? 1 : 0.6 }}>
           <div style={{ fontSize: 12, fontWeight: 500 }}>
             <span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 11, marginRight: 4 }}>余额</span>
-            {currencySymbol}{gift.toFixed(4)}
+            {currencySymbol}{gift.toFixed(6)}
           </div>
           <div style={{ fontSize: 11, marginTop: 2, color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
             <span style={{ marginRight: 4 }}>{labelPrefix}</span>
-            {currencySymbol}{displayGiftTotal.toFixed(4)}
+            {currencySymbol}{displayGiftTotal.toFixed(6)}
           </div>
         </div>
         <Progress 

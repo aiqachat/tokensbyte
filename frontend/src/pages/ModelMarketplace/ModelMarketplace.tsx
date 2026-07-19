@@ -545,7 +545,7 @@ const ModelMarketplace: React.FC = () => {
     const getRaw = (n: number) => {
       if (isNaN(n)) return String(price);
 
-      const formatNumber = (val: number) => parseFloat(val.toFixed(4));
+      const formatNumber = (val: number) => parseFloat(val.toFixed(6));
 
       if (selectedCurrencyCode === '') {
         return `${currencySymbol}${formatNumber(n)}`;
