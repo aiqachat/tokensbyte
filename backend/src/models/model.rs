@@ -1,16 +1,17 @@
 #![allow(dead_code)]
+use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Model {
     pub id: i64,
-    pub mid: String,        // 6位系统识别码，永久不变
+    pub mid: String, // 6位系统识别码，永久不变
     pub name: String,
     pub model_id: String,
     #[sqlx(default)]
     pub original_id: String,
     #[sqlx(default)]
-    pub model_id_alias: String,   // 模型ID别名映射值，非空时上游请求使用此ID替代model_id
+    pub model_id_alias: String, // 模型ID别名映射值，非空时上游请求使用此ID替代model_id
     pub provider_id: Option<i64>,
     pub type_id: Option<i64>,
     pub api_provider_id: Option<i64>,
@@ -21,11 +22,11 @@ pub struct Model {
     pub forward_rule_ids: Option<String>,
     pub enable_log_content: i32,
     #[sqlx(default)]
-    pub site_discount: f64,         // 折扣限价倍率（开启时折扣不低于此值，1.0=原价）
+    pub site_discount: f64, // 折扣限价倍率（开启时折扣不低于此值，1.0=原价）
     #[sqlx(default)]
     pub site_discount_enabled: i32, // 折扣限价开关（0=关，1=开）
     #[sqlx(default)]
-    pub global_discount: f64,       // 全站折扣倍率
+    pub global_discount: f64, // 全站折扣倍率
     #[sqlx(default)]
     pub global_discount_enabled: i32, // 全站折扣开关（0=关，1=开）
     #[sqlx(default)]
@@ -36,8 +37,10 @@ pub struct Model {
     pub description: Option<String>,
     #[sqlx(default)]
     pub feature_attributes: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
+    #[sqlx(default)]
+    pub type_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -69,8 +72,93 @@ pub struct BillingRule {
     pub pricing_type: String,
     #[sqlx(default)]
     pub sort_order: i32,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
+    #[sqlx(default)]
+    #[serde(default = "default_applied_multiplier")]
+    pub applied_multiplier: f64,
+    #[sqlx(default)]
+    #[serde(skip)]
+    pub is_multiplier_applied: bool,
+}
+
+fn default_applied_multiplier() -> f64 {
+    1.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeMultiplier {
+    pub start: String,
+    pub end: String,
+    pub multiplier: f64,
+}
+
+impl BillingRule {
+    pub fn get_current_multiplier(&self, default_tz: &str) -> f64 {
+        if self.extended_config.is_empty() || self.extended_config == "{}" {
+            return 1.0;
+        }
+
+        let config: serde_json::Value = match serde_json::from_str(&self.extended_config) {
+            Ok(v) => v,
+            Err(_) => return 1.0,
+        };
+
+        let multipliers_val = match config.get("time_multipliers") {
+            Some(v) => v,
+            None => return 1.0,
+        };
+
+        let multipliers: Vec<TimeMultiplier> = match serde_json::from_value(multipliers_val.clone())
+        {
+            Ok(v) => v,
+            Err(_) => return 1.0,
+        };
+
+        if multipliers.is_empty() {
+            return 1.0;
+        }
+
+        let tz: chrono_tz::Tz = default_tz.parse().unwrap_or(chrono_tz::Asia::Shanghai);
+        let local_now = chrono::Utc::now().with_timezone(&tz);
+        let current_time = local_now.time();
+
+        for item in multipliers {
+            let start = chrono::NaiveTime::parse_from_str(&item.start, "%H:%M");
+            let end = chrono::NaiveTime::parse_from_str(&item.end, "%H:%M");
+            if let (Ok(start_t), Ok(end_t)) = (start, end) {
+                let matched = if start_t > end_t {
+                    current_time >= start_t || current_time < end_t
+                } else {
+                    current_time >= start_t && current_time < end_t
+                };
+                if matched {
+                    return item.multiplier;
+                }
+            }
+        }
+
+        1.0
+    }
+
+    pub fn apply_time_multiplier(&mut self, default_tz: &str) -> f64 {
+        if self.is_multiplier_applied {
+            return self.applied_multiplier;
+        }
+        let multiplier = self.get_current_multiplier(default_tz);
+        self.applied_multiplier = multiplier;
+        self.is_multiplier_applied = true;
+        if (multiplier - 1.0).abs() > 0.00001 {
+            self.prompt_rate *= multiplier;
+            self.completion_rate *= multiplier;
+            self.cached_rate *= multiplier;
+            self.claude_cache_creation_rate *= multiplier;
+            self.claude_cache_read_rate *= multiplier;
+            self.fixed_rate *= multiplier;
+            self.duration_rate *= multiplier;
+        }
+        multiplier
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -169,8 +257,8 @@ pub struct ForwardRule {
     pub eid: String,
     #[sqlx(default)]
     pub sort_order: i32,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
 }
 
 #[derive(Debug, Deserialize)]
@@ -198,9 +286,13 @@ pub struct UpdateRuleRequest {
     pub sort_order: Option<i32>,
 }
 
-pub fn default_active() -> i32 { 1 }
+pub fn default_active() -> i32 {
+    1
+}
 
-pub fn default_pricing_type() -> String { "custom".to_string() }
+pub fn default_pricing_type() -> String {
+    "custom".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ModelProvider {
@@ -215,8 +307,8 @@ pub struct ModelProvider {
     pub remark: Option<String>,
     #[sqlx(default)]
     pub logo: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -233,8 +325,8 @@ pub struct ModelType {
     pub logo: Option<String>,
     #[sqlx(default)]
     pub default_features: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -264,7 +356,10 @@ impl Model {
 
     pub fn get_multiplier_for_group(&self, group: &str) -> f64 {
         let ratios = self.get_group_ratios();
-        *ratios.get(group).or_else(|| ratios.get("default")).unwrap_or(&1.0)
+        *ratios
+            .get(group)
+            .or_else(|| ratios.get("default"))
+            .unwrap_or(&1.0)
     }
 }
 

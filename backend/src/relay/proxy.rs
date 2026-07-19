@@ -1,13 +1,13 @@
 //! Shared proxy utilities — user context, billing, logging.
 //! All relay handlers reuse these to avoid code duplication.
 
-use std::sync::Arc;
-use crate::AppState;
-use crate::models::ApiToken;
-use crate::error::{AppError, AppResult};
-use regex::Regex;
 use super::router;
+use crate::error::{AppError, AppResult};
+use crate::models::ApiToken;
 use crate::models::Channel;
+use crate::AppState;
+use regex::Regex;
+use std::sync::Arc;
 
 // ── User Context ────────────────────────────────────────────────
 
@@ -33,7 +33,14 @@ pub async fn get_user_context(state: &Arc<AppState>, user_id: &str) -> AppResult
     .bind(user_id)
     .fetch_one(&state.db.pool)
     .await?;
-    Ok(UserContext { user_group: g, level_id: l_id.to_string(), balance: b + gb + cl, discount: d, model_discounts: md, role: r })
+    Ok(UserContext {
+        user_group: g,
+        level_id: l_id.to_string(),
+        balance: b + gb + cl,
+        discount: d,
+        model_discounts: md,
+        role: r,
+    })
 }
 
 /// 统一折扣策略（MIN + MAX 两步）：
@@ -94,41 +101,59 @@ pub async fn get_model_billing_rule(
         let model = find_active_model_exact(state, model_id, None, channel).await?;
         model.billing_rule_id?
     };
-    sqlx::query_as(
-        &state.db.format_query(
-            "SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"
-        )
+    let mut rule: crate::models::BillingRule = sqlx::query_as(
+        &state
+            .db
+            .format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"),
     )
     .bind(rule_id)
     .fetch_optional(&state.db.pool)
     .await
-    .unwrap_or(None)
+    .unwrap_or(None)?;
+
+    // 使用缓存时区计算并赋能运行时 applied_multiplier，但不改变实体内的单价，实现安全的后置计费
+    let (default_site_tz, _) = super::get_cached_config(state).await;
+    rule.applied_multiplier = rule.get_current_multiplier(&default_site_tz);
+
+    Some(rule)
 }
 
 /// 按 model_id 查找活跃模型，可选传入 category 以区分同名但不同类型的模型。
 /// category: Some("图片") / Some("视频") / Some("聊天") / None（不限类型）
 pub async fn find_active_model_exact(
-    state: &AppState, 
-    model_id: &str, 
-    category: Option<&str>, 
-    channel: Option<&crate::models::Channel>
+    state: &AppState,
+    model_id: &str,
+    category: Option<&str>,
+    channel: Option<&crate::models::Channel>,
 ) -> Option<crate::models::Model> {
-    let cat_filter = if let Some(cat) = category {
-        format!(" AND t.name = '{}'", cat)
+    // category 过滤条件（参数化绑定防止 SQL 注入）
+    let cat_filter = if category.is_some() {
+        " AND t.name = ?"
     } else {
-        String::new()
+        ""
     };
 
     // 1. 获取所有匹配的活跃模型候选（ORDER BY m.id 保证多候选时返回顺序确定性）
     let sql = format!(
-        "SELECT m.* FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? AND m.is_active = 1{} ORDER BY m.id",
+        "SELECT m.*, t.name AS type_name FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? AND m.is_active = 1{} ORDER BY m.id",
         cat_filter
     );
-    let candidates: Vec<crate::models::Model> = sqlx::query_as(&state.db.format_query(&sql))
-        .bind(model_id)
-        .fetch_all(&state.db.pool)
-        .await
-        .unwrap_or_default();
+    let formatted_sql = state.db.format_query(&sql);
+    let mut query = sqlx::query_as(&formatted_sql).bind(model_id);
+    if let Some(cat) = category {
+        query = query.bind(cat);
+    }
+    let mut candidates: Vec<crate::models::Model> =
+        query.fetch_all(&state.db.pool).await.unwrap_or_default();
+
+    if candidates.is_empty() && category.is_some() {
+        let fallback_sql = "SELECT m.*, t.name AS type_name FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.model_id = ? AND m.is_active = 1 ORDER BY m.id";
+        candidates = sqlx::query_as(&state.db.format_query(fallback_sql))
+            .bind(model_id)
+            .fetch_all(&state.db.pool)
+            .await
+            .unwrap_or_default();
+    }
 
     if candidates.is_empty() {
         return None;
@@ -153,13 +178,23 @@ pub async fn find_active_model_exact(
     Some(candidates.into_iter().next().unwrap())
 }
 
+/// 根据 mid 查找处于激活状态的模型数据
+pub async fn find_active_model_by_mid(state: &AppState, mid: &str) -> Option<crate::models::Model> {
+    let sql = "SELECT m.*, t.name AS type_name FROM models m LEFT JOIN model_types t ON m.type_id = t.id WHERE m.mid = ? AND m.is_active = 1 LIMIT 1";
+    sqlx::query_as(&state.db.format_query(sql))
+        .bind(mid)
+        .fetch_optional(&state.db.pool)
+        .await
+        .unwrap_or(None)
+}
+
 // ── Access Check ────────────────────────────────────────────────
 
 /// 根据 category 推断标准 endpoint 路径（用于错误日志记录）
 pub fn category_endpoint(category: Option<&str>) -> &'static str {
     match category {
         Some("图片") => "/v1/images/generations",
-        Some("视频") => "/v1/video/generations",
+        Some("视频") | Some("视频增强") => "/v1/video/generations",
         Some("音频") => "/v1/audio/speech",
         Some("向量") => "/v1/embeddings",
         Some("排序") => "/v1/rerank",
@@ -167,17 +202,80 @@ pub fn category_endpoint(category: Option<&str>) -> &'static str {
     }
 }
 
+/// 入口类型与模型真实类型是否互通（目前仅视频 ↔ 视频增强）
+#[inline]
+fn category_compatible(expected: &str, resolved: &str) -> bool {
+    expected == resolved
+        || (expected == "视频" && resolved == "视频增强")
+        || (expected == "视频增强" && resolved == "视频")
+}
+
+/// 类型隔离失败文案：真实类型 + 实际入口（action_type 另记入口，见 check_access）
+#[inline]
+fn type_mismatch_message(model: &str, resolved_cat: &str, expected_cat: &str) -> String {
+    format!(
+        "模型 '{}' 为 '{}' 类型，不支持当前 '{}' 接口请求",
+        model, resolved_cat, expected_cat
+    )
+}
+
+/// 路径→类型兜底（仅鉴权中间件 / 历史日志补全等「业务模块尚未透传」场景）。
+/// 业务失败日志应优先透传模块已知的 category，勿依赖本函数。
+pub fn action_type_from_path(endpoint: &str) -> Option<&'static str> {
+    let ep = endpoint
+        .split('|')
+        .next()
+        .unwrap_or(endpoint)
+        .to_ascii_lowercase();
+    // 更具体的规则在前
+    const RULES: &[(&str, &str)] = &[
+        ("enhance-video", "视频增强"),
+        ("erase-video", "视频增强"),
+        ("contents/generations", "视频"),
+        ("video-generation", "视频"),
+        ("video-synthesis", "视频"),
+        ("/videos/", "视频"),
+        ("/video/", "视频"),
+        ("multimodal-generation", "图片"),
+        ("/images/", "图片"),
+        ("/image/", "图片"),
+        ("/audio/", "音频"),
+        ("/tts", "音频"),
+        ("/speech", "音频"),
+        ("embedding", "向量"),
+        ("rerank", "排序"),
+        ("/chat/", "聊天"),
+        ("/messages", "聊天"),
+        ("/responses", "聊天"),
+        ("v1beta/models", "聊天"),
+    ];
+    RULES.iter().find(|(k, _)| ep.contains(k)).map(|(_, v)| *v)
+}
+
 /// Token 模型权限校验（渠道选择 **之前** 调用，快速拦截未授权模型）。
-/// 返回 Ok(()) 表示放行，Err 表示拒绝。
+/// `action_type`: 调用方已知类别（如 "图片"），失败落库时透传，保证日志 Tab 定位正确。
 pub async fn check_model_permission(
     state: &Arc<AppState>,
     token: &ApiToken,
     model: &str,
     endpoint: &str,
+    action_type: Option<&str>,
 ) -> AppResult<()> {
     if !token.is_model_allowed(model) {
         let msg = format!("Model {} not allowed for this token", model);
-        record_error_log(state, &token.user_id, None, Some(token.id), model, 403, endpoint, &msg, None, None).await;
+        record_error_log(
+            state,
+            &token.user_id,
+            None,
+            Some(token.id),
+            model,
+            403,
+            endpoint,
+            &msg,
+            None,
+            action_type,
+        )
+        .await;
         return Err(AppError::Forbidden(msg));
     }
     Ok(())
@@ -195,27 +293,56 @@ pub async fn check_access(
     ctx: &UserContext,
     category: Option<&str>,
     channel: Option<&crate::models::Channel>,
-) -> AppResult<(f64, Option<crate::models::Model>)> {
+) -> AppResult<(f64, Option<crate::models::Model>, String)> {
+    check_access_with_model(state, token, model, ctx, category, channel, None).await
+}
+
+/// 支持透传预查模型实体的安全隔离扣费校验，规避 find_active_model_exact 内部的二次查表
+pub async fn check_access_with_model(
+    state: &Arc<AppState>,
+    token: &ApiToken,
+    model: &str,
+    ctx: &UserContext,
+    category: Option<&str>,
+    channel: Option<&crate::models::Channel>,
+    pre_fetched_model: Option<crate::models::Model>,
+) -> AppResult<(f64, Option<crate::models::Model>, String)> {
+    let db_model = if let Some(m) = pre_fetched_model {
+        Some(m)
+    } else {
+        find_active_model_exact(state, model, category, channel).await
+    };
+
+    // 获取真实分类
+    let resolved_cat = if let Some(ref m) = db_model {
+        m.type_name
+            .clone()
+            .unwrap_or_else(|| category.unwrap_or("").to_string())
+    } else {
+        category.unwrap_or("").to_string()
+    };
+
     let ep = category_endpoint(category);
     let ch_id = channel.map(|c| c.id);
     let up_url = channel.map(|c| c.base_url.as_str());
 
-    let db_model = find_active_model_exact(state, model, category, channel).await;
-
-    // 类型安全隔离：若指定了 category，但在当前类别下查不到，且该模型在活跃模型表里有配置，则说明其属于其他类型，直接拦截
-    if db_model.is_none() && category.is_some() {
-        let exists: Option<(i64,)> = sqlx::query_as(&state.db.format_query(
-            "SELECT id FROM models WHERE model_id = ? AND is_active = 1 LIMIT 1"
-        ))
-        .bind(model)
-        .fetch_optional(&state.db.pool)
-        .await
-        .unwrap_or(None);
-
-        if exists.is_some() {
-            let cat = category.unwrap();
-            let msg = format!("模型 '{}' 不支持当前 '{}' 接口请求", model, cat);
-            record_error_log(state, &token.user_id, ch_id, Some(token.id), model, 400, ep, &msg, up_url, category).await;
+    // 类型安全隔离：action_type 记入口 expected（Tab=endpoint），文案带模型真实类型 resolved
+    if let Some(expected_cat) = category {
+        if db_model.is_some() && !category_compatible(expected_cat, &resolved_cat) {
+            let msg = type_mismatch_message(model, &resolved_cat, expected_cat);
+            record_error_log(
+                state,
+                &token.user_id,
+                ch_id,
+                Some(token.id),
+                model,
+                400,
+                ep,
+                &msg,
+                up_url,
+                Some(expected_cat),
+            )
+            .await;
             return Err(AppError::BadRequest(msg));
         }
     }
@@ -226,59 +353,194 @@ pub async fn check_access(
     let is_admin = ctx.role == "admin";
 
     if is_admin {
-        return Ok((pre_deduction, db_model));
+        return Ok((pre_deduction, db_model, resolved_cat));
     }
 
     if pre_deduction > 0.0 {
         if ctx.balance < pre_deduction {
-            let currency_unit = {
-                let setting_val: Option<String> = sqlx::query_scalar(
-                    &state.db.format_query("SELECT value FROM settings WHERE key = 'currency_settings'")
-                )
-                .fetch_optional(&state.db.pool)
+            let currency_unit = crate::api::settings::get_currency_settings(state)
                 .await
-                .ok()
-                .flatten();
-
-                setting_val
-                    .and_then(|v| serde_json::from_str::<serde_json::Value>(&v).ok())
-                    .and_then(|json| json.get("currency_unit").and_then(|u| u.as_str().map(|s| s.to_string())))
-                    .unwrap_or_else(|| "元".to_string())
-            };
+                .currency_unit;
             let msg = format!("账户余额不足{}{}", pre_deduction, currency_unit);
-            record_error_log(state, &token.user_id, ch_id, Some(token.id), model, 403, ep, &msg, up_url, category).await;
+            record_error_log(
+                state,
+                &token.user_id,
+                ch_id,
+                Some(token.id),
+                model,
+                403,
+                ep,
+                &msg,
+                up_url,
+                Some(&resolved_cat),
+            )
+            .await;
             return Err(AppError::Forbidden(msg));
         }
     } else {
         if token.quota_limit < 0.0 && ctx.balance <= 0.0 {
             let msg = "余额不足";
-            record_error_log(state, &token.user_id, ch_id, Some(token.id), model, 403, ep, &msg, up_url, category).await;
+            record_error_log(
+                state,
+                &token.user_id,
+                ch_id,
+                Some(token.id),
+                model,
+                403,
+                ep,
+                &msg,
+                up_url,
+                Some(&resolved_cat),
+            )
+            .await;
             return Err(AppError::Forbidden(msg.into()));
         }
     }
 
-    Ok((pre_deduction, db_model))
+    Ok((pre_deduction, db_model, resolved_cat))
 }
 
 // ── Channel Selection ───────────────────────────────────────────
 
-pub async fn select_channel_for_model_with_exclude(
-    state: &Arc<AppState>, token: &ApiToken, model: &str, user_group: &str, level_id: &str, endpoint: &str, exclude_aids: &[String],
+pub async fn select_channel_for_model(
+    state: &Arc<AppState>,
+    token: &ApiToken,
+    model: &str,
+    user_group: &str,
+    level_id: &str,
+    endpoint: &str,
+    exclude_aids: &[String],
+    log_miss: bool,
+    action_type: Option<&str>,
 ) -> AppResult<Channel> {
-    match router::select_channel(state, model, user_group, level_id, exclude_aids).await {
+    select_channel_with_db(
+        state,
+        token,
+        model,
+        user_group,
+        level_id,
+        endpoint,
+        None,
+        exclude_aids,
+        log_miss,
+        action_type,
+    )
+    .await
+}
+
+/// 渠道选择（支持透传 Model 实体，提取其 mid 规避 select_channel 内部的查表动作）。
+/// `log_miss`: 选渠失败时是否写入日志。failover 循环中若已有上游错误应传 false，终态为 No available channels 时传 true。
+/// `action_type`: 调用方已知类别，选渠失败落库时透传。
+pub async fn select_channel_with_db(
+    state: &Arc<AppState>,
+    token: &ApiToken,
+    model: &str,
+    user_group: &str,
+    level_id: &str,
+    endpoint: &str,
+    db_model: Option<&crate::models::Model>,
+    exclude_aids: &[String],
+    log_miss: bool,
+    action_type: Option<&str>,
+) -> AppResult<Channel> {
+    let mids = db_model.map(|m| vec![m.mid.clone()]);
+    let (allow_ha, _) = super::ha::policy(state, token.high_availability).await;
+    match router::select_channel(
+        state,
+        model,
+        user_group,
+        level_id,
+        exclude_aids,
+        mids.as_deref(),
+        allow_ha,
+    )
+    .await
+    {
         Ok(ch) => Ok(ch),
         Err(e) => {
-            let msg = if let AppError::NotFound(ref m) = e { m.clone() } else { e.to_string() };
-            record_error_log(state, &token.user_id, None, Some(token.id), model, 404, endpoint, &msg, None, None).await;
+            if log_miss {
+                let msg = if let AppError::NotFound(ref m) = e {
+                    m.clone()
+                } else {
+                    e.to_string()
+                };
+                record_error_log(
+                    state,
+                    &token.user_id,
+                    None,
+                    Some(token.id),
+                    model,
+                    404,
+                    endpoint,
+                    &msg,
+                    None,
+                    action_type,
+                )
+                .await;
+            }
             Err(e)
         }
     }
 }
 
-pub async fn select_channel_for_model(
-    state: &Arc<AppState>, token: &ApiToken, model: &str, user_group: &str, level_id: &str, endpoint: &str,
-) -> AppResult<Channel> {
-    select_channel_for_model_with_exclude(state, token, model, user_group, level_id, endpoint, &[]).await
+/// 触发高可用子渠道熔断冷却
+pub fn trigger_ha_meltdown(
+    state: &Arc<AppState>,
+    group_aid: &str,
+    status_code: u16,
+    error_message: &str,
+) {
+    // 正常渠道（非 HA 子渠道）不具备全局熔断功能
+    if !group_aid.starts_with("ha_group_") {
+        return;
+    }
+
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+
+    // 检查报错信息是否命中不熔断白名单（子字符串包含匹配，不区分大小写）
+    if !error_message.is_empty() {
+        if let Ok(whitelist) = state.ha_meltdown_whitelist.read() {
+            let err_lower = error_message.to_lowercase();
+            for pattern in whitelist.iter() {
+                if !pattern.is_empty() && err_lower.contains(pattern.as_str()) {
+                    tracing::info!(
+                        "[HA Whitelist] 子渠道 {} 错误信息命中不熔断白名单 (关键词: {}), 跳过熔断",
+                        group_aid,
+                        pattern
+                    );
+                    return;
+                }
+            }
+        }
+    }
+
+    let cooldown = match status_code {
+        429 => state.ha_cooldown_429.load(Ordering::Relaxed),
+        401 | 402 => state.ha_cooldown_auth.load(Ordering::Relaxed),
+        404 => state.ha_cooldown_404.load(Ordering::Relaxed),
+        _ => state.ha_cooldown_network.load(Ordering::Relaxed),
+    };
+
+    if cooldown > 0 {
+        let block_until = Instant::now() + Duration::from_secs(cooldown.max(0) as u64);
+        state
+            .failed_channels
+            .insert(group_aid.to_string(), block_until);
+        tracing::warn!(
+            "[HA Failover] 子渠道 {} 发生错误(HTTP {}), 自动熔断冷却 {} 秒",
+            group_aid,
+            status_code,
+            cooldown
+        );
+    }
+
+    // 定期 + 超阈值时清理过期熔断，防止 DashMap 无限增长
+    static CLEANUP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = CLEANUP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    if n % 32 == 0 || state.failed_channels.len() > 2048 {
+        crate::relay::ha::scrub_failed_channels(state);
+    }
 }
 
 // ── Record Usage & Billing ──────────────────────────────────────
@@ -294,19 +556,33 @@ pub struct PreDeductSplit {
 
 #[allow(dead_code)]
 impl PreDeductSplit {
-    pub fn zero() -> Self { Self { gift: 0.0, balance: 0.0 } }
-    pub fn total(&self) -> f64 { self.gift + self.balance }
+    pub fn zero() -> Self {
+        Self {
+            gift: 0.0,
+            balance: 0.0,
+        }
+    }
+    pub fn total(&self) -> f64 {
+        self.gift + self.balance
+    }
 }
 
 /// 事务化预扣费：FOR UPDATE 锁行防并发，精确记录双钱包扣除比例
-pub async fn pre_deduct(state: &Arc<AppState>, user_id: &str, amount: f64) -> Result<PreDeductSplit, sqlx::Error> {
+pub async fn pre_deduct(
+    state: &Arc<AppState>,
+    user_id: &str,
+    amount: f64,
+) -> Result<PreDeductSplit, sqlx::Error> {
     if amount <= 0.0 {
         return Ok(PreDeductSplit::zero());
     }
     let mut tx = state.db.pool.begin().await?;
-    let (bal, gift, credit): (f64, f64, f64) = sqlx::query_as(
-        &state.db.format_query("SELECT balance, gift_balance, credit_limit FROM users WHERE id = ? FOR UPDATE")
-    ).bind(user_id).fetch_one(&mut *tx).await?;
+    let (bal, gift, credit): (f64, f64, f64) = sqlx::query_as(&state.db.format_query(
+        "SELECT balance, gift_balance, credit_limit FROM users WHERE id = ? FOR UPDATE",
+    ))
+    .bind(user_id)
+    .fetch_one(&mut *tx)
+    .await?;
 
     if bal + gift + credit < amount {
         tx.rollback().await?;
@@ -317,14 +593,86 @@ pub async fn pre_deduct(state: &Arc<AppState>, user_id: &str, amount: f64) -> Re
     let balance_deducted = ((amount - gift_deducted) * 1_000_000.0).round() / 1_000_000.0;
 
     sqlx::query(&state.db.format_query(
-        "UPDATE users SET balance = balance - ?, gift_balance = gift_balance - ? WHERE id = ?"
-    )).bind(balance_deducted).bind(gift_deducted).bind(user_id)
-    .execute(&mut *tx).await?;
+        "UPDATE users SET balance = balance - ?, gift_balance = gift_balance - ? WHERE id = ?",
+    ))
+    .bind(balance_deducted)
+    .bind(gift_deducted)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
 
-    Ok(PreDeductSplit { gift: gift_deducted, balance: balance_deducted })
+    Ok(PreDeductSplit {
+        gift: gift_deducted,
+        balance: balance_deducted,
+    })
 }
 
+/// 预扣费；失败时写 403 日志并返回 AppError（admin / 金额≤0 跳过）
+pub async fn pre_deduct_or_intercept(
+    state: &Arc<AppState>,
+    token: &ApiToken,
+    channel: &crate::models::Channel,
+    model: &str,
+    pre_deduction: f64,
+    ep: &str,
+    start_time: std::time::Instant,
+    is_stream: i32,
+    request_content_str: &str,
+    upstream_body_str: &str,
+    ep_tag: Option<String>,
+    pending_log_id: Option<i64>,
+    db_model: Option<&crate::models::Model>,
+    role: &str,
+    category: Option<&str>,
+) -> AppResult<f64> {
+    if pre_deduction <= 0.0 || role == "admin" {
+        return Ok(0.0);
+    }
+    match pre_deduct(state, &token.user_id, pre_deduction).await {
+        Ok(split) => Ok(split.gift),
+        Err(e) => {
+            let err_msg = match e {
+                sqlx::Error::RowNotFound => "余额不足".to_string(),
+                _ => format!("预扣费失败: {:?}", e),
+            };
+            tracing::error!("Pre deduction failed for {}: {:?}", token.user_id, e);
+            let latency_ms = start_time.elapsed().as_millis() as u32;
+            record_and_bill_inner(BillRecord {
+                state,
+                token,
+                channel,
+                model,
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                cached_tokens: 0,
+                cost: 0.0,
+                pre_deducted: 0.0,
+                pre_deduct_gift: 0.0,
+                status_code: 403,
+                endpoint: ep,
+                error_msg: Some(&err_msg),
+                latency_ms,
+                is_stream,
+                request_content: Some(request_content_str.to_string()),
+                response_content: Some(err_msg.clone()),
+                upstream_req_content: Some(upstream_body_str.to_string()),
+                billing_detail: ep_tag,
+                hint_category: category,
+                pending_log_id,
+                billing_model_hint: None,
+                plugin_tag: None,
+                db_model,
+            })
+            .await;
+            Err(if matches!(e, sqlx::Error::RowNotFound) {
+                AppError::Forbidden("余额不足".to_string())
+            } else {
+                AppError::Internal(err_msg)
+            })
+        }
+    }
+}
 
 // ── 预记录日志（请求前写入） ────────────────────────────────────
 //
@@ -346,68 +694,90 @@ pub fn sanitize_base64(text: &str) -> String {
     re_raw_b64.replace_all(&text, "\"base64数据\"").to_string()
 }
 
+/// 预记录日志参数（命名字段，避免位置参数踩坑）
+pub struct PendingLog<'a> {
+    pub state: &'a Arc<AppState>,
+    pub user_id: &'a str,
+    pub token_id: i64,
+    pub model: &'a str,
+    pub endpoint: &'a str,
+    pub is_stream: i32,
+    pub request_content: Option<&'a str>,
+    pub upstream_url: Option<&'a str>,
+    pub channel: &'a crate::models::Channel,
+    pub billing_model_hint: Option<&'a str>,
+    pub plugin_tag: Option<&'a str>,
+    pub category: Option<&'a str>,
+    pub db_model: Option<&'a crate::models::Model>,
+    pub forward_eid: Option<&'a str>,
+    pub requested_log_id: Option<&'a str>,
+}
+
 /// 在上游请求发送前预记录一条"处理中"日志（status_code=0），返回 log_id。
 /// 使用户能立即在日志页面看到请求记录，而不必等待上游响应。
 /// 存入的信息包括：用户信息、渠道、模型、请求参数、端点、流式标志等。
 /// 预记录阶段不存储 upstream_req_content（上游请求参数），因为此时请求尚未真正发送给上游，
 /// 该字段在请求完成后由 record_and_bill_inner UPDATE 写入。
 /// 预记录阶段即执行 URL 密钥脱敏、Base64 脱敏和上下文开关控制，与最终日志保持数据安全一致性。
-pub async fn record_pending_log(
-    state: &Arc<AppState>,
-    user_id: &str,
-    channel_id: i64,
-    token_id: i64,
-    model: &str,
-    endpoint: &str,
-    is_stream: i32,
-    request_content: Option<&str>,
-    upstream_url: Option<&str>,
-    channel: Option<&crate::models::Channel>,
-    billing_model_hint: Option<&str>,
-    plugin_tag: Option<&str>,
-    category: Option<&str>,
-    db_model: Option<&crate::models::Model>,
-    forward_eid: Option<&str>,
-    requested_log_id: Option<&str>,
-) -> Option<i64> {
+pub async fn record_pending_log(p: PendingLog<'_>) -> Option<i64> {
+    let PendingLog {
+        state,
+        user_id,
+        token_id,
+        model,
+        endpoint,
+        is_stream,
+        request_content,
+        upstream_url,
+        channel,
+        billing_model_hint,
+        plugin_tag,
+        category,
+        db_model,
+        forward_eid,
+        requested_log_id,
+    } = p;
     // 计费模型提示：插件（如快乐小马）解析后的实际模型，用于正确查询元信息
     let meta_model = billing_model_hint.unwrap_or(model);
-    let (action_type, billing_pid, enable_log) = resolve_model_meta(state, meta_model, category, channel, db_model).await;
-    // 根据 action_type 生成带前缀的 log_id (ULID)
+    let (mut action_type, billing_pid, enable_log) =
+        resolve_model_meta(state, meta_model, category, Some(channel), db_model).await;
+    // 元信息未解析到类型时透传调用方 category（业务模块已知，无需再猜 endpoint）
+    if action_type.is_empty() {
+        if let Some(cat) = category.map(str::trim).filter(|c| !c.is_empty()) {
+            action_type = cat.to_string();
+        }
+    }
     let log_id_prefix = if !action_type.is_empty() && action_type != "聊天" {
         "tsk_"
     } else {
         "log_"
     };
     let generated_log_id = requested_log_id.map(|s| s.to_string()).unwrap_or_else(|| {
-        format!("{}{}", log_id_prefix, ulid::Ulid::new().to_string().to_lowercase())
+        format!(
+            "{}{}",
+            log_id_prefix,
+            ulid::Ulid::new().to_string().to_lowercase()
+        )
     });
-    // forward_eid: 优先使用调用方从 resolve_forward_rule 解析到的 eid，避免二次查库
-    let forward_eid: Option<String> = forward_eid
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
+    let forward_eid: Option<String> = forward_eid.filter(|s| !s.is_empty()).map(|s| s.to_string());
 
-    // URL 密钥脱敏：与最终日志（record_and_bill_inner）保持一致
-    let masked_url: Option<String> = upstream_url.map(|u| {
-        if let Some(ch) = channel {
-            super::forward::mask_key_in_string(u, &ch.api_key)
-        } else {
-            u.to_string()
-        }
-    });
+    let channel_config_id = super::ha::resolve_log_config_id(state, channel).await;
+    let masked_url: Option<String> =
+        upstream_url.map(|u| super::forward::mask_key_in_string(u, &channel.api_key));
 
-    // 上下文开关 + Base64 脱敏：与最终日志 filter_content 行为完全一致
     let stored_req: Option<String> = if enable_log > 0 {
         request_content.map(sanitize_base64)
-    } else { None };
+    } else {
+        None
+    };
 
     let sql = state.db.format_query(
         "INSERT INTO logs (log_id, user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, \
          cached_tokens, cost, status_code, endpoint, error_message, latency_ms, \
          request_content, response_content, is_stream, upstream_url, \
-         billing_detail, task_id, action_type, billing_pid, forward_eid, plugin_tag) \
+         billing_detail, task_id, action_type, billing_pid, forward_eid, plugin_tag, channel_config_id) \
          VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0.0, 0, ?, NULL, 0, ?, NULL, ?, ?, \
-                 '请求处理中', '', ?, ?, ?, ?) RETURNING id"
+                 '请求处理中', '', ?, ?, ?, ?, ?) RETURNING id"
     );
 
     let (sys_ep, _upstream_ep) = if endpoint.contains('|') {
@@ -420,7 +790,7 @@ pub async fn record_pending_log(
     let res = sqlx::query_scalar::<_, i64>(&sql)
         .bind(&generated_log_id)
         .bind(user_id)
-        .bind(channel_id)
+        .bind(channel.id)
         .bind(token_id)
         .bind(model)
         .bind(sys_ep)
@@ -431,12 +801,19 @@ pub async fn record_pending_log(
         .bind(&billing_pid)
         .bind(&forward_eid)
         .bind(plugin_tag.unwrap_or(""))
+        .bind(channel_config_id)
         .fetch_one(&state.db.pool)
         .await;
 
     match res {
         Ok(id) => {
-            tracing::info!("[PendingLog] id={}, log_id={}, model={}, ep={}", id, generated_log_id, model, sys_ep);
+            tracing::info!(
+                "[PendingLog] id={}, log_id={}, model={}, ep={}",
+                id,
+                generated_log_id,
+                model,
+                sys_ep
+            );
             Some(id)
         }
         Err(e) => {
@@ -490,13 +867,29 @@ async fn resolve_model_meta(
             "{} WHERE m.model_id = ? AND m.is_active = 1{} ORDER BY m.id",
             base_select, cat_filter
         );
-        let rows = sqlx::query(&state.db.format_query(&sql))
+        let mut rows = sqlx::query(&state.db.format_query(&sql))
             .bind(model_name)
             .fetch_all(&state.db.pool)
             .await
             .unwrap_or_default();
 
+        if rows.is_empty() && hint_category.is_some() {
+            let fallback_sql = format!(
+                "{} WHERE m.model_id = ? AND m.is_active = 1 ORDER BY m.id",
+                base_select
+            );
+            rows = sqlx::query(&state.db.format_query(&fallback_sql))
+                .bind(model_name)
+                .fetch_all(&state.db.pool)
+                .await
+                .unwrap_or_default();
+        }
+
         if rows.is_empty() {
+            // 模型未入库时仍保留调用方类别提示，避免失败日志 action_type 为空
+            if let Some(cat) = hint_category.filter(|c| !c.is_empty()) {
+                action_type = cat.to_string();
+            }
             return (action_type, billing_pid, enable_log);
         }
 
@@ -505,11 +898,15 @@ async fn resolve_model_meta(
         let target_row = if let Some(ch) = channel {
             let ch_models = ch.get_models();
             if !ch_models.is_empty() {
-                rows.iter().position(|r| {
-                    let mid: String = r.try_get("mid").unwrap_or_default();
-                    ch_models.contains(&mid)
-                })
-                .or_else(|| rows.iter().position(|_| ch_models.contains(&model_name.to_string())))
+                rows.iter()
+                    .position(|r| {
+                        let mid: String = r.try_get("mid").unwrap_or_default();
+                        ch_models.contains(&mid)
+                    })
+                    .or_else(|| {
+                        rows.iter()
+                            .position(|_| ch_models.contains(&model_name.to_string()))
+                    })
             } else {
                 None
             }
@@ -522,16 +919,27 @@ async fn resolve_model_meta(
 
     let row = match row {
         Some(r) => r,
-        None => return (action_type, billing_pid, enable_log),
+        None => {
+            if let Some(cat) = hint_category.filter(|c| !c.is_empty()) {
+                action_type = cat.to_string();
+            }
+            return (action_type, billing_pid, enable_log);
+        }
     };
 
     action_type = row.try_get("category_name").unwrap_or_default();
+    if action_type.is_empty() {
+        if let Some(cat) = hint_category.filter(|c| !c.is_empty()) {
+            action_type = cat.to_string();
+        }
+    }
     billing_pid = row.try_get("billing_pid").unwrap_or(None);
     enable_log = row.try_get("enable_log_content").unwrap_or(0);
 
     tracing::info!(
         "[ModelMeta] model={}, category={}, billing_pid={}, enable_log={}, source={}",
-        model_name, action_type,
+        model_name,
+        action_type,
         billing_pid.as_deref().unwrap_or("-"),
         enable_log,
         if db_model.is_some() { "pk" } else { "query" }
@@ -552,13 +960,30 @@ pub async fn record_error_log(
     upstream_url: Option<&str>,
     action_type: Option<&str>,
 ) {
+    let db_error_msg = extract_error_message(error_msg);
+    // 优先用调用方透传的类型；仅未透传时（鉴权中间件）才按路径兜底
+    let resolved_type = action_type
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| action_type_from_path(endpoint).map(|s| s.to_string()))
+        .unwrap_or_default();
     let sql = state.db.format_query(
-        "INSERT INTO logs (log_id, user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, action_type) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0.0, ?, ?, ?, 0, NULL, NULL, 0, ?, ?)"
+        "INSERT INTO logs (log_id, user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, is_stream, upstream_url, action_type, is_completed) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0.0, ?, ?, ?, 0, NULL, NULL, 0, ?, ?, 1)"
     );
     let cid = channel_id.unwrap_or(0);
     let tid = token_id.unwrap_or(0);
-    let error_log_id = format!("log_{}", ulid::Ulid::new().to_string().to_lowercase());
-    
+    let log_prefix = if !resolved_type.is_empty() && resolved_type != "聊天" {
+        "tsk_"
+    } else {
+        "log_"
+    };
+    let error_log_id = format!(
+        "{}{}",
+        log_prefix,
+        ulid::Ulid::new().to_string().to_lowercase()
+    );
+
     let res = sqlx::query(&sql)
         .bind(&error_log_id)
         .bind(user_id)
@@ -567,9 +992,9 @@ pub async fn record_error_log(
         .bind(model)
         .bind(status_code as i32)
         .bind(endpoint)
-        .bind(error_msg)
+        .bind(&db_error_msg)
         .bind(upstream_url.unwrap_or(""))
-        .bind(action_type.unwrap_or(""))
+        .bind(&resolved_type)
         .execute(&state.db.pool)
         .await;
 
@@ -578,102 +1003,134 @@ pub async fn record_error_log(
     }
 }
 
+/// 最终记账/更新日志参数
+pub struct BillRecord<'a> {
+    pub state: &'a Arc<AppState>,
+    pub token: &'a ApiToken,
+    pub channel: &'a crate::models::Channel,
+    pub model: &'a str,
+    pub prompt_tokens: i32,
+    pub completion_tokens: i32,
+    pub cached_tokens: i32,
+    pub cost: f64,
+    pub pre_deducted: f64,
+    pub pre_deduct_gift: f64,
+    pub status_code: u16,
+    pub endpoint: &'a str,
+    pub error_msg: Option<&'a str>,
+    pub latency_ms: u32,
+    pub is_stream: i32,
+    pub request_content: Option<String>,
+    pub response_content: Option<String>,
+    pub upstream_req_content: Option<String>,
+    pub billing_detail: Option<String>,
+    pub hint_category: Option<&'a str>,
+    pub pending_log_id: Option<i64>,
+    pub billing_model_hint: Option<&'a str>,
+    pub plugin_tag: Option<&'a str>,
+    pub db_model: Option<&'a crate::models::Model>,
+}
+
 /// 计费记录统一入口
 /// 【一条日志原则】pending_log_id 有值时 UPDATE 预记录行，无值时 INSERT 新行
 /// billing_model_hint: 插件解析后的实际模型（用于正确查询 billing_pid 等元信息），普通场景传 None
 /// plugin_tag: 插件标记JSON（仅 INSERT 新行时使用，UPDATE 不覆盖预记录值）
 /// db_model: 调用方已查询的 Model 记录，传入后 resolve_model_meta 走主键精确定位，避免重复查库
-pub async fn record_and_bill_inner(
-    state: &Arc<AppState>,
-    token: &ApiToken,
-    channel_id: i64,
-    model_name: &str,
-    prompt_tokens: i32,
-    completion_tokens: i32,
-    cached_tokens: i32,
-    cost: f64,
-    pre_deducted: f64,
-    pre_deduct_gift: f64,
-    status_code: u16,
-    endpoint: &str,
-    error_msg: Option<&str>,
-    latency_ms: u32,
-    is_stream: i32,
-    request_content: Option<String>,
-    response_content: Option<String>,
-    upstream_req_content: Option<String>,
-    billing_detail: Option<String>,
-    hint_category: Option<&str>,
-    pending_log_id: Option<i64>,
-    billing_model_hint: Option<&str>,
-    plugin_tag: Option<&str>,
-    db_model: Option<&crate::models::Model>,
-) {
-    // 查询渠道信息（后续 channel_info 构建和 resolve_model_meta 共用，避免重复查库）
-    let channel_obj: Option<crate::models::Channel> = if channel_id > 0 {
-        sqlx::query_as(
-            &state.db.format_query("SELECT * FROM channels WHERE id = ?")
-        ).bind(channel_id).fetch_optional(&state.db.pool).await.unwrap_or(None)
-    } else { None };
-    // 计费模型提示：插件（如快乐小马）解析后的实际模型，用于正确查询 billing_pid 等元信息
+/// channel: 已水合渠道（含最终 base_url/api_key/yid），禁止再查空父行覆盖
+pub async fn record_and_bill_inner(p: BillRecord<'_>) {
+    let BillRecord {
+        state,
+        token,
+        channel,
+        model: model_name,
+        prompt_tokens,
+        completion_tokens,
+        cached_tokens,
+        cost,
+        pre_deducted,
+        pre_deduct_gift,
+        status_code,
+        endpoint,
+        error_msg,
+        latency_ms,
+        is_stream,
+        request_content,
+        response_content,
+        upstream_req_content,
+        billing_detail,
+        hint_category,
+        pending_log_id,
+        billing_model_hint,
+        plugin_tag,
+        db_model,
+    } = p;
+    let extracted_error_msg = error_msg.map(|msg| extract_error_message(msg));
+    let db_error_msg = extracted_error_msg.as_deref();
+    let channel_id = channel.id;
+
     let meta_model = billing_model_hint.unwrap_or(model_name);
-    let (category, billing_pid, enable_log) = resolve_model_meta(state, meta_model, hint_category, channel_obj.as_ref(), db_model).await;
+    let (category, billing_pid, enable_log) =
+        resolve_model_meta(state, meta_model, hint_category, Some(channel), db_model).await;
+
+    // HA: group_aid；物理: preset_id；内存 yid 补全 config_id
+    let channel_config_id = super::ha::resolve_log_config_id(state, channel).await;
 
     let filter_content = |content: Option<String>, respect_log_flag: bool| -> Option<String> {
         let text = content?;
-        if respect_log_flag && enable_log == 0 { return None; }
+        if respect_log_flag && enable_log == 0 {
+            return None;
+        }
         Some(sanitize_base64(&text))
     };
 
     // ── 计费特征快照 ──
-    // 在 filter_content 过滤之前，从原始 request_content 提取计费特征并序列化为 JSON。
-    // 该快照独立于 enable_log 开关，确保异步任务 GET 轮询结算时始终有完整的计费参数。
-    // 同时合并 upstream_req_content 的特征（转发规则可能修改了 duration/resolution 等参数）。
     let billing_features_json: Option<String> = {
-        let mut feat = request_content.as_ref()
+        let mut feat = request_content
+            .as_ref()
             .and_then(|rc| serde_json::from_str::<serde_json::Value>(rc).ok())
             .map(|json| crate::relay::usage_extractor::extract_request_features(&json));
-        // 合并 upstream_req_content 的特征（如 asset_convert 后修改的参数）
-        if let Some(upstream_feat) = upstream_req_content.as_ref()
+        if let Some(upstream_feat) = upstream_req_content
+            .as_ref()
             .and_then(|uc| serde_json::from_str::<serde_json::Value>(uc).ok())
             .map(|json| crate::relay::usage_extractor::extract_request_features(&json))
         {
             if let Some(ref mut f) = feat {
-                if f.duration_seconds.is_none() { f.duration_seconds = upstream_feat.duration_seconds; }
-                if f.resolution.is_none() { f.resolution = upstream_feat.resolution; }
-                if f.mode.is_none() { f.mode = upstream_feat.mode; }
-                if f.sound.is_none() { f.sound = upstream_feat.sound; }
-                if upstream_feat.has_video { f.has_video = true; }
-                if upstream_feat.has_audio { f.has_audio = true; }
-                if upstream_feat.has_image_ref { f.has_image_ref = true; }
+                f.merge(upstream_feat);
             } else {
                 feat = Some(upstream_feat);
+            }
+        }
+        if let Some(ref resp) = response_content {
+            if let Ok(resp_json) = serde_json::from_str::<serde_json::Value>(resp) {
+                let resp_feat = crate::relay::usage_extractor::extract_request_features(&resp_json);
+                if let Some(ref mut f) = feat {
+                    f.merge(resp_feat);
+                } else {
+                    feat = Some(resp_feat);
+                }
+            }
+            let usage = crate::relay::usage_extractor::parse_usage(resp);
+            if usage.web_search > 0 {
+                feat.get_or_insert_with(Default::default).web_search = Some(usage.web_search);
             }
         }
         feat.and_then(|f| serde_json::to_string(&f).ok())
     };
 
-    // request_content / upstream_req_content 恢复尊重 enable_log 开关（计费不再依赖它们）
     let req_content = filter_content(request_content, true);
     let upstream_req = filter_content(upstream_req_content, true);
-    
-    // 灵活处理 response_content 的存储
+
     let resp_content = if enable_log == 0 {
         if category == "视频" || category == "图片" {
-            // 视频和图片模型：结果始终保留（需要提取生成的资源URL等）
             filter_content(response_content, false)
         } else {
             if let Some(ref text) = response_content {
                 let usage_json = crate::relay::usage_extractor::extract_usage_json_string(text);
                 if usage_json.is_some() {
-                    // 只要成功提取出 token 的 usage JSON，则为节省日志空间仅存 usage
                     usage_json
                 } else if category == "聊天" || category == "文本" {
-                    // 纯文本语言模型：如果既没查到usage又关闭了上下文，避免存入大文本影响性能，做极简化占位
                     Some("[]".to_string())
                 } else {
-                    // 语音及未来新增的其他异构模型类型：
-                    // 如果没有找到 usage 数据提取格式，基于严谨性，兜底保留经过 Base64 等脱敏后的完整请求包！
                     filter_content(Some(text.clone()), false)
                 }
             } else {
@@ -681,76 +1138,10 @@ pub async fn record_and_bill_inner(
             }
         }
     } else {
-        // 如果开启了上下文，始终保存处理后的内容
         filter_content(response_content, false)
     };
 
-    // 复用上方已查询的 channel_obj，避免重复查库
-    let mut channel_info: Option<(String, String, String)> = None;
-    if let Some(ch) = &channel_obj {
-        let mut b = ch.base_url.clone();
-        let mut k = ch.api_key.clone();
-        if let Some(pid) = ch.preset_id {
-            if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
-                .bind(pid)
-                .fetch_optional(&state.db.pool)
-                .await
-            {
-                b = preset.base_url;
-                k = preset.api_key;
-            }
-        }
-        channel_info = Some((b, k, ch.provider_type.clone()));
-
-        // ── 火山引擎卡池统计集成 ──
-        #[cfg(feature = "commercial_plugins")]
-        if let Ok(config_val) = serde_json::from_str::<serde_json::Value>(&ch.config) {
-            if let (Some(acc_id), Some(p_id)) = (config_val["_pool_account_id"].as_i64(), config_val["_pool_id"].as_i64()) {
-                let acc_name = config_val["_pool_account_name"].as_str().unwrap_or("Unknown").to_string();
-                let state_pool = state.clone();
-                let model_pool = model_name.to_string();
-                let cid_pool = channel_id;
-                let p_tokens = prompt_tokens;
-                let c_tokens = completion_tokens;
-                let ca_tokens = cached_tokens;
-                let s_code = status_code;
-                let err_msg_pool = error_msg.map(|s| s.to_string());
-                
-                tokio::spawn(async move {
-                    // 获取配额单位
-                    let mapping: Option<(String,)> = sqlx::query_as(&state_pool.db.format_query(
-                        "SELECT quota_unit FROM volcengine_pool_account_mapping WHERE pool_id = ? AND account_id = ?"
-                    ))
-                    .bind(p_id)
-                    .bind(acc_id)
-                    .fetch_optional(&state_pool.db.pool)
-                    .await
-                    .unwrap_or(None);
-                    
-                    if let Some((unit,)) = mapping {
-                        let usage_amount = match unit.as_str() {
-                            "tokens" => (p_tokens + c_tokens + ca_tokens) as f64,
-                            "requests" => 1.0,
-                            "images" => 1.0, // 简化处理，生图场景默认为 1
-                            _ => (p_tokens + c_tokens + ca_tokens) as f64,
-                        };
-                        
-                        if s_code == 200 {
-                            crate::services::volcengine_pool::record_usage(
-                                &state_pool, p_id, acc_id, &acc_name, &model_pool, cid_pool, usage_amount, &unit
-                            ).await;
-                        } else {
-                            let err = err_msg_pool.unwrap_or_else(|| format!("HTTP {}", s_code));
-                            crate::services::volcengine_pool::mark_failed(
-                                &state_pool, p_id, acc_id, &acc_name, &model_pool, cid_pool, &err
-                            ).await;
-                        }
-                    }
-                });
-            }
-        }
-    }
-        
+    // 直接复用已水合 Channel 的 base_url/api_key（含 HA 子配 / preset / volc 覆盖）
     let (system_endpoint, upstream_ep) = if endpoint.contains('|') {
         let parts: Vec<&str> = endpoint.splitn(2, '|').collect();
         (parts[0], parts[1])
@@ -759,36 +1150,37 @@ pub async fn record_and_bill_inner(
     };
 
     let mut final_endpoint = upstream_ep.to_string();
-    if let Some((base, key, _provider)) = channel_info {
-        if !final_endpoint.starts_with("http") {
-             final_endpoint = join_url(&base, if final_endpoint.starts_with('/') { &final_endpoint[1..] } else { &final_endpoint });
-        }
-        // 通用密钥脱敏：只要 URL 中包含 api_key，统一脱敏
-        final_endpoint = super::forward::mask_key_in_string(&final_endpoint, &key);
+    if !final_endpoint.starts_with("http") && !channel.base_url.is_empty() {
+        final_endpoint = join_url(&channel.base_url, &final_endpoint);
     }
-
-
+    if !channel.api_key.is_empty() {
+        final_endpoint = super::forward::mask_key_in_string(&final_endpoint, &channel.api_key);
+    }
+    if !final_endpoint.starts_with("http") {
+        if let Some(log_id) = pending_log_id {
+            if let Ok(Some(prev)) = sqlx::query_scalar::<_, String>(
+                &state
+                    .db
+                    .format_query("SELECT COALESCE(upstream_url, '') FROM logs WHERE id = ?"),
+            )
+            .bind(log_id)
+            .fetch_optional(&state.db.pool)
+            .await
+            {
+                if prev.starts_with("http") {
+                    final_endpoint = prev;
+                }
+            }
+        }
+    }
 
     let res: Result<(), sqlx::Error> = async {
         let mut tx = state.db.pool.begin().await?;
-        let now_str = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        
-        // 从响应体自动提取异步任务 ID（复用 response_formatter::find_id 统一逻辑）
+        // 从响应体自动提取异步任务 ID（复用 response_formatter::extract_async_task_id 统一逻辑）
         // 提前解析提取，用于判断当前是否为异步任务预扣冻结阶段
         let task_id = resp_content.as_deref()
             .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-            .map(|v| {
-                let id = super::response_formatter::find_id(&v);
-                // 聊天响应（含 choices/candidates）的 id 字段是会话 ID，不是异步任务 ID
-                // 仅当匹配到的是通用 id（而非明确的 task_id）时排除
-                if !id.is_empty()
-                    && (v.get("choices").is_some() || v.get("candidates").is_some())
-                {
-                    String::new()
-                } else {
-                    id
-                }
-            })
+            .map(|v| super::response_formatter::extract_async_task_id(&v))
             .unwrap_or_default();
 
         // 异步任务预扣冻结判定：任务 ID 非空且计费详情中包含“冻结”
@@ -796,51 +1188,41 @@ pub async fn record_and_bill_inner(
 
         // 始终更新令牌最后使用时间
         sqlx::query(&state.db.format_query(
-            "UPDATE api_tokens SET last_used_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            "UPDATE api_tokens SET last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         ))
-        .bind(&now_str)
         .bind(token.id)
         .execute(&mut *tx)
         .await?;
 
         if cost > 0.0 || pre_deducted > 0.0 {
-            let now_t = chrono::Local::now();
-            let now_day = now_t.format("%Y-%m-%d").to_string();
-            let now_week = now_t.format("%Y-%U").to_string();
-            let now_month = now_t.format("%Y-%m").to_string();
+            let (site_tz, _) = crate::relay::get_cached_config(state).await;
+            let tz = crate::api::date_helper::resolve_user_timedisplay_name(
+                &state.db,
+                &token.user_id,
+                &site_tz,
+            )
+            .await;
+            // 令牌额度异步切流：内存 check_and_incr → MPSC 刷库；管道满则同步 fallback
+            if cost > 0.0 {
+                let _added = super::token_quota::consume_async_or_sync(
+                    state,
+                    &mut tx,
+                    token,
+                    cost,
+                    &tz,
+                )
+                .await?;
+            }
 
-            sqlx::query(&state.db.format_query(
-                "UPDATE api_tokens SET \
-                 quota_used = quota_used + ?, \
-                 daily_quota_used = CASE WHEN last_reset_day <> ? THEN ? ELSE daily_quota_used + ? END, \
-                 weekly_quota_used = CASE WHEN last_reset_week <> ? THEN ? ELSE weekly_quota_used + ? END, \
-                 monthly_quota_used = CASE WHEN last_reset_month <> ? THEN ? ELSE monthly_quota_used + ? END, \
-                 last_reset_day = ?, \
-                 last_reset_week = ?, \
-                 last_reset_month = ?, \
-                 updated_at = CURRENT_TIMESTAMP \
-                 WHERE id = ?",
-            ))
-            .bind(cost)
-            .bind(&now_day).bind(cost).bind(cost)
-            .bind(&now_week).bind(cost).bind(cost)
-            .bind(&now_month).bind(cost).bind(cost)
-            .bind(&now_day)
-            .bind(&now_week)
-            .bind(&now_month)
-            .bind(token.id)
-            .execute(&mut *tx)
-            .await?;
-            
             let apply_balance = cost - pre_deducted; // 正数表示还要扣，负数表示退款
             if apply_balance > 0.0 {
                 sqlx::query(&state.db.format_query(
-                    "UPDATE users SET 
+                    "UPDATE users SET
                      balance = CASE WHEN gift_balance >= ? THEN balance ELSE balance - (? - gift_balance) END,
                      gift_used_quota = gift_used_quota + ? + CASE WHEN gift_balance >= ? THEN ? ELSE gift_balance END,
                      gift_balance = CASE WHEN gift_balance >= ? THEN gift_balance - ? ELSE 0 END,
-                     used_quota = used_quota + ?, 
-                     updated_at = CURRENT_TIMESTAMP 
+                     used_quota = used_quota + ?,
+                     updated_at = CURRENT_TIMESTAMP
                      WHERE id = ?",
                 ))
                 .bind(apply_balance).bind(apply_balance)
@@ -881,15 +1263,21 @@ pub async fn record_and_bill_inner(
                 .execute(&mut *tx)
                 .await?;
             }
-            
+
             if channel_id > 0 {
-                sqlx::query(&state.db.format_query(
-                    "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                ))
-                .bind(cost)
-                .bind(channel_id)
-                .execute(&mut *tx)
+                // 渠道为共享资源：日/月 key 必须用站点时区，禁止用请求用户 timedisplay
+                super::channel_quota::consume_channel(
+                    &state.db, &mut tx, channel_id, cost, &site_tz,
+                )
                 .await?;
+            }
+            if let Some(cfg_id) = channel_config_id {
+                if cfg_id > 0 {
+                    super::channel_quota::consume_config(
+                        &state.db, &mut tx, cfg_id as i64, cost, &site_tz,
+                    )
+                    .await?;
+                }
             }
         }
 
@@ -902,10 +1290,12 @@ pub async fn record_and_bill_inner(
         let final_action_type = if !category.is_empty() {
             category.clone()
         } else {
-            hint_category.unwrap_or_default().to_string()
+            hint_category.unwrap_or("").to_string()
         };
 
         // 【一条日志原则】有 pending_log_id 时 UPDATE 预记录行，否则 INSERT 新行
+        // 成功：写入本次成功子渠的 channel_id / channel_config_id（可覆盖先前失败快照）
+        // 全失败：由 ha::reinstate_first_log / 仅首次落库 保证仍为子渠 1
         if let Some(log_id) = pending_log_id {
             sqlx::query(&state.db.format_query(
                 "UPDATE logs SET channel_id = ?, model = ?, \
@@ -915,7 +1305,8 @@ pub async fn record_and_bill_inner(
                  upstream_req_content = ?, billing_detail = ?, \
                  task_id = CASE WHEN ? = '' OR ? IS NULL THEN task_id ELSE ? END, \
                  action_type = ?, billing_pid = ?, \
-                 billing_features = ?, pre_deduct_gift = ? \
+                 billing_features = ?, pre_deduct_gift = ?, is_completed = ?, \
+                 channel_config_id = ? \
                  WHERE id = ?",
             ))
             .bind(channel_id)
@@ -926,7 +1317,7 @@ pub async fn record_and_bill_inner(
             .bind(cost)
             .bind(status_code as i32)
             .bind(system_endpoint)
-            .bind(error_msg)
+            .bind(db_error_msg)
             .bind(latency_ms as i32)
             .bind(&req_content)
             .bind(&resp_content)
@@ -939,6 +1330,8 @@ pub async fn record_and_bill_inner(
             .bind(&billing_pid)
             .bind(&billing_features_json)
             .bind(pre_deduct_gift)
+            .bind(if is_freeze { 0i16 } else { 1i16 })  // is_completed: 冻结任务=0(待结算), 同步请求=1(已完成)
+            .bind(channel_config_id)
             .bind(log_id)
             .execute(&mut *tx)
             .await?;
@@ -946,8 +1339,8 @@ pub async fn record_and_bill_inner(
             let fb_prefix = if !final_action_type.is_empty() && final_action_type != "聊天" { "tsk_" } else { "log_" };
             let fallback_log_id = format!("{}{}", fb_prefix, ulid::Ulid::new().to_string().to_lowercase());
             sqlx::query(&state.db.format_query(
-                "INSERT INTO logs (log_id, user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, post_response, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type, billing_pid, forward_eid, billing_features, pre_deduct_gift, plugin_tag) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO logs (log_id, user_id, channel_id, token_id, model, prompt_tokens, completion_tokens, cached_tokens, cost, status_code, endpoint, error_message, latency_ms, request_content, response_content, post_response, is_stream, upstream_url, upstream_req_content, billing_detail, task_id, action_type, billing_pid, forward_eid, billing_features, pre_deduct_gift, plugin_tag, is_completed, channel_config_id) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             ))
             .bind(&fallback_log_id)
             .bind(&token.user_id)
@@ -960,7 +1353,7 @@ pub async fn record_and_bill_inner(
             .bind(cost)
             .bind(status_code as i32)
             .bind(system_endpoint)
-            .bind(error_msg)
+            .bind(db_error_msg)
             .bind(latency_ms as i32)
             .bind(&req_content)
             .bind(&resp_content)
@@ -976,6 +1369,8 @@ pub async fn record_and_bill_inner(
             .bind(&billing_features_json)
             .bind(pre_deduct_gift)
             .bind(plugin_tag.unwrap_or(""))
+            .bind(if is_freeze { 0i16 } else { 1i16 })  // is_completed: 冻结任务=0(待结算), 同步请求=1(已完成)
+            .bind(channel_config_id)
             .execute(&mut *tx)
             .await?;
         }
@@ -985,6 +1380,13 @@ pub async fn record_and_bill_inner(
     .await;
     if let Err(e) = res {
         tracing::error!("Failed to record relay usage: {:?}", e);
+    } else if cost > 0.0 {
+        // 异步检查低余额提醒，不阻塞计费路径
+        let state_notify = Arc::clone(state);
+        let uid = token.user_id.clone();
+        tokio::spawn(async move {
+            crate::services::notification::check_and_notify_low_balance(&state_notify, &uid).await;
+        });
     }
 }
 
@@ -993,12 +1395,10 @@ pub async fn record_and_bill_inner(
 pub async fn cleanup_orphan_pending_logs(state: &Arc<AppState>) {
     // 查找超过 30 分钟仍为"处理中"的孤儿日志
     // cost 字段存储的是预扣费总额（pre_deduction），pre_deduct_gift 是赠送钱包扣除部分
-    let orphans: Vec<(i64, String, f64, f64)> = match sqlx::query_as(
-        &state.db.format_query(
-            "SELECT id, user_id, cost, pre_deduct_gift FROM logs \
-             WHERE status_code = 0 AND created_at::timestamptz < CURRENT_TIMESTAMP - INTERVAL '30 minutes'"
-        )
-    )
+    let orphans: Vec<(i64, String, f64, f64)> = match sqlx::query_as(&state.db.format_query(
+        "SELECT id, user_id, cost, pre_deduct_gift FROM logs \
+             WHERE status_code = 0 AND created_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes'",
+    ))
     .fetch_all(&state.db.pool)
     .await
     {
@@ -1013,7 +1413,10 @@ pub async fn cleanup_orphan_pending_logs(state: &Arc<AppState>) {
         return;
     }
 
-    tracing::info!("[OrphanCleanup] 发现 {} 条孤儿日志，开始清理", orphans.len());
+    tracing::info!(
+        "[OrphanCleanup] 发现 {} 条孤儿日志，开始清理",
+        orphans.len()
+    );
 
     for (log_id, user_id, cost, pre_deduct_gift) in &orphans {
         let mut tx = match state.db.pool.begin().await {
@@ -1028,8 +1431,8 @@ pub async fn cleanup_orphan_pending_logs(state: &Arc<AppState>) {
         let update_res = sqlx::query(&state.db.format_query(
             "UPDATE logs SET status_code = 408, cost = 0.0, pre_deduct_gift = 0.0, \
              error_message = '请求处理超时或连接中断', \
-             billing_detail = '孤儿日志清理，预扣费已退回' \
-             WHERE id = ? AND status_code = 0"
+             billing_detail = '孤儿日志清理，预扣费已退回', is_completed = 1 \
+             WHERE id = ? AND status_code = 0",
         ))
         .bind(log_id)
         .execute(&mut *tx)
@@ -1070,7 +1473,13 @@ pub async fn cleanup_orphan_pending_logs(state: &Arc<AppState>) {
             tracing::error!("[OrphanCleanup] 提交事务失败: {:?}", e);
         } else if *cost > 0.0 || *pre_deduct_gift > 0.0 {
             let balance_refund = *cost - *pre_deduct_gift;
-            tracing::info!("[OrphanCleanup] 日志 {} 已清理，退还用户 {} 系统钱包 {:.6} + 赠送钱包 {:.6}", log_id, user_id, balance_refund, pre_deduct_gift);
+            tracing::info!(
+                "[OrphanCleanup] 日志 {} 已清理，退还用户 {} 系统钱包 {:.6} + 赠送钱包 {:.6}",
+                log_id,
+                user_id,
+                balance_refund,
+                pre_deduct_gift
+            );
         } else {
             tracing::info!("[OrphanCleanup] 日志 {} 已清理（无预扣费）", log_id);
         }
@@ -1080,12 +1489,10 @@ pub async fn cleanup_orphan_pending_logs(state: &Arc<AppState>) {
 /// 服务启动时恢复上次中断遗留的"处理中"日志
 /// 仅处理非异步冻结任务（异步任务由 task 模块后台轮询自动恢复，不重复调用上游）
 pub async fn recover_interrupted_logs(state: &Arc<AppState>) {
-    let orphans: Vec<(i64, String, f64, f64)> = match sqlx::query_as(
-        &state.db.format_query(
-            "SELECT id, user_id, cost, pre_deduct_gift FROM logs \
-             WHERE status_code = 0 AND billing_detail NOT LIKE '%冻结%'"
-        )
-    )
+    let orphans: Vec<(i64, String, f64, f64)> = match sqlx::query_as(&state.db.format_query(
+        "SELECT id, user_id, cost, pre_deduct_gift FROM logs \
+             WHERE status_code = 0 AND billing_detail NOT LIKE '%冻结%'",
+    ))
     .fetch_all(&state.db.pool)
     .await
     {
@@ -1100,7 +1507,10 @@ pub async fn recover_interrupted_logs(state: &Arc<AppState>) {
         return;
     }
 
-    tracing::info!("[StartupRecover] 发现 {} 条上次中断遗留的处理中日志", orphans.len());
+    tracing::info!(
+        "[StartupRecover] 发现 {} 条上次中断遗留的处理中日志",
+        orphans.len()
+    );
 
     for (log_id, user_id, cost, pre_deduct_gift) in &orphans {
         let mut tx = match state.db.pool.begin().await {
@@ -1116,7 +1526,7 @@ pub async fn recover_interrupted_logs(state: &Arc<AppState>) {
             "UPDATE logs SET status_code = 503, cost = CASE WHEN ? > 0 THEN 0.0 ELSE cost END, pre_deduct_gift = CASE WHEN ? > 0 THEN 0.0 ELSE pre_deduct_gift END, \
              error_message = '服务升级重启，请求被中断', \
              billing_detail = CASE WHEN ? > 0 THEN '服务升级中断，预扣费已退回' \
-                 ELSE '服务升级中断' END \
+                 ELSE '服务升级中断' END, is_completed = 1 \
              WHERE id = ? AND status_code = 0"
         ))
         .bind(cost)
@@ -1137,7 +1547,7 @@ pub async fn recover_interrupted_logs(state: &Arc<AppState>) {
             let balance_refund = *cost - *pre_deduct_gift;
             if let Err(e) = sqlx::query(&state.db.format_query(
                 "UPDATE users SET balance = balance + ?, gift_balance = gift_balance + ?, \
-                 updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                 updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             ))
             .bind(balance_refund)
             .bind(pre_deduct_gift)
@@ -1154,10 +1564,18 @@ pub async fn recover_interrupted_logs(state: &Arc<AppState>) {
         if let Err(e) = tx.commit().await {
             tracing::error!("[StartupRecover] 提交事务失败: {:?}", e);
         } else if *cost > 0.0 || *pre_deduct_gift > 0.0 {
-            tracing::info!("[StartupRecover] 日志 {} 已恢复，退还用户 {} 预扣费 {} (gift: {})",
-                log_id, user_id, cost, pre_deduct_gift);
+            tracing::info!(
+                "[StartupRecover] 日志 {} 已恢复，退还用户 {} 预扣费 {} (gift: {})",
+                log_id,
+                user_id,
+                cost,
+                pre_deduct_gift
+            );
         } else {
-            tracing::info!("[StartupRecover] 日志 {} 已标记为服务中断（无预扣费）", log_id);
+            tracing::info!(
+                "[StartupRecover] 日志 {} 已标记为服务中断（无预扣费）",
+                log_id
+            );
         }
     }
 }
@@ -1165,7 +1583,7 @@ pub async fn recover_interrupted_logs(state: &Arc<AppState>) {
 /// 错误信息敏感词脱敏：URL 域名替换为 ***（保留协议和路径），密钥替换为 ***。
 /// 仅用于普通用户端返回和日志展示，管理员端保留原始信息用于排查。
 pub fn sanitize_error_message(msg: &str) -> String {
-    // URL 域名脱敏：https://api.example.com/v1/... → https://***​/v1/...
+    // URL 域名脱敏：https://api.example.com/v1/... → https://***/v1/...
     let re_url = Regex::new(r"(https?://)([^/\s)\]},]+)").unwrap();
     let result = re_url.replace_all(msg, "${1}***").to_string();
     // API 密钥脱敏：sk-xxxx 等格式
@@ -1173,102 +1591,516 @@ pub fn sanitize_error_message(msg: &str) -> String {
     re_key.replace_all(&result, "***").to_string()
 }
 
+/// 上游失败对外错误：日志与客户端共用同一 HTTP 状态码（4xx/5xx 透出，其余按 502）
+/// 对方舟/智算等 ErrorCode+ErrorMessage 扁平错误，统一转为 OpenAI error 再返回
+pub fn upstream_fail(status: u16, raw_msg: &str) -> crate::error::AppError {
+    let normalized = normalize_upstream_error_for_client(raw_msg);
+    let msg = sanitize_error_message(&normalized);
+    let status = if (400..600).contains(&status) {
+        status
+    } else {
+        502
+    };
+    crate::error::AppError::UpstreamHttpError(status, msg)
+}
+
+/// 仅将 PascalCase ErrorCode 扁平错误转为 OpenAI 格式；其它厂商 JSON 保持原样透传
+fn normalize_upstream_error_for_client(raw_msg: &str) -> String {
+    let raw = raw_msg.find('{').map(|i| &raw_msg[i..]).unwrap_or(raw_msg);
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
+        // 非空 ErrorCode 才转换，避免空串/null 误入
+        if v.get("ErrorCode")
+            .and_then(|c| c.as_str())
+            .is_some_and(|c| !c.is_empty())
+        {
+            if let Some(formatted) = super::response_formatter::format_as_openai_error(&v) {
+                return formatted;
+            }
+        }
+    }
+    raw_msg.to_string()
+}
+
+/// 上游错误文案：空 body 时补默认句，供日志与 `upstream_fail` 共用
+#[inline]
+pub fn upstream_error_text(status: u16, body: &str) -> String {
+    if body.trim().is_empty() {
+        format!("Upstream HTTP error {}", status)
+    } else {
+        body.to_string()
+    }
+}
+
 /// 从可能为 JSON 格式的错误响应体中提取最核心的错误文本信息
 pub fn extract_error_message(resp_body: &str) -> String {
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(resp_body) {
-        if let Some(msg) = json.pointer("/error/message").or(json.get("message")).and_then(|v| v.as_str()) {
-            return msg.to_string();
-        }
-        if let Some(msg) = json.pointer("/Response/Error/Message").and_then(|v| v.as_str()) {
-            return msg.to_string();
-        }
-        if let Some(msg) = json.pointer("/ResponseMetadata/Error/Message").and_then(|v| v.as_str()) {
-            return msg.to_string();
+    let raw = resp_body
+        .find('{')
+        .map(|i| &resp_body[i..])
+        .unwrap_or(resp_body);
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(raw) {
+        if let Some(msg) = super::response_formatter::extract_error_message_from_value(&json) {
+            return msg;
         }
     }
     resp_body.to_string()
 }
 
-/// 根据错误文本（支持中英文），智能推断业务错误状态码
-pub fn infer_error_status_code(err_msg: &str) -> u16 {
-    let err_msg_lower = err_msg.to_lowercase();
-    // 1. 内容安全/敏感词/违规过滤/政策屏蔽
-    if err_msg_lower.contains("safety") 
-        || err_msg_lower.contains("censor") 
-        || err_msg_lower.contains("policy") 
-        || err_msg_lower.contains("violation")
-        || err_msg_lower.contains("block")
-        || err_msg_lower.contains("sensitive")
-        || err_msg_lower.contains("moderation")
-        || err_msg_lower.contains("content_filter")
-        || err_msg_lower.contains("敏感")
-        || err_msg_lower.contains("违规")
-        || err_msg_lower.contains("安全")
-        || err_msg_lower.contains("政策")
-        || err_msg_lower.contains("审核")
+/// 根据错误响应 JSON 推断业务 HTTP 状态码
+/// 优先从结构化 error.code 精确识别；无 code 时从 message 文本关键词兜底
+pub fn infer_error_status_code(body: &serde_json::Value) -> u16 {
+    if let Some(code) = super::response_formatter::extract_error_code_from_value(body) {
+        return classify_error_code(&code);
+    }
+    let msg = super::response_formatter::extract_error_message_from_value(body).unwrap_or_default();
+    classify_error_text(&msg)
+}
+
+/// 纯文本/网络错误场景的快捷入口（无完整 JSON 结构时）
+/// 自动尝试从文本中提取 JSON，再委托 infer_error_status_code 处理
+pub fn infer_error_status_code_from_str(err: &str) -> u16 {
+    let raw = err.find('{').map(|i| &err[i..]).unwrap_or(err);
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
+        return infer_error_status_code(&v);
+    }
+    classify_error_text(err)
+}
+
+/// 按 error.code 字符串分类 HTTP 状态码（私有辅助）
+/// 支持字符串语义码（"PolicyViolation" / "PERMISSION_ERROR"）和数字字符串（"429"）直接映射
+fn classify_error_code(code: &str) -> u16 {
+    // 数字形式（APIMart/即梦等直接返回 HTTP 状态码数字）→ 直接映射
+    if let Ok(n) = code.parse::<u16>() {
+        if n >= 400 {
+            return n;
+        }
+    }
+    let c = code.to_lowercase();
+    // 403：内容安全 / 政策违规 / 权限不足（permission 须排在 auth 之前）
+    if c.contains("sensitive")
+        || c.contains("policy")
+        || c.contains("violation")
+        || c.contains("safety")
+        || c.contains("copyright")
+        || c.contains("block")
+        || c.contains("moderation")
+        || c.contains("censor")
+        || c.contains("permission")
+        || c.contains("forbidden")
+        || c.contains("access_denied")
     {
         return 403;
     }
-    // 2. 鉴权失败/无效 Key/密钥被封/授权失效
-    if err_msg_lower.contains("auth") 
-        || err_msg_lower.contains("unauthorized") 
-        || err_msg_lower.contains("api_key") 
-        || err_msg_lower.contains("credential")
-        || err_msg_lower.contains("invalid_key")
-        || err_msg_lower.contains("bad_key")
-        || err_msg_lower.contains("token")
-        || err_msg_lower.contains("revoked")
-        || err_msg_lower.contains("unauthenticated")
-        || err_msg_lower.contains("鉴权")
-        || err_msg_lower.contains("密钥")
-        || err_msg_lower.contains("授权")
+    // 鉴权/身份认证失败
+    if c.contains("auth")
+        || c.contains("unauthorized")
+        || c.contains("invalid_key")
+        || c.contains("credential")
+        || c.contains("unauthenticated")
+        || c.contains("revoked")
     {
         return 401;
     }
-    // 3. 限流/超出额度/欠费不足
-    if err_msg_lower.contains("limit") 
-        || err_msg_lower.contains("quota") 
-        || err_msg_lower.contains("exceeded") 
-        || err_msg_lower.contains("rate")
-        || err_msg_lower.contains("insufficient")
-        || err_msg_lower.contains("out of budget")
-        || err_msg_lower.contains("payment")
-        || err_msg_lower.contains("欠费")
-        || err_msg_lower.contains("额度")
-        || err_msg_lower.contains("限流")
-        || err_msg_lower.contains("并发")
-        || err_msg_lower.contains("超出")
-        || err_msg_lower.contains("不足")
+    // 限流/超额
+    if c.contains("rate")
+        || c.contains("limit")
+        || c.contains("quota")
+        || c.contains("throttl")
+        || c.contains("exceeded")
     {
         return 429;
     }
-    // 4. 超时/网关/连接中断/上游无响应
-    if err_msg_lower.contains("timeout") 
-        || err_msg_lower.contains("gateway") 
-        || err_msg_lower.contains("connect") 
-        || err_msg_lower.contains("disconnect")
-        || err_msg_lower.contains("abort")
-        || err_msg_lower.contains("unreachable")
-        || err_msg_lower.contains("超时")
-        || err_msg_lower.contains("网关")
-        || err_msg_lower.contains("中断")
+    // 超时/不可用
+    if c.contains("timeout")
+        || c.contains("gateway")
+        || c.contains("unavailable")
+        || c.contains("overload")
     {
         return 504;
     }
-    // 5. 上游服务器内部故障/执行渲染错误
-    if err_msg_lower.contains("internal") 
-        || err_msg_lower.contains("server") 
-        || err_msg_lower.contains("failed") 
-        || err_msg_lower.contains("error")
-        || err_msg_lower.contains("bug")
-        || err_msg_lower.contains("crash")
-        || err_msg_lower.contains("故障")
-        || err_msg_lower.contains("服务器错误")
-        || err_msg_lower.contains("执行失败")
-        || err_msg_lower.contains("异常")
+    // 上游服务内部错误
+    if c.contains("internal") || c.contains("server_error") || c.contains("service_error") {
+        return 500;
+    }
+    // 有 code 但未命中以上分类 → 客户端类业务错误
+    400
+}
+
+/// message 文本关键词分类 HTTP 状态码（无结构化 error.code 时的兜底，私有辅助）
+fn classify_error_text(msg: &str) -> u16 {
+    let m = msg.to_lowercase();
+    // 内容安全/政策违规
+    if m.contains("safety")
+        || m.contains("censor")
+        || m.contains("policy")
+        || m.contains("violation")
+        || m.contains("block")
+        || m.contains("sensitive")
+        || m.contains("moderation")
+        || m.contains("content_filter")
+        || m.contains("敏感")
+        || m.contains("违规")
+        || m.contains("安全")
+        || m.contains("政策")
+        || m.contains("审核")
+    {
+        return 403;
+    }
+    // 权限不足（须在 auth 之前： "not authorized" 含 auth 子串）
+    if m.contains("permission")
+        || m.contains("forbidden")
+        || m.contains("not authorized")
+        || m.contains("access denied")
+        || m.contains("无权限")
+        || m.contains("没有权限")
+    {
+        return 403;
+    }
+    // 鉴权/授权失败
+    if m.contains("auth")
+        || m.contains("unauthorized")
+        || m.contains("api_key")
+        || m.contains("credential")
+        || m.contains("invalid_key")
+        || m.contains("bad_key")
+        || m.contains("revoked")
+        || m.contains("unauthenticated")
+        || m.contains("鉴权")
+        || m.contains("密钥")
+        || m.contains("授权")
+    {
+        return 401;
+    }
+    // 限流/超额/欠费
+    if m.contains("limit")
+        || m.contains("quota")
+        || m.contains("exceeded")
+        || m.contains("rate")
+        || m.contains("insufficient")
+        || m.contains("out of budget")
+        || m.contains("payment")
+        || m.contains("欠费")
+        || m.contains("额度")
+        || m.contains("限流")
+        || m.contains("并发")
+        || m.contains("超出")
+        || m.contains("不足")
+    {
+        return 429;
+    }
+    // 超时/网关/连接中断
+    if m.contains("timeout")
+        || m.contains("gateway")
+        || m.contains("connect")
+        || m.contains("disconnect")
+        || m.contains("abort")
+        || m.contains("unreachable")
+        || m.contains("超时")
+        || m.contains("网关")
+        || m.contains("中断")
+    {
+        return 504;
+    }
+    // 上游服务器内部故障
+    if m.contains("internal")
+        || m.contains("server")
+        || m.contains("failed")
+        || m.contains("error")
+        || m.contains("bug")
+        || m.contains("crash")
+        || m.contains("故障")
+        || m.contains("服务器错误")
+        || m.contains("执行失败")
+        || m.contains("异常")
     {
         return 500;
     }
-    // 6. 默认回落到 400
     400
+}
+
+/// 并发获取所有视频 URL 的时长之和（8 秒全局超时兜底）
+pub async fn sum_remote_videos_duration(client: &reqwest::Client, urls: &[String]) -> f64 {
+    if urls.is_empty() {
+        return 0.0;
+    }
+    let probe = async {
+        let futs = urls.iter().map(|u| probe_video_duration(client, u));
+        futures::future::join_all(futs).await.into_iter().sum()
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(8), probe)
+        .await
+        .unwrap_or(0.0)
+}
+
+/// 局部辅助：流式获取指定 Range 的数据，一旦解析出时长立刻返回，支持 UA 伪装防拦截
+async fn fetch_and_parse(
+    client: &reqwest::Client,
+    url: &str,
+    range: &str,
+) -> Option<(f64, Option<u64>, Vec<u8>)> {
+    use futures::StreamExt;
+
+    let resp = client.get(url)
+        .header("Range", range)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(4))
+        .send().await.ok()?;
+
+    let status = resp.status().as_u16();
+    if status != 200 && status != 206 {
+        tracing::warn!(
+            "[VideoDuration] HTTP 状态码非预期: {}, status={}",
+            url,
+            status
+        );
+        return None;
+    }
+
+    let total = resp
+        .headers()
+        .get("content-range")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|cr| cr.split('/').last()?.trim().parse::<u64>().ok());
+
+    let mut buf = Vec::with_capacity(8192);
+    let mut stream = resp.bytes_stream();
+    while let Some(Ok(chunk)) = stream.next().await {
+        buf.extend_from_slice(&chunk);
+        if let Some(d) = parse_video_duration(&buf) {
+            return Some((d, total, buf));
+        }
+        if buf.len() >= 32768 {
+            break;
+        }
+    }
+    Some((0.0, total, buf))
+}
+
+/// HTTP Range 流式探测单个远程 MP4 视频时长，解析出 duration 立即终止连接
+async fn probe_video_duration(client: &reqwest::Client, url: &str) -> f64 {
+    let start = std::time::Instant::now();
+
+    // 1. 发起头部 Range 请求，拉取并流式解析前 32KB
+    let (dur, total_size, head_buf) = match fetch_and_parse(client, url, "bytes=0-32767").await {
+        Some(res) => res,
+        None => {
+            tracing::warn!("[VideoDuration] 头部请求异常: {}", url);
+            return 0.0;
+        }
+    };
+
+    if dur > 0.0 {
+        tracing::info!(
+            "[VideoDuration] 头部解析成功: {}, duration={}, 耗时={:?}",
+            url,
+            dur,
+            start.elapsed()
+        );
+        return dur;
+    }
+
+    // 2. 如果头部未找到且知道总大小，发起第二个 Range 请求，拉取并流式解析尾部 32KB (处理非 faststart 视频)
+    if let Some(total) = total_size {
+        if total > 32768 {
+            let range = format!("bytes={}-{}", total - 32768, total - 1);
+            if let Some((tail_dur, _, _)) = fetch_and_parse(client, url, &range).await {
+                if tail_dur > 0.0 {
+                    tracing::info!(
+                        "[VideoDuration] 尾部解析成功: {}, duration={}, 耗时={:?}",
+                        url,
+                        tail_dur,
+                        start.elapsed()
+                    );
+                    return tail_dur;
+                }
+            }
+        }
+    }
+
+    // 3. 兜底处理 (若全部步骤都没找到，则宣告失败)
+    tracing::warn!(
+        "[VideoDuration] 探测失败(非标准或元数据过大): {}, 大小={} 字节, 总长={:?}, 耗时={:?}",
+        url,
+        head_buf.len(),
+        total_size,
+        start.elapsed()
+    );
+    0.0
+}
+
+/// 通用视频时长解析入口，支持 MP4/MOV、WEBM/MKV、AVI、FLV
+fn parse_video_duration(data: &[u8]) -> Option<f64> {
+    parse_mp4_duration(data)
+        .or_else(|| parse_webm_duration(data))
+        .or_else(|| parse_avi_duration(data))
+        .or_else(|| parse_flv_duration(data))
+        .filter(|d| *d > 0.0 && d.is_finite() && *d < 86400.0)
+}
+
+/// 解析 MP4/MOV 提取视频时长（秒）
+fn parse_mp4_duration(data: &[u8]) -> Option<f64> {
+    let moov_pos = data.windows(4).position(|w| w == b"moov")?;
+    let moov_body = &data[moov_pos + 4..];
+    let mvhd_pos = moov_body.windows(4).position(|w| w == b"mvhd")?;
+    let mvhd_body = &moov_body[mvhd_pos + 4..];
+    let (ts_off, dur_off, dur_len) = if mvhd_body.first().copied()? == 0 {
+        (12, 16, 4)
+    } else {
+        (20, 24, 8)
+    };
+    if mvhd_body.len() < dur_off + dur_len {
+        return None;
+    }
+    let timescale = u32::from_be_bytes(mvhd_body[ts_off..ts_off + 4].try_into().ok()?) as f64;
+    let duration = if dur_len == 4 {
+        u32::from_be_bytes(mvhd_body[dur_off..dur_off + 4].try_into().ok()?) as f64
+    } else {
+        u64::from_be_bytes(mvhd_body[dur_off..dur_off + 8].try_into().ok()?) as f64
+    };
+    if timescale > 0.0 {
+        Some(duration / timescale)
+    } else {
+        None
+    }
+}
+
+/// 解析 WEBM/MKV (EBML 容器) 提取视频时长（秒）
+fn parse_webm_duration(data: &[u8]) -> Option<f64> {
+    data.windows(4)
+        .position(|w| w == &[0x1A, 0x45, 0xDF, 0xA3])?;
+    let info_pos = data
+        .windows(4)
+        .position(|w| w == &[0x15, 0x49, 0xA9, 0x66])?;
+    let info_body = &data[info_pos + 4..];
+
+    let ts_pos = info_body
+        .windows(3)
+        .position(|w| w == &[0x2A, 0xD7, 0xB1])?;
+    let (timescale, _) = parse_ebml_vint(&info_body[ts_pos + 3..])?;
+
+    let dur_pos = info_body.windows(2).position(|w| w == &[0x44, 0x89])?;
+    let dur_body = &info_body[dur_pos + 2..];
+    let (dur_size, dur_size_len) = parse_ebml_vint(dur_body)?;
+    if dur_body.len() < dur_size_len + dur_size as usize {
+        return None;
+    }
+
+    let val_bytes = &dur_body[dur_size_len..dur_size_len + dur_size as usize];
+    let duration_ms = if dur_size == 4 {
+        f32::from_be_bytes(val_bytes.try_into().ok()?) as f64
+    } else if dur_size == 8 {
+        f64::from_be_bytes(val_bytes.try_into().ok()?) as f64
+    } else {
+        return None;
+    };
+
+    if timescale > 0 {
+        Some((duration_ms * timescale as f64) / 1_000_000_000.0)
+    } else {
+        Some(duration_ms / 1000.0)
+    }
+}
+
+/// 解析 AVI (RIFF 容器) 提取视频时长（秒）
+fn parse_avi_duration(data: &[u8]) -> Option<f64> {
+    if data.len() < 12 || &data[0..4] != b"RIFF" || &data[8..12] != b"AVI " {
+        return None;
+    }
+    let avih_pos = data.windows(4).position(|w| w == b"avih")?;
+    let avih_body = &data[avih_pos + 8..];
+    if avih_body.len() < 20 {
+        return None;
+    }
+    let us_per_frame = u32::from_le_bytes(avih_body[0..4].try_into().ok()?) as f64;
+    let total_frames = u32::from_le_bytes(avih_body[16..20].try_into().ok()?) as f64;
+    if us_per_frame > 0.0 {
+        Some((us_per_frame * total_frames) / 1_000_000.0)
+    } else {
+        None
+    }
+}
+
+/// 解析 FLV (AMF 容器) 提取视频时长（秒）
+fn parse_flv_duration(data: &[u8]) -> Option<f64> {
+    if data.len() < 4 || &data[0..3] != b"FLV" {
+        return None;
+    }
+    let dur_pos = data.windows(8).position(|w| w == b"duration")?;
+    let val_type_pos = dur_pos + 8;
+    if data.len() >= val_type_pos + 9 && data[val_type_pos] == 0x00 {
+        let duration =
+            f64::from_be_bytes(data[val_type_pos + 1..val_type_pos + 9].try_into().ok()?);
+        if duration > 0.0 && duration.is_finite() {
+            return Some(duration);
+        }
+    }
+    None
+}
+
+/// 解析 EBML VINT (可变长度整数)
+fn parse_ebml_vint(data: &[u8]) -> Option<(u64, usize)> {
+    let first = *data.first()?;
+    let zeros = first.leading_zeros() as usize;
+    if zeros >= 8 {
+        return None;
+    }
+    let len = zeros + 1;
+    if data.len() < len {
+        return None;
+    }
+    let mut val = (first & (0xFF >> len)) as u64;
+    for i in 1..len {
+        val = (val << 8) | data[i] as u64;
+    }
+    Some((val, len))
+}
+
+/// 高效精确：复用系统特征识别结构来提取输入视频 URL 列表
+pub fn extract_request_video_urls(body: &serde_json::Value) -> Vec<String> {
+    let mut urls = Vec::new();
+
+    // 1. 顶层 videos 数组
+    if let Some(arr) = body.get("videos").and_then(|v| v.as_array()) {
+        for item in arr {
+            if let Some(s) = item.as_str().filter(|s| !s.is_empty()) {
+                urls.push(s.to_string());
+            } else if let Some(u) = item
+                .get("url")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                urls.push(u.to_string());
+            } else if let Some(u) = item
+                .get("video_url")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                urls.push(u.to_string());
+            }
+        }
+    }
+
+    // 2. 火山方舟 content[].video_url 结构
+    if let Some(content) = body.get("content").and_then(|c| c.as_array()) {
+        for item in content {
+            if let Some(t) = item.get("type").and_then(|v| v.as_str()) {
+                if t.contains("video") {
+                    if let Some(video_obj) = item.get("video_url") {
+                        if let Some(u) = video_obj.as_str().filter(|s| !s.is_empty()) {
+                            urls.push(u.to_string());
+                        } else if let Some(u) = video_obj
+                            .get("url")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty())
+                        {
+                            urls.push(u.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    urls.sort();
+    urls.dedup();
+    urls
 }

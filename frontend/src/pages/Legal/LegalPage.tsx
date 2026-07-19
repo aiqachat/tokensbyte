@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Spin, Typography, ConfigProvider, theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import { sanitizeHtml } from '../../utils/sanitize';
 
 const LegalPage: React.FC = () => {
   const { type } = useParams<{ type: string }>();
@@ -35,8 +36,14 @@ const LegalPage: React.FC = () => {
           if (isEn ? agreement.tos_mode_en === 'link' : agreement.tos_mode === 'link') {
             const link = isEn && agreement.tos_link_en ? agreement.tos_link_en : agreement.tos_link;
             if (link) {
-              window.location.href = link;
-              return;
+              // URL 协议白名单校验，防止开放重定向
+              try {
+                const parsed = new URL(link);
+                if (['http:', 'https:'].includes(parsed.protocol)) {
+                  window.location.href = link;
+                  return;
+                }
+              } catch { /* 非法 URL，忽略 */ }
             }
           }
           const textContent = isEn && agreement.tos_content_en ? agreement.tos_content_en : agreement.tos_content;
@@ -46,8 +53,14 @@ const LegalPage: React.FC = () => {
           if (isEn ? agreement.privacy_mode_en === 'link' : agreement.privacy_mode === 'link') {
             const link = isEn && agreement.privacy_link_en ? agreement.privacy_link_en : agreement.privacy_link;
             if (link) {
-              window.location.href = link;
-              return;
+              // URL 协议白名单校验，防止开放重定向
+              try {
+                const parsed = new URL(link);
+                if (['http:', 'https:'].includes(parsed.protocol)) {
+                  window.location.href = link;
+                  return;
+                }
+              } catch { /* 非法 URL，忽略 */ }
             }
           }
           const textContent = isEn && agreement.privacy_content_en ? agreement.privacy_content_en : agreement.privacy_content;
@@ -102,7 +115,7 @@ const LegalPage: React.FC = () => {
               lineHeight: 1.8,
               color: 'rgba(255, 255, 255, 0.85)'
             }}
-            dangerouslySetInnerHTML={{ __html: content }} 
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(content) }} 
           />
         </div>
       </div>

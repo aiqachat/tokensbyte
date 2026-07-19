@@ -20,10 +20,26 @@
 
 /* === TextArea 聚焦 === */
 .playground-root .ant-input:focus,
-.playground-root .ant-input-focused {
+.playground-root .ant-input-focused,
+.prompt-textarea,
+.prompt-textarea:focus,
+.prompt-textarea:focus-within,
+.prompt-textarea:hover,
+.prompt-textarea:active,
+.prompt-textarea-focused,
+.prompt-textarea .ant-input,
+.prompt-textarea .ant-input:focus,
+.prompt-textarea .ant-input-focused,
+.prompt-textarea textarea,
+.prompt-textarea textarea:focus,
+.prompt-textarea textarea:hover,
+.prompt-textarea textarea:active {
+    border: none !important;
     border-color: transparent !important;
+    outline: none !important;
     box-shadow: none !important;
 }
+
 
 /* === AI Studio Modal 弹窗深度订制 === */
 .studio-model-modal-wrap .ant-modal-content {
@@ -86,3 +102,132 @@
 .light-confirm-modal .ant-modal-confirm-content {
     color: rgba(0,0,0,0.85) !important;
 }
+
+/* ==========================================================================
+   Shadcn UI Style Dropdown Override
+   ========================================================================== */
+
+/* 主容器及子菜单容器 */
+.shadcn-dropdown.dark .ant-dropdown-menu {
+  background: rgba(20, 20, 22, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 15px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+.shadcn-dropdown.light .ant-dropdown-menu {
+  background: rgba(255, 255, 255, 0.75) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.1) !important;
+}
+
+.shadcn-dropdown .ant-dropdown-menu {
+  padding: 8px !important;
+  border-radius: 20px !important;
+  backdrop-filter: blur(30px) saturate(180%) !important;
+  min-width: 180px !important;
+}
+
+/* 每一个菜单项及子菜单触发项 */
+.shadcn-dropdown .ant-dropdown-menu-item,
+.shadcn-dropdown .ant-dropdown-menu-submenu-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 4px 10px !important;
+  font-size: 13px !important;
+  border-radius: 6px !important;
+  margin: 1px 0 !important;
+  transition: all 0.15s ease !important;
+}
+
+/* 暗色模式菜单项 Hover 态 */
+.shadcn-dropdown.dark .ant-dropdown-menu-item,
+.shadcn-dropdown.dark .ant-dropdown-menu-submenu-title {
+  color: #e4e4e7 !important;
+}
+.shadcn-dropdown.dark .ant-dropdown-menu-item:hover,
+.shadcn-dropdown.dark .ant-dropdown-menu-submenu-active,
+.shadcn-dropdown.dark .ant-dropdown-menu-submenu-title:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+/* 亮色模式菜单项 Hover 态 */
+.shadcn-dropdown.light .ant-dropdown-menu-item,
+.shadcn-dropdown.light .ant-dropdown-menu-submenu-title {
+  color: #27272a !important;
+}
+.shadcn-dropdown.light .ant-dropdown-menu-item:hover,
+.shadcn-dropdown.light .ant-dropdown-menu-submenu-active,
+.shadcn-dropdown.light .ant-dropdown-menu-submenu-title:hover {
+  background: #f4f4f5 !important;
+  color: #09090b !important;
+}
+
+/* 禁用项（如版本历史） */
+.shadcn-dropdown.dark .ant-dropdown-menu-item-disabled,
+.shadcn-dropdown.dark .ant-dropdown-menu-item-disabled:hover {
+  color: #3f3f46 !important;
+  background: transparent !important;
+  cursor: not-allowed !important;
+}
+.shadcn-dropdown.light .ant-dropdown-menu-item-disabled,
+.shadcn-dropdown.light .ant-dropdown-menu-item-disabled:hover {
+  color: #a1a1aa !important;
+  background: transparent !important;
+  cursor: not-allowed !important;
+}
+
+/* 分割线 */
+.shadcn-dropdown.dark .ant-dropdown-menu-item-divider {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  margin: 6px 0 !important;
+}
+.shadcn-dropdown.light .ant-dropdown-menu-item-divider {
+  border-color: #e4e4e7 !important;
+  margin: 6px 0 !important;
+}
+
+/* 图标大小及垂直居中对齐微调 */
+.shadcn-dropdown .ant-dropdown-menu-item-icon {
+  font-size: 14px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: inherit !important;
+  margin: 0 !important;
+}
+
+/* 二级级联子菜单的展开箭头指示器 */
+.shadcn-dropdown .ant-dropdown-menu-submenu-expand-icon {
+  color: inherit !important;
+  opacity: 0.5;
+}
+
+/* 右键快捷菜单项 */
+.pg-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 400;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.pg-context-menu-item.light {
+  color: #27272a;
+}
+.pg-context-menu-item.light:hover {
+  background: #f4f4f5;
+  color: #09090b;
+}
+.pg-context-menu-item.dark {
+  color: #e4e4e7;
+}
+.pg-context-menu-item.dark:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+

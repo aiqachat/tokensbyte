@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import { pinyin } from 'pinyin-pro';
 import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
 import type { UserLevel } from '../../types';
 
 const { TabPane } = Tabs;
@@ -13,9 +14,12 @@ const UserLevelEdit: React.FC = () => {
   const { t } = useTranslation();
   const { actionId } = useParams<{ actionId: string }>();
   const navigate = useNavigate();
+  const { settings } = useSettingsStore();
+  const adminPath = settings?.site?.admin_path || 'admin1688';
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [marketingToggleLoading, setMarketingToggleLoading] = useState(false);
   const [groupKeyManuallyEdited, setGroupKeyManuallyEdited] = useState(false);
   const isAdd = actionId === 'new';
 
@@ -70,7 +74,7 @@ const UserLevelEdit: React.FC = () => {
           });
         } else {
           message.error('未找到对应等级记录');
-          navigate('/admin0755/user-levels');
+          navigate(`/${adminPath}/user-levels`);
         }
       } catch (e) {
         console.error(e);
@@ -109,11 +113,30 @@ const UserLevelEdit: React.FC = () => {
         await request.put(`/user_levels/${actionId}`, payload);
         message.success(t('user_levels.success'));
       }
-      navigate('/admin0755/user-levels');
+      navigate(`/${adminPath}/user-levels`);
     } catch (e) {
       console.error(e);
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** 专属推广开关：编辑模式下切换即生效，无需点保存配置 */
+  const handleMarketingEnabledChange = async (checked: boolean) => {
+    form.setFieldValue('marketing_enabled', checked);
+    if (isAdd) return;
+
+    setMarketingToggleLoading(true);
+    try {
+      await request.put(`/user_levels/${actionId}`, {
+        marketing_enabled: checked ? 1 : 0,
+      });
+      message.success(checked ? '专属推广模式已开启' : '专属推广模式已关闭');
+    } catch (e) {
+      console.error(e);
+      form.setFieldValue('marketing_enabled', !checked);
+    } finally {
+      setMarketingToggleLoading(false);
     }
   };
 
@@ -127,7 +150,7 @@ const UserLevelEdit: React.FC = () => {
     <Card 
       title={
         <Space>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin0755/user-levels')} />
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/${adminPath}/user-levels`)} />
           <span>{isAdd ? t('user_levels.add_level') : t('user_levels.edit_level')}</span>
         </Space>
       }
@@ -189,9 +212,16 @@ const UserLevelEdit: React.FC = () => {
               name="marketing_enabled" 
               label="开启专属推广模式 (高优先级)" 
               valuePropName="checked"
-              extra="开启后，被邀请人注册时将不再发放站点的「全局注册好礼」，而是直接发放该等级配置的面额。邀请人也会根据日限制额度获得对应提成。"
+              extra={
+                isAdd
+                  ? '开启后，被邀请人注册时将不再发放站点的「全局注册好礼」，而是直接发放该等级配置的面额。邀请人也会根据日限制额度获得对应提成。新建等级需点击「保存配置」后生效。'
+                  : '开启后立即生效，无需点击「保存配置」。被邀请人注册时将不再发放站点的「全局注册好礼」，而是直接发放该等级配置的面额。邀请人也会根据日限制额度获得对应提成。'
+              }
             >
-              <Switch />
+              <Switch
+                loading={marketingToggleLoading}
+                onChange={handleMarketingEnabledChange}
+              />
             </Form.Item>
 
             <Form.Item 

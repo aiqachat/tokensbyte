@@ -6,11 +6,57 @@
  * 
  * 这样每次 mousemove 不再触发 React re-render，实现 60fps 流畅拖拽。
  */
-import { useCallback, useRef } from 'react';
-import { useCanvas } from '../context/PlaygroundContext';
-import type { CanvasTransform } from '../types';
+import { useCallback, useRef, useEffect } from 'react';
+import toast from '../components/PlaygroundToast';
+import { useCanvas, usePlayground } from '../context/PlaygroundContext';
+import type { CanvasTransform, CanvasNode } from '../types';
 import type { CanvasParticlesHandle } from '../components/CanvasParticles';
-import type { ResizeDirection } from '../components/nodes/CanvasNode';
+import type { ResizeDirection } from '../components/nodes/ResizeHandle';
+
+/**
+ * 重新计算所有 Section 节点的子节点包含关系 (中心点碰撞检测)
+ */
+const recalculateSectionChildren = (allNodes: CanvasNode[]): CanvasNode[] => {
+  const sections = allNodes.filter(n => n.type === 'section' && !n.isHidden);
+  const aiNodes = allNodes.filter(n => n.type !== 'section' && !n.isHidden);
+
+  const nodeToSectionMap = new Map<string, string>();
+  const sortedSections = [...sections].sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+
+  aiNodes.forEach(node => {
+    const nodeW = node.width || 320;
+    const nodeH = node.height || 240;
+    const centerX = node.x + nodeW / 2;
+    const centerY = node.y + nodeH / 2;
+
+    for (const section of sortedSections) {
+      const secW = section.width || 400;
+      const secH = section.height || 300;
+      if (
+        centerX >= section.x &&
+        centerX <= section.x + secW &&
+        centerY >= section.y &&
+        centerY <= section.y + secH
+      ) {
+        nodeToSectionMap.set(node.id, section.id);
+        break;
+      }
+    }
+  });
+
+  return allNodes.map(n => {
+    if (n.type === 'section') {
+      const childIds: string[] = [];
+      nodeToSectionMap.forEach((secId, nodeId) => {
+        if (secId === n.id) {
+          childIds.push(nodeId);
+        }
+      });
+      return { ...n, childrenNodeIds: childIds };
+    }
+    return n;
+  });
+};
 
 /**
  * 模块级共享拖拽状态
@@ -25,6 +71,10 @@ const sharedNodeDrag = {
 /** 节点缩放最小尺寸 */
 const MIN_NODE_WIDTH = 120;
 const MIN_NODE_HEIGHT = 80;
+
+/** 提示词节点最大尺寸 */
+const MAX_PROMPT_WIDTH = 480;
+const MAX_PROMPT_HEIGHT = 360;
 
 /** 模块级共享缩放状态 */
 const sharedResizeDrag = {
@@ -53,6 +103,8 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
     setActiveTool,
   } = useCanvas();
 
+  const { saveCanvasState } = usePlayground();
+
   // --- Ref-based 拖拽中间状态（不触发 React 渲染） ---
   const canvasDragRef = useRef({
     isDragging: false,
@@ -64,6 +116,189 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
   // 缓存最新的 canvasTransform，在闭包中使用
   const transformRef = useRef<CanvasTransform>(canvasTransform);
   transformRef.current = canvasTransform;
+
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  const updateConnectionLines = useCallback((nodeId: string) => {
+    if (!canvasRef.current) return;
+    const paths = canvasRef.current.querySelectorAll(
+      `path[data-parent-id="${nodeId}"], path[data-child-id="${nodeId}"]`
+    );
+    if (paths.length === 0) return;
+
+    const processedLinks = new Set<string>();
+
+    const getNodeCurrentPos = (id: string, stateNode: any) => {
+      const el = canvasRef.current?.querySelector(`[data-node-id="${id}"]`) as HTMLElement | null;
+      const isPrompt = stateNode.taskData?.node_type === 'prompt';
+      const defaultW = isPrompt ? 280 : 320;
+      const defaultH = isPrompt ? 180 : 200;
+      if (el) {
+        const leftVal = parseFloat(el.style.left || '');
+        const topVal = parseFloat(el.style.top || '');
+        const widthVal = parseFloat(el.style.width || '');
+        const heightVal = parseFloat(el.style.height || '');
+        return {
+          x: isNaN(leftVal) ? stateNode.x : leftVal,
+          y: isNaN(topVal) ? stateNode.y : topVal,
+          width: isNaN(widthVal) ? (stateNode.width || defaultW) : widthVal,
+          height: isNaN(heightVal) ? (stateNode.height || defaultH) : heightVal,
+        };
+      }
+      return {
+        x: stateNode.x,
+        y: stateNode.y,
+        width: stateNode.width || defaultW,
+        height: stateNode.height || defaultH,
+      };
+    };
+
+    paths.forEach(p => {
+      const parentId = p.getAttribute('data-parent-id');
+      const childId = p.getAttribute('data-child-id');
+      const handleId = p.getAttribute('data-handle-id') || undefined;
+      if (!parentId || !childId) return;
+      const linkKey = `${parentId}-${childId}-${handleId || 'default'}`;
+      if (processedLinks.has(linkKey)) return;
+      processedLinks.add(linkKey);
+
+      const parentNode = nodesRef.current.find(n => n.id === parentId);
+      const childNode = nodesRef.current.find(n => n.id === childId);
+      if (!parentNode || !childNode) return;
+
+      const parentPos = getNodeCurrentPos(parentId, parentNode);
+      const childPos = getNodeCurrentPos(childId, childNode);
+
+      const pX = parentPos.x;
+      const pY = parentPos.y;
+      const pW = parentPos.width;
+      const pH = parentPos.height;
+
+      const cX = childPos.x;
+      const cY = childPos.y;
+      const cW = childPos.width;
+      const cH = childPos.height;
+
+      const parentType = parentNode.taskData?.node_type;
+      const childType = childNode.taskData?.node_type;
+
+      let x1 = pX + pW;
+      let y1 = pY + pH / 2;
+      if (parentType === 'ai_image' || parentType === 'ai_video') {
+        x1 = pX + pW + 15;
+        y1 = pY + 31;
+      } else if (parentType === 'preview') {
+        x1 = pX + pW + 15;
+        y1 = pY + 29;
+      } else if (parentType === 'prompt') {
+        x1 = pX + pW + 15;
+        y1 = pY + 29;
+      }
+
+      let x2 = cX;
+      let y2 = cY + cH / 2;
+
+      const hasSideSocket = ['prompt', 'ai_image', 'ai_video', 'preview'].includes(parentType || '');
+
+      if (handleId && childType === 'ai_video') {
+        const isSeedance2 = childNode.taskData?.scheme_id === 'seedance2.0' || String(childNode.taskData?.model).toLowerCase().includes('seedance');
+        let list: string[] = [];
+        if (isSeedance2) {
+          list = ['Prompt'];
+          const highestImg = [1,2,3,4,5,6,7,8,9].reverse().find(i => childNode.inputConnections?.[`Reference Images ${i}`]) || 0;
+          const manualImg = childNode.taskData?.manualSocketCounts?.['Reference Images'] || 1;
+          const imgCount = Math.min(9, Math.max(manualImg, highestImg + 1));
+          for(let i = 1; i <= imgCount; i++) list.push(`Reference Images ${i}`);
+          
+          const highestVid = [1,2,3].reverse().find(i => childNode.inputConnections?.[`Reference Videos ${i}`]) || 0;
+          const manualVid = childNode.taskData?.manualSocketCounts?.['Reference Videos'] || 1;
+          const vidCount = Math.min(3, Math.max(manualVid, highestVid + 1));
+          for(let i = 1; i <= vidCount; i++) list.push(`Reference Videos ${i}`);
+
+          const highestAud = [1,2,3].reverse().find(i => childNode.inputConnections?.[`Reference Audio ${i}`]) || 0;
+          const manualAud = childNode.taskData?.manualSocketCounts?.['Reference Audio'] || 1;
+          const audCount = Math.min(3, Math.max(manualAud, highestAud + 1));
+          for(let i = 1; i <= audCount; i++) list.push(`Reference Audio ${i}`);
+        } else {
+          list = ['Prompt', 'Negative Prompt'];
+        }
+        let socketIndex = list.indexOf(handleId);
+        if (socketIndex === -1) socketIndex = 0;
+        
+        x2 = cX - 15;
+        y2 = cY + 34 + socketIndex * 26;
+        if (cX + cW < pX) x1 = hasSideSocket ? x1 : pX;
+      } else if (parentType === 'prompt' && (childType === 'ai_image' || childType === 'ai_video')) {
+        x2 = cX - 15;
+        y2 = cY + 31;
+        if (cX + cW < pX) {
+          x1 = hasSideSocket ? x1 : pX;
+        }
+      } else if (childType === 'ai_image' && parentType !== 'prompt') {
+        x2 = cX - 15;
+        y2 = cY + 65; // Reference image socket center
+        if (cX + cW < pX) {
+          x1 = hasSideSocket ? x1 : pX;
+        }
+      } else if (childType === 'preview') {
+        x2 = cX - 15;
+        y2 = cY + (childPos.height || 240) / 2;
+        if (cX + cW < pX) {
+          x1 = hasSideSocket ? x1 : pX;
+        }
+      } else {
+        if (cX + cW < pX) {
+          x1 = hasSideSocket ? x1 : pX;
+          x2 = cX + cW;
+        } else if (cY + cH < pY) {
+          if (!hasSideSocket) {
+            x1 = pX + pW / 2;
+            y1 = pY;
+          }
+          x2 = cX + cW / 2;
+          y2 = cY + cH;
+        } else if (pY + pH < cY) {
+          if (!hasSideSocket) {
+            x1 = pX + pW / 2;
+            y1 = pY + pH;
+          }
+          x2 = cX + cW / 2;
+          y2 = cY;
+        }
+      }
+
+      const visualX1 = x1 + 10000;
+      const visualY1 = y1 + 10000;
+      const visualX2 = x2 + 10000;
+      const visualY2 = y2 + 10000;
+
+      const isHorizontal = Math.abs(visualX2 - visualX1) > Math.abs(visualY2 - visualY1);
+      let pathData = '';
+      if (isHorizontal) {
+        const ctrlX = (visualX1 + visualX2) / 2;
+        pathData = `M ${visualX1} ${visualY1} C ${ctrlX} ${visualY1}, ${ctrlX} ${visualY2}, ${visualX2} ${visualY2}`;
+      } else {
+        const ctrlY = (visualY1 + visualY2) / 2;
+        pathData = `M ${visualX1} ${visualY1} C ${visualX1} ${ctrlY}, ${visualX2} ${ctrlY}, ${visualX2} ${visualY2}`;
+      }
+
+      const currentLinkPaths = canvasRef.current?.querySelectorAll(`path[data-link-id="${linkKey}"]`);
+      currentLinkPaths?.forEach(path => {
+        path.setAttribute('d', pathData);
+      });
+
+      const midX = (x1 + x2) / 2;
+      const midY = (y1 + y2) / 2;
+      const btn = canvasRef.current?.querySelector(`[data-disconnect-id="${linkKey}"]`) as HTMLElement | null;
+      if (btn) {
+        btn.style.left = `${midX - 10}px`;
+        btn.style.top = `${midY - 10}px`;
+      }
+    });
+  }, [canvasRef]);
 
   const marqueeDragRef = useRef({
     isDragging: false,
@@ -182,7 +417,8 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       if (e.button === 1) {
         e.preventDefault();
       }
-    } else if (activeTool === 'marquee' && !isSpaceDown && e.button !== 1) {
+    } else if ((activeTool === 'marquee' || activeTool === 'pointer' || activeTool === 'section') && !isSpaceDown && e.button !== 1) {
+      e.preventDefault();
       const rect = canvasRef.current?.getBoundingClientRect();
       if (rect) {
         marqueeDragRef.current = {
@@ -248,21 +484,48 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
         marqueeDragRef.current.currentX = e.clientX - rect.left;
         marqueeDragRef.current.currentY = e.clientY - rect.top;
         const { startX, startY, currentX, currentY } = marqueeDragRef.current;
-        const x = Math.min(startX, currentX);
-        const y = Math.min(startY, currentY);
-        const w = Math.abs(currentX - startX);
-        const h = Math.abs(currentY - startY);
 
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = requestAnimationFrame(() => {
-          const marqueeEl = canvasRef.current?.querySelector('.marquee-box') as HTMLElement | null;
-          if (marqueeEl) {
-            marqueeEl.style.left = `${x}px`;
-            marqueeEl.style.top = `${y}px`;
-            marqueeEl.style.width = `${w}px`;
-            marqueeEl.style.height = `${h}px`;
-          }
-        });
+        if (activeTool === 'section') {
+          const ct = transformRef.current;
+          const startX_canvas = (startX - ct.x) / ct.scale;
+          const startY_canvas = (startY - ct.y) / ct.scale;
+          const currentX_canvas = (marqueeDragRef.current.currentX - ct.x) / ct.scale;
+          const currentY_canvas = (marqueeDragRef.current.currentY - ct.y) / ct.scale;
+
+          const x = Math.min(startX_canvas, currentX_canvas);
+          const y = Math.min(startY_canvas, currentY_canvas);
+          const w = Math.abs(currentX_canvas - startX_canvas);
+          const h = Math.abs(currentY_canvas - startY_canvas);
+
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = requestAnimationFrame(() => {
+            const previewEl = canvasRef.current?.querySelector('.section-preview-box') as HTMLElement | null;
+            if (previewEl) {
+              previewEl.style.left = `${x}px`;
+              previewEl.style.top = `${y}px`;
+              previewEl.style.width = `${w}px`;
+              previewEl.style.height = `${h}px`;
+              previewEl.style.display = 'block';
+            }
+          });
+        } else {
+          const x = Math.min(startX, currentX);
+          const y = Math.min(startY, currentY);
+          const w = Math.abs(currentX - startX);
+          const h = Math.abs(currentY - startY);
+
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = requestAnimationFrame(() => {
+            const marqueeEl = canvasRef.current?.querySelector('.marquee-box') as HTMLElement | null;
+            if (marqueeEl) {
+              marqueeEl.style.display = 'block';
+              marqueeEl.style.left = `${x}px`;
+              marqueeEl.style.top = `${y}px`;
+              marqueeEl.style.width = `${w}px`;
+              marqueeEl.style.height = `${h}px`;
+            }
+          });
+        }
       }
     } else if (sharedResizeDrag.nodeId) {
       // 节点缩放：直接操作节点 DOM 的 width/height/left/top
@@ -280,17 +543,62 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       const minW = rd.nodeId === 'group' ? 20 : MIN_NODE_WIDTH;
       const minH = rd.nodeId === 'group' ? 20 : MIN_NODE_HEIGHT;
 
-      if (rd.direction.includes('e')) { newW = Math.max(minW, rd.startNodeW + deltaX); }
-      if (rd.direction.includes('s')) { newH = Math.max(minH, rd.startNodeH + deltaY); }
+      const targetNode = rd.nodeId !== 'group' ? nodes.find(n => n.id === rd.nodeId) : null;
+      const isPrompt = targetNode?.taskData?.node_type === 'prompt';
+
+      if (rd.direction.includes('e')) {
+        const val = rd.startNodeW + deltaX;
+        newW = Math.max(minW, isPrompt ? Math.min(val, MAX_PROMPT_WIDTH) : val);
+      }
+      if (rd.direction.includes('s')) {
+        const val = rd.startNodeH + deltaY;
+        newH = Math.max(minH, isPrompt ? Math.min(val, MAX_PROMPT_HEIGHT) : val);
+      }
       if (rd.direction.includes('w')) {
-        const dw = Math.min(deltaX, rd.startNodeW - minW);
+        let dw = Math.min(deltaX, rd.startNodeW - minW);
+        if (isPrompt) {
+          dw = Math.max(dw, -(MAX_PROMPT_WIDTH - rd.startNodeW));
+        }
         newW = rd.startNodeW - dw;
         newX = rd.startNodeX + dw;
       }
       if (rd.direction.includes('n')) {
-        const dh = Math.min(deltaY, rd.startNodeH - minH);
+        let dh = Math.min(deltaY, rd.startNodeH - minH);
+        if (isPrompt) {
+          dh = Math.max(dh, -(MAX_PROMPT_HEIGHT - rd.startNodeH));
+        }
         newH = rd.startNodeH - dh;
         newY = rd.startNodeY + dh;
+      }
+
+      if (rd.nodeId !== 'group') {
+        const targetNode = nodes.find(n => n.id === rd.nodeId);
+        // 对素材节点强制锁定等比例缩放
+        if (targetNode && (targetNode.type === 'image' || targetNode.type === 'video')) {
+          const aspectRatio = rd.startNodeW / rd.startNodeH;
+          
+          if (rd.direction === 'e' || rd.direction === 'w') {
+            newH = newW / aspectRatio;
+          } else if (rd.direction === 'n' || rd.direction === 's') {
+            newW = newH * aspectRatio;
+          } else {
+            const scaleW = newW / rd.startNodeW;
+            const scaleH = newH / rd.startNodeH;
+            if (Math.abs(scaleW - 1) > Math.abs(scaleH - 1)) {
+              newH = newW / aspectRatio;
+            } else {
+              newW = newH * aspectRatio;
+            }
+          }
+          
+          // 若影响了 x 或 y，需要根据最终确定的宽高重新计算位置
+          if (rd.direction.includes('w')) {
+            newX = rd.startNodeX + rd.startNodeW - newW;
+          }
+          if (rd.direction.includes('n')) {
+            newY = rd.startNodeY + rd.startNodeH - newH;
+          }
+        }
       }
 
       const scaleX = rd.startNodeW > 0 ? newW / rd.startNodeW : 1;
@@ -318,6 +626,7 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
               nodeEl.style.width = `${nw}px`;
               nodeEl.style.height = `${nh}px`;
             }
+            updateConnectionLines(gn.id);
           });
         } else {
           const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${rd.nodeId}"]`) as HTMLElement | null;
@@ -327,6 +636,7 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
             nodeEl.style.width = `${newW}px`;
             nodeEl.style.height = `${newH}px`;
           }
+          if (rd.nodeId) updateConnectionLines(rd.nodeId);
         }
       });
     } else if (nd.groupNodes.length > 0) {
@@ -344,6 +654,7 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
               nodeEl.style.left = `${pointerX - g.offsetX}px`;
               nodeEl.style.top = `${pointerY - g.offsetY}px`;
             }
+            updateConnectionLines(g.id);
           });
         });
       }
@@ -364,10 +675,35 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
             nodeEl.style.left = `${newNodeX}px`;
             nodeEl.style.top = `${newNodeY}px`;
           }
+          if (nd.nodeId) updateConnectionLines(nd.nodeId);
         });
       }
+    } else {
+      // 没有任何拖拽发生，普通鼠标移动且为 section 工具时更新随动预览
+      if (activeTool === 'section') {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (rect) {
+          const ct = transformRef.current;
+          const mouseX = (e.clientX - rect.left - ct.x) / ct.scale;
+          const mouseY = (e.clientY - rect.top - ct.y) / ct.scale;
+          const x = mouseX - 200;
+          const y = mouseY - 150;
+
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = requestAnimationFrame(() => {
+            const previewEl = canvasRef.current?.querySelector('.section-preview-box') as HTMLElement | null;
+            if (previewEl) {
+              previewEl.style.left = `${x}px`;
+              previewEl.style.top = `${y}px`;
+              previewEl.style.width = '400px';
+              previewEl.style.height = '300px';
+              previewEl.style.display = 'block';
+            }
+          });
+        }
+      }
     }
-  }, [canvasRef]);
+  }, [canvasRef, activeTool]);
 
   /** 鼠标松开 — 将最终位置一次性提交到 React state */
   const handleCanvasMouseUp = useCallback(() => {
@@ -398,6 +734,68 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       const marqueeEl = canvasRef.current?.querySelector('.marquee-box') as HTMLElement | null;
       if (marqueeEl) {
         marqueeEl.style.display = 'none';
+      }
+
+      if (activeTool === 'section') {
+        const currentSections = nodes.filter(n => n.type === 'section' && !n.isHidden);
+        if (currentSections.length >= 10) {
+          toast.warning('该项目已达区块节点上限 (最多10个)');
+          setActiveTool('pointer');
+          // 隐藏随动预览框
+          const previewEl = canvasRef.current?.querySelector('.section-preview-box') as HTMLElement | null;
+          if (previewEl) {
+            previewEl.style.display = 'none';
+          }
+          return;
+        }
+
+        const ct = transformRef.current;
+        const clickX = (x - ct.x) / ct.scale;
+        const clickY = (y - ct.y) / ct.scale;
+
+        let finalW = w / ct.scale;
+        let finalH = h / ct.scale;
+        let finalX = clickX;
+        let finalY = clickY;
+
+        // 如果拖动距离小于 20px，我们视为单纯的“点击”操作，直接生成 400x300 默认大小的区块
+        if (w < 20 || h < 20) {
+          finalW = 400;
+          finalH = 300;
+          finalX = clickX - 200;
+          finalY = clickY - 150;
+        }
+
+        const newSection: CanvasNode = {
+          id: `section-${Date.now()}`,
+          type: 'section',
+          status: 'completed',
+          title: `Section ${nodes.filter(n => n.type === 'section').length + 1}`,
+          x: finalX,
+          y: finalY,
+          width: finalW,
+          height: finalH,
+          zIndex: maxZIndex + 1,
+          taskData: {},
+          resultData: null,
+          childrenNodeIds: []
+        };
+
+        setNodes(prev => {
+          const next = recalculateSectionChildren([...prev, newSection]);
+          saveCanvasState(next);
+          return next;
+        });
+
+        setMaxZIndex(maxZIndex + 1);
+        setActiveTool('pointer');
+
+        // 隐藏随动预览框
+        const previewEl = canvasRef.current?.querySelector('.section-preview-box') as HTMLElement | null;
+        if (previewEl) {
+          previewEl.style.display = 'none';
+        }
+        return;
       }
 
       // 计算碰撞
@@ -448,22 +846,27 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
       // 提交最终缩放结果到 React state
       const rd = sharedResizeDrag;
       if (rd.nodeId === 'group') {
-        setNodes(prev => prev.map(n => {
-          const g = rd.groupStartNodes.find(gn => gn.id === n.id);
-          if (g) {
-            const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${n.id}"]`) as HTMLElement | null;
-            if (nodeEl) {
-              return { 
-                ...n, 
-                x: parseFloat(nodeEl.style.left), 
-                y: parseFloat(nodeEl.style.top),
-                width: parseFloat(nodeEl.style.width),
-                height: parseFloat(nodeEl.style.height),
-              };
+        setNodes(prev => {
+          const next = prev.map(n => {
+            const g = rd.groupStartNodes.find(gn => gn.id === n.id);
+            if (g) {
+              const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${n.id}"]`) as HTMLElement | null;
+              if (nodeEl) {
+                return { 
+                  ...n, 
+                  x: parseFloat(nodeEl.style.left), 
+                  y: parseFloat(nodeEl.style.top),
+                  width: parseFloat(nodeEl.style.width),
+                  height: parseFloat(nodeEl.style.height),
+                };
+              }
             }
-          }
-          return n;
-        }));
+            return n;
+          });
+          const withRecalc = recalculateSectionChildren(next);
+          saveCanvasState(withRecalc);
+          return withRecalc;
+        });
       } else {
         const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${rd.nodeId}"]`) as HTMLElement | null;
         if (nodeEl) {
@@ -472,9 +875,14 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
           const finalW = parseFloat(nodeEl.style.width);
           const finalH = parseFloat(nodeEl.style.height);
           const resizedId = rd.nodeId;
-          setNodes(prev => prev.map(n =>
-            n.id === resizedId ? { ...n, x: finalX, y: finalY, width: finalW, height: finalH } : n
-          ));
+          setNodes(prev => {
+            const next = prev.map(n =>
+              n.id === resizedId ? { ...n, x: finalX, y: finalY, width: finalW, height: finalH } : n
+            );
+            const withRecalc = recalculateSectionChildren(next);
+            saveCanvasState(withRecalc);
+            return withRecalc;
+          });
         }
       }
       rd.nodeId = null;
@@ -484,16 +892,21 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
     if (nd.groupNodes.length > 0) {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (rect) {
-        setNodes(prev => prev.map(n => {
-          const g = nd.groupNodes.find(gn => gn.id === n.id);
-          if (g) {
-            const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${n.id}"]`) as HTMLElement | null;
-            if (nodeEl) {
-              return { ...n, x: parseFloat(nodeEl.style.left), y: parseFloat(nodeEl.style.top) };
+        setNodes(prev => {
+          const next = prev.map(n => {
+            const g = nd.groupNodes.find(gn => gn.id === n.id);
+            if (g) {
+              const nodeEl = canvasRef.current?.querySelector(`[data-node-id="${n.id}"]`) as HTMLElement | null;
+              if (nodeEl) {
+                return { ...n, x: parseFloat(nodeEl.style.left), y: parseFloat(nodeEl.style.top) };
+              }
             }
-          }
-          return n;
-        }));
+            return n;
+          });
+          const withRecalc = recalculateSectionChildren(next);
+          saveCanvasState(withRecalc);
+          return withRecalc;
+        });
       }
       nd.groupNodes = [];
       setDraggingNodeId(null);
@@ -507,32 +920,43 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
         const finalX = parseFloat(nodeEl.style.left);
         const finalY = parseFloat(nodeEl.style.top);
         const draggedId = nd.nodeId;
-        setNodes(prev => prev.map(n =>
-          n.id === draggedId ? { ...n, x: finalX, y: finalY } : n
-        ));
+        setNodes(prev => {
+          const next = prev.map(n =>
+            n.id === draggedId ? { ...n, x: finalX, y: finalY } : n
+          );
+          const withRecalc = recalculateSectionChildren(next);
+          saveCanvasState(withRecalc);
+          return withRecalc;
+        });
       }
       nd.nodeId = null;
       setDraggingNodeId(null);
     }
 
     cancelAnimationFrame(rafRef.current);
-  }, [canvasRef, setCanvasTransform, setIsDraggingCanvas, setNodes, setDraggingNodeId, setActiveTool, setSelectedNodeIds, setSelectedNodeId, nodes]);
+  }, [canvasRef, setCanvasTransform, setIsDraggingCanvas, setNodes, setDraggingNodeId, setActiveTool, setSelectedNodeIds, setSelectedNodeId, nodes, maxZIndex, saveCanvasState, activeTool]);
 
   /** 节点鼠标按下（启动节点拖拽并置顶） */
   const handleNodeMouseDown = useCallback((e: React.MouseEvent, nodeId: string, nodeX: number, nodeY: number) => {
     if (activeTool === 'pointer') {
       e.stopPropagation();
       setDraggingNodeId(nodeId);
-      const newZ = maxZIndex + 1;
-      setMaxZIndex(newZ);
-      setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, zIndex: newZ } : n));
+
       const ct = transformRef.current;
       const startX = (e.clientX - ct.x) / ct.scale;
       const startY = (e.clientY - ct.y) / ct.scale;
 
-      if (selectedNodeIds.includes(nodeId) && selectedNodeIds.length > 1) {
-        // Dragging a group
-        sharedNodeDrag.groupNodes = selectedNodeIds.map(id => {
+      const targetNode = nodes.find(n => n.id === nodeId);
+      const isSection = targetNode?.type === 'section';
+
+      if (isSection) {
+        const newZ = maxZIndex + 1;
+        setMaxZIndex(newZ);
+        setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, zIndex: newZ } : n));
+
+        const childIds = targetNode.childrenNodeIds || [];
+        const dragGroupIds = [nodeId, ...childIds];
+        sharedNodeDrag.groupNodes = dragGroupIds.map(id => {
           const n = nodes.find(n => n.id === id);
           return {
             id,
@@ -541,17 +965,107 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
           };
         });
         sharedNodeDrag.nodeId = null;
-      } else {
-        // Dragging a single node
-        sharedNodeDrag.nodeId = nodeId;
-        sharedNodeDrag.offsetX = startX - nodeX;
-        sharedNodeDrag.offsetY = startY - nodeY;
-        sharedNodeDrag.groupNodes = [];
+      } else if (nodeId === 'group' || (selectedNodeIds.includes(nodeId) && selectedNodeIds.length > 1)) {
+        // Dragging a group
+        let minX = Infinity, minY = Infinity;
+        selectedNodeIds.forEach(id => {
+          const n = nodes.find(node => node.id === id);
+          if (n) {
+            minX = Math.min(minX, n.x);
+            minY = Math.min(minY, n.y);
+          }
+        });
 
-        // If clicking a new single node, select it
-        if (!selectedNodeIds.includes(nodeId) || selectedNodeIds.length > 1) {
-          setSelectedNodeIds([nodeId]);
-          setSelectedNodeId(nodeId);
+        const dragGroup = selectedNodeIds.map(id => {
+          const n = nodes.find(n => n.id === id);
+          return {
+            id,
+            offsetX: startX - (n?.x || 0),
+            offsetY: startY - (n?.y || 0)
+          };
+        });
+
+        // Add the group box itself so it moves with the selection during drag
+        if (minX !== Infinity && minY !== Infinity) {
+          dragGroup.push({
+            id: 'group',
+            offsetX: startX - minX,
+            offsetY: startY - minY
+          });
+        }
+
+        sharedNodeDrag.groupNodes = dragGroup;
+        sharedNodeDrag.nodeId = null;
+      } else {
+        // Dragging a single node (or multi-selecting via ctrl/meta key)
+        const newZ = maxZIndex + 1;
+        setMaxZIndex(newZ);
+        setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, zIndex: newZ } : n));
+
+        const isMultiSelect = e.ctrlKey || e.metaKey;
+
+        if (isMultiSelect) {
+          const isSelected = selectedNodeIds.includes(nodeId);
+          const nextSelectedIds = isSelected 
+            ? selectedNodeIds.filter(id => id !== nodeId)
+            : [...selectedNodeIds, nodeId];
+
+          if (nextSelectedIds.length > 1) {
+            // 如果多选后有多个，按拖拽组处理
+            let minX = Infinity, minY = Infinity;
+            nextSelectedIds.forEach(id => {
+              const n = nodes.find(node => node.id === id);
+              if (n) {
+                minX = Math.min(minX, n.x);
+                minY = Math.min(minY, n.y);
+              }
+            });
+
+            const dragGroup = nextSelectedIds.map(id => {
+              const n = nodes.find(node => node.id === id);
+              return {
+                id,
+                offsetX: startX - (n?.x || 0),
+                offsetY: startY - (n?.y || 0)
+              };
+            });
+
+            if (minX !== Infinity && minY !== Infinity) {
+              dragGroup.push({
+                id: 'group',
+                offsetX: startX - minX,
+                offsetY: startY - minY
+              });
+            }
+
+            sharedNodeDrag.groupNodes = dragGroup;
+            sharedNodeDrag.nodeId = null;
+          } else {
+            // 如果多选后只剩 1 个或没有，按单节点处理
+            sharedNodeDrag.nodeId = nextSelectedIds[0] || null;
+            sharedNodeDrag.offsetX = startX - nodeX;
+            sharedNodeDrag.offsetY = startY - nodeY;
+            sharedNodeDrag.groupNodes = [];
+          }
+
+          setSelectedNodeIds(nextSelectedIds);
+          if (nextSelectedIds.length === 1) {
+            setSelectedNodeId(nextSelectedIds[0]);
+          } else {
+            setSelectedNodeId(null);
+          }
+        } else {
+          // 默认单选模式
+          sharedNodeDrag.nodeId = nodeId;
+          sharedNodeDrag.offsetX = startX - nodeX;
+          sharedNodeDrag.offsetY = startY - nodeY;
+          sharedNodeDrag.groupNodes = [];
+
+          // If clicking a new single node, select it
+          if (!selectedNodeIds.includes(nodeId) || selectedNodeIds.length > 1) {
+            setSelectedNodeIds([nodeId]);
+            setSelectedNodeId(nodeId);
+          }
         }
       }
     }
@@ -594,14 +1108,37 @@ export const useCanvasInteraction = (particlesRef?: React.RefObject<CanvasPartic
   }, [nodes, selectedNodeIds]);
 
   /** 移除节点 */
-  const removeNode = useCallback((id: string) => {
-    setNodes(prev => prev.map(n => {
-      if (n.id === id && n.status === 'completed') {
-        return { ...n, isHidden: true };
-      }
-      return n;
-    }).filter(n => !(n.id === id && n.status !== 'completed')));
-  }, [setNodes]);
+  const removeNode = useCallback((idOrIds: string | string[]) => {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+    if (ids.length === 0) return;
+
+    setNodes(prev => {
+      const filtered = prev.filter(n => {
+        // 如果是高级节点（预览节点或画质增强节点），直接删除（滤除）
+        if (ids.includes(n.id) && (n.taskData?.node_type === 'preview' || n.taskData?.node_type === 'volc_enhance')) {
+          return false;
+        }
+        return true;
+      }).map(n => {
+        if (ids.includes(n.id) && n.status === 'completed') {
+          return { ...n, isHidden: true };
+        }
+        return n;
+      }).filter(n => !(ids.includes(n.id) && n.status !== 'completed'));
+
+      // 清理子节点的 parentId 如果其父节点被移除了（删除或隐藏）
+      const nextNodes = filtered.map(n => {
+        if (n.parentId && (ids.includes(n.parentId) || !filtered.some(parent => parent.id === n.parentId && !parent.isHidden))) {
+          return { ...n, parentId: undefined };
+        }
+        return n;
+      });
+
+      const withRecalc = recalculateSectionChildren(nextNodes);
+      saveCanvasState(withRecalc);
+      return withRecalc;
+    });
+  }, [setNodes, saveCanvasState]);
 
   /** 重置视图 */
   const resetView = useCallback(() => {

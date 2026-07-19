@@ -1,3 +1,4 @@
+use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -10,9 +11,9 @@ pub struct Plugin {
     pub is_enabled: i64,
     pub allowed_levels: String,
     #[sqlx(default)]
-    pub category: String,        // user=用户增强插件, system=系统增强插件
-    pub created_at: String,
-    pub updated_at: String,
+    pub category: String, // user=用户增强插件, system=系统增强插件, system_builtin=系统内置
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
@@ -33,8 +34,8 @@ pub struct PluginAsset {
     pub sort_order: Option<i64>,
     pub group_id: Option<String>,
     pub content_hash: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -50,6 +51,6 @@ pub struct PluginAssetGroup {
     pub group_id: String,
     pub name: String,
     pub description: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
 }

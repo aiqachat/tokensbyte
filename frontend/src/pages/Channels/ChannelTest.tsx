@@ -21,6 +21,7 @@ interface TestResult {
 const ChannelTest: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const adminPath = localStorage.getItem('tokensbyte_admin_path') || 'admin1688';
     const [channel, setChannel] = useState<Channel | null>(null);
     const [loading, setLoading] = useState(true);
     const [testStatuses, setTestStatuses] = useState<Record<string, TestResult>>({});
@@ -34,13 +35,19 @@ const ChannelTest: React.FC = () => {
     const [activeModelLog, setActiveModelLog] = useState<string | null>(null);
     const [batchTesting, setBatchTesting] = useState(false);
 
+    // 高可用子渠道列表相关状态
+    const [subChannels, setSubChannels] = useState<Channel[]>([]);
+    const [isHaMode, setIsHaMode] = useState<boolean>(false);
+    const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
+
     useEffect(() => {
         const fetchChannelData = async () => {
             try {
                 // Parallel fetch resources needed for UI mappings
-                const [channelResp, modelsResp, rulesResp] = await Promise.all([
+                const [channelResp, modelsResp, configsResp, rulesResp] = await Promise.all([
                     request.get('/channels') as unknown as Promise<{ data: Channel[] }>,
                     request.get('/models') as unknown as Promise<{ data: any[] }>,
+                    request.get('/channel-configs') as unknown as Promise<{ data: any[] }>,
                     request.get('/forward-rules') as unknown as Promise<any[]>
                 ]);
                 
@@ -60,11 +67,33 @@ const ChannelTest: React.FC = () => {
                 const target = channelResp.data.find(c => c.id === Number(id));
                 if (target) {
                     setChannel(target);
+
+                    const isHa = target.provider_type === 'high_availability_group';
+                    setIsHaMode(isHa);
+
+                    let subChs: Channel[] = [];
+                    if (isHa) {
+                        let parsed: any = {};
+                        try {
+                            parsed = target.config ? (typeof target.config === 'string' ? JSON.parse(target.config) : target.config) : {};
+                        } catch {}
+                        const subIds = parsed.sub_channels || [];
+                        subChs = (configsResp.data || []).filter(c => subIds.includes(c.id));
+                        setSubChannels(subChs);
+                    }
+                    
                     const initialStatuses: Record<string, TestResult> = {};
                     const initSelRules: Record<string, number> = {};
                     
                     target.models.forEach(m => {
-                        initialStatuses[m] = { status: 'idle' };
+                        if (isHa) {
+                            subChs.forEach(sc => {
+                                initialStatuses[`${m}_${sc.id}`] = { status: 'idle' };
+                            });
+                        } else {
+                            initialStatuses[m] = { status: 'idle' };
+                        }
+
                         const gModel = modMap[String(m)];
                         if (gModel && gModel.forward_rule_ids) {
                             try {
@@ -77,9 +106,12 @@ const ChannelTest: React.FC = () => {
                     });
                     setTestStatuses(initialStatuses);
                     setSelectedRules(initSelRules);
+                    if (isHa) {
+                        setExpandedRowKeys(target.models);
+                    }
                 } else {
                     message.error('渠道并未找到，请检查！');
-                    navigate('/admin0755/channels');
+                    navigate(`/${adminPath}/channels`);
                 }
             } catch (e) {
                 console.error(e);
@@ -90,31 +122,34 @@ const ChannelTest: React.FC = () => {
         fetchChannelData();
     }, [id, navigate]);
 
-    const runSingleModelTest = async (channelId: number, model: string, ruleId?: number, autoFocus: boolean = true) => {
+    const runSingleModelTest = async (channelId: number, model: string, ruleId?: number, autoFocus: boolean = true, statusKey?: string, subChannelId?: number) => {
+        const key = statusKey || model;
         if (autoFocus) {
-            setActiveModelLog(model);
+            setActiveModelLog(key);
         }
-        setTestStatuses(prev => ({ ...prev, [model]: { status: 'testing', timestamp: new Date().toISOString() } }));
+        setTestStatuses(prev => ({ ...prev, [key]: { status: 'testing', timestamp: new Date().toISOString() } }));
         try {
             const gModel = globalModels[String(model)];
             const actualModelId = gModel ? gModel.model_id : model;
 
-            const resp = await (request.post(`/channels/${channelId}/test`, { model: actualModelId, forward_rule_id: ruleId }) as unknown as Promise<{ success: boolean; err_msg?: string; latency?: number; request_data?: any; response_data?: any; curl_command?: string }>);
+            const payload: any = { model: actualModelId, forward_rule_id: ruleId };
+            if (subChannelId) payload.sub_channel_id = subChannelId;
+            const resp = await (request.post(`/channels/${channelId}/test`, payload) as unknown as Promise<{ success: boolean; err_msg?: string; latency?: number; request_data?: any; response_data?: any; curl_command?: string }>);
             if (resp.success) {
                 setTestStatuses(prev => ({ 
                     ...prev, 
-                    [model]: { status: 'success', latency: resp.latency, request_data: resp.request_data, response_data: resp.response_data, curl_command: resp.curl_command, timestamp: new Date().toISOString() } 
+                    [key]: { status: 'success', latency: resp.latency, request_data: resp.request_data, response_data: resp.response_data, curl_command: resp.curl_command, timestamp: new Date().toISOString() } 
                 }));
             } else {
                 setTestStatuses(prev => ({ 
                     ...prev, 
-                    [model]: { status: 'error', message: resp.err_msg, latency: resp.latency, request_data: resp.request_data, response_data: resp.response_data, curl_command: resp.curl_command, timestamp: new Date().toISOString() } 
+                    [key]: { status: 'error', message: resp.err_msg, latency: resp.latency, request_data: resp.request_data, response_data: resp.response_data, curl_command: resp.curl_command, timestamp: new Date().toISOString() } 
                 }));
             }
         } catch (e: any) {
             setTestStatuses(prev => ({ 
                 ...prev, 
-                [model]: { status: 'error', message: e.message || '网关连接断开或超时', timestamp: new Date().toISOString() } 
+                [key]: { status: 'error', message: e.message || '网关连接断开或超时', timestamp: new Date().toISOString() } 
             }));
         }
     };
@@ -122,15 +157,29 @@ const ChannelTest: React.FC = () => {
     const handleBatchTest = async () => {
         if (!channel || selectedTestModels.length === 0) return;
         
-        // 自动将右侧焦点设为批量测试的第一个模型，方便运营者观察
-        setActiveModelLog(selectedTestModels[0] as string);
-        
         setBatchTesting(true);
         try {
-            const promises = selectedTestModels.map(modelKey => {
-                const model = modelKey as string;
-                return runSingleModelTest(channel.id, model, selectedRules[model], false);
-            });
+            const promises: Promise<void>[] = [];
+            
+            if (isHaMode) {
+                if (subChannels.length > 0) {
+                    setActiveModelLog(`${selectedTestModels[0]}_${subChannels[0].id}`);
+                }
+                
+                selectedTestModels.forEach(modelKey => {
+                    const model = modelKey as string;
+                    subChannels.forEach(sc => {
+                        promises.push(runSingleModelTest(channel!.id, model, selectedRules[model], false, `${model}_${sc.id}`, sc.id));
+                    });
+                });
+            } else {
+                setActiveModelLog(selectedTestModels[0] as string);
+                selectedTestModels.forEach(modelKey => {
+                    const model = modelKey as string;
+                    promises.push(runSingleModelTest(channel.id, model, selectedRules[model], false));
+                });
+            }
+
             await Promise.all(promises);
             message.success('勾选模型的批量拨测已完成');
         } catch (error) {
@@ -141,12 +190,28 @@ const ChannelTest: React.FC = () => {
     };
 
     // UI renderer for logs
+    const _isLight = document.documentElement.getAttribute('data-theme') !== 'dark';
     const activeLogData = activeModelLog ? testStatuses[activeModelLog] : null;
+
+    let displayLogTarget = activeModelLog || '';
+    let displaySubChannelName = '';
+    if (activeModelLog && isHaMode) {
+        const parts = activeModelLog.split('_');
+        if (parts.length >= 2) {
+            const modelName = parts.slice(0, -1).join('_');
+            const subId = Number(parts[parts.length - 1]);
+            displayLogTarget = modelName;
+            const sc = subChannels.find(c => c.id === subId);
+            if (sc) {
+                displaySubChannelName = ` (物理上游: ${sc.name})`;
+            }
+        }
+    }
 
     return (
         <Card bordered={false}>
             <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
-                <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin0755/channels')}>返回列表</Button>
+                <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/${adminPath}/channels`)}>返回列表</Button>
                 <div>
                     <Title level={3} style={{ margin: 0 }}>渠道日志抓取分析：{channel?.name}</Title>
                     <Text type="secondary" style={{ marginTop: 4, display: 'block' }}>Base URL: {channel?.base_url}</Text>
@@ -170,7 +235,13 @@ const ChannelTest: React.FC = () => {
                             onRow={(record) => {
                                 return {
                                     onClick: () => {
-                                        setActiveModelLog(record.model);
+                                        if (isHaMode) {
+                                            if (subChannels.length > 0) {
+                                                setActiveModelLog(`${record.model}_${subChannels[0].id}`);
+                                            }
+                                        } else {
+                                            setActiveModelLog(record.model);
+                                        }
                                     },
                                     style: { cursor: 'pointer' }
                                 };
@@ -179,6 +250,90 @@ const ChannelTest: React.FC = () => {
                                 selectedRowKeys: selectedTestModels,
                                 onChange: (newSelectedRowKeys) => setSelectedTestModels(newSelectedRowKeys),
                             }}
+                            expandable={isHaMode ? {
+                                expandedRowKeys: expandedRowKeys,
+                                onExpandedRowsChange: (keys) => setExpandedRowKeys(keys as React.Key[]),
+                                expandedRowRender: (record) => {
+                                    return (
+                                        <div style={{ padding: '8px 12px', background: _isLight ? 'rgba(0,0,0,0.01)' : 'rgba(255,255,255,0.01)', borderRadius: 6, border: _isLight ? '1px dashed rgba(0,0,0,0.08)' : '1px dashed rgba(255,255,255,0.08)' }}>
+                                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 6, fontWeight: 'bold' }}>
+                                                ↳ 物理上游子通道拨测队列 ({subChannels.length})
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                {subChannels.map(sc => {
+                                                    const statusKey = `${record.model}_${sc.id}`;
+                                                    const st = testStatuses[statusKey];
+                                                    const isTesting = st?.status === 'testing';
+                                                    
+                                                    return (
+                                                        <div 
+                                                            key={sc.id} 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setActiveModelLog(statusKey);
+                                                            }}
+                                                            style={{ 
+                                                                display: 'flex', 
+                                                                justifyContent: 'space-between', 
+                                                                alignItems: 'center', 
+                                                                padding: '6px 12px', 
+                                                                background: activeModelLog === statusKey ? (_isLight ? 'rgba(22,119,255,0.08)' : 'rgba(22,119,255,0.15)') : 'transparent', 
+                                                                border: activeModelLog === statusKey ? '1px solid #91caff' : (_isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'),
+                                                                borderRadius: 6,
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.15s'
+                                                            }}
+                                                        >
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
+                                                                <span style={{ fontSize: 12, fontWeight: 600 }}>{sc.name}</span>
+                                                                <span style={{ fontSize: 10, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                                    {sc.provider_type ? `(${sc.provider_type})` : ''} {(sc as any).yid ? `YID: ${(sc as any).yid}` : `ID: ${sc.id}`}
+                                                                </span>
+                                                                <Space size={4} style={{ marginLeft: 8 }}>
+                                                                    <Tag color="cyan" style={{ margin: 0, fontSize: 10, borderRadius: 4 }}>倍率: {(sc as any).rate ?? 1}x</Tag>
+                                                                    <Tag color="blue" style={{ margin: 0, fontSize: 10, borderRadius: 4 }}>请求优先级: {(sc as any).priority ?? 0}</Tag>
+                                                                    <Tag color="cyan" style={{ margin: 0, fontSize: 10, borderRadius: 4 }}>请求权重: {(sc as any).weight ?? 1}</Tag>
+                                                                </Space>
+                                                            </div>
+                                                            
+                                                            <Space size={8} style={{ flexShrink: 0 }}>
+                                                                {!st || st.status === 'idle' ? (
+                                                                    <Tag color="default" style={{ margin: 0, fontSize: 10, borderRadius: 3 }}>未开始</Tag>
+                                                                ) : isTesting ? (
+                                                                    <Tag color="processing" icon={<SyncOutlined spin />} style={{ margin: 0, fontSize: 10, borderRadius: 3 }}>拨测中</Tag>
+                                                                ) : st.status === 'success' ? (
+                                                                    <Tag color="success" style={{ margin: 0, fontSize: 10, borderRadius: 3 }}>成功 ({st.latency}ms)</Tag>
+                                                                ) : (
+                                                                    <Tooltip title={st.message}>
+                                                                        <Tag color="error" style={{ margin: 0, fontSize: 10, borderRadius: 3, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                            失败: {st.message}
+                                                                        </Tag>
+                                                                    </Tooltip>
+                                                                )}
+                                                                
+                                                                <Button
+                                                                    size="small"
+                                                                    type="dashed"
+                                                                    style={{ fontSize: 11 }}
+                                                                    loading={isTesting}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        runSingleModelTest(channel!.id, record.model, selectedRules[record.model], true, statusKey, sc.id);
+                                                                    }}
+                                                                >
+                                                                    发起拨测
+                                                                </Button>
+                                                            </Space>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                },
+                                rowExpandable: () => true,
+                                defaultExpandAllRows: true,
+                            } : undefined}
                             columns={[
                                 {
                                     title: '接入模型',
@@ -190,7 +345,7 @@ const ChannelTest: React.FC = () => {
                                             return (
                                                 <Space direction="vertical" size={0}>
                                                     <Text strong>{gModel.name || gModel.model_id}</Text>
-                                                    <Tag color="blue" style={{ fontSize: 10, margin: 0, marginTop: 4 }}>{gModel.model_id}</Tag>
+                                                    <Tag color="blue" style={{ fontSize: 10, margin: 0, marginTop: 4, borderRadius: 3 }}>{gModel.model_id}</Tag>
                                                 </Space>
                                             );
                                         }
@@ -201,13 +356,26 @@ const ChannelTest: React.FC = () => {
                                     title: '探测状态',
                                     key: 'status',
                                     render: (_, record) => {
+                                        if (isHaMode) {
+                                            const statuses = subChannels.map(sc => testStatuses[`${record.model}_${sc.id}`]?.status);
+                                            if (statuses.every(s => s === 'idle' || !s)) return <Tag color="default" style={{ borderRadius: 3 }}>未开始</Tag>;
+                                            if (statuses.some(s => s === 'testing')) return <Tag color="processing" icon={<SyncOutlined spin />} style={{ borderRadius: 3 }}>拨测中</Tag>;
+                                            if (statuses.every(s => s === 'success')) return <Tag color="success" style={{ borderRadius: 3 }}>全部通道成功</Tag>;
+                                            if (statuses.every(s => s === 'error')) return <Tag color="error" style={{ borderRadius: 3 }}>全部通道异常</Tag>;
+                                            if (statuses.some(s => s === 'error')) {
+                                                const errCount = statuses.filter(s => s === 'error').length;
+                                                return <Tag color="warning" style={{ borderRadius: 3 }}>部分通道异常 ({errCount}失败)</Tag>;
+                                            }
+                                            return <Tag color="success" style={{ borderRadius: 3 }}>部分通道成功</Tag>;
+                                        }
+
                                         const st = testStatuses[record.model];
-                                        if (!st || st.status === 'idle') return <Tag color="default">未开始</Tag>;
-                                        if (st.status === 'testing') return <Tag color="processing" icon={<SyncOutlined spin />}>拨测中</Tag>;
-                                        if (st.status === 'success') return <Tag color="success">成功 ({st.latency}ms)</Tag>;
+                                        if (!st || st.status === 'idle') return <Tag color="default" style={{ borderRadius: 3 }}>未开始</Tag>;
+                                        if (st.status === 'testing') return <Tag color="processing" icon={<SyncOutlined spin />} style={{ borderRadius: 3 }}>拨测中</Tag>;
+                                        if (st.status === 'success') return <Tag color="success" style={{ borderRadius: 3 }}>成功 ({st.latency}ms)</Tag>;
                                         return (
                                             <Tooltip title={st.message}>
-                                                <Tag color="error" style={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+                                                <Tag color="error" style={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle', borderRadius: 3 }}>
                                                     失败: {st.message}
                                                 </Tag>
                                             </Tooltip>
@@ -230,12 +398,16 @@ const ChannelTest: React.FC = () => {
                                             } catch(e) {}
                                         }
 
+                                        const isAnySubTesting = isHaMode 
+                                            ? subChannels.some(sc => testStatuses[`${record.model}_${sc.id}`]?.status === 'testing') 
+                                            : testStatuses[record.model]?.status === 'testing';
+
                                         return (
                                             <Space direction="horizontal" size="small">
                                                 {ruleOptions.length > 0 && (
                                                     <Select
                                                         size="small"
-                                                        style={{ minWidth: 180 }}
+                                                        style={{ minWidth: 160 }}
                                                         placeholder="默认拨号"
                                                         value={selectedRules[record.model] || undefined}
                                                         onChange={(val) => setSelectedRules({...selectedRules, [record.model]: val})}
@@ -246,13 +418,19 @@ const ChannelTest: React.FC = () => {
                                                 <Button 
                                                     size="small" 
                                                     type="dashed"
-                                                    loading={testStatuses[record.model]?.status === 'testing'}
+                                                    loading={isAnySubTesting}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        runSingleModelTest(channel!.id, record.model, selectedRules[record.model]);
+                                                        if (isHaMode) {
+                                                            subChannels.forEach(sc => {
+                                                                runSingleModelTest(channel!.id, record.model, selectedRules[record.model], true, `${record.model}_${sc.id}`, sc.id);
+                                                            });
+                                                        } else {
+                                                            runSingleModelTest(channel!.id, record.model, selectedRules[record.model]);
+                                                        }
                                                     }}
                                                 >
-                                                    发起拨测
+                                                    {isHaMode ? '全部拨测' : '发起拨测'}
                                                 </Button>
                                             </Space>
                                         );
@@ -265,7 +443,7 @@ const ChannelTest: React.FC = () => {
 
                 {/* Right Panel: Data Layout Rendering */}
                 <Col xs={24} lg={12} xl={10}>
-                    <Card size="small" title={activeModelLog ? `链路解包跟踪 - ${activeModelLog}` : '链路解包跟踪'}>
+                    <Card size="small" title={activeModelLog ? `链路解包跟踪 - ${displayLogTarget}${displaySubChannelName}` : '链路解包跟踪'}>
                         {!activeModelLog ? (
                             <div style={{ padding: 40, textAlign: 'center', color: '#666', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 'calc(100vh - 350px)' }}>
                                 <div style={{ fontSize: 16, marginBottom: 12 }}>等待查看底层链路</div>
@@ -284,11 +462,11 @@ const ChannelTest: React.FC = () => {
                                 fontSize: 13,
                             }}>
                                 <div style={{ marginBottom: 16, color: '#4ec9b0', fontWeight: 'bold' }}>
-                                    {`[${activeLogData?.timestamp || '队列外'}]`} 【Target】: {globalModels[String(activeModelLog)]?.model_id || activeModelLog}
+                                    {`[${activeLogData?.timestamp || '队列外'}]`} 【Target】: {globalModels[String(displayLogTarget)]?.model_id || displayLogTarget}{displaySubChannelName}
                                 </div>
                                 
                                 {activeLogData?.status === 'idle' && (
-                                    <div style={{ color: '#ce9178' }}>... 等待指令，暂无建立的 TPC/HTTP 数据交换记录 ...</div>
+                                    <div style={{ color: '#ce9178' }}>... 等待指令，暂无建立 of TPC/HTTP 数据交换记录 ...</div>
                                 )}
                                 
                                 {activeLogData?.status === 'testing' && (
@@ -311,7 +489,7 @@ const ChannelTest: React.FC = () => {
                                                 <div style={{ color: '#ce9178', marginTop: 8 }}>### [CURL] 通道 REST 同构请求 (cURL Equivalent) ###</div>
                                                 <div style={{ borderLeft: '3px solid #ce9178', marginTop: 8, marginBottom: 24, background: '#252526', padding: 12 }}>
                                                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                                        {activeLogData.curl_command}
+                                                         {activeLogData.curl_command}
                                                    </pre>
                                                 </div>
                                             </>

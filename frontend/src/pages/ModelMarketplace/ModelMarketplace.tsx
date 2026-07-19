@@ -3,11 +3,18 @@
  * 参考 NeuralGrid 设计风格：深色主题 + 左侧筛选 + 模型卡片网格
  */
 import React, { useState, useEffect, useMemo } from 'react';
+import { getAnnouncementLabel } from '../../utils/announcement';
+import {
+  parseNotificationPreferences,
+  shouldShowWebNotifications,
+  maybeShowBrowserPush,
+} from '../../utils/notificationPrefs';
+import { Sidebar as SidebarIcon } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ConfigProvider, theme, Input, Checkbox, Avatar, Dropdown, Spin, Empty, Tooltip, Popover, Button, Layout, Grid, Space, Result, Descriptions, Tag, Breadcrumb, Badge, List, message, Pagination } from 'antd';
 import {
-  RocketOutlined, SearchOutlined, ArrowLeftOutlined, AppstoreOutlined,
+  RocketOutlined, CompassOutlined, SearchOutlined, ArrowLeftOutlined, AppstoreOutlined,
   MessageOutlined, PictureOutlined, VideoCameraOutlined,
   AudioOutlined, CodeOutlined, ApiOutlined, ShopOutlined,
   FilterOutlined, SortAscendingOutlined, MenuOutlined, CloseOutlined,
@@ -52,6 +59,7 @@ interface MarketplaceModel {
   global_discount_enabled?: number;
   billing: any;
   created_at: string;
+  has_ha?: boolean;
   variant_count?: number;
   variants?: MarketplaceModel[];
 }
@@ -62,11 +70,12 @@ interface FilterItem {
   logo?: string;
 }
 
-import { Image as ImageIcon, Video, AudioLines, MessageSquare, Cuboid, ListOrdered, Code, LayoutGrid } from 'lucide-react';
+import { Image as ImageIcon, Video, AudioLines, MessageSquare, Cuboid, ListOrdered, Code, LayoutGrid, Sparkles } from 'lucide-react';
 
 // 类型图标映射
 const getTypeIcon = (typeName: string) => {
   const style = { width: '1em', height: '1em' };
+  if (typeName.includes('视频增强') || typeName.includes('videoenhance') || typeName.includes('video-enhance') || typeName.includes('video_enhance')) return <Sparkles style={style} />;
   if (typeName.includes('聊天') || typeName.includes('对话') || typeName.includes('LLM')) return <MessageSquare style={style} />;
   if (typeName.includes('图片') || typeName.includes('图像')) return <ImageIcon style={style} />;
   if (typeName.includes('视频')) return <Video style={style} />;
@@ -75,6 +84,62 @@ const getTypeIcon = (typeName: string) => {
   if (typeName.includes('嵌入') || typeName.includes('向量') || typeName.includes('Embedding') || typeName.includes('Vector')) return <Cuboid style={style} />;
   if (typeName.includes('排序') || typeName.includes('重排') || typeName.includes('Rerank')) return <ListOrdered style={style} />;
   return <LayoutGrid style={style} />;
+};
+
+// 智能兜底计费规则生成
+const getFallbackBilling = (variant: any) => {
+  if (variant.billing) return variant.billing;
+  const mid = variant.mid || '';
+  const typeName = variant.type_name || '';
+
+  // 1. 火山引擎画质增强与字幕擦除预置模型兜底
+  if (mid.startsWith('vve-') || mid.startsWith('vvs-')) {
+    const isErase = mid.startsWith('vvs-');
+    return {
+      billing_type: 'duration',
+      billing_rule: isErase ? 'per_second' : 'video_quality',
+      fixed_rate: 0,
+      duration_rate: 0,
+      pricing_tiers: '[]',
+      extended_config: '{}',
+      name: isErase ? '火山字幕擦除默认规则' : '火山画质增强默认规则',
+    };
+  }
+
+  // 2. 图像/生图/视频等其它模型按类型智能推断
+  if (typeName.includes('图') || typeName.includes('画') || typeName.includes('Image') || typeName.includes('image')) {
+    return {
+      billing_type: 'requests',
+      billing_rule: 'per_image',
+      fixed_rate: 0,
+      pricing_tiers: '[]',
+      extended_config: '{}',
+      name: '图片按张计费默认规则',
+    };
+  }
+
+  if (typeName.includes('视频') || typeName.includes('Video') || typeName.includes('video')) {
+    return {
+      billing_type: 'duration',
+      billing_rule: 'video_resolution',
+      fixed_rate: 0,
+      duration_rate: 0,
+      pricing_tiers: '[]',
+      extended_config: '{}',
+      name: '视频按秒计费默认规则',
+    };
+  }
+
+  // 3. 默认兜底为 tokens
+  return {
+    billing_type: 'tokens',
+    billing_rule: 'standard',
+    prompt_rate: 0,
+    completion_rate: 0,
+    pricing_tiers: '[]',
+    extended_config: '{}',
+    name: 'Tokens计费默认规则',
+  };
 };
 
 // 计费类型中文
@@ -89,15 +154,41 @@ const getBillingLabel = (billing: any, tp: any) => {
   }
 };
 
+const LOBE_DEFAULT_ICON = '/assets/icons/lobe/default-model.svg';
+
+const lobeIconSrc = (logo?: string | null, providerLogo?: string | null) =>
+  logo ? `/assets/icons/lobe/${logo}.svg`
+    : providerLogo ? `/assets/icons/lobe/${providerLogo}.svg`
+      : LOBE_DEFAULT_ICON;
+
+/** 图标加载失败时降级到默认图；默认图也失败则隐藏，避免裂图 */
+const handleLobeIconError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+  const img = e.currentTarget;
+  img.style.filter = 'none';
+  if (!img.src.endsWith(LOBE_DEFAULT_ICON)) {
+    img.src = LOBE_DEFAULT_ICON;
+  } else {
+    img.style.display = 'none';
+  }
+};
+
+/** 所有变体均无绑定可用渠道时视为暂不可用 */
+const isModelUnavailable = (model: any) =>
+  (model?.variants || [model]).every(
+    (v: any) => !Array.isArray(v?.ha_subchannels) || v.ha_subchannels.length === 0
+  );
+
 const getLogoFilter = (logoName: string | undefined, isLight: boolean) => {
   if (isLight) return 'none';
   if (!logoName) return 'none';
   const name = logoName.toLowerCase();
+  if (name.includes('default')) return 'none';
 
   // 包含以下关键字的单色/黑色图标，在暗色模式下反色为白色显示
   const monochromeKeywords = [
     'openai', 'github', 'anthropic', 'groq', 'ollama',
-    'moonshot', 'zeroone', 'openrouter', 'xai', 'grok'
+    'moonshot', 'zeroone', 'openrouter', 'xai', 'grok',
+    'hermes'
   ];
 
   if (monochromeKeywords.some(keyword => name.includes(keyword))) {
@@ -226,7 +317,8 @@ const ModelMarketplace: React.FC = () => {
   const siteLogo = settings?.site?.logo || '';
   const currencySymbol = settings?.currency?.currency_symbol || '¥';
   const auxiliaryCurrencies = useMemo(() => {
-    return (settings?.currency?.auxiliary_currencies || []).filter((c: any) => c.enabled);
+    const list = settings?.currency?.auxiliary_currencies;
+    return Array.isArray(list) ? list.filter(c => c.enabled) : [];
   }, [settings?.currency?.auxiliary_currencies]);
 
   useEffect(() => {
@@ -234,24 +326,50 @@ const ModelMarketplace: React.FC = () => {
   }, [settings?.agreement]);
 
   useEffect(() => {
-    document.title = '模型广场';
     fetchData();
   }, []);
 
   useEffect(() => {
+    if (selectedModel) {
+      document.title = `${selectedModel.original_id || selectedModel.name}-模型广场`;
+    } else {
+      document.title = `${siteName}-模型广场`;
+    }
+  }, [selectedModel, siteName]);
+
+  useEffect(() => {
     const fetchAnnouncements = async () => {
+      const prefs = parseNotificationPreferences(
+        user?.notification_preferences,
+        settings?.notification?.low_balance_threshold ?? 100.0,
+      );
+      if (!shouldShowWebNotifications(prefs, settings?.notification)) {
+        setAnnouncements([]);
+        setUnreadCount(0);
+        return;
+      }
       try {
         const response = await (request.get('/announcements/public') as any);
         if (response.data) {
           setAnnouncements(response.data);
           setUnreadCount(response.data.length);
+          if (response.data.length > 0) {
+            const first = response.data[0];
+            const seenKey = `notif_push_seen_${first.id}`;
+            if (!sessionStorage.getItem(seenKey)) {
+              sessionStorage.setItem(seenKey, '1');
+              const title = getAnnouncementLabel(first.title || '') || (i18n.language === 'zh' ? '新通知' : 'New notification');
+              const body = getAnnouncementLabel(first.content || '').replace(/<[^>]+>/g, '').slice(0, 120);
+              maybeShowBrowserPush(title, body, prefs, settings?.notification);
+            }
+          }
         }
       } catch (error) {
         console.error('Failed to fetch announcements:', error);
       }
     };
     fetchAnnouncements();
-  }, []);
+  }, [user?.notification_preferences, settings?.notification?.low_balance_threshold, i18n.language]);
 
   const fetchData = async () => {
     try {
@@ -388,8 +506,8 @@ const ModelMarketplace: React.FC = () => {
 
   const isLight = themeMode === 'light';
   const c = {
-    bg: isLight ? '#f4f5f7' : '#0a0a0c',
-    siderBg: isLight ? '#ffffff' : '#121214',
+    bg: isLight ? '#f0f4f9' : '#000000',
+    siderBg: isLight ? '#f8f9fa' : '#141414',
     cardBg: isLight ? '#ffffff' : '#121214',
     cardBorder: isLight ? '#eaeaea' : '#222225',
     cardHoverBg: isLight ? '#fafafa' : '#18181b',
@@ -455,18 +573,18 @@ const ModelMarketplace: React.FC = () => {
     return raw;
   };
 
-  const renderPriceGridTable = (title: string, items: { label: string, price: number | undefined | null, unit: string }[], variant: any, discount?: number, discountLabel: string = '错峰折扣: ×') => {
+  const renderPriceGridTable = (title: string, items: { label: string, price: number | undefined | null, unit: string }[], variant: any, discount?: number, discountLabel: string = '错峰折扣: ×', subRate: number = 1) => {
     const validItems = items.filter(item => item.price !== undefined && item.price !== null && Number(item.price) > 0);
     if (!validItems || validItems.length === 0) return null;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%', maxWidth: 560 }}>
         {title && <div style={{ fontSize: 11, fontWeight: 600, color: c.text2, marginBottom: 2 }}>{title}</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 16, rowGap: 2 }}>
           {validItems.map((item, idx) => (
-            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: `1px solid ${c.cardBorder}`, borderRadius: 6, padding: '4px 8px', fontSize: 11 }}>
-              <span style={{ color: c.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: 12 }} title={item.label}>{item.label}</span>
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', fontSize: 11, padding: '2px 0', gap: 6 }}>
+              <span style={{ color: c.text3, whiteSpace: 'nowrap' }} title={item.label}>{item.label}:</span>
               <span style={{ color: c.text1, fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace", fontWeight: 600, flexShrink: 0 }}>
-                {formatPrice(item.price, variant)}<span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2, color: c.text3 }}>{item.unit}</span>
+                {item.unit === '倍' ? `${Number(item.price).toFixed(2)}` : formatPrice(Number(item.price) * subRate, variant)}<span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2, color: c.text3 }}>{item.unit}</span>
               </span>
             </div>
           ))}
@@ -479,24 +597,12 @@ const ModelMarketplace: React.FC = () => {
   };
 
   const renderCardPrice = (model: MarketplaceModel) => {
-    if (!model.billing) return null;
-    const { billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule, extended_config, pricing_tiers } = model.billing;
+    const billing = model.billing || getFallbackBilling(model);
+    if (!billing) return null;
+    const { billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule, extended_config, pricing_tiers } = billing;
 
-    // Parse extended config
-    let ext: any = {};
-    if (extended_config) {
-      try {
-        ext = typeof extended_config === 'string' ? JSON.parse(extended_config) : extended_config;
-      } catch (e) { }
-    }
-
-    // Parse pricing tiers
-    let tiers: any[] = [];
-    if (pricing_tiers) {
-      try {
-        tiers = typeof pricing_tiers === 'string' ? JSON.parse(pricing_tiers) : pricing_tiers;
-      } catch (e) { }
-    }
+    const ext = safeParseJson(extended_config);
+    const tiers = safeParseJson(pricing_tiers, []);
 
     const priceStyle: React.CSSProperties = {
       fontSize: 12,
@@ -546,6 +652,30 @@ const ModelMarketplace: React.FC = () => {
             {pRate > 0 && cRate > 0 && <span style={{ margin: '0 4px', color: isLight ? '#d1d5db' : '#4b5563' }}>|</span>}
             {cRate > 0 && <span style={{ whiteSpace: 'nowrap' }}>输出: <span style={{ fontWeight: 600 }}>{formatPrice(cRate, model)}</span>/1M</span>}
           </>
+        );
+      }
+      else if (billing_rule === 'gpt_billing') {
+        const gptConfig = (ext && typeof ext.gpt_config === 'object' && ext.gpt_config !== null) ? ext.gpt_config : {};
+        const items = [
+          { key: 'input_text', label: '文P' },
+          { key: 'input_image', label: '图P' },
+          { key: 'output_image', label: '图C' },
+          { key: 'cached_input_text', label: '文缓' },
+          { key: 'cached_input_image', label: '图缓' },
+        ];
+        const enabledItems = items.filter(item => gptConfig[item.key]?.enabled);
+        priceContent = (
+          <Space size={4} wrap>
+            {enabledItems.map((item, idx) => (
+              <React.Fragment key={item.key}>
+                {idx > 0 && <span style={{ color: isLight ? '#d1d5db' : '#4b5563' }}>|</span>}
+                <span style={{ whiteSpace: 'nowrap' }}>
+                  {item.label}: <span style={{ fontWeight: 600 }}>{formatPrice(gptConfig[item.key].rate, model)}</span>/1M
+                </span>
+              </React.Fragment>
+            ))}
+            {enabledItems.length === 0 && <span>GPT官方计费(未启用)</span>}
+          </Space>
         );
       }
       else if (billing_rule === 'multimodal') {
@@ -600,6 +730,12 @@ const ModelMarketplace: React.FC = () => {
         priceContent = renderMinPrice(rates, '/张');
       }
 
+      // 2.5. volc_seedream_pro (火山 Seedream Pro)
+      else if (billing_rule === 'volc_seedream_pro' && Array.isArray(tiers) && tiers.length > 0) {
+        const rates = tiers.filter(t => t.enabled !== false).map(t => Number(t.rate)).filter(r => !isNaN(r) && r > 0);
+        priceContent = renderMinPrice(rates, '/张');
+      }
+
       // 3. vidu_image billing
       else if (billing_rule === 'vidu_image') {
         const pt = ext.price_table || {};
@@ -631,8 +767,8 @@ const ModelMarketplace: React.FC = () => {
         priceContent = renderMinPrice(values, '/秒');
       }
 
-      // 3. vidu_video billing
-      else if (billing_rule === 'vidu_video') {
+      // 3. vidu_video & volc_enhance_cascade billing
+      else if (billing_rule === 'vidu_video' || billing_rule === 'volc_enhance_cascade') {
         const pt = ext.price_table || {};
         const disabledKeys: string[] = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
         const values = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k)).map(([, v]) => v as number);
@@ -665,11 +801,11 @@ const ModelMarketplace: React.FC = () => {
         if (fRate === 0) {
           return freeBadge;
         }
-        const isImageRule = ['per_image', 'vidu_image', 'image_resolution', 'image_size_pixel'].includes(billing_rule || '') || 
-                            (billing_rule || '').includes('image') || 
-                            (model.type_name || '').includes('图片') || 
-                            (model.type_name || '').includes('图像') ||
-                            (model.type_name || '').includes('Image');
+        const isImageRule = ['per_image', 'vidu_image', 'image_resolution', 'image_size_pixel', 'volc_seedream_pro'].includes(billing_rule || '') ||
+          (billing_rule || '').includes('image') ||
+          (model.type_name || '').includes('图片') ||
+          (model.type_name || '').includes('图像') ||
+          (model.type_name || '').includes('Image');
         const unit = isImageRule ? '/张' : '/次';
         priceContent = <><span style={{ fontWeight: 600 }}>{formatPrice(fRate, model)}</span>{unit}</>;
       } else if (billing_type === 'duration') {
@@ -682,19 +818,380 @@ const ModelMarketplace: React.FC = () => {
     }
 
     if (priceContent) {
+      const showMultiplier = ext.enable_time_multipliers && Array.isArray(ext.time_multipliers) && ext.time_multipliers.length > 0;
       return (
-        <span style={priceStyle}>
-          <DollarOutlined style={{ marginRight: 4, color: isLight ? '#4b5563' : 'rgba(255,255,255,0.75)', fontSize: 13 }} />
-          {priceContent}
-        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+          <span style={priceStyle}>
+            {priceContent}
+          </span>
+          {showMultiplier && (
+            <Tooltip title={
+              <div style={{ padding: '4px 2px' }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>峰谷时段价格倍率已启用:</div>
+                {ext.time_multipliers.map((tm: any, idx: number) => (
+                  <div key={idx} style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                    <span>{tm.start} - {tm.end}</span>
+                    <span style={{ color: Number(tm.multiplier) < 1 ? '#52c41a' : '#faad14', fontWeight: 600 }}>{Number(tm.multiplier).toFixed(2)}倍</span>
+                  </div>
+                ))}
+              </div>
+            }>
+              <Tag color="orange" style={{ margin: '2px 0 0 0', padding: '0 4px', fontSize: 10, borderRadius: 4, height: 16, lineHeight: '14px', border: 'none' }}>峰谷优惠</Tag>
+            </Tooltip>
+          )}
+        </div>
       );
     }
-    return null;
   };
 
 
+  const renderUniversalPriceDetailsInner = (variant: any, subRate: number = 1) => {
+    const billing = variant.billing || getFallbackBilling(variant);
+    if (!billing) return <span style={{ color: c.text3, fontSize: 13 }}>Unconfigured</span>;
+
+    const isTokens = billing.billing_type === 'tokens';
+    const isRequests = billing.billing_type === 'requests';
+    const isDuration = billing.billing_type === 'duration';
+    const br = billing.billing_rule;
+
+    const ext = safeParseJson(billing.extended_config);
+    const tiers = safeParseJson(billing.pricing_tiers, []);
+
+    const imgRefStr = ext.image_ref_multiplier && ext.image_ref_multiplier !== 1 ? ` (${tp('img2img', '图生图')}×${ext.image_ref_multiplier})` : '';
+
+    // 1. 如果有阶梯定价
+    if (tiers.length > 0) {
+      // 如果是 tokens 相关的已知阶梯
+      if (isTokens && (br === 'tiered' || br === 'doubao_chat')) {
+        const hasFast = br === 'doubao_chat' && tiers.some((t: any) => t.fast_prompt_rate > 0 || t.fast_completion_rate > 0);
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {tiers.map((tier: any, idx: number) => {
+              const pLabel = tier.max_prompt_tokens ? `≤${tier.max_prompt_tokens}k` : '无限制';
+              const cLabel = tier.max_completion_tokens ? `≤${tier.max_completion_tokens}k` : '无限制';
+              let title = `阶梯 ${idx + 1}: 输入 ${pLabel}`;
+              if (tier.max_completion_tokens) {
+                title += ` | 输出 ${cLabel}`;
+              }
+              const items: any[] = [];
+              items.push({ label: '文本输入', price: tier.prompt_rate, unit: '/ 1M' });
+              items.push({ label: '文本输出', price: tier.completion_rate, unit: '/ 1M' });
+              if (tier.audio_prompt_rate > 0) items.push({ label: '音频输入', price: tier.audio_prompt_rate, unit: '/ 1M' });
+              if (tier.cached_rate > 0) items.push({ label: '命中缓存', price: tier.cached_rate, unit: '/ 1M' });
+              if (tier.audio_cached_rate > 0) items.push({ label: '音频缓存', price: tier.audio_cached_rate, unit: '/ 1M' });
+              if (hasFast) {
+                if (tier.fast_prompt_rate > 0) items.push({ label: '低延迟 (快P)', price: tier.fast_prompt_rate || tier.prompt_rate, unit: '/ 1M' });
+                if (tier.fast_completion_rate > 0) items.push({ label: '低延迟 (快C)', price: tier.fast_completion_rate || tier.completion_rate, unit: '/ 1M' });
+                if (tier.fast_cached_rate > 0) items.push({ label: '低延迟 (快缓)', price: tier.fast_cached_rate, unit: '/ 1M' });
+                if (tier.fast_audio_prompt_rate > 0) items.push({ label: '低延迟 (快音P)', price: tier.fast_audio_prompt_rate, unit: '/ 1M' });
+                if (tier.fast_audio_cached_rate > 0) items.push({ label: '低延迟 (快音缓)', price: tier.fast_audio_cached_rate, unit: '/ 1M' });
+              }
+              return <div key={idx}>{renderPriceGridTable(title, items, variant, undefined, undefined, subRate)}</div>;
+            })}
+          </div>
+        );
+      }
+
+      // 其它阶梯情况，如 image_resolution, image_size_pixel, video_resolution, video_quality 等
+      const items: any[] = [];
+      const unit = isDuration ? '/秒' : (isRequests ? '/张' : '/次');
+      if (br === 'volc_seedream_pro') {
+        const pRate = billing.prompt_rate !== undefined && billing.prompt_rate !== null ? Number(billing.prompt_rate) : 0;
+        items.push({ label: '输入图额外 (第2张起)', price: pRate, unit: '/张' });
+      }
+      tiers.filter((tier: any) => tier.enabled !== false).forEach((tier: any) => {
+        let label = '规格';
+        if (tier.resolution && tier.fps_range) {
+          label = `${tier.resolution} | ${tier.fps_range === '<=30' ? '≤30fps' : tier.fps_range === '>30' ? '>30fps' : tier.fps_range}`;
+        } else if (tier.resolution) {
+          label = tier.resolution;
+        } else if (tier.size) {
+          label = tier.size;
+        } else if (tier.max_pixels_wan !== undefined) {
+          label = `输出总像素 <= ${tier.max_pixels_wan}万`;
+        }
+        if (tier.quality_pricing) {
+          items.push({ label: `${label} (低)`, price: tier.rate_low, unit });
+          items.push({ label: `${label} (中)`, price: tier.rate_medium, unit });
+          items.push({ label: `${label} (高)`, price: tier.rate_high, unit });
+        } else {
+          items.push({ label, price: tier.rate, unit });
+        }
+      });
+      if (items.length > 0) {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {renderPriceGridTable('', items, variant, undefined, undefined, subRate)}
+            {imgRefStr && <div style={{ fontSize: 11, color: c.text3, marginTop: 2 }}>{imgRefStr}</div>}
+          </div>
+        );
+      }
+    }
+
+    // 2. 如果有自定义价格表 (price_table 或 resolution_rates)
+    const pt = ext.price_table || ext.resolution_rates;
+    if (pt && typeof pt === 'object') {
+      const disabledKeys: string[] = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
+      const items: any[] = [];
+      const unit = isDuration ? '/秒' : (variant.type_name?.includes('图') || isRequests ? '/张' : '/次');
+
+      // 扁平化遍历 price_table 或 resolution_rates
+      const traverseTable = (obj: any, prefix = '') => {
+        Object.entries(obj).forEach(([key, val]) => {
+          if (disabledKeys.includes(key)) return;
+          const label = prefix ? `${prefix} | ${key}` : key;
+          const friendlyLabel = translateBillingKey(label);
+          if (typeof val === 'number') {
+            items.push({ label: friendlyLabel, price: val, unit });
+          } else if (val && typeof val === 'object') {
+            const valAny = val as any;
+            // 针对 resolution_rates 中 with_video / without_video 的特殊处理
+            if (valAny.with_video !== undefined || valAny.without_video !== undefined) {
+              if (valAny.with_video !== undefined) items.push({ label: `${friendlyLabel} (含视)`, price: valAny.with_video, unit: '/ 1M' });
+              if (valAny.without_video !== undefined) items.push({ label: `${friendlyLabel} (无视)`, price: valAny.without_video, unit: '/ 1M' });
+            } else {
+              traverseTable(val, label);
+            }
+          }
+        });
+      };
+
+      traverseTable(pt);
+      const discount = br === 'vidu_video' ? ext.offpeak_discount : undefined;
+      if (items.length > 0) {
+        return renderPriceGridTable('', items, variant, discount, undefined, subRate);
+      }
+    }
+
+    // 针对特定规则且无大表的特探 (seedance1.5pro, seedance1.0, volcengine)
+    if (isTokens) {
+      if (br === 'gpt_billing') {
+        const gptConfig = (ext && typeof ext.gpt_config === 'object' && ext.gpt_config !== null) ? ext.gpt_config : {};
+        const items: { label: string; price: number; unit: string }[] = [];
+        const configKeys = [
+          { key: 'input_text', label: '输入文本' },
+          { key: 'input_image', label: '输入图片' },
+          { key: 'output_image', label: '输出图片' },
+          { key: 'cached_input_text', label: '输入文本缓存' },
+          { key: 'cached_input_image', label: '输入图片缓存' },
+        ];
+        configKeys.forEach(item => {
+          const cfg = gptConfig[item.key];
+          if (cfg && cfg.enabled) {
+            items.push({ label: item.label, price: cfg.rate, unit: '/ 1M' });
+          }
+        });
+        return renderPriceGridTable('', items, variant, undefined, undefined, subRate);
+      }
+      if (br === 'multimodal') {
+        const items = [
+          { label: '文本输入', price: billing.prompt_rate, unit: '/ 1M' },
+          { label: '文本输出', price: billing.completion_rate, unit: '/ 1M' },
+          { label: '图片输入', price: ext.image_prompt_rate, unit: '/ 1M' }
+        ];
+        return renderPriceGridTable('', items, variant, undefined, undefined, subRate);
+      }
+      if (br === 'seedance1.5pro') {
+        const items = [
+          { label: '带语音', price: ext.audio_rate, unit: '/ 1M' },
+          { label: '无语音', price: ext.base_rate, unit: '/ 1M' }
+        ];
+        return renderPriceGridTable('', items, variant, ext.offline_discount, '离线折扣: ×', subRate);
+      }
+      if (br === 'seedance1.0') {
+        const items = [
+          { label: '在线', price: ext.online_rate, unit: '/ 1M' },
+          { label: '离线', price: ext.offline_rate, unit: '/ 1M' }
+        ];
+        return renderPriceGridTable('', items, variant, undefined, undefined, subRate);
+      }
+      if (br === 'volcengine') {
+        const items = [];
+        if (ext.volc_video_enabled) items.push({ label: '含视频', price: ext.volc_video_rate, unit: '/ 1M' });
+        if (ext.volc_audio_enabled) items.push({ label: '含音频', price: ext.volc_audio_rate, unit: '/ 1M' });
+        if (ext.volc_base_enabled) items.push({ label: '纯文本', price: ext.volc_base_rate, unit: '/ 1M' });
+        return renderPriceGridTable('', items, variant, undefined, undefined, subRate);
+      }
+    }
+
+    if (isDuration && br === 'kling_video') {
+      const mm = ext.mode_multipliers || {};
+      const sm = ext.sound_multipliers || {};
+      const vm = ext.video_ref_multipliers || {};
+      const items = [
+        { label: '基准单价', price: billing.duration_rate, unit: '/秒' },
+        { label: '标准模式 (std) 倍率', price: mm.std ?? 1.0, unit: '倍' },
+        { label: '高品质模式 (pro) 倍率', price: mm.pro ?? 1.33, unit: '倍' },
+        { label: '2K 分辨率模式 倍率', price: mm['2k'] ?? 1.5, unit: '倍' },
+        { label: '4K 分辨率模式 倍率', price: mm['4k'] ?? 2.0, unit: '倍' },
+        { label: '有声倍率 (on)', price: sm.on ?? 1.5, unit: '倍' },
+        { label: '无声倍率 (off)', price: sm.off ?? 1.0, unit: '倍' },
+        { label: '有参考视频倍率 (yes)', price: vm.yes ?? 1.5, unit: '倍' },
+        { label: '无参考视频倍率 (no)', price: vm.no ?? 1.0, unit: '倍' }
+      ];
+      return renderPriceGridTable('可灵视频倍率计费明细', items, variant, undefined, undefined, subRate);
+    }
+
+    // 3. 兜底，展示所有的非零基础单价
+    const items: any[] = [];
+    const pRate = billing.prompt_rate ? Number(billing.prompt_rate) : 0;
+    const cRate = billing.completion_rate ? Number(billing.completion_rate) : 0;
+    const fRate = billing.fixed_rate ? Number(billing.fixed_rate) : 0;
+    const dRate = billing.duration_rate ? Number(billing.duration_rate) : 0;
+    const cacheVal = billing.cached_rate ? Number(billing.cached_rate) : 0;
+    const ccCreate = billing.claude_cache_creation_rate ? Number(billing.claude_cache_creation_rate) : 0;
+    const ccRead = billing.claude_cache_read_rate ? Number(billing.claude_cache_read_rate) : 0;
+
+    if (pRate > 0 || cRate > 0) {
+      items.push({ label: '基础输入', price: pRate, unit: '/ 1M' });
+      items.push({ label: '基础输出', price: cRate, unit: '/ 1M' });
+      if (cacheVal > 0) items.push({ label: '命中缓存', price: cacheVal, unit: '/ 1M' });
+      if (ccCreate > 0) items.push({ label: '写入缓存', price: ccCreate, unit: '/ 1M' });
+      if (ccRead > 0) items.push({ label: '读取缓存', price: ccRead, unit: '/ 1M' });
+    } else if (fRate > 0) {
+      const isImageRule = ['per_image', 'vidu_image', 'image_resolution', 'image_size_pixel', 'volc_seedream_pro'].includes(br || '') ||
+        (br || '').includes('image') ||
+        (variant.type_name || '').includes('图片') ||
+        (variant.type_name || '').includes('图像') ||
+        (variant.type_name || '').includes('Image');
+      const unit = isImageRule ? '/张' : (br === 'characters' ? '/万字符' : '/次');
+      items.push({ label: '固定费率', price: fRate, unit });
+    } else if (dRate > 0) {
+      items.push({ label: '时长费率', price: dRate, unit: '/秒' });
+    }
+
+    if (items.length > 0) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {renderPriceGridTable('', items, variant, undefined, undefined, subRate)}
+          {imgRefStr && <div style={{ fontSize: 11, color: c.text3, marginTop: 2 }}>{imgRefStr}</div>}
+        </div>
+      );
+    }
+
+    // 啥费率都没有
+    return (
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontSize: 16, fontWeight: 600 }}>免费</span>
+      </div>
+    );
+  };
+
+  const renderUniversalPriceDetails = (variant: any) => {
+    const node = renderUniversalPriceDetailsInner(variant);
+    const hasDiscount = variant.global_discount_enabled === 1 && variant.global_discount !== undefined && variant.global_discount > 0 && variant.global_discount < 1;
+    const billing = variant.billing || getFallbackBilling(variant);
+    const ext = safeParseJson(billing?.extended_config);
+    const showMultipliers = ext?.enable_time_multipliers && Array.isArray(ext.time_multipliers) && ext.time_multipliers.length > 0;
+    const upstreamChannels = (variant.ha_subchannels || []).filter((sub: any) => sub.is_ha || Number(sub.rate) !== 1);
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {upstreamChannels.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 2 }}>
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+              background: isLight ? '#09090b' : '#fafafa',
+              color: isLight ? '#fafafa' : '#09090b',
+              display: 'inline-block', lineHeight: '16px'
+            }}>
+              默认定价
+            </span>
+          </div>
+        )}
+        {node}
+        {hasDiscount && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{
+              fontSize: 10, fontWeight: 600, lineHeight: '16px',
+              padding: '0 6px', borderRadius: 4,
+              background: 'linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%)',
+              color: '#fff',
+              border: 'none',
+              boxShadow: '0 1px 3px rgba(255,77,79,0.2)',
+              display: 'inline-block'
+            }}>
+              {Number((variant.global_discount * 10).toFixed(1))}折
+            </span>
+          </div>
+        )}
+        {showMultipliers && (
+          <div style={{
+            marginTop: 8,
+            padding: '10px 12px',
+            background: isLight ? 'rgba(250,173,20,0.05)' : 'rgba(250,173,20,0.08)',
+            borderRadius: 8,
+            border: `1px dashed ${isLight ? 'rgba(250,173,20,0.3)' : 'rgba(250,173,20,0.4)'}`
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <span style={{
+                fontSize: 10, fontWeight: 600, padding: '0 6px', borderRadius: 4,
+                background: '#faad14', color: '#fff', display: 'inline-block', lineHeight: '16px'
+              }}>
+                峰谷时段倍率
+              </span>
+              <span style={{ fontSize: 11, color: c.text2, fontWeight: 500 }}>当前规则已开启时间段倍率折算</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {ext.time_multipliers.map((tm: any, idx: number) => (
+                <div key={idx} style={{ fontSize: 12, display: 'flex', justifyContent: 'space-between', color: c.text2 }}>
+                  <span>时段 {idx + 1}: <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{tm.start} ~ {tm.end}</span></span>
+                  <span style={{ color: Number(tm.multiplier) < 1 ? '#52c41a' : '#faad14', fontWeight: 600 }}>{Number(tm.multiplier).toFixed(2)} 倍</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: c.text3, marginTop: 8, fontStyle: 'italic' }}>
+              * 计费时间段将自适应站点系统设定的默认时区进行判定和折扣折算。
+            </div>
+          </div>
+        )}
+        {upstreamChannels.length > 0 && (
+          <div style={{
+            marginTop: showMultipliers ? 16 : 24,
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {upstreamChannels.map((sub: any, idx: number) => {
+                const subRate = Number(sub.rate) || 1;
+                return (
+                  <div key={idx} style={{ 
+                    fontSize: 13, 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    gap: 12,
+                    paddingBottom: idx === upstreamChannels.length - 1 ? 0 : 16,
+                    paddingTop: idx === 0 ? 0 : 16,
+                    borderBottom: idx === upstreamChannels.length - 1 ? 'none' : `1px dashed ${isLight ? '#e4e4e7' : '#27272a'}`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ color: isLight ? '#09090b' : '#fafafa', fontWeight: 600 }}>{sub.provider_type || sub.name}</span>
+                        <span style={{ 
+                          fontSize: 11, 
+                          padding: '1px 6px', 
+                          borderRadius: 4, 
+                          background: isLight ? '#f4f4f5' : '#27272a',
+                          color: isLight ? '#52525b' : '#a1a1aa',
+                          border: `1px solid ${isLight ? '#e4e4e7' : '#3f3f46'}`
+                        }}>
+                          {subRate.toFixed(2)}x
+                        </span>
+                    </div>
+                    <div style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 6 }}>
+                      {renderUniversalPriceDetailsInner(variant, subRate)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const langNameMap: Record<string, string> = {
-    zh: '简体中文', en: 'English', ja: '日本語', ko: '한국어',
+    zh: '简体中文', en: 'English', ja: '日本語', ko: '한국어', vi: 'Tiếng Việt',
     fr: 'Français', de: 'Deutsch', es: 'Español', pt: 'Português',
     ru: 'Русский', ar: 'العربية',
   };
@@ -709,6 +1206,8 @@ const ModelMarketplace: React.FC = () => {
       label: langNameMap[lng] || lng,
       onClick: () => changeLanguage(lng),
     }));
+
+
 
   const announcementContent = (
     <div style={{ width: 360, display: 'flex', flexDirection: 'column' }}>
@@ -750,18 +1249,19 @@ const ModelMarketplace: React.FC = () => {
                     {item.is_pinned === 1 && (
                       <div style={{
                         background: 'rgba(22, 119, 255, 0.1)', color: '#1677ff', fontSize: 12,
-                        padding: '2px 6px', borderRadius: 4, marginTop: 2, whiteSpace: 'nowrap'
+                        padding: '2px 6px', borderRadius: 4, marginTop: 2, whiteSpace: 'nowrap',
+                        flexShrink: 0
                       }}>
                         {_t('common.pinned', '置顶')}
                       </div>
                     )}
                     <div style={{ color: c.text1, fontSize: 15, fontWeight: 500, lineHeight: 1.5 }}>
-                      {item.title}
+                      {getAnnouncementLabel(item.title)}
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: c.text3, fontSize: 12 }}>
                     <ScheduleOutlined />
-                    {new Date(item.created_at).toLocaleString(i18n.language === 'en' ? 'en-US' : 'zh-CN', {
+                    {new Date(item.created_at).toLocaleString(i18n.language === 'en' ? 'en-US' : (i18n.language === 'vi' ? 'vi-VN' : 'zh-CN'), {
                       year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
                     })}
                   </div>
@@ -769,7 +1269,7 @@ const ModelMarketplace: React.FC = () => {
 
                 <div
                   className="quill-content"
-                  dangerouslySetInnerHTML={{ __html: item.content }}
+                  dangerouslySetInnerHTML={{ __html: getAnnouncementLabel(item.content) }}
                   style={{
                     color: c.text2, fontSize: 13, lineHeight: 1.6,
                     background: 'transparent', padding: '0', overflowWrap: 'break-word', wordBreak: 'break-all'
@@ -801,16 +1301,16 @@ const ModelMarketplace: React.FC = () => {
         .mp-card { border: 1px solid ${c.cardBorder}; border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: ${c.cardBg}; position: relative; }
         .mp-card:hover { border-color: ${isLight ? '#999999' : '#444448'} !important; background: ${c.cardHoverBg}; transform: translateY(-4px); box-shadow: 0 12px 30px ${c.shadow}; }
         .mp-card-icon { width: 36px; height: 36px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
-        .mp-sidebar-content { padding: 24px 20px; overflow-y: auto; height: 100%; }
+        .mp-sidebar-content { padding: 8px 0; overflow-y: auto; height: 100%; }
         .mp-sidebar-content::-webkit-scrollbar { width: 4px; }
         .mp-sidebar-content::-webkit-scrollbar-thumb { background: ${c.scrollThumb}; border-radius: 4px; }
-        .mp-sidebar-title { font-size: 11px; font-weight: 600; color: ${c.text3}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
-        .mp-sidebar-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; cursor: pointer; transition: all 0.12s; font-size: 14px; color: ${c.sidebarText}; margin-bottom: 2px; }
-        .mp-sidebar-item:hover { background: ${c.hoverBg}; color: ${c.text1}; }
-        .mp-sidebar-item.active { background: ${isLight ? '#eaeaea' : '#27272a'} !important; color: ${isLight ? '#000000' : '#ffffff'} !important; font-weight: 500; }
+        .mp-sidebar-title { font-size: 11px; font-weight: 600; color: ${c.text3}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; padding: 0 20px; }
+        .mp-sidebar-item { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; margin: 2px 8px; border-radius: 6px; cursor: pointer; transition: all 0.12s; font-size: 13.5px; color: ${isLight ? '#4b5563' : 'rgba(255, 255, 255, 0.65)'}; }
+        .mp-sidebar-item:hover { background: ${isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.08)'}; color: ${isLight ? '#1f2937' : '#ffffff'}; }
+        .mp-sidebar-item.active { background: ${isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.12)'} !important; color: ${isLight ? '#1f2937' : '#ffffff'} !important; font-weight: 500; }
         .mp-sidebar-item.active .mp-sidebar-count { color: ${isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.85)'}; }
         .mp-sidebar-count { margin-left: auto; font-size: 12px; color: ${c.textMuted}; font-weight: 500; }
-        .mp-sidebar-divider { height: 1px; background: ${c.cardBorder}; margin: 20px 0; }
+        .mp-sidebar-divider { height: 1px; background: ${c.cardBorder}; margin: 20px 8px; }
         
         @media (max-width: 767px) {
           .responsive-table-wrapper { border: none !important; background: transparent !important; box-shadow: none !important; overflow: visible !important; }
@@ -839,15 +1339,16 @@ const ModelMarketplace: React.FC = () => {
           trigger={null}
           collapsible
           collapsed={collapsed}
-          theme={isLight ? undefined : 'dark'}
-          width={200}
+          theme={themeMode}
+          width={240}
           breakpoint="lg"
           collapsedWidth={screens.xs ? 0 : 68}
           onBreakpoint={(broken) => {
             if (broken) setCollapsed(true);
           }}
           style={{
-            boxShadow: `1px 0 4px 0 ${c.shadow}`,
+            boxShadow: 'none',
+            borderRight: isLight ? '1px solid #e4e4e7' : '1px solid #1f1f23',
             zIndex: 10,
             position: screens.xs ? 'fixed' : 'relative',
             height: '100%',
@@ -863,38 +1364,36 @@ const ModelMarketplace: React.FC = () => {
             {/* Logo Area */}
             <div style={{
               height: screens.xs ? 48 : 56,
-              display: 'flex', alignItems: 'center', justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start',
-              padding: collapsed && !screens.xs ? '16px 0' : '16px 20px',
-              borderBottom: `1px solid ${c.cardBorder}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '0 8px',
+              borderBottom: isLight ? '1px solid #e4e4e7' : '1px solid #1f1f23',
               cursor: 'pointer',
               transition: 'all 0.2s'
             }} onClick={() => navigate('/dashboard')}>
               {siteLogo ? (
                 (collapsed && !screens.xs) ? (
-                  <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
+                  <img src={siteLogo} alt="logo" style={{ width: 32, height: 32, objectFit: 'contain' }} />
                 ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-                    <span style={{ color: c.text1, fontSize: '18px', fontWeight: 600 }}>{siteName}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', justifyContent: 'center' }}>
+                    <img src={siteLogo} alt="logo" style={{ width: 28, height: 28, objectFit: 'contain', flexShrink: 0 }} />
+                    <div style={{ color: isLight ? '#1f2937' : '#fff', margin: 0, fontSize: siteName.length > 12 ? 14 : siteName.length > 8 ? 16 : 18, fontWeight: 700, lineHeight: 1.2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-all' }}>
+                      {siteName}
+                    </div>
                   </div>
                 )
               ) : (
-                <>
-                  <ShopOutlined style={{ fontSize: 20, color: isLight ? '#6b7280' : '#1677ff', marginRight: collapsed && !screens.xs ? 0 : 10 }} />
-                  {!(collapsed && !screens.xs) && <span style={{ color: c.text1, fontSize: '18px', fontWeight: 600 }}>{siteName || 'TokensByte'}</span>}
-                </>
+                <div style={{ color: isLight ? '#1f2937' : '#fff', margin: 0, fontSize: siteName.length > 12 ? 14 : siteName.length > 8 ? 16 : 18, fontWeight: 700, lineHeight: 1.2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-all', textAlign: 'center' }}>
+                  {(collapsed && !screens.xs) ? 'TB' : siteName}
+                </div>
               )}
             </div>
 
             {/* Sidebar Content (Filters) */}
-            {/* Sidebar Content (Filters) */}
-            <div className="mp-sidebar-content" style={{ padding: collapsed && !screens.xs ? '12px 0' : '24px 20px', transition: 'all 0.2s' }}>
-              {!(collapsed && !screens.xs) && <div className="mp-sidebar-title" style={{ padding: '0 12px' }}>{tp('browse')}</div>}
+            <div className="mp-sidebar-content" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0', transition: 'all 0.2s' }}>
               <Tooltip title={collapsed && !screens.xs ? tp('all_models') : ""} placement="right">
                 <div
                   className={`mp-sidebar-item ${selectedType === null ? 'active' : ''}`}
                   onClick={() => { setSelectedType(null); setSelectedModel(null); }}
-                  style={{ justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start', padding: collapsed && !screens.xs ? '12px 0' : '8px 12px' }}
                 >
                   <AppstoreOutlined style={{ fontSize: 18 }} />
                   {!(collapsed && !screens.xs) && (
@@ -910,7 +1409,6 @@ const ModelMarketplace: React.FC = () => {
                   <div
                     className={`mp-sidebar-item ${selectedType === t.id ? 'active' : ''}`}
                     onClick={() => { setSelectedType(t.id); setSelectedModel(null); }}
-                    style={{ justifyContent: collapsed && !screens.xs ? 'center' : 'flex-start', padding: collapsed && !screens.xs ? '12px 0' : '8px 12px' }}
                   >
                     <span style={{ fontSize: 18, display: 'flex', alignItems: 'center' }}>{getTypeIcon(t.name)}</span>
                     {!(collapsed && !screens.xs) && (
@@ -922,31 +1420,36 @@ const ModelMarketplace: React.FC = () => {
                   </div>
                 </Tooltip>
               ))}
-
-
             </div>
           </div>
         </Sider>
 
         <Layout style={{ marginLeft: (screens.xs || collapsed) ? 0 : 0 }}>
           <Header style={{
-            padding: 0,
-            background: c.siderBg,
+            padding: '0 12px',
+            background: themeMode === 'light' ? '#ffffff' : '#000000',
             height: screens.xs ? 48 : 56,
             lineHeight: (screens.xs ? 48 : 56) + 'px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             paddingRight: screens.xs ? 8 : 24,
-            boxShadow: `0 1px 4px ${c.shadow}`,
-            borderBottom: `1px solid ${c.cardBorder}`,
+            borderBottom: themeMode === 'light' ? '1px solid #e4e4e7' : '1px solid #1f1f23'
           }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
               <Button
                 type="text"
-                icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                icon={<SidebarIcon size={16} />}
                 onClick={() => handleCollapsedChange(!collapsed)}
-                style={{ fontSize: '16px', width: screens.xs ? 48 : 56, height: screens.xs ? 48 : 56, color: c.text1 }}
+                style={{
+                  width: 32,
+                  height: 32,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: themeMode === 'light' ? '#71717a' : '#a1a1aa',
+                  borderRadius: 6
+                }}
               />
               {screens.xs && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }} onClick={() => navigate('/dashboard')}>
@@ -965,14 +1468,69 @@ const ModelMarketplace: React.FC = () => {
                   height: 40px;
                 }
               `}</style>
+              <Tooltip title={_t('menu.model_marketplace', '模型广场')} placement="bottom">
+                <Button
+                  type="text"
+                  href="/models"
+                  icon={
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      style={{ verticalAlign: 'middle', transform: 'translateY(1.5px)' }}
+                    >
+                      <path d="M12 2L19.5 6.2L12 10.5L4.5 6.2Z" fill={isLight ? '#e0e0e0' : '#2e2e2e'} />
+                      <path d="M3.5 7.8L11 12V21L3.5 16.8Z" fill={isLight ? '#b0b0b0' : '#555555'} />
+                      <path d="M13 12L20.5 7.8V16.8L13 21Z" fill={isLight ? '#757575' : '#9e9e9e'} />
+                    </svg>
+                  }
+                  style={{
+                    color: isLight ? '#1f2937' : '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 14,
+                    fontWeight: 500,
+                    height: 40,
+                    padding: '0 12px',
+                  }}
+                  onClick={(e) => {
+                    if (!e.metaKey && !e.ctrlKey) {
+                      e.preventDefault();
+                      navigate('/models');
+                    }
+                  }}
+                >
+                  <span style={{ display: 'inline-block', transform: 'translateY(1.5px)' }}>{_t('menu.model_marketplace', '模型广场')}</span>
+                </Button>
+              </Tooltip>
+
               <Tooltip title={_t('menu.relay_api', 'API教程')} placement="bottom">
                 <Button
                   type="text"
-                  shape="circle"
-                  icon={<RocketOutlined style={{ fontSize: 18, color: isLight ? '#757575' : '#9e9e9e', verticalAlign: 'middle', transform: 'translateY(1.5px)' }} />}
-                  style={{ color: c.text1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40 }}
-                  onClick={() => window.open('/relay-api', '_blank')}
-                />
+                  href="/docs"
+                  icon={<RocketOutlined style={{ fontSize: '16px', verticalAlign: 'middle', transform: 'translateY(1.5px)' }} />}
+                  style={{
+                    color: isLight ? '#1f2937' : '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 14,
+                    fontWeight: 500,
+                    height: 40,
+                    padding: '0 12px',
+                  }}
+                  onClick={(e) => {
+                    if (!e.metaKey && !e.ctrlKey) {
+                      e.preventDefault();
+                      navigate('/docs');
+                    }
+                  }}
+                >
+                  <span style={{ display: 'inline-block', transform: 'translateY(1.5px)' }}>{_t('menu.relay_api', 'API教程')}</span>
+                </Button>
               </Tooltip>
 
               {enableThemeToggle && (
@@ -1024,17 +1582,8 @@ const ModelMarketplace: React.FC = () => {
                 overlayClassName="custom-premium-popover"
                 open={announcementsDrawerVisible}
                 onOpenChange={setAnnouncementsDrawerVisible}
-                overlayInnerStyle={{
-                  padding: 0,
-                  borderRadius: 20,
-                  background: isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(30, 30, 30, 0.45)',
-                  backdropFilter: 'blur(30px) saturate(200%)',
-                  WebkitBackdropFilter: 'blur(30px) saturate(200%)',
-                  border: isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.15)',
-                  boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.6)',
-                  transform: 'translateZ(0)',
-                  overflow: 'hidden'
-                }}
+                styles={{ container: { padding: 0, background: 'transparent', boxShadow: 'none' } }}
+                motion={{ motionName: '' }}
                 arrow={false}
               >
                 <Tooltip title={_t('header.notifications', '通知')} placement="bottom">
@@ -1119,17 +1668,27 @@ const ModelMarketplace: React.FC = () => {
                   <div style={{ flex: '1 1 500px', background: c.cardBg, border: `1px solid ${c.cardBorder}`, borderRadius: 12, padding: screens.xs ? '16px' : '24px', boxShadow: isLight ? '0 4px 20px rgba(0,0,0,0.02)' : '0 4px 24px rgba(0,0,0,0.3)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
                       <div style={{ width: 64, height: 64, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, overflow: 'hidden', background: isLight ? '#f4f5f7' : '#18181b', border: `1px solid ${c.cardBorder}` }}>
-                        {selectedModel.logo ? (
-                          <img src={`/assets/icons/lobe/${selectedModel.logo}.svg`} alt="" style={{ width: 48, height: 48, objectFit: 'contain', filter: getLogoFilter(selectedModel.logo, isLight) }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        ) : selectedModel.provider_logo ? (
-                          <img src={`/assets/icons/lobe/${selectedModel.provider_logo}.svg`} alt="" style={{ width: 48, height: 48, objectFit: 'contain', filter: getLogoFilter(selectedModel.provider_logo, isLight) }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        ) : (
-                          <span style={{ color: c.text2 }}>{getTypeIcon(selectedModel.type_name)}</span>
-                        )}
+                        <img 
+                          src={lobeIconSrc(selectedModel.logo, selectedModel.provider_logo)} 
+                          alt="" 
+                          style={{ width: 48, height: 48, objectFit: 'contain', filter: getLogoFilter(selectedModel.logo || selectedModel.provider_logo || 'default-model', isLight) }} 
+                          onError={handleLobeIconError} 
+                        />
                       </div>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                           <h1 style={{ margin: 0, fontSize: screens.xs ? 20 : 26, fontWeight: 700, color: c.text1 }}>{selectedModel.original_id || selectedModel.name}</h1>
+                          {isModelUnavailable(selectedModel) && (
+                              <span style={{
+                                fontSize: 12, fontWeight: 500, lineHeight: '22px',
+                                padding: '0 10px', borderRadius: 10,
+                                background: 'rgba(255,77,79,0.1)',
+                                color: '#ff4d4f',
+                                border: `1px solid rgba(255,77,79,0.3)`
+                              }}>
+                                模型暂不可用
+                              </span>
+                          )}
                           {(selectedModel.variant_count || 0) > 1 && (
                             <span style={{
                               fontSize: 12, fontWeight: 500, lineHeight: '22px',
@@ -1172,7 +1731,7 @@ const ModelMarketplace: React.FC = () => {
                                 <span key={pn} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                   {i > 0 && <span style={{ width: 4, height: 4, borderRadius: '50%', background: c.textMuted, marginRight: 4 }} />}
                                   {v?.provider_logo && (
-                                    <img src={`/assets/icons/lobe/${v.provider_logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain', filter: getLogoFilter(v.provider_logo, isLight) }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                    <img src={`/assets/icons/lobe/${v.provider_logo}.svg`} alt="" style={{ width: 16, height: 16, objectFit: 'contain', filter: getLogoFilter(v.provider_logo, isLight) }} onError={handleLobeIconError} />
                                   )}
                                   {pn}
                                 </span>
@@ -1276,325 +1835,51 @@ const ModelMarketplace: React.FC = () => {
                         </thead>
                         <tbody>
                           {(selectedModel.variants || [selectedModel]).map((variant, vIdx) => {
-                            const isTokens = variant.billing?.billing_type === 'tokens';
-                            const isRequests = variant.billing?.billing_type === 'requests';
-                            const isDuration = variant.billing?.billing_type === 'duration';
-                            const br = variant.billing?.billing_rule;
+                            const billing = variant.billing || getFallbackBilling(variant);
+                            const isTokens = billing?.billing_type === 'tokens';
+                            const isRequests = billing?.billing_type === 'requests';
+                            const isDuration = billing?.billing_type === 'duration';
+                            const br = billing?.billing_rule;
 
-                            let ext: any = {};
-                            if (variant.billing?.extended_config) {
-                              try { ext = typeof variant.billing.extended_config === 'string' ? JSON.parse(variant.billing.extended_config) : variant.billing.extended_config; } catch { }
-                            }
-
-                            let tiers: any[] = [];
-                            if (variant.billing?.pricing_tiers) {
-                              try { tiers = typeof variant.billing.pricing_tiers === 'string' ? JSON.parse(variant.billing.pricing_tiers) : variant.billing.pricing_tiers; } catch { }
-                            }
-                            if (!Array.isArray(tiers)) tiers = [];
+                            const ext = safeParseJson(billing?.extended_config);
+                            const tiers = safeParseJson(billing?.pricing_tiers, []);
 
                             return (
                               <tr key={variant.id || vIdx} style={{
                                 borderBottom: vIdx === (selectedModel.variants || [selectedModel]).length - 1 ? 'none' : `1px solid ${c.cardBorder}`,
                                 transition: 'all 0.2s ease-in-out'
                               }} onMouseEnter={e => e.currentTarget.style.background = c.hoverBg} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                                <td data-label={tp('provider_col', 'Provider')} style={{ padding: '20px 24px', verticalAlign: 'middle', minWidth: 240 }}>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <td data-label={tp('provider_col', 'Provider')} style={{ padding: '12px 24px', verticalAlign: 'middle', minWidth: 240, maxWidth: 400 }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                     <div style={{
                                       fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace",
                                       fontSize: 13,
                                       color: c.text1,
-                                      background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.04)',
-                                      padding: '4px 8px',
-                                      borderRadius: 6,
                                       display: 'inline-flex',
                                       alignItems: 'center',
                                       width: 'fit-content',
                                       gap: 6,
-                                      border: `1px solid ${c.cardBorder}`,
                                       whiteSpace: 'nowrap'
                                     }}>
                                       <span style={{ color: c.text3, fontSize: 12, marginRight: 2 }}>模型ID:</span>
                                       {variant.model_id}
                                       <CopyModelIdButton modelId={variant.model_id} isLight={isLight} c={c} />
+                                      {variant.has_ha && <Tag color="purple" style={{ margin: 0, borderRadius: 4, fontSize: 10, border: 'none', lineHeight: '18px', height: 18, padding: '0 4px' }}>高可用</Tag>}
                                     </div>
-                                    <div style={{ fontSize: 13, color: c.text2, lineHeight: 1.5, whiteSpace: 'pre-wrap', marginLeft: 62 }}>
+                                    <div style={{ fontSize: 13, color: c.text2, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginLeft: 62 }}>
                                       {(variant as any).model_description || '暂无详细描述信息。'}
                                     </div>
                                   </div>
                                 </td>
-                                <td data-label={tp('billing_type_col', 'Billing Type')} style={{ padding: '20px 24px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-                                  {variant.billing ? (
+                                <td data-label={tp('billing_type_col', 'Billing Type')} style={{ padding: '12px 24px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                                  {billing ? (
                                     <Tag bordered={false} style={{ margin: 0, borderRadius: 6, padding: '4px 10px', background: isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)', color: c.text2, border: `1px solid ${c.cardBorder}`, fontWeight: 500, fontSize: 12 }}>
-                                      {getBillingLabel(variant.billing, tp)}
+                                      {getBillingLabel(billing, tp)}
                                     </Tag>
                                   ) : <span style={{ color: c.text3, fontSize: 13 }}>Unconfigured</span>}
                                 </td>
-                                <td data-label={tp('price_details_col', '价格明细')} style={{ padding: '20px 24px', verticalAlign: 'middle', color: c.text1, whiteSpace: 'nowrap' }}>
-                                  {isTokens ? (
-                                    (() => {
-                                      if (br === 'tiered' || br === 'doubao_chat') {
-                                          if (tiers.length > 0) {
-                                            const hasFast = br === 'doubao_chat' && tiers.some((t: any) => t.fast_prompt_rate > 0 || t.fast_completion_rate > 0);
-                                            return (
-                                              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                                {tiers.map((tier: any, idx: number) => {
-                                                  const pLabel = tier.max_prompt_tokens ? `≤${tier.max_prompt_tokens}k` : '无限制';
-                                                  const cLabel = tier.max_completion_tokens ? `≤${tier.max_completion_tokens}k` : '无限制';
-                                                  let title = `阶梯 ${idx + 1}: 输入 ${pLabel}`;
-                                                  if (tier.max_completion_tokens) {
-                                                    title += ` | 输出 ${cLabel}`;
-                                                  }
-                                                  const items: any[] = [];
-                                                  items.push({ label: '文本输入', price: tier.prompt_rate, unit: '/ 1M' });
-                                                  items.push({ label: '文本输出', price: tier.completion_rate, unit: '/ 1M' });
-                                                  if (tier.audio_prompt_rate > 0) items.push({ label: '音频输入', price: tier.audio_prompt_rate, unit: '/ 1M' });
-                                                  if (tier.cached_rate > 0) items.push({ label: '命中缓存', price: tier.cached_rate, unit: '/ 1M' });
-                                                  if (tier.audio_cached_rate > 0) items.push({ label: '音频缓存', price: tier.audio_cached_rate, unit: '/ 1M' });
-                                                  if (hasFast) {
-                                                    if (tier.fast_prompt_rate > 0) items.push({ label: '低延迟 (快P)', price: tier.fast_prompt_rate || tier.prompt_rate, unit: '/ 1M' });
-                                                    if (tier.fast_completion_rate > 0) items.push({ label: '低延迟 (快C)', price: tier.fast_completion_rate || tier.completion_rate, unit: '/ 1M' });
-                                                    if (tier.fast_cached_rate > 0) items.push({ label: '低延迟 (快缓)', price: tier.fast_cached_rate, unit: '/ 1M' });
-                                                    if (tier.fast_audio_prompt_rate > 0) items.push({ label: '低延迟 (快音P)', price: tier.fast_audio_prompt_rate, unit: '/ 1M' });
-                                                    if (tier.fast_audio_cached_rate > 0) items.push({ label: '低延迟 (快音缓)', price: tier.fast_audio_cached_rate, unit: '/ 1M' });
-                                                  }
-                                                  return <div key={idx}>{renderPriceGridTable(title, items, variant)}</div>;
-                                                })}
-                                              </div>
-                                            );
-                                          }
-                                          return <span style={{ fontSize: 13, color: c.text3, fontWeight: 500 }}>阶梯定价 (暂无配置)</span>;
-                                        }
-
-                                      if (br === 'multimodal') {
-                                        const items = [
-                                          { label: '文本输入', price: variant.billing?.prompt_rate, unit: '/ 1M' },
-                                          { label: '文本输出', price: variant.billing?.completion_rate, unit: '/ 1M' },
-                                          { label: '图片输入', price: ext.image_prompt_rate, unit: '/ 1M' }
-                                        ];
-                                        return renderPriceGridTable('', items, variant);
-                                      }
-
-                                      if (br === 'seedance2.0') {
-                                        const rates = ext.resolution_rates || {};
-                                        const activeRes = Object.keys(rates).filter(k => ['480p', '720p', '1080p'].includes(k));
-                                        if (activeRes.length === 0) return <span style={{ fontSize: 13, color: c.text3, fontWeight: 500 }}>无独立分辨率设置(自动兜底)</span>;
-                                        const items: any[] = [];
-                                        activeRes.forEach(r => {
-                                          items.push({ label: `${r} (含视)`, price: rates[r].with_video, unit: '/ 1M' });
-                                          items.push({ label: `${r} (无视)`, price: rates[r].without_video, unit: '/ 1M' });
-                                        });
-                                        return renderPriceGridTable('', items, variant);
-                                      }
-
-                                      if (br === 'seedance1.5pro') {
-                                        const items = [
-                                          { label: '带语音', price: ext.audio_rate, unit: '/ 1M' },
-                                          { label: '无语音', price: ext.base_rate, unit: '/ 1M' }
-                                        ];
-                                        return renderPriceGridTable('', items, variant, ext.offline_discount, '离线折扣: ×');
-                                      }
-
-                                      if (br === 'seedance1.0') {
-                                        const items = [
-                                          { label: '在线', price: ext.online_rate, unit: '/ 1M' },
-                                          { label: '离线', price: ext.offline_rate, unit: '/ 1M' }
-                                        ];
-                                        return renderPriceGridTable('', items, variant);
-                                      }
-
-                                      if (br === 'volcengine') {
-                                        const items = [];
-                                        if (ext.volc_video_enabled) items.push({ label: '含视频', price: ext.volc_video_rate, unit: '/ 1M' });
-                                        if (ext.volc_audio_enabled) items.push({ label: '含音频', price: ext.volc_audio_rate, unit: '/ 1M' });
-                                        if (ext.volc_base_enabled) items.push({ label: '纯文本', price: ext.volc_base_rate, unit: '/ 1M' });
-                                        return renderPriceGridTable('', items, variant);
-                                      }
-
-                                      const cacheVal = variant.billing?.cached_rate;
-                                      const ccCreate = (variant.billing as any)?.claude_cache_creation_rate;
-                                      const ccRead = (variant.billing as any)?.claude_cache_read_rate;
-                                      const items: any[] = [];
-                                      items.push({ label: '基础输入', price: variant.billing?.prompt_rate, unit: '/ 1M' });
-                                      items.push({ label: '基础输出', price: variant.billing?.completion_rate, unit: '/ 1M' });
-                                      if (cacheVal > 0) items.push({ label: '命中缓存', price: cacheVal, unit: '/ 1M' });
-                                      if (ccCreate > 0) items.push({ label: '写入缓存', price: ccCreate, unit: '/ 1M' });
-                                      if (ccRead > 0) items.push({ label: '读取缓存', price: ccRead, unit: '/ 1M' });
-
-                                      return renderPriceGridTable('', items, variant);
-                                    })()
-                                  ) : isRequests ? (
-                                    (() => {
-                                      const imgRefStr = ext.image_ref_multiplier && ext.image_ref_multiplier !== 1 ? ` (${tp('img2img', '图生图')}×${ext.image_ref_multiplier})` : '';
-
-                                      return (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                          {(br === 'image_resolution' || br === 'image_size_pixel') ? (
-                                            (() => {
-                                              if (tiers.length > 0) {
-                                                const items: any[] = [];
-                                                tiers.filter(tier => tier.enabled !== false).forEach(tier => {
-                                                  const label = tier.resolution || tier.size;
-                                                  if (tier.quality_pricing) {
-                                                    items.push({ label: `${label} (低)`, price: tier.rate_low, unit: '/张' });
-                                                    items.push({ label: `${label} (中)`, price: tier.rate_medium, unit: '/张' });
-                                                    items.push({ label: `${label} (高)`, price: tier.rate_high, unit: '/张' });
-                                                  } else {
-                                                    items.push({ label, price: tier.rate, unit: '/张' });
-                                                  }
-                                                });
-                                                return (
-                                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                                    {renderPriceGridTable('', items, variant)}
-                                                    {imgRefStr && <div style={{ fontSize: 11, color: c.text3, marginTop: 2 }}>{imgRefStr}</div>}
-                                                  </div>
-                                                );
-                                              }
-                                              return <span style={{ fontSize: 13, color: c.text3, fontWeight: 500 }}>{tp('resolution_billing_no_config', '按分辨率计费 (暂无配置)')}{imgRefStr}</span>;
-                                            })()
-                                          ) : variant.billing?.billing_rule === 'vidu_image' ? (
-                                            (() => {
-                                              const pt = ext.price_table || {};
-                                              const disabledKeys: string[] = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
-                                              const activeEntries = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k));
-                                              if (activeEntries.length > 0) {
-                                                const items = activeEntries.map(([k, v]) => ({ label: k, price: v as number, unit: '/张' }));
-                                                return renderPriceGridTable('按属性×分辨率查表:', items, variant);
-                                              }
-                                              return (
-                                                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                                                  <span style={{ fontSize: 16, fontWeight: 600, fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace" }}>{formatPrice(variant.billing?.fixed_rate ?? '-', variant)}</span>
-                                                  <span style={{ fontSize: 12, color: c.text3, fontWeight: 500 }}>/ {tp('per_image', '张')}</span>
-                                                </div>
-                                              );
-                                            })()
-                                          ) : (
-                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                                              <span style={{ fontSize: 16, fontWeight: 600, fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace" }}>{formatPrice(variant.billing?.fixed_rate ?? '-', variant)}</span>
-                                              <span style={{ fontSize: 12, color: c.text3, fontWeight: 500 }}>
-                                                {variant.billing?.billing_rule === 'per_image' ? `/ ${tp('per_image', '张')}` : variant.billing?.billing_rule === 'characters' ? `/ 万字符` : `/ ${tp('per_request', '次')}`}
-                                              </span>
-                                              {imgRefStr && <span style={{ fontSize: 12, color: c.text3, marginLeft: 4 }}>{imgRefStr}</span>}
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })()
-                                  ) : isDuration ? (
-                                    (() => {
-                                      if (br === 'video_quality') {
-                                         const activeTiers = tiers.filter(t => t.enabled !== false);
-                                         if (activeTiers.length > 0) {
-                                           const items = activeTiers.map(t => ({
-                                             label: `${t.resolution} • ${t.fps_range === '<=30' ? '≤30fps' : t.fps_range === '>30' ? '>30fps' : t.fps_range}`,
-                                             price: t.rate,
-                                             unit: '/s'
-                                           }));
-                                           return renderPriceGridTable('', items, variant);
-                                         }
-                                         return <span style={{ fontSize: 13, color: c.text3, fontWeight: 500 }}>视频画质及帧率阶梯定价 (暂无配置)</span>;
-                                       }
-
-                                       if (br === 'video_resolution') {
-                                         const activeTiers = tiers.filter(t => t.enabled !== false);
-                                         if (activeTiers.length > 0) {
-                                           const items = activeTiers.map(t => ({ label: t.resolution, price: t.rate, unit: '/s' }));
-                                           return renderPriceGridTable('', items, variant);
-                                         }
-                                         return <span style={{ fontSize: 13, color: c.text3, fontWeight: 500 }}>视频分辨率阶梯定价 (暂无配置)</span>;
-                                       }
-
-                                      if (br === 'kling_video') {
-                                        const pt = ext.price_table || {};
-                                        const ptKeys = Object.keys(pt);
-                                        if (ptKeys.length > 0) {
-                                          const eMode = ext.enable_mode !== false;
-                                          const eSound = ext.enable_sound !== false;
-                                          const eVideo = ext.enable_video_ref === true;
-                                          const disabledKeys: string[] = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
-                                          const activeKeys = ptKeys.filter(key => {
-                                            if (disabledKeys.includes(key)) return false;
-                                            const parts = key.split('|');
-                                            if (!eMode && parts[0] !== 'std') return false;
-                                            if (!eSound && parts[1] !== 'off') return false;
-                                            if (!eVideo && parts[2] !== 'no') return false;
-                                            return true;
-                                          });
-
-                                          const modeMap: Record<string, string> = { std: '标准', pro: '高品质', '4k': '4K' };
-                                          const soundMap: Record<string, string> = { on: '有声', off: '无声' };
-                                          const videoMap: Record<string, string> = { yes: '带参考', no: '无参考' };
-
-                                          if (activeKeys.length > 0) {
-                                            const items = activeKeys.map(k => {
-                                              const parts = k.split('|');
-                                              const labels = [];
-                                              if (eMode) labels.push(modeMap[parts[0]] || parts[0]);
-                                              if (eSound) labels.push(soundMap[parts[1]] || parts[1]);
-                                              if (eVideo) labels.push(videoMap[parts[2]] || parts[2]);
-                                              return { label: labels.join(' • '), price: pt[k], unit: '/s' };
-                                            });
-                                            return renderPriceGridTable('可灵精确视频费率:', items, variant);
-                                          }
-                                          return <span style={{ fontSize: 13, color: c.text3, fontWeight: 500 }}>精确查表 (无有效条目)</span>;
-                                        }
-                                        const mm = ext.mode_multipliers || {};
-                                        const sm = ext.sound_multipliers || {};
-                                        const vm = ext.video_ref_multipliers || {};
-                                        const eMode = ext.enable_mode !== false;
-                                        const eSound = ext.enable_sound !== false;
-                                        const eVideo = ext.enable_video_ref !== false;
-                                        return (
-                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 200 }}>
-                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                                              <span style={{ fontSize: 12, color: c.text2 }}>基准:</span>
-                                              <span style={{ fontSize: 15, fontWeight: 600, color: c.text1, fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace" }}>{formatPrice(variant.billing?.duration_rate ?? 0, variant)}</span>
-                                              <span style={{ fontSize: 12, color: c.text3 }}>/s</span>
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11, color: c.text3, background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', padding: '8px', borderRadius: 6, border: `1px solid ${c.cardBorder}` }}>
-                                              {eMode && (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                  <span style={{ color: c.text2 }}>模式倍率:</span>
-                                                  <span style={{ fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace", paddingLeft: 4 }}>std×{mm.std ?? 1} | pro×{mm.pro ?? 1.33} | 4k×{mm['4k'] ?? 2}</span>
-                                                </div>
-                                              )}
-                                              {eSound && (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                  <span style={{ color: c.text2 }}>音频倍率:</span>
-                                                  <span style={{ fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace", paddingLeft: 4 }}>无声×{sm.off ?? 1} | 有声×{sm.on ?? 1.5}</span>
-                                                </div>
-                                              )}
-                                              {eVideo && (
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                  <span style={{ color: c.text2 }}>视频倍率:</span>
-                                                  <span style={{ fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace", paddingLeft: 4 }}>无×{vm.no ?? 1} | 有×{vm.yes ?? 1.5}</span>
-                                                </div>
-                                              )}
-                                              {!eMode && !eSound && !eVideo && <div style={{ textAlign: 'center', color: c.text3 }}>无附加倍率</div>}
-                                            </div>
-                                          </div>
-                                        );
-                                      }
-
-                                      // vidu_video 查表明细
-                                      if (br === 'vidu_video' && ext.price_table) {
-                                        const pt = ext.price_table || {};
-                                        const disabledKeys: string[] = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
-                                        const activeEntries = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k));
-                                        if (activeEntries.length > 0) {
-                                          const discount = ext.offpeak_discount;
-                                          const items = activeEntries.map(([k, v]) => ({ label: k, price: v as number, unit: '/s' }));
-                                          return renderPriceGridTable('按属性×分辨率查表:', items, variant, discount);
-                                        }
-                                      }
-
-                                      return (
-                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                                          <span style={{ fontSize: 16, fontWeight: 600, fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace" }}>{formatPrice(variant.billing?.duration_rate ?? '-', variant)}</span>
-                                          <span style={{ fontSize: 12, color: c.text3, fontWeight: 500 }}>/s</span>
-                                        </div>
-                                      );
-                                    })()
-                                  ) : <span style={{ color: c.text3 }}>-</span>}
+                                <td data-label={tp('price_details_col', '价格明细')} style={{ padding: '12px 24px', verticalAlign: 'middle', color: c.text1, whiteSpace: 'nowrap' }}>
+                                  {renderUniversalPriceDetails(variant)}
                                 </td>
                               </tr>
                             );
@@ -1708,7 +1993,12 @@ const ModelMarketplace: React.FC = () => {
                           }}
                         >
                           {p.logo && (
-                            <img src={`/assets/icons/lobe/${p.logo}.svg`} alt="" style={{ width: 14, height: 14, objectFit: 'contain', filter: getLogoFilter(p.logo, isLight) }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            <img 
+                              src={`/assets/icons/lobe/${p.logo}.svg`} 
+                              alt="" 
+                              style={{ width: 14, height: 14, objectFit: 'contain', filter: getLogoFilter(p.logo, isLight) }} 
+                              onError={handleLobeIconError} 
+                            />
                           )}
                           {p.name}
                           <span style={{ fontSize: 11, opacity: 0.7 }}>{providerCounts[p.id] || 0}</span>
@@ -1735,205 +2025,259 @@ const ModelMarketplace: React.FC = () => {
                         : { flexDirection: 'column' as const, gap: 12 }
                       ),
                     }}>
-                      {pagedModels.map(model => (
-                      <div
-                        key={model.id}
-                        className="mp-card"
-                        onClick={() => setSelectedModel(model)}
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          position: 'relative',
-                          padding: viewMode === 'grid' ? '20px' : '16px 20px',
-                          background: c.cardBg,
-                          borderColor: c.cardBorder,
-                          borderRadius: 12,
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: viewMode === 'grid' ? 'flex-start' : 'center', gap: 12, marginBottom: 8 }}>
-                          <div className="mp-card-icon" style={{
-                            overflow: 'hidden',
-                            width: viewMode === 'grid' ? 32 : 20,
-                            height: viewMode === 'grid' ? 32 : 20,
-                            borderRadius: viewMode === 'grid' ? 6 : 4,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
-                          }}>
-                            {model.logo ? (
-                              <img src={`/assets/icons/lobe/${model.logo}.svg`} alt="" style={{ width: viewMode === 'grid' ? 28 : 14, height: viewMode === 'grid' ? 28 : 14, objectFit: 'contain', filter: getLogoFilter(model.logo, isLight) }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                            ) : model.provider_logo ? (
-                              <img src={`/assets/icons/lobe/${model.provider_logo}.svg`} alt="" style={{ width: viewMode === 'grid' ? 28 : 14, height: viewMode === 'grid' ? 28 : 14, objectFit: 'contain', filter: getLogoFilter(model.provider_logo, isLight) }} onError={e => { (e.target as HTMLImageElement).replaceWith(document.createTextNode('')); }} />
-                            ) : (
-                              <span style={{ fontSize: viewMode === 'grid' ? 20 : 12 }}>{getTypeIcon(model.type_name)}</span>
-                            )}
-                          </div>
+                      {pagedModels.map(model => {
+                        const billing = model.billing || getFallbackBilling(model);
+                        return (
+                          <div
+                            key={model.id}
+                            className="mp-card"
+                            onClick={() => setSelectedModel(model)}
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              position: 'relative',
+                              padding: viewMode === 'grid' ? '12px 14px' : '16px 20px',
+                              background: c.cardBg,
+                              borderColor: c.cardBorder,
+                              borderRadius: 12,
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: viewMode === 'grid' ? 'flex-start' : 'center', gap: 12, marginBottom: viewMode === 'grid' ? 6 : 8 }}>
+                              <div className="mp-card-icon" style={{
+                                overflow: 'hidden',
+                                width: viewMode === 'grid' ? 32 : 20,
+                                height: viewMode === 'grid' ? 32 : 20,
+                                borderRadius: viewMode === 'grid' ? 6 : 4,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0
+                              }}>
+                                <img 
+                                  src={lobeIconSrc(model.logo, model.provider_logo)} 
+                                  alt="" 
+                                  style={{ width: viewMode === 'grid' ? 28 : 14, height: viewMode === 'grid' ? 28 : 14, objectFit: 'contain', filter: getLogoFilter(model.logo || model.provider_logo || 'default-model', isLight) }} 
+                                  onError={handleLobeIconError} 
+                                />
+                              </div>
 
-                          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-                              <Tooltip title={model.original_id || model.name} placement="topLeft">
-                                <h3 style={{
-                                  margin: 0,
-                                  fontSize: viewMode === 'grid' ? 14 : 16,
-                                  fontWeight: 500,
-                                  color: c.text1,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                  flex: 1,
-                                  minWidth: 0,
-                                  fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace",
-                                  letterSpacing: '-0.3px',
-                                  lineHeight: 1.4,
-                                }}>
-                                  {model.original_id || model.name}
-                                </h3>
-                              </Tooltip>
-                              {(model.variant_count || 0) > 1 && (
-                                <span style={{
-                                  fontSize: 11, fontWeight: 500, lineHeight: '18px',
-                                  padding: '0 8px', borderRadius: 10, flexShrink: 0,
-                                  background: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)',
-                                  color: isLight ? '#1f2937' : 'rgba(255,255,255,0.88)',
-                                  border: `1px solid ${isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)'}`,
-                                }}>
-                                  {model.variant_count} 种定价
-                                </span>
-                              )}
-                              {(() => {
-                                const validDiscounts = (model.variants || [model])
-                                  .filter(v => v.global_discount_enabled === 1 && v.global_discount !== undefined && v.global_discount > 0 && v.global_discount < 1)
-                                  .map(v => v.global_discount as number);
-                                if (validDiscounts.length === 0) return null;
-                                const minDiscount = Math.min(...validDiscounts);
-                                return (
-                                  <span style={{
-                                    fontSize: 11, fontWeight: 600, lineHeight: '18px',
-                                    padding: '0 8px', borderRadius: 10, flexShrink: 0,
-                                    background: 'linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%)',
-                                    color: '#fff',
-                                    border: 'none',
-                                    boxShadow: '0 2px 4px rgba(255,77,79,0.2)'
+                              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                                  <Tooltip title={model.original_id || model.name} placement="topLeft">
+                                    <h3 style={{
+                                      margin: 0,
+                                      fontSize: viewMode === 'grid' ? 14 : 16,
+                                      fontWeight: 500,
+                                      color: c.text1,
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                      flex: 1,
+                                      minWidth: 0,
+                                      fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace",
+                                      letterSpacing: '-0.3px',
+                                      lineHeight: 1.4,
+                                    }}>
+                                      {model.original_id || model.name}
+                                    </h3>
+                                  </Tooltip>
+                                  {isModelUnavailable(model) && (
+                                    <span style={{
+                                      fontSize: 11, fontWeight: 500, lineHeight: '18px',
+                                      padding: '0 8px', borderRadius: 10, flexShrink: 0,
+                                      background: 'rgba(255,77,79,0.1)',
+                                      color: '#ff4d4f',
+                                      border: '1px solid rgba(255,77,79,0.3)',
+                                    }}>
+                                      暂不可用
+                                    </span>
+                                  )}
+                                  {viewMode !== 'grid' && (model.variant_count || 0) > 1 && (
+                                    <span style={{
+                                      fontSize: 11, fontWeight: 500, lineHeight: '18px',
+                                      padding: '0 8px', borderRadius: 10, flexShrink: 0,
+                                      background: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)',
+                                      color: isLight ? '#1f2937' : 'rgba(255,255,255,0.88)',
+                                      border: `1px solid ${isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)'}`,
+                                    }}>
+                                      {model.variant_count} 种定价
+                                    </span>
+                                  )}
+                                  {viewMode !== 'grid' && (() => {
+                                    const validDiscounts = (model.variants || [model])
+                                      .filter(v => v.global_discount_enabled === 1 && v.global_discount !== undefined && v.global_discount > 0 && v.global_discount < 1)
+                                      .map(v => v.global_discount as number);
+                                    if (validDiscounts.length === 0) return null;
+                                    const minDiscount = Math.min(...validDiscounts);
+                                    return (
+                                      <span style={{
+                                        fontSize: 11, fontWeight: 600, lineHeight: '18px',
+                                        padding: '0 8px', borderRadius: 10, flexShrink: 0,
+                                        background: 'linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%)',
+                                        color: '#fff',
+                                        border: 'none',
+                                        boxShadow: '0 2px 4px rgba(255,77,79,0.2)'
+                                      }}>
+                                        {Number((minDiscount * 10).toFixed(1))}折
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+
+                                {/* 子标题：有original_id时显示变体第一个model_id，否则显示model_id。如果是多定价模型组则不显示。 */}
+                                {(!model.variant_count || model.variant_count <= 1) && (
+                                  <div style={{
+                                    marginTop: 4,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    maxWidth: '100%'
                                   }}>
-                                    {Number((minDiscount * 10).toFixed(1))}折
-                                  </span>
-                                );
-                              })()}
+                                    <span style={{
+                                      fontSize: 11,
+                                      color: c.text2,
+                                      fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace",
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                      maxWidth: 'calc(100% - 22px)'
+                                    }}>
+                                      {model.original_id && model.variants?.length ? model.variants[0].model_id : model.model_id}
+                                    </span>
+                                    <CopyModelIdButton
+                                      modelId={model.original_id && model.variants?.length ? model.variants[0].model_id : model.model_id}
+                                      isLight={isLight}
+                                      c={c}
+                                    />
+                                  </div>
+                                )}
+                              </div>
                             </div>
 
-                            {/* 子标题：有original_id时显示变体第一个model_id，否则显示model_id */}
+                            {viewMode === 'grid' && model.description && (
+                              <div style={{
+                                fontSize: 12, color: c.text3, lineHeight: 1.5, marginBottom: 6,
+                                overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
+                              }}>
+                                {model.description}
+                              </div>
+                            )}
+
+                            {/* 价格展示区 */}
+                            {billing && (
+                              <div style={{
+                                marginBottom: viewMode === 'grid' ? 16 : 6,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'flex-end',
+                              }}>
+                                {renderCardPrice(model)}
+                              </div>
+                            )}
+
                             <div style={{
-                              marginTop: 4,
+                              fontSize: viewMode === 'grid' ? 12 : 13,
+                              color: c.text3,
                               display: 'flex',
                               alignItems: 'center',
-                              gap: 4,
-                              maxWidth: '100%'
+                              justifyContent: 'space-between',
+                              width: '100%',
+                              gap: 12,
+                              ...(viewMode === 'grid' ? { marginTop: 'auto' } : {}),
                             }}>
-                              <code style={{
-                                background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)',
-                                padding: '2px 6px',
-                                borderRadius: 4,
-                                fontSize: 11,
-                                color: c.text2,
-                                fontFamily: "'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace",
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                maxWidth: 'calc(100% - 22px)',
-                                border: `1px solid ${c.cardBorder}`
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                flexWrap: 'wrap',
+                                gap: viewMode === 'grid' ? 6 : 8,
                               }}>
-                                {model.original_id && model.variants?.length ? model.variants[0].model_id : model.model_id}
-                              </code>
-                              <CopyModelIdButton
-                                modelId={model.original_id && model.variants?.length ? model.variants[0].model_id : model.model_id}
-                                isLight={isLight}
-                                c={c}
-                              />
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  {getTypeIcon(model.type_name)}
+                                  {model.type_name}
+                                </span>
+                                {viewMode !== 'grid' && (
+                                  <>
+                                    <span style={{ color: c.textMuted }}>•</span>
+                                    <span>Updated {new Date(model.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                  </>
+                                )}
+
+                                {model.sort_order > 900 && (
+                                  <>
+                                    <span style={{ color: c.textMuted }}>•</span>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                      <span style={{ color: '#e3b341' }}>⚡</span>
+                                    </span>
+                                  </>
+                                )}
+
+                                {billing && billing.billing_type && (
+                                  <>
+                                    <span style={{ color: c.textMuted }}>•</span>
+                                    <span>
+                                      {billing.billing_type === 'tokens' ? tp('billing_tokens') :
+                                        billing.billing_type === 'requests' ? '按次计费' :
+                                          billing.billing_type === 'duration' ? tp('billing_duration') : tp('billing_tokens')}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+
+                              {viewMode === 'grid' && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                  {(model.variant_count || 0) > 1 && (
+                                    <span style={{
+                                      fontSize: 11, fontWeight: 500, lineHeight: '18px',
+                                      padding: '0 8px', borderRadius: 10,
+                                      background: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)',
+                                      color: isLight ? '#1f2937' : 'rgba(255,255,255,0.88)',
+                                      border: `1px solid ${isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)'}`,
+                                    }}>
+                                      {model.variant_count} 种定价
+                                    </span>
+                                  )}
+                                  {(() => {
+                                    const validDiscounts = (model.variants || [model])
+                                      .filter(v => v.global_discount_enabled === 1 && v.global_discount !== undefined && v.global_discount > 0 && v.global_discount < 1)
+                                      .map(v => v.global_discount as number);
+                                    if (validDiscounts.length === 0) return null;
+                                    const minDiscount = Math.min(...validDiscounts);
+                                    return (
+                                      <span style={{
+                                        fontSize: 11, fontWeight: 600, lineHeight: '18px',
+                                        padding: '0 8px', borderRadius: 10,
+                                        background: 'linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%)',
+                                        color: '#fff',
+                                        border: 'none',
+                                        boxShadow: '0 2px 4px rgba(255,77,79,0.2)'
+                                      }}>
+                                        {Number((minDiscount * 10).toFixed(1))}折
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
-
-                        {viewMode === 'grid' && model.description && (
-                          <div style={{
-                            fontSize: 12, color: c.text3, lineHeight: 1.5, marginBottom: 10,
-                            overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
-                          }}>
-                            {model.description}
-                          </div>
-                        )}
-
-                        {/* 价格展示区 */}
-                        {model.billing && (
-                          <div style={{
-                            marginBottom: 12,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'flex-end',
-                          }}>
-                            {renderCardPrice(model)}
-                          </div>
-                        )}
-
-                        <div style={{
-                          fontSize: viewMode === 'grid' ? 12 : 13,
-                          color: c.text3,
-                          display: 'flex',
-                          alignItems: 'center',
-                          flexWrap: 'wrap',
-                          gap: viewMode === 'grid' ? 6 : 8,
-                          ...(viewMode === 'grid' ? { marginTop: 'auto' } : {}),
-                        }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            {getTypeIcon(model.type_name)}
-                            {model.type_name}
-                          </span>
-                          {viewMode !== 'grid' && (
-                            <>
-                              <span style={{ color: c.textMuted }}>•</span>
-                              <span>Updated {new Date(model.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                            </>
-                          )}
-
-                          {model.sort_order > 900 && (
-                            <>
-                              <span style={{ color: c.textMuted }}>•</span>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <span style={{ color: '#e3b341' }}>⚡</span>
-                              </span>
-                            </>
-                          )}
-
-                          {model.billing && model.billing.billing_type && (
-                            <>
-                              <span style={{ color: c.textMuted }}>•</span>
-                              <span>
-                                {model.billing.billing_type === 'tokens' ? tp('billing_tokens') :
-                                  model.billing.billing_type === 'requests' ? '按次计费' :
-                                    model.billing.billing_type === 'duration' ? tp('billing_duration') : tp('billing_tokens')}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24, padding: '0 8px' }}>
-                    <Pagination
-                      current={currentPage}
-                      pageSize={pageSize}
-                      total={filteredModels.length}
-                      onChange={(page, size) => {
-                        setCurrentPage(page);
-                        setPageSize(size);
-                      }}
-                      showSizeChanger
-                      pageSizeOptions={['10', '20', '30', '50', '100']}
-                      showTotal={(total) => `共 ${total} 个模型`}
-                      size={screens.xs ? 'small' : undefined}
-                    />
-                  </div>
-                </>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24, padding: '0 8px' }}>
+                      <Pagination
+                        current={currentPage}
+                        pageSize={pageSize}
+                        total={filteredModels.length}
+                        onChange={(page, size) => {
+                          setCurrentPage(page);
+                          setPageSize(size);
+                        }}
+                        showSizeChanger
+                        pageSizeOptions={['10', '20', '30', '50', '100']}
+                        showTotal={(total) => `共 ${total} 个模型`}
+                        size={screens.xs ? 'small' : undefined}
+                      />
+                    </div>
+                  </>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', color: c.textMuted }}>
                     <ShopOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }} />
@@ -1971,6 +2315,43 @@ const ModelMarketplace: React.FC = () => {
       </Layout>
     </>
   );
+};
+
+const translateBillingKey = (key: string): string => {
+  const map: Record<string, string> = {
+    "std": "标准",
+    "pro": "专业",
+    "fast": "极速",
+    "standard": "标准",
+    "ai": "大模型",
+    "text": "文生",
+    "image": "图生",
+    "ref": "视频参考",
+    "on": "有声",
+    "off": "无声",
+    "yes": "含视频",
+    "no": "无视频",
+    "img2img": "图生图",
+    "ref_1_3": "1-3张参考",
+    "ref_4_7": "4-7张参考"
+  };
+  const delimiter = key.includes(' | ') ? ' | ' : '|';
+  return key.split(delimiter)
+    .map(part => {
+      const trimmed = part.trim().toLowerCase();
+      return map[trimmed] || part.trim();
+    })
+    .join(delimiter);
+};
+
+const safeParseJson = (jsonStr: any, fallback: any = {}): any => {
+  if (!jsonStr) return fallback;
+  if (typeof jsonStr !== 'string') return jsonStr;
+  try {
+    return JSON.parse(jsonStr) || fallback;
+  } catch {
+    return fallback;
+  }
 };
 
 export default ModelMarketplace;

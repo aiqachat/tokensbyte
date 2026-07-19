@@ -1,13 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid, Switch, theme, Spin, Dropdown } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Tooltip, Row, Col, Grid, theme, Spin, Dropdown, Progress, Checkbox } from 'antd';
+import AppSwitch from '../../components/AppSwitch';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined, KeyOutlined, CheckOutlined, ArrowLeftOutlined, DollarOutlined, BarChartOutlined, EllipsisOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, SyncOutlined, EyeOutlined, EyeInvisibleOutlined, KeyOutlined, CheckOutlined, ArrowLeftOutlined, DollarOutlined, BarChartOutlined, EllipsisOutlined, PieChartOutlined, InfoCircleOutlined, FileTextOutlined, ClearOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import request from '../../utils/request';
 import { useThemeStore } from '../../store/theme';
+import useSettingsStore from '../../store/settings';
+import useAuthStore from '../../store/auth';
 import type { ApiToken } from '../../types';
 import dayjs from 'dayjs';
+import { getPeriodicUsed, getQuotaRefreshText, hasPeriodicLimits } from './quotaUtils';
+import { resolveTimedisplay } from '../../utils/timedisplay';
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -16,9 +21,14 @@ const Tokens: React.FC = () => {
   const { t } = useTranslation();
   const { token: themeToken } = theme.useToken();
   const { themeMode } = useThemeStore();
+  const { settings, fetchSettings } = useSettingsStore();
+  const userTimezone = useAuthStore((s) => s.user?.timezone);
+  // 与后端令牌热路径一致：用户 timedisplay（个人时区 > 站点默认）
+  const quotaTz = (userTimezone?.trim() || resolveTimedisplay() || settings?.site?.default_timezone || 'Asia/Shanghai');
   const isLight = themeMode === 'light';
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detailRefreshing, setDetailRefreshing] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingToken, setEditingToken] = useState<ApiToken | null>(null);
   const [form] = Form.useForm();
@@ -30,6 +40,11 @@ const Tokens: React.FC = () => {
   const [periodicQuotaEnabled, setPeriodicQuotaEnabled] = useState(false);
   const [ipFilterEnabled, setIpFilterEnabled] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  // 高可用通道确认弹窗状态
+  const [isHAConfirmModalOpen, setIsHAConfirmModalOpen] = useState(false);
+  const [haConfirmDismiss, setHaConfirmDismiss] = useState(false);
+  const [tempValues, setTempValues] = useState<any>(null);
 
   const sectionContainerStyle: React.CSSProperties = {
     marginBottom: '16px',
@@ -62,33 +77,52 @@ const Tokens: React.FC = () => {
   const [revealedKeys, setRevealedKeys] = useState<Record<number, string>>({});
   const [revealLoading, setRevealLoading] = useState(false);
 
+  // 令牌额度使用详情弹窗状态
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedToken, setSelectedToken] = useState<ApiToken | null>(null);
+  const [clearingUsage, setClearingUsage] = useState(false);
+
+  const refreshTokenInList = async (tokenId: number): Promise<ApiToken | null> => {
+    const resp = await (request.get('/tokens') as unknown as Promise<{ data: ApiToken[] }>);
+    setTokens(resp.data);
+    return resp.data.find(t => t.id === tokenId) ?? null;
+  };
+
+  const handleShowDetails = async (record: ApiToken) => {
+    setSelectedToken(record);
+    setIsDetailModalOpen(true);
+    setDetailRefreshing(true);
+    try {
+      const fresh = await refreshTokenInList(record.id);
+      if (fresh) setSelectedToken(fresh);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDetailRefreshing(false);
+    }
+  };
+
+  const handleClearUsage = async () => {
+    if (!selectedToken) return;
+    setClearingUsage(true);
+    try {
+      const updated = await (request.post(`/tokens/${selectedToken.id}/reset-usage`) as unknown as Promise<ApiToken>);
+      setSelectedToken(updated);
+      setTokens(prev => prev.map(t => (t.id === updated.id ? updated : t)));
+      message.success(t('tokens.clear_usage_success', '已清空该令牌的使用额度数据'));
+    } catch (e: any) {
+      message.error(e?.message || t('tokens.clear_usage_failed', '清空失败'));
+    } finally {
+      setClearingUsage(false);
+    }
+  };
+
   const isLocal = window.location.hostname === 'localhost' || /^(127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(window.location.hostname);
   const baseUrl = isLocal
     ? `${window.location.protocol}//${window.location.hostname}:3000`
     : `${window.location.protocol}//${window.location.hostname}`;
 
-  // 智能路由 EP 列表
-  const [routerEPs, setRouterEPs] = useState<{ id: number; name: string; endpoint_id: string; route_rule: string }[]>([]);
-
-  const fetchRouterEPs = async () => {
-    try {
-      const pluginRes = await (request.get('/plugins/active') as Promise<any>);
-      const isActive = pluginRes?.active_plugins?.some((p: any) => p.name === 'router_flow');
-      if (!isActive) {
-        setRouterEPs([]);
-        return;
-      }
-
-      const res = await (request.get('/plugins/router-flow/groups') as Promise<any>);
-      if (res?.groups) {
-        setRouterEPs(
-          res.groups
-            .filter((g: any) => g.is_active === 1 && g.endpoint_id)
-            .map((g: any) => ({ id: g.id, name: g.name, endpoint_id: g.endpoint_id, route_rule: g.route_rule }))
-        );
-      }
-    } catch { /* ignore if plugin not enabled */ }
-  };
+  const [isHAPluginEnabled, setIsHAPluginEnabled] = useState(false);
 
   const fetchTokens = async () => {
     setLoading(true);
@@ -102,8 +136,18 @@ const Tokens: React.FC = () => {
     }
   };
 
+  const fetchPluginsState = async () => {
+    try {
+      const pluginRes = await (request.get('/plugins/active') as Promise<any>);
+      const isActiveHA = pluginRes?.active_plugins?.some((p: any) => p.name === 'high_availability_channel');
+      setIsHAPluginEnabled(!!isActiveHA);
+    } catch { /* ignore */ }
+  };
+
   useEffect(() => {
     fetchTokens();
+    fetchPluginsState();
+    fetchSettings();
   }, []);
 
   const handleCopy = async (key: string, tokenId: number) => {
@@ -140,7 +184,7 @@ const Tokens: React.FC = () => {
     form.resetFields();
     form.setFieldsValue({
       only_playground: false,
-      high_availability: true,
+      high_availability: false,
       daily_quota_limit: -1,
       weekly_quota_limit: -1,
       monthly_quota_limit: -1,
@@ -150,7 +194,6 @@ const Tokens: React.FC = () => {
     setPeriodicQuotaEnabled(false);
     setIpFilterEnabled(false);
     setIsModalVisible(true);
-    fetchRouterEPs(); // 预加载 EP 列表
   };
 
   const handleEdit = (record: ApiToken) => {
@@ -160,10 +203,7 @@ const Tokens: React.FC = () => {
     const hasModels = Array.isArray(models) && models.length > 0;
     setEnableModelFilter(hasModels);
     setLimitQuotaEnabled(record.quota_limit >= 0);
-    const hasPeriodicLimit = (record.daily_quota_limit !== undefined && record.daily_quota_limit > 0) ||
-                             (record.weekly_quota_limit !== undefined && record.weekly_quota_limit > 0) ||
-                             (record.monthly_quota_limit !== undefined && record.monthly_quota_limit > 0);
-    setPeriodicQuotaEnabled(hasPeriodicLimit);
+    setPeriodicQuotaEnabled(hasPeriodicLimits(record));
     const hasIpLimit = record.allowed_ips !== undefined && record.allowed_ips !== null && record.allowed_ips.trim() !== '';
     setIpFilterEnabled(hasIpLimit);
     form.setFieldsValue({
@@ -179,7 +219,6 @@ const Tokens: React.FC = () => {
       allowed_models: Array.isArray(models) ? models.join('\n') : '',
     });
     setIsModalVisible(true);
-    fetchRouterEPs(); // 预加载 EP 列表
   };
 
   const handleDelete = async (id: number) => {
@@ -192,40 +231,52 @@ const Tokens: React.FC = () => {
     }
   };
 
-  const handleSave = async (values: { allowed_models?: string; allowed_ips?: string; [key: string]: unknown }) => {
+  const executeSave = async (formValues: any, shouldDismissHA: boolean) => {
     const data = {
-      ...values,
-      quota_limit: (values.quota_limit === undefined || values.quota_limit === null) ? -1 : values.quota_limit,
-      daily_quota_limit: (values.daily_quota_limit === undefined || values.daily_quota_limit === null) ? -1 : values.daily_quota_limit,
-      weekly_quota_limit: (values.weekly_quota_limit === undefined || values.weekly_quota_limit === null) ? -1 : values.weekly_quota_limit,
-      monthly_quota_limit: (values.monthly_quota_limit === undefined || values.monthly_quota_limit === null) ? -1 : values.monthly_quota_limit,
-      rps_limit: (values.rps_limit === undefined || values.rps_limit === null) ? 0 : values.rps_limit,
-      rpm_limit: (values.rpm_limit === undefined || values.rpm_limit === null) ? 0 : values.rpm_limit,
-      allowed_ips: ipFilterEnabled ? (values.allowed_ips || '') : '',
-      only_playground: values.only_playground ? 1 : 0,
-      high_availability: values.high_availability ? 1 : 0,
+      ...formValues,
+      quota_limit: (formValues.quota_limit === undefined || formValues.quota_limit === null) ? -1 : formValues.quota_limit,
+      daily_quota_limit: (formValues.daily_quota_limit === undefined || formValues.daily_quota_limit === null) ? -1 : formValues.daily_quota_limit,
+      weekly_quota_limit: (formValues.weekly_quota_limit === undefined || formValues.weekly_quota_limit === null) ? -1 : formValues.weekly_quota_limit,
+      monthly_quota_limit: (formValues.monthly_quota_limit === undefined || formValues.monthly_quota_limit === null) ? -1 : formValues.monthly_quota_limit,
+      rps_limit: (formValues.rps_limit === undefined || formValues.rps_limit === null) ? 0 : formValues.rps_limit,
+      rpm_limit: (formValues.rpm_limit === undefined || formValues.rpm_limit === null) ? 0 : formValues.rpm_limit,
+      allowed_ips: ipFilterEnabled ? (formValues.allowed_ips || '') : '',
+      only_playground: formValues.only_playground ? 1 : 0,
+      high_availability: formValues.high_availability ? 1 : 0,
       allowed_models: enableModelFilter
-        ? (values.allowed_models?.split('\n').filter((m: string) => m.trim()) || [])
+        ? (formValues.allowed_models?.split('\n').filter((m: string) => m.trim()) || [])
         : [],
     };
 
     try {
-      if (editingToken) {
-        await request.put(`/tokens/${editingToken.id}`, data);
-        message.success(t('common.success'));
-      } else {
-        await (request as any).post('/tokens', data, { skipErrorHandler: true });
-        message.success(t('common.success'));
+      const res = editingToken
+        ? await (request as any).put(`/tokens/${editingToken.id}`, data, { skipErrorHandler: true })
+        : await (request as any).post('/tokens', data, { skipErrorHandler: true });
+      if (shouldDismissHA) {
+        const tokenId = editingToken?.id ?? res?.id;
+        if (tokenId) localStorage.setItem(`ha_confirm_dismiss_${tokenId}`, 'true');
       }
+      message.success(t('common.success'));
       setIsModalVisible(false);
       fetchTokens();
     } catch (e: any) {
-      // 提取后端错误信息，关闭弹窗并只显示一次
       const serverMsg = e?.response?.data?.error?.message || e?.message || t('tokens.create_failed', '创建失败');
       setIsModalVisible(false);
       message.error(serverMsg);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSave = async (values: { allowed_models?: string; allowed_ips?: string; [key: string]: unknown }) => {
+    const isDismissed = editingToken && localStorage.getItem(`ha_confirm_dismiss_${editingToken.id}`) === 'true';
+
+    if (values.high_availability && !isDismissed) {
+      setTempValues(values);
+      setHaConfirmDismiss(false);
+      setIsHAConfirmModalOpen(true);
+    } else {
+      executeSave(values, false);
     }
   };
 
@@ -349,22 +400,8 @@ const Tokens: React.FC = () => {
       key: 'usage',
       sorter: (a: ApiToken, b: ApiToken) => a.quota_used - b.quota_used,
       render: (record: ApiToken) => {
-        const now = new Date();
-        const pad = (n: number) => n.toString().padStart(2, '0');
-        const nowDay = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-        const nowMonth = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-        
-        // 计算周
-        const janFirst = new Date(now.getFullYear(), 0, 1);
-        const days = Math.floor((now.getTime() - janFirst.getTime()) / (24 * 3600 * 1000));
-        const weekNum = Math.floor((days + janFirst.getDay()) / 7);
-        const nowWeek = `${now.getFullYear()}-${pad(weekNum)}`;
-
-        const dailyUsed = record.last_reset_day === nowDay ? record.daily_quota_used : 0.0;
-        const weeklyUsed = record.last_reset_week === nowWeek ? record.weekly_quota_used : 0.0;
-        const monthlyUsed = record.last_reset_month === nowMonth ? record.monthly_quota_used : 0.0;
-
-        const hasPeriodicLimits = record.daily_quota_limit >= 0.0 || record.weekly_quota_limit >= 0.0 || record.monthly_quota_limit >= 0.0;
+        const { dailyUsed, weeklyUsed, monthlyUsed } = getPeriodicUsed(record, quotaTz);
+        const periodic = hasPeriodicLimits(record);
 
         const periodicTooltipContent = (
           <div style={{ fontSize: '12px', padding: '4px' }}>
@@ -376,14 +413,14 @@ const Tokens: React.FC = () => {
         );
 
         return (
-          <Tooltip title={hasPeriodicLimits ? periodicTooltipContent : null}>
-            <Space direction="vertical" size={2} style={{ cursor: hasPeriodicLimits ? 'pointer' : 'default' }}>
+          <Tooltip title={periodic ? periodicTooltipContent : null}>
+            <Space direction="vertical" size={2} style={{ cursor: periodic ? 'pointer' : 'default' }}>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {t('tokens.used')}: {record.quota_used.toFixed(4)}
               </Text>
               <Text style={{ fontSize: 12 }}>
                 {t('tokens.limit')}: {record.quota_limit < 0 ? t('tokens.unlimited') : record.quota_limit}
-                {hasPeriodicLimits && <span style={{ marginLeft: '4px', color: '#1890ff', fontSize: '10px', fontWeight: 500 }}>[周期限额]</span>}
+                {periodic && <span style={{ marginLeft: '4px', color: '#1890ff', fontSize: '10px', fontWeight: 500 }}>[周期限额]</span>}
               </Text>
             </Space>
           </Tooltip>
@@ -420,6 +457,9 @@ const Tokens: React.FC = () => {
       key: 'actions',
       render: (_: unknown, record: ApiToken) => (
         <Space>
+          <Tooltip title="额度详情">
+            <Button icon={<PieChartOutlined />} onClick={() => handleShowDetails(record)} />
+          </Tooltip>
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Popconfirm title={t('common.confirm_delete')} onConfirm={() => handleDelete(record.id)}>
             <Button icon={<DeleteOutlined />} danger />
@@ -516,9 +556,42 @@ const Tokens: React.FC = () => {
                 </Text>
               </div>
             </div>
-            <Space style={{ alignItems: 'flex-start' }}>
-              <Button icon={<SyncOutlined />} onClick={fetchTokens}>{t('common.refresh')}</Button>
-              <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('tokens.create')}</Button>
+            <Space style={{ alignItems: 'flex-start', gap: '12px' }}>
+              <Button 
+                type="text" 
+                icon={<FileTextOutlined style={{ fontSize: '15px' }} />} 
+                onClick={() => window.open('/docs', '_blank')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: isLight ? '#71717a' : '#a1a1aa',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  padding: '4px 8px',
+                  height: '36px'
+                }}
+              >
+                API 快速入门
+              </Button>
+              <Button 
+                type="primary" 
+                icon={<KeyOutlined style={{ fontSize: '15px' }} />} 
+                onClick={handleAdd}
+                style={{
+                  borderRadius: '6px',
+                  background: isLight ? '#09090b' : '#fafafa',
+                  color: isLight ? '#ffffff' : '#09090b',
+                  border: 'none',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  height: '36px',
+                  padding: '0 16px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                创建 API 令牌
+              </Button>
             </Space>
           </div>
 
@@ -593,6 +666,12 @@ const Tokens: React.FC = () => {
                       menu={{
                         items: [
                           {
+                            key: 'details',
+                            label: '额度详情',
+                            icon: <PieChartOutlined />,
+                            onClick: () => handleShowDetails(record)
+                          },
+                          {
                             key: 'edit',
                             label: '编辑令牌',
                             icon: <EditOutlined />,
@@ -636,7 +715,19 @@ const Tokens: React.FC = () => {
                         <Tag color="default" style={{ margin: 0 }}>{record.is_active ? t('common.active') : t('common.disabled')}</Tag>
                       </CardRow>
                       <CardRow label="可用限额" compact={true}>
-                        <Text style={{ fontSize: 12 }}>{record.quota_limit < 0 ? t('tokens.unlimited') : `${record.quota_used.toFixed(4)} / ${record.quota_limit}`}</Text>
+                        <Space direction="vertical" size={0}>
+                          <Text style={{ fontSize: 12 }}>{record.quota_limit < 0 ? t('tokens.unlimited') : `${record.quota_used.toFixed(4)} / ${record.quota_limit}`}</Text>
+                          {hasPeriodicLimits(record) && (() => {
+                            const { dailyUsed, weeklyUsed, monthlyUsed } = getPeriodicUsed(record, quotaTz);
+                            const parts: string[] = [];
+                            if (record.daily_quota_limit >= 0) parts.push(`日 ${dailyUsed.toFixed(2)}/${record.daily_quota_limit}`);
+                            if (record.weekly_quota_limit >= 0) parts.push(`周 ${weeklyUsed.toFixed(2)}/${record.weekly_quota_limit}`);
+                            if (record.monthly_quota_limit >= 0) parts.push(`月 ${monthlyUsed.toFixed(2)}/${record.monthly_quota_limit}`);
+                            return parts.length > 0 ? (
+                              <Text type="secondary" style={{ fontSize: 11 }}>{parts.join(' · ')}</Text>
+                            ) : null;
+                          })()}
+                        </Space>
                       </CardRow>
                       <CardRow label="使用范围" compact={true}>
                         <Tag color={record.only_playground === 1 ? 'blue' : 'gray'} style={{ fontSize: 11, margin: 0 }}>
@@ -719,6 +810,31 @@ const Tokens: React.FC = () => {
               border-color: ${isLight ? '#09090b' : '#fafafa'} !important;
               box-shadow: 0 0 0 2px ${isLight ? 'rgba(9, 9, 11, 0.1)' : 'rgba(250, 250, 250, 0.15)'} !important;
             }
+            
+            /* 自定义中央弹出动画 */
+            .center-popup-modal .ant-modal-content {
+              animation: centerZoomIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) forwards !important;
+            }
+            @keyframes centerZoomIn {
+              0% {
+                opacity: 0;
+                transform: scale(0.85);
+              }
+              100% {
+                opacity: 1;
+                transform: scale(1);
+              }
+            }
+            .center-popup-modal .ant-modal-close:focus-visible,
+            .center-popup-modal .ant-modal-close:focus,
+            .center-popup-modal .ant-modal-close:hover {
+              outline: none !important;
+              box-shadow: none !important;
+            }
+            .center-popup-modal .ant-modal-header {
+              background: transparent !important;
+              border-bottom: none !important;
+            }
           `}</style>
 
           {/* 返回按钮与辅助信息 */}
@@ -779,7 +895,7 @@ const Tokens: React.FC = () => {
                         { required: true, message: t('tokens.name_required', '请输入令牌名称') },
                         { max: 24, message: t('tokens.name_max_length', '令牌名称不能超过 24 个字符') },
                         {
-                          pattern: /^[\p{L}\p{N}\s]+$/u,
+                          pattern: /^[\p{L}\p{N}\s_-]+$/u,
                           message: t('tokens.name_invalid_chars', '不支持标点符号'),
                         }
                       ]} 
@@ -826,29 +942,31 @@ const Tokens: React.FC = () => {
                 </Row>
 
                 {/* 高可用通道开关 */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  boxSizing: 'border-box',
-                  padding: '8px 0',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingRight: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Text style={{ fontSize: '14px', fontWeight: 500, color: isLight ? '#09090b' : '#fafafa' }}>{t('tokens.high_availability_label', '高可用通道')}</Text>
-                      <Tooltip title={t('tokens.high_availability_tooltip', '开启后，当调用物理渠道遇到网关错误、5xx、429 等故障时，系统会自动重试并秒级切换到同虚拟组内的备选渠道。')}>
-                        <span style={{ cursor: 'pointer', color: isLight ? '#09090b' : '#fafafa', fontSize: '13px' }}>ⓘ</span>
-                      </Tooltip>
+                {isHAPluginEnabled && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    boxSizing: 'border-box',
+                    padding: '8px 0',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingRight: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Text style={{ fontSize: '14px', fontWeight: 500, color: isLight ? '#09090b' : '#fafafa' }}>{t('tokens.high_availability_label', '高可用通道')}</Text>
+                        <Tooltip title={t('tokens.high_availability_tooltip', '开启后，当调用物理渠道遇到网关错误、5xx、429 等故障时，系统会自动重试并秒级切换到同虚拟组内的备选渠道。')}>
+                          <span style={{ cursor: 'pointer', color: isLight ? '#09090b' : '#fafafa', fontSize: '13px' }}>ⓘ</span>
+                        </Tooltip>
+                      </div>
+                      <Text style={{ fontSize: '13px', lineHeight: '1.4', color: isLight ? '#71717a' : '#a1a1aa' }}>
+                        仅针对管理后台分组里已开启的高可用渠道生效，普通渠道无自动切换功能。
+                      </Text>
                     </div>
-                    <Text style={{ fontSize: '13px', lineHeight: '1.4', color: isLight ? '#71717a' : '#a1a1aa' }}>
-                      故障自动无感 Failover 转移
-                    </Text>
+                    <Form.Item name="high_availability" valuePropName="checked" noStyle>
+                      <AppSwitch />
+                    </Form.Item>
                   </div>
-                  <Form.Item name="high_availability" valuePropName="checked" noStyle>
-                    <Switch />
-                  </Form.Item>
-                </div>
+                )}
 
                 {/* 限制总额度开关 */}
                 <div style={{
@@ -865,7 +983,7 @@ const Tokens: React.FC = () => {
                       {limitQuotaEnabled ? t('tokens.limited_quota_desc', '额度消耗完令牌失效') : t('tokens.unlimited_quota_desc', '不限制使用额度')}
                     </Text>
                   </div>
-                  <Switch
+                  <AppSwitch
                     checked={limitQuotaEnabled}
                     onChange={(checked) => {
                       setLimitQuotaEnabled(checked);
@@ -923,7 +1041,7 @@ const Tokens: React.FC = () => {
                       按日、周、月循环控制额度消耗上限
                     </Text>
                   </div>
-                  <Switch
+                  <AppSwitch
                     checked={periodicQuotaEnabled}
                     onChange={(checked) => {
                       setPeriodicQuotaEnabled(checked);
@@ -1035,7 +1153,7 @@ const Tokens: React.FC = () => {
                     </Text>
                   </div>
                   <Form.Item name="only_playground" valuePropName="checked" noStyle>
-                    <Switch />
+                    <AppSwitch />
                   </Form.Item>
                 </div>
               </div>
@@ -1058,14 +1176,12 @@ const Tokens: React.FC = () => {
                       {enableModelFilter ? t('tokens.models_enabled_desc', '仅允许请求下方指定的模型') : t('tokens.models_disabled_desc', '全站模型都可以使用，一般不需要修改')}
                     </Text>
                   </div>
-                  <Switch
+                  <AppSwitch
                     checked={enableModelFilter}
                     onChange={(checked) => {
                       setEnableModelFilter(checked);
                       if (!checked) {
                         form.setFieldsValue({ allowed_models: '' });
-                      } else {
-                        fetchRouterEPs();
                       }
                     }}
                   />
@@ -1077,81 +1193,7 @@ const Tokens: React.FC = () => {
                     marginBottom: '0px',
                     marginTop: '16px'
                   }}>
-                    {/* 智能路由 EP 快速选择 */}
-                    {routerEPs.length > 0 && (
-                      <div style={{
-                        background: isLight ? '#fafafa' : '#18181b',
-                        border: `1px solid ${isLight ? '#e4e4e7' : '#27272a'}`,
-                        borderRadius: '6px',
-                        padding: '12px',
-                        marginBottom: 12,
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                          <span style={{ fontSize: 14 }}>🧭</span>
-                          <Text style={{ fontSize: 13, fontWeight: 600, color: isLight ? '#09090b' : '#fafafa' }}>
-                            {t('tokens.smart_router_title', '智能路由推理节点')}
-                          </Text>
-                          <Text style={{ fontSize: 12, color: isLight ? '#71717a' : '#a1a1aa' }}>
-                            {t('tokens.smart_router_desc', '点击可快速添加到模型列表')}
-                          </Text>
-                        </div>
-                        <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.allowed_models !== currentValues.allowed_models}>
-                          {({ getFieldValue }) => {
-                            const allowedModelsText = getFieldValue('allowed_models') || '';
-                            const currentModels = allowedModelsText.split('\n').filter((m: string) => m.trim());
-                            return (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                {routerEPs.map(ep => {
-                                  const isAdded = currentModels.includes(ep.endpoint_id);
-                                  return (
-                                    <Tag
-                                      key={ep.id}
-                                      style={{
-                                        cursor: 'pointer',
-                                        borderRadius: '4px',
-                                        padding: '3px 10px',
-                                        fontSize: 13,
-                                        fontFamily: 'monospace',
-                                        background: isAdded 
-                                          ? (isLight ? '#09090b' : '#fafafa') 
-                                          : (isLight ? '#f4f4f5' : '#27272a'),
-                                        border: `1px solid ${
-                                          isAdded 
-                                            ? (isLight ? '#09090b' : '#fafafa') 
-                                            : (isLight ? '#e4e4e7' : '#27272a')
-                                        }`,
-                                        color: isAdded 
-                                          ? (isLight ? '#ffffff' : '#09090b') 
-                                          : (isLight ? '#71717a' : '#a1a1aa'),
-                                        margin: 0,
-                                        transition: 'all 0.15s ease',
-                                      }}
-                                      onClick={() => {
-                                        const current = form.getFieldValue('allowed_models') || '';
-                                        const lines = current.split('\n').filter((m: string) => m.trim());
-                                        if (isAdded) {
-                                          const newLines = lines.filter((m: string) => m !== ep.endpoint_id);
-                                          form.setFieldsValue({ allowed_models: newLines.join('\n') });
-                                        } else {
-                                          lines.push(ep.endpoint_id);
-                                          form.setFieldsValue({ allowed_models: lines.join('\n') });
-                                        }
-                                      }}
-                                    >
-                                      {isAdded && <CheckOutlined style={{ marginRight: 4, fontSize: 10 }} />}
-                                      {ep.endpoint_id}
-                                      <span style={{ color: isAdded ? (isLight ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)') : (isLight ? '#a1a1aa' : '#71717a'), marginLeft: 6, fontFamily: 'inherit', fontSize: 12 }}>
-                                        {ep.name}
-                                      </span>
-                                    </Tag>
-                                  );
-                                })}
-                              </div>
-                            );
-                          }}
-                        </Form.Item>
-                      </div>
-                    )}
+
                     <Form.Item
                       name="allowed_models"
                       style={{ marginBottom: 0 }}
@@ -1198,7 +1240,7 @@ const Tokens: React.FC = () => {
                       限制允许使用该令牌调用的客户端 IP 范围
                     </Text>
                   </div>
-                  <Switch
+                  <AppSwitch
                     checked={ipFilterEnabled}
                     onChange={(checked) => {
                       setIpFilterEnabled(checked);
@@ -1302,7 +1344,283 @@ const Tokens: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 额度使用详情弹窗 */}
+      <Modal
+        title={
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px', 
+            fontSize: '16px', 
+            fontWeight: 600,
+            color: isLight ? '#09090b' : '#fafafa',
+            paddingBottom: '4px'
+          }}>
+            <span style={{ 
+              fontFamily: 'monospace', 
+              background: isLight ? '#f4f4f5' : '#18181b', 
+              padding: '2px 8px', 
+              borderRadius: '6px', 
+              fontSize: '13px', 
+              fontWeight: 500,
+              border: `1px solid ${isLight ? '#e4e4e7' : '#27272a'}`,
+              color: isLight ? '#27272a' : '#e4e4e7' 
+            }}>
+              {selectedToken?.name}
+            </span>
+            <span>额度详情</span>
+            <Tooltip title="打开时从服务端拉取最新用量；周期按站点默认时区统计（周重置为周日 00:00）">
+              <InfoCircleOutlined style={{ fontSize: '13px', color: isLight ? '#71717a' : '#a1a1aa', cursor: 'pointer', marginLeft: '2px' }} />
+            </Tooltip>
+            {detailRefreshing && <SyncOutlined spin style={{ fontSize: 13, color: isLight ? '#71717a' : '#a1a1aa' }} />}
+          </div>
+        }
+        open={isDetailModalOpen}
+        onCancel={() => setIsDetailModalOpen(false)}
+        footer={null}
+        destroyOnClose
+        centered
+        width={500}
+        transitionName=""
+        className="center-popup-modal"
+        styles={{
+          body: {
+            background: isLight ? '#ffffff' : '#09090b',
+            border: `1px solid ${isLight ? '#e4e4e7' : '#27272a'}`,
+            borderRadius: '12px',
+            padding: '24px',
+          }
+        }}
+      >
+        <div style={{ 
+          marginTop: '16px', 
+          display: 'flex', 
+          flexDirection: 'column',
+          background: isLight ? '#fafafa' : '#141414',
+          border: `1px solid ${isLight ? '#e4e4e7' : '#27272a'}`,
+          borderRadius: '10px',
+          padding: '0 20px',
+          boxSizing: 'border-box'
+        }}>
+          {(() => {
+            if (!selectedToken) return null;
+
+            const { dailyUsed, weeklyUsed, monthlyUsed } = getPeriodicUsed(selectedToken, quotaTz);
+
+            const items = [];
+            const totalItems = 1 + 
+              (selectedToken.daily_quota_limit >= 0 ? 1 : 0) + 
+              (selectedToken.weekly_quota_limit >= 0 ? 1 : 0) + 
+              (selectedToken.monthly_quota_limit >= 0 ? 1 : 0);
+            
+            let count = 0;
+
+            // 1. 总额度
+            count++;
+            items.push(
+              <QuotaProgressItem
+                key="total"
+                label="总额度限制"
+                used={selectedToken.quota_used}
+                limit={selectedToken.quota_limit}
+                isLight={isLight}
+                isLast={count === totalItems}
+              />
+            );
+
+            // 2. 日额度
+            if (selectedToken.daily_quota_limit >= 0) {
+              count++;
+              items.push(
+                <QuotaProgressItem
+                  key="daily"
+                  label="日额度限制"
+                  used={dailyUsed}
+                  limit={selectedToken.daily_quota_limit}
+                  refreshText={getQuotaRefreshText('day', quotaTz)}
+                  isLight={isLight}
+                  isLast={count === totalItems}
+                />
+              );
+            }
+
+            // 3. 周额度
+            if (selectedToken.weekly_quota_limit >= 0) {
+              count++;
+              items.push(
+                <QuotaProgressItem
+                  key="weekly"
+                  label="周额度限制"
+                  used={weeklyUsed}
+                  limit={selectedToken.weekly_quota_limit}
+                  refreshText={getQuotaRefreshText('week', quotaTz)}
+                  isLight={isLight}
+                  isLast={count === totalItems}
+                />
+              );
+            }
+
+            // 4. 月额度
+            if (selectedToken.monthly_quota_limit >= 0) {
+              count++;
+              items.push(
+                <QuotaProgressItem
+                  key="monthly"
+                  label="月额度限制"
+                  used={monthlyUsed}
+                  limit={selectedToken.monthly_quota_limit}
+                  refreshText={getQuotaRefreshText('month', quotaTz)}
+                  isLight={isLight}
+                  isLast={count === totalItems}
+                />
+              );
+            }
+
+            return items;
+          })()}
+        </div>
+
+        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+          <Popconfirm
+            title={t('tokens.clear_usage_confirm', '确认清空该令牌的已用额度数据？')}
+            description={t('tokens.clear_usage_confirm_desc', '将重置总额度与日/周/月已用量为 0，不影响额度上限与账户余额。')}
+            onConfirm={handleClearUsage}
+            okText={t('common.confirm', '确认')}
+            cancelText={t('common.cancel', '取消')}
+            okButtonProps={{ danger: true, loading: clearingUsage }}
+          >
+            <Button
+              danger
+              icon={<ClearOutlined />}
+              loading={clearingUsage}
+              disabled={!selectedToken}
+            >
+              {t('tokens.clear_usage', '清空使用额度')}
+            </Button>
+          </Popconfirm>
+        </div>
+      </Modal>
+
+      {/* 开启高可用通道确认弹窗 */}
+      <Modal
+        title="开启高可用通道确认"
+        open={isHAConfirmModalOpen}
+        onCancel={() => {
+          setIsHAConfirmModalOpen(false);
+          setSaving(false);
+        }}
+        onOk={() => {
+          setIsHAConfirmModalOpen(false);
+          executeSave(tempValues, haConfirmDismiss);
+        }}
+        okText="确认"
+        cancelText="取消"
+      >
+        <div style={{ marginTop: '12px' }}>
+          <p style={{ margin: 0, lineHeight: '1.6', fontSize: '14px', color: isLight ? '#3f3f46' : '#d4d4d8' }}>
+            高可用通道功能，使用中遇到上游不稳定的模型会自动切换稳定上游计费可能会受上游渠道不同费用会短暂增加，确认是否开启
+          </p>
+          <div style={{ marginTop: '16px' }}>
+            <Checkbox checked={haConfirmDismiss} onChange={(e) => setHaConfirmDismiss(e.target.checked)}>
+              不再提示（仅针对当前令牌）
+            </Checkbox>
+          </div>
+        </div>
+      </Modal>
     </Card>
+  );
+};
+
+// 额度详情的单项进度条组件
+const QuotaProgressItem: React.FC<{
+  label: string;
+  used: number;
+  limit: number;
+  refreshText?: string;
+  isLight: boolean;
+  isLast: boolean;
+}> = ({ label, used, limit, refreshText, isLight, isLast }) => {
+  const isUnlimited = limit < 0;
+  const percent = isUnlimited ? 0 : Math.min(100, (used / limit) * 100);
+  
+  // 决定进度条状态颜色
+  let strokeColor = '#22c55e'; // 绿色
+  if (!isUnlimited) {
+    if (percent >= 90) {
+      strokeColor = '#ef4444'; // 90% 以上红色
+    } else if (percent >= 70) {
+      strokeColor = '#eab308'; // 70% - 90% 黄色
+    }
+  }
+
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '20px 0',
+      borderBottom: isLast ? 'none' : `1px solid ${isLight ? '#e4e4e7' : '#27272a'}`,
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, paddingRight: '16px' }}>
+        <Text style={{ 
+          fontSize: '14px', 
+          fontWeight: 600, 
+          color: isLight ? '#09090b' : '#fafafa' 
+        }}>
+          {label}
+        </Text>
+        
+        {/* 数据层级可视化排版 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+          <span style={{ fontSize: '11px', color: isLight ? '#71717a' : '#a1a1aa', fontWeight: 500 }}>已使用</span>
+          <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace', color: isLight ? '#09090b' : '#fafafa' }}>
+            {used.toFixed(4)}
+          </span>
+          <span style={{ fontSize: '12px', color: isLight ? '#e4e4e7' : '#27272a' }}>/</span>
+          <span style={{ fontSize: '11px', color: isLight ? '#71717a' : '#a1a1aa', fontWeight: 500 }}>限额</span>
+          <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace', color: isLight ? '#09090b' : '#fafafa' }}>
+            {isUnlimited ? '无限' : limit.toFixed(4)}
+          </span>
+        </div>
+
+        {/* 刷新倒计时排版 */}
+        {refreshText && (
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '4px', 
+            marginTop: '6px', 
+            fontSize: '11px', 
+            color: isLight ? '#71717a' : '#a1a1aa'
+          }}>
+            <SyncOutlined spin style={{ fontSize: '10px', color: '#22c55e' }} />
+            <span>重置倒计时：</span>
+            <span style={{ fontWeight: 500, color: isLight ? '#09090b' : '#fafafa' }}>{refreshText}</span>
+          </div>
+        )}
+      </div>
+      
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+        <Text style={{ 
+          fontSize: '15px', 
+          fontWeight: 700, 
+          fontFamily: 'monospace',
+          color: isLight ? '#09090b' : '#fafafa' 
+        }}>
+          {isUnlimited ? '∞' : `${Math.round(percent)}%`}
+        </Text>
+        <Progress 
+          type="circle" 
+          percent={isUnlimited ? 100 : percent} 
+          width={36} 
+          strokeWidth={8}
+          strokeColor={isUnlimited ? '#3b82f6' : strokeColor} // 蓝/绿/黄/红
+          trailColor={isLight ? '#e4e4e7' : '#27272a'}
+          showInfo={false}
+        />
+      </div>
+    </div>
   );
 };
 

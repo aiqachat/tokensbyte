@@ -23,7 +23,15 @@ const AdminLogin: React.FC = () => {
   const [glitch, setGlitch] = useState(false);
 
   const navigate = useNavigate();
-  const { setToken, setUser } = useAuthStore();
+  const { token, user, setToken, setUser } = useAuthStore();
+
+  // 如果管理员已登录，直接跳转到控制台页面
+  useEffect(() => {
+    if (token && user?.role === 'admin') {
+      const adminPath = localStorage.getItem('tokensbyte_admin_path') || 'admin1688';
+      navigate(`/${adminPath}/dashboard`, { replace: true });
+    }
+  }, [token, user, navigate]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -47,7 +55,8 @@ const AdminLogin: React.FC = () => {
       setToken(token);
       setUser(user);
       message.success(t('auth.admin_success') || 'AUTHENTICATION SUCCESSFUL. WELCOME, OPERATOR.');
-      navigate('/admin0755/dashboard');
+      const adminPath = localStorage.getItem('tokensbyte_admin_path') || 'admin1688';
+      navigate(`/${adminPath}/dashboard`);
     } catch (error) {
       console.error(error);
       const axiosError = error as AxiosError<{ error: { message: string } }>;

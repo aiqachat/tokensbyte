@@ -10,7 +10,7 @@ interface Props {
 const TextNodeContent: React.FC<Props> = React.memo(({ resultData }) => {
   return (
     <div style={{ padding: 16, overflowY: 'auto', width: '100%', height: '100%' }}>
-      <pre style={{ margin: 0, color: 'rgba(255,255,255,0.85)', whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+      <pre style={{ margin: 0, color: 'rgba(255,255,255,0.85)', whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: '13px' }}>
         {resultData?.choices?.[0]?.message?.content || JSON.stringify(resultData, null, 2)}
       </pre>
     </div>

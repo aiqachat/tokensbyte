@@ -1,5 +1,5 @@
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use argon2::password_hash::SaltString;
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String,        // user id
+    pub sub: String, // user id
     pub username: String,
     pub role: String,
     pub exp: usize,
@@ -81,7 +81,10 @@ pub fn generate_api_key() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
     let bytes: Vec<u8> = (0..32).map(|_| rng.gen()).collect();
-    format!("sk-{}", hex::encode(&bytes).chars().take(48).collect::<String>())
+    format!(
+        "sk-{}",
+        hex::encode(&bytes).chars().take(48).collect::<String>()
+    )
 }
 
 // Simple hex encoding since we don't want to add another dep
@@ -90,4 +93,3 @@ mod hex {
         bytes.iter().map(|b| format!("{:02x}", b)).collect()
     }
 }
-

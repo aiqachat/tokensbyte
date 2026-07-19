@@ -1,21 +1,29 @@
-use axum::{
-    extract::{Query, State, Extension},
-    Json,
-    response::{IntoResponse, Response},
-};
-use axum::http::{header, StatusCode};
-use std::sync::Arc;
-use crate::AppState;
+use crate::api::date_helper;
 use crate::auth;
-use crate::models::{RequestLog, LogQuery, LogListResponse};
-use crate::error::{AppResult, AppError};
+use crate::error::{AppError, AppResult};
+use crate::models::{LogDetailContent, LogListResponse, LogQuery, RequestLog};
+use crate::AppState;
+use axum::extract::Path;
+use axum::http::{header, StatusCode};
+use axum::{
+    extract::{Extension, Query, State},
+    response::{IntoResponse, Response},
+    Json,
+};
+use std::sync::Arc;
 
-/// 构建使用日志的公共 WHERE 子句与绑定参数
-fn build_log_where(claims: &auth::Claims, query: &LogQuery) -> (String, Vec<String>) {
+pub(crate) const SQL_VISION_ACTION_FILTER: &str = " AND (l.action_type = '图片' OR l.action_type = '视频' OR l.action_type = '视频增强' OR l.action_type = '视觉模型' OR l.action_type = '视觉')";
+
+/// WHERE 只引用 `logs l`；跨表条件用 EXISTS，COUNT/stats 无需 JOIN。
+fn build_log_where(
+    claims: &auth::Claims,
+    query: &LogQuery,
+    allowed_target_user: bool,
+) -> (String, Vec<String>) {
     let mut sql = " WHERE 1=1".to_string();
     let mut binds: Vec<String> = Vec::new();
 
-    if claims.role != "admin" {
+    if claims.role != "admin" && !allowed_target_user {
         sql.push_str(" AND l.user_id = ?");
         binds.push(claims.sub.clone());
     } else if let Some(ref user_id) = query.user_id {
@@ -28,7 +36,8 @@ fn build_log_where(claims: &auth::Claims, query: &LogQuery) -> (String, Vec<Stri
     }
 
     if let Some(ref uid) = query.uid {
-        sql.push_str(" AND u.uid = ?");
+        // 等价于原 LEFT JOIN users + u.uid = ?
+        sql.push_str(" AND EXISTS (SELECT 1 FROM users xu WHERE xu.id = l.user_id AND xu.uid = ?)");
         binds.push(uid.clone());
     }
 
@@ -44,7 +53,10 @@ fn build_log_where(claims: &auth::Claims, query: &LogQuery) -> (String, Vec<Stri
     }
 
     if let Some(ref aid) = query.channel_group_aid {
-        sql.push_str(" AND c.group_aid = ?");
+        // 等价于原 LEFT JOIN channels + c.group_aid = ?
+        sql.push_str(
+            " AND EXISTS (SELECT 1 FROM channels xc WHERE xc.id = l.channel_id AND xc.group_aid = ?)",
+        );
         binds.push(aid.clone());
     }
 
@@ -57,14 +69,10 @@ fn build_log_where(claims: &auth::Claims, query: &LogQuery) -> (String, Vec<Stri
     }
 
     if let Some(ref s) = query.start_date {
-        sql.push_str(" AND l.created_at::timestamptz >= ?::timestamptz");
-        let start_str = if s.contains('T') { s.clone() } else { format!("{} 00:00:00+08:00", s) };
-        binds.push(start_str);
+        push_created_at_bound(&mut sql, &mut binds, s, false);
     }
     if let Some(ref e) = query.end_date {
-        sql.push_str(" AND l.created_at::timestamptz <= ?::timestamptz");
-        let end_str = if e.contains('T') { e.clone() } else { format!("{} 23:59:59+08:00", e) };
-        binds.push(end_str);
+        push_created_at_bound(&mut sql, &mut binds, e, true);
     }
 
     if let Some(ref ep) = query.router_ep {
@@ -76,7 +84,7 @@ fn build_log_where(claims: &auth::Claims, query: &LogQuery) -> (String, Vec<Stri
     if let Some(ref action_type) = query.action_type {
         if !action_type.is_empty() {
             if action_type == "视觉模型" || action_type == "vision" || action_type == "视觉" {
-                sql.push_str(" AND (l.action_type = '图片' OR l.action_type = '视频' OR l.action_type = '视觉模型' OR l.action_type = '视觉')");
+                sql.push_str(SQL_VISION_ACTION_FILTER);
             } else {
                 sql.push_str(" AND l.action_type = ?");
                 binds.push(action_type.clone());
@@ -93,12 +101,148 @@ fn build_log_where(claims: &auth::Claims, query: &LogQuery) -> (String, Vec<Stri
 
     if let Some(ref token_kid) = query.token_kid {
         if !token_kid.is_empty() {
-            sql.push_str(" AND t.kid = ?");
+            // 等价于原 LEFT JOIN api_tokens + t.kid = ?
+            sql.push_str(
+                " AND EXISTS (SELECT 1 FROM api_tokens xt WHERE xt.id = l.token_id AND xt.kid = ?)",
+            );
             binds.push(token_kid.clone());
         }
     }
 
+    if let Some(ref task_id) = query.task_id {
+        if !task_id.is_empty() {
+            sql.push_str(" AND l.task_id = ?");
+            binds.push(task_id.clone());
+        }
+    }
+
+    if let Some(ref keyword) = query.search_keyword {
+        if !keyword.is_empty() {
+            sql.push_str(" AND (l.log_id = ? OR l.task_id = ?)");
+            binds.push(keyword.clone());
+            binds.push(keyword.clone());
+        }
+    }
+
     (sql, binds)
+}
+
+/// 按 timestamptz 列做范围过滤（列已为 TIMESTAMPTZ，勿再对列做 ::timestamptz）
+pub(crate) fn push_created_at_bound(
+    sql: &mut String,
+    binds: &mut Vec<String>,
+    raw: &str,
+    is_end: bool,
+) {
+    let (normalized, _bound) = date_helper::parse_and_get_bounds(raw, is_end);
+    if is_end {
+        sql.push_str(" AND l.created_at <= ?::timestamptz");
+    } else {
+        sql.push_str(" AND l.created_at >= ?::timestamptz");
+    }
+    binds.push(normalized);
+}
+
+const LOGS_LIST_JOINS: &str = " LEFT JOIN channels c ON l.channel_id = c.id \
+      LEFT JOIN channel_configs cc ON l.channel_config_id = cc.id \
+      LEFT JOIN users u ON l.user_id = u.id \
+      LEFT JOIN user_levels ul ON u.user_group = ul.group_key \
+      LEFT JOIN api_tokens t ON l.token_id = t.id";
+
+const LOGS_EXPORT_JOINS: &str = " LEFT JOIN channels c ON l.channel_id = c.id \
+         LEFT JOIN channel_configs cc ON l.channel_config_id = cc.id \
+         LEFT JOIN users u ON l.user_id = u.id";
+
+/// 列表查询刻意排除 request/response 等大 TEXT，展开时走 get_log_detail
+const LOGS_LIST_SELECT: &str = "SELECT l.id, l.log_id, l.user_id, l.channel_id, l.token_id, l.model, \
+         l.prompt_tokens, l.completion_tokens, l.cached_tokens, l.cost, l.latency_ms, \
+         l.status_code, l.endpoint, l.error_message, l.upstream_url, \
+         NULL::text AS request_content, NULL::text AS response_content, \
+         NULL::text AS post_response, NULL::text AS upstream_req_content, \
+         l.is_stream, l.billing_detail, l.billing_pid, l.forward_eid, \
+         NULL::text AS billing_features, l.pre_deduct_gift, l.plugin_tag, \
+         l.action_type, l.is_completed, l.channel_config_id, l.task_id, l.created_at, \
+         c.group_aid AS channel_group_aid, c.name AS channel_name, c.provider_type AS channel_provider_type, \
+         cc.name AS sub_channel_name, cc.yid AS yid, \
+         COALESCE(u.nickname, u.username) AS user_nickname, \
+         u.user_group, ul.name AS user_level_name, u.uid AS user_uid, \
+         t.name AS token_name, t.kid AS token_kid";
+
+fn append_default_stats_window(where_clause: &str, binds: &[String]) -> (String, Vec<String>) {
+    let mut sql = where_clause.to_string();
+    let mut sb = binds.to_vec();
+    let thirty_days_ago = (chrono::Utc::now() - chrono::Duration::days(30))
+        .format("%Y-%m-%d")
+        .to_string();
+    push_created_at_bound(&mut sql, &mut sb, &thirty_days_ago, false);
+    (sql, sb)
+}
+
+pub(crate) async fn lookup_user_id(
+    db: &crate::db::Database,
+    key: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        &db.format_query("SELECT id FROM users WHERE uid = ? OR id = ? OR username = ?"),
+    )
+    .bind(key)
+    .bind(key)
+    .bind(key)
+    .fetch_optional(&db.pool)
+    .await
+}
+
+/// 解析用户标识；找不到时用占位，使后续 WHERE 安全返回空集
+pub(crate) async fn resolve_user_filter(
+    db: &crate::db::Database,
+    key: &str,
+) -> Result<String, sqlx::Error> {
+    Ok(lookup_user_id(db, key)
+        .await?
+        .unwrap_or_else(|| "NOT_FOUND_USER".to_string()))
+}
+
+pub(crate) fn summarize_restricted_billing(detail: &str) -> String {
+    if detail.contains("失败") {
+        "失败".to_string()
+    } else if detail.contains("冻结") {
+        "冻结".to_string()
+    } else {
+        "成功".to_string()
+    }
+}
+
+pub(crate) async fn fetch_logs_count(
+    db: &crate::db::Database,
+    where_clause: &str,
+    binds: &[String],
+) -> Result<i64, sqlx::Error> {
+    let sql = db.format_query(&format!("SELECT COUNT(*) FROM logs l{}", where_clause));
+    let mut q = sqlx::query_scalar::<_, i64>(&sql);
+    for v in binds {
+        q = q.bind(v);
+    }
+    q.fetch_one(&db.pool).await
+}
+
+async fn fetch_logs_stats(
+    db: &crate::db::Database,
+    where_clause: &str,
+    binds: &[String],
+) -> (f64, i64, i64, f64) {
+    let sql = db.format_query(&format!(
+        "SELECT COALESCE(SUM(l.cost), 0.0), \
+         COUNT(CASE WHEN l.status_code >= 200 AND l.status_code < 400 THEN 1 END), \
+         COUNT(CASE WHEN l.status_code >= 400 OR l.status_code < 200 THEN 1 END), \
+         COALESCE(SUM(l.pre_deduct_gift), 0.0) \
+         FROM logs l{}",
+        where_clause
+    ));
+    let mut q = sqlx::query_as::<_, (f64, i64, i64, f64)>(&sql);
+    for v in binds {
+        q = q.bind(v);
+    }
+    q.fetch_one(&db.pool).await.unwrap_or((0.0, 0, 0, 0.0))
 }
 
 pub async fn list_logs(
@@ -111,96 +255,110 @@ pub async fn list_logs(
     let offset = (page - 1) * per_page;
 
     let mut q = query.clone();
+    let mut allowed_target_user = false;
+
     if claims.role == "admin" {
+        allowed_target_user = true;
         if let Some(ref user_id) = q.user_id {
             if user_id != "unknown" {
-                let resolved: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM users WHERE uid = ? OR id = ? OR username = ?"))
-                    .bind(user_id)
-                    .bind(user_id)
-                    .bind(user_id)
-                    .fetch_optional(&state.db.pool)
-                    .await?;
-                if let Some(uuid) = resolved {
-                    q.user_id = Some(uuid);
-                } else {
-                    q.user_id = Some("NOT_FOUND_USER".to_string());
-                }
+                q.user_id = Some(resolve_user_filter(&state.db, user_id).await?);
             }
+        }
+    } else if let Some(ref target_user_id) = q.user_id {
+        let my_uid: Option<String> =
+            sqlx::query_scalar(&state.db.format_query("SELECT uid FROM users WHERE id = ?"))
+                .bind(&claims.sub)
+                .fetch_optional(&state.db.pool)
+                .await?;
+        let my_uid = my_uid.unwrap_or_default();
+
+        if let Some(target_uuid) = lookup_user_id(&state.db, target_user_id).await? {
+            let is_referral: bool = sqlx::query_scalar(
+                &state.db.format_query(
+                    "SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND (referred_by = ? OR referred_by = ?))",
+                ),
+            )
+            .bind(&target_uuid)
+            .bind(&claims.sub)
+            .bind(&my_uid)
+            .fetch_one(&state.db.pool)
+            .await?;
+
+            if is_referral {
+                allowed_target_user = true;
+                q.user_id = Some(target_uuid);
+            } else {
+                q.user_id = None;
+            }
+        } else {
+            q.user_id = None;
         }
     }
 
-    let (where_clause, binds) = build_log_where(&claims, &q);
+    let (where_clause, binds) = build_log_where(&claims, &q, allowed_target_user);
 
-    let base_select = "SELECT l.*, \
-        c.group_aid as channel_group_aid, c.name as channel_name, \
-        COALESCE(u.nickname, u.username) as user_nickname, \
-        u.user_group, \
-        ul.name as user_level_name, \
-        u.uid as user_uid, \
-        t.name as token_name, \
-        t.kid as token_kid \
-        FROM logs l \
-        LEFT JOIN channels c ON l.channel_id = c.id \
-        LEFT JOIN users u ON l.user_id = u.id \
-        LEFT JOIN user_levels ul ON u.user_group = ul.group_key \
-        LEFT JOIN api_tokens t ON l.token_id = t.id";
-
-    let full_sql = format!("{}{}", base_select, where_clause);
-
-    let count_sql = if let Some(from_idx) = full_sql.find("FROM logs") {
-        format!("SELECT COUNT(*) {}", &full_sql[from_idx..])
+    // 无 start_date 时汇总默认近 30 天，避免全历史扫描
+    let stats_owned = if query.start_date.is_none() {
+        Some(append_default_stats_window(&where_clause, &binds))
     } else {
-        full_sql.replace("SELECT l.*", "SELECT COUNT(*)")
+        None
     };
-    let count_query_str = state.db.format_query(&count_sql);
-    let mut count_q = sqlx::query_scalar::<_, i64>(&count_query_str);
-    for val in &binds {
-        count_q = count_q.bind(val);
-    }
-    let total = count_q.fetch_one(&state.db.pool).await?;
+    let (stats_where, stats_binds) = match &stats_owned {
+        Some((w, b)) => (w.as_str(), b.as_slice()),
+        None => (where_clause.as_str(), binds.as_slice()),
+    };
 
-    let data_sql = format!("{} ORDER BY l.created_at DESC LIMIT {} OFFSET {}", full_sql, per_page, offset);
-    let logs_query_str = state.db.format_query(&data_sql);
-    let mut logs_q = sqlx::query_as::<_, RequestLog>(&logs_query_str);
-    for val in &binds {
-        logs_q = logs_q.bind(val);
-    }
-    let mut logs = logs_q.fetch_all(&state.db.pool).await?;
+    let data_sql = state.db.format_query(&format!(
+        "{LOGS_LIST_SELECT} FROM logs l{LOGS_LIST_JOINS}{where_clause} \
+         ORDER BY l.created_at DESC LIMIT {per_page} OFFSET {offset}"
+    ));
+    let binds_data = binds.clone();
+    let db = state.db.clone();
+    let stats_where_owned = stats_where.to_string();
+    let stats_binds_owned = stats_binds.to_vec();
 
-    // 检查当前登录用户的日志详情查看权限
+    // COUNT / 列表 / 汇总并行，缩短大数据量下的接口等待
+    let (total_res, logs_res, stats) = tokio::join!(
+        fetch_logs_count(&state.db, &where_clause, &binds),
+        async {
+            let mut logs_q = sqlx::query_as::<_, RequestLog>(&data_sql);
+            for val in &binds_data {
+                logs_q = logs_q.bind(val);
+            }
+            logs_q.fetch_all(&db.pool).await
+        },
+        fetch_logs_stats(&state.db, &stats_where_owned, &stats_binds_owned),
+    );
+    let total = total_res?;
+    let mut logs = logs_res?;
+    let (total_cost, success_count, fail_count, total_gift_cost) = stats;
+
     let mut allow_details = true;
     if claims.role != "admin" {
         let perm: Option<i32> = sqlx::query_scalar(
-            &state.db.format_query("SELECT ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?")
+            &state.db.format_query(
+                "SELECT ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?",
+            ),
         )
         .bind(&claims.sub)
         .fetch_optional(&state.db.pool)
         .await?
         .flatten();
         allow_details = perm.unwrap_or(1) == 1;
-    }
 
-    if claims.role != "admin" {
         for log in &mut logs {
             log.channel_id = None;
             log.channel_group_aid = None;
             log.channel_name = None;
+            log.sub_channel_name = None;
             if !allow_details {
-                log.request_content = None;
-                log.response_content = None;
-                log.upstream_req_content = None;
-                log.post_response = None;
-                log.billing_detail = None;
+                log.billing_detail = log
+                    .billing_detail
+                    .as_deref()
+                    .map(summarize_restricted_billing);
             }
-            // 错误信息脱敏：过滤上游域名、密钥等敏感信息
             if let Some(ref err) = log.error_message {
                 log.error_message = Some(crate::relay::proxy::sanitize_error_message(err));
-            }
-            // 响应结果脱敏：仅失败日志，response_content 可能包含真实上游 URL（如 reqwest 错误信息）
-            if log.status_code != 200 {
-                if let Some(ref resp) = log.response_content {
-                    log.response_content = Some(crate::relay::proxy::sanitize_error_message(resp));
-                }
             }
             if let Some(ref upstream) = log.upstream_url {
                 if let Some(scheme_end) = upstream.find("://") {
@@ -218,34 +376,114 @@ pub async fn list_logs(
         }
     }
 
-    let stats_sql = state.db.format_query(&format!(
-        "SELECT COALESCE(SUM(l.cost), 0.0), \
-         COUNT(CASE WHEN l.status_code >= 200 AND l.status_code < 400 THEN 1 END), \
-         COUNT(CASE WHEN l.status_code >= 400 OR l.status_code < 200 THEN 1 END), \
-         COALESCE(SUM(l.pre_deduct_gift), 0.0) \
-         FROM logs l \
-         LEFT JOIN channels c ON l.channel_id = c.id \
-         LEFT JOIN users u ON l.user_id = u.id{}",
-        where_clause
-    ));
-    let mut sq = sqlx::query_as::<_, (f64, i64, i64, f64)>(&stats_sql);
-    for v in &binds { sq = sq.bind(v); }
-    let (total_cost, success_count, fail_count, total_gift_cost) = sq.fetch_one(&state.db.pool).await.unwrap_or((0.0, 0, 0, 0.0));
     let total_system_cost = total_cost - total_gift_cost;
 
-    Ok(Json(LogListResponse { 
-        data: logs, 
-        total, 
-        allow_details, 
-        total_cost, 
-        success_count, 
+    Ok(Json(LogListResponse {
+        data: logs,
+        total,
+        allow_details,
+        total_cost,
+        success_count,
         fail_count,
         total_system_cost: Some(total_system_cost),
-        total_gift_cost: Some(total_gift_cost)
+        total_gift_cost: Some(total_gift_cost),
     }))
 }
 
-/// 导出使用日志 CSV（仅超管可用，上限 100,000 条）
+/// 按需拉取单条日志的请求/响应大字段（列表接口已剥离）
+pub async fn get_log_detail(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<auth::Claims>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<LogDetailContent>> {
+    #[derive(sqlx::FromRow)]
+    struct DetailRow {
+        user_id: String,
+        status_code: i32,
+        request_content: Option<String>,
+        response_content: Option<String>,
+        post_response: Option<String>,
+        upstream_req_content: Option<String>,
+    }
+
+    let row: Option<DetailRow> = sqlx::query_as(
+        &state.db.format_query(
+            "SELECT user_id, status_code, request_content, response_content, post_response, upstream_req_content \
+             FROM logs WHERE id = ?",
+        ),
+    )
+    .bind(id)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
+    let row = match row {
+        Some(r) => r,
+        None => return Err(AppError::BadRequest("日志记录不存在".to_string())),
+    };
+
+    if claims.role != "admin" && row.user_id != claims.sub {
+        let my_uid: Option<String> =
+            sqlx::query_scalar(&state.db.format_query("SELECT uid FROM users WHERE id = ?"))
+                .bind(&claims.sub)
+                .fetch_optional(&state.db.pool)
+                .await?;
+        let my_uid = my_uid.unwrap_or_default();
+        let is_referral: bool = sqlx::query_scalar(
+            &state.db.format_query(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND (referred_by = ? OR referred_by = ?))",
+            ),
+        )
+        .bind(&row.user_id)
+        .bind(&claims.sub)
+        .bind(&my_uid)
+        .fetch_one(&state.db.pool)
+        .await?;
+        if !is_referral {
+            return Err(AppError::Forbidden("无权查看此日志详情".to_string()));
+        }
+    }
+
+    let mut allow_details = true;
+    if claims.role != "admin" {
+        let perm: Option<i32> = sqlx::query_scalar(
+            &state.db.format_query(
+                "SELECT ul.allow_view_log_details FROM users u LEFT JOIN user_levels ul ON u.user_group = ul.group_key WHERE u.id = ?",
+            ),
+        )
+        .bind(&claims.sub)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .flatten();
+        allow_details = perm.unwrap_or(1) == 1;
+    }
+
+    if !allow_details {
+        return Ok(Json(LogDetailContent {
+            id,
+            request_content: None,
+            response_content: None,
+            post_response: None,
+            upstream_req_content: None,
+        }));
+    }
+
+    let mut detail = LogDetailContent {
+        id,
+        request_content: row.request_content,
+        response_content: row.response_content,
+        post_response: row.post_response,
+        upstream_req_content: row.upstream_req_content,
+    };
+
+    if claims.role != "admin" && row.status_code != 200 {
+        if let Some(ref resp) = detail.response_content {
+            detail.response_content = Some(crate::relay::proxy::sanitize_error_message(resp));
+        }
+    }
+
+    Ok(Json(detail))
+}
+
 const EXPORT_LIMIT: i64 = 100_000;
 
 pub async fn export_logs(
@@ -260,34 +498,12 @@ pub async fn export_logs(
     let mut q = query.clone();
     if let Some(ref user_id) = q.user_id {
         if user_id != "unknown" {
-            let resolved: Option<String> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM users WHERE uid = ? OR id = ? OR username = ?"))
-                .bind(user_id)
-                .bind(user_id)
-                .bind(user_id)
-                .fetch_optional(&state.db.pool)
-                .await?;
-            if let Some(uuid) = resolved {
-                q.user_id = Some(uuid);
-            } else {
-                q.user_id = Some("NOT_FOUND_USER".to_string());
-            }
+            q.user_id = Some(resolve_user_filter(&state.db, user_id).await?);
         }
     }
 
-    let (where_clause, binds) = build_log_where(&claims, &q);
-
-    // 先查总数，超出上限则提示
-    let count_sql = state.db.format_query(&format!(
-        "SELECT COUNT(*) FROM logs l \
-         LEFT JOIN channels c ON l.channel_id = c.id \
-         LEFT JOIN users u ON l.user_id = u.id \
-         LEFT JOIN user_levels ul ON u.user_group = ul.group_key \
-         LEFT JOIN api_tokens t ON l.token_id = t.id{}",
-        where_clause
-    ));
-    let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
-    for v in &binds { cq = cq.bind(v); }
-    let total = cq.fetch_one(&state.db.pool).await?;
+    let (where_clause, binds) = build_log_where(&claims, &q, true);
+    let total = fetch_logs_count(&state.db, &where_clause, &binds).await?;
 
     if total > EXPORT_LIMIT {
         return Ok((
@@ -295,7 +511,8 @@ pub async fn export_logs(
             Json(serde_json::json!({
                 "error": format!("当前筛选条件下共 {} 条数据，超出单次导出上限 {} 条，请缩小时间范围或增加筛选条件后重试", total, EXPORT_LIMIT)
             })),
-        ).into_response());
+        )
+            .into_response());
     }
 
     let data_sql = state.db.format_query(&format!(
@@ -304,24 +521,24 @@ pub async fn export_logs(
          l.billing_detail, l.created_at, \
          c.name as channel_name, \
          COALESCE(u.nickname, u.username) as user_nickname, \
-         COALESCE(u.uid, '') as user_uid \
-         FROM logs l \
-         LEFT JOIN channels c ON l.channel_id = c.id \
-         LEFT JOIN users u ON l.user_id = u.id \
+         COALESCE(u.uid, '') as user_uid, \
+         cc.name as sub_channel_name, \
+         COALESCE(l.task_id, '') as task_id \
+         FROM logs l{} \
          {} ORDER BY l.created_at DESC LIMIT {}",
-        where_clause, EXPORT_LIMIT
+        LOGS_EXPORT_JOINS, where_clause, EXPORT_LIMIT
     ));
 
-    // 使用 sqlx::query + Row::get 手动提取，绕过元组 FromRow 的16列上限
     use sqlx::Row;
     let raw_rows = {
         let mut q = sqlx::query(&data_sql);
-        for v in &binds { q = q.bind(v); }
+        for v in &binds {
+            q = q.bind(v);
+        }
         q.fetch_all(&state.db.pool).await?
     };
 
-    // CSV BOM + Header
-    let mut csv = String::from("\u{FEFF}日志ID,ID,用户ID,用户昵称,UID,模型,输入Tokens,输出Tokens,缓存Tokens,费用,耗时(ms),状态码,类型,渠道,计费明细,请求路径,时间\n");
+    let mut csv = String::from("\u{FEFF}日志ID,任务ID,ID,用户ID,用户昵称,UID,模型,输入Tokens,输出Tokens,缓存Tokens,费用,耗时(ms),状态码,类型,渠道,上游子渠道,计费明细,请求路径,时间\n");
     for row in &raw_rows {
         let id: i64 = row.get(0);
         let log_id: String = row.get(1);
@@ -336,51 +553,80 @@ pub async fn export_logs(
         let endpoint: String = row.get(10);
         let is_stream: Option<i32> = row.get(11);
         let billing_detail: Option<String> = row.get(12);
-        let created_at: String = row.get(13);
+        let created_at: crate::time_system::DbTs = row.get(13);
         let channel_name: Option<String> = row.get(14);
         let user_nickname: Option<String> = row.get(15);
         let user_uid: String = row.get(16);
-        let stream_label = match is_stream { Some(1) => "流", _ => "非流" };
+        let sub_channel_name: Option<String> = row.get(17);
+        let task_id: String = row.get(18);
+        let stream_label = match is_stream {
+            Some(1) => "流",
+            _ => "非流",
+        };
         let formatted_time = format_db_time(&created_at);
         csv.push_str(&format!(
-            "\"{}\",{},\"{}\",\"{}\",\"{}\",\"{}\",{},{},{},{:.6},{},{},{},\"{}\",\"{}\",\"{}\",\"{}\"\n",
-            log_id, id, user_id,
+            "\"{}\",\"{}\",{},\"{}\",\"{}\",\"{}\",\"{}\",{},{},{},{:.6},{},{},{},\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
+            log_id,
+            task_id,
+            id,
+            user_id,
             user_nickname.as_deref().unwrap_or("-").replace('"', "\"\""),
             user_uid,
             model.replace('"', "\"\""),
-            prompt_tokens, completion_tokens, cached_tokens, cost, latency_ms, status_code,
+            prompt_tokens,
+            completion_tokens,
+            cached_tokens,
+            cost,
+            latency_ms,
+            status_code,
             stream_label,
             channel_name.as_deref().unwrap_or("-").replace('"', "\"\""),
+            sub_channel_name.as_deref().unwrap_or("-").replace('"', "\"\""),
             billing_detail.as_deref().unwrap_or("").replace('"', "\"\""),
             endpoint.replace('"', "\"\""),
             formatted_time,
         ));
     }
 
-    let filename = format!("usage_logs_{}.csv", chrono::Local::now().format("%Y%m%d_%H%M%S"));
+    let filename = format!(
+        "usage_logs_{}.csv",
+        chrono::Local::now().format("%Y%m%d_%H%M%S")
+    );
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/csv; charset=utf-8")
-        .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", filename),
+        )
         .body(axum::body::Body::from(csv))
         .unwrap())
 }
 
 /// 将数据库存储的时间字符串格式化为可读的北京时间
-/// 输入: "2026-05-08 08:05:56.328607+00" 或类似格式
-/// 输出: "2026-05-08 16:05:56"
 pub fn format_db_time(raw: &str) -> String {
     use chrono::{DateTime, FixedOffset, Utc};
-    // 尝试解析为带时区的时间
-    if let Ok(dt) = DateTime::parse_from_str(raw.trim(), "%Y-%m-%d %H:%M:%S%.f%#z") {
+    let raw = raw.trim();
+    if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
         let shanghai = FixedOffset::east_opt(8 * 3600).unwrap();
-        return dt.with_timezone(&shanghai).format("%Y-%m-%d %H:%M:%S").to_string();
+        return dt
+            .with_timezone(&shanghai)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
     }
-    // 尝试 RFC3339 / ISO8601
-    if let Ok(dt) = raw.trim().parse::<DateTime<Utc>>() {
+    if let Ok(dt) = DateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f%#z") {
         let shanghai = FixedOffset::east_opt(8 * 3600).unwrap();
-        return dt.with_timezone(&shanghai).format("%Y-%m-%d %H:%M:%S").to_string();
+        return dt
+            .with_timezone(&shanghai)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
     }
-    // 无法解析则截断微秒和时区部分返回原始值
+    if let Ok(dt) = raw.parse::<DateTime<Utc>>() {
+        let shanghai = FixedOffset::east_opt(8 * 3600).unwrap();
+        return dt
+            .with_timezone(&shanghai)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+    }
     raw.split('.').next().unwrap_or(raw).to_string()
 }

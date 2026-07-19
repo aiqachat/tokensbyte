@@ -53,6 +53,9 @@ const applySiteSettings = (site?: AllSettings['site']) => {
     document.title = site.title;
     localStorage.setItem('tokensbyte_site_title', site.title);
   }
+  if (site.admin_path) {
+    localStorage.setItem('tokensbyte_admin_path', site.admin_path);
+  }
   updateFavicon(site.favicon);
   updateMeta('keywords', site.keywords);
   updateMeta('description', site.description);

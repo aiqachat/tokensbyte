@@ -195,7 +195,7 @@ body.dark .md-not-found h2 { color: rgba(255,255,255,0.85); }
                  <div class="ant-breadcrumb">
                 <a href="/home/models" data-i18n-dynamic="模型广场">模型广场</a>
                 <span class="breadcrumb-separator">/</span>
-                <span class="breadcrumb-current">{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.name }}{% endif %}</span>
+                <span class="breadcrumb-current">{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.model_name }}{% endif %}</span>
             </div>
             
             <div class="content-flex">
@@ -203,18 +203,26 @@ body.dark .md-not-found h2 { color: rgba(255,255,255,0.85); }
                     <div class="header-flex">
                         <div class="logo-box">
                             {% if model.logo and model.logo | length > 0 %}
-                            <img src="/assets/icons/lobe/{{ model.logo }}.svg" alt="logo" onerror="this.style.display='none'">
+                                {% set m_logo = model.logo %}
+                                {% if not m_logo is starting_with("http") and not m_logo is starting_with("/") %}
+                                    {% set m_logo = "/assets/icons/lobe/" ~ m_logo ~ ".svg" %}
+                                {% endif %}
+                                <img src="{{ m_logo | safe }}" alt="logo" onerror="this.style.display='none'">
                             {% elif model.provider_logo and model.provider_logo | length > 0 %}
-                            <img src="/assets/icons/lobe/{{ model.provider_logo }}.svg" alt="logo" onerror="this.style.display='none'">
+                                {% set prov_logo = model.provider_logo %}
+                                {% if not prov_logo is starting_with("http") and not prov_logo is starting_with("/") %}
+                                    {% set prov_logo = "/assets/icons/lobe/" ~ prov_logo ~ ".svg" %}
+                                {% endif %}
+                                <img src="{{ prov_logo | safe }}" alt="logo" onerror="this.style.display='none'">
                             {% else %}
-                            <span style="color: rgba(0,0,0,0.45)">
-                                {% if model.mid is containing("gpt") %}🟢{% elif model.mid is containing("claude") %}🟣{% elif model.mid is containing("gemini") %}🔵{% elif model.mid is containing("deepseek") %}🐳{% else %}🤖{% endif %}
-                            </span>
+                                <span style="color: rgba(0,0,0,0.45)">
+                                    {% if model.mid is containing("gpt") %}🟢{% elif model.mid is containing("claude") %}🟣{% elif model.mid is containing("gemini") %}🔵{% elif model.mid is containing("deepseek") %}🐳{% else %}🤖{% endif %}
+                                </span>
                             {% endif %}
                         </div>
                         <div>
                             <div class="title-line">
-                                <h1 class="title-text">{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.name }}{% endif %}</h1>
+                                <h1 class="title-text">{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.model_name }}{% endif %}</h1>
                                 {% if model.variants and model.variants | length > 1 %}
                                 <span class="variant-badge">
                                     <span style="font-family: monospace;">{{ model.variants | length }}</span>
@@ -226,18 +234,24 @@ body.dark .md-not-found h2 { color: rgba(255,255,255,0.85); }
                                 {% set_global seen_providers = "" %}
                                 {% set_global provider_count = 0 %}
                                 {% for v in model.variants %}
-                                    {% if v.provider_name and v.provider_name not in seen_providers %}
+                                    {% if v.provider_name and v.provider_name != "" and v.provider_name != "未知官方服务商" and v.provider_name != "未知服务商" and v.provider_name not in seen_providers %}
                                         <span class="provider-item">
                                             {% if provider_count > 0 %}<span class="dot-sep"></span>{% endif %}
-                                            {% if v.provider_logo %}<img src="/assets/icons/lobe/{{ v.provider_logo }}.svg" style="width:16px;height:16px;" onerror="this.style.display='none'">{% endif %}
+                                            {% if v.provider_logo %}
+                                                {% set sub_prov_logo = v.provider_logo %}
+                                                {% if not sub_prov_logo is starting_with("http") and not sub_prov_logo is starting_with("/") %}
+                                                    {% set sub_prov_logo = "/assets/icons/lobe/" ~ sub_prov_logo ~ ".svg" %}
+                                                {% endif %}
+                                                <img src="{{ sub_prov_logo | safe }}" style="width:16px;height:16px;" onerror="this.style.display='none'">
+                                            {% endif %}
                                             <span data-i18n-dynamic="{{ v.provider_name }}">{{ v.provider_name }}</span>
                                         </span>
                                         {% set_global seen_providers = seen_providers ~ v.provider_name ~ "," %}
                                         {% set_global provider_count = provider_count + 1 %}
                                     {% endif %}
                                 {% endfor %}
-                                {% if provider_count == 0 %}
-                                    <span class="provider-item" data-i18n-dynamic="{{ model.provider | default(value="未知服务商") }}">{{ model.provider | default(value="未知服务商") }}</span>
+                                {% if provider_count == 0 and model.provider and model.provider != "" and model.provider != "未知服务商" and model.provider != "未知官方服务商" %}
+                                    <span class="provider-item" data-i18n-dynamic="{{ model.provider }}">{{ model.provider }}</span>
                                 {% endif %}
                             </div>
                         </div>
@@ -313,10 +327,16 @@ body.dark .md-not-found h2 { color: rgba(255,255,255,0.85); }
                                     <td>
                                         <div class="provider-td-flex">
                                             {% if variant.provider_logo %}
-                                            <img src="/assets/icons/lobe/{{ variant.provider_logo }}.svg" class="provider-logo" onerror="this.style.display='none'">
+                                                {% set tbl_prov_logo = variant.provider_logo %}
+                                                {% if not tbl_prov_logo is starting_with("http") and not tbl_prov_logo is starting_with("/") %}
+                                                    {% set tbl_prov_logo = "/assets/icons/lobe/" ~ tbl_prov_logo ~ ".svg" %}
+                                                {% endif %}
+                                                <img src="{{ tbl_prov_logo | safe }}" class="provider-logo" onerror="this.style.display='none'">
                                             {% endif %}
                                             <div>
-                                                <div class="provider-name" data-i18n-dynamic="{{ variant.provider_name | default(value="未知官方服务商") }}">{{ variant.provider_name | default(value="未知官方服务商") }}</div>
+                                                {% if variant.provider_name and variant.provider_name != "" and variant.provider_name != "未知官方服务商" and variant.provider_name != "未知服务商" %}
+                                                <div class="provider-name" data-i18n-dynamic="{{ variant.provider_name }}">{{ variant.provider_name }}</div>
+                                                {% endif %}
                                                 <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 4px;">
                                                     {% if variant.name %}
                                                     <div class="provider-variant">{{ variant.name }}</div>
@@ -384,8 +404,8 @@ function copyText(text) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    const currentLang = document.documentElement.lang || 'zh-CN';
-    const isEn = currentLang === 'en-US';
+    const currentLang = typeof normalizeLang !== 'undefined' ? normalizeLang(document.documentElement.lang) : (document.documentElement.lang || 'zh');
+    const isEn = currentLang !== 'zh';
 
     // Dynamic Billing Rendering to mimic React
     document.querySelectorAll('script[type="application/json"][id^="billing-data-"]').forEach(el => {

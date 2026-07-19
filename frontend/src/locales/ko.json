@@ -88,8 +88,7 @@
     "system_about": "시스템소개",
     "channel_groups": "모델 채널 그룹화",
     "channel_configs": "업스트림 채널 구성",
-    "model_marketplace": "모델 스퀘어",
-    "smart_router": "지능형 라우팅"
+    "model_marketplace": "모델 스퀘어"
   },
   "dashboard": {
     "title": "시스템 개요",
@@ -99,7 +98,7 @@
     "active_tokens": "활성 토큰",
     "recent_activity": "최근 활동",
     "model_distribution": "모델 분포(비용별)",
-    "auto_refresh": "자동 새로고침: 30초",
+    "auto_refresh": "자동 새로고침: 3분",
     "no_data": "아직 데이터가 없습니다"
   },
   "login": {
@@ -272,7 +271,8 @@
     "total_records": "共 {{total}} 条",
     "export_success": "导出成功",
     "export_fail": "导出失败",
-    "search_log_id": "로그 ID 검색"
+    "search_log_id": "로그 ID 검색",
+    "search_task_id": "작업 ID 검색"
   },
   "redemptions": {
     "title": "兑换管理",
@@ -464,14 +464,14 @@
     "total_calls": "总调用次数",
     "success_calls": "成功调用",
     "recharge_records": "充值记录",
-    "amount": "金额 (元)",
+    "amount": "金额 ({{unit}})",
     "remark": "备注",
     "time": "时间",
     "copy_invite_link_success": "邀请链接已复制到剪贴板",
     "copy_failed": "复制失败，请手动选择复制",
     "payment_success": "支付已完成，余额稍后到账",
     "payment_cancelled": "支付已取消",
-    "system_balance": "系统主余额",
+    "system_balance": "系统总余额",
     "gift_balance": "赠送金余额",
     "priority_deduction": "优先扣除",
     "invite_friends": "邀请好友获返利",
@@ -501,7 +501,8 @@
     "recharge_type_commission": "邀请返佣",
     "recharge_type_alipay": "支付宝充值",
     "recharge_type_wechat": "微信充值",
-    "recharge_type_bonuspay": "BonusPay充值",
+    "recharge_type_allinpay_wechat": "통련 위챗페이",
+    "recharge_type_allinpay_alipay": "통련 알리페이",
     "recharge_type_gift": "赠送金",
     "recharge_type_other": "其它",
     "operator": "操作人"
@@ -561,6 +562,37 @@
     "mobile_required": "请输入手机号",
     "sms_code_sent": "验证码已发送到您的手机",
     "admin_success": "认证成功，欢迎，操作员。"
+  },
+  "moderation_query": {
+    "tip_desc": "활성화 후 최근 14일 내 이미지/동영상/오디오 차단만 조회 가능. 텍스트 미지원. 분당 약 10회.",
+    "id_type": "ID 유형",
+    "id": "조회 ID",
+    "id_placeholder": "예: asset-xxx / cgt-xxx / request_id",
+    "id_required": "조회할 ID를 입력하세요",
+    "id_too_long": "ID가 너무 깁니다",
+    "query": "조회",
+    "result_title": "조회 결과",
+    "hit_count": "차단 사유 {{count}}건",
+    "status_hits": "조회 성공: 차단 사유 {{count}}건",
+    "status_empty": "조회 성공: 차단 사유 없음(미차단, 14일 초과 또는 세부정보 없음)",
+    "query_failed": "조회 실패",
+    "copy_success": "복사됨",
+    "copy_failed": "복사 실패",
+    "type_asset_id": "소재 라이브러리 ID",
+    "type_task_id": "작업 ID",
+    "type_request_id": "추론 요청 ID",
+    "col_label": "대분류",
+    "col_sub_label": "소분류",
+    "col_detail": "상세",
+    "label_Safety": "안전",
+    "label_Copyright": "저작권",
+    "label_Celebrity": "공인",
+    "label_Deepfake": "실물 얼굴",
+    "sub_Safety": "안전 위험",
+    "sub_IP": "IP 시각 작품",
+    "sub_Other": "기타 저작권",
+    "sub_Celebrity": "공인",
+    "sub_RealHuman": "실물 얼굴"
   },
   "assets": {
     "my_assets": "我的素材库",
@@ -736,7 +768,8 @@
     "bonuspay_tip": "💡 充值金额以实际链上到账金额为准，通常需要几分钟确认",
     "recharge_again": "再次充值",
     "close": "关闭",
-    "select_amount": "选择金额 (元)",
+    "select_amount": "选择金额 ({{unit}})",
+    "min_amount_error": "充值金额不能小于 {{limit}} {{unit}}",
     "custom": "自定义",
     "input_amount": "输入金额",
     "crypto_recharge": "加密货币充值",
@@ -746,14 +779,20 @@
     "payment_method": "支付方式",
     "alipay": "支付宝",
     "wechat_pay": "微信支付",
+    "allinpay_wechat": "통련 위챗페이",
+    "allinpay_alipay": "통련 알리페이",
     "payable_amount": "应付金额",
     "get_address": "获取充值地址",
     "go_stripe": "去 Stripe 支付",
     "go_alipay": "去支付宝支付",
     "gen_wechat_qr": "生成微信支付码",
+    "gen_alipay_qr": "生成支付宝支付码",
     "trust_badge": "资金安全保障 · 充值后即时到账 · 正规支付渠道",
     "not_available": "在线充值暂不可用",
-    "not_available_desc": "管理员尚未开启或正确配置在线支付功能"
+    "not_available_desc": "管理员尚未开启或正确配置在线支付功能",
+    "hyperbc_select_pay": "결제 통화 및 네트워크를 선택하십시오",
+    "hyperbc_tip": "💡 해당하는 체인과 통화를 지원하는 지갑을 사용하여 정확한 금액을 이체하십시오. 보통 몇 초에서 몇 분 이내에 입금됩니다. 이체가 성공하면 이 페이지가 자동으로 새로 고침되므로 팝업을 닫지 마십시오.",
+    "go_hyperbc": "HyperBC로 결제하기"
   },
   "task_logs": {
     "fetch_fail": "获取任务日志失败",
@@ -781,7 +820,8 @@
     "refresh": "刷新",
     "total_records": "共 {{total}} 条",
     "export_success": "导出成功",
-    "export_fail": "导出失败"
+    "export_fail": "导出失败",
+    "search_task_id": "작업 ID 검색"
   },
   "marketplace": {
     "model_desc": "模型简介",

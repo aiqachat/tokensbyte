@@ -8,7 +8,8 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { CopyOutlined, UserOutlined, RobotOutlined } from '@ant-design/icons';
-import { message, Button, Tooltip, Grid } from 'antd';
+import { Button, Tooltip, Grid } from 'antd';
+import toast from './PlaygroundToast';
 import { usePlayground } from '../context/PlaygroundContext';
 import { useThemeStore } from '../../../store/theme';
 
@@ -29,7 +30,7 @@ const ChatPanel: React.FC = React.memo(() => {
 
   const copyText = useCallback((text: string) => {
     navigator.clipboard.writeText(text).then(
-      () => message.success('已复制'),
+      () => toast.success('已复制'),
       () => {
         // fallback
         const ta = document.createElement('textarea');
@@ -38,7 +39,7 @@ const ChatPanel: React.FC = React.memo(() => {
         ta.select();
         document.execCommand('copy');
         document.body.removeChild(ta);
-        message.success('已复制');
+        toast.success('已复制');
       }
     );
   }, []);

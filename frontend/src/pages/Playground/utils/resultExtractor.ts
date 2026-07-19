@@ -41,6 +41,10 @@ export function extractVideoUrl(resultData: any): string {
   // 系统内部格式: content.video_url
   const cvUrl = resultData?.content?.video_url;
   if (cvUrl && typeof cvUrl === 'string') return cvUrl;
+  // 注：火山 MediaKit 原始格式已统一至 OpenAI 任务轮询响应，在此无需冗余解析 result.video_url 字段
+  // 兜底直接取根节点 video_url
+  const rootUrl = resultData?.video_url;
+  if (rootUrl && typeof rootUrl === 'string') return rootUrl;
   return '';
 }
 
@@ -49,7 +53,7 @@ export function extractVideoUrl(resultData: any): string {
  */
 export function getResultDisplayUrl(nodeType: string, resultData: any): string {
   if (!resultData) return '';
-  if (nodeType === 'image') {
+  if (nodeType === 'image' || nodeType === 'ai_image') {
     const rawUrl = extractImageUrl(resultData);
     if (!rawUrl) return '';
     if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl;

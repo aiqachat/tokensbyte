@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal } from 'antd';
 import { AudioOutlined } from '@ant-design/icons';
+import { getSharedModalStyles } from '../utils/modalStyles';
 
 interface AudioPreviewModalProps {
   open: boolean;
@@ -21,11 +22,11 @@ const AudioPreviewModal: React.FC<AudioPreviewModalProps> = ({ open, audioUrl, f
       destroyOnClose
       title={null}
       closable={false}
+      {...getSharedModalStyles(false)}
       styles={{
-        body: { padding: '24px 20px', background: '#1e1f22' },
-        mask: { backdropFilter: 'blur(4px)' },
+        ...getSharedModalStyles(false).styles,
+        body: { padding: '24px 20px', background: 'transparent' },
       }}
-      style={{ borderRadius: 16, overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.08)' }}
     >
       <div 
         style={{ display: 'flex', flexDirection: 'column', gap: 16 }}

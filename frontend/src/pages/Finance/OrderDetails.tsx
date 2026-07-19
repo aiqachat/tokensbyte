@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import dayjs from 'dayjs';
+import { formatApiDateTime } from '../../utils/timedisplay';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -34,6 +35,22 @@ const methodMap: Record<string, { color: string; label: string }> = {
   alipay: { color: '#1677ff', label: '支付宝' },
   stripe: { color: '#635bff', label: 'Stripe' },
   bonuspay: { color: '#ff6a00', label: 'BonusPay' },
+  hyperbc: { color: '#8b5cf6', label: 'HyperBC' },
+  allinpay_wechat: { color: '#07c160', label: '通联微信' },
+  'allinpay wechat': { color: '#07c160', label: '通联微信' },
+  allinpay_alipay: { color: '#1677ff', label: '通联支付宝' },
+  'allinpay alipay': { color: '#1677ff', label: '通联支付宝' },
+};
+
+const formatOrderTime = (
+  timeStr: string | null,
+  _refTimeStr: string | null,
+  _outTradeNo: string,
+  _isCreatedAt: boolean
+): string => {
+  if (!timeStr) return '';
+  // timesystem=UTC 落库后统一按 timedisplay 渲染；不再做订单号字面量纠偏
+  return formatApiDateTime(timeStr);
 };
 
 const OrderDetails: React.FC = () => {
@@ -141,20 +158,20 @@ const OrderDetails: React.FC = () => {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
-      render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm:ss'),
+      render: (text: string, record: OrderRecord) => formatOrderTime(text, record.paid_at, record.out_trade_no, true),
     },
     {
       title: '支付时间',
       dataIndex: 'paid_at',
       key: 'paid_at',
       width: 180,
-      render: (text: string | null) => text ? dayjs(text).format('YYYY-MM-DD HH:mm:ss') : <Text type="secondary">-</Text>,
+      render: (text: string | null, record: OrderRecord) => text ? formatOrderTime(text, record.created_at, record.out_trade_no, false) : <Text type="secondary">-</Text>,
     },
   ];
 
   return (
     <Card bordered={false}>
-      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 12, alignItems: screens.xs ? 'flex-start' : 'center', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: screens.xs ? 'column' : 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 12, alignItems: screens.xs ? 'flex-start' : 'center', gap: 16 }}>
         <Space size="small" align="center" wrap>
           <BarChartOutlined style={{ fontSize: 24, color: '#52c41a' }} />
           <Title level={2} style={{ margin: 0, fontSize: screens.xs ? 20 : 24 }}>支付订单</Title>
@@ -195,8 +212,11 @@ const OrderDetails: React.FC = () => {
             options={[
               { label: '微信支付', value: 'wechat' },
               { label: '支付宝', value: 'alipay' },
+              { label: '通联微信', value: 'allinpay_wechat' },
+              { label: '通联支付宝', value: 'allinpay_alipay' },
               { label: 'Stripe', value: 'stripe' },
               { label: 'BonusPay', value: 'bonuspay' },
+              { label: 'HyperBC', value: 'hyperbc' },
             ]}
           />
           <Input
@@ -262,12 +282,12 @@ const OrderDetails: React.FC = () => {
                   )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>创建时间</Text>
-                    <Text style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+                    <Text style={{ fontSize: 12 }}>{formatOrderTime(record.created_at, record.paid_at, record.out_trade_no, true)}</Text>
                   </div>
                   {record.paid_at && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 0 }}>
                       <Text type="secondary" style={{ fontSize: 12 }}>支付时间</Text>
-                      <Text style={{ fontSize: 12 }}>{dayjs(record.paid_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+                      <Text style={{ fontSize: 12 }}>{formatOrderTime(record.paid_at, record.created_at, record.out_trade_no, false)}</Text>
                     </div>
                   )}
                 </Card>

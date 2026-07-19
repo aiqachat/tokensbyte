@@ -20,6 +20,7 @@ export interface SchemeParam {
 
 /** 体验模型定义 */
 export interface PlaygroundModel {
+  id?: number;
   mid: string;
   name: string;
   model_id: string;
@@ -42,7 +43,7 @@ export interface PlaygroundModel {
 /** 画布节点定义 */
 export interface CanvasNode {
   id: string;
-  type: 'video' | 'image' | 'text' | 'audio';
+  type: 'video' | 'image' | 'text' | 'audio' | 'section';
   status: 'loading' | 'completed' | 'error';
   taskData: any;
   resultData: any;
@@ -52,6 +53,12 @@ export interface CanvasNode {
   height: number;
   zIndex: number;
   isHidden?: boolean;
+  parentId?: string;
+  isInstance?: boolean;
+  childrenNodeIds?: string[];
+  title?: string;
+  backgroundColor?: string;
+  inputConnections?: Record<string, string>;
 }
 
 /** 画布变换状态 */
@@ -62,7 +69,7 @@ export interface CanvasTransform {
 }
 
 /** 活跃工具类型 */
-export type ActiveTool = 'pointer' | 'hand' | 'marquee';
+export type ActiveTool = 'pointer' | 'hand' | 'marquee' | 'section';
 
 /** 二维坐标 */
 export interface Point {

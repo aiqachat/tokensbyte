@@ -1,0 +1,1831 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模型数据 - TokensByte</title>
+<meta name="description" content="">
+<meta name="keywords" content="">
+<meta name="robots" content="index, follow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Colors */
+  --bg-primary: #000000;
+  --bg-secondary: #09090b;
+  --bg-card: rgba(255, 255, 255, 0.02);
+  --bg-nav: rgba(0, 0, 0, 0.75);
+
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #52525b;
+
+  --brand-primary: #6366f1;
+  --brand-secondary: #4f46e5;
+  --brand-gradient: linear-gradient(135deg, #4f46e5, #6366f1, #3b82f6);
+
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.16);
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  /* Layout */
+  --max-width: 1200px;
+  --nav-height: 64px;
+
+  /* Effects */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.8);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.8), 0 2px 4px -1px rgba(0, 0, 0, 0.8);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.9), 0 4px 6px -2px rgba(0, 0, 0, 0.9);
+  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="light"] {
+  --bg-primary: #fafafa;
+  --bg-secondary: #f4f4f5;
+  --bg-card: rgba(255, 255, 255, 0.8);
+  --bg-nav: rgba(255, 255, 255, 0.75);
+
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #a1a1aa;
+
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.15);
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+
+  
+
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-sans);background-color:var(--bg-primary);color:var(--text-primary);line-height:1.6;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;min-height:100vh;display:flex;flex-direction:column;transition:background-color var(--transition-normal), color var(--transition-normal)}
+a{color:var(--brand-secondary);text-decoration:none;transition:color var(--transition-fast)}
+a:hover{color:var(--brand-primary)}
+code{font-family:'JetBrains Mono','Fira Code',monospace;background:rgba(128,128,128,0.15);color:var(--brand-primary);padding:3px 6px;border-radius:6px;font-size:13px;border:1px solid rgba(128,128,128,0.2)}
+[data-theme="light"] code{background:rgba(0, 0, 0, 0.05);color:#0060df}
+strong{color:var(--text-primary);font-weight:600}
+.wrap{max-width:var(--max-width);margin:0 auto;padding:0 24px;width:100%;position:relative;z-index:10}
+.main-content{flex:1}
+
+/* ── Header Navbar ── */
+.hdr{position:fixed;top:0;left:0;right:0;height:var(--nav-height);background:var(--bg-nav);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--border-color);z-index:100;transition:transform var(--transition-normal), background var(--transition-normal), border-color var(--transition-normal)}
+.hdr.hidden {transform:translateY(-100%)}
+.hdr-in{max-width:var(--max-width);margin:0 auto;display:flex;align-items:center;padding:0 24px;height:100%;gap:24px}
+.hdr-logo{display:flex;align-items:center;gap:12px;color:var(--text-primary)!important;font-weight:700;font-size:1.125rem;letter-spacing:-0.025em;white-space:nowrap}
+.hdr-logo img{height:24px;border-radius:4px;object-fit:contain}
+.hdr-search{flex:1;max-width:320px;position:relative;display:none}
+@media(min-width:992px){.hdr-search{display:block}}
+.hdr-search input{width:100%;background:rgba(0,0,0,0.2);border:1px solid var(--border-color);border-radius:6px;padding:6px 12px 6px 32px;color:var(--text-primary);font-size:13px;outline:none;transition:all var(--transition-fast)}
+[data-theme="light"] .hdr-search input{background:rgba(255,255,255,0.8)}
+.hdr-search input:focus{border-color:var(--brand-primary);box-shadow:var(--shadow-glow)}
+.hdr-search input::placeholder{color:var(--text-muted)}
+.hdr-search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;fill:var(--text-muted)}
+.hdr-menu{display:flex;align-items:center;margin-left:auto;gap:16px}
+.hdr-nav{display:flex;gap:4px}
+.hdr-nav a{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;font-size:14px;font-weight:500;color:var(--text-secondary);transition:all var(--transition-fast)}
+.hdr-nav a:hover,.hdr-nav a.on{color:var(--text-primary);background:rgba(128,128,128,0.1)}
+.hdr-sep{width:1px;height:24px;background:var(--border-color);margin:0 4px}
+.hdr-act{display:flex;gap:12px;align-items:center}
+.btn-s{display:inline-flex;align-items:center;justify-content:center;padding:8px 16px;border-radius:9999px;font-size:14px;font-weight:500;transition:all var(--transition-fast);white-space:nowrap}
+.btn-ghost{color:var(--text-secondary);background:transparent;border:none}
+.btn-ghost:hover{color:var(--text-primary);background:rgba(128,128,128,0.05)}
+.btn-primary{background:var(--brand-primary);color:#fff!important;border:none}
+.btn-primary:hover{filter:brightness(0.9);transform:translateY(-1px)}
+.btn-icon{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border:none;background:transparent;border-radius:50%;color:var(--text-secondary);cursor:pointer;transition:all var(--transition-fast)}
+.btn-icon:hover{background:rgba(128,128,128,0.1);color:var(--text-primary)}
+.btn-icon svg{width:18px;height:18px;fill:currentColor}
+.hdr-avatar-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; border-radius: 50% !important; overflow: hidden; background: var(--brand-primary); color: #fff !important; width: 36px; height: 36px; transition: transform var(--transition-fast), box-shadow var(--transition-fast); box-shadow: var(--shadow-sm); }
+.hdr-avatar-link:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); filter: brightness(1.1); }
+.hdr-avatar { font-size: 16px; font-weight: 600; text-transform: uppercase; user-select: none; }
+
+/* Mobile Menu Button */
+.mob-btn{display:none;background:none;border:none;color:var(--text-primary);cursor:pointer;padding:8px;z-index:1000}
+.mob-btn span{display:block;width:20px;height:2px;background:currentColor;margin:4px 0;transition:transform var(--transition-fast);border-radius:1px}
+.hdr-search-mob{display:none}
+
+/* ── Sub Page Hero ── */
+.pg-hero{padding:calc(var(--nav-height) + 40px) 0 40px;text-align:left;border-bottom:1px solid var(--border-color);background:var(--bg-secondary);transition:background-color var(--transition-normal)}
+.pg-hero h1{font-size:32px;font-weight:800;margin-bottom:12px;letter-spacing:-0.5px;color:var(--text-primary)}
+.pg-hero p{color:var(--text-secondary);font-size:16px;max-width:600px}
+
+/* ── Models Table ── */
+.mod-sec{padding:40px 0 80px}
+.mod-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border-color);background:var(--bg-card);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:var(--shadow-md)}
+.mod-tbl{width:100%;border-collapse:collapse}
+.mod-tbl th{text-align:left;padding:14px 20px;font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;background:rgba(128,128,128,0.05);border-bottom:1px solid var(--border-color)}
+.mod-tbl td{padding:14px 20px;font-size:14px;border-bottom:1px solid var(--border-color);color:var(--text-secondary)}
+.mod-tbl tr:last-child td{border-bottom:none}
+.mod-tbl tbody tr:hover td{background:rgba(128,128,128,0.05)}
+.mod-name{font-weight:600;color:var(--text-primary);font-size:15px}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;background:rgba(128,128,128,0.1);color:var(--text-secondary);border:1px solid var(--border-color)}
+.mod-note{margin-top:24px;padding:16px;border-radius:8px;background:var(--bg-secondary);border:1px solid var(--border-color);font-size:14px;color:var(--text-muted)}
+.empty-h{text-align:center;color:var(--text-muted);padding:48px 0!important}
+
+/* ── Contact ── */
+.ct-sec{padding:40px 0 80px}
+.ct-grid{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+.ct-info{display:flex;flex-direction:column;gap:16px}
+.ct-item{display:flex;gap:16px;padding:20px;border-radius:12px;background:var(--bg-card);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--border-color);box-shadow:var(--shadow-sm);transition:all var(--transition-normal)}
+.ct-item:hover{border-color:var(--border-hover);transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.ct-item .ci{font-size:20px;flex-shrink:0;width:40px;height:40px;background:rgba(128,128,128,0.1);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-primary)}
+.ct-item strong{display:block;color:var(--text-primary);font-size:15px;font-weight:600;margin-bottom:4px}
+.ct-item p{color:var(--text-secondary);font-size:14px;margin:0;line-height:1.5}
+.soc h3{font-size:18px;font-weight:700;margin-bottom:16px;color:var(--text-primary)}
+.soc-grid{display:flex;flex-wrap:wrap;gap:10px}
+.soc-a{padding:8px 16px;border-radius:8px;font-size:14px;font-weight:500;background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-secondary);transition:all var(--transition-fast);box-shadow:var(--shadow-sm)}
+.soc-a:hover{border-color:var(--brand-secondary);color:var(--brand-secondary);background:rgba(128,128,128,0.05);transform:translateY(-1px)}
+
+/* ── About ── */
+.ab-sec{padding:40px 0 80px}
+.ab-body{max-width:800px;margin:0 auto;font-size:16px;line-height:1.8;color:var(--text-secondary)}
+.ab-body h2{font-size:26px;color:var(--text-primary);margin:36px 0 16px;font-weight:800;letter-spacing:-0.5px}
+.ab-body h3{font-size:20px;color:var(--text-primary);margin:24px 0 12px;font-weight:700}
+.ab-body p{margin-bottom:16px}
+.ab-body ul,.ab-body ol{margin:0 0 16px 20px}
+.ab-body li{margin-bottom:8px}
+
+/* ── Footer ── */
+.ftr{border-top:1px solid var(--border-color);padding:48px 0 0;margin-top:auto;background:var(--bg-secondary);transition:background-color var(--transition-normal), border-color var(--transition-normal)}
+.ftr-in{max-width:var(--max-width);margin:0 auto;padding:0 24px}
+.ftr-top{display:flex;justify-content:space-between;gap:40px;padding-bottom:32px}
+.ftr-brand{max-width:360px}
+.ftr-brand b{font-size:18px;color:var(--text-primary);display:block;margin-bottom:12px;letter-spacing:-0.5px;font-weight:800}
+.ftr-brand p{color:var(--text-secondary);font-size:14px;line-height:1.6}
+.ftr-links{display:flex;gap:48px}
+.ftr-col h4{font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:16px;letter-spacing:0.5px;text-transform:uppercase}
+.ftr-col a{display:block;font-size:14px;color:var(--text-secondary);margin-bottom:10px;transition:color var(--transition-fast);font-weight:500}
+.ftr-col a:hover{color:var(--text-primary)}
+.ftr-btm{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px 0;border-top:1px solid var(--border-color);font-size:13px;color:var(--text-muted);text-align:center}
+.ftr-btm a{color:var(--text-secondary);font-weight:500;transition:color var(--transition-fast)}
+.ftr-btm a:hover{color:var(--text-primary)}
+
+/* ── Responsive ── */
+@media(max-width:992px){
+  .ftr-top{flex-direction:column;gap:32px}
+  .ftr-links{flex-wrap:wrap;gap:32px}
+}
+@media(max-width:768px){
+  .hdr-menu{position:fixed;top:var(--nav-height);left:0;right:0;bottom:0;background:var(--bg-primary);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);flex-direction:column;padding:32px 24px;z-index:999;align-items:stretch;justify-content:flex-start;gap:24px;opacity:0;pointer-events:none;transform:translateY(-10px);transition:all var(--transition-normal)}
+  .navbar.menu-open .hdr-menu{opacity:1;pointer-events:auto;transform:translateY(0)}
+  .hdr-nav{flex-direction:column;gap:12px}
+  .hdr-nav a{padding:10px 16px;font-size:16px}
+  .hdr-sep{display:none}
+  .hdr-act{flex-direction:column;gap:12px;margin-top:16px}
+  .hdr-act .btn-s{width:100%;padding:12px;font-size:16px}
+  .mob-btn{display:block}
+  .hdr-search-mob{display:block;position:relative;width:100%;margin-bottom:8px}
+  .hdr-search-mob input{width:100%;background:rgba(0,0,0,0.1);border:1px solid var(--border-color);border-radius:6px;padding:10px 12px 10px 36px;color:var(--text-primary);font-size:15px;outline:none}
+  [data-theme="light"] .hdr-search-mob input{background:rgba(255,255,255,0.8)}
+  .hdr-search-mob svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;fill:var(--text-muted)}
+  .ct-grid{grid-template-columns:1fr}
+  .ftr-btm{flex-direction:column;gap:12px;text-align:center}
+  .pg-hero{padding:calc(var(--nav-height) + 24px) 0 32px}
+}
+
+/* ── Global border-radius override to exactly 5px ── */
+code, .lang-dropdown-menu, .lang-dropdown-menu a, .hdr-logo img, .hdr-search input, .hdr-nav a, .btn-s, .btn-primary, .btn-icon, .mob-btn, .hero-btns .btn-big, .code-wrap, .feat-card, .feat-card .ic, .qnav-card, .qnav-card .arr, .mod-wrap, .tag, .mod-note, .ct-item, .ct-item .ci, .soc-a, .hdr-search-mob input, .hf-search input, .hf-filter-item, .hf-filter-item img, .hf-filter-count, .hf-card, .hf-card-icon img, .hf-card-tag, .hf-copy-btn, .md-header, .md-logo, .md-logo img, .md-mid, .md-tag, .md-desc, .md-table-container, .md-copy-btn, .md-not-found a, .playground-container, .playground-tab, .playground-btn, .price-ticket, .action-btn, .spec-card, .spec-icon, .spec-icon svg, .side-spec-value img, .spec-info span, .playground-pre, .playground-pre code {
+  border-radius: 5px !important;
+}
+body.dark .invert-dark,
+[data-theme="dark"] .invert-dark {
+  filter: brightness(0) invert(1) !important;
+}
+
+/* ── Language Dropdown ── */
+.lang-dropdown {
+  position: relative;
+  display: inline-block;
+}
+.lang-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  min-width: 120px;
+  z-index: 1000;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.lang-dropdown.open .lang-dropdown-menu {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+.lang-dropdown-menu a {
+  display: block;
+  padding: 8px 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 4px;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+.lang-dropdown-menu a:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+[data-theme="light"] .lang-dropdown-menu a:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+.lang-dropdown-menu a.active {
+  background: var(--brand-gradient);
+  color: #ffffff !important;
+}
+</style>
+
+</head>
+<body>
+
+<header class="hdr">
+<div class="hdr-in">
+  <a href="/home" class="hdr-logo">
+    
+    <span data-i18n-dynamic="TokensByte">TokensByte</span>
+  </a>
+  <div class="hdr-search">
+    <svg viewBox="0 0 20 20"><path d="M12.9 14.32a8 8 0 1 1 1.41-1.41l5.35 5.33-1.42 1.42-5.33-5.34zM8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z"></path></svg>
+    <input type="text" id="global-search-input" data-i18n-placeholder="search_placeholder" placeholder="搜索模型名称、ID或MID..." onkeydown="if(event.key === 'Enter') { window.location.href = '/home/models?q=' + encodeURIComponent(this.value.trim()); }">
+  </div>
+  <div class="hdr-menu">
+    <div class="hdr-search-mob">
+      <svg viewBox="0 0 20 20"><path d="M12.9 14.32a8 8 0 1 1 1.41-1.41l5.35 5.33-1.42 1.42-5.33-5.34zM8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z"></path></svg>
+      <input type="text" data-i18n-placeholder="search_placeholder" placeholder="搜索模型名称、ID或MID..." onkeydown="if(event.key === 'Enter') { window.location.href = '/home/models?q=' + encodeURIComponent(this.value.trim()); }">
+    </div>
+    <nav class="hdr-nav">
+      
+      <a href="/home" data-i18n-title="nav_home" title="首页|Home">
+        
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-home" style="margin-right:4px;opacity:0.8"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        
+        <span data-i18n-dynamic="首页|Home" data-key="home">首页|Home</span>
+      </a>
+      
+      <a href="/home/models" class="on" data-i18n-title="nav_models" title="模型数据|Models">
+        
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database" style="margin-right:4px;opacity:0.8"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+        
+        <span data-i18n-dynamic="模型数据|Models" data-key="models">模型数据|Models</span>
+      </a>
+      
+      <a href="/home/contact" data-i18n-title="nav_contact" title="联系我们|Contact Us">
+        
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square" style="margin-right:4px;opacity:0.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        
+        <span data-i18n-dynamic="联系我们|Contact Us" data-key="contact">联系我们|Contact Us</span>
+      </a>
+      
+      <a href="/home/about" data-i18n-title="nav_about" title="关于我们|About Us">
+        
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-book-open" style="margin-right:4px;opacity:0.8"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        
+        <span data-i18n-dynamic="关于我们|About Us" data-key="about">关于我们|About Us</span>
+      </a>
+      
+    </nav>
+    <div class="hdr-tools" style="display:flex;align-items:center;gap:4px;margin-left:8px;">
+      <button class="btn-icon" onclick="toggleTheme()" data-i18n-title="theme_toggle" title="切换主题">
+        <svg id="icon-sun" viewBox="0 0 24 24" style="display:none;"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"></path></svg>
+        <svg id="icon-moon" viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-3.03 0-5.5-2.47-5.5-5.5 0-1.82.89-3.42 2.26-4.4C12.92 3.04 12.46 3 12 3z"></path></svg>
+      </button>
+      <div class="lang-dropdown">
+        <button class="btn-icon" onclick="toggleLang(); event.stopPropagation();" data-i18n-title="lang_toggle" title="切换语言">
+          <svg viewBox="0 0 24 24"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"></path></svg>
+        </button>
+        <div class="lang-dropdown-menu" id="lang-menu">
+          <a href="javascript:void(0)" onclick="changeLang('zh')" data-lang="zh">简体中文</a>
+          <a href="javascript:void(0)" onclick="changeLang('en')" data-lang="en">English</a>
+          <a href="javascript:void(0)" onclick="changeLang('ja')" data-lang="ja">日本語</a>
+          <a href="javascript:void(0)" onclick="changeLang('ko')" data-lang="ko">한국어</a>
+          <a href="javascript:void(0)" onclick="changeLang('vi')" data-lang="vi">Tiếng Việt</a>
+        </div>
+      </div>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-act" id="hdr-auth-buttons">
+      <a href="/login" class="btn-s btn-ghost" data-i18n-dynamic="登录" >登录</a>
+      <a href="/register" class="btn-s btn-primary" data-i18n-dynamic="免费注册" >免费注册</a>
+    </div>
+    <div class="hdr-act" id="hdr-user-profile" style="display: none;">
+      <a href="/" class="hdr-avatar-link">
+        <div class="hdr-avatar" id="hdr-avatar-text">U</div>
+      </a>
+    </div>
+  </div>
+  <button class="mob-btn" onclick="document.querySelector('.hdr-menu').classList.toggle('open')"><span></span><span></span><span></span></button>
+</div>
+</header>
+
+<div class="main-content">
+
+<style>
+/* Hugging Face inspired models page layout */
+.hf-container { max-width: 1400px; margin: 0 auto; padding: 32px 24px; display: flex; gap: 32px; }
+.hf-sidebar { width: 280px; flex-shrink: 0; }
+.hf-main { flex: 1; min-width: 0; }
+.hf-header { margin-bottom: 24px; }
+.hf-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; color: var(--text-primary); }
+.hf-header p { color: var(--text-secondary); font-size: 15px; }
+
+/* Search Bar */
+.hf-search { position: relative; margin-bottom: 24px; }
+.hf-search input { width: 100%; padding: 10px 16px 10px 40px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 15px; outline: none; transition: all 0.2s; background: var(--bg-card); color: var(--text-primary); }
+.hf-search input:focus { border-color: var(--brand-primary); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+.hf-search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; fill: var(--text-muted); }
+
+/* Filters */
+.hf-filter-group { margin-bottom: 24px; }
+.hf-filter-title { font-size: 14px; font-weight: 600; color: var(--text-muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.hf-filter-list { list-style: none; padding: 0; margin: 0; }
+.hf-filter-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; margin: 0 -8px; border-radius: 6px; cursor: pointer; color: var(--text-secondary); font-size: 14px; transition: background 0.15s; }
+.hf-filter-item:hover { background: rgba(128,128,128,0.1); color: var(--text-primary); }
+.hf-filter-item.active { background: rgba(22, 100, 255, 0.15); color: var(--brand-secondary); font-weight: 500; }
+.hf-filter-count { font-size: 12px; color: var(--text-muted); background: rgba(128,128,128,0.08); padding: 2px 8px; border-radius: 999px; }
+.hf-filter-item.active .hf-filter-count { background: rgba(22, 100, 255, 0.25); color: var(--brand-secondary); }
+
+/* Cards Grid */
+.hf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 20px; }
+.hf-card { display: flex; flex-direction: column; padding: 20px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); transition: all 0.2s; text-decoration: none; color: var(--text-primary); cursor: pointer; min-height: 168px; height: auto; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-sizing: border-box; }
+.hf-card:hover { border-color: var(--brand-secondary); transform: translateY(-2px); box-shadow: 0 12px 20px -10px rgba(0,0,0,0.1); }
+.hf-card-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 4px; }
+.hf-card-icon { width: 32px; height: 32px; background: transparent; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.hf-card-title-container { display: flex; align-items: center; justify-content: space-between; flex: 1; min-width: 0; }
+.hf-card-title { font-weight: 600; font-size: 16px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
+.hf-card-badges { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 8px; }
+.hf-badge-variant { font-size: 11px; font-weight: 500; line-height: 18px; padding: 0 8px; border-radius: 9999px; background: rgba(128,128,128,0.1); color: var(--text-secondary); border: 1px solid var(--border-color); }
+.hf-badge-discount { font-size: 11px; font-weight: 600; line-height: 18px; padding: 0 8px; border-radius: 9999px; background: linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%); color: #fff; box-shadow: 0 2px 4px rgba(255,77,79,0.2); }
+.hf-card-alias-row { display: flex; align-items: center; gap: 4px; margin-top: 4px; margin-bottom: 12px; padding-left: 44px; }
+.hf-card-alias-code { background: rgba(128,128,128,0.06); padding: 2px 8px; border-radius: 4px; font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; border: 1px solid var(--border-color); }
+.hf-card-price-row { display: flex; align-items: center; gap: 6px; margin-top: auto; margin-bottom: 12px; padding-left: 44px; font-size: 12.5px; font-weight: 500; color: var(--text-primary); font-family: var(--font-mono, monospace); min-height: 24px; }
+.hf-card-price-row svg { color: var(--text-muted); flex-shrink: 0; }
+.hf-card-meta { display: flex; align-items: center; font-size: 12px; color: var(--text-muted); margin-top: auto; padding-top: 10px; border-top: 1px dashed var(--border-color); }
+.hf-card-footer-info { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: space-between; }
+.hf-card-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; background: rgba(128,128,128,0.1); color: var(--text-secondary); font-size: 12px; font-weight: 500; border: 1px solid var(--border-color); }
+.hf-card-provider { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); }
+.hf-card-provider svg { width: 14px; height: 14px; fill: currentColor; }
+.hf-empty { text-align: center; padding: 60px 0; color: var(--text-muted); }
+
+.hf-copy-btn { color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; transition: background 0.2s, color 0.2s; cursor: pointer; flex-shrink: 0; }
+.hf-copy-btn:hover { background: rgba(128,128,128,0.15); color: var(--text-primary); }
+
+@media(max-width: 768px) {
+    .hf-container { flex-direction: column; }
+    .hf-sidebar { width: 100%; }
+}
+
+
+</style>
+
+<div class="hf-container">
+    <aside class="hf-sidebar">
+        <div class="hf-filter-group">
+            <h3 class="hf-filter-title"><span data-i18n="models_filter_tasks">能力类型</span> Tasks</h3>
+            <ul class="hf-filter-list" id="filter-types">
+                <li class="hf-filter-item active" data-type="all">
+                    <span style="display:flex;align-items:center;gap:6px;" data-i18n="models_all_types">
+                        全部类型
+                    </span>
+                    <span class="hf-filter-count" id="count-all-types">0</span>
+                </li>
+            </ul>
+        </div>
+        <div class="hf-filter-group">
+            <h3 class="hf-filter-title"><span data-i18n="models_filter_providers">服务商</span> Providers</h3>
+            <ul class="hf-filter-list" id="filter-providers">
+                <li class="hf-filter-item active" data-provider="all">
+                    <span style="display:flex;align-items:center;gap:6px;" data-i18n="models_all_providers">
+                        全部服务商
+                    </span>
+                    <span class="hf-filter-count" id="count-all-providers">0</span>
+                </li>
+            </ul>
+        </div>
+    </aside>
+ 
+    <main class="hf-main">
+        <div class="hf-header">
+            <h1>
+                Models 
+                <span style="color: #9ca3af; font-weight: 400; font-size: 20px;">1</span>
+            </h1>
+            <p>
+                <span data-i18n-dynamic="模型数据" >模型数据</span>
+                <span data-i18n="models_subtitle_suffix"> - 覆盖文本、图像、视频、语音等能力</span>
+            </p>
+        </div>
+ 
+        <div class="hf-search">
+            <svg viewBox="0 0 20 20"><path d="M12.9 14.32a8 8 0 1 1 1.41-1.41l5.35 5.33-1.42 1.42-5.33-5.34zM8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z"></path></svg>
+            <input type="text" id="model-search" data-i18n-placeholder="models_search_placeholder" placeholder="Filter by name or ID...">
+        </div>
+ 
+        <div class="hf-grid" id="models-grid">
+            
+            <a href="/home/model/qwen3.6-35b" class="hf-card" data-id="qwen3.6-35b" data-name="qwen3.6-35b" data-mid="301649" data-type="聊天" data-provider="其他" data-type-logo="chatgpt" data-provider-logo="" data-index="0">
+                <div class="hf-card-header">
+                    <div class="hf-card-icon">
+                        
+                        🤖
+                        
+                    </div>
+                    <div class="hf-card-title-container">
+                        <span class="hf-card-title">qwen3.6-35b</span>
+                        <div class="hf-card-badges" id="badges-0"></div>
+                    </div>
+                </div>
+                <div class="hf-card-alias-row">
+                    <span class="hf-card-alias-code">qwen3.6-35b</span>
+                    <span class="hf-copy-btn" data-clipboard-text="qwen3.6-35b" title="复制模型ID">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                    </span>
+                </div>
+                <div class="hf-card-price-row" id="price-0"></div>
+                <div class="hf-card-meta">
+                    <div class="hf-card-footer-info">
+                        <span id="footer-info-0"></span>
+                        <div class="hf-card-provider">
+                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
+                            <span data-i18n-dynamic="其他">其他</span>
+                        </div>
+                    </div>
+                </div>
+            </a>
+            
+            
+        </div>
+        <div id="no-results" class="hf-empty" style="display: none; grid-column: 1 / -1;" data-i18n="models_no_results">
+            未找到匹配的模型，请尝试其他关键词或过滤条件。
+        </div>
+    </main>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const cards = Array.from(document.querySelectorAll('.hf-card'));
+    const searchInput = document.getElementById('model-search');
+    const noResults = document.getElementById('no-results');
+    
+    const types = new Map();
+    const providers = new Map();
+    
+    cards.forEach(card => {
+        const t = card.dataset.type;
+        const p = card.dataset.provider;
+        const tLogo = card.dataset.typeLogo;
+        const pLogo = card.dataset.providerLogo;
+        
+        if (!types.has(t)) {
+            types.set(t, { count: 0, logo: tLogo });
+        }
+        types.get(t).count++;
+        
+        if (!providers.has(p)) {
+            providers.set(p, { count: 0, logo: pLogo });
+        }
+        providers.get(p).count++;
+    });
+
+    document.getElementById('count-all-types').textContent = cards.length;
+    document.getElementById('count-all-providers').textContent = cards.length;
+
+    const getSystemIcon = (key) => {
+        const lower = key.toLowerCase();
+        if (lower.includes('图片') || lower.includes('image')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
+        if (lower.includes('视频') || lower.includes('video')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>';
+        if (lower.includes('音频') || lower.includes('audio')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>';
+        if (lower.includes('聊天') || lower.includes('chat') || lower.includes('text') || lower.includes('对话')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+        if (lower.includes('embedding') || lower.includes('向量')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.12 7.04-6-4.66a2 2 0 0 0-2.24 0l-6 4.66A2 2 0 0 0 6 8.66V15.3a2 2 0 0 0 .88 1.62l6 4.66a2 2 0 0 0 2.24 0l6-4.66a2 2 0 0 0 .88-1.62V8.66a2 2 0 0 0-.88-1.62z"/><path d="M12 2v20"/><path d="m2 7 10 5 10-5"/><path d="M12 12v10"/></svg>';
+        if (lower.includes('rerank') || lower.includes('排序')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" x2="21" y1="6" y2="6"/><line x1="10" x2="21" y1="12" y2="12"/><line x1="10" x2="21" y1="18" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>';
+        return null;
+    };
+
+    const renderFilterItems = (map, containerId, dataKey) => {
+        const container = document.getElementById(containerId);
+        const sorted = Array.from(map.entries()).sort((a, b) => b[1].count - a[1].count);
+        sorted.forEach(([key, obj]) => {
+            const li = document.createElement('li');
+            li.className = 'hf-filter-item';
+            li.dataset[dataKey] = key;
+            
+            let logoHtml = null;
+            // For model type sidebar filters, we prioritize the built-in system icon (just like the admin backend panel)
+            if (dataKey === 'type') {
+                logoHtml = getSystemIcon(key);
+            }
+            
+            // If it's not 'type' or if no system icon matched, fallback to configured logo
+            if (!logoHtml && obj.logo && obj.logo !== '') {
+                let logoUrl = obj.logo;
+                if (!logoUrl.startsWith('http') && !logoUrl.startsWith('/')) {
+                    logoUrl = `/assets/icons/lobe/${logoUrl}.svg`;
+                }
+                logoHtml = `<img class="hf-smart-icon" src="${logoUrl}" style="width: 16px; height: 16px; object-fit: contain; border-radius: 4px;" onload="makeIconSmart(this)" onerror="this.style.display='none'">`;
+            }
+            
+            // Absolute fallback (e.g. for provider default or fallback system icon)
+            if (!logoHtml) {
+                logoHtml = getSystemIcon(key) || '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="opacity: 0.5;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>';
+            }
+            
+            li.innerHTML = `<span style="display:flex;align-items:center;gap:6px;">${logoHtml}${key}</span><span class="hf-filter-count">${obj.count}</span>`;
+            container.appendChild(li);
+        });
+    };
+
+    renderFilterItems(types, 'filter-types', 'type');
+    renderFilterItems(providers, 'filter-providers', 'provider');
+
+    let activeType = 'all';
+    let activeProvider = 'all';
+    let searchQuery = '';
+
+    const filterCards = () => {
+        let visibleCount = 0;
+        cards.forEach(card => {
+            const matchType = activeType === 'all' || card.dataset.type === activeType;
+            const matchProvider = activeProvider === 'all' || card.dataset.provider === activeProvider;
+            const matchSearch = card.dataset.name.includes(searchQuery) || card.dataset.mid.includes(searchQuery) || (card.dataset.id && card.dataset.id.includes(searchQuery));
+            
+            if (matchType && matchProvider && matchSearch) {
+                card.style.display = 'flex';
+                visibleCount++;
+            } else {
+                card.style.display = 'none';
+            }
+        });
+        
+        noResults.style.display = visibleCount === 0 && cards.length > 0 ? 'block' : 'none';
+    };
+
+    searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value.toLowerCase().trim();
+        filterCards();
+    });
+
+    const setupFilterClick = (containerId, dataKey, setActive) => {
+        const container = document.getElementById(containerId);
+        container.addEventListener('click', (e) => {
+            const item = e.target.closest('.hf-filter-item');
+            if (!item) return;
+            
+            Array.from(container.children).forEach(child => child.classList.remove('active'));
+            item.classList.add('active');
+            
+            setActive(item.dataset[dataKey]);
+            filterCards();
+        });
+    };
+
+    setupFilterClick('filter-types', 'type', val => activeType = val);
+    setupFilterClick('filter-providers', 'provider', val => activeProvider = val);
+
+    // Initialize search query from URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryParam = urlParams.get('q');
+    if (queryParam) {
+        searchInput.value = queryParam;
+        searchQuery = queryParam.toLowerCase().trim();
+    }
+    
+    // Initial filter run
+    filterCards();
+
+    // Copy to clipboard functionality
+    document.querySelectorAll('.hf-copy-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const text = btn.getAttribute('data-clipboard-text');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="#10b981"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+                    setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                });
+            } else {
+                // Fallback for older browsers
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="#10b981"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+                    setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+                } catch (err) {
+                    console.error('Fallback: Oops, unable to copy', err);
+                }
+                document.body.removeChild(textArea);
+            }
+        });
+    });
+
+    // ==========================================
+    // 精致价格与打折信息展示与多语言动态渲染支持
+    // ==========================================
+    const modelsData = [{"id":1,"model_name":"qwen3.6-35b","mid":"301649","model_id":"qwen3.6-35b","original_id":"","model_type":"聊天","provider":null,"logo":null,"type_logo":"chatgpt","provider_logo":null,"description":null,"billing":{"billing_type":"tokens","billing_rule":"standard","prompt_rate":1,"completion_rate":2,"fixed_rate":0,"duration_rate":0,"extended_config":"{}","pricing_tiers":"[]","cached_rate":0,"claude_cache_creation_rate":0,"claude_cache_read_rate":0,"global_discount":1,"global_discount_enabled":1},"sort_order":0,"global_discount":1.0,"global_discount_enabled":1,"variant_count":1,"variants":[{"id":1,"model_name":"qwen3.6-35b","mid":"301649","model_id":"qwen3.6-35b","original_id":"","model_type":"聊天","provider":null,"logo":null,"type_logo":"chatgpt","provider_logo":null,"description":null,"billing":{"billing_type":"tokens","billing_rule":"standard","prompt_rate":1,"completion_rate":2,"fixed_rate":0,"duration_rate":0,"extended_config":"{}","pricing_tiers":"[]","cached_rate":0,"claude_cache_creation_rate":0,"claude_cache_read_rate":0,"global_discount":1,"global_discount_enabled":1},"sort_order":0,"global_discount":1.0,"global_discount_enabled":1}]}];
+    const currencySettings = {"default_currency":"CNY","currency_symbol":"¥","currency_unit":"元","token_ratio":1.0,"auxiliary_currencies":[],"quick_amounts":[20.0,50.0,100.0,500.0,1000.0,5000.0],"min_recharge_amount":5.0};
+
+    function getFallbackBilling(model) {
+        if (model.billing) return model.billing;
+        const mid = model.mid || '';
+        const typeName = model.model_type || '';
+        
+        if (mid.startsWith('vve-') || mid.startsWith('vvs-')) {
+            const isErase = mid.startsWith('vvs-');
+            return {
+                billing_type: 'duration',
+                billing_rule: isErase ? 'per_second' : 'video_quality',
+                fixed_rate: 0,
+                duration_rate: 0,
+                pricing_tiers: '[]',
+                extended_config: '{}',
+            };
+        }
+        if (typeName.includes('图') || typeName.includes('画') || typeName.includes('Image') || typeName.includes('image')) {
+            return {
+                billing_type: 'requests',
+                billing_rule: 'per_image',
+                fixed_rate: 0,
+                pricing_tiers: '[]',
+                extended_config: '{}',
+            };
+        }
+        if (typeName.includes('视频') || typeName.includes('Video') || typeName.includes('video')) {
+            return {
+                billing_type: 'duration',
+                billing_rule: 'video_resolution',
+                fixed_rate: 0,
+                duration_rate: 0,
+                pricing_tiers: '[]',
+                extended_config: '{}',
+            };
+        }
+        return {
+            billing_type: 'tokens',
+            billing_rule: 'standard',
+            prompt_rate: 0,
+            completion_rate: 0,
+            pricing_tiers: '[]',
+            extended_config: '{}',
+        };
+    }
+
+    function formatPrice(price, discountModel, lang) {
+        if (price === undefined || price === null || price === '') return '-';
+        const num = Number(price);
+        if (isNaN(num)) return String(price);
+
+        const dict = locales[lang] || locales['zh'];
+        const symbol = currencySettings.currency_symbol || '¥';
+        const formatNumber = (val) => parseFloat(val.toFixed(4));
+        
+        const raw = `${symbol}${formatNumber(num)}`;
+        
+        const hasDiscount = discountModel && 
+                            discountModel.global_discount_enabled === 1 && 
+                            discountModel.global_discount !== undefined && 
+                            discountModel.global_discount > 0 && 
+                            discountModel.global_discount < 1;
+                            
+        if (hasDiscount) {
+            const discountedNum = num * discountModel.global_discount;
+            const discountedRaw = `${symbol}${formatNumber(discountedNum)}`;
+            return `<span style="text-decoration: line-through; color: var(--text-muted); font-size: 0.85em; font-weight: 400; opacity: 0.7; margin-right: 6px;">${raw}</span><span style="color: #ff4d4f; font-weight: 700;">${discountedRaw}</span>`;
+        }
+        return `<span>${raw}</span>`;
+    }
+
+    function getDiscountLabel(discount, lang) {
+        if (lang === 'en') {
+            const pct = Math.round((1 - discount) * 100);
+            return `${pct}% off`;
+        }
+        return `${Number((discount * 10).toFixed(1))}折`;
+    }
+
+    function renderCardPrice(model, lang) {
+        const billing = model.billing || getFallbackBilling(model);
+        if (!billing) return '';
+        
+        const { billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule, extended_config, pricing_tiers } = billing;
+        const dict = locales[lang] || locales['zh'];
+        
+        let ext = {};
+        if (extended_config) {
+            try { ext = typeof extended_config === 'string' ? JSON.parse(extended_config) : extended_config; } catch (e) {}
+        }
+        let tiers = [];
+        if (pricing_tiers) {
+            try { tiers = typeof pricing_tiers === 'string' ? JSON.parse(pricing_tiers) : pricing_tiers; } catch (e) {}
+        }
+        
+        const freeBadge = `<span class="hf-badge-variant" style="padding: 2px 6px; border-radius: 4px;">${dict['models_price_free'] || '免费'}</span>`;
+        
+        const renderMinPrice = (rates, unitKey) => {
+            const activeRates = rates.map(r => Number(r)).filter(r => !isNaN(r) && r > 0);
+            if (activeRates.length > 0) {
+                const minVal = Math.min(...activeRates);
+                const unit = dict[unitKey] || '/1M';
+                const fromLabel = dict['models_price_from'] || '起价: ';
+                return `<span>${fromLabel}${formatPrice(minVal, model, lang)}${unit}</span>`;
+            }
+            return '';
+        };
+        
+        let priceHtml = '';
+        
+        if (billing_type === 'tokens') {
+            if ((billing_rule === 'tiered' || billing_rule === 'doubao_chat') && Array.isArray(tiers) && tiers.length > 0) {
+                const firstTier = tiers[0];
+                const pRate = firstTier.prompt_rate !== undefined && firstTier.prompt_rate !== null ? Number(firstTier.prompt_rate) : 0;
+                const cRate = firstTier.completion_rate !== undefined && firstTier.completion_rate !== null ? Number(firstTier.completion_rate) : 0;
+                
+                const parts = [];
+                if (pRate > 0) {
+                    parts.push(`<span>${dict['models_price_input'] || '输入: '}${formatPrice(pRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                if (cRate > 0) {
+                    parts.push(`<span>${dict['models_price_output'] || '输出: '}${formatPrice(cRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                priceHtml = parts.join('<span style="margin: 0 6px; opacity: 0.4;">|</span>');
+            } else if (billing_rule === 'multimodal') {
+                const pRate = prompt_rate !== undefined && prompt_rate !== null ? Number(prompt_rate) : 0;
+                const imgRate = ext.image_prompt_rate !== undefined && ext.image_prompt_rate !== null ? Number(ext.image_prompt_rate) : 0;
+                
+                const parts = [];
+                if (pRate > 0) {
+                    parts.push(`<span>文P: ${formatPrice(pRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                if (imgRate > 0) {
+                    parts.push(`<span>图P: ${formatPrice(imgRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                priceHtml = parts.join('<span style="margin: 0 6px; opacity: 0.4;">|</span>');
+            } else if (billing_rule === 'seedance2.0' && ext.resolution_rates) {
+                const rates = ext.resolution_rates || {};
+                const values = [];
+                Object.keys(rates).forEach(k => {
+                    if (rates[k]) {
+                        values.push(rates[k].with_video, rates[k].without_video);
+                    }
+                });
+                priceHtml = renderMinPrice(values, 'models_unit_1m');
+            } else if (billing_rule === 'seedance1.5pro') {
+                priceHtml = renderMinPrice([ext.base_rate, ext.audio_rate], 'models_unit_1m');
+            } else if (billing_rule === 'seedance1.0') {
+                priceHtml = renderMinPrice([ext.online_rate, ext.offline_rate], 'models_unit_1m');
+            } else if (billing_rule === 'volcengine') {
+                priceHtml = renderMinPrice([ext.volc_base_rate, ext.volc_audio_rate, ext.volc_video_rate], 'models_unit_1m');
+            } else {
+                const pRate = prompt_rate !== undefined && prompt_rate !== null ? Number(prompt_rate) : 0;
+                const cRate = completion_rate !== undefined && completion_rate !== null ? Number(completion_rate) : 0;
+                if (pRate === 0 && cRate === 0) {
+                    return freeBadge;
+                }
+                const parts = [];
+                if (pRate > 0) {
+                    parts.push(`<span>${dict['models_price_input'] || '输入: '}${formatPrice(pRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                if (cRate > 0) {
+                    parts.push(`<span>${dict['models_price_output'] || '输出: '}${formatPrice(cRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                priceHtml = parts.join('<span style="margin: 0 6px; opacity: 0.4;">|</span>');
+            }
+        } else if (billing_type === 'requests') {
+            if (billing_rule === 'image_resolution' && Array.isArray(tiers) && tiers.length > 0) {
+                priceHtml = renderMinPrice(tiers.filter(t => t.enabled !== false).map(t => t.rate), 'models_unit_image');
+            } else if (billing_rule === 'image_size_pixel' && Array.isArray(tiers) && tiers.length > 0) {
+                const rates = [];
+                tiers.filter(t => t.enabled !== false).forEach(t => {
+                    rates.push(t.quality_pricing ? t.rate_low : t.rate);
+                });
+                priceHtml = renderMinPrice(rates, 'models_unit_image');
+            } else if (billing_rule === 'vidu_image') {
+                const pt = ext.price_table || {};
+                const disabledKeys = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
+                const values = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k)).map(([, v]) => v);
+                priceHtml = renderMinPrice(values, 'models_unit_image');
+            } else if (billing_rule === 'characters') {
+                const fRate = fixed_rate !== undefined && fixed_rate !== null ? Number(fixed_rate) : 0;
+                if (fRate === 0) return freeBadge;
+                priceHtml = `<span>${formatPrice(fRate, model, lang)}${dict['models_unit_thousand_chars'] || '/万字符'}</span>`;
+            } else {
+                const fRate = fixed_rate !== undefined && fixed_rate !== null ? Number(fixed_rate) : 0;
+                if (fRate === 0) return freeBadge;
+                const isImageRule = ['per_image', 'vidu_image', 'image_resolution', 'image_size_pixel'].includes(billing_rule || '') || 
+                                    (billing_rule || '').includes('image') || 
+                                    (model.model_type || '').includes('图片') || 
+                                    (model.model_type || '').includes('图像') ||
+                                    (model.model_type || '').includes('Image');
+                const unitKey = isImageRule ? 'models_unit_image' : 'models_unit_request';
+                priceHtml = `<span>${formatPrice(fRate, model, lang)}${dict[unitKey] || '/次'}</span>`;
+            }
+        } else if (billing_type === 'duration') {
+            if (billing_rule === 'video_resolution' && Array.isArray(tiers) && tiers.length > 0) {
+                priceHtml = renderMinPrice(tiers.filter(t => t.enabled !== false).map(t => t.rate), 'models_unit_second');
+            } else if (billing_rule === 'kling_video') {
+                const pt = ext.price_table || {};
+                const disabledKeys = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
+                const values = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k)).map(([, v]) => v);
+                priceHtml = renderMinPrice(values, 'models_unit_second');
+            } else if (billing_rule === 'vidu_video') {
+                const pt = ext.price_table || {};
+                const disabledKeys = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
+                const values = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k)).map(([, v]) => v);
+                priceHtml = renderMinPrice(values, 'models_unit_second');
+            } else if (billing_rule === 'video_quality' && Array.isArray(tiers) && tiers.length > 0) {
+                priceHtml = renderMinPrice(tiers.filter(t => t.enabled !== false).map(t => t.rate), 'models_unit_second');
+            } else {
+                const dRate = duration_rate !== undefined && duration_rate !== null ? Number(duration_rate) : 0;
+                if (dRate === 0) return freeBadge;
+                priceHtml = `<span>${formatPrice(dRate, model, lang)}${dict['models_unit_second'] || '/秒'}</span>`;
+            }
+        }
+        
+        if (priceHtml) {
+            return `<svg class="price-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="16"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/></svg>${priceHtml}`;
+        }
+        return '';
+    }
+
+    function updateAllCards(lang) {
+        const dict = locales[lang] || locales['zh'];
+        modelsData.forEach((model, idx) => {
+            // 1. Badges
+            const badgesContainer = document.getElementById(`badges-${idx}`);
+            if (badgesContainer) {
+                let badgesHtml = '';
+                if (model.variant_count > 1) {
+                    const plansLabel = dict['models_pricing_plans'] || ' 种定价';
+                    badgesHtml += `<span class="hf-badge-variant">${model.variant_count}${plansLabel}</span>`;
+                }
+                const validDiscounts = (model.variants || [model])
+                    .filter(v => v.global_discount_enabled === 1 && v.global_discount !== undefined && v.global_discount > 0 && v.global_discount < 1)
+                    .map(v => Number(v.global_discount));
+                if (validDiscounts.length > 0) {
+                    const minDiscount = Math.min(...validDiscounts);
+                    badgesHtml += `<span class="hf-badge-discount">${getDiscountLabel(minDiscount, lang)}</span>`;
+                }
+                badgesContainer.innerHTML = badgesHtml;
+            }
+            
+            // 2. Price
+            const priceContainer = document.getElementById(`price-${idx}`);
+            if (priceContainer) {
+                priceContainer.innerHTML = renderCardPrice(model, lang);
+            }
+            
+            // 3. Footer
+            const footerContainer = document.getElementById(`footer-info-${idx}`);
+            if (footerContainer) {
+                const mType = model.model_type || '综合';
+                const typeText = dict[mType] || mType;
+                
+                const billing = model.billing || getFallbackBilling(model);
+                const billingType = billing ? billing.billing_type : 'tokens';
+                
+                let billingTextKey = 'Tokens 计费';
+                if (billingType === 'requests') billingTextKey = '按次计费';
+                else if (billingType === 'duration') billingTextKey = '时长计费';
+                
+                const billingText = dict[billingTextKey] || billingTextKey;
+                
+                footerContainer.innerHTML = `${typeText} · ${billingText}`;
+            }
+        });
+    }
+
+    window.addEventListener('languageChanged', (e) => {
+        updateAllCards(e.detail.lang);
+    });
+
+    const currentLang = localStorage.getItem('site_portal_lang') || 'zh';
+    updateAllCards(currentLang);
+});
+</script>
+
+</div>
+
+<footer class="ftr">
+<div class="ftr-in">
+  <div class="ftr-top">
+    <div class="ftr-brand">
+      <b>TokensByte</b>
+      <p>OpenAI 兼容格式，极速接入主流模型。按量付费，零门槛开始。</p>
+    </div>
+    <div class="ftr-links">
+      
+        <div class="ftr-col">
+          <h4 data-i18n="footer_products">产品</h4>
+          <a href="/home/models" data-i18n="footer_models">模型列表</a>
+          <a href="/home/about" data-i18n="footer_about">关于我们</a>
+          <a href="/home/contact" data-i18n="footer_contact">联系我们</a>
+        </div>
+        <div class="ftr-col">
+          <h4 data-i18n="footer_developers">开发者</h4>
+          <a href="/login" data-i18n="footer_console">控制台</a>
+          <a href="/register" data-i18n="nav_register">免费注册</a>
+        </div>
+      
+    </div>
+  </div>
+  <div class="ftr-btm">
+    <span>&copy; 2026 . All rights reserved.</span>
+    
+  </div>
+</div>
+</footer>
+
+
+
+<script>
+  // Cache for SVG analysis results
+  const _darkSvgCache = {};
+
+  function makeIconSmart(img) {
+    if (!img || !img.src) return;
+    const src = img.src;
+
+    if (_darkSvgCache[src] !== undefined) {
+      if (_darkSvgCache[src]) {
+        img.classList.add('invert-dark');
+      }
+      return;
+    }
+
+    // Fallback heuristics: name-based checking for instant load
+    const lowerSrc = src.toLowerCase();
+    const knownDark = lowerSrc.includes('baichuan') || 
+                      lowerSrc.includes('minimax') || 
+                      lowerSrc.includes('spark') || 
+                      lowerSrc.includes('sensetime') || 
+                      lowerSrc.includes('tencent') || 
+                      lowerSrc.includes('custom/');
+    if (knownDark) {
+      _darkSvgCache[src] = true;
+      img.classList.add('invert-dark');
+      return;
+    }
+
+    const analyze = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 16;
+        canvas.height = 16;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, 16, 16);
+        const data = ctx.getImageData(0, 0, 16, 16).data;
+        
+        let total = 0;
+        let darkGrayscale = 0;
+        
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const a = data[i + 3];
+          
+          if (a > 30) { // Only analyze visible pixels
+            total++;
+            const isGrayscale = Math.abs(r - g) < 25 && Math.abs(g - b) < 25 && Math.abs(r - b) < 25;
+            const isDarkColor = r < 110 && g < 110 && b < 110;
+            if (isGrayscale && isDarkColor) {
+              darkGrayscale++;
+            }
+          }
+        }
+        
+        const needed = total > 0 && (darkGrayscale / total) > 0.75;
+        _darkSvgCache[src] = needed;
+        if (needed) {
+          img.classList.add('invert-dark');
+        }
+      } catch (e) {
+        // Fallback for CORS or canvas errors
+        _darkSvgCache[src] = false;
+      }
+    };
+
+    if (img.complete) {
+      analyze();
+    } else {
+      img.onload = analyze;
+    }
+  }
+
+  function toggleTheme() {
+    const htmlElement = document.documentElement;
+    const currentTheme = htmlElement.getAttribute('data-theme') || 'dark';
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    htmlElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    
+    if (newTheme === 'dark') {
+      document.body.classList.add('dark');
+    } else {
+      document.body.classList.remove('dark');
+    }
+    
+    document.getElementById('icon-sun').style.display = newTheme === 'dark' ? 'block' : 'none';
+    document.getElementById('icon-moon').style.display = newTheme === 'dark' ? 'none' : 'block';
+  }
+
+  // Set initial theme
+  const savedTheme = localStorage.getItem('theme');
+  const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = savedTheme === 'dark' || (!savedTheme && systemPrefersDark);
+  
+  document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  if (isDark) {
+    document.body.classList.add('dark');
+  } else {
+    document.body.classList.remove('dark');
+  }
+  document.getElementById('icon-sun').style.display = isDark ? 'block' : 'none';
+  document.getElementById('icon-moon').style.display = isDark ? 'none' : 'block';
+
+  const locales = {
+    'zh': {
+  "search_placeholder": "搜索模型名称、ID或MID...",
+  "theme_toggle": "切换主题",
+  "lang_toggle": "切换语言",
+  "nav_home": "首页",
+  "nav_models": "模型广场",
+  "nav_about": "关于我们",
+  "nav_contact": "联系我们",
+  "nav_login": "登录",
+  "nav_register": "免费注册",
+  "footer_products": "产品",
+  "footer_models": "模型列表",
+  "footer_about": "关于我们",
+  "footer_contact": "联系我们",
+  "footer_developers": "开发者",
+  "footer_console": "控制台",
+  "hero_title": "一个接口，调用全球数百个 AI 模型",
+  "hero_subtitle": "OpenAI 兼容格式，极速接入 GPT-4o、Claude、DeepSeek、Gemini 等主流模型。按量付费，零门槛开始。",
+  "hero_badge": "✨ 探索下一代 AI",
+  "btn_copy": "复制 URL",
+  "btn_copied": "已复制!",
+  "stats_models": "AI 模型",
+  "stats_uptime": "服务可用率",
+  "stats_latency": "首字平均延迟",
+  "stats_concurrency": "并发无上限",
+  "feat_title": "为什么选择我们",
+  "feat_subtitle": "为开发者和企业打造的下一代极速 AI 大模型分发网关",
+  "feat1_title": "一键极速接入",
+  "feat1_desc": "OpenAI 兼容 API 格式，只需修改 Base URL 和 Key，即可无缝替换至数百个主流模型，零代码成本迁移。",
+  "feat2_title": "全球模型全面覆盖",
+  "feat2_desc": "聚合 OpenAI、Anthropic、Google Gemini、DeepSeek、字节跳动火山引擎等数十家顶级服务商的模型矩阵。",
+  "feat3_title": "智能分流与高可用",
+  "feat3_desc": "全球边缘节点路由，支持在主渠道高负载或故障时自动无感容灾重试，首字耗时降至毫秒级。",
+  "feat4_title": "极致安全数据脱敏",
+  "feat4_desc": "支持 IP 白名单防刷保护，端到端高强度加密传输，异步任务与计费明细日志支持 Base64 数据隐私脱敏。",
+  "qnav1_title": "模型数据",
+  "qnav1_desc": "查看平台全部 AI 模型，覆盖文本、图像、视频、语音等能力",
+  "qnav2_title": "联系我们",
+  "qnav2_desc": "技术支持、商务合作、定制化需求",
+  "qnav3_title": "关于我们",
+  "qnav3_desc": "了解团队愿景与技术实力",
+  "cta_title": "准备好开始构建了吗？",
+  "cta_description": "只需 3 分钟即可获取您的 API 密钥并开始创新。基础 URL：https://api.artsapi.com/api，零成本平滑迁移。",
+  "cta_primary_btn_text": "开始对话",
+  "cta_secondary_btn_text": "阅读文档",
+  "about_title_prefix": "关于",
+  "about_hero_subtitle": "作为业内领先的 AI 模型聚合服务平台，我们消除服务商锁定风险，通过更优的价格、高可用性和企业级的稳定性，为您打通全球最先进大语言模型的访问桥梁。",
+  "about_stat_tokens": "月均请求 Token",
+  "about_stat_developers": "全球活跃开发者",
+  "about_stat_providers": "模型供应商",
+  "about_stat_models": "集成前沿模型",
+  "about_press_title_prefix": "统一大模型接口体验，",
+  "about_press_title_suffix": " 让接入 AI 零负担",
+  "about_press_desc": "旨在成为开发者接入、对比、调用不同 AI 模型的首选聚合网关。只需一次接入，即可全量访问数百个前沿模型。",
+  "about_press_link": "联系我们洽谈合作 →",
+  "about_partners_title": "受到行业领先团队的信任",
+  "about_cta_desc_prefix": "加入数以万计的开发者，利用 ",
+  "about_cta_desc_suffix": " 快速部署 AI 应用。",
+  "contact_subtitle": "欢迎联系我们获取技术支持或商务合作",
+  "contact_email": "邮箱",
+  "contact_phone": "电话",
+  "contact_address": "地址",
+  "contact_tip": "提示",
+  "contact_tip_desc": "请在管理后台「门户管理 → 栏目管理」中填写联系信息",
+  "contact_social": "社交媒体",
+  "models_filter_tasks": "能力类型",
+  "models_filter_providers": "服务商",
+  "models_all_types": "全部类型",
+  "models_all_providers": "全部服务商",
+  "models_subtitle_suffix": " - 覆盖文本、图像、视频、语音等能力",
+  "models_search_placeholder": "搜索模型名称或 ID...",
+  "models_empty": "暂无已启用的模型",
+  "models_no_results": "未找到匹配的模型，请尝试其他关键词或过滤条件。",
+  "model_detail_variants_suffix": " 种定价",
+  "model_detail_copy_id": "复制模型ID",
+  "model_detail_intro": "模型简介",
+  "model_detail_about_title": "关于该模型",
+  "model_detail_about_desc": "该模型目前已在全平台上线。您可以直接在 API 调用或控制台中使用。如果您有大规模调用需求，请联系客服获取专属优惠。",
+  "model_detail_label_type": "能力分类",
+  "model_detail_label_provider": "官方服务商",
+  "model_detail_label_variants": "定价方案",
+  "model_detail_variants_count_suffix": " 种",
+  "model_detail_label_updated": "更新时间",
+  "model_detail_table_provider": "服务商 / PROVIDER",
+  "model_detail_table_billing": "计费模式 / BILLING TYPE",
+  "model_detail_table_input": "输入价格 / INPUT PRICE",
+  "model_detail_table_output": "输出价格 / OUTPUT PRICE",
+  "综合": "综合",
+  "文本": "文本",
+  "图像": "图像",
+  "视频": "视频",
+  "语音": "语音",
+  "向量": "向量",
+  "其他": "其他",
+  "未知服务商": "未知服务商",
+  "Tokens 计费": "Tokens 计费",
+  "按次计费": "按次计费",
+  "时长计费": "时长计费",
+  "未配置": "未配置",
+  "模型广场": "模型广场",
+  "models_price_input": "输入: ",
+  "models_price_output": "输出: ",
+  "models_price_from": "起价: ",
+  "models_price_free": "免费",
+  "models_unit_1m": "/1M",
+  "models_unit_image": "/张",
+  "models_unit_second": "/秒",
+  "models_unit_thousand_chars": "/万字符",
+  "models_unit_request": "/次",
+  "models_pricing_plans": " 种定价"
+}
+,
+    'en': {
+  "search_placeholder": "Search models by name, ID or MID...",
+  "theme_toggle": "Toggle Theme",
+  "lang_toggle": "Toggle Language",
+  "nav_home": "Home",
+  "nav_models": "Models",
+  "nav_about": "About Us",
+  "nav_contact": "Contact Us",
+  "nav_login": "Log In",
+  "nav_register": "Sign Up",
+  "footer_products": "Products",
+  "footer_models": "Models",
+  "footer_about": "About Us",
+  "footer_contact": "Contact Us",
+  "footer_developers": "Developers",
+  "footer_console": "Console",
+  "hero_title": "One API for Hundreds of AI Models Worldwide",
+  "hero_subtitle": "OpenAI compatible format. Quickly connect to GPT-4o, Claude, DeepSeek, Gemini, and more. Pay as you go, start with zero threshold.",
+  "hero_badge": "✨ Explore Next-Gen AI",
+  "btn_copy": "Copy URL",
+  "btn_copied": "Copied!",
+  "stats_models": "AI Models",
+  "stats_uptime": "Uptime",
+  "stats_latency": "Avg. Latency",
+  "stats_concurrency": "Unlimited Concurrency",
+  "feat_title": "Why Choose Us",
+  "feat_subtitle": "The Next-Generation Lightning Fast AI Model Gateway for Developers and Enterprises",
+  "feat1_title": "One-Click Fast Integration",
+  "feat1_desc": "OpenAI compatible API format. Just change the Base URL and Key to seamlessly switch to hundreds of mainstream models with zero code cost.",
+  "feat2_title": "Comprehensive Global Coverage",
+  "feat2_desc": "Aggregating model matrices from dozens of top providers like OpenAI, Anthropic, Google Gemini, DeepSeek, ByteDance, etc.",
+  "feat3_title": "Smart Routing & High Availability",
+  "feat3_desc": "Global edge node routing. Supports automatic hitless disaster recovery retries during high load or failure of main channels.",
+  "feat4_title": "Ultimate Security & Data Masking",
+  "feat4_desc": "Supports IP whitelist protection, end-to-end high-strength encryption, and Base64 data privacy masking for logs.",
+  "qnav1_title": "Model Data",
+  "qnav1_desc": "View all AI models on the platform, covering text, image, video, voice, and more",
+  "qnav2_title": "Contact Us",
+  "qnav2_desc": "Technical support, business cooperation, custom requirements",
+  "qnav3_title": "About Us",
+  "qnav3_desc": "Learn about our team vision and technical strength",
+  "cta_title": "Ready to start building?",
+  "cta_description": "Get your API key in just 3 minutes and start innovating. Base URL: https://api.artsapi.com/api, seamless migration with zero cost.",
+  "cta_primary_btn_text": "Start Chatting",
+  "cta_secondary_btn_text": "Read Docs",
+  "about_title_prefix": "About ",
+  "about_hero_subtitle": "As an industry-leading AI model aggregation platform, we eliminate vendor lock-in risks. With better pricing, high availability, and enterprise-grade stability, we bridge your access to the world's most advanced large language models.",
+  "about_stat_tokens": "Monthly Tokens",
+  "about_stat_developers": "Active Developers",
+  "about_stat_providers": "Model Providers",
+  "about_stat_models": "Integrated Models",
+  "about_press_title_prefix": "Unified AI Model API Experience, ",
+  "about_press_title_suffix": " Makes AI Integration Effortless",
+  "about_press_desc": "Aims to be the preferred aggregation gateway for developers to connect, compare, and call different AI models. Connect once to access hundreds of frontier models.",
+  "about_press_link": "Contact us for cooperation →",
+  "about_partners_title": "Trusted by Industry-Leading Teams",
+  "about_cta_desc_prefix": "Join tens of thousands of developers and leverage ",
+  "about_cta_desc_suffix": " to deploy AI applications rapidly.",
+  "contact_subtitle": "Welcome to contact us for technical support or business cooperation",
+  "contact_email": "Email",
+  "contact_phone": "Phone",
+  "contact_address": "Address",
+  "contact_tip": "Tip",
+  "contact_tip_desc": "Please fill in the contact information in the admin panel under \"Portal Management -> Column Management\"",
+  "contact_social": "Social Media",
+  "models_filter_tasks": "Tasks",
+  "models_filter_providers": "Providers",
+  "models_all_types": "All Tasks",
+  "models_all_providers": "All Providers",
+  "models_subtitle_suffix": " - Covering text, image, video, voice capabilities",
+  "models_search_placeholder": "Filter by name or ID...",
+  "models_empty": "No active models available",
+  "models_no_results": "No matching models found. Try other keywords or filter criteria.",
+  "model_detail_variants_suffix": " Pricing Plans",
+  "model_detail_copy_id": "Copy Model ID",
+  "model_detail_intro": "Model Intro",
+  "model_detail_about_title": "About this Model",
+  "model_detail_about_desc": "This model is currently active across the platform. You can use it directly in API calls or in the console. For high-volume needs, contact support for custom discounts.",
+  "model_detail_label_type": "Capabilities",
+  "model_detail_label_provider": "Official Providers",
+  "model_detail_label_variants": "Pricing",
+  "model_detail_variants_count_suffix": " Types",
+  "model_detail_label_updated": "Updated At",
+  "model_detail_table_provider": "PROVIDER",
+  "model_detail_table_billing": "BILLING TYPE",
+  "model_detail_table_input": "INPUT PRICE",
+  "model_detail_table_output": "OUTPUT PRICE",
+  "综合": "General",
+  "文本": "Text",
+  "图像": "Image",
+  "视频": "Video",
+  "语音": "Audio",
+  "向量": "Embedding",
+  "其他": "Others",
+  "未知服务商": "Unknown Provider",
+  "Tokens 计费": "Tokens Billing",
+  "按次计费": "Per Request",
+  "时长计费": "Duration",
+  "未配置": "Unconfigured",
+  "模型广场": "Model Hub",
+  "models_price_input": "Input: ",
+  "models_price_output": "Output: ",
+  "models_price_from": "From: ",
+  "models_price_free": "Free",
+  "models_unit_1m": "/1M",
+  "models_unit_image": "/img",
+  "models_unit_second": "/sec",
+  "models_unit_thousand_chars": "/10k chars",
+  "models_unit_request": "/req",
+  "models_pricing_plans": " pricing plans"
+}
+,
+    'ja': {
+  "search_placeholder": "モデル名、ID、またはMIDで検索...",
+  "theme_toggle": "テーマ切り替え",
+  "lang_toggle": "言語切り替え",
+  "nav_home": "ホーム",
+  "nav_models": "モデル広場",
+  "nav_about": "会社概要",
+  "nav_contact": "お問い合わせ",
+  "nav_login": "ログイン",
+  "nav_register": "無料登録",
+  "footer_products": "製品",
+  "footer_models": "モデル一覧",
+  "footer_about": "会社概要",
+  "footer_contact": "お問い合わせ",
+  "footer_developers": "開発者",
+  "footer_console": "コンソール",
+  "hero_title": "1つのAPIで世界中の何百ものAIモデルを呼び出す",
+  "hero_subtitle": "OpenAI互換フォーマット。GPT-4o、Claude、DeepSeek、Geminiなどの主要モデルに迅速に接続。従量課金制、初期費用ゼロで開始。",
+  "hero_badge": "✨ 次世代AIを探索",
+  "btn_copy": "URLをコピー",
+  "btn_copied": "コピーしました!",
+  "stats_models": "AIモデル",
+  "stats_uptime": "サービス稼働率",
+  "stats_latency": "初回文字平均遅延",
+  "stats_concurrency": "同時接続数制限なし",
+  "feat_title": "選ばれる理由",
+  "feat_subtitle": "開発者と企業向けに構築された次世代の極速AI大モデル配信ゲートウェイ",
+  "feat1_title": "ワンクリックで極速接続",
+  "feat1_desc": "OpenAI互換APIフォーマット。Base URLとKeyを変更するだけで、何百もの主要モデルへシームレスに切り替え可能。コード変更コストはゼロ。",
+  "feat2_title": "世界中のモデルを完全カバー",
+  "feat2_desc": "OpenAI、Anthropic、Google Gemini、DeepSeek、ByteDanceなど、数十社のトッププロバイダーのモデルマトリックスを統合。",
+  "feat3_title": "インテリジェントルーティングと高可用性",
+  "feat3_desc": "グローバルエッジノードルーティング。メインチャネルの高負荷時や障害発生時に、無感覚な自動災害復旧再試行をサポートし、最初の文字の生成時間をミリ秒単位に短縮。",
+  "feat4_title": "究極のセキュリティとデータマスキング",
+  "feat4_desc": "IPホワイトリストによる悪用防止保護、エンドツーエンドの高強度暗号化転送、非同期タスクおよび課金詳細ログのBase64データプライバシーマスキングをサポート。",
+  "qnav1_title": "モデルデータ",
+  "qnav1_desc": "テキスト、画像、動画、音声などを網羅したプラットフォーム上のすべてのAIモデルを閲覧",
+  "qnav2_title": "お問い合わせ",
+  "qnav2_desc": "技術サポート、ビジネス提携、カスタマイズのニーズ",
+  "qnav3_title": "会社概要",
+  "qnav3_desc": "チームのビジョンと技術力を知る",
+  "cta_title": "構築を開始する準備はできましたか？",
+  "cta_description": "わずか3分でAPIキーを取得し、イノベーションを開始。ベースURL：https://api.artsapi.com/api、コストゼロでスムーズに移行。",
+  "cta_primary_btn_text": "対話を開始",
+  "cta_secondary_btn_text": "ドキュメントを読む",
+  "about_title_prefix": "会社概要 ",
+  "about_hero_subtitle": "業界をリードするAIモデルアグリゲーションサービスプラットフォームとして、ベンダーロックインのリスクを排除。より魅力的な価格、高可用性、企業レベルの安定性を通じて、世界最先端の大規模言語モデルへのアクセスを提供します。",
+  "about_stat_tokens": "月平均リクエストToken",
+  "about_stat_developers": "世界のアクティブ開発者",
+  "about_stat_providers": "モデルプロバイダー",
+  "about_stat_models": "統合された最先端モデル",
+  "about_press_title_prefix": "統合された大規模モデルのAPI体験、",
+  "about_press_title_suffix": " AI接続の負担をゼロに",
+  "about_press_desc": "開発者が異なるAIモデルを接続、比較、呼び出すための好ましい集約ゲートウェイになることを目指しています。一度接続するだけで、何百もの最先端モデルにフルアクセス可能。",
+  "about_press_link": "提携についてお問い合わせ →",
+  "about_partners_title": "業界をリードするチームから信頼されています",
+  "about_cta_desc_prefix": "何万人もの開発者に加わり、",
+  "about_cta_desc_suffix": " を利用してAIアプリケーションを迅速にデプロイしましょう。",
+  "contact_subtitle": "技術サポートやビジネス提携に関するお問い合わせはお気軽にどうぞ",
+  "contact_email": "メールアドレス",
+  "contact_phone": "電話番号",
+  "contact_address": "住所",
+  "contact_tip": "ヒント",
+  "contact_tip_desc": "管理バックエンドの「ポータル管理 → カラム管理」で連絡先情報を入力してください",
+  "contact_social": "ソーシャルメディア",
+  "models_filter_tasks": "機能タイプ",
+  "models_filter_providers": "プロバイダー",
+  "models_all_types": "すべてのタイプ",
+  "models_all_providers": "すべてのプロバイダー",
+  "models_subtitle_suffix": " - テキスト、画像、動画、音声機能などをカバー",
+  "models_search_placeholder": "モデル名またはIDで検索...",
+  "models_empty": "有効なモデルはありません",
+  "models_no_results": "一致するモデルが見つかりません。他のキーワードまたはフィルター条件をお試しください。",
+  "model_detail_variants_suffix": " 種の料金プラン",
+  "model_detail_copy_id": "モデルIDをコピー",
+  "model_detail_intro": "モデル紹介",
+  "model_detail_about_title": "このモデルについて",
+  "model_detail_about_desc": "このモデルは現在、プラットフォーム全体で利用可能です。API呼び出しやコンソールで直接使用できます。大規模な呼び出しが必要な場合は、カスタマーサポートに連絡して特別割引を受けてください。",
+  "model_detail_label_type": "機能分類",
+  "model_detail_label_provider": "公式プロバイダー",
+  "model_detail_label_variants": "料金プラン",
+  "model_detail_variants_count_suffix": " 種",
+  "model_detail_label_updated": "更新日時",
+  "model_detail_table_provider": "プロバイダー / PROVIDER",
+  "model_detail_table_billing": "課金モード / BILLING TYPE",
+  "model_detail_table_input": "入力価格 / INPUT PRICE",
+  "model_detail_table_output": "出力価格 / OUTPUT PRICE",
+  "综合": "総合",
+  "文本": "テキスト",
+  "图像": "画像",
+  "视频": "動画",
+  "语音": "音声",
+  "向量": "ベクトル",
+  "其他": "その他",
+  "未知服务商": "未知のプロバイダー",
+  "Tokens 计费": "Tokens課金",
+  "按次计费": "リクエストごと課金",
+  "时长计费": "時間課金",
+  "未配置": "未設定",
+  "模型广场": "モデルスクエア",
+  "models_price_input": "入力: ",
+  "models_price_output": "出力: ",
+  "models_price_from": "起: ",
+  "models_price_free": "無料",
+  "models_unit_1m": "/1M",
+  "models_unit_image": "/枚",
+  "models_unit_second": "/秒",
+  "models_unit_thousand_chars": "/万文字",
+  "models_unit_request": "/回",
+  "models_pricing_plans": " 種類の料金"
+}
+,
+    'ko': {
+  "search_placeholder": "모델 이름, ID 또는 MID로 검색...",
+  "theme_toggle": "테마 전환",
+  "lang_toggle": "언어 전환",
+  "nav_home": "홈",
+  "nav_models": "모델 광장",
+  "nav_about": "회사 소개",
+  "nav_contact": "문의하기",
+  "nav_login": "로그인",
+  "nav_register": "무료 가입",
+  "footer_products": "제품",
+  "footer_models": "모델 목록",
+  "footer_about": "회사 소개",
+  "footer_contact": "문의하기",
+  "footer_developers": "개발자",
+  "footer_console": "콘솔",
+  "hero_title": "하나의 API로 전 세계 수백 개의 AI 모델 호출",
+  "hero_subtitle": "OpenAI 호환 규격. GPT-4o, Claude, DeepSeek, Gemini 등 주요 모델에 신속한 연동. 사용량 기준 결제, 진입 장벽 없이 시작.",
+  "hero_badge": "✨ 차세대 AI 탐색",
+  "btn_copy": "URL 복사",
+  "btn_copied": "복사 완료!",
+  "stats_models": "AI 모델",
+  "stats_uptime": "서비스 가동률",
+  "stats_latency": "첫 글자 평균 지연 시간",
+  "stats_concurrency": "동시성 무제한",
+  "feat_title": "우리를 선택해야 하는 이유",
+  "feat_subtitle": "개발자와 기업을 위해 설계된 차세대 초고속 AI 대형 모델 분배 게이트웨이",
+  "feat1_title": "원클릭 초고속 연동",
+  "feat1_desc": "OpenAI 호환 API 규격. Base URL과 Key만 변경하여 수백 개의 주요 모델로 원활하게 전환 가능, 코드 비용 없이 마이그레이션.",
+  "feat2_title": "전 세계 모델 완벽 커버",
+  "feat2_desc": "OpenAI, Anthropic, Google Gemini, DeepSeek, ByteDance 등 수십 개의 최상위 서비스 제공업체의 모델 매트릭스를 통합.",
+  "feat3_title": "지능형 분류 및 고가용성",
+  "feat3_desc": "글로벌 에지 노드 라우팅. 메인 채널의 과부하 또는 장애 발생 시 지연 없는 자동 재시도 기능을 지원하여 첫 글자 응답 시간을 밀리초 단위로 단축.",
+  "feat4_title": "최고의 보안 및 데이터 마스킹",
+  "feat4_desc": "IP 화이트리스트 차단 방지 보안, 엔드투엔드 고강도 암호화 전송, 비동기 작업 및 과금 상세 로그의 Base64 데이터 프라이버시 마스킹 지원.",
+  "qnav1_title": "모델 데이터",
+  "qnav1_desc": "텍스트, 이미지, 비디오, 음성 등을 포함하는 플랫폼의 모든 AI 모델 확인",
+  "qnav2_title": "문의하기",
+  "qnav2_desc": "기술 지원, 비즈니스 협력, 맞춤형 요구 사항",
+  "qnav3_title": "회사 소개",
+  "qnav3_desc": "팀의 비전과 기술 역량 알아보기",
+  "cta_title": "빌드를 시작할 준비가 되셨습니까?",
+  "cta_description": "단 3분 만에 API 키를 획득하고 혁신을 시작하세요. 기본 URL: https://api.artsapi.com/api, 비용 없이 원활하게 마이그레이션.",
+  "cta_primary_btn_text": "대화 시작",
+  "cta_secondary_btn_text": "문서 읽기",
+  "about_title_prefix": "회사 소개 ",
+  "about_hero_subtitle": "업계를 선도하는 AI 모델 애그리게이션 서비스 플랫폼으로서 벤더 종속 위험을 제거하고, 우수한 가격 책정, 고가용성 및 엔터프라이즈급 안정성을 통해 세계에서 가장 진보된 대형 언어 모델과의 연동 다리를 구축합니다.",
+  "about_stat_tokens": "월평균 요청 토큰",
+  "about_stat_developers": "글로벌 활성 개발자",
+  "about_stat_providers": "모델 공급업체",
+  "about_stat_models": "통합 전방 모델",
+  "about_press_title_prefix": "통합 대형 모델 API 환경, ",
+  "about_press_title_suffix": " AI 연동 부담 제로",
+  "about_press_desc": "개발자가 다양한 AI 모델을 연결하고 비교하며 호출할 수 있는 최적의 애그리게이션 게이트웨이가 되는 것을 지향합니다. 한 번의 연동으로 수백 개의 최첨단 모델에 전체 액세스 가능.",
+  "about_press_link": "협력에 대한 문의하기 →",
+  "about_partners_title": "업계 최고 팀들로부터 신뢰를 받고 있습니다",
+  "about_cta_desc_prefix": "수만 명의 개발자들과 합류하여 ",
+  "about_cta_desc_suffix": "을(를) 활용해 AI 애플리케이션을 신속하게 배포하세요.",
+  "contact_subtitle": "기술 지원 또는 비즈니스 협업을 위한 문의를 환영합니다",
+  "contact_email": "이메일",
+  "contact_phone": "전화번호",
+  "contact_address": "주소",
+  "contact_tip": "힌트",
+  "contact_tip_desc": "관리자 백엔드 「포털 관리 → 컬럼 관리」에서 연락처 정보를 입력하십시오",
+  "contact_social": "소셜 미디어",
+  "models_filter_tasks": "기능 유형",
+  "models_filter_providers": "서비스 제공업체",
+  "models_all_types": "모든 유형",
+  "models_all_providers": "모든 제공업체",
+  "models_subtitle_suffix": " - 텍스트, 이미지, 비디오, 음성 등의 기능 포함",
+  "models_search_placeholder": "모델 이름 또는 ID로 검색...",
+  "models_empty": "활성화된 모델이 없습니다",
+  "models_no_results": "일치하는 모델을 찾을 수 없습니다. 다른 키워드 또는 필터 조건을 시도해 보십시오.",
+  "model_detail_variants_suffix": " 가지 요금제",
+  "model_detail_copy_id": "모델 ID 복사",
+  "model_detail_intro": "모델 소개",
+  "model_detail_about_title": "이 모델에 대하여",
+  "model_detail_about_desc": "이 모델은 현재 전체 플랫폼에서 사용 가능합니다. API 호출 또는 콘솔에서 직접 사용할 수 있습니다. 대규모 호출이 필요한 경우 전용 혜택을 위해 고객 센터에 문의해 주십시오.",
+  "model_detail_label_type": "기능 분류",
+  "model_detail_label_provider": "공식 서비스 제공업체",
+  "model_detail_label_variants": "요금제",
+  "model_detail_variants_count_suffix": " 가지",
+  "model_detail_label_updated": "업데이트 시간",
+  "model_detail_table_provider": "서비스 제공업체 / PROVIDER",
+  "model_detail_table_billing": "요금 청구 방식 / BILLING TYPE",
+  "model_detail_table_input": "입력 가격 / INPUT PRICE",
+  "model_detail_table_output": "출력 가격 / OUTPUT PRICE",
+  "综合": "종합",
+  "文本": "텍스트",
+  "图像": "이미지",
+  "视频": "비디오",
+  "语音": "음성",
+  "向量": "벡터",
+  "其他": "기타",
+  "未知服务商": "알 수 없는 제공업체",
+  "Tokens 计费": "토큰 요금제",
+  "按次计费": "요청당 요금제",
+  "时长计费": "시간당 요금제",
+  "未配置": "설정되지 않음",
+  "模型广场": "모델 광장",
+  "models_price_input": "입력: ",
+  "models_price_output": "출력: ",
+  "models_price_from": "시작: ",
+  "models_price_free": "무료",
+  "models_unit_1m": "/1M",
+  "models_unit_image": "/장",
+  "models_unit_second": "/초",
+  "models_unit_thousand_chars": "/만 글자",
+  "models_unit_request": "/회",
+  "models_pricing_plans": " 가지 요금"
+}
+,
+    'vi': {
+  "search_placeholder": "Tìm kiếm mô hình theo tên, ID hoặc MID...",
+  "theme_toggle": "Chuyển đổi chủ đề",
+  "lang_toggle": "Chuyển đổi ngôn ngữ",
+  "nav_home": "Trang chủ",
+  "nav_models": "Thị trường mô hình",
+  "nav_about": "Về chúng tôi",
+  "nav_contact": "Liên hệ",
+  "nav_login": "Đăng nhập",
+  "nav_register": "Đăng ký miễn phí",
+  "footer_products": "Sản phẩm",
+  "footer_models": "Danh sách mô hình",
+  "footer_about": "Về chúng tôi",
+  "footer_contact": "Liên hệ",
+  "footer_developers": "Nhà phát triển",
+  "footer_console": "Bảng điều khiển",
+  "hero_title": "Một API duy nhất để gọi hàng trăm mô hình AI trên toàn thế giới",
+  "hero_subtitle": "Định dạng tương thích với OpenAI. Kết nối cực nhanh với các mô hình phổ biến như GPT-4o, Claude, DeepSeek, Gemini. Thanh toán theo lượng sử dụng, bắt đầu không cần điều kiện.",
+  "hero_badge": "✨ Khám phá AI thế hệ mới",
+  "btn_copy": "Sao chép URL",
+  "btn_copied": "Đã sao chép!",
+  "stats_models": "Mô hình AI",
+  "stats_uptime": "Tỷ lệ hoạt động",
+  "stats_latency": "Độ trễ trung bình của chữ đầu tiên",
+  "stats_concurrency": "Không giới hạn kết nối đồng thời",
+  "feat_title": "Tại sao chọn chúng tôi",
+  "feat_subtitle": "Cổng phân phối mô hình lớn AI cực nhanh thế hệ mới được xây dựng cho các nhà phát triển và doanh nghiệp",
+  "feat1_title": "Kết nối cực nhanh một chạm",
+  "feat1_desc": "Định dạng API tương thích với OpenAI. Chỉ cần sửa đổi Base URL và Key là có thể thay thế liền mạch cho hàng trăm mô hình phổ biến, chuyển đổi không tốn chi phí viết mã.",
+  "feat2_title": "Bao phủ toàn diện mô hình toàn cầu",
+  "feat2_desc": "Tổng hợp ma trận mô hình từ hàng chục nhà cung cấp dịch vụ hàng đầu như OpenAI, Anthropic, Google Gemini, DeepSeek, ByteDance, v.v.",
+  "feat3_title": "Phân luồng thông minh & Sẵn sàng cao",
+  "feat3_desc": "Định tuyến nút cạnh toàn cầu, hỗ trợ tự động thử lại khắc phục thảm họa không gián đoạn khi kênh chính quá tải hoặc gặp lỗi, thời gian của chữ đầu tiên giảm xuống mức mili giây.",
+  "feat4_title": "Bảo mật tối đa & Khử nhạy cảm dữ liệu",
+  "feat4_desc": "Hỗ trợ bảo vệ chống spam bằng danh sách trắng IP, truyền tải mã hóa cường độ cao đầu cuối, khử nhạy cảm quyền riêng tư dữ liệu Base64 cho nhật ký chi tiết và tác vụ không đồng bộ.",
+  "qnav1_title": "Dữ liệu mô hình",
+  "qnav1_desc": "Xem tất cả các mô hình AI trên nền tảng, bao gồm các khả năng như văn bản, hình ảnh, video, giọng nói, v.v.",
+  "qnav2_title": "Liên hệ",
+  "qnav2_desc": "Hỗ trợ kỹ thuật, hợp tác thương mại, nhu cầu tùy chỉnh",
+  "qnav3_title": "Về chúng tôi",
+  "qnav3_desc": "Tìm hiểu về tầm nhìn và năng lực kỹ thuật của đội ngũ",
+  "cta_title": "Đã sẵn sàng bắt đầu xây dựng chưa?",
+  "cta_description": "Chỉ mất 3 phút để lấy Khóa API của bạn và bắt đầu sáng tạo. URL cơ sở: https://api.artsapi.com/api, di chuyển mượt mà không tốn chi phí.",
+  "cta_primary_btn_text": "Bắt đầu trò chuyện",
+  "cta_secondary_btn_text": "Đọc tài liệu",
+  "about_title_prefix": "Về ",
+  "about_hero_subtitle": "Là nền tảng dịch vụ tổng hợp mô hình AI hàng đầu trong ngành, chúng tôi loại bỏ rủi ro bị khóa nhà cung cấp, thông qua mức giá tốt hơn, tính sẵn sàng cao và độ ổn định cấp doanh nghiệp, xây dựng cầu nối giúp bạn tiếp cận các mô hình ngôn ngữ lớn tiên tiến nhất thế giới.",
+  "about_stat_tokens": "Token yêu cầu trung bình hàng tháng",
+  "about_stat_developers": "Nhà phát triển hoạt động toàn cầu",
+  "about_stat_providers": "Nhà cung cấp mô hình",
+  "about_stat_models": "Mô hình tiên phong tích hợp",
+  "about_press_title_prefix": "Trải nghiệm giao diện mô hình lớn thống nhất, ",
+  "about_press_title_suffix": " Giúp kết nối AI không gánh nặng",
+  "about_press_desc": "Nhằm mục tiêu trở thành cổng tổng hợp ưu tiên cho các nhà phát triển kết nối, so sánh và gọi các mô hình AI khác nhau. Chỉ cần kết nối một lần là có thể truy cập toàn bộ hàng trăm mô hình tiên phong.",
+  "about_press_link": "Liên hệ thương lượng hợp tác →",
+  "about_partners_title": "Được tin tưởng bởi các đội ngũ hàng đầu ngành",
+  "about_cta_desc_prefix": "Gia nhập cùng hàng vạn nhà phát triển, tận dụng ",
+  "about_cta_desc_suffix": " để triển khai nhanh chóng các ứng dụng AI.",
+  "contact_subtitle": "Chào mừng liên hệ chúng tôi để nhận hỗ trợ kỹ thuật hoặc hợp tác thương mại",
+  "contact_email": "Email",
+  "contact_phone": "Điện thoại",
+  "contact_address": "Địa chỉ",
+  "contact_tip": "Gợi ý",
+  "contact_tip_desc": "Vui lòng điền thông tin liên hệ trong trang quản trị \"Quản lý cổng thông tin -> Quản lý chuyên mục\"",
+  "contact_social": "Mạng xã hội",
+  "models_filter_tasks": "Loại khả năng",
+  "models_filter_providers": "Nhà cung cấp",
+  "models_all_types": "Tất cả các loại",
+  "models_all_providers": "Tất cả các nhà cung cấp",
+  "models_subtitle_suffix": " - Bao phủ các khả năng văn bản, hình ảnh, video, giọng nói, v.v.",
+  "models_search_placeholder": "Tìm kiếm tên mô hình hoặc ID...",
+  "models_empty": "Chưa có mô hình hoạt động",
+  "models_no_results": "Không tìm thấy mô hình phù hợp, vui lòng thử từ khóa hoặc điều kiện lọc khác.",
+  "model_detail_variants_suffix": " Phương án giá",
+  "model_detail_copy_id": "Sao chép ID mô hình",
+  "model_detail_intro": "Giới thiệu mô hình",
+  "model_detail_about_title": "Về mô hình này",
+  "model_detail_about_desc": "Mô hình này hiện đã hoạt động trên toàn bộ nền tảng. Bạn có thể sử dụng trực tiếp trong cuộc gọi API hoặc bảng điều khiển. Nếu bạn có nhu cầu gọi số lượng lớn, vui lòng liên hệ dịch vụ khách hàng để nhận ưu đãi riêng.",
+  "model_detail_label_type": "Phân loại khả năng",
+  "model_detail_label_provider": "Nhà cung cấp chính thức",
+  "model_detail_label_variants": "Phương án giá",
+  "model_detail_variants_count_suffix": " Loại",
+  "model_detail_label_updated": "Thời gian cập nhật",
+  "model_detail_table_provider": "NHÀ CUNG CẤP / PROVIDER",
+  "model_detail_table_billing": "PHƯƠNG THỨC TÍNH PHÍ / BILLING TYPE",
+  "model_detail_table_input": "GIÁ ĐẦU VÀO / INPUT PRICE",
+  "model_detail_table_output": "GIÁ ĐẦU RA / OUTPUT PRICE",
+  "综合": "Tổng hợp",
+  "文本": "Văn bản",
+  "图像": "Hình ảnh",
+  "视频": "Video",
+  "语音": "Giọng nói",
+  "向量": "Véc-tơ",
+  "其他": "Khác",
+  "未知服务商": "Nhà cung cấp không xác định",
+  "Tokens 计费": "Tính phí Token",
+  "按次计费": "Tính phí theo lượt",
+  "时长计费": "Tính phí theo thời lượng",
+  "未配置": "Chưa cấu hình",
+  "模型广场": "Thị trường mô hình",
+  "models_price_input": "Nhập: ",
+  "models_price_output": "Xuất: ",
+  "models_price_from": "Từ: ",
+  "models_price_free": "Miễn phí",
+  "models_unit_1m": "/1M",
+  "models_unit_image": "/ảnh",
+  "models_unit_second": "/giây",
+  "models_unit_thousand_chars": "/10k ký tự",
+  "models_unit_request": "/lần",
+  "models_pricing_plans": " gói định giá"
+}
+
+  };
+
+  const LANG_INDEXES = { 'zh': 0, 'en': 1, 'ja': 2, 'ko': 3, 'vi': 4 };
+
+  function normalizeLang(lang) {
+    if (!lang) return 'zh';
+    lang = lang.toLowerCase();
+    if (lang.startsWith('zh')) return 'zh';
+    if (lang.startsWith('en')) return 'en';
+    if (lang.startsWith('ja')) return 'ja';
+    if (lang.startsWith('ko')) return 'ko';
+    if (lang.startsWith('vi')) return 'vi';
+    return 'zh';
+  }
+
+  function translateText(text, rawLang) {
+    if (!text) return '';
+    const lang = normalizeLang(rawLang);
+    if (text.includes('|')) {
+      const parts = text.split('|');
+      const idx = LANG_INDEXES[lang] || 0;
+      return (parts[idx] || parts[0]).trim();
+    }
+    const dict = locales[lang] || locales['zh'];
+    return dict[text] || text;
+  }
+
+  function applyLanguage(rawLang) {
+    const lang = normalizeLang(rawLang);
+    document.documentElement.lang = lang;
+    const dict = locales[lang] || locales['zh'];
+    
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      if (dict[key]) {
+        el.innerHTML = dict[key];
+      }
+    });
+
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+      const key = el.getAttribute('data-i18n-placeholder');
+      if (dict[key]) {
+        el.setAttribute('placeholder', dict[key]);
+      }
+    });
+
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+      const key = el.getAttribute('data-i18n-title');
+      if (dict[key]) {
+        el.setAttribute('title', dict[key]);
+      }
+    });
+
+    document.querySelectorAll('[data-i18n-dynamic]').forEach(el => {
+      const text = el.getAttribute('data-i18n-dynamic') || el.innerHTML.trim();
+      if (text.includes('|')) {
+        const parts = text.split('|');
+        const idx = LANG_INDEXES[lang] || 0;
+        el.innerHTML = (parts[idx] || parts[0]).trim();
+      } else {
+        const key = el.getAttribute('data-i18n-key') || text;
+        if (dict[key]) {
+          el.innerHTML = dict[key];
+        } else {
+          el.innerHTML = text;
+        }
+      }
+    });
+
+    // Update Dropdown active states
+    document.querySelectorAll('#lang-menu a').forEach(a => {
+      if (a.getAttribute('data-lang') === lang) {
+        a.classList.add('active');
+      } else {
+        a.classList.remove('active');
+      }
+    });
+
+    // Update document title dynamically
+    const currentPath = window.location.pathname;
+    const logoEl = document.querySelector('.hdr-logo span[data-i18n-dynamic]');
+    const rawLogoText = logoEl ? logoEl.getAttribute('data-i18n-dynamic') || logoEl.textContent : 'TokensByte';
+    const siteName = translateText(rawLogoText, lang);
+    
+    if (currentPath === '/home' || currentPath === '/home/') {
+      const homeTitle = dict['hero_title'];
+      document.title = `${siteName} - ${translateText(homeTitle, lang)}`;
+    } else if (currentPath.includes('/models')) {
+      const modelsTitle = dict['nav_models'];
+      document.title = `${translateText(modelsTitle, lang)} - ${siteName}`;
+    } else if (currentPath.includes('/contact')) {
+      const contactTitle = dict['nav_contact'];
+      document.title = `${translateText(contactTitle, lang)} - ${siteName}`;
+    } else if (currentPath.includes('/about')) {
+      const aboutTitle = dict['nav_about'];
+      document.title = `${translateText(aboutTitle, lang)} - ${siteName}`;
+    } else if (currentPath.includes('/model/')) {
+      let modelDetailTitle = '模型详情';
+      if (lang === 'en') modelDetailTitle = 'Model Detail';
+      else if (lang === 'ja') modelDetailTitle = 'モデルの詳細';
+      else if (lang === 'ko') modelDetailTitle = '모델 상세 정보';
+      else if (lang === 'vi') modelDetailTitle = 'Chi tiết mô hình';
+      const pathParts = currentPath.split('/');
+      const modelId = pathParts[pathParts.length - 1] || '';
+      document.title = `${modelId} ${modelDetailTitle} - ${siteName}`;
+    }
+    window.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang } }));
+  }
+
+  const DEFAULT_LANG = "zh";
+
+  function changeLang(lang) {
+    localStorage.setItem('lang', lang);
+    applyLanguage(lang);
+    const dropdown = document.querySelector('.lang-dropdown');
+    if (dropdown) dropdown.classList.remove('open');
+  }
+
+  function toggleLang() {
+    const dropdown = document.querySelector('.lang-dropdown');
+    if (dropdown) dropdown.classList.toggle('open');
+  }
+
+  // Close dropdown on outside click
+  document.addEventListener('click', (e) => {
+    const dropdown = document.querySelector('.lang-dropdown');
+    if (dropdown && !dropdown.contains(e.target)) {
+      dropdown.classList.remove('open');
+    }
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const savedLang = localStorage.getItem('lang') || DEFAULT_LANG;
+    applyLanguage(savedLang);
+
+    // Check login state
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (token) {
+      const authButtons = document.getElementById('hdr-auth-buttons');
+      if (authButtons) authButtons.style.display = 'none';
+      const userProfile = document.getElementById('hdr-user-profile');
+      if (userProfile) {
+        userProfile.style.display = 'flex';
+        try {
+          const userStr = localStorage.getItem('user') || sessionStorage.getItem('user');
+          if (userStr) {
+            const user = JSON.parse(userStr);
+            const username = user.username || user.email || 'U';
+            document.getElementById('hdr-avatar-text').innerText = username.charAt(0).toUpperCase();
+            
+            // Set link to dashboard based on role
+            const avatarLink = document.querySelector('.hdr-avatar-link');
+            if (avatarLink) {
+              const adminPath = localStorage.getItem('tokensbyte_admin_path') || 'admin1688';
+              avatarLink.href = user.role === 'admin' ? `/${adminPath}/dashboard` : '/dashboard';
+            }
+          }
+        } catch (e) {
+          console.error('Failed to parse user info', e);
+        }
+      }
+    }
+  });
+
+  // Navbar hide/show on scroll
+  let lastScrollY = window.scrollY;
+  const navbar = document.querySelector('.hdr');
+
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > lastScrollY && window.scrollY > 80) {
+      navbar.classList.add('hidden');
+    } else {
+      navbar.classList.remove('hidden');
+    }
+    lastScrollY = window.scrollY;
+  });
+
+  // Mobile menu toggle
+  const mobBtn = document.querySelector('.mob-btn');
+  if (mobBtn) {
+    mobBtn.addEventListener('click', () => {
+      navbar.classList.toggle('menu-open');
+    });
+  }
+
+  // Close mobile menu when clicking a link
+  const navLinksList = document.querySelectorAll('.hdr-nav a, .hdr-act a');
+  navLinksList.forEach(link => {
+    link.addEventListener('click', () => {
+      navbar.classList.remove('menu-open');
+    });
+  });
+</script>
+
+</body>
+</html>

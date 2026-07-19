@@ -132,15 +132,15 @@
   white-space: nowrap;
 }
 .cta-primary {
-  background: #0066ff !important;
+  background: var(--brand-primary) !important;
   color: #ffffff !important;
   border: none !important;
-  box-shadow: 0 4px 14px rgba(0, 102, 255, 0.2);
+  box-shadow: 0 4px 14px rgba(128, 128, 128, 0.15);
 }
 .cta-primary:hover {
-  background: #0052cc !important;
+  filter: brightness(0.9);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 102, 255, 0.35);
+  box-shadow: 0 6px 20px rgba(128, 128, 128, 0.25);
 }
 .cta-secondary-wrapper {
   position: relative;
@@ -187,7 +187,745 @@
     text-align: center;
   }
 }
+
+/* Tech theme specific styles */
+.tech-split-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 40px;
+  width: 100%;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: calc(var(--nav-height) + 60px) 24px 60px;
+  min-height: 80vh;
+}
+.tech-left {
+  flex: 1;
+  text-align: left;
+}
+.tech-right {
+  width: 48%;
+  max-width: 550px;
+}
+.tech-title {
+  font-size: clamp(2rem, 3.5vw, 3.5rem);
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+.tech-subtitle {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin-bottom: 30px;
+}
+.tech-terminal {
+  background: #09090b;
+  border: 1px solid var(--brand-primary);
+  box-shadow: var(--shadow-glow);
+  width: 100%;
+  overflow: hidden;
+  text-align: left;
+}
+.terminal-hdr {
+  display: flex;
+  align-items: center;
+  background: #18181b;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.terminal-dots {
+  display: flex;
+  gap: 6px;
+}
+.terminal-dots .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.dot.red { background: #ef4444; }
+.dot.yellow { background: #eab308; }
+.dot.green { background: #22c55e; }
+.terminal-title {
+  margin-left: 16px;
+  font-size: 12px;
+  color: #a1a1aa;
+  font-family: monospace;
+}
+.terminal-body {
+  padding: 16px;
+}
+.terminal-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding-bottom: 8px;
+}
+.term-tab {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #a1a1aa;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.term-tab.active, .term-tab:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+.term-code {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #e4e4e7;
+  font-family: 'JetBrains Mono', monospace;
+}
+.t-cmd { color: #f43f5e; }
+.t-str { color: #10b981; }
+.t-key { color: #60a5fa; }
+.t-val { color: #f59e0b; }
+.t-kwd { color: #a78bfa; }
+
+/* Dark Gradient cosmic SaaS specific styles */
+.cosmic-hero {
+  position: relative;
+  padding: calc(var(--nav-height) + 80px) 0 80px;
+  min-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  overflow: hidden;
+}
+.cosmic-title {
+  font-size: clamp(2.8rem, 5vw, 4.5rem);
+  font-weight: 850;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, #fff 20%, rgba(255,255,255,0.7) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+[data-theme="light"] .cosmic-title {
+  background: linear-gradient(135deg, #09090b 20%, #3f3f46 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.cosmic-subtitle {
+  font-size: clamp(1.1rem, 2vw, 1.25rem);
+  color: var(--text-secondary);
+  max-width: 700px;
+  margin: 0 auto 40px;
+  line-height: 1.6;
+}
+/* 3D Stack Card Wall */
+.neon-card-wall {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  height: 220px;
+  margin: 40px auto 0;
+  perspective: 1000px;
+}
+.neon-stack-card {
+  position: absolute;
+  width: 200px;
+  height: 110px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+  cursor: pointer;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+[data-theme="light"] .neon-stack-card {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+}
+.neon-stack-card:hover {
+  transform: translateY(-12px) rotateY(-8deg) scale(1.08) !important;
+  border-color: var(--brand-primary);
+  box-shadow: 0 15px 35px rgba(236, 72, 153, 0.25);
+  z-index: 20 !important;
+}
+.card-openai { top: 0; left: 40px; transform: rotate(-8deg); z-index: 10; }
+.card-claude { top: 20px; right: 40px; transform: rotate(6deg); z-index: 11; }
+.card-deepseek { bottom: 10px; left: 80px; transform: rotate(-4deg); z-index: 12; }
+.card-gemini { bottom: 20px; right: 80px; transform: rotate(3deg); z-index: 13; }
+
+.neon-stack-card.active {
+  transform: translateY(-16px) rotateY(0deg) scale(1.12) !important;
+  border-color: var(--brand-primary) !important;
+  box-shadow: 0 15px 40px rgba(236, 72, 153, 0.35) !important;
+  z-index: 50 !important;
+}
+.neon-stack-card.dimmed {
+  opacity: 0.25 !important;
+  transform: scale(0.88) !important;
+  filter: blur(1px);
+}
+
+/* Cosmic SaaS Calculator specific styles */
+.cosmic-calculator-container {
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.cosmic-calculator {
+  position: relative;
+  border-radius: 16px;
+  background: rgba(20, 20, 20, 0.5);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+  text-align: left;
+}
+[data-theme="light"] .cosmic-calculator {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.05);
+}
+.calc-inner {
+  padding: 24px;
+}
+.calc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.calc-title {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 0;
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.calc-close {
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 0.2s;
+  line-height: 1;
+}
+.calc-close:hover {
+  color: var(--text-primary);
+}
+.calc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 24px;
+  align-items: center;
+}
+.calc-model-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+[data-theme="light"] .calc-model-badge {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+.calc-model-logo {
+  font-size: 24px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+[data-theme="light"] .calc-model-logo {
+  background: rgba(0, 0, 0, 0.04);
+}
+.calc-model-badge h4 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 2px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.calc-model-badge p {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.calc-rates {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rate-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.rate-val {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+/* Sliders style */
+.slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.slider-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.slider-val {
+  font-weight: 700;
+  color: var(--brand-primary);
+}
+/* Advanced sliders input track styling */
+.slider-group input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+}
+[data-theme="light"] .slider-group input[type="range"] {
+  background: rgba(0, 0, 0, 0.08);
+}
+.slider-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--brand-primary);
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 0 10px rgba(236, 72, 153, 0.4);
+  transition: transform 0.1s;
+}
+.slider-group input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+/* Total cost bar */
+.calc-total-bar {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+[data-theme="light"] .calc-total-bar {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+.total-cost-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.total-cost-box span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.total-cost-val {
+  font-size: 26px;
+  font-weight: 850;
+  color: var(--text-primary);
+}
+.save-cost-box {
+  text-align: right;
+}
+.save-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.save-cost-box p {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+}
+@media(max-width: 768px) {
+  .calc-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+.neon-stack-card .card-icon {
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.neon-stack-card h4 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  color: var(--text-primary);
+}
+.neon-stack-card p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+@media(max-width: 768px) {
+  .tech-split-hero {
+    flex-direction: column;
+    padding-top: calc(var(--nav-height) + 30px);
+    text-align: center;
+    gap: 30px;
+  }
+  .tech-left {
+    text-align: center;
+  }
+  .tech-right {
+    width: 100%;
+  }
+  .neon-card-wall {
+    height: 380px;
+    max-width: 280px;
+  }
+  .card-openai { top: 0; left: 50%; transform: translateX(-50%) rotate(-3deg); }
+  .card-claude { top: 90px; left: 50%; transform: translateX(-50%) rotate(3deg); }
+  .card-deepseek { top: 180px; left: 50%; transform: translateX(-50%) rotate(-2deg); }
+  .card-gemini { top: 270px; left: 50%; transform: translateX(-50%) rotate(2deg); }
+}
+
+.terminal-run-btn {
+  margin-left: auto;
+  background: var(--brand-primary);
+  border: none;
+  color: #fff !important;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+  height: 24px;
+}
+.terminal-run-btn:hover {
+  filter: brightness(1.15);
+}
+.terminal-run-btn.running {
+  background: #27272a;
+  color: #71717a !important;
+  cursor: not-allowed;
+}
+.terminal-output-window {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 12px;
+  padding-top: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #a1a1aa;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+.output-stream-content {
+  color: #f4f4f5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-left: 2px solid var(--brand-primary);
+  padding-left: 10px;
+  margin: 10px 0;
+}
 </style>
+{% if style and style.current_style == "tech" %}
+<!-- Tech Split Hero -->
+<header class="tech-split-hero">
+  <div class="tech-left">
+    <div class="hero-badge" style="border-radius: 0px;"><span data-i18n="hero_badge">✨ Explore Next-Gen AI</span> <span class="arrow">→</span></div>
+    <h1 class="tech-title">
+      <span data-i18n-dynamic="{{ home.hero_title | default(value="") }}" {% if not home.hero_title %}data-i18n-key="hero_title"{% endif %}>{{ home.hero_title | default(value="一个接口，调用全球数百个 AI 模型") }}</span>
+    </h1>
+    <p class="tech-subtitle" data-i18n-dynamic="{{ home.hero_subtitle | default(value="") }}" {% if not home.hero_subtitle %}data-i18n-key="hero_subtitle"{% endif %}>{{ home.hero_subtitle | default(value="OpenAI 兼容格式，极速接入 GPT-4o、Claude、DeepSeek、Gemini 等主流模型。按量付费，零门槛开始。") }}</p>
+    
+    <!-- API Display -->
+    <div class="api-display-container" style="margin: 0; max-width: 100%;">
+      <div class="api-address-box" style="border-radius: 0px; padding: 4px 4px 4px 16px;">
+        <span class="api-prefix" data-i18n="api_base_url">API Base URL</span>
+        <code id="api-url-text">{{ home.api_base_url | default(value="") }}</code>
+        <button class="api-copy-btn" onclick="copyApiUrl()" aria-label="复制 API 地址" style="border-radius: 0px;">
+          <span class="btn-text" data-i18n="btn_copy">Copy</span> 
+          <span class="copy-tooltip" data-i18n="btn_copied">Copied!</span>
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <div class="tech-right">
+    <div class="tech-terminal">
+      <div class="terminal-hdr">
+        <div class="terminal-dots">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+        </div>
+        <div class="terminal-title">tokensbyte_playground.sh</div>
+        <button class="terminal-run-btn" onclick="runTerminalCode(this)">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="margin-right:4px;"><path d="M8 5v14l11-7z"/></svg>
+          <span class="run-btn-text">Run</span>
+        </button>
+      </div>
+      <div class="terminal-body">
+        <div class="terminal-tabs">
+          <button class="term-tab active" onclick="switchTermTab(this, 'curl')">cURL</button>
+          <button class="term-tab" onclick="switchTermTab(this, 'js')">Node.js</button>
+          <button class="term-tab" onclick="switchTermTab(this, 'py')">Python</button>
+        </div>
+        <pre class="term-code" id="term-curl"><code><span class="t-cmd">$ curl</span> <span class="api-base-url-placeholder">{{ home.api_base_url | default(value="https://api.artsapi.com/v1") }}</span>/chat/completions \
+  -H <span class="t-str">"Authorization: Bearer sk-arts..."</span> \
+  -d '{
+    <span class="t-key">"model"</span>: <span class="t-val">"deepseek-chat"</span>,
+    <span class="t-key">"messages"</span>: [{"role": "user", "content": "介绍一下 TokensByte"}]
+  }'</code></pre>
+        <pre class="term-code" id="term-js" style="display:none;"><code><span class="t-kwd">import</span> OpenAI <span class="t-kwd">from</span> <span class="t-str">"openai"</span>;
+const openai = <span class="t-kwd">new</span> OpenAI({
+  apiKey: <span class="t-str">"sk-arts..."</span>,
+  baseURL: <span class="t-str">"<span class="api-base-url-placeholder">{{ home.api_base_url | default(value="https://api.artsapi.com/v1") }}</span>"</span>
+});
+const res = <span class="t-kwd">await</span> openai.chat.completions.create({
+  model: <span class="t-str">"claude-3-5-sonnet"</span>,
+  messages: [{"role": "user", "content": "介绍一下 TokensByte"}]
+});</code></pre>
+        <pre class="term-code" id="term-py" style="display:none;"><code><span class="t-kwd">from</span> openai <span class="t-kwd">import</span> OpenAI
+client = OpenAI(
+  api_key=<span class="t-str">"sk-arts..."</span>,
+  base_url=<span class="t-str">"<span class="api-base-url-placeholder">{{ home.api_base_url | default(value="https://api.artsapi.com/v1") }}</span>"</span>
+)
+resp = client.chat.completions.create(
+  model=<span class="t-str">"gpt-4o"</span>,
+  messages=[{"role": "user", "content": "介绍一下 TokensByte"}]
+)</code></pre>
+        
+        <!-- Simulated Output Screen -->
+        <div class="terminal-output-window" style="display: none;">
+          <div class="output-line log-cmd" style="color: #60a5fa;"></div>
+          <div class="output-line log-status" style="color: #10b981; margin: 4px 0;"></div>
+          <div class="output-stream-content"></div>
+          <div class="output-line log-usage" style="color: #71717a; font-size: 11px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+{% elif style and style.current_style == "dark_gradient" %}
+<!-- Model Extraction logic for SaaS 3D stack cards -->
+{% set openai_model = "" %}
+{% set claude_model = "" %}
+{% set deepseek_model = "" %}
+{% set gemini_model = "" %}
+
+{% if models | length > 0 %}{% set_global openai_model = models[0] %}{% endif %}
+{% if models | length > 1 %}{% set_global claude_model = models[1] %}{% else %}{% set_global claude_model = openai_model %}{% endif %}
+{% if models | length > 2 %}{% set_global deepseek_model = models[2] %}{% else %}{% set_global deepseek_model = openai_model %}{% endif %}
+{% if models | length > 3 %}{% set_global gemini_model = models[3] %}{% else %}{% set_global gemini_model = openai_model %}{% endif %}
+
+<!-- Cosmic SaaS Hero -->
+<header class="cosmic-hero">
+  <div class="hero-background">
+    <div class="glow-blob blob-1" style="width: 600px; height: 600px; background: rgba(236, 72, 153, 0.15); filter: blur(140px); top: -10%;"></div>
+    <div class="glow-blob blob-2" style="width: 500px; height: 500px; background: rgba(139, 92, 246, 0.12); filter: blur(120px); top: 30%;"></div>
+    <div class="noise-overlay"></div>
+  </div>
+
+  <div class="hero-content" style="max-width: 900px; margin-bottom: 24px;">
+    <div class="hero-badge" style="border-radius: 9999px; background: rgba(236,72,153,0.05); border-color: rgba(236,72,153,0.2);"><span data-i18n="hero_badge" style="color: #ec4899;">✨ Explore Next-Gen AI</span> <span class="arrow" style="color: #ec4899;">→</span></div>
+    <h1 class="cosmic-title">
+      <span data-i18n-dynamic="{{ home.hero_title | default(value="") }}" {% if not home.hero_title %}data-i18n-key="hero_title"{% endif %}>{{ home.hero_title | default(value="一个接口，调用全球数百个 AI 模型") }}</span>
+    </h1>
+    <p class="cosmic-subtitle" data-i18n-dynamic="{{ home.hero_subtitle | default(value="") }}" {% if not home.hero_subtitle %}data-i18n-key="hero_subtitle"{% endif %}>{{ home.hero_subtitle | default(value="OpenAI 兼容格式，极速接入 GPT-4o、Claude、DeepSeek、Gemini 等主流模型。按量付费，零门槛开始。") }}</p>
+
+    <!-- API Base URL display card -->
+    <div class="api-display-container">
+      <div class="api-address-box" style="border-radius: 9999px; border-color: rgba(236, 72, 153, 0.3);">
+        <span class="api-prefix" data-i18n="api_base_url">API Base URL</span>
+        <code id="api-url-text" style="font-family: var(--font-sans);">{{ home.api_base_url | default(value="") }}</code>
+        <button class="api-copy-btn" onclick="copyApiUrl()" aria-label="复制 API 地址" style="border-radius: 9999px; background: var(--brand-gradient);">
+          <span class="btn-text" data-i18n="btn_copy">Copy URL</span> 
+          <span class="copy-tooltip" data-i18n="btn_copied">Copied!</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3D Stack Card Wall -->
+  <div class="neon-card-wall">
+    <div class="neon-stack-card card-openai" 
+         onclick="selectCosmicCard(this)"
+         data-model-id="{{ openai_model.model_id | default(value='gpt-4o') }}"
+         data-model-name="{{ openai_model.model_name | default(value='GPT-4o') }}"
+         data-provider="{{ openai_model.provider | default(value='OpenAI') }}"
+         data-logo="🟢"
+         data-prompt-rate="{{ openai_model.billing.prompt_rate | default(value=10.0) }}"
+         data-completion-rate="{{ openai_model.billing.completion_rate | default(value=30.0) }}">
+      <div class="card-icon">
+        {% if openai_model.logo %}<img src="{{ openai_model.logo | safe }}" alt="logo" style="width: 24px; height: 24px; object-fit: contain;">{% else %}🟢{% endif %}
+      </div>
+      <div class="card-info">
+        <h4>{{ openai_model.model_name | default(value='OpenAI') }}</h4>
+        <p>{{ openai_model.model_id | default(value='gpt-4o') }}</p>
+      </div>
+    </div>
+    
+    <div class="neon-stack-card card-claude" 
+         onclick="selectCosmicCard(this)"
+         data-model-id="{{ claude_model.model_id | default(value='claude-3-5-sonnet') }}"
+         data-model-name="{{ claude_model.model_name | default(value='Claude 3.5 Sonnet') }}"
+         data-provider="{{ claude_model.provider | default(value='Anthropic') }}"
+         data-logo="🟣"
+         data-prompt-rate="{{ claude_model.billing.prompt_rate | default(value=21.0) }}"
+         data-completion-rate="{{ claude_model.billing.completion_rate | default(value=105.0) }}">
+      <div class="card-icon">
+        {% if claude_model.logo %}<img src="{{ claude_model.logo | safe }}" alt="logo" style="width: 24px; height: 24px; object-fit: contain;">{% else %}🟣{% endif %}
+      </div>
+      <div class="card-info">
+        <h4>{{ claude_model.model_name | default(value='Anthropic') }}</h4>
+        <p>{{ claude_model.model_id | default(value='claude-3-5-sonnet') }}</p>
+      </div>
+    </div>
+    
+    <div class="neon-stack-card card-deepseek" 
+         onclick="selectCosmicCard(this)"
+         data-model-id="{{ deepseek_model.model_id | default(value='deepseek-chat') }}"
+         data-model-name="{{ deepseek_model.model_name | default(value='DeepSeek-V3') }}"
+         data-provider="{{ deepseek_model.provider | default(value='DeepSeek') }}"
+         data-logo="🐳"
+         data-prompt-rate="{{ deepseek_model.billing.prompt_rate | default(value=1.0) }}"
+         data-completion-rate="{{ deepseek_model.billing.completion_rate | default(value=2.0) }}">
+      <div class="card-icon">
+        {% if deepseek_model.logo %}<img src="{{ deepseek_model.logo | safe }}" alt="logo" style="width: 24px; height: 24px; object-fit: contain;">{% else %}🐳{% endif %}
+      </div>
+      <div class="card-info">
+        <h4>{{ deepseek_model.model_name | default(value='DeepSeek') }}</h4>
+        <p>{{ deepseek_model.model_id | default(value='deepseek-chat') }}</p>
+      </div>
+    </div>
+    
+    <div class="neon-stack-card card-gemini" 
+         onclick="selectCosmicCard(this)"
+         data-model-id="{{ gemini_model.model_id | default(value='gemini-1.5-pro') }}"
+         data-model-name="{{ gemini_model.model_name | default(value='Gemini 1.5 Pro') }}"
+         data-provider="{{ gemini_model.provider | default(value='Google') }}"
+         data-logo="🔵"
+         data-prompt-rate="{{ gemini_model.billing.prompt_rate | default(value=9.0) }}"
+         data-completion-rate="{{ gemini_model.billing.completion_rate | default(value=27.0) }}">
+      <div class="card-icon">
+        {% if gemini_model.logo %}<img src="{{ gemini_model.logo | safe }}" alt="logo" style="width: 24px; height: 24px; object-fit: contain;">{% else %}🔵{% endif %}
+      </div>
+      <div class="card-info">
+        <h4>{{ gemini_model.model_name | default(value='Google') }}</h4>
+        <p>{{ gemini_model.model_id | default(value='gemini-1.5-pro') }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cosmic Price Calculator Widget -->
+  <div class="cosmic-calculator-container" style="display: none; width: 100%; max-width: 700px; margin: 40px auto 0; padding: 0 24px; position: relative; z-index: 100;">
+    <div class="cosmic-calculator">
+      <div class="calc-inner">
+        <div class="calc-header">
+          <h3 class="calc-title"><span data-i18n="calc_title">SaaS 流光价格计算器</span></h3>
+          <span class="calc-close" onclick="closeCosmicCalculator()">×</span>
+        </div>
+        
+        <div class="calc-grid">
+          <!-- Left: Model Info -->
+          <div class="calc-left">
+            <div class="calc-model-badge">
+              <span class="calc-model-logo" id="calc-logo">🤖</span>
+              <div style="min-width: 0;">
+                <h4 id="calc-model-id" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">gpt-4o</h4>
+                <p id="calc-provider">OpenAI</p>
+              </div>
+            </div>
+            <div class="calc-rates">
+              <div class="rate-row">
+                <span data-i18n="calc_input_price">输入价格</span>
+                <span class="rate-val" id="calc-input-rate">¥0.00 / M Tokens</span>
+              </div>
+              <div class="rate-row">
+                <span data-i18n="calc_output_price">输出价格</span>
+                <span class="rate-val" id="calc-output-rate">¥0.00 / M Tokens</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Right: Sliders -->
+          <div class="calc-right">
+            <div class="slider-group">
+              <div class="slider-label">
+                <span data-i18n="calc_input_tokens">输入 Tokens 数量</span>
+                <span class="slider-val" id="val-input-tokens">100k</span>
+              </div>
+              <input type="range" id="slider-input" min="0" max="1000" step="10" value="100" oninput="updateCalculatorValues()">
+            </div>
+            
+            <div class="slider-group" style="margin-top: 20px;">
+              <div class="slider-label">
+                <span data-i18n="calc_output_tokens">输出 Tokens 数量</span>
+                <span class="slider-val" id="val-output-tokens">100k</span>
+              </div>
+              <input type="range" id="slider-output" min="0" max="1000" step="10" value="100" oninput="updateCalculatorValues()">
+            </div>
+          </div>
+        </div>
+        
+        <!-- Bottom Total Bar -->
+        <div class="calc-total-bar">
+          <div class="total-cost-box">
+            <span data-i18n="calc_total_cost">预估费用</span>
+            <span class="total-cost-val" id="calc-total-val">¥0.00</span>
+          </div>
+          <div class="save-cost-box">
+            <span class="save-badge" id="calc-save-percent">Save 35%</span>
+            <p data-i18n="calc_vs_official">对比官方直连节省</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+{% else %}
 <!-- Hero Section with Canvas Particles & Glow Blobs -->
 <header class="hero">
   <div class="hero-background">
@@ -276,6 +1014,7 @@
     </div>
   </div>
 </header>
+{% endif %}
 
 <!-- Stats Section -->
 <section class="stats">
@@ -411,6 +1150,11 @@
       apiUrlText.textContent = resolvedApiUrl;
     }
 
+    // Update API Base URL placeholders in the terminal code snippets
+    document.querySelectorAll('.api-base-url-placeholder').forEach(el => {
+      el.textContent = resolvedApiUrl;
+    });
+
     // Format CTA description: Replace any URL inside it with the resolved API Base URL, then wrap it in <code>
     const ctaDesc = document.querySelector('.cta-desc');
     if (ctaDesc) {
@@ -512,8 +1256,8 @@
       copyBtn.classList.add('copied');
       const btnTextEl = copyBtn.querySelector('.btn-text');
       const oldText = btnTextEl.textContent;
-      const currentLang = document.documentElement.lang || 'zh-CN';
-      const dict = typeof locales !== 'undefined' ? (locales[currentLang] || locales['zh-CN']) : null;
+      const currentLang = typeof normalizeLang !== 'undefined' ? normalizeLang(document.documentElement.lang) : (document.documentElement.lang || 'zh');
+      const dict = typeof locales !== 'undefined' ? (locales[currentLang] || locales['zh']) : null;
       btnTextEl.textContent = dict ? dict['btn_copied'] : '已复制!';
       
       setTimeout(() => {
@@ -525,6 +1269,163 @@
     }).catch(err => {
       console.error('无法复制: ', err);
     });
+  }
+
+  function switchTermTab(btn, lang) {
+    const container = btn.closest('.tech-terminal');
+    container.querySelectorAll('.term-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    container.querySelectorAll('.term-code').forEach(c => c.style.display = 'none');
+    container.querySelector('#term-' + lang).style.display = 'block';
+  }
+
+  let terminalTypingInterval = null;
+
+  function runTerminalCode(btn) {
+    if (btn.classList.contains('running')) return;
+    
+    const terminal = btn.closest('.tech-terminal');
+    const outputWindow = terminal.querySelector('.terminal-output-window');
+    const logCmd = outputWindow.querySelector('.log-cmd');
+    const logStatus = outputWindow.querySelector('.log-status');
+    const streamContent = outputWindow.querySelector('.output-stream-content');
+    const logUsage = outputWindow.querySelector('.log-usage');
+    
+    // Clear previous simulation
+    clearInterval(terminalTypingInterval);
+    btn.classList.add('running');
+    btn.querySelector('.run-btn-text').textContent = 'Running...';
+    
+    outputWindow.style.display = 'block';
+    
+    let resolvedApiUrl = window.location.origin + '/v1';
+    const configuredUrl = "{{ home.api_base_url | default(value="") | safe }}";
+    if (configuredUrl) {
+      resolvedApiUrl = configuredUrl;
+    }
+    
+    logCmd.textContent = '> [POST] Sending request to ' + resolvedApiUrl + '/chat/completions...';
+    logStatus.textContent = '';
+    streamContent.textContent = '';
+    logUsage.textContent = '';
+    
+    let isZh = (document.documentElement.lang || 'zh').startsWith('zh');
+    
+    const zhText = "你好！我是 TokensByte 统一 API 服务。目前您的账号已成功接入我们平台！\n\n我们现已启用包括 DeepSeek-R1、GPT-4o、Claude 3.5 Sonnet、Gemini Pro 等在内的数百个主流 AI 模型。\n\n使用本平台您的优势在于：\n1. 一站式调用：无需多方充值，单个 API 密钥覆盖全球主流大模型。\n2. 智能主备路由：如果主渠道出现拥堵或故障，我们将毫秒级自动无感容灾，确保您的业务不中断。\n3. 极致性价比：提供更优的价格政策，提供 Base64 数据隐私脱敏保障。\n\n祝您开发愉快！";
+    const enText = "Hello! I am the TokensByte Unified API assistant. We have currently integrated hundreds of leading AI models, including DeepSeek-R1, GPT-4o, Claude 3.5 Sonnet, Gemini Pro, and more.\n\nOur core advantages:\n1. Unified Access: Access global models with a single API Key and unified balance.\n2. Smart Routing: High availability with millisecond-level disaster recovery retry.\n3. Secure & Privacy: Base64 data desensitization and end-to-end encryption.\n\nHappy coding!";
+    
+    const textToType = isZh ? zhText : enText;
+    
+    setTimeout(() => {
+      logStatus.textContent = '> [HTTP] Status: 200 OK';
+      setTimeout(() => {
+        let index = 0;
+        terminalTypingInterval = setInterval(() => {
+          if (index < textToType.length) {
+            streamContent.textContent += textToType.charAt(index);
+            index++;
+            outputWindow.scrollTop = outputWindow.scrollHeight;
+          } else {
+            clearInterval(terminalTypingInterval);
+            logUsage.textContent = isZh 
+              ? '> [INFO] Usage: prompt_tokens: 15, completion_tokens: 182, total_cost: $0.00012'
+              : '> [INFO] Usage: prompt_tokens: 15, completion_tokens: 198, total_cost: $0.00012';
+            btn.classList.remove('running');
+            btn.querySelector('.run-btn-text').textContent = 'Run';
+            outputWindow.scrollTop = outputWindow.scrollHeight;
+          }
+        }, 15);
+      }, 500);
+    }, 600);
+  }
+
+  let activeCalculatorRate = { prompt: 10.0, completion: 30.0 };
+
+  function selectCosmicCard(card) {
+    const wall = card.closest('.neon-card-wall');
+    const cards = wall.querySelectorAll('.neon-stack-card');
+    
+    // Toggle active classes
+    const wasActive = card.classList.contains('active');
+    
+    cards.forEach(c => {
+      c.classList.remove('active');
+      c.classList.add('dimmed');
+    });
+    
+    if (wasActive) {
+      // If clicked again, close calculator
+      closeCosmicCalculator();
+      return;
+    }
+    
+    card.classList.remove('dimmed');
+    card.classList.add('active');
+    
+    // Set values into calculator
+    const calcContainer = document.querySelector('.cosmic-calculator-container');
+    const logo = card.getAttribute('data-logo');
+    const modelId = card.getAttribute('data-model-id');
+    const provider = card.getAttribute('data-provider');
+    const promptRate = parseFloat(card.getAttribute('data-prompt-rate') || '0');
+    const completionRate = parseFloat(card.getAttribute('data-completion-rate') || '0');
+    
+    activeCalculatorRate.prompt = promptRate;
+    activeCalculatorRate.completion = completionRate;
+    
+    document.getElementById('calc-logo').textContent = logo;
+    document.getElementById('calc-model-id').textContent = modelId;
+    document.getElementById('calc-provider').textContent = provider;
+    
+    // Check currency prefix
+    let isZh = (document.documentElement.lang || 'zh').startsWith('zh');
+    let curPrefix = isZh ? '¥' : '$';
+    
+    document.getElementById('calc-input-rate').textContent = curPrefix + promptRate.toFixed(2) + ' / M';
+    document.getElementById('calc-output-rate').textContent = curPrefix + completionRate.toFixed(2) + ' / M';
+    
+    // Random discount for visual SaaS WOW effect (based on real cost savings)
+    let discount = 35;
+    if (modelId.includes('deepseek')) discount = 20;
+    else if (modelId.includes('claude')) discount = 30;
+    else if (modelId.includes('gemini')) discount = 25;
+    document.getElementById('calc-save-percent').textContent = 'Save ' + discount + '%';
+    
+    // Show calculator
+    calcContainer.style.display = 'block';
+    
+    // Trigger recalculate
+    updateCalculatorValues();
+  }
+
+  function closeCosmicCalculator() {
+    const calcContainer = document.querySelector('.cosmic-calculator-container');
+    if (calcContainer) calcContainer.style.display = 'none';
+    
+    const cards = document.querySelectorAll('.neon-stack-card');
+    cards.forEach(c => {
+      c.classList.remove('active');
+      c.classList.remove('dimmed');
+    });
+  }
+
+  function updateCalculatorValues() {
+    const inputSlider = document.getElementById('slider-input');
+    const outputSlider = document.getElementById('slider-output');
+    
+    const inputVal = parseInt(inputSlider.value);
+    const outputVal = parseInt(outputSlider.value);
+    
+    document.getElementById('val-input-tokens').textContent = inputVal + 'k';
+    document.getElementById('val-output-tokens').textContent = outputVal + 'k';
+    
+    // Formula: (tokens_in_thousands * rate_per_million) / 1000
+    const totalCost = ((inputVal * activeCalculatorRate.prompt) + (outputVal * activeCalculatorRate.completion)) / 1000;
+    
+    let isZh = (document.documentElement.lang || 'zh').startsWith('zh');
+    let curPrefix = isZh ? '¥' : '$';
+    
+    document.getElementById('calc-total-val').textContent = curPrefix + totalCost.toFixed(3);
   }
 </script>
 {% endblock %}

@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -36,8 +37,8 @@ pub struct User {
     pub referred_by: Option<String>,
     #[sqlx(default)]
     pub commission_balance: f64,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
     #[sqlx(default)]
     pub register_ip: Option<String>,
     #[sqlx(default)]
@@ -59,6 +60,8 @@ pub struct User {
     /// 是否允许在线支付：1-允许，0-禁止
     #[sqlx(default)]
     pub pay_enabled: i32,
+    #[sqlx(default)]
+    pub notification_preferences: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +85,14 @@ pub struct CreateUserRequest {
     pub pay_enabled: Option<i32>,
 }
 
+pub fn deserialize_some_option<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Option::deserialize(deserializer).map(Some)
+}
+
 #[derive(Debug, Deserialize)]
 pub struct UpdateUserRequest {
     pub username: Option<String>,
@@ -94,7 +105,8 @@ pub struct UpdateUserRequest {
     pub role: Option<String>,
     pub balance: Option<f64>,
     pub user_group: Option<String>,
-    pub admin_group_id: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_some_option")]
+    pub admin_group_id: Option<Option<i64>>,
     pub is_active: Option<i64>,
     pub commission_balance: Option<f64>,
     pub admin_remark: Option<String>,
@@ -109,6 +121,7 @@ pub struct UpdateUserRequest {
     pub credit_limit: Option<f64>,
     /// 是否允许在线支付
     pub pay_enabled: Option<i32>,
+    pub notification_preferences: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,6 +133,7 @@ pub struct ProfileUpdateRequest {
     pub mobile: Option<String>,
     pub wechat_id: Option<String>,
     pub timezone: Option<String>,
+    pub notification_preferences: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -133,7 +147,7 @@ pub struct RechargeRecord {
     pub operator: Option<String>,
     #[sqlx(default)]
     pub wallet_type: Option<String>,
-    pub created_at: String,
+    pub created_at: DbTs,
 }
 
 #[derive(Debug, Deserialize)]

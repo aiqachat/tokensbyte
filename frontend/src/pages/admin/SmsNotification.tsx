@@ -56,6 +56,13 @@ const SmsNotification: React.FC = () => {
         <Form.Item label={t('settings.sms_sdk_app_id')} name="sdk_app_id" rules={[{ required: true }]}><Input placeholder="1400000000" /></Form.Item>
         <Form.Item label={t('settings.sms_sign_name')} name="sign_name" rules={[{ required: true }]}><Input placeholder="已审核的短信签名" /></Form.Item>
         <Form.Item label={t('settings.sms_template_id')} name="template_id" rules={[{ required: true }]}><Input placeholder="123456" /></Form.Item>
+        <Form.Item
+          label={t('settings.sms_balance_template_id', '余额提醒模板 ID')}
+          name="balance_template_id"
+          extra={t('settings.sms_balance_template_hint', '可选。腾讯云模板变量建议：{1}=当前余额，{2}=提醒阈值。留空则不发短信余额提醒。')}
+        >
+          <Input placeholder="可选，余额不足提醒模板 ID" />
+        </Form.Item>
 
         <Space style={{ marginBottom: 24 }}>
           <Button type="primary" onClick={handleSave} loading={loading}>{t('common.save')}</Button>

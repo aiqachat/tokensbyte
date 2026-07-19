@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Card, Typography, Avatar, Space, List, Button, Modal, Form, Input, message, Popconfirm, Select } from 'antd';
+import { Card, Typography, Avatar, Space, List, Button, Modal, Form, Input, message, Popconfirm, Select, Grid } from 'antd';
 import { UserOutlined, CameraOutlined, LockOutlined, MailOutlined, MobileOutlined, WechatOutlined, GoogleOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
+import { Settings } from 'lucide-react';
 import request from '../../utils/request';
 import type { User } from '../../types';
 import useAuthStore from '../../store/auth';
@@ -62,7 +63,8 @@ const formatTimezoneDisplay = (tz: string) => {
 };
 
 const Profile: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isEn = i18n.language === 'en';
   const [profile, setProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -75,17 +77,21 @@ const Profile: React.FC = () => {
   const cardBg = isLight ? '#fff' : '#141414';
   const cardBorder = isLight ? '1px solid #e8e8e8' : '1px solid #303030';
   const listBorder = isLight ? '1px solid #f0f0f0' : '1px solid #303030';
-  const mainText = isLight ? '#1f2937' : '#fff';
-  const subText = isLight ? '#6b7280' : '#8c8c8c';
+  const mainText = isLight ? '#09090b' : '#fafafa';
+  const subText = isLight ? '#71717a' : '#a1a1aa';
   const avatarBg = isLight ? '#e8e8e8' : '#303030';
   const avatarBorder = isLight ? '2px solid #d9d9d9' : '2px solid #505050';
   const [countdowns, setCountdowns] = useState<Record<string, number>>({});
   const [searchParams, setSearchParams] = useSearchParams();
+  const { useBreakpoint } = Grid;
+  const screens = useBreakpoint();
 
   // 微信换绑步骤：'verify'=验证旧微信, 'bind'=绑定新微信
   const [wechatBindStep, setWechatBindStep] = useState<'verify' | 'bind'>('verify');
   // 每次切换步骤时重新生成 key，确保二维码刷新
   const [wechatQRKey, setWechatQRKey] = useState(() => Date.now());
+  // 服务端 HMAC 签发的绑定/验证 state
+  const [wechatBindState, setWechatBindState] = useState('');
 
   const startCountdown = (key: string) => {
     setCountdowns(prev => ({ ...prev, [key]: 60 }));
@@ -104,6 +110,23 @@ const Profile: React.FC = () => {
   }, [setUser]);
 
   useEffect(() => { fetchProfile(); }, [fetchProfile]);
+
+  // 打开微信绑定弹窗或切换步骤时，向后端获取 HMAC state
+  useEffect(() => {
+    if (!isModalVisible || modalType !== 'bind_wechat') return;
+    let cancelled = false;
+    setWechatBindState('');
+    request
+      .get('/user/bind/oauth-state', {
+        params: { provider: 'wechat', action: wechatBindStep },
+        skipErrorHandler: true,
+      } as any)
+      .then((res: any) => {
+        if (!cancelled && res?.state) setWechatBindState(res.state);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isModalVisible, modalType, wechatBindStep, wechatQRKey]);
 
   // ── 监听微信回调 URL 参数 ──────────────────────────────────
   useEffect(() => {
@@ -390,15 +413,18 @@ const Profile: React.FC = () => {
         const appId = settings?.wechat_oauth_app_id || '';
         const redirectUri = `${window.location.origin}/api/v1/user/bind/wechat/callback`;
         const isVerifyStep = wechatBindStep === 'verify';
-        const statePrefix = isVerifyStep ? 'verify_wechat_' : 'bind_wechat_';
         return (
           <div style={{ textAlign: 'center', padding: '12px 0' }}>
-            <WechatQR
-              key={wechatQRKey}
-              appId={appId}
-              redirectUri={redirectUri}
-              state={`${statePrefix}${profile?.id || ''}`}
-            />
+            {wechatBindState ? (
+              <WechatQR
+                key={wechatQRKey}
+                appId={appId}
+                redirectUri={redirectUri}
+                state={wechatBindState}
+              />
+            ) : (
+              <div style={{ padding: '40px 0', color: '#8c8c8c' }}>加载中...</div>
+            )}
             <div style={{ marginTop: 8, color: '#e5e5e5', fontSize: 14 }}>
               {isVerifyStep ? t('profile.scan_current_wechat', '请用当前绑定的微信扫码验证身份') : t('profile.scan_new_wechat', '请用新微信扫码绑定')}
             </div>
@@ -426,15 +452,24 @@ const Profile: React.FC = () => {
   };
 
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto', padding: screens.md ? '16px 0 40px 0' : '12px 0 24px 0' }}>
+      {/* Header Area */}
+      <div style={{ marginBottom: 32 }}>
+        <Title level={2} style={{ margin: 0, fontWeight: 700, color: mainText, letterSpacing: '-0.025em' }}>
+          {t('menu.profile', '个人中心')}
+        </Title>
+        <Text style={{ color: subText, fontSize: 15, marginTop: 4, display: 'block' }}>
+          {isEn ? 'Manage your personal information and security settings.' : '管理您的个人基本信息与账号安全设置。'}
+        </Text>
+      </div>
       {/* Profile Header */}
-      <Card style={{ marginBottom: 24, borderRadius: 16, background: cardBg, border: cardBorder }}
+      <Card style={{ marginBottom: 24, borderRadius: 8, background: cardBg, border: cardBorder }}
         styles={{ body: { padding: '32px' } }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ position: 'relative' }}>
             <Avatar size={80} icon={<UserOutlined />} style={{ background: avatarBg, border: avatarBorder }} />
             <Button shape="circle" size="small" icon={<CameraOutlined style={{ fontSize: 10 }} />}
-              style={{ position: 'absolute', bottom: 0, right: 0, background: '#1677ff', border: 'none', color: '#fff' }} />
+              style={{ position: 'absolute', bottom: 0, right: 0, background: isLight ? '#18181b' : '#fafafa', border: 'none', color: isLight ? '#fafafa' : '#18181b' }} />
           </div>
           <div style={{ marginLeft: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
@@ -460,7 +495,7 @@ const Profile: React.FC = () => {
       </Card>
 
       {/* Basic Info */}
-      <Card style={{ marginBottom: 24, borderRadius: 16, background: cardBg, border: cardBorder }}>
+      <Card style={{ marginBottom: 24, borderRadius: 8, background: cardBg, border: cardBorder }}>
         <List itemLayout="horizontal"
           dataSource={[
             { key: 'username', label: t('profile.account'), value: profile?.username },
@@ -468,9 +503,17 @@ const Profile: React.FC = () => {
             { key: 'timezone', label: t('profile.timezone', '时区'), value: formatTimezoneDisplay(profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai') },
           ]}
           renderItem={(item) => (
-            <List.Item style={{ borderBottom: listBorder, padding: '16px 24px' }}
+            <List.Item 
+              className="hover:bg-zinc-100/30 dark:hover:bg-zinc-800/30 transition-all duration-200"
+              style={{ borderBottom: listBorder, padding: '16px 24px' }}
               extra={(item.key === 'nickname' || item.key === 'timezone') && (
-                <Button type="link" onClick={() => handleAction(item.key)}>{t('profile.edit')}</Button>
+                <button
+                  onClick={() => handleAction(item.key)}
+                  className="p-1 rounded-md border border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors cursor-pointer"
+                  title={t('profile.edit')}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </button>
               )}>
               <div style={{ width: 120 }}><Text style={{ color: subText }}>{item.label}</Text></div>
               <div style={{ flex: 1 }}><Text style={{ color: mainText }}>{item.value || t('profile.not_set')}</Text></div>
@@ -480,13 +523,21 @@ const Profile: React.FC = () => {
       </Card>
 
       {/* Security */}
-      <Card style={{ borderRadius: 16, background: cardBg, border: cardBorder }}>
+      <Card style={{ borderRadius: 8, background: cardBg, border: cardBorder }}>
         <List itemLayout="horizontal" dataSource={securityItems}
           renderItem={(item) => (
-            <List.Item style={{ borderBottom: listBorder, padding: '16px 24px' }}
+            <List.Item 
+              className="hover:bg-zinc-100/30 dark:hover:bg-zinc-800/30 transition-all duration-200"
+              style={{ borderBottom: listBorder, padding: '16px 24px' }}
               extra={
                 <Space>
-                  <Button type="link" onClick={item.handler}>{item.action}</Button>
+                  <button
+                    onClick={item.handler}
+                    className="p-1 rounded-md border border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors cursor-pointer"
+                    title={item.action}
+                  >
+                    <Settings className="h-3.5 w-3.5" />
+                  </button>
                   {(item.key === 'wechat' && profile?.wechat_id) || (item.key === 'google' && profile?.google_id) ? (
                     <Popconfirm title={t('profile.unbind_confirm')}
                       description={<Input.Password placeholder={t('profile.unbind_password')} id={`unbind_pwd_${item.key}`} />}

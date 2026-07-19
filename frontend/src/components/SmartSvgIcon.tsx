@@ -22,6 +22,13 @@ const SmartSvgIcon: React.FC<SmartSvgIconProps> = ({ src, alt = "", style = {}, 
   useEffect(() => {
     if (!src) return;
 
+    // 站点默认彩色图标：禁止暗色反色
+    if (src.toLowerCase().includes('default-model')) {
+      darkSvgCache[src] = false;
+      setIsInvertNeeded(false);
+      return;
+    }
+
     if (darkSvgCache[src] !== undefined) {
       setIsInvertNeeded(darkSvgCache[src]);
       return;
@@ -67,14 +74,26 @@ const SmartSvgIcon: React.FC<SmartSvgIconProps> = ({ src, alt = "", style = {}, 
         darkSvgCache[src] = needed;
         setIsInvertNeeded(needed);
       } catch (e) {
-        // Fallback heuristics: name-based checking if canvas fails (e.g. CORS or security block)
         const lowerSrc = src.toLowerCase();
-        const knownDark = lowerSrc.includes('baichuan') || 
+        // 默认彩色图标不做反色；其余已知纯黑品牌图标在暗色下反色
+        const knownDark = !lowerSrc.includes('default-model') && (
+                          lowerSrc.includes('baichuan') || 
                           lowerSrc.includes('minimax') || 
                           lowerSrc.includes('spark') || 
                           lowerSrc.includes('sensetime') || 
                           lowerSrc.includes('tencent') || 
-                          lowerSrc.includes('custom/');
+                          lowerSrc.includes('openai') || 
+                          lowerSrc.includes('github') || 
+                          lowerSrc.includes('anthropic') || 
+                          lowerSrc.includes('groq') || 
+                          lowerSrc.includes('ollama') || 
+                          lowerSrc.includes('moonshot') || 
+                          lowerSrc.includes('zeroone') || 
+                          lowerSrc.includes('openrouter') || 
+                          lowerSrc.includes('xai') || 
+                          lowerSrc.includes('grok') || 
+                          lowerSrc.includes('hermes') || 
+                          lowerSrc.includes('custom/'));
         darkSvgCache[src] = knownDark;
         setIsInvertNeeded(knownDark);
       }

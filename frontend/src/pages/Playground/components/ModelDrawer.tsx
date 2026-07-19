@@ -3,12 +3,13 @@
  */
 import React from 'react';
 import { Input, Tooltip, Grid, message, Popover } from 'antd';
-import { CloseOutlined, SearchOutlined, AppstoreOutlined, InfoCircleOutlined, DollarOutlined, StarOutlined, StarFilled, CopyOutlined, BookOutlined } from '@ant-design/icons';
+import { CloseOutlined, SearchOutlined, AppstoreOutlined, InfoCircleOutlined, DollarOutlined, StarOutlined, StarFilled, CopyOutlined, BookOutlined, UpOutlined, DownOutlined } from '@ant-design/icons';
 import { usePlayground } from '../context/PlaygroundContext';
 import { getCategoryIcon, getCategoryLabel, getLucideCategoryIcon } from '../constants';
 import { useThemeStore } from '../../../store/theme';
 import useSettingsStore from '../../../store/settings';
 import RateDisplay from '../../Models/RateDisplay';
+import SmartSvgIcon from '../../../components/SmartSvgIcon';
 
 const { useBreakpoint } = Grid;
 
@@ -20,6 +21,7 @@ const ModelDrawer: React.FC = React.memo(() => {
     handleSelectModel, categories, handleCategoryChange,
     isSettingsWidgetVisible,
     favorites, toggleFavorite,
+    activeSelectorNodeId, activeSelectorNodeSelectedMid,
   } = usePlayground();
   const { themeMode } = useThemeStore();
   const { settings } = useSettingsStore();
@@ -29,6 +31,23 @@ const ModelDrawer: React.FC = React.memo(() => {
   const isMobile = screens.md === false; // <= 768px
 
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  const [expandedBillingMids, setExpandedBillingMids] = React.useState<Set<number | string>>(new Set());
+
+  const toggleBillingExpand = (mid: number | string) => {
+    setExpandedBillingMids(prev => {
+      const next = new Set(prev);
+      if (next.has(mid)) {
+        next.delete(mid);
+      } else {
+        next.add(mid);
+      }
+      return next;
+    });
+  };
+
+  const isBillingExpanded = (mid: number | string) => {
+    return expandedBillingMids.has(mid);
+  };
 
 
   const handleCopy = (text: string) => {
@@ -63,7 +82,7 @@ const ModelDrawer: React.FC = React.memo(() => {
     <>
       <style>{`
         .action-icon-btn {
-          width: 24px; height: 24px; border-radius: 50%;
+          width: 20px; height: 20px; border-radius: 50%;
           display: flex; align-items: center; justify-content: center;
           cursor: pointer; transition: all 0.2s;
           color: ${_isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.65)'};
@@ -164,7 +183,9 @@ const ModelDrawer: React.FC = React.memo(() => {
             <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', textAlign: 'center', padding: '60px 0' }}>该类别下暂无可体验的模型。</div>
           ) : (
             modelsInCategory.map(model => {
-              const isSelected = selectedMid === model.mid;
+              const isSelected = activeSelectorNodeId
+                ? String(activeSelectorNodeSelectedMid) === String(model.mid)
+                : selectedMid === model.mid;
               const isPaid = !!model.billing;
               return (
                 <div
@@ -178,7 +199,7 @@ const ModelDrawer: React.FC = React.memo(() => {
                     background: isSelected
                       ? (_isLight ? 'rgba(22,119,255,0.06)' : '#262930')
                       : (_isLight ? '#ffffff' : '#202124'),
-                    cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, transition: 'all 0.2s ease',
+                    cursor: 'pointer', display: 'flex', flexDirection: 'column', transition: 'all 0.2s ease',
                     boxShadow: isSelected
                       ? (_isLight ? '0 4px 12px rgba(22,119,255,0.06)' : '0 4px 12px rgba(0,0,0,0.15)')
                       : 'none'
@@ -194,98 +215,102 @@ const ModelDrawer: React.FC = React.memo(() => {
                     }
                   }}
                 >
-                  {/* 头部区：Logo + 名称 + ID */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  {/* 头部区：Logo + ID + 操作区 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
                     {/* Logo 容器 */}
                     <div style={{
-                      width: 36, height: 36, flexShrink: 0,
-                      borderRadius: 8,
-                      background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.06)',
-                      border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.08)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      marginTop: 2
+                      width: 20, height: 20, flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}>
                       {model.logo ? (
-                        <img 
+                        <SmartSvgIcon 
                           src={`/assets/icons/lobe/${model.logo}.svg`} 
                           alt={model.name} 
-                          style={{ width: 24, height: 24, objectFit: 'contain', borderRadius: 4 }} 
+                          style={{ width: 16, height: 16, objectFit: 'contain' }} 
                           onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
                           }}
                         />
                       ) : (
-                        <div style={{ fontSize: 18, opacity: 0.8, color: _isLight ? '#1677ff' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {getLucideCategoryIcon(activeCategory, 18)}
+                        <div style={{ fontSize: 14, opacity: 0.8, color: _isLight ? '#1677ff' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {getLucideCategoryIcon(activeCategory, 14)}
                         </div>
                       )}
                     </div>
                     
-                    {/* 名称和 ID */}
-                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                          <div style={{ color: _isLight ? '#1f2937' : '#E8eaed', fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{model.name}</div>
-                          {/* 模型类型徽章 */}
-                          <Tooltip title={getCategoryLabel(model.scheme_type || model.type_name || 'chat')}>
-                            <div style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              width: 26,
-                              height: 26,
-                              borderRadius: 6,
-                              background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)',
-                              color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)',
-                              flexShrink: 0
-                            }}>
-                              {getLucideCategoryIcon(model.scheme_type || model.type_name || 'chat', 16)}
-                            </div>
-                          </Tooltip>
+                    {/* ID 和 徽章 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                      <div style={{ color: _isLight ? '#1f2937' : '#E8eaed', fontSize: 15, fontWeight: 500, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{model.model_id}</div>
+                      {/* 模型类型徽章 */}
+                      <Tooltip title={getCategoryLabel(model.scheme_type || model.type_name || 'chat')}>
+                        <div style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 26,
+                          height: 26,
+                          borderRadius: 6,
+                          background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.08)',
+                          color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)',
+                          flexShrink: 0
+                        }}>
+                          {getLucideCategoryIcon(model.scheme_type || model.type_name || 'chat', 16)}
                         </div>
-                        
-                        {/* 快捷操作区 */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, marginLeft: 'auto' }} onClick={e => e.stopPropagation()}>
-                          <Tooltip title="收藏" placement="bottom" overlayStyle={{ zIndex: 9999 }}>
-                            <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); toggleFavorite(model.mid); }}>
-                              {favorites.includes(String(model.mid)) ? (
-                                <StarFilled style={{ fontSize: 13.5, color: _isLight ? '#000' : '#fff' }} />
-                              ) : (
-                                <StarOutlined style={{ fontSize: 13.5 }} />
-                              )}
-                            </div>
-                          </Tooltip>
-                          <Tooltip title={copiedId === model.model_id ? '已复制！' : '复制'} placement="bottom" overlayStyle={{ zIndex: 9999 }}>
-                            <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); handleCopy(model.model_id); }}>
-                              <CopyOutlined style={{ fontSize: 13.5 }} />
-                            </div>
-                          </Tooltip>
-                          <Tooltip title="开发文档" placement="bottom" overlayStyle={{ zIndex: 9999 }}>
-                            <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); window.open('/relay-api', '_blank'); }}>
-                              <BookOutlined style={{ fontSize: 13.5 }} />
-                            </div>
-                          </Tooltip>
+                      </Tooltip>
+                    </div>
+                    
+                    {/* 快捷操作区 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexShrink: 0, marginLeft: 'auto' }} onClick={e => e.stopPropagation()}>
+                      <Tooltip title="收藏" placement="bottom" overlayStyle={{ zIndex: 9999 }} overlayInnerStyle={{ fontSize: 11, padding: '3px 6px', minHeight: 'auto' }}>
+                        <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); toggleFavorite(model.mid); }}>
+                          {favorites.includes(String(model.mid)) ? (
+                            <StarFilled style={{ fontSize: 11.5, color: _isLight ? '#000' : '#fff' }} />
+                          ) : (
+                            <StarOutlined style={{ fontSize: 11.5 }} />
+                          )}
                         </div>
-                      </div>
-                      <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {model.model_id}
-                      </div>
+                      </Tooltip>
+                      <Tooltip title={copiedId === model.model_id ? '已复制！' : '复制'} placement="bottom" overlayStyle={{ zIndex: 9999 }} overlayInnerStyle={{ fontSize: 11, padding: '3px 6px', minHeight: 'auto' }}>
+                        <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); handleCopy(model.model_id); }}>
+                          <CopyOutlined style={{ fontSize: 11.5 }} />
+                        </div>
+                      </Tooltip>
+                      {model.billing && (
+                        <Tooltip title={isBillingExpanded(model.mid) ? "收起Tokens详情" : "Tokens详情"} placement="bottom" overlayStyle={{ zIndex: 9999 }} overlayInnerStyle={{ fontSize: 11, padding: '3px 6px', minHeight: 'auto' }}>
+                          <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); toggleBillingExpand(model.mid); }}>
+                            {isBillingExpanded(model.mid) ? (
+                              <UpOutlined style={{ fontSize: 11.5 }} />
+                            ) : (
+                              <DownOutlined style={{ fontSize: 11.5 }} />
+                            )}
+                          </div>
+                        </Tooltip>
+                      )}
                     </div>
                   </div>
 
                   {/* 详情区：简介 + 价格 */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 4 }}>
-
-
-                    {model.billing && (
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: _isLight ? '#5f6368' : '#9aa0a6', fontSize: 13 }}>
-                        <DollarOutlined style={{ marginTop: 2, fontSize: 15 }} />
-                        <div style={{ flex: 1, lineHeight: 1.5 }}>
-                          <RateDisplay rule={model.billing} currencySymbol={currencySymbol} formatPrice={formatPrice} siteDiscount={model.global_discount} siteDiscountEnabled={model.global_discount_enabled} />
-                        </div>
+                  {model.billing && (
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'flex-start', 
+                      gap: 8, 
+                      color: _isLight ? '#5f6368' : '#9aa0a6', 
+                      fontSize: 13,
+                      paddingLeft: 8,
+                      maxHeight: isBillingExpanded(model.mid) ? 200 : 0,
+                      opacity: isBillingExpanded(model.mid) ? 1 : 0,
+                      overflow: 'hidden',
+                      marginTop: isBillingExpanded(model.mid) ? 8 : 0,
+                      paddingTop: isBillingExpanded(model.mid) ? 4 : 0,
+                      paddingBottom: isBillingExpanded(model.mid) ? 4 : 0,
+                      transition: 'max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, margin-top 0.25s cubic-bezier(0.4, 0, 0.2, 1), padding 0.2s ease',
+                    }}>
+                      <div style={{ flex: 1, lineHeight: 1.5 }}>
+                        <RateDisplay rule={model.billing} currencySymbol={currencySymbol} formatPrice={formatPrice} siteDiscount={model.global_discount} siteDiscountEnabled={model.global_discount_enabled} />
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               );
             })

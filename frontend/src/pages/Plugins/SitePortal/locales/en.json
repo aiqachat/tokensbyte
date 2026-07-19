@@ -11,5 +11,7 @@
   "save_success": "Configuration saved",
   "save_failed": "Save failed",
   "generate_success": "Generation complete",
-  "generate_failed": "Generation failed"
+  "generate_failed": "Generation failed",
+  "custom_homepage": "Custom Homepage",
+  "custom_homepage_desc": "When enabled, the portal homepage will render your pasted HTML code"
 }

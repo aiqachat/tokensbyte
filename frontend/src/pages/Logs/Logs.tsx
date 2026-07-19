@@ -1,15 +1,18 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid, Tooltip, DatePicker, message, Radio } from 'antd';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid, Tooltip, DatePicker, message, Radio, Modal, Form, Spin } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { RefreshCw, Search, Download, Image as ImageIcon, MessageSquare, Video, Wrench, LayoutGrid, Copy, Cuboid, ListOrdered, Mic } from 'lucide-react';
+import { RefreshCw, Search, Download, Image as ImageIcon, MessageSquare, Video, Wrench, LayoutGrid, Copy, Cuboid, ListOrdered, Mic, MoreHorizontal, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
+import { QueryGuard, isRequestAborted } from '../../utils/queryGuard';
 import useSettingsStore from '../../store/settings';
 import useAuthStore from '../../store/auth';
 import { useThemeStore } from '../../store/theme';
 import type { RequestLog, ModelModel } from '../../types';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
+import { formatApiDateTime } from '../../utils/timedisplay';
 dayjs.extend(utc);
 
 const { RangePicker } = DatePicker;
@@ -100,60 +103,103 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
   const [pageSize, setPageSize] = useState(20);
   const [modelFilter, setModelFilter] = useState('');
   const [kidFilter, setKidFilter] = useState('');
-  const [logIdFilter, setLogIdFilter] = useState('');
-  const [userFilter, setUserFilter] = useState<string | undefined>(undefined);
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchParams] = useSearchParams();
+  const [userFilter, setUserFilter] = useState<string | undefined>(searchParams.get('user_id') || undefined);
   const [channelFilter, setChannelFilter] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [channelsList, setChannelsList] = useState<any[]>([]);
   const [allowDetails, setAllowDetails] = useState(true);
-  const [dateRange, setDateRange] = useState<[any, any] | null>(null);
+  const [dateRange, setDateRange] = useState<[any, any] | null>(() => [dayjs().startOf('day'), dayjs().endOf('day')]);
   const [exporting, setExporting] = useState(false);
   const [stats, setStats] = useState<{ total_cost: number; success_count: number; fail_count: number }>({ total_cost: 0, success_count: 0, fail_count: 0 });
   const { user } = useAuthStore();
   const screens = useBreakpoint();
-  const [actionTypeFilter, setActionTypeFilter] = useState<string>('视觉');
+  const [actionTypeFilter, setActionTypeFilter] = useState<string>(localStorage.getItem('default_log_type') || '视觉');
+  const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
+  const [tempDefaultType, setTempDefaultType] = useState<string>('视觉');
+  const queryGuardRef = useRef(new QueryGuard());
+  const skipNextEffectFetchRef = useRef(false);
+  const [detailCache, setDetailCache] = useState<Record<number, Partial<RequestLog>>>({});
+  const [detailLoadingIds, setDetailLoadingIds] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
-    if (user?.role === 'admin') {
-      request.get('/channels').then((res: any) => setChannelsList(res.data || [])).catch(console.error);
-    } else {
-      // 普通用户：从自己的日志中提取去重的渠道列表
-      request.get('/logs', { params: { page: 1, per_page: 500 } }).then((res: any) => {
-        const seen = new Map<string, string>();
-        (res.data || []).forEach((log: any) => {
-          if (log.channel_group_aid && !seen.has(log.channel_group_aid)) {
-            seen.set(log.channel_group_aid, log.channel_name || '');
-          }
-        });
-        const list = Array.from(seen.entries()).map(([aid, name]) => ({ group_aid: aid, name }));
-        setChannelsList(list);
-      }).catch(console.error);
+    const guard = queryGuardRef.current;
+    return () => guard.dispose();
+  }, []);
+
+  useEffect(() => {
+    if (isSettingsModalVisible) {
+      setTempDefaultType(localStorage.getItem('default_log_type') || '视觉');
     }
+  }, [isSettingsModalVisible]);
+
+  useEffect(() => {
+    if (user?.role !== 'admin') return;
+    request.get('/channels').then((res: any) => setChannelsList(res.data || [])).catch(console.error);
   }, [user]);
 
   const buildParams = useCallback(() => {
-    const params: any = { model: modelFilter || undefined };
+    const params: any = {};
+    if (modelFilter && modelFilter.trim()) params.model = modelFilter.trim();
     if (routerEp) params.router_ep = routerEp;
-    if (logIdFilter) params.log_id = logIdFilter;
-    if (userFilter) params.user_id = userFilter;
+    if (searchKeyword && searchKeyword.trim()) params.search_keyword = searchKeyword.trim();
+    if (userFilter && userFilter.trim()) params.user_id = userFilter.trim();
     if (channelFilter) params.channel_group_aid = channelFilter;
     if (statusFilter) params.status = statusFilter;
-    if (kidFilter) params.token_kid = kidFilter;
+    if (kidFilter && kidFilter.trim()) params.token_kid = kidFilter.trim();
     if (dateRange?.[0]) params.start_date = dateRange[0].startOf('day').toISOString();
     if (dateRange?.[1]) params.end_date = dateRange[1].endOf('day').toISOString();
     if (actionTypeFilter && actionTypeFilter !== '全部') {
       params.action_type = actionTypeFilter;
     }
     return params;
-  }, [modelFilter, logIdFilter, userFilter, channelFilter, statusFilter, dateRange, routerEp, actionTypeFilter, kidFilter]);
+  }, [modelFilter, searchKeyword, userFilter, channelFilter, statusFilter, dateRange, routerEp, actionTypeFilter, kidFilter]);
 
-  const fetchLogs = useCallback(async () => {
+  const fetchLogs = useCallback(async (overrides?: {
+    page?: number;
+    pageSize?: number;
+    modelFilter?: string;
+    searchKeyword?: string;
+    userFilter?: string | undefined;
+    channelFilter?: string | undefined;
+    statusFilter?: string | undefined;
+    kidFilter?: string;
+    dateRange?: [any, any] | null;
+    actionTypeFilter?: string;
+  }) => {
+    const signal = queryGuardRef.current.begin();
     setLoading(true);
     try {
-      const params = { ...buildParams(), page, per_page: pageSize };
-      const resp = await (request.get('/logs', { params }) as unknown as Promise<{ data: RequestLog[]; total: number; allow_details?: boolean }>);
+      const params: any = {
+        page: overrides?.page ?? page,
+        per_page: overrides?.pageSize ?? pageSize,
+      };
+      const model = overrides?.modelFilter !== undefined ? overrides.modelFilter : modelFilter;
+      const keyword = overrides?.searchKeyword !== undefined ? overrides.searchKeyword : searchKeyword;
+      const uid = overrides?.userFilter !== undefined ? overrides.userFilter : userFilter;
+      const channel = overrides?.channelFilter !== undefined ? overrides.channelFilter : channelFilter;
+      const status = overrides?.statusFilter !== undefined ? overrides.statusFilter : statusFilter;
+      const kid = overrides?.kidFilter !== undefined ? overrides.kidFilter : kidFilter;
+      const range = overrides?.dateRange !== undefined ? overrides.dateRange : dateRange;
+      const actionType = overrides?.actionTypeFilter !== undefined ? overrides.actionTypeFilter : actionTypeFilter;
+
+      if (model && model.trim()) params.model = model.trim();
+      if (routerEp) params.router_ep = routerEp;
+      if (keyword && keyword.trim()) params.search_keyword = keyword.trim();
+      if (uid && uid.trim()) params.user_id = uid.trim();
+      if (channel) params.channel_group_aid = channel;
+      if (status) params.status = status;
+      if (kid && kid.trim()) params.token_kid = kid.trim();
+      if (range?.[0]) params.start_date = range[0].startOf('day').toISOString();
+      if (range?.[1]) params.end_date = range[1].endOf('day').toISOString();
+      if (actionType && actionType !== '全部') params.action_type = actionType;
+
+      const resp = await (request.get('/logs', { params, signal }) as unknown as Promise<{ data: RequestLog[]; total: number; allow_details?: boolean }>);
+      if (!queryGuardRef.current.isCurrent(signal)) return;
       setLogs(resp.data);
       setTotal(resp.total);
+      setDetailCache({});
       if (resp.allow_details !== undefined) {
         setAllowDetails(resp.allow_details);
       }
@@ -163,11 +209,66 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
         fail_count: (resp as any).fail_count || 0,
       });
     } catch (e) {
+      if (isRequestAborted(e)) return;
       console.error(e);
     } finally {
-      setLoading(false);
+      if (queryGuardRef.current.isCurrent(signal)) {
+        setLoading(false);
+      }
     }
-  }, [page, pageSize, buildParams]);
+  }, [page, pageSize, modelFilter, searchKeyword, userFilter, channelFilter, statusFilter, kidFilter, dateRange, routerEp, actionTypeFilter]);
+
+  const loadLogDetail = useCallback(async (id: number) => {
+    if (detailCache[id] || detailLoadingIds[id]) return;
+    setDetailLoadingIds(prev => ({ ...prev, [id]: true }));
+    try {
+      const detail = await request.get(`/logs/${id}/detail`) as any;
+      setDetailCache(prev => ({
+        ...prev,
+        [id]: {
+          request_content: detail.request_content,
+          response_content: detail.response_content,
+          post_response: detail.post_response,
+          upstream_req_content: detail.upstream_req_content,
+        },
+      }));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDetailLoadingIds(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+  }, [detailCache, detailLoadingIds]);
+
+  const handleExpand = useCallback((expanded: boolean, record: RequestLog) => {
+    if (expanded) loadLogDetail(record.id);
+  }, [loadLogDetail]);
+
+  const handleReset = () => {
+    const today: [any, any] = [dayjs().startOf('day'), dayjs().endOf('day')];
+    setModelFilter('');
+    setSearchKeyword('');
+    setUserFilter(undefined);
+    setChannelFilter(undefined);
+    setStatusFilter(undefined);
+    setKidFilter('');
+    setDateRange(today);
+    if (page !== 1) skipNextEffectFetchRef.current = true;
+    setPage(1);
+    fetchLogs({
+      page: 1,
+      modelFilter: '',
+      searchKeyword: '',
+      userFilter: undefined,
+      channelFilter: undefined,
+      statusFilter: undefined,
+      kidFilter: '',
+      dateRange: today,
+    });
+  };
 
   const handleExport = async () => {
     setExporting(true);
@@ -211,8 +312,13 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
   };
 
   useEffect(() => {
+    if (skipNextEffectFetchRef.current) {
+      skipNextEffectFetchRef.current = false;
+      return;
+    }
     fetchLogs();
-  }, [fetchLogs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, actionTypeFilter, channelFilter, statusFilter]);
 
   const columns = ([
     {
@@ -222,7 +328,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
       width: 170,
       render: (text: string, record: RequestLog) => (
         <Space direction="vertical" size={0}>
-          <Text style={{ fontSize: 12 }}>{dayjs.utc(text).local().format('YYYY-MM-DD HH:mm:ss')}</Text>
+          <Text style={{ fontSize: 12 }}>{formatApiDateTime(text)}</Text>
           {record.log_id && (
             <Text 
               type="secondary" 
@@ -231,6 +337,16 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
               copyable={{ text: record.log_id, tooltips: [t('logs.copy', '复制'), t('logs.copy_success', '已复制')] }}
             >
               {record.log_id}
+            </Text>
+          )}
+          {record.task_id && (
+            <Text 
+              type="secondary" 
+              style={{ fontSize: 10, fontFamily: 'monospace', maxWidth: 140, color: '#1677ff' }} 
+              ellipsis={{ tooltip: `Task ID: ${record.task_id}` }}
+              copyable={{ text: record.task_id, tooltips: [t('logs.copy', '复制'), t('logs.copy_success', '已复制')] }}
+            >
+              {record.task_id}
             </Text>
           )}
         </Space>
@@ -245,7 +361,19 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
       filterMultiple: false,
       filterSearch: true,
       filteredValue: channelFilter ? [channelFilter] : null,
-      render: (text: string) => <Text type="secondary" style={{ fontSize: 12 }}>{text || '-'}</Text>,
+      render: (text: string, record: RequestLog) => (
+        <Space size={4} direction="vertical" style={{ alignItems: 'flex-start' }}>
+          <Space size={4}>
+            <Text type="secondary" style={{ fontSize: 12 }}>{text || '-'}</Text>
+            {record.channel_provider_type === 'high_availability_group' && <Tag color="blue" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px' }}>HA</Tag>}
+          </Space>
+          {record.yid && (
+            <Tag color="cyan" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px' }}>
+              {t('logs.sub_channel', '上游')}: {record.yid}
+            </Tag>
+          )}
+        </Space>
+      ),
     } : null,
     user?.role === 'admin' ? {
       title: t('logs.user', '用户'),
@@ -286,7 +414,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
       filteredValue: statusFilter ? [statusFilter] : null,
       render: (code: number) => {
         if (code === 0) {
-          return <Tag icon={<RefreshCw size={14} className="anticon-spin" style={{ marginRight: 4 }} />} color="processing">{t('logs.processing', '处理中')}</Tag>;
+          return <Tag icon={<RefreshCw size={14} className="anticon-spin" />} color="processing" style={{ display: 'inline-flex', alignItems: 'center' }}>{t('logs.processing', '处理中')}</Tag>;
         }
         return <Tag color={code === 200 ? 'success' : 'error'}>{code || 400}</Tag>;
       },
@@ -308,8 +436,9 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
               <Text style={{ fontSize: 12 }}>{text}</Text>
               {pluginLabel && <Tag color="purple" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px' }}>{pluginLabel}</Tag>}
             </Space>
-            {user?.role === 'admin' && (record.billing_pid || record.forward_eid) && (
+            {user?.role === 'admin' && (record.yid || record.billing_pid || record.forward_eid) && (
               <Space size={4}>
+                {record.yid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>YID:{record.yid}</Text>}
                 {record.billing_pid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>PID:{record.billing_pid}</Text>}
                 {record.forward_eid && <Text type="secondary" style={{ fontSize: 10, fontFamily: 'monospace' }}>EID:{record.forward_eid}</Text>}
               </Space>
@@ -340,8 +469,10 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
         // 从 billing_detail 中提取 Claude 缓存创建/读取数量
         const ccMatch = record.billing_detail?.match(/(\d+)创建@/);
         const crMatch = record.billing_detail?.match(/(\d+)读取@/);
+        const wsMatch = record.billing_detail?.match(/联网搜索:\s*([\d.]+)次/);
         const cacheCreation = ccMatch ? parseInt(ccMatch[1]) : 0;
         const cacheRead = crMatch ? parseInt(crMatch[1]) : 0;
+        const webSearch = wsMatch ? parseFloat(wsMatch[1]) : 0;
         const isClaude = cacheCreation > 0 || cacheRead > 0;
         return (
           <Space direction="vertical" size={0}>
@@ -355,6 +486,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
             ) : (
               (record.cached_tokens ?? 0) > 0 && <Text type="secondary" style={{ fontSize: 11, color: '#52c41a' }}>{t('logs.cache_input', '缓存(输入内)')}: {record.cached_tokens}</Text>
             )}
+            {webSearch > 0 && <Text type="secondary" style={{ fontSize: 11, color: '#1677ff' }}>联网搜索: {webSearch}次</Text>}
           </Space>
         );
       },
@@ -379,10 +511,12 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
   ].map((c: any) => c ? { ...c, align: 'center' } : null).filter(Boolean)) as any[];
 
   const expandedRowRender = (record: RequestLog) => {
-    let reqJson = record.request_content;
-    let respJson = record.response_content;
-    let postRespJson = record.post_response;
-    let upstreamReqJson = record.upstream_req_content;
+    const merged = { ...record, ...detailCache[record.id] };
+    const loadingDetail = !!detailLoadingIds[record.id] && !detailCache[record.id];
+    let reqJson = merged.request_content;
+    let respJson = merged.response_content;
+    let postRespJson = merged.post_response;
+    let upstreamReqJson = merged.upstream_req_content;
     try {
       if (reqJson) reqJson = JSON.stringify(JSON.parse(reqJson), null, 2);
     } catch (e) { /* keep raw */ }
@@ -419,7 +553,17 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
             </Descriptions.Item>
           )}
           {user?.role === 'admin' && (
-            <Descriptions.Item label={t('logs.channel_aid', '渠道标识')}>{record.channel_group_aid || '-'}</Descriptions.Item>
+            <Descriptions.Item label={t('logs.channel_aid', '渠道标识')}>
+              <Space size={4}>
+                <span>{record.channel_group_aid || '-'}</span>
+                {record.channel_provider_type === 'high_availability_group' && <Tag color="blue" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px' }}>HA</Tag>}
+              </Space>
+            </Descriptions.Item>
+          )}
+          {user?.role === 'admin' && record.sub_channel_name && (
+            <Descriptions.Item label={t('logs.sub_channel_name', '实际调用上游')}>
+              <Tag color="cyan">{record.sub_channel_name}</Tag>
+            </Descriptions.Item>
           )}
           <Descriptions.Item label={t('logs.error_msg', '错误信息')}>
             {(() => {
@@ -458,11 +602,14 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
               {record.plugin_tag && (() => {
                 try {
                   const tag = JSON.parse(record.plugin_tag);
-                  return (
-                    <Tag color="purple" style={{ fontSize: 11 }}>
-                      {tag.title || tag.name}: {tag.custom_model} → {tag.actual_model} ({tag.media_type})
-                    </Tag>
-                  );
+                  if (tag && tag.name === 'happyhorse') {
+                    return (
+                      <Tag color="purple" style={{ fontSize: 11 }}>
+                        {tag.title || tag.name}: {tag.custom_model} → {tag.actual_model} ({tag.media_type})
+                      </Tag>
+                    );
+                  }
+                  return null;
                 } catch { return null; }
               })()}
             </Space>
@@ -484,6 +631,9 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
           </Descriptions.Item>
         </Descriptions>
 
+        {loadingDetail ? (
+          <div style={{ padding: 32, textAlign: 'center' }}><Spin tip={t('logs.loading_detail', '加载详情中...')} /></div>
+        ) : (
         <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
           <Col span={24} style={{ maxWidth: '100%', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -548,6 +698,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
             </Col>
           )}
         </Row>
+        )}
       </div>
     );
   };
@@ -569,34 +720,55 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
               <RefreshCw size={20} />
               {t('menu.usage_logs', '使用日志')}
             </Typography.Title>
-            <ShadcnTabs 
-              value={actionTypeFilter}
-              isLight={_isLight}
-              themeToken={themeToken}
-              onChange={(v: string) => {
-                setActionTypeFilter(v);
-                setPage(1);
-              }}
-              options={[
-                { value: '视觉', label: t('logs.type_vision', '视觉'), icon: <ImageIcon size={14} /> },
-                { value: '聊天', label: t('logs.type_chat', '聊天'), icon: <MessageSquare size={14} /> },
-                { value: '音频', label: t('logs.type_audio', '音频'), icon: <Mic size={14} /> },
-                { value: '向量', label: t('logs.type_embedding', '向量'), icon: <Cuboid size={14} /> },
-                { value: '排序', label: t('logs.type_rerank', '排序'), icon: <ListOrdered size={14} /> },
-                { value: '其它', label: t('logs.type_other', '其它'), icon: <Wrench size={14} /> },
-                { value: '全部', label: t('logs.type_all', '全部'), icon: <LayoutGrid size={14} /> },
-              ]}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShadcnTabs 
+                value={actionTypeFilter}
+                isLight={_isLight}
+                themeToken={themeToken}
+                onChange={(v: string) => {
+                  setActionTypeFilter(v);
+                  setPage(1);
+                }}
+                options={[
+                  { value: '视觉', label: t('logs.type_vision', '视觉'), icon: <ImageIcon size={14} /> },
+                  { value: '聊天', label: t('logs.type_chat', '聊天'), icon: <MessageSquare size={14} /> },
+                  { value: '音频', label: t('logs.type_audio', '音频'), icon: <Mic size={14} /> },
+                  { value: '向量', label: t('logs.type_embedding', '向量'), icon: <Cuboid size={14} /> },
+                  { value: '排序', label: t('logs.type_rerank', '排序'), icon: <ListOrdered size={14} /> },
+                  { value: '其它', label: t('logs.type_other', '其它'), icon: <Wrench size={14} /> },
+                  { value: '全部', label: t('logs.type_all', '全部'), icon: <LayoutGrid size={14} /> },
+                ]}
+              />
+              <Tooltip title={t('logs.configure_default_type', '配置默认视图')}>
+                <Button
+                  type="text"
+                  icon={<MoreHorizontal size={16} />}
+                  onClick={() => setIsSettingsModalVisible(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '8px',
+                    width: '32px',
+                    height: '32px',
+                    padding: 0,
+                    background: themeToken?.colorFillAlter || (_isLight ? '#fafafa' : '#1d1d1d'),
+                    border: 'none',
+                    color: themeToken?.colorTextSecondary || (_isLight ? '#71717a' : '#a1a1aa'),
+                  }}
+                />
+              </Tooltip>
+            </div>
           </div>
         </div>
         {total > 0 && (
           <div style={{ marginTop: 8 }}>
             <Space size={12} wrap split={<span style={{ color: themeToken.colorBorder }}>|</span>}>
-              <Text type="secondary" style={{ fontSize: 12 }}>请求 <strong style={{ color: themeToken.colorText }}>{total}</strong></Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>成功 <strong style={{ color: themeToken.colorText }}>{stats.success_count}</strong></Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>失败 <strong style={{ color: themeToken.colorText }}>{stats.fail_count}</strong></Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>成功率 <strong style={{ color: themeToken.colorText }}>{total > 0 ? ((stats.success_count / total) * 100).toFixed(1) : '0.0'}%</strong></Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>成本合计 <strong style={{ color: themeToken.colorText }}>{currencySymbol}{stats.total_cost.toFixed(4)}</strong></Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.requests', '请求')} <strong style={{ color: themeToken.colorText }}>{total}</strong></Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.success', '成功')} <strong style={{ color: themeToken.colorText }}>{stats.success_count}</strong></Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.fail', '失败')} <strong style={{ color: themeToken.colorText }}>{stats.fail_count}</strong></Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.success_rate', '成功率')} <strong style={{ color: themeToken.colorText }}>{total > 0 ? ((stats.success_count / total) * 100).toFixed(1) : '0.0'}%</strong></Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.total_cost', '成本合计')} <strong style={{ color: themeToken.colorText }}>{currencySymbol}{stats.total_cost.toFixed(4)}</strong></Text>
             </Space>
           </div>
         )}
@@ -609,25 +781,33 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
               prefix={<Search size={16} />}
               value={userFilter || ''}
               onChange={e => setUserFilter(e.target.value || undefined)}
-              onPressEnter={fetchLogs}
+              onPressEnter={() => fetchLogs()}
               style={{ width: screens.xs ? '100%' : 180 }}
               allowClear
             />
           )}
+          {user?.role !== 'admin' && userFilter && (
+            <Input
+              value={userFilter}
+              style={{ width: screens.xs ? '100%' : 120 }}
+              disabled
+            />
+          )}
           <Input
-            placeholder={t('logs.search_log_id', '搜索日志ID')}
+            placeholder={t('logs.search_keyword', '搜索日志 ID / 任务 ID')}
             prefix={<Search size={16} />}
-            value={logIdFilter}
-            onChange={e => setLogIdFilter(e.target.value)}
-            onPressEnter={fetchLogs}
-            style={{ width: screens.xs ? '100%' : 200 }}
+            value={searchKeyword}
+            onChange={e => setSearchKeyword(e.target.value)}
+            onPressEnter={() => fetchLogs()}
+            style={{ width: screens.xs ? '100%' : 240 }}
+            allowClear
           />
           <Input
             placeholder={t('logs.search_model')}
             prefix={<Search size={16} />}
             value={modelFilter}
             onChange={e => setModelFilter(e.target.value)}
-            onPressEnter={fetchLogs}
+            onPressEnter={() => fetchLogs()}
             style={{ width: screens.xs ? '100%' : 140 }}
           />
           <Input
@@ -635,19 +815,22 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
             prefix={<Search size={16} />}
             value={kidFilter}
             onChange={e => setKidFilter(e.target.value)}
-            onPressEnter={fetchLogs}
+            onPressEnter={() => fetchLogs()}
             style={{ width: screens.xs ? '100%' : 140 }}
           />
           <RangePicker
             value={dateRange}
+            placeholder={[t('logs.start_date', '开始日期'), t('logs.end_date', '结束日期')]}
             onChange={(vals) => setDateRange(vals as [any, any] | null)}
             style={{ width: screens.xs ? '100%' : undefined }}
           />
           <Space size={8} style={{ marginLeft: screens.xs ? 0 : 'auto' }}>
-            <Button icon={<RefreshCw size={14} />} onClick={fetchLogs} style={{ borderRadius: 6 }}>{t('common.refresh')}</Button>
+            <Button type="primary" icon={<Search size={14} />} onClick={() => fetchLogs()} loading={loading} disabled={loading} style={{ borderRadius: 6 }}>{t('logs.query', '查询')}</Button>
+            <Button onClick={handleReset} disabled={loading} style={{ borderRadius: 6 }}>{t('logs.reset', '重置')}</Button>
+            <Button icon={<RefreshCw size={14} />} onClick={() => fetchLogs()} loading={loading} disabled={loading} style={{ borderRadius: 6 }}>{t('common.refresh', '刷新')}</Button>
             {user?.role === 'admin' && (
               <Tooltip title={t('logs.export_tooltip', '根据当前筛选条件导出 CSV（上限10万条）')}>
-                <Button icon={<Download size={14} />} loading={exporting} onClick={handleExport} style={{ borderRadius: 6 }}>{t('logs.export', '导出')}</Button>
+                <Button icon={<Download size={14} />} loading={exporting} disabled={loading} onClick={handleExport} style={{ borderRadius: 6 }}>{t('logs.export', '导出')}</Button>
               </Tooltip>
             )}
           </Space>
@@ -674,13 +857,13 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
                 style={{ background: _isLight ? '#fff' : '#141414', border: 'none' }}
                 title={<Tag color="blue">{record.model}</Tag>}
                 extra={record.status_code === 0
-                  ? <Tag icon={<RefreshCw size={14} className="anticon-spin" style={{ marginRight: 4 }} />} color="processing">{t('logs.processing', '处理中')}</Tag>
+                  ? <Tag icon={<RefreshCw size={14} className="anticon-spin" />} color="processing" style={{ display: 'inline-flex', alignItems: 'center' }}>{t('logs.processing', '处理中')}</Tag>
                   : <Tag color={record.status_code === 200 ? 'success' : 'error'}>{record.status_code || 400}</Tag>
                 }
               >
                 <CardRow label={t('logs.time', '时间')}>
                   <Space direction="vertical" size={0} align="end">
-                    <Text type="secondary" style={{ fontSize: 12 }}>{dayjs.utc(record.created_at).local().format('YYYY-MM-DD HH:mm:ss')}</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{formatApiDateTime(record.created_at)}</Text>
                     {record.log_id && (
                       <Text 
                         type="secondary" 
@@ -701,10 +884,19 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
                     </Space>
                   </CardRow>
                 )}
-                {user?.role === 'admin' && record.channel_group_aid && <CardRow label={t('logs.channel_aid', '渠道AID')}><Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text></CardRow>}
-                {user?.role === 'admin' && (record.billing_pid || record.forward_eid) && (
+                {user?.role === 'admin' && record.channel_group_aid && <CardRow label={t('logs.channel_aid', '渠道AID')}>
+                  <Space size={4}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>{record.channel_group_aid}</Text>
+                    {record.channel_provider_type === 'high_availability_group' && <Tag color="blue" style={{ fontSize: 10, margin: 0, padding: '0 4px', lineHeight: '16px' }}>HA</Tag>}
+                  </Space>
+                </CardRow>}
+                {user?.role === 'admin' && record.yid && <CardRow label={t('logs.sub_channel_name', '实际调用上游')}>
+                  <Tag color="cyan" style={{ fontSize: 11 }}>{record.yid}</Tag>
+                </CardRow>}
+                {user?.role === 'admin' && (record.yid || record.billing_pid || record.forward_eid) && (
                   <CardRow label={t('logs.match_rule', '匹配规则')}>
                     <Space size={8}>
+                      {record.yid && <Text type="secondary" style={{ fontSize: 11 }}>YID:<Typography.Text keyboard style={{ fontSize: 10 }}>{record.yid}</Typography.Text></Text>}
                       {record.billing_pid && <Text type="secondary" style={{ fontSize: 11 }}>PID:<Typography.Text keyboard style={{ fontSize: 10 }}>{record.billing_pid}</Typography.Text></Text>}
                       {record.forward_eid && <Text type="secondary" style={{ fontSize: 11 }}>EID:<Typography.Text keyboard style={{ fontSize: 10 }}>{record.forward_eid}</Typography.Text></Text>}
                     </Space>
@@ -762,6 +954,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
           expandable={
             allowDetails ? {
               expandedRowRender,
+              onExpand: handleExpand,
               expandRowByClick: false
             } : undefined
           }
@@ -796,6 +989,123 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
           scroll={{ x: 'max-content' }}
         />
       )}
+
+      <Modal
+        title={null}
+        open={isSettingsModalVisible}
+        onCancel={() => setIsSettingsModalVisible(false)}
+        footer={null}
+        width={420}
+        styles={{
+          mask: { backgroundColor: 'rgba(0, 0, 0, 0.45)' },
+          body: { padding: '24px' },
+          content: { 
+            backgroundColor: _isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(28, 29, 31, 0.85)', 
+            backdropFilter: 'blur(16px) saturate(120%)', 
+            WebkitBackdropFilter: 'blur(16px) saturate(120%)',
+            borderRadius: 16, 
+            padding: 0, 
+            overflow: 'hidden',
+            border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)',
+            boxShadow: _isLight ? '0 12px 32px rgba(0,0,0,0.1)' : '0 24px 48px rgba(0,0,0,0.4)'
+          },
+        } as any}
+      >
+        <div style={{ marginBottom: 20 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: _isLight ? '#1f2937' : '#E8EAED' }}>
+            {t('logs.default_type_modal_title', '配置默认查看日志类型')}
+          </h3>
+          <p style={{ fontSize: 12, color: _isLight ? '#71717a' : '#a1a1aa', margin: '4px 0 0 0' }}>
+            {t('logs.default_type_modal_desc', '选择在进入日志查询页面时，默认加载并展示的日志类别。')}
+          </p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 24 }}>
+          {[
+            { value: '视觉', label: t('logs.type_vision', '视觉'), icon: <ImageIcon size={14} /> },
+            { value: '聊天', label: t('logs.type_chat', '聊天'), icon: <MessageSquare size={14} /> },
+            { value: '音频', label: t('logs.type_audio', '音频'), icon: <Mic size={14} /> },
+            { value: '向量', label: t('logs.type_embedding', '向量'), icon: <Cuboid size={14} /> },
+            { value: '排序', label: t('logs.type_rerank', '排序'), icon: <ListOrdered size={14} /> },
+            { value: '其它', label: t('logs.type_other', '其它'), icon: <Wrench size={14} /> },
+            { value: '全部', label: t('logs.type_all', '全部'), icon: <LayoutGrid size={14} /> },
+          ].map((opt) => {
+            const isSelected = tempDefaultType === opt.value;
+            return (
+              <div
+                key={opt.value}
+                onClick={() => setTempDefaultType(opt.value)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  border: `1px solid ${isSelected ? themeToken.colorPrimary : (_isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)')}`,
+                  background: isSelected 
+                    ? (_isLight ? 'rgba(22, 119, 255, 0.05)' : 'rgba(22, 119, 255, 0.15)') 
+                    : (_isLight ? 'transparent' : 'rgba(255,255,255,0.02)'),
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  color: isSelected ? themeToken.colorPrimary : (_isLight ? '#1f2937' : '#E8EAED'),
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)';
+                    e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.01)' : 'rgba(255,255,255,0.04)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)';
+                    e.currentTarget.style.background = _isLight ? 'transparent' : 'rgba(255,255,255,0.02)';
+                  }
+                }}
+              >
+                <span>{opt.icon}</span>
+                <span style={{ fontSize: 13, fontWeight: isSelected ? 500 : 400 }}>{opt.label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+          <Button
+            onClick={() => setIsSettingsModalVisible(false)}
+            style={{
+              borderRadius: 6,
+              height: 32,
+              padding: '0 16px',
+              fontSize: 13,
+              border: _isLight ? '1px solid rgba(0,0,0,0.15)' : '1px solid rgba(255,255,255,0.15)',
+              background: 'transparent',
+              color: _isLight ? '#1f2937' : '#E8EAED',
+            }}
+          >
+            {t('common.cancel', '取消')}
+          </Button>
+          <Button
+            onClick={() => {
+              localStorage.setItem('default_log_type', tempDefaultType);
+              setActionTypeFilter(tempDefaultType);
+              setPage(1);
+              message.success(t('logs.default_type_saved', '默认日志类型配置已保存'));
+              setIsSettingsModalVisible(false);
+            }}
+            style={{
+              borderRadius: 6,
+              height: 32,
+              padding: '0 16px',
+              fontSize: 13,
+              background: themeToken.colorPrimary,
+              color: '#fff',
+              border: 'none',
+            }}
+          >
+            {t('common.confirm', '确认')}
+          </Button>
+        </div>
+      </Modal>
     </Card>
   );
 };

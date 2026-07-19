@@ -379,14 +379,8 @@
   </section>
 
   <section class="cta-section">
-    <div class="cta-box">
-      <h2 class="cta-title" data-i18n="cta_title">准备好开始构建了吗？</h2>
-      <p class="cta-desc">
-        <span data-i18n="about_cta_desc_prefix">加入数以万计的开发者，利用 </span>
-        <span data-i18n-dynamic="{{ nav.logo_text | default(value="TokensByte") }}">{{ nav.logo_text | default(value="TokensByte") }}</span>
-        <span data-i18n="about_cta_desc_suffix"> 快速部署 AI 应用。</span>
-      </p>
-      <a href="/login" class="cta-button" data-i18n="nav_register">免费注册账号</a>
+    <div class="cta-box" style="text-align: left; max-width: 56rem; margin: 0 auto; padding: 0; line-height: 1.6; background: transparent; border: none; box-shadow: none;">
+      {{ columns.about.content | default(value="<p>暂无内容</p>") | safe }}
     </div>
   </section>
 

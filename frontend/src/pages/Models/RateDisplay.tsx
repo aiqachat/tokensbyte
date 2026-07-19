@@ -1,5 +1,5 @@
 import React from 'react';
-import { Space, Tag, Typography } from 'antd';
+import { Space, Tag, Typography, Tooltip } from 'antd';
 
 const { Text } = Typography;
 
@@ -7,12 +7,14 @@ const { Text } = Typography;
 const RULE_LABELS: Record<string, string> = {
   standard: '标准计费',
   multimodal: '多模态计费',
+  gpt_billing: 'GPT官方计费',
   tiered: '阶梯计费',
   doubao_chat: '豆包聊天阶梯',
   volcengine: '火山多模态(旧)',
   'seedance2.0': 'Seedance 2.0',
   'seedance1.5pro': 'Seedance 1.5 Pro',
   'seedance1.0': 'Seedance 1.0',
+  volc_seedream_pro: '火山 Seedream Pro',
   fixed: '固定按次',
   per_image: '按张收费',
   image_resolution: '按分辨率K',
@@ -23,6 +25,7 @@ const RULE_LABELS: Record<string, string> = {
   vidu_video: 'Vidu 视频',
   vidu_image: 'Vidu 图片',
   characters: '按字符计费',
+  volc_enhance_cascade: '火山级联增强',
 };
 
 interface BillingRuleInfo {
@@ -78,6 +81,17 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
   let ext: Record<string, any> = {};
   try { if (rule.extended_config) ext = JSON.parse(rule.extended_config); } catch { }
 
+  // 统一解析 pricing_tiers 数组
+  const tiers = (() => {
+    try {
+      if (rule.pricing_tiers) {
+        const parsed = JSON.parse(rule.pricing_tiers);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  })();
+
   // 查表类计费摘要（vidu_image / vidu_video 共用）
   const renderPriceTableSummary = (unit: string, extra?: React.ReactNode) => {
     const pt = ext.price_table || {};
@@ -99,8 +113,6 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
   const renderDetails = () => {
     if (rule.billing_type === 'tokens') {
       if (rule.billing_rule === 'tiered') {
-        let tiers: any[] = [];
-        try { if (rule.pricing_tiers) tiers = JSON.parse(rule.pricing_tiers); } catch { }
         if (tiers.length === 0) return <Text type="secondary" style={s}>阶梯定价 (无配置)</Text>;
         
         return (
@@ -114,8 +126,6 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
         );
       }
       if (rule.billing_rule === 'doubao_chat') {
-        let tiers: any[] = [];
-        try { if (rule.pricing_tiers) tiers = JSON.parse(rule.pricing_tiers); } catch { }
         if (tiers.length === 0) return <Text type="secondary" style={s}>豆包聊天阶梯 (无配置)</Text>;
         const hasFast = tiers.some((t: any) => t.fast_prompt_rate > 0 || t.fast_completion_rate > 0);
         return (
@@ -139,7 +149,7 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
       }
       if (rule.billing_rule === 'seedance2.0') {
         const rates = ext.resolution_rates || {};
-        const activeRes = Object.keys(rates).filter(k => ['480p', '720p', '1080p'].includes(k));
+        const activeRes = Object.keys(rates);
 
         if (activeRes.length === 0) {
           return <Text type="secondary" style={s}>无独立分辨率设置(自动兜底计费)</Text>;
@@ -179,6 +189,35 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
         if (ext.volc_base_enabled) lines.push(<Text key="b" type="secondary" style={s}>纯文本: {fp(ext.volc_base_rate)}/1M</Text>);
         return <>{lines}</>;
       }
+      if (rule.billing_rule === 'gpt_billing') {
+        const gptConfig = (ext && typeof ext.gpt_config === 'object' && ext.gpt_config !== null) ? ext.gpt_config : {};
+        const items = [
+          { key: 'input_text', label: '文输' },
+          { key: 'input_image', label: '图输' },
+          { key: 'output_image', label: '图出' },
+          { key: 'cached_input_text', label: '文缓' },
+          { key: 'cached_input_image', label: '图缓' },
+        ];
+        const lines: React.ReactNode[] = [];
+        items.forEach(item => {
+          const cfg = gptConfig[item.key];
+          if (cfg && cfg.enabled) {
+            lines.push(
+              <Text key={item.key} type="secondary" style={s}>
+                {item.label}: {fp(cfg.rate)}/1M
+              </Text>
+            );
+          }
+        });
+        if (lines.length === 0) {
+          return <Text type="secondary" style={s}>GPT官方计费(未启用计费项)</Text>;
+        }
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {lines}
+          </div>
+        );
+      }
       if (rule.billing_rule === 'multimodal') {
         const imgRate = ext.image_prompt_rate || 0;
         return (
@@ -208,8 +247,6 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
       const multiplierParts = [imgRefStr, promptExtStr].filter(Boolean);
       const multiplierStr = multiplierParts.length > 0 ? ` (${multiplierParts.join(' ')})` : '';
       if (rule.billing_rule === 'image_resolution') {
-        let tiers: any[] = [];
-        try { if (rule.pricing_tiers) tiers = JSON.parse(rule.pricing_tiers); } catch { }
         const activeTiers = tiers.filter(t => t.enabled !== false);
         if (activeTiers.length === 0) return <Text type="secondary" style={s}>按分辨率K (无有效配置){multiplierStr}</Text>;
         return (
@@ -224,8 +261,6 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
         );
       }
       if (rule.billing_rule === 'image_size_pixel') {
-        let tiers: any[] = [];
-        try { if (rule.pricing_tiers) tiers = JSON.parse(rule.pricing_tiers); } catch { }
         const activeTiers = tiers.filter(t => t.enabled !== false);
         if (activeTiers.length === 0) return <Text type="secondary" style={s}>按分辨率像素 (无有效配置){multiplierStr}</Text>;
         return (
@@ -238,6 +273,21 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
               </Text>
             ))}
             {multiplierStr && <Text type="secondary" style={s}>{multiplierStr}</Text>}
+          </div>
+        );
+      }
+      if (rule.billing_rule === 'volc_seedream_pro') {
+        const activeTiers = tiers.filter(t => t.enabled !== false);
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            <Text type="secondary" style={s}>
+              输入额外: {fp(rule.prompt_rate)} / 张 (首免)
+            </Text>
+            {activeTiers.map((t, idx) => (
+              <Text key={idx} type="secondary" style={s}>
+                输出 &lt;= {t.max_pixels_wan}万像素: {fp(t.rate)} / 张
+              </Text>
+            ))}
           </div>
         );
       }
@@ -254,8 +304,6 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
 
     // duration
     if (rule.billing_rule === 'video_resolution') {
-        let tiers: any[] = [];
-        try { if (rule.pricing_tiers) tiers = JSON.parse(rule.pricing_tiers); } catch { }
         const activeTiers = tiers.filter(t => t.enabled !== false);
         if (activeTiers.length === 0) return <Text type="secondary" style={s}>按视频分辨率阶梯 (无有效配置)</Text>;
 
@@ -270,8 +318,6 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
         );
     }
     if (rule.billing_rule === 'video_quality') {
-        let tiers: any[] = [];
-        try { if (rule.pricing_tiers) tiers = JSON.parse(rule.pricing_tiers); } catch { }
         const activeTiers = tiers.filter(t => t.enabled !== false);
         if (activeTiers.length === 0) return <Text type="secondary" style={s}>按视频画质及帧率阶梯 (无有效配置)</Text>;
 
@@ -338,6 +384,9 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
         : undefined;
       return renderPriceTableSummary('s', extraNode);
     }
+    if (rule.billing_rule === 'volc_enhance_cascade') {
+      return renderPriceTableSummary('s');
+    }
     return <Text type="secondary" style={s}>{fp(rule.duration_rate)}/s</Text>;
   };
 
@@ -345,19 +394,40 @@ const RateDisplay: React.FC<RateDisplayProps> = ({ rule, currencySymbol, formatP
     standard: 'default', multimodal: 'gold', tiered: 'gold', doubao_chat: 'gold', volcengine: 'volcano',
     'seedance2.0': 'volcano', 'seedance1.5pro': 'volcano', 'seedance1.0': 'volcano',
     fixed: 'default', per_image: 'lime', image_resolution: 'gold', image_size_pixel: 'gold',
+    volc_seedream_pro: 'volcano',
     video_resolution: 'gold',
     kling_video: 'purple',
     vidu_video: 'cyan',
     vidu_image: 'green',
     characters: 'geekblue',
+    volc_enhance_cascade: 'volcano',
   };
+  const hasTimeMultipliers = ext?.enable_time_multipliers && Array.isArray(ext.time_multipliers) && ext.time_multipliers.length > 0;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <span style={{ fontSize: '11px', lineHeight: 1.2, margin: 0, color: 'var(--text-secondary, #595959)' }}>{ruleLabel}</span>
         {discountTag}
+        {hasTimeMultipliers && (
+          <Tooltip title={
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>已启用时间段价格倍率 (共 {ext.time_multipliers.length} 个时段):</div>
+              {ext.time_multipliers.map((tm: any, i: number) => (
+                <div key={i} style={{ fontSize: 11 }}>
+                  {tm.start} - {tm.end}: <b>{Number(tm.multiplier).toFixed(2)}倍</b>
+                </div>
+              ))}
+            </div>
+          }>
+            <Tag color="volcano" style={{ margin: 0, padding: '0 4px', fontSize: 10, lineHeight: '14px' }}>峰谷启用</Tag>
+          </Tooltip>
+        )}
       </div>
       {renderDetails()}
+      {rule.billing_type === 'tokens' && ext.web_search_rate !== undefined && ext.web_search_rate > 0 && (
+        <Text type="secondary" style={{ ...s, marginTop: 2 }}>联网搜索: {fp(ext.web_search_rate)}/千次</Text>
+      )}
     </div>
   );
 };

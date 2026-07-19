@@ -11,6 +11,11 @@ import { useThemeStore } from '../../../store/theme';
 
 const { Text } = Typography;
 
+// 最大公约数计算
+const getGcd = (a: number, b: number): number => {
+  return b === 0 ? a : getGcd(b, a % b);
+};
+
 /** 独立滑块控件 — 拖拽时仅更新本地 state，松手后同步到全局 Context，保证丝滑 60fps */
 const SliderControl: React.FC<{
   param: SchemeParam;
@@ -144,7 +149,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param, disabled }) => {
     return (
       <div key={param.key}>
         <Text style={{ display: 'block', marginBottom: 8, fontSize: 13, color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }}>{param.label}</Text>
-        <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(4, 64px)', justifyContent: 'center', gap: 12 }}>
+        <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(4, 68px)', justifyContent: 'center', gap: 10 }}>
           {param.options.map(opt => {
             const isActive = value === opt;
             return (
@@ -155,7 +160,7 @@ const ParamControl: React.FC<Props> = React.memo(({ param, disabled }) => {
                   setParamValues(prev => ({ ...prev, [param.key]: opt }));
                 }}
                 style={{
-                  width: 64, height: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  width: 68, height: 70, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                   cursor: disabled ? 'not-allowed' : 'pointer',
                   opacity: disabled ? 0.45 : 1,
                   pointerEvents: disabled ? 'none' : 'auto',
@@ -188,13 +193,25 @@ const ParamControl: React.FC<Props> = React.memo(({ param, disabled }) => {
                         boxW = Math.max(minSide, Math.round(maxSide * (w / h)));
                       }
                     }
+
+                    // 计算比例并生成标注
+                    let ratioStr = '';
+                    if (w > 0 && h > 0) {
+                      const d = getGcd(w, h);
+                      ratioStr = `${w / d}:${h / d}`;
+                    }
+                    const isAlreadyRatio = optStr === ratioStr || optStr.includes(':');
+
                     return (
                       <>
                         <div style={{
                           width: boxW, height: boxH,
-                          border: '1.5px solid currentColor', borderRadius: 2, marginBottom: 4
+                          border: '1.5px solid currentColor', borderRadius: 2, marginBottom: 2
                         }} />
-                        <span style={{ fontSize: optStr.length > 7 ? 10 : 11 }}>{optStr}</span>
+                        <span style={{ fontSize: optStr.length > 7 ? 10 : 11, lineHeight: 1.1 }}>{optStr}</span>
+                        {ratioStr && !isAlreadyRatio && (
+                          <span style={{ fontSize: 9, opacity: 0.65, marginTop: 1, lineHeight: 1.1 }}>({ratioStr})</span>
+                        )}
                       </>
                     );
                   } else if (optStr.toLowerCase() === 'adaptive' || optStr.toLowerCase() === 'auto') {

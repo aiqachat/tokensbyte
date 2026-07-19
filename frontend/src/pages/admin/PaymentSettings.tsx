@@ -10,7 +10,7 @@ const { Title, Text, Paragraph } = Typography;
 
 const PaymentSettings: React.FC = () => {
   const { t } = useTranslation();
-  const { updateStoreSettings } = useSettingsStore();
+  const { settings, updateStoreSettings } = useSettingsStore();
   const { themeMode } = useThemeStore();
   const isLight = themeMode === 'light';
   const [formCurrency] = Form.useForm();
@@ -18,11 +18,15 @@ const PaymentSettings: React.FC = () => {
   const [formAlipay] = Form.useForm();
   const [formStripe] = Form.useForm();
   const [formBonuspay] = Form.useForm();
+  const [formHyperbc] = Form.useForm();
+  const [formAllinpay] = Form.useForm();
   const [loadingCurrency, setLoadingCurrency] = useState(false);
   const [loadingWechat, setLoadingWechat] = useState(false);
   const [loadingAlipay, setLoadingAlipay] = useState(false);
   const [loadingStripe, setLoadingStripe] = useState(false);
   const [loadingBonuspay, setLoadingBonuspay] = useState(false);
+  const [loadingHyperbc, setLoadingHyperbc] = useState(false);
+  const [loadingAllinpay, setLoadingAllinpay] = useState(false);
 
   // 回调地址展示：生产环境用户通过域名访问，nginx 自动反代 /api/v1 到后端
   const siteOrigin = window.location.origin;
@@ -30,17 +34,28 @@ const PaymentSettings: React.FC = () => {
   const notifyAlipay = `${siteOrigin}/api/v1/finance/pay/notify/alipay`;
   const notifyStripe = `${siteOrigin}/api/v1/finance/pay/notify/stripe`;
   const notifyBonuspay = `${siteOrigin}/api/v1/finance/pay/notify/bonuspay`;
+  const notifyHyperbc = `${siteOrigin}/api/v1/finance/pay/notify/hyperbc`;
+  const notifyAllinpay = `${siteOrigin}/api/v1/finance/pay/notify/allinpay`;
 
   useEffect(() => { fetchSettings(); }, []);
 
   const fetchSettings = async () => {
     try {
       const response = await (request.get('/settings/full') as any);
-      if (response?.currency) formCurrency.setFieldsValue(response.currency);
+      if (response?.currency) {
+        const amountsStr = (response.currency.quick_amounts || [20, 50, 100, 500, 1000, 5000]).join(', ');
+        formCurrency.setFieldsValue({
+          ...response.currency,
+          quick_amounts: amountsStr,
+          min_recharge_amount: response.currency.min_recharge_amount !== undefined && response.currency.min_recharge_amount !== null ? response.currency.min_recharge_amount : 5,
+        });
+      }
       if (response?.payment_wechat) formWechat.setFieldsValue(response.payment_wechat);
       if (response?.payment_alipay) formAlipay.setFieldsValue(response.payment_alipay);
       if (response?.payment_stripe) formStripe.setFieldsValue(response.payment_stripe);
       if (response?.payment_bonuspay) formBonuspay.setFieldsValue(response.payment_bonuspay);
+      if (response?.payment_hyperbc) formHyperbc.setFieldsValue(response.payment_hyperbc);
+      if (response?.payment_allinpay) formAllinpay.setFieldsValue(response.payment_allinpay);
     } catch (error) {
       console.error('Failed to fetch payment settings:', error);
     }
@@ -49,13 +64,21 @@ const PaymentSettings: React.FC = () => {
   const onFinishCurrency = async (values: any) => {
     setLoadingCurrency(true);
     try {
+      const quick_amounts = (String(values.quick_amounts || ''))
+        .split(',')
+        .map((x: string) => parseFloat(x.trim()))
+        .filter((x: number) => !isNaN(x) && x > 0);
+
       const payload = {
         currency: {
+          ...settings?.currency,
           default_currency: values.default_currency,
           currency_symbol: values.currency_symbol,
           currency_unit: values.currency_unit,
           token_ratio: values.token_ratio,
           auxiliary_currencies: values.auxiliary_currencies || [],
+          quick_amounts,
+          min_recharge_amount: values.min_recharge_amount !== undefined && values.min_recharge_amount !== null ? parseFloat(values.min_recharge_amount) : 5.0,
         }
       };
       const updatedSettings = await (request.post('/settings', payload) as any);
@@ -75,6 +98,7 @@ const PaymentSettings: React.FC = () => {
     try {
       const payload = {
         payment_wechat: {
+          ...settings?.payment_wechat,
           enabled: values.enabled || false,
           mchid: values.mchid || '',
           appid: values.appid || '',
@@ -100,6 +124,7 @@ const PaymentSettings: React.FC = () => {
     try {
       const payload = {
         payment_alipay: {
+          ...settings?.payment_alipay,
           enabled: values.enabled || false,
           app_id: values.app_id || '',
           private_key: values.private_key || '',
@@ -124,6 +149,7 @@ const PaymentSettings: React.FC = () => {
     try {
       const payload = {
         payment_stripe: {
+          ...settings?.payment_stripe,
           enabled: values.enabled || false,
           secret_key: values.secret_key || '',
           publishable_key: values.publishable_key || '',
@@ -147,6 +173,7 @@ const PaymentSettings: React.FC = () => {
     try {
       const payload = {
         payment_bonuspay: {
+          ...settings?.payment_bonuspay,
           enabled: values.enabled || false,
           partner_id: values.partner_id || '',
           merchant_private_key: values.merchant_private_key || '',
@@ -164,6 +191,59 @@ const PaymentSettings: React.FC = () => {
       message.error(t('common.error'));
     } finally {
       setLoadingBonuspay(false);
+    }
+  };
+
+  const onFinishHyperbc = async (values: any) => {
+    setLoadingHyperbc(true);
+    try {
+      const payload = {
+        payment_hyperbc: {
+          ...settings?.payment_hyperbc,
+          enabled: values.enabled || false,
+          app_id: values.app_id || '',
+          merchant_private_key: values.merchant_private_key || '',
+          hyperbc_public_key: values.hyperbc_public_key || '',
+          api_url: values.api_url || 'https://api.cipherbc.com/shopapi',
+          crypto_exchange_rate: values.crypto_exchange_rate || 1.0,
+        }
+      };
+      const updatedSettings = await (request.post('/settings', payload) as any);
+      message.destroy();
+      message.success('HyperBC 配置保存成功');
+      updateStoreSettings(updatedSettings);
+    } catch (error) {
+      console.error('Save hyperbc error:', error);
+      message.error(t('common.error'));
+    } finally {
+      setLoadingHyperbc(false);
+    }
+  };
+
+  const onFinishAllinpay = async (values: any) => {
+    setLoadingAllinpay(true);
+    try {
+      const payload = {
+        payment_allinpay: {
+          enabled: values.enabled || false,
+          cusid: values.cusid || '',
+          appid: values.appid || '',
+          merchant_private_key: values.merchant_private_key || '',
+          allinpay_public_key: values.allinpay_public_key || '',
+          sign_type: 'RSA',
+          api_url: values.api_url || 'https://vsp.allinpay.com/apiweb',
+          version: values.version || '11',
+        }
+      };
+      const updatedSettings = await (request.post('/settings', payload) as any);
+      message.destroy();
+      message.success('通联支付配置保存成功');
+      updateStoreSettings(updatedSettings);
+    } catch (error) {
+      console.error('Save allinpay error:', error);
+      message.error(t('common.error'));
+    } finally {
+      setLoadingAllinpay(false);
     }
   };
 
@@ -197,11 +277,13 @@ const PaymentSettings: React.FC = () => {
             <Form.Item label={t('settings.default_currency', '默认货币代码')} name="default_currency" rules={[{ required: true }]}><Input placeholder="CNY" /></Form.Item>
             <Form.Item label={t('settings.currency_symbol', '货币符号')} name="currency_symbol" rules={[{ required: true }]}><Input placeholder="¥" /></Form.Item>
             <Form.Item label={t('settings.currency_unit', '货币单位')} name="currency_unit" rules={[{ required: true }]}><Input placeholder="元" /></Form.Item>
-            <Form.Item noStyle dependencies={['default_currency']}>
+            <Form.Item noStyle dependencies={['default_currency', 'token_ratio']}>
               {({ getFieldValue }) => {
                 const c = getFieldValue('default_currency') || 'USD';
+                const ratio = getFieldValue('token_ratio');
+                const ratioStr = (ratio !== undefined && ratio !== null) ? ratio : 'N';
                 return (
-                  <Form.Item label={t('settings.token_ratio', '兑换比例')} name="token_ratio" rules={[{ required: true }]} extra={<Text type="secondary">{`1 ${c} = N Tokens`}</Text>}>
+                  <Form.Item label={t('settings.token_ratio', '兑换比例')} name="token_ratio" rules={[{ required: true }]} extra={<Text type="secondary">{`1 ${c} = ${ratioStr} Tokens`}</Text>}>
                     <InputNumber style={{ width: '100%' }} min={0} step={0.0001} />
                   </Form.Item>
                 );
@@ -243,6 +325,25 @@ const PaymentSettings: React.FC = () => {
               )}
             </Form.List>
 
+            <Divider>通用充值设置</Divider>
+            <Form.Item 
+              label="快捷支付金额" 
+              name="quick_amounts" 
+              rules={[{ required: true, message: '请输入快捷支付金额' }]}
+              extra="多个金额请用英文逗号分隔，例如：20, 50, 100, 500, 1000, 5000"
+            >
+              <Input placeholder="20, 50, 100, 500, 1000, 5000" />
+            </Form.Item>
+
+            <Form.Item 
+              label="最小充值金额限制" 
+              name="min_recharge_amount" 
+              rules={[{ required: true, message: '请输入最小充值金额' }]}
+              extra="设置用户单次最小的充值金额。设置为 0 代表无限制，默认值为 5"
+            >
+              <InputNumber style={{ width: '100%' }} min={0} step={1} />
+            </Form.Item>
+
             <Form.Item>
               <Button type="primary" htmlType="submit" loading={loadingCurrency} size="large" style={{ borderRadius: 8 }}>
                 {t('common.save', '保存设置')}
@@ -252,6 +353,7 @@ const PaymentSettings: React.FC = () => {
         </div>
       ),
     },
+
     {
       key: 'wechat',
       label: <span><WechatOutlined style={{ color: '#07c160' }} /> 微信支付 (V3)</span>,
@@ -492,6 +594,144 @@ const PaymentSettings: React.FC = () => {
               <Button type="primary" htmlType="submit" loading={loadingBonuspay} size="large"
                 style={{ background: 'linear-gradient(135deg, #ff6a00, #ee0979)', border: 'none', borderRadius: 8 }}>
                 <ThunderboltOutlined /> 保存 BonusPay 配置
+              </Button>
+            </Form.Item>
+          </Form>
+        </div>
+      ),
+    },
+    {
+      key: 'hyperbc',
+      label: <span><span style={{ marginRight: 4, fontSize: 16 }}>₿</span> HyperBC</span>,
+      children: (
+        <div style={{ maxWidth: 640, marginTop: 16 }}>
+          <Alert
+            type="info"
+            showIcon
+            icon={<SafetyCertificateOutlined />}
+            style={{ marginBottom: 20, borderRadius: 8 }}
+            message="HyperBC 数字货币支付接入指引"
+            description={
+              <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+                <div>1. 在 <a href="https://www.hyperbc.com" target="_blank" rel="noreferrer">HyperBC 官网</a> 注册商户账号</div>
+                <div>2. 商户后台 → 获取 <strong>APP_ID</strong></div>
+                <div>3. 使用密钥生成工具或 OpenSSL 生成 RSA 密钥对 (2048位)</div>
+                <div>4. 上传商户公钥到 HyperBC 后台，并获取 <strong>HyperBC 平台公钥</strong></div>
+                <div>5. 将商户 RSA 私钥 (PKCS#8 PEM) 和平台公钥填入下方</div>
+                <div>6. 将下方回调地址配置到商户后台的回调通知设置中</div>
+              </div>
+            }
+          />
+
+          {notifyUrlBlock(notifyHyperbc, 'HyperBC 异步回调通知地址（请配置到商户后台 → Webhook URL）')}
+
+          <Divider style={{ margin: '16px 0' }} />
+
+          <Form form={formHyperbc} layout="vertical" onFinish={onFinishHyperbc} autoComplete="off">
+            <Form.Item label="是否启用 HyperBC" name="enabled" valuePropName="checked">
+              <Switch />
+            </Form.Item>
+
+            <Form.Item label="APP_ID (应用ID)" name="app_id" rules={[{ required: true, message: '请输入 APP_ID' }]}
+              extra="在 HyperBC 商户后台获取">
+              <Input placeholder="例如：hyperbc_app_xxxx" />
+            </Form.Item>
+
+            <Form.Item label="商户 RSA 私钥 (PKCS#8 PEM)" name="merchant_private_key" rules={[{ required: true, message: '请输入商户私钥' }]}
+              extra="用于对请求进行签名，请妥善保管">
+              <Input.TextArea rows={4} placeholder={'-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----'} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+            </Form.Item>
+
+            <Form.Item label="HyperBC 平台公钥 (PEM)" name="hyperbc_public_key" rules={[{ required: true, message: '请输入 HyperBC 平台公钥' }]}
+              extra="用于验证回调签名，在商户后台获取">
+              <Input.TextArea rows={4} placeholder={'-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----'} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+            </Form.Item>
+
+            <Form.Item label="API 接口地址" name="api_url"
+              extra="正式环境：https://api.cipherbc.com/shopapi">
+              <Input placeholder="https://api.cipherbc.com/shopapi" />
+            </Form.Item>
+
+            <Form.Item label="加密货币 → 系统法币 汇率" name="crypto_exchange_rate" rules={[{ required: true, message: '请输入汇率' }]}
+              extra="例如系统货币为 CNY，汇率为 7.2，则 10 USDT 会为用户充值 72 余额。如果系统货币是 USD，请填 1.0">
+              <InputNumber min={0.01} step={0.1} style={{ width: '100%' }} placeholder="7.2" />
+            </Form.Item>
+
+            <Form.Item>
+              <Button type="primary" htmlType="submit" loading={loadingHyperbc} size="large"
+                style={{ background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)', border: 'none', borderRadius: 8 }}>
+                <span style={{ marginRight: 4 }}>₿</span> 保存 HyperBC 配置
+              </Button>
+            </Form.Item>
+          </Form>
+        </div>
+      ),
+    },
+    {
+      key: 'allinpay',
+      label: <span><ThunderboltOutlined style={{ color: '#1677ff' }} /> 通联支付</span>,
+      children: (
+        <div style={{ maxWidth: 640, marginTop: 16 }}>
+          <Alert
+            type="info"
+            showIcon
+            icon={<SafetyCertificateOutlined />}
+            style={{ marginBottom: 20, borderRadius: 8 }}
+            message="通联收银宝 统一支付接入指引"
+            description={
+              <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+                <div>1. 登录通联商服平台，获取 <strong>商户号 (cusid)</strong> 和 <strong>应用ID (appid)</strong></div>
+                <div>2. 在「重置交易密钥」中配置 <strong>RSA（SHA1WithRSA）</strong>：生成商户密钥对，将商户公钥上传到「RSA公钥」栏位</div>
+                <div>3. 复制商服「通联RSA公钥」填入下方（不要填 RSA2 公钥）</div>
+                <div>4. 本系统固定使用 <strong>signtype=RSA / SHA1WithRSA</strong> 加签与验签</div>
+              </div>
+            }
+          />
+
+          {notifyUrlBlock(notifyAllinpay, '通联支付异步回调通知地址（请将此地址配置到通联商服后台的回调通知设置中）')}
+
+          <Divider style={{ margin: '16px 0' }} />
+
+          <Form form={formAllinpay} layout="vertical" onFinish={onFinishAllinpay} autoComplete="off"
+            initialValues={{ api_url: 'https://vsp.allinpay.com/apiweb', version: '11' }}>
+            <Form.Item label="是否启用通联支付" name="enabled" valuePropName="checked">
+              <Switch />
+            </Form.Item>
+
+            <Form.Item label="商户号 (cusid)" name="cusid" rules={[{ required: true, message: '请输入通联商户号' }]}
+              extra="实际交易商户号，由通联平台分配">
+              <Input placeholder="例如：100020000000001" />
+            </Form.Item>
+
+            <Form.Item label="应用ID (appid)" name="appid" rules={[{ required: true, message: '请输入通联应用ID' }]}
+              extra="应用 APPID，由通联平台分配">
+              <Input placeholder="例如：00012345" />
+            </Form.Item>
+
+            <Form.Item label="商户 RSA 私钥" name="merchant_private_key" rules={[{ required: true, message: '请输入商户私钥' }]}
+              extra="粘贴通联生成的 PKCS#1 私钥（Base64 原文或 PEM）；用于 SHA1WithRSA 加签，须与上传至「RSA公钥」的商户公钥配对">
+              <Input.TextArea rows={4} placeholder="粘贴通联生成的商户私钥（可无 PEM 头）" style={{ fontFamily: 'monospace', fontSize: 12 }} />
+            </Form.Item>
+
+            <Form.Item label="通联 RSA 公钥" name="allinpay_public_key" rules={[{ required: true, message: '请输入通联平台公钥' }]}
+              extra="填商服「通联RSA公钥」（不是商户公钥），Base64 原文或 PEM 均可；用于回调与查询验签">
+              <Input.TextArea rows={4} placeholder="粘贴商服「通联RSA公钥」（可无 PEM 头）" style={{ fontFamily: 'monospace', fontSize: 12 }} />
+            </Form.Item>
+
+            <Form.Item label="API 接口网关地址" name="api_url" rules={[{ required: true }]}
+              extra="正式环境默认为 https://vsp.allinpay.com/apiweb，测试环境默认为 https://syb-test.allinpay.com/apiweb">
+              <Input placeholder="https://vsp.allinpay.com/apiweb" />
+            </Form.Item>
+
+            <Form.Item label="协议版本号" name="version" rules={[{ required: true }]}
+              extra="通联统一支付协议版本号，一般填 11">
+              <Input placeholder="11" />
+            </Form.Item>
+
+            <Form.Item>
+              <Button type="primary" htmlType="submit" loading={loadingAllinpay} size="large"
+                style={{ background: 'linear-gradient(135deg, #1677ff, #003eb3)', border: 'none', borderRadius: 8 }}>
+                <ThunderboltOutlined /> 保存通联支付配置
               </Button>
             </Form.Item>
           </Form>

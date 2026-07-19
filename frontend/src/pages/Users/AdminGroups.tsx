@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, Checkbox, Space, message, Card, Typography, Divider, Grid } from 'antd';
+import { Table, Button, Modal, Form, Input, InputNumber, Checkbox, Space, message, Card, Typography, Divider, Grid, Tag } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import request from '../../utils/request';
-import dayjs from 'dayjs';
+import { formatApiDateTime } from '../../utils/timedisplay';
 import type { AdminGroup } from '../../types';
 
 const { Title, Text } = Typography;
@@ -28,6 +28,7 @@ const AdminGroups: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingGroup, setEditingGroup] = useState<AdminGroup | null>(null);
+  const [activePlugins, setActivePlugins] = useState<any[]>([]);
   const [form] = Form.useForm();
   const screens = useBreakpoint();
 
@@ -43,8 +44,20 @@ const AdminGroups: React.FC = () => {
     }
   };
 
+  const fetchActivePlugins = async () => {
+    try {
+      const response = await (request.get('/plugins/active') as any);
+      if (response.active_plugins) {
+        setActivePlugins(response.active_plugins);
+      }
+    } catch (error) {
+      console.error('获取插件失败', error);
+    }
+  };
+
   useEffect(() => {
     fetchGroups();
+    fetchActivePlugins();
   }, []);
 
   const handleCreate = () => {
@@ -55,10 +68,15 @@ const AdminGroups: React.FC = () => {
 
   const handleEdit = (group: AdminGroup) => {
     setEditingGroup(group);
+    const allPerms = group.permissions ? JSON.parse(group.permissions) : [];
+    const basicPerms = allPerms.filter((p: string) => !p.startsWith('plugin:'));
+    const pluginPerms = allPerms.filter((p: string) => p.startsWith('plugin:'));
+
     form.setFieldsValue({
       name: group.name,
       description: group.description,
-      permissions: group.permissions ? JSON.parse(group.permissions) : [],
+      permissions: basicPerms,
+      plugin_permissions: pluginPerms,
       sort_order: group.sort_order || 0,
     });
     setModalVisible(true);
@@ -77,11 +95,18 @@ const AdminGroups: React.FC = () => {
   const onModalOk = async () => {
     try {
       const values = await form.validateFields();
+      const allPerms = [...(values.permissions || []), ...(values.plugin_permissions || [])];
+      const payload = {
+        ...values,
+        permissions: allPerms
+      };
+      delete payload.plugin_permissions;
+
       if (editingGroup) {
-        await request.put(`/admin_groups/${editingGroup.id}`, values);
+        await request.put(`/admin_groups/${editingGroup.id}`, payload);
         message.success('修改成功');
       } else {
-        await request.post('/admin_groups', values);
+        await request.post('/admin_groups', payload);
         message.success('创建成功');
       }
       setModalVisible(false);
@@ -91,19 +116,72 @@ const AdminGroups: React.FC = () => {
     }
   };
 
+  const renderPermissionsTags = (permissionsStr?: string) => {
+    let perms: string[] = [];
+    try {
+      if (permissionsStr) {
+        perms = JSON.parse(permissionsStr);
+      }
+    } catch {}
+    
+    const hasAllBasic = ALL_PERMISSIONS.every(item => perms.includes(item.value));
+    const hasAllPlugins = activePlugins.every(plugin => perms.includes(`plugin:${plugin.name}`));
+
+    if (hasAllBasic && hasAllPlugins) {
+      return (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+          <Tag color="success" style={{ fontSize: '11px', margin: 0, padding: '0 4px', fontWeight: 'bold' }}>
+            全部功能
+          </Tag>
+        </div>
+      );
+    }
+
+    const permLabels = perms.map(p => {
+      if (p.startsWith('plugin:')) {
+        const pName = p.substring(7);
+        const foundPlugin = activePlugins.find(ap => ap.name === pName);
+        return `插件: ${foundPlugin ? (foundPlugin.title || pName) : pName}`;
+      }
+      const found = ALL_PERMISSIONS.find(item => item.value === p);
+      return found ? found.label.split(' ')[0] : p;
+    });
+
+    if (permLabels.length === 0) {
+      return <Text type="secondary" style={{ fontSize: '11px' }}>未配置权限</Text>;
+    }
+
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+        {permLabels.map(label => (
+          <Tag color="blue" style={{ fontSize: '11px', margin: 0, padding: '0 4px' }} key={label}>
+            {label}
+          </Tag>
+        ))}
+      </div>
+    );
+  };
+
   const columns = [
-    { title: '排序', dataIndex: 'sort_order', key: 'sort_order', width: 80 },
     { title: '名称', dataIndex: 'name', key: 'name', width: 150 },
+    { title: '用户数', dataIndex: 'user_count', key: 'user_count', width: 80, render: (val: number) => <Tag color="blue">{val || 0}</Tag> },
+    { 
+      title: '权限详细', 
+      key: 'permissions_detail', 
+      width: 500,
+      render: (_: any, record: AdminGroup) => renderPermissionsTags(record.permissions)
+    },
     { title: '描述', dataIndex: 'description', key: 'description' },
-    { title: '创建时间', dataIndex: 'created_at', key: 'created_at', render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm:ss') },
+    { title: '排序', dataIndex: 'sort_order', key: 'sort_order', width: 80 },
+    { title: '创建时间', dataIndex: 'created_at', key: 'created_at', render: (text: string) => formatApiDateTime(text) },
     { 
       title: '操作', 
       key: 'action', 
       width: 200,
       render: (_: any, record: AdminGroup) => (
         <Space>
-          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
-          <Button danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)}>删除</Button>
+          <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+          <Button danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
         </Space>
       )
     },
@@ -119,7 +197,7 @@ const AdminGroups: React.FC = () => {
       }
       extra={
         <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-          新建分组
+          添加管理员等级
         </Button>
       }
     >
@@ -134,12 +212,14 @@ const AdminGroups: React.FC = () => {
               title={<Text strong>{record.name}</Text>}
               extra={null}
             >
+              <CardRow label="权限详细">{renderPermissionsTags(record.permissions)}</CardRow>
+              <CardRow label="用户数"><Tag color="blue">{record.user_count || 0}</Tag></CardRow>
               {record.description && <CardRow label="描述"><Text type="secondary" style={{ fontSize: 12 }}>{record.description}</Text></CardRow>}
               <CardRow label="排序"><Text type="secondary" style={{ fontSize: 12 }}>{record.sort_order || 0}</Text></CardRow>
-              <CardRow label="创建时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text></CardRow>
+              <CardRow label="创建时间"><Text type="secondary" style={{ fontSize: 12 }}>{formatApiDateTime(record.created_at)}</Text></CardRow>
               <CardActions>
-                <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
-                <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)}>删除</Button>
+                <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+                <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
               </CardActions>
             </MobileCard>
           )}
@@ -154,7 +234,7 @@ const AdminGroups: React.FC = () => {
       )}
 
       <Modal
-        title={editingGroup ? '编辑分组' : '新建分组'}
+        title={editingGroup ? '编辑管理员等级' : '添加管理员等级'}
         open={modalVisible}
         onOk={onModalOk}
         onCancel={() => setModalVisible(false)}
@@ -171,9 +251,46 @@ const AdminGroups: React.FC = () => {
             <InputNumber style={{ width: '100%' }} />
           </Form.Item>
           <Divider>权限配置</Divider>
-          <Form.Item name="permissions" label="选择可见菜单">
+          <Form.Item 
+            name="permissions" 
+            label={
+              <Space>
+                选择可见基础菜单
+                <Checkbox 
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    form.setFieldsValue({ permissions: e.target.checked ? ALL_PERMISSIONS.map(p => p.value) : [] });
+                  }}
+                >
+                  <span style={{ fontWeight: 'normal', fontSize: 12, color: '#1677ff' }}>全选/全不选</span>
+                </Checkbox>
+              </Space>
+            }
+          >
             <Checkbox.Group options={ALL_PERMISSIONS} />
           </Form.Item>
+          {activePlugins.length > 0 && (
+            <Form.Item 
+              name="plugin_permissions" 
+              label={
+                <Space>
+                  插件权限（可展示使用的插件）
+                  <Checkbox 
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      form.setFieldsValue({ plugin_permissions: e.target.checked ? activePlugins.map(p => `plugin:${p.name}`) : [] });
+                    }}
+                  >
+                    <span style={{ fontWeight: 'normal', fontSize: 12, color: '#1677ff' }}>全选/全不选</span>
+                  </Checkbox>
+                </Space>
+              }
+            >
+              <Checkbox.Group 
+                options={activePlugins.map(p => ({ label: p.title || p.name, value: `plugin:${p.name}` }))} 
+              />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
     </Card>

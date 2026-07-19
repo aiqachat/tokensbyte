@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 
 fn default_rate() -> f64 {
@@ -13,30 +14,48 @@ pub struct Channel {
     pub base_url: String,
     #[serde(skip_serializing)]
     pub api_key: String,
-    pub models: String,       // JSON array string
-    pub model_mapping: String, // JSON object string
-    pub user_groups: String,   // JSON array of user level ids/keys
+    pub models: String,              // JSON array string
+    pub model_mapping: String,       // JSON object string
+    pub user_groups: String,         // JSON array of user level ids/keys
     pub exclude_user_groups: String, // JSON array of excluded user level ids/keys (blacklist)
     #[sqlx(default)]
     pub group_aid: Option<String>,
     #[sqlx(default)]
     pub preset_id: Option<i64>,
     #[sqlx(default)]
-    pub pool_id: Option<i64>,    // 关联的卡池ID
+    pub category_id: Option<i64>,
     #[sqlx(default)]
-    pub gptimage_pool_id: Option<i64>, // GPT-Image卡池ID
+    pub yid: Option<String>,
     pub sort_order: i32,
     pub priority: i32,
     pub weight: i32,
-    pub status: i32,           // 1=active, 0=disabled, 2=testing
+    pub status: i32, // 1=active, 0=disabled, 2=testing
     pub balance: Option<f64>,
     pub max_rps: Option<i32>,
-    pub quota_limit: f64,      // 渠道使用最大额度（上限），-1 即代表无限额
-    pub quota_used: f64,       // 该渠道累计真实消耗金额
-    pub config: String,        // JSON extras
+    pub quota_limit: f64, // 渠道使用最大额度（上限），-1 即代表无限额
+    pub quota_used: f64,  // 该渠道累计真实消耗金额
+    #[sqlx(default)]
+    pub daily_quota_limit: f64,
+    #[sqlx(default)]
+    pub daily_quota_used: f64,
+    #[sqlx(default)]
+    pub weekly_quota_limit: f64,
+    #[sqlx(default)]
+    pub weekly_quota_used: f64,
+    #[sqlx(default)]
+    pub monthly_quota_limit: f64,
+    #[sqlx(default)]
+    pub monthly_quota_used: f64,
+    #[sqlx(default)]
+    pub last_reset_day: String,
+    #[sqlx(default)]
+    pub last_reset_week: String,
+    #[sqlx(default)]
+    pub last_reset_month: String,
+    pub config: String, // JSON extras
     pub rate: f64,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
 }
 
 impl Channel {
@@ -58,7 +77,7 @@ impl Channel {
 
     pub fn resolve_model(&self, model: &str) -> String {
         let mapping = self.get_model_mapping();
-        
+
         // 1. Exact match
         if let Some(target) = mapping.get(model) {
             return target.clone();
@@ -85,9 +104,55 @@ impl Channel {
         if !cfg.get("tos_storage_enabled")?.as_bool()? {
             return None;
         }
-        Some(cfg.get("tos_storage_days").and_then(|d| d.as_i64()).unwrap_or(1) as i32)
+        Some(
+            cfg.get("tos_storage_days")
+                .and_then(|d| d.as_i64())
+                .unwrap_or(1) as i32,
+        )
     }
 
+    pub fn has_available_quota(&self, now_day: &str, now_week: &str, now_month: &str) -> bool {
+        crate::models::channel_quota::has_available_quota(
+            self.quota_limit,
+            self.quota_used,
+            self.daily_quota_limit,
+            self.daily_quota_used,
+            &self.last_reset_day,
+            now_day,
+            self.weekly_quota_limit,
+            self.weekly_quota_used,
+            &self.last_reset_week,
+            now_week,
+            self.monthly_quota_limit,
+            self.monthly_quota_used,
+            &self.last_reset_month,
+            now_month,
+        )
+    }
+
+    pub fn check_quota_limits(
+        &self,
+        now_day: &str,
+        now_week: &str,
+        now_month: &str,
+    ) -> Result<(), String> {
+        crate::models::channel_quota::check_quota_limits(
+            self.quota_limit,
+            self.quota_used,
+            self.daily_quota_limit,
+            self.daily_quota_used,
+            &self.last_reset_day,
+            now_day,
+            self.weekly_quota_limit,
+            self.weekly_quota_used,
+            &self.last_reset_week,
+            now_week,
+            self.monthly_quota_limit,
+            self.monthly_quota_used,
+            &self.last_reset_month,
+            now_month,
+        )
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,14 +170,16 @@ pub struct CreateChannelRequest {
     pub exclude_user_groups: Option<Vec<String>>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
-    pub pool_id: Option<i64>,
-    pub gptimage_pool_id: Option<i64>,
+    pub category_id: Option<i64>,
     pub sort_order: Option<i32>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
     pub max_rps: Option<i32>,
     pub quota_limit: Option<f64>,
     pub quota_used: Option<f64>,
+    pub daily_quota_limit: Option<f64>,
+    pub weekly_quota_limit: Option<f64>,
+    pub monthly_quota_limit: Option<f64>,
     pub config: Option<serde_json::Value>,
     #[serde(default = "default_rate")]
     pub rate: f64,
@@ -130,8 +197,9 @@ pub struct UpdateChannelRequest {
     pub exclude_user_groups: Option<Vec<String>>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
-    pub pool_id: Option<i64>,
-    pub gptimage_pool_id: Option<i64>,
+    /// None = 未传不改；Some(None) = 清空；Some(Some(id)) = 设置
+    #[serde(default)]
+    pub category_id: Option<Option<i64>>,
     pub sort_order: Option<i32>,
     pub priority: Option<i32>,
     pub weight: Option<i32>,
@@ -139,6 +207,9 @@ pub struct UpdateChannelRequest {
     pub max_rps: Option<i32>,
     pub quota_limit: Option<f64>,
     pub quota_used: Option<f64>,
+    pub daily_quota_limit: Option<f64>,
+    pub weekly_quota_limit: Option<f64>,
+    pub monthly_quota_limit: Option<f64>,
     pub config: Option<serde_json::Value>,
     pub rate: Option<f64>,
 }
@@ -163,16 +234,24 @@ pub struct ChannelSafe {
     pub exclude_user_groups: Vec<String>,
     pub group_aid: Option<String>,
     pub preset_id: Option<i64>,
-    pub pool_id: Option<i64>,
-    pub gptimage_pool_id: Option<i64>,
+    pub category_id: Option<i64>,
     pub sort_order: i32,
     pub priority: i32,
     pub weight: i32,
     pub status: i32,
     pub balance: Option<f64>,
     pub max_rps: Option<i32>,
-    pub quota_limit: f64,      // 渠道额度上限
-    pub quota_used: f64,       // 当前消耗总计
+    pub quota_limit: f64, // 渠道额度上限
+    pub quota_used: f64,  // 当前消耗总计
+    pub daily_quota_limit: f64,
+    pub daily_quota_used: f64,
+    pub weekly_quota_limit: f64,
+    pub weekly_quota_used: f64,
+    pub monthly_quota_limit: f64,
+    pub monthly_quota_used: f64,
+    pub last_reset_day: String,
+    pub last_reset_week: String,
+    pub last_reset_month: String,
     pub rate: f64,
     pub created_at: String,
     pub updated_at: String,
@@ -205,8 +284,7 @@ impl ChannelSafe {
             exclude_user_groups,
             group_aid: ch.group_aid,
             preset_id: ch.preset_id,
-            pool_id: ch.pool_id,
-            gptimage_pool_id: ch.gptimage_pool_id,
+            category_id: ch.category_id,
             sort_order: ch.sort_order,
             priority: ch.priority,
             weight: ch.weight,
@@ -215,12 +293,44 @@ impl ChannelSafe {
             max_rps: ch.max_rps,
             quota_limit: ch.quota_limit,
             quota_used: ch.quota_used,
+            daily_quota_limit: ch.daily_quota_limit,
+            daily_quota_used: ch.daily_quota_used,
+            weekly_quota_limit: ch.weekly_quota_limit,
+            weekly_quota_used: ch.weekly_quota_used,
+            monthly_quota_limit: ch.monthly_quota_limit,
+            monthly_quota_used: ch.monthly_quota_used,
+            last_reset_day: ch.last_reset_day,
+            last_reset_week: ch.last_reset_week,
+            last_reset_month: ch.last_reset_month,
             rate: ch.rate,
-            created_at: ch.created_at,
-            updated_at: ch.updated_at,
+            created_at: ch.created_at.into_string(),
+            updated_at: ch.updated_at.into_string(),
             config: serde_json::from_str(&ch.config).unwrap_or(serde_json::json!({})),
         }
     }
+}
+
+/// 渠道分组分类（图片 / 视频 / 聊天等，可自定义）
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ChannelCategory {
+    pub id: i64,
+    pub name: String,
+    #[sqlx(default)]
+    pub name_en: String,
+    pub sort_order: i32,
+    pub is_active: i32,
+    #[serde(default)]
+    pub is_system: i32,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChannelCategoryRequest {
+    pub name: String,
+    pub name_en: Option<String>,
+    pub sort_order: i32,
+    pub is_active: i32,
 }
 
 /// 脱敏工具：保留前4后4字符，中间用 ****** 替代；短于8字符则全部隐藏
@@ -228,7 +338,7 @@ pub fn mask_secret(s: &str) -> String {
     let chars: Vec<char> = s.chars().collect();
     if chars.len() > 8 {
         let prefix: String = chars[..4].iter().collect();
-        let suffix: String = chars[chars.len()-4..].iter().collect();
+        let suffix: String = chars[chars.len() - 4..].iter().collect();
         format!("{}******{}", prefix, suffix)
     } else if !s.is_empty() {
         "******".to_string()
@@ -241,5 +351,5 @@ pub fn mask_secret(s: &str) -> String {
 pub struct TestChannelRequest {
     pub model: Option<String>,
     pub forward_rule_id: Option<i64>,
+    pub sub_channel_id: Option<i64>,
 }
-

@@ -42,6 +42,34 @@ const VideoNodeContent: React.FC<Props> = React.memo(({ resultData, node }) => {
   return videoUrl
     ? (
         <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {node.taskData?.agent_mode && (
+            <div style={{
+              position: 'absolute',
+              top: 12,
+              left: 12,
+              background: 'rgba(22, 119, 255, 0.85)',
+              color: '#fff',
+              padding: '4px 10px',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 500,
+              zIndex: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              pointerEvents: 'none',
+              userSelect: 'none',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+            }}>
+              <span>🤖</span>
+              <span>AI智能体: {
+                node.taskData?.agent_video_mode === 'autonomous' ? '自主决策' :
+                node.taskData?.agent_video_mode === 'interactive' ? '交互录屏' : '操作轨迹'
+              }</span>
+            </div>
+          )}
           {!isLoaded && (
             <div style={{ position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 0 }}>
               <Spin size="small" />
@@ -72,17 +100,13 @@ const VideoNodeContent: React.FC<Props> = React.memo(({ resultData, node }) => {
             onMouseDown={(e) => {
               dragStart.current = { x: e.clientX, y: e.clientY };
             }}
-            onClick={(e) => {
-              const dx = Math.abs(e.clientX - dragStart.current.x);
-              const dy = Math.abs(e.clientY - dragStart.current.y);
-              // 如果偏移量极小，认为是点击而不是拖拽
-              if (dx < 5 && dy < 5) {
-                if (videoRef.current) {
-                  if (videoRef.current.paused) {
-                    videoRef.current.play();
-                  } else {
-                    videoRef.current.pause();
-                  }
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (videoRef.current) {
+                if (videoRef.current.paused) {
+                  videoRef.current.play();
+                } else {
+                  videoRef.current.pause();
                 }
               }
             }}

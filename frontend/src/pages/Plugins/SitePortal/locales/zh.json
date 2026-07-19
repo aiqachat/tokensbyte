@@ -11,5 +11,7 @@
   "save_success": "配置已保存",
   "save_failed": "保存失败",
   "generate_success": "生成完成",
-  "generate_failed": "生成失败"
+  "generate_failed": "生成失败",
+  "custom_homepage": "自定义主页",
+  "custom_homepage_desc": "开启后门户首页将直接渲染您粘贴的HTML代码"
 }

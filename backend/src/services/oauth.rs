@@ -133,14 +133,12 @@ impl OAuthService {
             .await
             .map_err(|e| AppError::Internal(format!("谷歌 token 解析失败: {}", e)))?;
 
-        let access_token = token_resp["access_token"]
-            .as_str()
-            .ok_or_else(|| {
-                let err = token_resp["error_description"]
-                    .as_str()
-                    .unwrap_or("unknown error");
-                AppError::Internal(format!("谷歌授权失败: {}", err))
-            })?;
+        let access_token = token_resp["access_token"].as_str().ok_or_else(|| {
+            let err = token_resp["error_description"]
+                .as_str()
+                .unwrap_or("unknown error");
+            AppError::Internal(format!("谷歌授权失败: {}", err))
+        })?;
 
         // 2. 获取用户信息
         let info_resp: serde_json::Value = client

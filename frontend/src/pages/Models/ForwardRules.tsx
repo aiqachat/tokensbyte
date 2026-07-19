@@ -10,6 +10,23 @@ const { TextArea } = Input;
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
+const RES_MUL_KEYS = ['720p', '1080p', '2k', '4k'] as const;
+
+const defaultResMul = (): Record<string, number> =>
+  Object.fromEntries(RES_MUL_KEYS.map((k) => [k, 1]));
+
+/** 从 config.res_mul 解析四档倍率，非法/缺失回退 1 */
+const parseResMul = (raw: unknown): Record<string, number> => {
+  const out = defaultResMul();
+  if (!raw || typeof raw !== 'object') return out;
+  const src = raw as Record<string, unknown>;
+  for (const k of RES_MUL_KEYS) {
+    const v = Number(src[k]);
+    if (v > 0) out[k] = v;
+  }
+  return out;
+};
+
 interface ForwardRule {
   id: number;
   name: string;
@@ -40,7 +57,10 @@ const ForwardRules: React.FC = () => {
   const [form] = Form.useForm();
   const screens = useBreakpoint();
 
-  const uniqueCategories = Array.from(new Set(items.map(i => i.category).filter(Boolean)));
+  const uniqueCategories = Array.from(new Set([
+    ...modelTypes.map(t => t.name),
+    ...items.map(i => i.category).filter(Boolean)
+  ]));
   const uniqueTypes = Array.from(new Set(items.map(i => i.rule_type).filter(Boolean)));
 
   const filteredItems = items.filter(item => {
@@ -85,15 +105,21 @@ const ForwardRules: React.FC = () => {
       is_active: true,
       config_json: '{\n  \n}',
       sort_order: 0,
+      is_cascade: false,
+      res_mul: defaultResMul(),
     });
     setIsModalVisible(true);
   };
 
   const handleEdit = (item: ForwardRule) => {
     let pollPath = '';
+    let isCascade = false;
+    let resMul = defaultResMul();
     try {
       const config = JSON.parse(item.config_json);
       pollPath = config.poll_path || '';
+      isCascade = !!config.is_cascade;
+      resMul = parseResMul(config.res_mul);
     } catch (e) { /* ignore */ }
 
     setEditingItem(item);
@@ -101,6 +127,8 @@ const ForwardRules: React.FC = () => {
       ...item,
       category: item.category ? [item.category] : ['聊天'],
       poll_path: pollPath,
+      is_cascade: isCascade,
+      res_mul: resMul,
       is_active: item.is_active === 1,
       sort_order: item.sort_order || 0,
     });
@@ -148,14 +176,25 @@ const ForwardRules: React.FC = () => {
         delete configObj.poll_path;
       }
 
+      // 级联开关与 res_mul（阶段二成功：有 usage 则 tokens×倍率，否则费用×倍率）
+      if (values.is_cascade) {
+        configObj.is_cascade = true;
+        configObj.res_mul = parseResMul(values.res_mul);
+      } else {
+        delete configObj.is_cascade;
+        delete configObj.res_mul;
+      }
+
       const payload = {
         ...values,
         config_json: JSON.stringify(configObj, null, 2),
         category: (Array.isArray(values.category) && values.category.length > 0) ? values.category[0] : (values.category || '聊天'),
         is_active: values.is_active ? 1 : 0,
       };
-      // poll_path 已合并到 config_json 内，不需要作为独立字段发送
+      // 表单辅助字段已合并进 config_json，不单独提交
       delete payload.poll_path;
+      delete payload.is_cascade;
+      delete payload.res_mul;
 
       if (editingItem) {
         await request.put(`/forward-rules/${editingItem.id}`, payload);
@@ -296,34 +335,136 @@ const ForwardRules: React.FC = () => {
     <span style={{
       background: _isLight ? 'rgba(0,0,0,0.06)' : '#252526',
       color: _isLight ? '#cf222e' : '#ce9178',
-      padding: '2px 6px',
+      padding: '1px 5px',
       borderRadius: 4,
-      fontFamily: 'monospace'
+      fontFamily: 'monospace',
+      fontSize: 12,
+      wordBreak: 'break-all',
+      overflowWrap: 'anywhere',
     }}>{children}</span>
   );
 
+  const ParamNo: React.FC<{ n: string; children: React.ReactNode }> = ({ n, children }) => (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 8, lineHeight: 1.5, minWidth: 0 }}>
+      <span style={{
+        flexShrink: 0,
+        minWidth: 28,
+        padding: '0 6px',
+        height: 22,
+        lineHeight: '22px',
+        textAlign: 'center',
+        borderRadius: 4,
+        fontSize: 12,
+        fontWeight: 600,
+        background: _isLight ? 'rgba(24,144,255,0.12)' : 'rgba(24,144,255,0.25)',
+        color: '#1890ff',
+      }}>{n}</span>
+      <div style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{children}</div>
+    </div>
+  );
+
+  const helpParams: { n: string; body: React.ReactNode }[] = [
+    {
+      n: '1',
+      body: <>
+        <CText>target_type</CText>：目标协议类型。常用 <CText>openai</CText>、<CText>anthropic</CText>、
+        <CText>gemini</CText>、<CText>volcengine</CText>、<CText>dashscope</CText>、<CText>kling</CText>、
+        <CText>tencent_vod_video</CText>、<CText>tencent_vod_image</CText> 等。
+      </>,
+    },
+    {
+      n: '2',
+      body: <>
+        <CText>path_rewrite</CText>：入口路径改写。
+        <div style={{ marginTop: 6 }}>
+          <ParamNo n="2.1">
+            <CText>old</CText>：匹配片段，如 <CText>/v1/video/generations</CText>
+          </ParamNo>
+          <ParamNo n="2.2">
+            <CText>new</CText>：上游路径，支持 <CText>{`\${model}`}</CText> 等宏，如{' '}
+            <CText>/api/v3/contents/generations/tasks</CText>
+          </ParamNo>
+        </div>
+      </>,
+    },
+    {
+      n: '3',
+      body: <>
+        <CText>auth_type</CText>：鉴权方式，默认 <CText>bearer</CText>。可选{' '}
+        <CText>query_key</CText>、<CText>x-api-key</CText>、<CText>tencent_vod</CText>、<CText>volcengine_tts</CText>。
+      </>,
+    },
+    {
+      n: '4',
+      body: <>
+        <CText>poll_path</CText>：异步轮询路径，如 <CText>{`/api/v1/tasks/\${task_id}`}</CText>。
+        支持 <CText>{`\${task_id}`}</CText>、<CText>{`\${model}`}</CText>。
+      </>,
+    },
+    {
+      n: '5',
+      body: <>
+        <CText>asset_convert</CText>：<CText>true</CText> 时将 content 网络 URL 转为方舟素材 ID（<CText>asset://</CText>），需配置素材插件凭证。
+      </>,
+    },
+    {
+      n: '6',
+      body: <>
+        <CText>asset_convert_ns</CText>：素材插件命名空间，默认 <CText>asset_manager</CText>，国际版 <CText>asset_manager_intl</CText>。
+      </>,
+    },
+    {
+      n: '7',
+      body: <>
+        <CText>moderation</CText>：<CText>true</CText> 时素材注册免审核（<CText>Skip</CText>）。
+      </>,
+    },
+    {
+      n: '8',
+      body: <>
+        <CText>content_to_prompt</CText>：无 <CText>prompt</CText> 时从 <CText>content</CText> 文本提取写入（部分火山视频通道）。
+      </>,
+    },
+    {
+      n: '9',
+      body: <>
+        <CText>is_cascade</CText>：启用二阶段级联（底座 → 超分）；阶段二超分不计费。
+      </>,
+    },
+    {
+      n: '10',
+      body: <>
+        <CText>res_mul</CText>：级联分辨率倍率，如 <CText>{`{"720p":1,"1080p":1.5,"2k":2,"4k":3.5}`}</CText>。
+        阶段二成功后：若 stage1 有 usage tokens，则 token（返回/列表/计费）× 倍率；否则底座费用 × 倍率。缺省 key 按 <CText>1.0</CText>。
+      </>,
+    },
+  ];
+
   const helpContent = (
-    <div style={{ maxWidth: 500, color: _isLight ? 'rgba(0, 0, 0, 0.85)' : 'rgba(255, 255, 255, 0.85)' }}>
-      <p>高级转发规则（Forward Rules）用于底层<strong>路由重写</strong>与<strong>协议转换</strong>，赋予系统对接所有非标准 OpenAI 接口的自定义能力。</p>
-      <p>当您接入特殊的第三方模型 API（如 Google 官方、Anthropic 等）而他们不使用标准的 <CText>/v1/chat/completions</CText> 路径时，您可以通过该规则将标准的接入请求转换为特定格式发往上游。</p>
+    <div style={{
+      width: '100%',
+      maxWidth: 480,
+      maxHeight: 'min(70vh, 560px)',
+      overflowX: 'hidden',
+      overflowY: 'auto',
+      color: _isLight ? 'rgba(0, 0, 0, 0.85)' : 'rgba(255, 255, 255, 0.85)',
+      boxSizing: 'border-box',
+    }}>
+      <p style={{ marginBottom: 10 }}>
+        用于<strong>路径重写</strong>与<strong>协议转换</strong>，将标准 OpenAI 请求适配各厂商上游。配置后在「模型列表」绑定模型。
+      </p>
+      <b>核心参数（1–3）</b>
       <div style={{ marginTop: 8 }}>
-        <b>核心 JSON 配置参数指南：</b>
-        <ul style={{ paddingLeft: 20, marginBottom: 0 }}>
-          <li><CText>mode</CText>: 转发执行模式，例如 <CText>"transform"</CText> (启用协议报文转换)、<CText>"passthrough"</CText> (透明代理直接透传)。</li>
-          <li><CText>target_type</CText>: 目标厂商架构标识，如 <CText>"gemini"</CText>, <CText>"anthropic"</CText>, <CText>"volcengine"</CText>, <CText>"tencent_vod_image"</CText>, <CText>"tencent_vod_video"</CText>。系统底层会自动加载该类型的 Header 或 Payload 模板。</li>
-          <li><CText>path_rewrite</CText>: URL 路径拦截变异规则。
-            <ul>
-              <li><CText>old</CText>: 将被拦截替换的原始路径片段，例如 <CText>"/v1/video/generations"</CText>；</li>
-              <li><CText>new</CText>: 将转换的新路径目标，支持宏变量替换，例如 <CText>{"\"/api/v3/contents/generations/tasks\""}</CText> (火山方舟官方)。</li>
-            </ul>
-          </li>
-          <li><CText>auth_type</CText>: <span style={{ color: '#888' }}>(可选)</span> 强行覆盖认证鉴权机制传递方式，例如 <CText>"query_key"</CText> 将 API-Key 拼装至 URL Query 参数中发放，<CText>"bearer"</CText> 强制走 Authorization 头，<CText>"tencent_vod"</CText> 使用 TC3-HMAC-SHA256 签名鉴权。</li>
-          <li><CText>poll_path</CText>: <span style={{ color: '#888' }}>(可选)</span> <strong>异步轮询路径</strong>。例如针对图片模型设为 <CText>{`"/v1/tasks/\${task_id}"`}</CText>。支持宏变量 <CText>{`\${task_id}`}</CText> 和 <CText>{`\${model}`}</CText>。</li>
-          <li><CText>asset_convert</CText>: <span style={{ color: '#888' }}>(可选)</span> 设为 <CText>true</CText> 时启用火山方舟视频素材自动转换，系统会将请求体 content 中的网络 URL（图片/视频/音频）通过 CreateAsset API 注册为方舟素材 ID（<CText>asset://</CText> 前缀格式），同一 URL 仅转换一次。<span style={{ color: '#faad14' }}>需先在素材资产管理插件中配置审核凭证。</span>（可通过 <CText>asset_convert_ns</CText> 指定使用国际版插件: <CText>"asset_manager_intl"</CText>）</li>
-          <li><CText>moderation</CText>: <span style={{ color: '#888' }}>(可选)</span> 设为 <CText>true</CText> 时，在资产转换注册时会向方舟接口发起 <CText>Moderation.Strategy</CText> 为 <CText>Skip</CText> 的免审核策略参数。</li>
-        </ul>
+        {helpParams.slice(0, 3).map((p) => (
+          <ParamNo key={p.n} n={p.n}>{p.body}</ParamNo>
+        ))}
       </div>
-      <p style={{ marginTop: 8, color: '#1890ff', marginBottom: 0 }}>配置结束后，您可在「模型列表」页将其绑定至对应的具体模型，真实网关或系统拨测都将自动走您定义的这条重写链路。</p>
+      <b>可选参数（4–10）</b>
+      <div style={{ marginTop: 8 }}>
+        {helpParams.slice(3).map((p) => (
+          <ParamNo key={p.n} n={p.n}>{p.body}</ParamNo>
+        ))}
+      </div>
     </div>
   );
 
@@ -335,7 +476,13 @@ const ForwardRules: React.FC = () => {
             <Typography.Title level={screens.xs ? 4 : 2} style={{ margin: 0 }}>
               高级转发规则管理
             </Typography.Title>
-            <Popover content={helpContent} title="什么是高级转发规则引擎？" trigger="hover" placement="bottomLeft">
+            <Popover
+              content={helpContent}
+              title="什么是高级转发规则引擎？"
+              trigger="hover"
+              placement="bottomLeft"
+              overlayInnerStyle={{ maxWidth: 520, overflow: 'hidden' }}
+            >
               <QuestionCircleOutlined style={{ color: '#1890ff', cursor: 'pointer', fontSize: 18 }} />
             </Popover>
           </div>
@@ -484,8 +631,33 @@ const ForwardRules: React.FC = () => {
             <Input placeholder={`例如: /v1/tasks/\${task_id} 或 /v1/video/generations/\${task_id}`} />
           </Form.Item>
 
+          <Form.Item name="is_cascade" label={<Space>级联超分 <Popover content="启用后走二阶段级联；阶段二超分不计费。阶段二成功后：有 usage tokens 则按 res_mul 放大 token（返回/列表/计费），无 tokens 时对底座费用相乘"><QuestionCircleOutlined /></Popover></Space>} valuePropName="checked">
+            <Switch />
+          </Form.Item>
+
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.is_cascade !== cur.is_cascade}>
+            {({ getFieldValue }) => getFieldValue('is_cascade') ? (
+              <Form.Item
+                label={<Space>分辨率倍率 res_mul <Popover content="阶段二成功：stage1 有 usage 时 tokens×目标分辨率倍率；无 usage 时底座费用×倍率；未命中 key 按 1.0"><QuestionCircleOutlined /></Popover></Space>}
+                style={{ marginBottom: 8 }}
+              >
+                <Space wrap size="middle">
+                  {RES_MUL_KEYS.map((k) => (
+                    <Form.Item key={k} name={['res_mul', k]} label={k} style={{ marginBottom: 0 }} rules={[{ required: true }]}>
+                      <InputNumber min={0.01} step={0.1} precision={2} style={{ width: 100 }} />
+                    </Form.Item>
+                  ))}
+                </Space>
+              </Form.Item>
+            ) : null}
+          </Form.Item>
+
           <Form.Item name="config_json" label="JSON 引擎路由协议参数配置 (核心)" rules={[{ required: true }]}>
-            <TextArea style={{ fontFamily: 'monospace', fontSize: 13, background: '#1e1e1e', color: '#d4d4d4', padding: 12 }} rows={10} placeholder={'{\n  "mode": "...", \n}'} />
+            <TextArea
+              style={{ fontFamily: 'monospace', fontSize: 13, background: '#1e1e1e', color: '#d4d4d4', padding: 12 }}
+              rows={10}
+              placeholder={'{\n  "target_type": "volcengine",\n  "path_rewrite": {"old": "/v1/video/generations", "new": "/api/v3/contents/generations/tasks"},\n  "auth_type": "bearer"\n}'}
+            />
           </Form.Item>
 
           <Form.Item name="is_active" label={t('common.status')} valuePropName="checked">

@@ -5,7 +5,8 @@
  * - 下层：功能芯片栏（模型选择、API 密钥、附加功能按钮）+ 运行按钮
  */
 import React, { useState, useRef, useCallback } from 'react';
-import { Input, Tooltip, message, Dropdown, Modal, Switch } from 'antd';
+import { Input, Tooltip, Dropdown, Modal, Switch, message } from 'antd';
+import toast from './PlaygroundToast';
 import type { MenuProps } from 'antd';
 import {
   KeyOutlined, PlayCircleOutlined, AppstoreOutlined,
@@ -39,7 +40,7 @@ const isMac = (): boolean => {
   return false;
 };
 
-const PromptInput: React.FC = React.memo(() => {
+const PromptInput: React.FC<{ embedded?: boolean }> = React.memo(({ embedded }) => {
   const { t } = useTranslation();
   const { user } = useAuthStore();
   const [activePlugins, setActivePlugins] = useState<any[]>([]);
@@ -79,7 +80,8 @@ const PromptInput: React.FC = React.memo(() => {
   const {
     loading,
     prompt, setPrompt,
-    currentModel, activeCategory,
+    currentModel, agentCurrentModel, setAgentCurrentModel, activeCategory,
+    models, advancedNodesConfig,
     selectedTokenKey, apiTokens,
     generating,
     setIsTokenModalVisible,
@@ -88,18 +90,22 @@ const PromptInput: React.FC = React.memo(() => {
     attachedAssets, setAttachedAssets,
     paramValues, setParamValues,
     handleSelectModel,
+    pageMode,
   } = usePlayground();
   const { handleGenerate, handleChatGenerate } = useGeneration();
 
-  const doGenerate = async () => {
-    if (!currentModel || !prompt.trim() || generating) return;
-    if (currentModel.scheme_type === 'chat') {
+  const effectiveModel = pageMode === 'agent' ? agentCurrentModel : currentModel;
+
+  const handleSend = async () => {
+    if (!effectiveModel || !prompt.trim() || generating) return;
+    if (effectiveModel.scheme_type === 'chat') {
       const ok = await handleChatGenerate();
       if (ok) setPrompt('');
     } else {
       handleGenerate();
     }
   };
+
   const { themeMode } = useThemeStore();
   const _isLight = themeMode === 'light';
   const [isFocused, setIsFocused] = useState(false);
@@ -121,10 +127,10 @@ const PromptInput: React.FC = React.memo(() => {
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [draggedAssetIndex, setDraggedAssetIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // @mention 状态
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [chatMode, setChatMode] = useState<'auto' | 'basic'>('auto');
   const [mentionFilter, setMentionFilter] = useState('');
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionStartRef = useRef<number>(-1); // @ 符号在 prompt 中的位置
@@ -139,15 +145,9 @@ const PromptInput: React.FC = React.memo(() => {
 
     const isMacOS = /Mac|iPod|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
     if (isMacOS) {
-      message.info({
-        content: '请按两次 Fn 键或点击键盘上的 🎙️ 键启动系统听写',
-        duration: 4,
-      });
+      toast.info('请按两次 Fn 键或点击键盘上的 🎙️ 键启动系统听写', undefined, 4000);
     } else {
-      message.info({
-        content: '请按 Win + H 启动系统语音输入',
-        duration: 4,
-      });
+      toast.info('请按 Win + H 启动系统语音输入', undefined, 4000);
     }
   }, []);
 
@@ -156,14 +156,14 @@ const PromptInput: React.FC = React.memo(() => {
     if (files.length === 0) return;
 
     if (attachedAssets.length + files.length > 10) {
-      message.error('最多只能附加 10 个附件');
+      toast.error('最多只能附加 10 个附件');
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
     const newAssets = files.map(file => {
       if (file.size > 10 * 1024 * 1024) {
-        message.error(`${file.name} 大小超过 10MB，已跳过`);
+        toast.error(`${file.name} 大小超过 10MB，已跳过`);
         return null;
       }
       const url = URL.createObjectURL(file);
@@ -182,7 +182,7 @@ const PromptInput: React.FC = React.memo(() => {
 
     setAttachedAssets(prev => [...prev, ...newAssets]);
     if (newAssets.length > 0) {
-      message.success(`已成功附加 ${newAssets.length} 个文件`);
+      toast.success(`已成功附加 ${newAssets.length} 个文件`);
     }
 
     if (e.target) {
@@ -372,7 +372,7 @@ const PromptInput: React.FC = React.memo(() => {
     const ext = a.asset.file_name?.split('.').pop()?.toLowerCase() || '';
     return a.asset.asset_type === 'image' || ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
   });
-  const isVideoModel = currentModel?.scheme_type === 'video' || currentModel?.type_name?.includes('视频');
+  const isVideoModel = effectiveModel?.scheme_type === 'video' || effectiveModel?.type_name?.includes('视频');
 
   // 使用 ref 追踪最新的 attachedAssets
   const attachedAssetsRef = useRef(attachedAssets);
@@ -411,7 +411,6 @@ const PromptInput: React.FC = React.memo(() => {
     
     setMentionFilter(filterText);
   }, [prompt, mentionOpen]);
-
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     e.stopPropagation();
@@ -456,10 +455,10 @@ const PromptInput: React.FC = React.memo(() => {
     }
 
     // 聊天模式：Enter 直接发送，Shift+Enter 换行
-    if (currentModel?.scheme_type === 'chat' && e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+    if (effectiveModel?.scheme_type === 'chat' && e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
-      if (currentModel && prompt.trim() && !generating) {
-        doGenerate();
+      if (effectiveModel && prompt.trim() && !generating) {
+        handleSend();
       }
       return;
     }
@@ -467,8 +466,8 @@ const PromptInput: React.FC = React.memo(() => {
     // 图片/视频模式：⌘+Enter 或 Ctrl+Enter 快捷发送
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
-      if (currentModel && prompt.trim() && !generating) {
-        doGenerate();
+      if (effectiveModel && prompt.trim() && !generating) {
+        handleSend();
       }
     }
   };
@@ -477,12 +476,12 @@ const PromptInput: React.FC = React.memo(() => {
     return (
       <div
         style={{
-          position: 'absolute',
-          bottom: isMobile ? 'calc(12px + env(safe-area-inset-bottom, 0px))' : 24,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: isMobile ? 'calc(100% - 24px)' : 'calc(100% - 48px)',
-          maxWidth: 720,
+          position: embedded ? 'relative' : 'absolute',
+          bottom: embedded ? 'auto' : (isMobile ? 'calc(12px + env(safe-area-inset-bottom, 0px))' : 24),
+          left: embedded ? 'auto' : '50%',
+          transform: embedded ? 'none' : 'translateX(-50%)',
+          width: embedded ? '100%' : (isMobile ? 'calc(100% - 24px)' : 'calc(100% - 48px)'),
+          maxWidth: embedded ? 'none' : 720,
           background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
           backdropFilter: 'blur(20px)',
           borderRadius: 24,
@@ -517,30 +516,443 @@ const PromptInput: React.FC = React.memo(() => {
     );
   }
 
-  return (
+    return (
     <div
-      style={{
-        position: 'absolute',
-        bottom: isMobile ? 'calc(12px + env(safe-area-inset-bottom, 0px))' : 24,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: isMobile ? 'calc(100% - 24px)' : 'calc(100% - 48px)',
-        maxWidth: 720,
-        background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
-        backdropFilter: 'blur(20px)',
-        borderRadius: 24,
-        border: `1px solid ${isFocused ? (_isLight ? '#1677ff' : '#A8C7FA') : (_isLight ? 'rgba(0,0,0,0.1)' : '#444746')}`,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'visible',
-        boxShadow: isFocused
-          ? (_isLight ? '0 4px 12px rgba(0,0,0,0.06), 0 0 0 1px #1677ff' : '0 4px 6px rgba(0,0,0,0.3), 0 0 0 1px #A8C7FA')
-          : (_isLight ? '0 4px 12px rgba(0,0,0,0.06)' : '0 4px 6px rgba(0,0,0,0.3)'),
-        zIndex: 1000,
-        transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
-      }}
-      onWheel={(e) => e.stopPropagation()}
+      style={
+        embedded
+          ? {
+              background: _isLight ? '#ffffff' : '#09090b',
+              borderRadius: 24,
+              border: `1px solid ${isFocused ? (_isLight ? '#1677ff' : '#27272a') : (_isLight ? '#e4e4e7' : '#18181b')}`,
+              boxShadow: isFocused ? (_isLight ? '0 4px 12px rgba(0,0,0,0.02), 0 0 0 1px #1677ff' : '0 4px 12px rgba(0,0,0,0.2), 0 0 0 1px #27272a') : 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '12px 14px 10px',
+              gap: 8,
+              transition: 'all 0.2s ease',
+              width: '100%',
+              position: 'relative',
+            }
+          : {
+              position: 'absolute',
+              bottom: (isMobile ? 'calc(12px + env(safe-area-inset-bottom, 0px))' : 24),
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: (isMobile ? 'calc(100% - 24px)' : 'calc(100% - 48px)'),
+              maxWidth: 720,
+              background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
+              backdropFilter: 'blur(20px)',
+              borderRadius: 24,
+              border: `1px solid ${isFocused ? (_isLight ? '#1677ff' : '#A8C7FA') : (_isLight ? 'rgba(0,0,0,0.1)' : '#444746')}`,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'visible',
+              boxShadow: isFocused
+                ? (_isLight ? '0 4px 12px rgba(0,0,0,0.06), 0 0 0 1px #1677ff' : '0 4px 6px rgba(0,0,0,0.3), 0 0 0 1px #A8C7FA')
+                : (_isLight ? '0 4px 12px rgba(0,0,0,0.06)' : '0 4px 6px rgba(0,0,0,0.3)'),
+              zIndex: 1000,
+              transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
+            }
+      }
     >
+      {embedded ? (
+        <>
+          {/* 已附加的素材预览列表 */}
+          {attachedAssets.length > 0 && (() => {
+            const grouped: { type: string; label: string; items: { item: any; origIndex: number }[] }[] = [];
+            const typeMap: Record<string, any> = {};
+
+            attachedAssets.forEach((assetItem, index) => {
+              const ext = assetItem.asset.file_name.split('.').pop()?.toLowerCase() || '';
+              const isVideo = assetItem.asset.asset_type === 'video' || ['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext);
+              const isAudio = assetItem.asset.asset_type === 'audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext);
+              const typeKey = isAudio ? 'audio' : isVideo ? 'video' : 'image';
+              const typeLabel = isAudio ? '声音' : isVideo ? '视频' : '图';
+              if (!typeMap[typeKey]) {
+                typeMap[typeKey] = { type: typeKey, label: typeLabel, items: [] };
+                grouped.push(typeMap[typeKey]);
+              }
+              typeMap[typeKey].items.push({ item: assetItem, origIndex: index });
+            });
+
+            return (
+              <div style={{ padding: '0 0 4px 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {grouped.map(group => (
+                  <div
+                    key={group.type}
+                    className="prompt-assets-scroll"
+                    onWheel={(e) => { if (e.deltaY !== 0) e.currentTarget.scrollLeft += e.deltaY; }}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 8, overflowX: 'auto' }}
+                  >
+                    {group.items.map((entry: any, idx: number) => (
+                      <div
+                        key={entry.item.asset.id}
+                        style={{
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{
+                          position: 'relative',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: 48, height: 48, borderRadius: 8, overflow: 'hidden',
+                          border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255, 255, 255, 0.1)',
+                          background: _isLight ? '#f4f4f5' : 'rgba(0,0,0,0.2)',
+                        }}>
+                          {(() => {
+                            if (group.type === 'audio') {
+                              return (
+                                <div
+                                  onClick={() => { setEditingAssetIndex(entry.origIndex); setIsAudioPreviewOpen(true); }}
+                                  style={{ width: '100%', height: '100%', position: 'relative', cursor: 'pointer' }}
+                                >
+                                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <AudioOutlined style={{ fontSize: 18, color: '#1677ff' }} />
+                                  </div>
+                                </div>
+                              );
+                            }
+                            if (group.type === 'video') {
+                              return (
+                                <div
+                                  onClick={() => { setEditingAssetIndex(entry.origIndex); setIsVideoPreviewOpen(true); }}
+                                  style={{ width: '100%', height: '100%', position: 'relative', cursor: 'pointer' }}
+                                >
+                                  <video src={entry.item.fullUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted preload="metadata" />
+                                </div>
+                              );
+                            }
+                            return (
+                              <div
+                                onClick={() => { setEditingAssetIndex(entry.origIndex); setIsImageEditorOpen(true); }}
+                                style={{ width: '100%', height: '100%', cursor: 'pointer', position: 'relative' }}
+                              >
+                                <img src={entry.item.fullUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              </div>
+                            );
+                          })()}
+                          <div
+                            onClick={(e) => { e.stopPropagation(); removeAsset(entry.origIndex); }}
+                            style={{
+                              position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: '50%',
+                              background: 'rgba(0,0,0,0.5)', display: 'flex',
+                              alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                              color: '#fff', zIndex: 10,
+                            }}
+                          >
+                            <CloseOutlined style={{ fontSize: 6 }} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* 输入区域 */}
+          <div style={{ position: 'relative' }}>
+            {renderRichPrompt && (
+              <div
+                className="prompt-rich-overlay"
+                style={{
+                  position: 'absolute',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  padding: 0,
+                  fontSize: 14,
+                  lineHeight: '1.6',
+                  color: _isLight ? '#18181b' : '#f4f4f5',
+                  pointerEvents: 'none',
+                  whiteSpace: 'pre-wrap',
+                  wordWrap: 'break-word',
+                  overflow: 'hidden',
+                  zIndex: 1,
+                }}
+              >
+                {renderRichPrompt}
+              </div>
+            )}
+            <TextArea
+              className="prompt-textarea"
+              id="playground-prompt-input"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Ask anything ..."
+              autoSize={{ minRows: 2, maxRows: 6 }}
+              bordered={false}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => {
+                setIsFocused(false);
+                setTimeout(() => setMentionOpen(false), 200);
+              }}
+              style={{
+                color: renderRichPrompt ? 'transparent' : (_isLight ? '#18181b' : '#f4f4f5'),
+                caretColor: _isLight ? '#18181b' : '#f4f4f5',
+                padding: 0,
+                fontSize: 14,
+                lineHeight: '1.6',
+                background: 'transparent',
+                resize: 'none',
+                position: 'relative',
+                zIndex: 2,
+                outline: 'none',
+                border: 'none',
+                boxShadow: 'none',
+              }}
+              onKeyDown={handleKeyDown}
+            />
+
+            {/* @mention 下拉面板 */}
+            {mentionOpen && (() => {
+              const allOptions = getMentionOptions();
+              const filtered = allOptions.filter(o => !mentionFilter || o.label.includes(mentionFilter));
+              const hasAssets = attachedAssets.length > 0;
+              return (
+                <div style={{
+                  position: 'absolute',
+                  bottom: '100%',
+                  left: 0,
+                  marginBottom: 6,
+                  background: _isLight ? '#ffffff' : '#18181b',
+                  border: _isLight ? '1px solid #e4e4e7' : '1px solid #27272a',
+                  borderRadius: 12,
+                  padding: '6px 0',
+                  minWidth: 180,
+                  maxHeight: 200,
+                  overflowY: 'auto',
+                  zIndex: 2000,
+                  boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
+                }}>
+                  <div style={{ 
+                    padding: '4px 12px 6px', 
+                    fontSize: 11, 
+                    color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', 
+                    fontWeight: 500,
+                  }}>
+                    <span>{hasAssets ? '引用素材' : '提示'}</span>
+                  </div>
+                  {!hasAssets ? (
+                    <div style={{ padding: '10px 12px', fontSize: 12, color: '#71717a', textAlign: 'center' }}>
+                      当前没有素材可供选择
+                    </div>
+                  ) : filtered.length === 0 ? (
+                    <div style={{ padding: '10px 12px', fontSize: 12, color: '#71717a', textAlign: 'center' }}>
+                      没有匹配的素材
+                    </div>
+                  ) : (
+                    filtered.map((opt, idx) => (
+                      <div
+                        key={opt.label}
+                        onMouseDown={(e) => { e.preventDefault(); insertMention(opt.label); }}
+                        onMouseEnter={() => setMentionIndex(idx)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '6px 12px', cursor: 'pointer',
+                          fontSize: 12.5, color: idx === mentionIndex ? (_isLight ? '#000' : '#fff') : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.7)'),
+                          background: idx === mentionIndex ? (_isLight ? '#f4f4f5' : '#27272a') : 'transparent',
+                        }}
+                      >
+                        <span style={{ fontWeight: 500 }}>@{opt.label}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* 底部工具栏 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+            {/* 左侧功能区 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {/* + 按钮 */}
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)',
+                  cursor: 'pointer',
+                  color: _isLight ? '#71717a' : '#a1a1aa',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = _isLight ? '#000' : '#fff'; e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = _isLight ? '#71717a' : '#a1a1aa'; e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.04)'; }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </div>
+
+              {/* Auto Mode Pill */}
+              <div
+                onClick={() => setChatMode('auto')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '3px 8px',
+                  borderRadius: 12,
+                  background: chatMode === 'auto' ? (_isLight ? 'rgba(24, 144, 255, 0.08)' : '#27272a') : 'transparent',
+                  border: chatMode === 'auto' ? (_isLight ? '1px solid rgba(24, 144, 255, 0.2)' : '1px solid #3f3f46') : '1px solid transparent',
+                  cursor: 'pointer',
+                  color: chatMode === 'auto' ? (_isLight ? '#1890ff' : '#f4f4f5') : (_isLight ? '#71717a' : '#71717a'),
+                  fontSize: 12,
+                  fontWeight: 500,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                <span>Auto</span>
+              </div>
+
+              {/* Basic Mode Pill */}
+              <div
+                onClick={() => setChatMode('basic')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '3px 8px',
+                  borderRadius: 12,
+                  background: chatMode === 'basic' ? (_isLight ? 'rgba(24, 144, 255, 0.08)' : '#27272a') : 'transparent',
+                  border: chatMode === 'basic' ? (_isLight ? '1px solid rgba(24, 144, 255, 0.2)' : '1px solid #3f3f46') : '1px solid transparent',
+                  cursor: 'pointer',
+                  color: chatMode === 'basic' ? (_isLight ? '#1890ff' : '#f4f4f5') : (_isLight ? '#71717a' : '#71717a'),
+                  fontSize: 12,
+                  fontWeight: 500,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                  <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                <span>Basic</span>
+              </div>
+
+              {/* Mention Button (@) */}
+              <div
+                onClick={() => {
+                  if (attachedAssets.length > 0) {
+                    setPrompt(prev => prev + '@');
+                    setMentionOpen(true);
+                    setMentionFilter('');
+                  } else {
+                    message.info('当前没有素材可供引用，请先上传素材');
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  color: _isLight ? '#71717a' : '#71717a',
+                  transition: 'all 0.15s',
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = _isLight ? '#000' : '#fff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = _isLight ? '#71717a' : '#71717a'; }}
+              >
+                @
+              </div>
+            </div>
+
+            {/* 右侧功能区 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {/* Voice Button */}
+              <div
+                onClick={handleVoiceInput}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  color: _isLight ? '#71717a' : '#a1a1aa',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = _isLight ? '#000' : '#fff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = _isLight ? '#71717a' : '#a1a1aa'; }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                  <line x1="12" y1="19" x2="12" y2="23"></line>
+                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+              </div>
+
+              {/* Send Button */}
+              <div
+                onClick={() => {
+                  if (!prompt.trim() && attachedAssets.length === 0) return;
+                  handleSend();
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  background: (!prompt.trim() && attachedAssets.length === 0)
+                    ? (_isLight ? 'rgba(0,0,0,0.03)' : '#18181b')
+                    : (_isLight ? '#18181b' : '#ffffff'),
+                  color: (!prompt.trim() && attachedAssets.length === 0)
+                    ? (_isLight ? '#d4d4d8' : '#3f3f46')
+                    : (_isLight ? '#ffffff' : '#09090b'),
+                  cursor: (!prompt.trim() && attachedAssets.length === 0) ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="19" x2="12" y2="5"></line>
+                  <polyline points="5 12 12 5 19 12"></polyline>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* AI 智能体模式顶部徽章 */}
+      {pageMode === 'agent' && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 16px',
+          borderBottom: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
+          background: _isLight ? 'rgba(24, 144, 255, 0.05)' : 'rgba(24, 144, 255, 0.08)',
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          fontSize: 12,
+          fontWeight: 500,
+          color: '#1890ff',
+        }}>
+          <span>🤖</span>
+          <span>AI 智能体模式已启用 — 当前操作视频生成模式为：{
+            advancedNodesConfig?.agent_video_mode === 'autonomous' ? '自主决策' :
+            advancedNodesConfig?.agent_video_mode === 'interactive' ? '交互录屏' : '操作轨迹'
+          }</span>
+        </div>
+      )}
       {/* 已附加的素材预览列表 */}
       {attachedAssets.length > 0 && (() => {
         // 按类型分组
@@ -722,16 +1134,22 @@ const PromptInput: React.FC = React.memo(() => {
         )}
         <TextArea
           className="prompt-textarea"
+          id="playground-prompt-input"
           value={prompt}
           onChange={(e) => {
             setPrompt(e.target.value);
           }}
           placeholder={
-            currentModel
-              ? attachedAssets.length > 0
-                ? `输入提示词，使用 @ 引用素材...`
-                : `Start typing a prompt to create ${getCategoryLabel(activeCategory)}...`
-              : '请先在右侧面板选择一个模型...'
+            pageMode === 'agent'
+              ? `输入智能体指令，将以[${
+                  advancedNodesConfig?.agent_video_mode === 'autonomous' ? '自主决策视频' :
+                  advancedNodesConfig?.agent_video_mode === 'interactive' ? '交互录制视频' : '操作轨迹视频'
+                }]模式生成智能体操作视频...`
+              : (effectiveModel
+                  ? (attachedAssets.length > 0
+                      ? `输入提示词，使用 @ 引用素材...`
+                      : `Start typing a prompt to create ${getCategoryLabel(activeCategory)}...`)
+                  : '请先在右侧面板选择一个模型...')
           }
           autoSize={{ minRows: 2, maxRows: isMobile ? 6 : 8 }}
           bordered={false}
@@ -760,6 +1178,9 @@ const PromptInput: React.FC = React.memo(() => {
             letterSpacing: '0.2px',
             position: 'relative',
             zIndex: 2,
+            outline: 'none',
+            border: 'none',
+            boxShadow: 'none',
           }}
           onKeyDown={handleKeyDown}
         />
@@ -959,15 +1380,63 @@ const PromptInput: React.FC = React.memo(() => {
           </Tooltip>
 
           {/* 模型快捷切换按钮 */}
-          <Tooltip title={currentModel ? "模型属性配置" : "选择模型"}>
-            <div
-              onClick={() => {
-                if (!currentModel) {
-                  setIsModelDrawerVisible(true);
-                } else if (!isSettingsWidgetVisible) {
-                  setIsSettingsWidgetVisible(true);
+          {pageMode === 'agent' ? (
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: (advancedNodesConfig?.agent_chat_models || []).map(mid => {
+                  const m = models.find(x => x.mid === String(mid));
+                  return m ? { key: String(m.mid), label: m.name } : null;
+                }).filter(Boolean) as any[],
+                onClick: (e) => {
+                  const selected = models.find(x => String(x.mid) === e.key);
+                  if (selected) setAgentCurrentModel(selected);
                 }
               }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  height: 30,
+                  padding: '0 10px',
+                  background: _isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.1)',
+                  border: _isLight ? '1px solid rgba(0, 0, 0, 0.1)' : '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  color: _isLight ? '#1f2937' : '#fff',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  whiteSpace: 'nowrap',
+                  maxWidth: isMobile ? 120 : 180,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = _isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.18)';
+                  e.currentTarget.style.borderColor = _isLight ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.35)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = _isLight ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.borderColor = _isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.2)';
+                }}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {effectiveModel?.name || '选择对话模型'}
+                </span>
+                <svg viewBox="64 64 896 896" focusable="false" data-icon="down" width="10px" height="10px" fill="currentColor" aria-hidden="true" style={{ marginLeft: 2, opacity: 0.6 }}><path d="M884 256h-75c-5.1 0-9.9 2.5-12.9 6.6L512 654.2 227.9 262.6c-3-4.1-7.8-6.6-12.9-6.6h-75c-6.5 0-10.3 7.4-6.5 12.7l352.6 486.1c12.8 17.6 39 17.6 51.7 0l352.6-486.1c3.9-5.3.1-12.7-6.4-12.7z"></path></svg>
+              </div>
+            </Dropdown>
+          ) : (
+            <Tooltip title={effectiveModel ? "模型属性配置" : "选择模型"}>
+              <div
+                onClick={() => {
+                  if (!effectiveModel) {
+                    setIsModelDrawerVisible(true);
+                  } else if (!isSettingsWidgetVisible) {
+                    setIsSettingsWidgetVisible(true);
+                  }
+                }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -995,9 +1464,9 @@ const PromptInput: React.FC = React.memo(() => {
               }}
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {currentModel?.name || '选择模型'}
+                {effectiveModel?.name || '选择模型'}
               </span>
-              {currentModel && (
+              {effectiveModel && (
                 <div
                   onClick={(e) => {
                     e.stopPropagation();
@@ -1025,9 +1494,10 @@ const PromptInput: React.FC = React.memo(() => {
               )}
             </div>
           </Tooltip>
+          )}
 
           {/* 联网搜索开关 */}
-          {currentModel?.params?.some((p: any) => p.key === 'web_search') && (
+          {effectiveModel?.params?.some((p: any) => p.key === 'web_search') && (
             <Tooltip title="开启后允许模型使用联网搜索能力">
               <div
                 style={{
@@ -1145,7 +1615,8 @@ const PromptInput: React.FC = React.memo(() => {
           </Tooltip>
 
           {/* 添加按钮（聊天模式暂不可用） */}
-          {currentModel?.scheme_type !== 'chat' && (() => {
+          {/* 简单逻辑判断：聊天模式通常不直接支持复杂多素材的附件 */}
+          {effectiveModel?.scheme_type !== 'chat' && (() => {
             const isOnlyLocalUpload = dropdownItems.length === 1 && dropdownItems[0]?.key === 'local-upload';
 
             const addButtonContent = (
@@ -1230,8 +1701,8 @@ const PromptInput: React.FC = React.memo(() => {
           {/* 运行按钮 */}
           <div
             onClick={() => {
-              if (currentModel && prompt.trim() && !generating) {
-                doGenerate();
+              if (effectiveModel && prompt.trim() && !generating) {
+                handleSend();
               }
             }}
             style={{
@@ -1298,8 +1769,9 @@ const PromptInput: React.FC = React.memo(() => {
           </div>
         </div>
       </div>
-
-      {/* 生成中脉冲动画 */}
+        </>
+      )}
+{/* 生成中脉冲动画 */}
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }
@@ -1320,14 +1792,14 @@ const PromptInput: React.FC = React.memo(() => {
           setAttachedAssets(prev => {
             const newTotal = prev.length + items.length;
             if (newTotal > 10) {
-              message.error(`最多只能附加 10 个附件，已截断超出部分`);
+              toast.error(`最多只能附加 10 个附件，已截断超出部分`);
               const allowed = 10 - prev.length;
               const toAdd = items.slice(0, Math.max(0, allowed));
               return [...prev, ...toAdd];
             }
             return [...prev, ...items];
           });
-          message.success(`已附加 ${items.length} 个素材`);
+          toast.success(`已附加 ${items.length} 个素材`);
         }}
       />
 
@@ -1359,7 +1831,7 @@ const PromptInput: React.FC = React.memo(() => {
             });
             setIsImageEditorOpen(false);
             setEditingAssetIndex(null);
-            message.success('图片编辑已保存');
+            toast.success('图片编辑已保存');
           }}
         />
       )}
@@ -1392,7 +1864,7 @@ const PromptInput: React.FC = React.memo(() => {
             });
             setIsVideoPreviewOpen(false);
             setEditingAssetIndex(null);
-            message.success('视频编辑已保存');
+            toast.success('视频编辑已保存');
           }}
         />
       )}

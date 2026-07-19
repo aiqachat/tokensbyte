@@ -1,10 +1,17 @@
 #![allow(dead_code)]
+use hmac::{Hmac, Mac};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::future::Future;
 use std::time::Duration;
-use sha2::{Sha256, Digest};
-use hmac::{Hmac, Mac};
 type HmacSha256 = Hmac<Sha256>;
+
+/// 内部 HMAC-SHA256 签名辅助函数（供 download_file / list_folder / generate_presigned_put_url 共用）
+fn hmac_sign(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC key error");
+    mac.update(data);
+    mac.finalize().into_bytes().to_vec()
+}
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
@@ -14,8 +21,8 @@ use ve_tos_rust_sdk::asynchronous::object::ObjectAPI;
 use ve_tos_rust_sdk::asynchronous::tos;
 use ve_tos_rust_sdk::asynchronous::tos::AsyncRuntime;
 use ve_tos_rust_sdk::bucket::ListBucketsInput;
-use ve_tos_rust_sdk::object::PutObjectFromBufferInput;
 use ve_tos_rust_sdk::object::DeleteObjectInput;
+use ve_tos_rust_sdk::object::PutObjectFromBufferInput;
 
 /// TOS 存储配置
 #[derive(Debug, Clone)]
@@ -37,7 +44,12 @@ impl TosConfig {
         let region = map.get("tos_region")?.trim().to_string();
         let bucket = map.get("tos_bucket")?.trim().to_string();
 
-        if ak.is_empty() || sk.is_empty() || endpoint.is_empty() || region.is_empty() || bucket.is_empty() {
+        if ak.is_empty()
+            || sk.is_empty()
+            || endpoint.is_empty()
+            || region.is_empty()
+            || bucket.is_empty()
+        {
             return None;
         }
 
@@ -47,41 +59,57 @@ impl TosConfig {
             endpoint,
             region,
             bucket,
-            path_prefix: map.get("tos_path_prefix").map(|s| s.trim().to_string()).unwrap_or_default(),
-            custom_domain: map.get("tos_custom_domain").map(|s| s.trim().to_string()).unwrap_or_default(),
+            path_prefix: map
+                .get("tos_path_prefix")
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default(),
+            custom_domain: map
+                .get("tos_custom_domain")
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default(),
         })
     }
 
-    /// 生成文件的公开访问 URL
+    /// 生成文件的公开访问 URL（可走自定义域名 / CDN）
     pub fn file_url(&self, object_key: &str) -> String {
-        let raw = if !self.custom_domain.is_empty() {
-            let domain = self.custom_domain.trim_end_matches('/');
-            format!("{}/{}", domain, object_key)
-        } else {
-            let ep = self.endpoint.trim_end_matches('/');
-            let ep_domain = if ep.starts_with("https://") {
-                &ep[8..]
-            } else if ep.starts_with("http://") {
-                &ep[7..]
+        let key = object_key.trim_start_matches('/');
+        if !self.custom_domain.is_empty() {
+            let raw = self.custom_domain.trim().trim_end_matches('/');
+            let (scheme, host) = if let Some(h) = raw.strip_prefix("https://") {
+                ("https", h.trim_end_matches('/'))
+            } else if let Some(h) = raw.strip_prefix("http://") {
+                ("http", h.trim_end_matches('/'))
             } else {
-                ep
+                ("https", raw)
             };
-            
-            // Bucket 名包含点号时不能用 Virtual-Hosted Style（SSL 证书不匹配），
-            // 改用 Path-Style: https://endpoint/bucket/key
-            if self.bucket.contains('.') {
-                format!("{}/{}/{}", ep_domain, self.bucket, object_key)
-            } else {
-                format!("{}.{}/{}", self.bucket, ep_domain, object_key)
-            }
+            return format!("{}://{}/{}", scheme, host, key);
+        }
+        self.official_request_target(key).2
+    }
+
+    /// 直传专用：官方 endpoint 的 `(host, path, url)`，忽略自定义域名
+    /// 保证签名 host 与浏览器 PUT Host 一致，并规避 CDN 改写 Host
+    fn official_request_target(&self, key: &str) -> (String, String, String) {
+        let ep = self.endpoint.trim().trim_end_matches('/');
+        let ep_domain = if let Some(h) = ep.strip_prefix("https://") {
+            h
+        } else if let Some(h) = ep.strip_prefix("http://") {
+            h
+        } else {
+            ep
         };
 
-        // 确保始终有 https:// 前缀
-        if raw.starts_with("https://") || raw.starts_with("http://") {
-            raw
+        // Bucket 名含点号时用 Path-Style，避免 SSL 证书与 Virtual-Hosted 不匹配
+        let (host, path) = if self.bucket.contains('.') {
+            (ep_domain.to_string(), format!("/{}/{}", self.bucket, key))
         } else {
-            format!("https://{}", raw)
-        }
+            (
+                format!("{}.{}", self.bucket, ep_domain),
+                format!("/{}", key),
+            )
+        };
+        let url = format!("https://{}{}", host, path);
+        (host, path, url)
     }
 
     /// 生成完整的 object key（含路径前缀）
@@ -95,45 +123,19 @@ impl TosConfig {
     }
 
     /// 从 file_url 反推 object key
+    /// 优先按当前 file_url 规则匹配；若开启了自定义域名，再回退官方 endpoint（兼容历史官方 URL）
     pub fn extract_object_key(&self, file_url: &str) -> Option<String> {
-        // 自定义域名: https://custom_domain/object_key
-        if !self.custom_domain.is_empty() {
-            let domain = self.custom_domain.trim_end_matches('/');
-            let domain_with_prefix = if domain.starts_with("http") {
-                domain.to_string()
-            } else {
-                format!("https://{}", domain)
-            };
-            if let Some(rest) = file_url.strip_prefix(&format!("{}/", domain_with_prefix)) {
-                return Some(rest.to_string());
-            }
-        }
-
-        // Virtual-hosted style: https://bucket.endpoint/object_key
-        // Path style: https://endpoint/bucket/object_key
-        let ep = self.endpoint.trim_end_matches('/');
-        let ep_domain = if ep.starts_with("https://") {
-            &ep[8..]
-        } else if ep.starts_with("http://") {
-            &ep[7..]
-        } else {
-            ep
+        let try_base = |base: &str| -> Option<String> {
+            let prefix = format!("{}/", base.trim_end_matches('/'));
+            file_url.strip_prefix(&prefix).map(|s| s.to_string())
         };
 
-        if self.bucket.contains('.') {
-            // Path-style
-            let base = format!("https://{}/{}/", ep_domain, self.bucket);
-            if let Some(rest) = file_url.strip_prefix(&base) {
-                return Some(rest.to_string());
-            }
-        } else {
-            // Virtual-hosted style
-            let base = format!("https://{}.{}/", self.bucket, ep_domain);
-            if let Some(rest) = file_url.strip_prefix(&base) {
-                return Some(rest.to_string());
-            }
+        if let Some(key) = try_base(&self.file_url("")) {
+            return Some(key);
         }
-
+        if !self.custom_domain.is_empty() {
+            return try_base(&self.official_request_target("").2);
+        }
         None
     }
 }
@@ -178,11 +180,18 @@ pub async fn test_connection(config: &TosConfig) -> Result<String, String> {
 
     match client.list_buckets(&ListBucketsInput::new()).await {
         Ok(output) => {
-            let names: Vec<String> = output.buckets().iter().map(|b| b.name().to_string()).collect();
+            let names: Vec<String> = output
+                .buckets()
+                .iter()
+                .map(|b| b.name().to_string())
+                .collect();
             if names.contains(&config.bucket) {
                 Ok(format!("连接成功，已找到目标 Bucket: {}", config.bucket))
             } else {
-                Ok(format!("连接成功，但未找到 Bucket '{}'，可用: {:?}", config.bucket, names))
+                Ok(format!(
+                    "连接成功，但未找到 Bucket '{}'，可用: {:?}",
+                    config.bucket, names
+                ))
             }
         }
         Err(e) => Err(format!("连接失败: {:?}", e)),
@@ -279,8 +288,7 @@ pub async fn download_file(config: &TosConfig, object_key: &str) -> Result<Vec<u
 
     let canonical_request = format!(
         "GET\n{}\n\nhost:{}\nx-tos-date:{}\n\nhost;x-tos-date\n{}",
-        path, host, date_str,
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        path, host, date_str, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
 
     let credential_scope = format!("{}/{}/tos/request", date_short, config.region);
@@ -290,11 +298,6 @@ pub async fn download_file(config: &TosConfig, object_key: &str) -> Result<Vec<u
         date_str, credential_scope, canonical_hash
     );
 
-    fn hmac_sign(key: &[u8], data: &[u8]) -> Vec<u8> {
-        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC key");
-        mac.update(data);
-        mac.finalize().into_bytes().to_vec()
-    }
     let k_date = hmac_sign(config.secret_key.as_bytes(), date_short.as_bytes());
     let k_region = hmac_sign(&k_date, config.region.as_bytes());
     let k_service = hmac_sign(&k_region, b"tos");
@@ -309,7 +312,8 @@ pub async fn download_file(config: &TosConfig, object_key: &str) -> Result<Vec<u
     let url = format!("https://{}{}", host, path);
 
     let client = reqwest::Client::new();
-    let resp = client.get(&url)
+    let resp = client
+        .get(&url)
         .header("Host", &host)
         .header("x-tos-date", &date_str)
         .header("Authorization", &auth_header)
@@ -324,15 +328,76 @@ pub async fn download_file(config: &TosConfig, object_key: &str) -> Result<Vec<u
         return Err(format!("TOS 下载失败 ({}): {}", status, body));
     }
 
-    let bytes = resp.bytes().await.map_err(|e| format!("读取文件数据失败: {}", e))?;
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取文件数据失败: {}", e))?;
     Ok(bytes.to_vec())
 }
 
-use ve_tos_rust_sdk::object::{PutObjectTaggingInput, GetObjectTaggingInput};
-use ve_tos_rust_sdk::common::{TagSet, Tag};
+/// 生成预签名 PUT URL（前端直传 TOS 专用）
+/// - 有效期 expires_secs 秒，足够完成单次上传，降低 URL 泄露窗口
+/// - 仅签名 host header（TOS 预签名 URL 规范），Content-Type 由前端上传时携带但不参与签名
+/// - Object Key 路径已含用户 uid/project_id，即使 URL 泄露也只能写入该用户目录
+/// - 直传 URL 始终使用官方 endpoint（与自定义域名/CDN 解耦），公开访问仍走 file_url 自定义域名
+/// 注意：canonical request 中的 X-Tos-SignedHeaders 必须与 query string 中的值严格一致，否则 403
+pub fn generate_presigned_put_url(
+    config: &TosConfig,
+    object_key: &str,
+    expires_secs: u64,
+) -> String {
+    // 签名 host ≡ 浏览器 PUT 的 Host（官方域名）；避免自定义域名签名/URL 分裂及 CDN 改写 Host
+    let (host, path, base_url) = config.official_request_target(object_key.trim_start_matches('/'));
+
+    let now = chrono::Utc::now();
+    let date_str = now.format("%Y%m%dT%H%M%SZ").to_string();
+    let date_short = now.format("%Y%m%d").to_string();
+
+    let credential_scope = format!("{}/{}/tos/request", date_short, config.region);
+    // Credential 值需要 URL 编码（含 / 符号）
+    let credential_val = format!("{}/{}", config.access_key, credential_scope);
+    let credential_encoded = urlencoding::encode(&credential_val).to_string();
+
+    // Query String 参数严格按字母序排列（TOS 规范要求）
+    // X-Tos-SignedHeaders 只包含 host，与下方 canonical request 完全一致
+    let signed_headers = "host";
+    let query = format!(
+        "X-Tos-Algorithm=TOS4-HMAC-SHA256&X-Tos-Credential={cred}&X-Tos-Date={date}&X-Tos-Expires={exp}&X-Tos-SignedHeaders={sh}",
+        cred = credential_encoded,
+        date = date_str,
+        exp = expires_secs,
+        sh = signed_headers,
+    );
+
+    // Canonical Request：signed headers 仅含 host，与 X-Tos-SignedHeaders 严格对应
+    let canonical_request = format!(
+        "PUT\n{}\n{}\nhost:{}\n\n{}\nUNSIGNED-PAYLOAD",
+        path, query, host, signed_headers
+    );
+
+    let canonical_hash = hex::encode(Sha256::digest(canonical_request.as_bytes()));
+    let string_to_sign = format!(
+        "TOS4-HMAC-SHA256\n{}\n{}\n{}",
+        date_str, credential_scope, canonical_hash
+    );
+
+    let k_date = hmac_sign(config.secret_key.as_bytes(), date_short.as_bytes());
+    let k_region = hmac_sign(&k_date, config.region.as_bytes());
+    let k_service = hmac_sign(&k_region, b"tos");
+    let k_signing = hmac_sign(&k_service, b"request");
+    let signature = hex::encode(hmac_sign(&k_signing, string_to_sign.as_bytes()));
+
+    format!("{}?{}&X-Tos-Signature={}", base_url, query, signature)
+}
+
+use ve_tos_rust_sdk::common::{Tag, TagSet};
+use ve_tos_rust_sdk::object::{GetObjectTaggingInput, PutObjectTaggingInput};
 
 /// 获取 TOS 文件标签
-pub async fn get_object_tags(config: &TosConfig, object_key: &str) -> Result<HashMap<String, String>, String> {
+pub async fn get_object_tags(
+    config: &TosConfig,
+    object_key: &str,
+) -> Result<HashMap<String, String>, String> {
     let client = tos::builder::<TokioRuntime>()
         .connection_timeout(5000)
         .request_timeout(10000)
@@ -354,12 +419,16 @@ pub async fn get_object_tags(config: &TosConfig, object_key: &str) -> Result<Has
     for tag in output.tag_set().tags() {
         result.insert(tag.key().to_string(), tag.value().to_string());
     }
-    
+
     Ok(result)
 }
 
 /// 更新 TOS 文件标签
-pub async fn update_object_tags(config: &TosConfig, object_key: &str, tags: HashMap<String, String>) -> Result<(), String> {
+pub async fn update_object_tags(
+    config: &TosConfig,
+    object_key: &str,
+    tags: HashMap<String, String>,
+) -> Result<(), String> {
     let client = tos::builder::<TokioRuntime>()
         .connection_timeout(5000)
         .request_timeout(10000)
@@ -371,12 +440,15 @@ pub async fn update_object_tags(config: &TosConfig, object_key: &str, tags: Hash
         .build()
         .map_err(|e| format!("创建 TOS 客户端失败: {:?}", e))?;
 
-    let tag_list: Vec<Tag> = tags.into_iter().map(|(k, v)| {
-        let mut t = Tag::default();
-        t.set_key(k);
-        t.set_value(v);
-        t
-    }).collect();
+    let tag_list: Vec<Tag> = tags
+        .into_iter()
+        .map(|(k, v)| {
+            let mut t = Tag::default();
+            t.set_key(k);
+            t.set_value(v);
+            t
+        })
+        .collect();
 
     let mut tag_set = TagSet::default();
     tag_set.set_tags(tag_list);
@@ -402,7 +474,10 @@ pub struct TosObject {
 
 /// 列出 TOS 文件夹下的所有文件（通过 S3 兼容 REST API）
 /// 返回文件列表和总大小
-pub async fn list_folder(config: &TosConfig, folder_prefix: &str) -> Result<(Vec<TosObject>, i64), String> {
+pub async fn list_folder(
+    config: &TosConfig,
+    folder_prefix: &str,
+) -> Result<(Vec<TosObject>, i64), String> {
     let full_prefix = config.full_key(folder_prefix);
     // 确保 prefix 以 / 结尾
     let prefix = if full_prefix.ends_with('/') {
@@ -445,7 +520,10 @@ pub async fn list_folder(config: &TosConfig, folder_prefix: &str) -> Result<(Vec
     // 构造 CanonicalRequest
     let canonical_request = format!(
         "GET\n{}\n{}\nhost:{}\nx-tos-date:{}\n\nhost;x-tos-date\n{}",
-        path, query_string, host, date_str,
+        path,
+        query_string,
+        host,
+        date_str,
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" // empty body hash
     );
 
@@ -453,17 +531,10 @@ pub async fn list_folder(config: &TosConfig, folder_prefix: &str) -> Result<(Vec
     let canonical_hash = hex::encode(Sha256::digest(canonical_request.as_bytes()));
     let string_to_sign = format!(
         "TOS4-HMAC-SHA256\n{}\n{}\n{}",
-        date_str,
-        credential_scope,
-        canonical_hash
+        date_str, credential_scope, canonical_hash
     );
 
-    // 计算签名
-    fn hmac_sign(key: &[u8], data: &[u8]) -> Vec<u8> {
-        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC key");
-        mac.update(data);
-        mac.finalize().into_bytes().to_vec()
-    }
+    // 计算签名（使用模块级 hmac_sign 函数）
     let k_date = hmac_sign(config.secret_key.as_bytes(), date_short.as_bytes());
     let k_region = hmac_sign(&k_date, config.region.as_bytes());
     let k_service = hmac_sign(&k_region, b"tos");
@@ -478,7 +549,8 @@ pub async fn list_folder(config: &TosConfig, folder_prefix: &str) -> Result<(Vec
     let url = format!("https://{}{}?{}", host, path, query_string);
 
     let client = reqwest::Client::new();
-    let resp = client.get(&url)
+    let resp = client
+        .get(&url)
         .header("Host", &host)
         .header("x-tos-date", &date_str)
         .header("Authorization", &auth_header)
@@ -493,7 +565,10 @@ pub async fn list_folder(config: &TosConfig, folder_prefix: &str) -> Result<(Vec
         return Err(format!("TOS ListObjects 失败 ({}): {}", status, body));
     }
 
-    let body = resp.text().await.map_err(|e| format!("读取响应失败: {}", e))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {}", e))?;
 
     // 解析 XML 响应
     let mut objects = Vec::new();

@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone, sqlx::Type)]
@@ -18,6 +19,6 @@ pub struct VerificationCode {
     pub phone: String,
     pub code: String,
     pub purpose: String,
-    pub expires_at: String,
-    pub created_at: String,
+    pub expires_at: DbTs,
+    pub created_at: DbTs,
 }

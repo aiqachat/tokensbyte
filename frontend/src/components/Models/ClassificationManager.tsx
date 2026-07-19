@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import { type ModelProvider, type ModelType } from '../../types';
 import IconPicker from '../IconPicker';
-import { Image as ImageIcon, Video, AudioLines, MessageSquare, Cuboid, ListOrdered } from 'lucide-react';
+import { Image as ImageIcon, Video, AudioLines, MessageSquare, Cuboid, ListOrdered, Sparkles } from 'lucide-react';
 
 interface ClassificationItem {
   id: number;
@@ -102,6 +102,7 @@ const ClassificationManager: React.FC<ClassificationManagerProps> = ({
 
   const renderSystemIcon = (name: string) => {
     const lowerName = name.toLowerCase();
+    if (lowerName.includes('视频增强') || lowerName.includes('videoenhance') || lowerName.includes('video-enhance') || lowerName.includes('video_enhance')) return <Sparkles size={18} />;
     if (lowerName.includes('图片') || lowerName.includes('image')) return <ImageIcon size={18} />;
     if (lowerName.includes('视频') || lowerName.includes('video')) return <Video size={18} />;
     if (lowerName.includes('音频') || lowerName.includes('audio')) return <AudioLines size={18} />;

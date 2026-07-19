@@ -188,7 +188,7 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
       key: 'amount',
       render: (amount: number) => (
         <Text style={{ color: amount > 0 ? '#52c41a' : amount < 0 ? '#ff4d4f' : undefined, fontWeight: 500 }}>
-          {amount > 0 ? '+' : (amount < 0 ? '-' : '')}{Math.abs(amount).toFixed(2)}
+          {amount > 0 ? '+' : (amount < 0 ? '-' : '')}{Math.abs(amount).toFixed(4)}
         </Text>
       ),
     },
@@ -211,6 +211,11 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
           'registration': t('type_registration', '注册赠送'),
           'alipay': t('type_alipay', '支付宝'),
           'wechat': t('type_wechat', '微信支付'),
+          'allinpay_wechat': t('type_allinpay_wechat', '通联微信'),
+          'allinpay_alipay': t('type_allinpay_alipay', '通联支付宝'),
+          'stripe': 'Stripe',
+          'hyperbc': 'HyperBC',
+          'bonuspay': 'BonusPay',
           'redemption': t('type_redemption', '兑换码'),
         };
         return <Tag>{typeMap[type] || type}</Tag>;
@@ -284,22 +289,22 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
               <Row gutter={16} style={{ marginBottom: 16 }}>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前系统账户余额</span>} value={user.balance || 0} precision={2} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前系统账户余额</span>} value={user.balance || 0} precision={4} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}充值记录`}</span>} value={totalSystemRecharge} precision={2} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}充值记录`}</span>} value={totalSystemRecharge} precision={4} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}消费合计`}</span>} value={consumedSystem} precision={2} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} loading={consumedLoading} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}消费合计`}</span>} value={consumedSystem} precision={4} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} loading={consumedLoading} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>历史全部消费合计</span>} value={systemUsed} precision={2} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>历史全部消费合计</span>} value={systemUsed} precision={4} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
                   </Card>
                 </Col>
               </Row>
@@ -323,22 +328,22 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
               <Row gutter={16} style={{ marginBottom: 16 }}>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前赠送账户余额</span>} value={user.gift_balance || 0} precision={2} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前赠送账户余额</span>} value={user.gift_balance || 0} precision={4} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}获得赠送`}</span>} value={totalGiftRecharge} precision={2} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}获得赠送`}</span>} value={totalGiftRecharge} precision={4} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}使用赠送`}</span>} value={consumedGift} precision={2} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} loading={consumedLoading} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}使用赠送`}</span>} value={consumedGift} precision={4} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} loading={consumedLoading} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>历史全部赠送使用</span>} value={giftUsed} precision={2} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>历史全部赠送使用</span>} value={giftUsed} precision={4} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
                   </Card>
                 </Col>
               </Row>
@@ -362,12 +367,12 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
               <Row gutter={16} style={{ marginBottom: 16 }}>
                 <Col span={12}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前信控额度</span>} value={creditLimit} precision={2} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1890ff' : '#69b1ff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前信控额度</span>} value={creditLimit} precision={4} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1890ff' : '#69b1ff' }} />
                   </Card>
                 </Col>
                 <Col span={12}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{(filterRange && filterRange[0] && filterRange[1]) ? '筛选期内信控调整' : '累计信控调增'}</span>} value={totalCreditRecharge} precision={2} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{(filterRange && filterRange[0] && filterRange[1]) ? '筛选期内信控调整' : '累计信控调增'}</span>} value={totalCreditRecharge} precision={4} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
                   </Card>
                 </Col>
               </Row>

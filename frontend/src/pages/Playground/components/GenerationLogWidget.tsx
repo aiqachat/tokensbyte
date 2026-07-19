@@ -10,13 +10,16 @@
  * 点击画布上的节点时自动弹出，展示该节点的创作信息
  */
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import { Typography, Tooltip, Tag, message, Grid, Button, Modal, Popconfirm } from 'antd';
+import { Typography, Tooltip, Tag, Grid, Button, Modal, Popconfirm, Checkbox } from 'antd';
+import toast from './PlaygroundToast';
 import {
   CloseOutlined, PictureOutlined, CopyOutlined,
   VideoCameraOutlined, CheckCircleOutlined, LoadingOutlined,
   CloseCircleOutlined, FileTextOutlined, ClockCircleOutlined,
   EditOutlined, ReloadOutlined,
   DownloadOutlined, DeleteOutlined, ArrowLeftOutlined,
+  PushpinOutlined, PushpinFilled,
+  CheckOutlined,
 } from '@ant-design/icons';
 import { MessageCircle, MessageSquarePlus } from 'lucide-react';
 import { useCanvas, usePlayground } from '../context/PlaygroundContext';
@@ -29,9 +32,33 @@ import request from '../../../utils/request';
 
 const { Text } = Typography;
 
+const safeParseDate = (dateStr?: string | null): Date => {
+  if (!dateStr) return new Date(NaN);
+  let s = String(dateStr).trim();
+  if (/^\d+$/.test(s)) {
+    return new Date(parseInt(s, 10));
+  }
+  if (s.includes(' ') && !s.includes('T')) {
+    s = s.replace(' ', 'T');
+  }
+  s = s.replace(/\.(\d{1,3})\d*(Z|[+-]\d{2}(?::?\d{2})?)?$/, (_, subSec, tz) => {
+    let normalizedTz = tz || '';
+    if (normalizedTz && normalizedTz !== 'Z' && !normalizedTz.includes(':') && normalizedTz.length === 3) {
+      normalizedTz = normalizedTz + ':00';
+    }
+    return `.${subSec}${normalizedTz}`;
+  });
+  if (!s.includes('.')) {
+    s = s.replace(/([+-]\d{2})$/, '$1:00');
+  }
+  return new Date(s);
+};
+
 const formatRelativeTime = (dateStr?: string) => {
   if (!dateStr) return '刚刚';
-  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const timeMs = safeParseDate(dateStr).getTime();
+  if (isNaN(timeMs)) return '刚刚';
+  const diffMs = Date.now() - timeMs;
   const diffMins = Math.floor(diffMs / 60000);
 
   if (diffMins <= 10) return '刚刚';
@@ -70,7 +97,10 @@ const showLocalSuccessMessage = (e: React.MouseEvent | undefined, text: string, 
     pointer-events: none;
     transition: opacity 0.2s, transform 0.2s;
   `;
-  el.innerHTML = `<span style="color: #52c41a; display: flex; align-items: center;"><svg viewBox="64 64 896 896" focusable="false" data-icon="check-circle" width="16px" height="16px" fill="currentColor" aria-hidden="true"><path d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm193.5 301.7l-210.6 292a31.8 31.8 31.8 0 01-51.7 0L318.5 484.9c-3.8-5.3 0-12.7 6.5-12.7h46.9c10.2 0 19.9 4.9 25.9 13.3l71.2 98.8 157.2-218c6-8.3 15.6-13.3 25.9-13.3H699c6.5 0 10.3 7.4 6.5 12.7z"></path></svg></span> ${text}`;
+  // HTML 转义，防止 XSS
+  const safeText = text.replace(/[&<>"']/g, (c: string) => 
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
+  el.innerHTML = `<span style="color: #52c41a; display: flex; align-items: center;"><svg viewBox="64 64 896 896" focusable="false" data-icon="check-circle" width="16px" height="16px" fill="currentColor" aria-hidden="true"><path d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm193.5 301.7l-210.6 292a31.8 31.8 31.8 0 01-51.7 0L318.5 484.9c-3.8-5.3 0-12.7 6.5-12.7h46.9c10.2 0 19.9 4.9 25.9 13.3l71.2 98.8 157.2-218c6-8.3 15.6-13.3 25.9-13.3H699c6.5 0 10.3 7.4 6.5 12.7z"></path></svg></span> ${safeText}`;
   document.body.appendChild(el);
   setTimeout(() => {
     el.style.opacity = '0';
@@ -189,10 +219,47 @@ const GenerationLogWidget: React.FC = React.memo(() => {
   } = useCanvas();
   const {
     isGenLogVisible, setIsGenLogVisible,
+    isGenLogPinned, setIsGenLogPinned,
     setPrompt, setAttachedAssets, storageStats,
     saveCanvasState, loadStorageStats
   } = usePlayground();
   const { themeMode } = useThemeStore();
+
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedLogNodeIds, setSelectedLogNodeIds] = useState<string[]>([]);
+
+  // 面板关闭时，重置编辑状态与已选 ID 列表
+  useEffect(() => {
+    if (!isGenLogVisible) {
+      setIsEditMode(false);
+      setSelectedLogNodeIds([]);
+    }
+  }, [isGenLogVisible]);
+
+  // 选中节点详情页时，自动退出批量管理模式
+  useEffect(() => {
+    if (selectedNodeId) {
+      setIsEditMode(false);
+      setSelectedLogNodeIds([]);
+    }
+  }, [selectedNodeId]);
+
+  const logNodes = useMemo(() => {
+    return nodes.filter(n => {
+      // 过滤掉区块节点（section 不属于 AI 生成素材）
+      if (n.type === 'section') {
+        return false;
+      }
+      // 过滤掉高级节点和实例节点
+      if (n.taskData?.node_type === 'preview' || n.taskData?.node_type === 'volc_enhance') {
+        return false;
+      }
+      if (n.isInstance || n.taskData?.is_instance) {
+        return false;
+      }
+      return true;
+    });
+  }, [nodes]);
 
   const saveCanvasRef = useRef(saveCanvasState);
   saveCanvasRef.current = saveCanvasState;
@@ -204,20 +271,28 @@ const GenerationLogWidget: React.FC = React.memo(() => {
   const [editorVideoUrl, setEditorVideoUrl] = useState('');
   const [mediaInfo, setMediaInfo] = useState<{ fileSize?: string; width?: number; height?: number; duration?: number } | null>(null);
 
-  // 找到当前选中的节点
   const selectedNode = useMemo(() => {
     if (!selectedNodeId) return null;
-    return nodes.find(n => n.id === selectedNodeId) || null;
+    let found = nodes.find(n => n.id === selectedNodeId) || null;
+    if (found && (found.isInstance || found.taskData?.is_instance) && found.taskData?.source_node_id) {
+      const source = nodes.find(n => n.id === found!.taskData.source_node_id);
+      if (source) {
+        found = source;
+      }
+    }
+    if (found?.taskData?.node_type) return null;
+    return found;
   }, [nodes, selectedNodeId]);
 
   const handleLocateNode = useCallback(() => {
-    if (!selectedNode || !canvasRef?.current) return;
+    const actualNode = nodes.find(n => n.id === selectedNodeId);
+    if (!actualNode || !canvasRef?.current) return;
     
     // 如果节点在画布上被隐藏，则恢复显示并置顶
-    if (selectedNode.isHidden) {
+    if (actualNode.isHidden) {
       const newZ = maxZIndex + 1;
       setMaxZIndex(newZ);
-      setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, isHidden: false, zIndex: newZ } : n));
+      setNodes(prev => prev.map(n => n.id === actualNode.id ? { ...n, isHidden: false, zIndex: newZ } : n));
     }
     
     const rect = canvasRef.current.getBoundingClientRect();
@@ -225,8 +300,8 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     const viewH = rect.height;
     const ct = canvasTransform;
     
-    const nodeCX = selectedNode.x + selectedNode.width / 2;
-    const nodeCY = selectedNode.y + selectedNode.height / 2;
+    const nodeCX = actualNode.x + (actualNode.width || 320) / 2;
+    const nodeCY = actualNode.y + (actualNode.height || 240) / 2;
     
     // 考虑左侧面板的宽度 (24px left + 320px width = 344px)
     const leftOffset = isMobile ? 0 : 360;
@@ -236,13 +311,13 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     const newY = viewH / 2 - nodeCY * ct.scale;
     
     setCanvasTransform({ ...ct, x: newX, y: newY });
-    setSelectedNodeIds([selectedNode.id]);
+    setSelectedNodeIds([actualNode.id]);
     
     if (isMobile) {
       setSelectedNodeId(null);
       setIsGenLogVisible(false);
     }
-  }, [selectedNode, canvasRef, canvasTransform, setCanvasTransform, setSelectedNodeIds, isMobile, setSelectedNodeId, setIsGenLogVisible, maxZIndex, setMaxZIndex, setNodes]);
+  }, [selectedNodeId, nodes, canvasRef, canvasTransform, setCanvasTransform, setSelectedNodeIds, isMobile, setSelectedNodeId, setIsGenLogVisible, maxZIndex, setMaxZIndex, setNodes]);
 
   /** 获取节点的结果URL */
   const getResultUrl = useCallback((node: any): string => {
@@ -314,13 +389,13 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     if (!selectedNode) return;
     const url = getResultUrl(selectedNode);
     if (!url) {
-      message.warning('暂无可用的结果资源');
+      toast.warning('暂无可用的结果资源');
       return;
     }
     const ext = selectedNode.type === 'video' ? 'mp4' : 'png';
     setAttachedAssets(prev => {
       if (prev.some(a => a.fullUrl === url)) {
-        message.info('该资源已在附件中');
+        toast.info('该资源已在附件中');
         return prev;
       }
       return [...prev, {
@@ -341,7 +416,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     if (!selectedNode) return;
     const url = getResultUrl(selectedNode);
     if (!url) {
-      message.warning('暂无可操作的媒体');
+      toast.warning('暂无可操作的媒体');
       return;
     }
     if (selectedNode.type === 'video') {
@@ -358,12 +433,12 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     if (!selectedNode) return;
     const url = getResultUrl(selectedNode);
     if (!url) {
-      message.warning('暂无可用的图片');
+      toast.warning('暂无可用的图片');
       return;
     }
     setAttachedAssets(prev => {
       if (prev.some(a => a.fullUrl === url)) {
-        message.info('该图片已在附件中，请选择视频模型并生成');
+        toast.info('该图片已在附件中，请选择视频模型并生成');
         return prev;
       }
       return [...prev, {
@@ -403,7 +478,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     }]);
     setEditorOpen(false);
     setVideoEditorOpen(false);
-    message.success('编辑完成，已加入素材');
+    toast.success('编辑完成，已加入素材');
   }, [selectedNode, setNodes, setAttachedAssets]);
 
   /** 重新生成 - 将原提示词填入 prompt，并恢复附件素材 */
@@ -448,7 +523,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
     if (!selectedNode) return;
     const url = getResultUrl(selectedNode);
     if (!url) {
-      message.warning('暂无可下载的结果');
+      toast.warning('暂无可下载的结果');
       return;
     }
     try {
@@ -518,15 +593,73 @@ const GenerationLogWidget: React.FC = React.memo(() => {
       }
     } catch (err: any) {
       const errMsg = err?.response?.data?.error?.message || err?.response?.data?.message || err?.message || '删除失败';
-      message.error(`删除失败: ${errMsg}`);
+      toast.error(`删除失败: ${errMsg}`);
     }
   }, [nodes, selectedNodeId, setSelectedNodeId, setNodes, loadStorageStats, _isLight]);
 
   /** 删除节点 */
   const handleDelete = useCallback((e?: React.MouseEvent) => {
-    if (!selectedNode) return;
-    performDeleteNode(selectedNode, e);
-  }, [selectedNode, performDeleteNode]);
+    const actualNode = nodes.find(n => n.id === selectedNodeId);
+    if (!actualNode) return;
+    performDeleteNode(actualNode, e);
+  }, [nodes, selectedNodeId, performDeleteNode]);
+
+  /** 批量删除节点 */
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedLogNodeIds.length === 0) return;
+
+    try {
+      const nodesToDelete = nodes.filter(n => selectedLogNodeIds.includes(n.id));
+
+      const deletePromises = nodesToDelete.map(async (nodeToDelete) => {
+        const isAsset = nodeToDelete.id?.startsWith('asset-');
+        let dbAssetId: string | null = null;
+        if (isAsset) {
+          const match = nodeToDelete.id.match(/^asset-(\d+)$/);
+          if (match) {
+            dbAssetId = match[1];
+          }
+        }
+
+        if (dbAssetId) {
+          try {
+            await request.delete(`/playground/assets/${dbAssetId}`);
+          } catch (delErr: any) {
+            const errMsg = delErr?.response?.data?.error?.message || delErr?.response?.data?.message || delErr?.message || '';
+            if (delErr?.response?.status === 404 || errMsg.includes('不存在')) {
+              console.warn(`[Playground] Asset ${dbAssetId} already deleted on server.`);
+            } else {
+              throw delErr;
+            }
+          }
+        }
+      });
+
+      await Promise.all(deletePromises);
+
+      const newNodes = nodes.filter(n => !selectedLogNodeIds.includes(n.id));
+      setNodes(newNodes);
+
+      if (selectedNodeId && selectedLogNodeIds.includes(selectedNodeId)) {
+        setSelectedNodeId(null);
+      }
+
+      setSelectedLogNodeIds([]);
+      setIsEditMode(false);
+
+      try {
+        await saveCanvasRef.current?.(newNodes);
+        await loadStorageStats();
+      } catch (err) {
+        console.error('保存画布状态或加载存储用量失败', err);
+      }
+
+      toast.success('删除成功');
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.error?.message || err?.response?.data?.message || err?.message || '批量删除失败';
+      toast.error(`批量删除失败: ${errMsg}`);
+    }
+  }, [selectedLogNodeIds, nodes, selectedNodeId, setSelectedNodeId, setNodes, loadStorageStats]);
 
   const isLocalAsset = selectedNode?.id?.startsWith('local-asset-');
 
@@ -595,7 +728,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
       key: 'img2video',
       icon: <VideoCameraOutlined />,
       label: selectedNode.type === 'video' ? '延长视频' : '生成视频',
-      onClick: selectedNode.type === 'video' ? () => message.info('延长视频功能开发中...') : handleGenerateVideo,
+      onClick: selectedNode.type === 'video' ? () => toast.info('延长视频功能开发中...') : handleGenerateVideo,
       disabled: !isCompleted || (selectedNode.type !== 'image' && selectedNode.type !== 'video') || !hasResult
     },
     { key: 'regen', icon: <ReloadOutlined />, label: '重新生成', onClick: handleRegenerate, disabled: !selectedNode.taskData?.prompt },
@@ -618,11 +751,11 @@ const GenerationLogWidget: React.FC = React.memo(() => {
           top: isMobile ? 72 : 80,
           width: isMobile ? 'calc(100vw - 24px)' : 320,
           height: isMobile ? 'calc(100vh - 240px)' : 'auto',
-          background: _isLight ? 'rgba(255,255,255,0.9)' : '#1e1f20',
-          borderRadius: 24,
-          border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746',
-          boxShadow: _isLight ? '0 4px 20px rgba(0,0,0,0.08)' : '0 4px 6px rgba(0,0,0,0.3)',
-          backdropFilter: 'blur(24px)',
+          background: _isLight ? 'rgba(255,255,255,0.75)' : 'rgba(20,20,22,0.8)',
+          borderRadius: 28,
+          border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)',
+          boxShadow: _isLight ? '0 10px 40px -10px rgba(0,0,0,0.1)' : '0 15px 50px -12px rgba(0,0,0,0.5)',
+          backdropFilter: 'blur(30px) saturate(180%)',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
           zIndex: 1000,
           maxHeight: isMobile ? 'calc(100vh - 240px)' : 'calc(100vh - 140px)',
@@ -631,100 +764,250 @@ const GenerationLogWidget: React.FC = React.memo(() => {
       >
         {/* 标题栏 */}
         <div style={{
-          padding: '0 12px', height: 48, minHeight: 48,
-          borderBottom: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid #444746',
+          padding: isMobile ? '16px 16px 8px' : '20px 24px 8px',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)',
           userSelect: 'none',
         }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {selectedNode && (
-              isMobile ? (
+              <div
+                onClick={() => setSelectedNodeId(null)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 28, height: 28, borderRadius: '50%', cursor: 'pointer',
+                  color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.7)',
+                  background: 'transparent',
+                  transition: 'all 0.2s',
+                  marginLeft: -4, marginRight: 2
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <ArrowLeftOutlined style={{ fontSize: 13 }} />
+              </div>
+            )}
+            <MessageCircle size={16} style={{ color: _isLight ? '#09090b' : '#ffffff', opacity: 0.8 }} />
+            <Text style={{ color: _isLight ? '#09090b' : '#ffffff', fontSize: 15, fontWeight: 600, letterSpacing: '-0.2px' }}>
+              {selectedNode ? '素材详情' : '素材创作记录'}
+            </Text>
+            {!selectedNode && (
+              <span style={{
+                fontSize: 11,
+                color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)',
+                background: _isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)',
+                padding: '2px 6px',
+                borderRadius: 12,
+                marginLeft: 4,
+                fontWeight: 500
+              }}>
+                {logNodes.length}/{storageStats?.max_assets || 10}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {!selectedNode && logNodes.length > 0 && (
+              <Tooltip title={isEditMode ? '退出管理' : '批量管理'} placement="bottom">
                 <div
-                  onClick={() => setSelectedNodeId(null)}
                   style={{
+                    width: 28, height: 28, borderRadius: '50%',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    width: 32, height: 32, borderRadius: 16, cursor: 'pointer',
-                    color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.7)',
-                    background: _isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)',
+                    cursor: 'pointer',
+                    color: isEditMode 
+                      ? (_isLight ? '#ffffff' : '#000000') 
+                      : (_isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)'),
+                    background: isEditMode 
+                      ? (_isLight ? '#000000' : '#ffffff') 
+                      : 'transparent',
                     transition: 'all 0.2s',
-                    marginLeft: -4, marginRight: 4
+                  }}
+                  onClick={() => {
+                    setIsEditMode(!isEditMode);
+                    setSelectedLogNodeIds([]);
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isEditMode) {
+                      e.currentTarget.style.color = _isLight ? '#000' : '#fff';
+                      e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isEditMode) {
+                      e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+                      e.currentTarget.style.background = 'transparent';
+                    }
                   }}
                 >
-                  <ArrowLeftOutlined style={{ fontSize: 15 }} />
+                  {isEditMode ? (
+                    <CheckOutlined style={{ fontSize: 13 }} />
+                  ) : (
+                    <EditOutlined style={{ fontSize: 13 }} />
+                  )}
                 </div>
-              ) : (
-                <Tooltip title="返回列表">
-                  <div
-                    onClick={() => setSelectedNodeId(null)}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      width: 24, height: 24, borderRadius: 4, cursor: 'pointer',
-                      color: _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.6)', transition: 'all 0.2s',
-                      marginLeft: -4, marginRight: 2
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = _isLight ? '#000' : '#fff'; e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.6)'; e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <ArrowLeftOutlined style={{ fontSize: 13 }} />
-                  </div>
-                </Tooltip>
-              )
+              </Tooltip>
             )}
-            <MessageCircle size={16} style={{ color: _isLight ? '#333' : '#fff' }} />
-            <Text style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: 500 }}>
-              {selectedNode ? '素材详情' : `项目创作记录 (${nodes.length}/${storageStats?.max_assets || 10})`}
-            </Text>
-          </div>
-          {isMobile ? (
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.7)',
-                borderRadius: 18,
-                background: _isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)',
-                transition: 'all 0.2s',
-                marginRight: -4
-              }}
-              onClick={handleClose}
-            >
-              <CloseOutlined style={{ fontSize: 16 }} />
-            </div>
-          ) : (
-            <Tooltip title="关闭">
+            <Tooltip title={isGenLogPinned ? '取消固定' : '固定面板'} placement="bottom">
               <div
-                style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)', borderRadius: 4, transition: 'all 0.2s' }}
-                onClick={handleClose}
-                onMouseEnter={(e) => { e.currentTarget.style.color = _isLight ? '#000' : '#fff'; e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.5)'; e.currentTarget.style.background = 'transparent'; }}
+                style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: isGenLogPinned 
+                    ? (_isLight ? '#ffffff' : '#000000') 
+                    : (_isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)'),
+                  background: isGenLogPinned 
+                    ? (_isLight ? '#000000' : '#ffffff') 
+                    : 'transparent',
+                  transition: 'all 0.2s',
+                  marginRight: -4
+                }}
+                onClick={() => setIsGenLogPinned(!isGenLogPinned)}
+                onMouseEnter={(e) => {
+                  if (!isGenLogPinned) {
+                    e.currentTarget.style.color = _isLight ? '#000' : '#fff';
+                    e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isGenLogPinned) {
+                    e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+                    e.currentTarget.style.background = 'transparent';
+                  }
+                }}
               >
-                <CloseOutlined />
+                {isGenLogPinned ? (
+                  <PushpinFilled style={{ fontSize: 13 }} />
+                ) : (
+                  <PushpinOutlined style={{ fontSize: 13 }} />
+                )}
               </div>
             </Tooltip>
-          )}
+          </div>
         </div>
 
         {/* 内容区域 */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px' : '20px 5px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '12px 16px' : '10px 20px' }}>
 
           {/* 如果没有选中节点，显示历史记录列表 */}
           {!selectedNode ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {nodes.length === 0 ? (
-                <div style={{ textAlign: 'center', color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', padding: '40px 0', fontSize: 13 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {isEditMode && logNodes.length > 0 && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '4px 0 12px 0',
+                  borderBottom: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
+                  marginBottom: 8,
+                  fontSize: 12,
+                  color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Checkbox
+                      checked={selectedLogNodeIds.length === logNodes.length && logNodes.length > 0}
+                      indeterminate={selectedLogNodeIds.length > 0 && selectedLogNodeIds.length < logNodes.length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedLogNodeIds(logNodes.map(n => n.id));
+                        } else {
+                          setSelectedLogNodeIds([]);
+                        }
+                      }}
+                    >
+                      全选
+                    </Checkbox>
+                    <span style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
+                      已选 {selectedLogNodeIds.length} 项
+                    </span>
+                  </div>
+                  
+                  <Popconfirm
+                    title={`确认删除选中的 ${selectedLogNodeIds.length} 个素材吗？`}
+                    description="此操作不可恢复，对应节点也将从画布中移除。"
+                    disabled={selectedLogNodeIds.length === 0}
+                    onConfirm={handleBatchDelete}
+                    okText="确定"
+                    cancelText="取消"
+                    okButtonProps={{ danger: true, size: 'small' }}
+                    cancelButtonProps={{ size: 'small' }}
+                  >
+                    <Button
+                      type="text"
+                      danger
+                      disabled={selectedLogNodeIds.length === 0}
+                      size="small"
+                      icon={<DeleteOutlined style={{ fontSize: 13 }} />}
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 12,
+                      }}
+                    >
+                      批量删除
+                    </Button>
+                  </Popconfirm>
+                </div>
+              )}
+              {logNodes.length === 0 ? (
+                <div style={{ textAlign: 'center', color: _isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)', padding: '30px 0', fontSize: 13 }}>
                   暂无创作记录
                 </div>
               ) : (
-                [...nodes].sort((a, b) => {
-                  const ta = a.taskData?.created_at ? new Date(a.taskData.created_at).getTime() : 0;
-                  const tb = b.taskData?.created_at ? new Date(b.taskData.created_at).getTime() : 0;
-                  return tb - ta;
-                }).map(node => {
+                 [...logNodes].sort((a, b) => {
+                    const getMs = (node: any) => {
+                      const dateStr = node.taskData?.created_at;
+                      if (dateStr) {
+                        const ms = safeParseDate(dateStr).getTime();
+                        if (!isNaN(ms)) return ms;
+                      }
+                      if (node.id) {
+                        if (node.id.startsWith('node-')) {
+                          const ts = parseInt(node.id.replace('node-', ''), 10);
+                          if (!isNaN(ts)) return ts;
+                        }
+                        if (node.id.startsWith('local-asset-')) {
+                          const parts = node.id.split('-');
+                          const ts = parseInt(parts[2], 10);
+                          if (!isNaN(ts)) return ts;
+                        }
+                        if (/^\d{13}/.test(node.id)) {
+                          const ts = parseInt(node.id.substring(0, 13), 10);
+                          if (!isNaN(ts)) return ts;
+                        }
+                      }
+                      return 0;
+                    };
+                    const ta = getMs(a);
+                    const tb = getMs(b);
+                    if (ta !== tb) {
+                      return tb - ta;
+                    }
+                    // ID比较回退（避免字符串localeCompare产生的20比9小的问题）
+                    const getNumericId = (idStr: string) => {
+                      if (idStr.startsWith('asset-')) {
+                        return parseInt(idStr.replace('asset-', ''), 10) || 0;
+                      }
+                      if (idStr.startsWith('node-')) {
+                        return parseInt(idStr.replace('node-', ''), 10) || 0;
+                      }
+                      if (idStr.startsWith('local-asset-')) {
+                        const parts = idStr.split('-');
+                        return parseInt(parts[2], 10) || 0;
+                      }
+                      if (/^\d{13}/.test(idStr)) {
+                        return parseInt(idStr.substring(0, 13), 10) || 0;
+                      }
+                      return 0;
+                    };
+                    const numA = getNumericId(a.id);
+                    const numB = getNumericId(b.id);
+                    if (numA !== numB) {
+                      return numB - numA;
+                    }
+                    return b.id.localeCompare(a.id);
+                  }).map(node => {
                   const url = getResultUrl(node);
                   const sInfo = statusInfo(node);
 
@@ -741,18 +1024,59 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                   return (
                     <div
                       key={node.id}
-                      onClick={() => setSelectedNodeId(node.id)}
-                      style={{
-                        display: 'flex', gap: 12, padding: 12, borderRadius: 12,
-                        background: _isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)', border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid #444746',
-                        cursor: 'pointer', transition: 'all 0.2s',
+                      onClick={() => {
+                        if (isEditMode) {
+                          setSelectedLogNodeIds(prev =>
+                            prev.includes(node.id)
+                              ? prev.filter(id => id !== node.id)
+                              : [...prev, node.id]
+                          );
+                        } else {
+                          setSelectedNodeId(node.id);
+                        }
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)'; }}
+                      style={{
+                        display: 'flex', gap: 10, padding: '10px 0', borderRadius: 0,
+                        background: isEditMode && selectedLogNodeIds.includes(node.id)
+                          ? (_isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.04)')
+                          : 'transparent',
+                        border: 'none',
+                        borderBottom: _isLight ? '1px solid rgba(0,0,0,0.05)' : '1px solid rgba(255,255,255,0.05)',
+                        cursor: 'pointer', transition: 'all 0.2s',
+                        alignItems: 'center',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!(isEditMode && selectedLogNodeIds.includes(node.id))) {
+                          e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!(isEditMode && selectedLogNodeIds.includes(node.id))) {
+                          e.currentTarget.style.background = 'transparent';
+                        }
+                      }}
                     >
+                      {isEditMode && (
+                        <div 
+                          style={{ display: 'flex', alignItems: 'center', marginRight: 2, paddingLeft: 4 }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={selectedLogNodeIds.includes(node.id)}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setSelectedLogNodeIds(prev =>
+                                checked
+                                  ? [...prev, node.id]
+                                  : prev.filter(id => id !== node.id)
+                              );
+                            }}
+                          />
+                        </div>
+                      )}
                       {/* 缩略图 */}
                       <div style={{
-                        width: 48, height: 48, borderRadius: 8, flexShrink: 0,
+                        width: 40, height: 40, borderRadius: 6, flexShrink: 0,
                         background: _isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         overflow: 'hidden', border: _isLight ? '1px solid rgba(0,0,0,0.05)' : '1px solid rgba(255,255,255,0.08)',
@@ -765,9 +1089,9 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                             <SafeImage src={displayUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           )
                         ) : (
-                          node.type === 'video' ? <VideoCameraOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.2)', fontSize: 20 }} /> :
-                            node.type === 'image' ? <PictureOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.2)', fontSize: 20 }} /> :
-                              <FileTextOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.2)', fontSize: 20 }} />
+                          node.type === 'video' ? <VideoCameraOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.2)', fontSize: 16 }} /> :
+                            node.type === 'image' ? <PictureOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.2)', fontSize: 16 }} /> :
+                              <FileTextOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.2)', fontSize: 16 }} />
                         )}
 
                         {/* 悬浮加载遮罩 */}
@@ -777,12 +1101,12 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                             background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center'
                           }}>
-                            <LoadingOutlined style={{ color: '#fff', fontSize: 16 }} />
+                            <LoadingOutlined style={{ color: '#fff', fontSize: 14 }} />
                           </div>
                         )}
                       </div>
                       {/* 详情 */}
-                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4 }}>
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
                         <Text style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           <RichPromptView node={node} isLight={_isLight} />
                         </Text>
@@ -797,46 +1121,33 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                         </div>
                       </div>
                       {/* 删除按钮 */}
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          alignSelf: 'center',
-                          flexShrink: 0,
-                          marginLeft: 4,
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                        }}
-                      >
-                        <Popconfirm
-                          title="确定删除？"
-                          onConfirm={async (e) => {
-                            e?.stopPropagation();
-                            await performDeleteNode(node, e);
+                      {!isEditMode && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            alignSelf: 'center',
+                            flexShrink: 0,
+                            marginLeft: 4,
                           }}
-                          onCancel={(e) => e?.stopPropagation()}
-                          okText="确定"
-                          cancelText="取消"
-                          okButtonProps={{ danger: true, size: 'small' }}
-                          cancelButtonProps={{ size: 'small' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
                         >
-                          {isMobile ? (
-                            <div
-                              style={{
-                                width: 32, height: 32, borderRadius: 8,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.6)',
-                                cursor: 'pointer', transition: 'all 0.2s',
-                              }}
-                              onMouseEnter={(e: any) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = _isLight ? '#000' : '#fff'; }}
-                              onMouseLeave={(e: any) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.6)'; }}
-                            >
-                              <DeleteOutlined style={{ fontSize: 15 }} />
-                            </div>
-                          ) : (
-                            <Tooltip title="删除记录">
+                          <Popconfirm
+                            title="确定删除？"
+                            onConfirm={async (e) => {
+                              e?.stopPropagation();
+                              await performDeleteNode(node, e);
+                            }}
+                            onCancel={(e) => e?.stopPropagation()}
+                            okText="确定"
+                            cancelText="取消"
+                            okButtonProps={{ danger: true, size: 'small' }}
+                            cancelButtonProps={{ size: 'small' }}
+                          >
+                            {isMobile ? (
                               <div
                                 style={{
                                   width: 28, height: 28, borderRadius: 6,
@@ -847,12 +1158,27 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                                 onMouseEnter={(e: any) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = _isLight ? '#000' : '#fff'; }}
                                 onMouseLeave={(e: any) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.6)'; }}
                               >
-                                <DeleteOutlined style={{ fontSize: 14 }} />
+                                <DeleteOutlined style={{ fontSize: 13 }} />
                               </div>
-                            </Tooltip>
-                          )}
-                        </Popconfirm>
-                      </div>
+                            ) : (
+                              <Tooltip title="删除记录">
+                                <div
+                                  style={{
+                                    width: 24, height: 24, borderRadius: 4,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.6)',
+                                    cursor: 'pointer', transition: 'all 0.2s',
+                                  }}
+                                  onMouseEnter={(e: any) => { e.currentTarget.style.background = _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = _isLight ? '#000' : '#fff'; }}
+                                  onMouseLeave={(e: any) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.6)'; }}
+                                >
+                                  <DeleteOutlined style={{ fontSize: 13 }} />
+                                </div>
+                              </Tooltip>
+                            )}
+                          </Popconfirm>
+                        </div>
+                      )}
                     </div>
                   );
                 })
@@ -862,11 +1188,12 @@ const GenerationLogWidget: React.FC = React.memo(() => {
             <>
               {/* 提示词区块 */}
               <div style={{
-                background: _isLight ? 'rgba(0,0,0,0.03)' : 'rgba(0,0,0,0.3)', borderRadius: 14, padding: '14px 16px',
-                marginBottom: 12, position: 'relative',
+                background: 'transparent', borderRadius: 0, padding: '4px 0 16px 0',
+                borderBottom: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
+                marginBottom: 16, position: 'relative',
               }}>
                 <div style={{
-                  color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.8)', fontSize: 14, lineHeight: '24px',
+                  color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 13, lineHeight: '22px',
                   wordBreak: 'break-word', display: 'block',
                   paddingRight: selectedNode.taskData?.prompt ? 28 : 0,
                 }}>
@@ -887,9 +1214,9 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                           textarea.select();
                           document.execCommand('copy');
                           document.body.removeChild(textarea);
-                          message.success('提示词已复制');
+                          toast.success('提示词已复制');
                         } catch {
-                          message.error('复制失败');
+                          toast.error('复制失败');
                         }
                       }}
                       style={{
@@ -919,9 +1246,9 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                             textarea.select();
                             document.execCommand('copy');
                             document.body.removeChild(textarea);
-                            message.success('提示词已复制');
+                            toast.success('提示词已复制');
                           } catch {
-                            message.error('复制失败');
+                            toast.error('复制失败');
                           }
                         }}
                         style={{
@@ -1115,9 +1442,10 @@ const GenerationLogWidget: React.FC = React.memo(() => {
               {/* 参考素材区块 */}
               {(selectedNode.taskData?.attached_urls?.length > 0 || selectedNode.taskData?.attached_url) && (
                 <div style={{
-                  background: _isLight ? 'rgba(0,0,0,0.03)' : 'rgba(0,0,0,0.2)', borderRadius: 12, padding: '12px 14px',
+                  background: 'transparent', borderRadius: 0, padding: '16px 0',
                   marginBottom: 16,
-                  border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
+                  border: 'none',
+                  borderBottom: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
                 }}>
                   <Text style={{ color: _isLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 10 }}>参考素材</Text>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -1186,8 +1514,8 @@ const GenerationLogWidget: React.FC = React.memo(() => {
 
               {/* 模型信息卡 */}
               <div style={{
-                background: _isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)', borderRadius: 14, padding: '14px 16px',
-                border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
+                background: 'transparent', borderRadius: 0, padding: '16px 0',
+                border: 'none',
                 marginBottom: 16,
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -1280,10 +1608,11 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                 if (!lastFrameUrl) return null;
                 return (
                   <div style={{
-                    background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: '12px 14px',
-                    marginBottom: 16, border: '1px solid rgba(255,255,255,0.06)',
+                    background: 'transparent', borderRadius: 0, padding: '16px 0',
+                    marginBottom: 16, border: 'none',
+                    borderTop: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)',
                   }}>
-                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 10 }}>生成尾帧</Text>
+                    <Text style={{ color: _isLight ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 10 }}>生成尾帧</Text>
                     <img
                       src={lastFrameUrl}
                       alt="生成尾帧"

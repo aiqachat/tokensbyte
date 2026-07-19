@@ -49,7 +49,6 @@ async def main():
         "locales/zh.json",
         "pages/Plugins/AssetManager/locales/zh.json",
         "pages/Plugins/AssetManagerIntl/locales/zh.json",
-        "pages/Plugins/RouterFlow/locales/zh.json",
         "pages/Plugins/Playground/locales/zh.json",
         "pages/Plugins/TeamMarketing/locales/zh.json",
         "pages/Plugins/ModelMarketplace/locales/zh.json"

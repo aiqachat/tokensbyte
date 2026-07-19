@@ -21,9 +21,12 @@ services:
       - RUST_LOG=${RUST_LOG:-info}
       - CARGO_TARGET_DIR=/usr/src/app/target
       - DATA_DIR=/usr/src/app/data
+    command: cargo watch -c -w src -x run
     volumes:
       # 将宿主机的后台源码映射入容器内，以便感知文件变动
       - ./backend:/usr/src/app
+      # 挂载前端源码目录，让后端编译时能成功包含 include_str! 的前端国际化文件
+      - ./frontend:/usr/src/frontend:ro
       # 将 Git 挂载入内，允许构建过程能够提取版本日志
       - ./.git:/usr/src/app/.git:ro
       # 映射独立的 target 构建缓存
@@ -60,6 +63,27 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
 
+  postgres-os:
+    image: postgres:18.4-alpine
+    container_name: ${PROJECT_NAME:-tokensbyte}-postgres-os
+    command: postgres -c shared_buffers=128MB
+    environment:
+      - POSTGRES_USER=tokensapi
+      - POSTGRES_PASSWORD=tokensapi
+      - POSTGRES_DB=tokensapi
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data-os:/var/lib/postgresql
+    networks:
+      - app-network
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U tokensapi" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   frontend:
     build:
       context: ./frontend
@@ -82,7 +106,7 @@ services:
       - app-network
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     restart: always
 
 volumes:
@@ -92,3 +116,6 @@ volumes:
     name: ${PROJECT_NAME:-tokensbyte}-cargo-registry
   frontend-node-modules:
     name: ${PROJECT_NAME:-tokensbyte}-frontend-node-modules
+
+  postgres-data-os:
+    name: ${PROJECT_NAME:-tokensbyte}-postgres-data-os

@@ -29,19 +29,38 @@ impl StripeClient {
         let amount_minor = self.to_minor_units(amount, currency);
         let currency_lower = currency.to_lowercase();
 
-        let params = [
+        let mut params = vec![
             ("mode", "payment".to_string()),
             ("payment_method_types[]", "card".to_string()),
-            ("line_items[0][price_data][currency]", currency_lower.clone()),
-            ("line_items[0][price_data][product_data][name]", description.to_string()),
-            ("line_items[0][price_data][unit_amount]", amount_minor.to_string()),
+            (
+                "line_items[0][price_data][currency]",
+                currency_lower.clone(),
+            ),
+            (
+                "line_items[0][price_data][product_data][name]",
+                description.to_string(),
+            ),
+            (
+                "line_items[0][price_data][unit_amount]",
+                amount_minor.to_string(),
+            ),
             ("line_items[0][quantity]", "1".to_string()),
             ("client_reference_id", out_trade_no.to_string()),
             ("success_url", success_url.to_string()),
             ("cancel_url", cancel_url.to_string()),
+            ("locale", "auto".to_string()),
         ];
 
-        let resp = self.http
+        // 支付宝支付支持的币种列表
+        let alipay_currencies = [
+            "aud", "cad", "cny", "eur", "gbp", "hkd", "jpy", "myr", "nzd", "sgd", "usd",
+        ];
+        if alipay_currencies.contains(&currency_lower.as_str()) {
+            params.push(("payment_method_types[]", "alipay".to_string()));
+        }
+
+        let resp = self
+            .http
             .post("https://api.stripe.com/v1/checkout/sessions")
             .basic_auth(&self.settings.secret_key, None::<&str>)
             .form(&params)
@@ -53,13 +72,18 @@ impl StripeClient {
         let body = resp.text().await.unwrap_or_default();
 
         if !status.is_success() {
-            return Err(anyhow!("Stripe Checkout Session 创建失败 (HTTP {}): {}", status, body));
+            return Err(anyhow!(
+                "Stripe Checkout Session 创建失败 (HTTP {}): {}",
+                status,
+                body
+            ));
         }
 
         let data: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| anyhow!("Stripe 响应解析失败: {} body={}", e, body))?;
 
-        let session_url = data["url"].as_str()
+        let session_url = data["url"]
+            .as_str()
             .ok_or_else(|| anyhow!("Stripe 响应中缺少 url 字段"))?
             .to_string();
 
@@ -70,11 +94,7 @@ impl StripeClient {
 
     /// 验证 Stripe Webhook 签名
     /// https://docs.stripe.com/webhooks#verify-official-libraries
-    pub fn verify_webhook_signature(
-        &self,
-        payload: &str,
-        sig_header: &str,
-    ) -> Result<bool> {
+    pub fn verify_webhook_signature(&self, payload: &str, sig_header: &str) -> Result<bool> {
         let webhook_secret = &self.settings.webhook_secret;
         if webhook_secret.is_empty() {
             return Err(anyhow!("Stripe Webhook Secret 未配置"));
@@ -117,7 +137,10 @@ impl StripeClient {
     /// 将金额转换为 Stripe 最小单位
     /// 零小数点货币（如 JPY, KRW）不需要乘以 100
     fn to_minor_units(&self, amount: f64, currency: &str) -> i64 {
-        let zero_decimal = ["bif","clp","djf","gnf","jpy","kmf","krw","mga","pyg","rwf","ugx","vnd","vuv","xaf","xof","xpf"];
+        let zero_decimal = [
+            "bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf", "ugx", "vnd",
+            "vuv", "xaf", "xof", "xpf",
+        ];
         let cur = currency.to_lowercase();
         if zero_decimal.contains(&cur.as_str()) {
             amount.round() as i64

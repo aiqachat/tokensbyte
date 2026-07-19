@@ -7,8 +7,10 @@ import { useThemeStore } from "../../store/theme";
 import { ConfigProvider, theme, Tooltip } from 'antd';
 import { useParams, Navigate } from 'react-router-dom';
 import { PlaygroundProvider, usePlayground, useCanvas } from './context/PlaygroundContext';
+import { useGlobalTaskPolling } from './hooks/useGeneration';
 import InfiniteCanvas from './components/InfiniteCanvas';
 import ChatPanel from './components/ChatPanel';
+import AgentChatPanel from './components/AgentChatPanel';
 import FloatingHeader from './components/FloatingHeader';
 import FloatingToolbar from './components/FloatingToolbar';
 import PromptInput from './components/PromptInput';
@@ -18,6 +20,7 @@ import GenerationLogWidget from './components/GenerationLogWidget';
 import ModelDrawer from './components/ModelDrawer';
 import TokenModal from './components/TokenModal';
 import ZoomIndicator from './components/ZoomIndicator';
+import AgentOrb from './components/AgentOrb';
 import { ControlOutlined } from '@ant-design/icons';
 import './Playground.css';
 
@@ -32,8 +35,11 @@ import './Playground.css';
 const PlaygroundLayout: React.FC = () => {
   const { themeMode } = useThemeStore();
   const _isLight = themeMode === 'light';
-  const { currentModel, isSettingsWidgetVisible, setIsSettingsWidgetVisible, isModelDrawerVisible, setIsModelDrawerVisible, isGenLogVisible, setIsGenLogVisible } = usePlayground();
+  const { currentModel, isSettingsWidgetVisible, setIsSettingsWidgetVisible, isModelDrawerVisible, setIsModelDrawerVisible, isGenLogVisible, setIsGenLogVisible, pageMode, setPageMode, advancedNodesConfig } = usePlayground();
   const { setSelectedNodeId } = useCanvas();
+
+  // 挂载全局常驻任务轮询与恢复服务，确保在 node 节点模式下轮询逻辑也能持续运行
+  useGlobalTaskPolling();
 
   const [isMobile, setIsMobile] = React.useState(window.innerWidth <= 768);
   React.useEffect(() => {
@@ -62,7 +68,7 @@ const PlaygroundLayout: React.FC = () => {
           <InfiniteCanvas isMobile={isMobile} />
         )}
         {!isMobile && <FloatingToolbar />}
-        <PromptInput />
+        {pageMode !== 'node' && pageMode !== 'agent' && <PromptInput />}
         <FloatingHeader />
         {!isChatMode && !isMobile && <ZoomIndicator />}
         <ResourceManagerWidget />
@@ -82,12 +88,13 @@ const PlaygroundLayout: React.FC = () => {
               position: 'absolute',
               top: isMobile ? 12 : 24,
               right: isMobile ? 12 : 24,
-              width: isMobile ? 40 : 48,
-              height: isMobile ? 40 : 48,
-              borderRadius: isMobile ? 12 : 16,
-              background: _isLight ? '#fff' : '#1e1f20',
-              border: _isLight ? '2px solid #f0f0f0' : '2px solid #333',
-              boxShadow: _isLight ? '0 2px 8px rgba(0,0,0,0.04)' : '0 2px 8px rgba(0,0,0,0.2)',
+              width: isMobile ? 32 : 38,
+              height: isMobile ? 32 : 38,
+              borderRadius: '50%',
+              background: _isLight ? 'rgba(255,255,255,0.85)' : '#1e1f20',
+              backdropFilter: 'blur(12px)',
+              border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid #444746',
+              boxShadow: _isLight ? '0 4px 12px rgba(0,0,0,0.08)' : '0 4px 6px rgba(0,0,0,0.3)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -99,23 +106,36 @@ const PlaygroundLayout: React.FC = () => {
               transition: 'all 0.2s',
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.background = _isLight ? '#f4f5f7' : '#2a2b2d';
+              e.currentTarget.style.background = _isLight ? 'rgba(244,245,247,0.9)' : '#2a2b2d';
               e.currentTarget.style.color = _isLight ? '#202124' : '#e8eaed';
-              e.currentTarget.style.borderColor = _isLight ? '#e0e0e0' : '#444';
+              e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.2)' : '#666';
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = _isLight ? '#fff' : '#1e1f20';
+              e.currentTarget.style.background = _isLight ? 'rgba(255,255,255,0.85)' : '#1e1f20';
               e.currentTarget.style.color = _isLight ? '#5f6368' : '#9aa0a6';
-              e.currentTarget.style.borderColor = _isLight ? '#f0f0f0' : '#333';
+              e.currentTarget.style.borderColor = _isLight ? 'rgba(0,0,0,0.1)' : '#444746';
             }}
           >
-            <ControlOutlined style={{ fontSize: isMobile ? 20 : 24, fontWeight: 'bold' }} />
+            <ControlOutlined style={{ fontSize: isMobile ? 18 : 20, fontWeight: 'bold' }} />
           </div>
         </Tooltip>
       </div>
 
-      {/* ═══════════ 右侧边栏层 ═══════════ */}
+      {/* ═══════════ 悬浮侧边栏配置面板 */}
       <SettingsWidget />
+
+      {/* ═══════════ AI 智能体抽屉层 ═══════════ */}
+      {pageMode === 'agent' && (
+        <AgentChatPanel />
+      )}
+
+      {/* ═══════════ 右下角智能体触发按钮 ═══════════ */}
+      {advancedNodesConfig?.agent_mode_enabled && !isChatMode && !isMobile && (
+        <AgentOrb 
+          isActive={pageMode === 'agent'} 
+          onClick={() => setPageMode(pageMode === 'agent' ? 'normal' : 'agent')} 
+        />
+      )}
 
       {/* 点击外部关闭 ModelDrawer 的透明遮罩层 */}
       <div 
@@ -186,7 +206,7 @@ const Playground: React.FC = () => {
     <ConfigProvider theme={{
       algorithm: themeMode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
       token: {
-        colorPrimary: themeMode === 'dark' ? '#fff' : '#1677ff',
+        colorPrimary: themeMode === 'dark' ? '#fafafa' : '#18181b',
         borderRadius: 12,
         colorBgContainer: themeMode === 'dark' ? '#1E1F22' : '#fff',
         colorBorder: themeMode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'

@@ -16,14 +16,15 @@
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18.4-alpine
     container_name: ${PROJECT_NAME:-tokensbyte}-postgres
+    command: postgres -c shared_buffers=512MB -c work_mem=32MB -c maintenance_work_mem=128MB -c effective_cache_size=1536MB -c synchronous_commit=off -c checkpoint_completion_target=0.9 -c wal_buffers=16MB -c random_page_cost=1.1
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-tokensapi}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-tokensapi}
       - POSTGRES_DB=${POSTGRES_DB:-tokensapi}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     # 可选：暴露端口到宿主机，方便本地工具连接（如 pgAdmin, DBeaver 等）
     # 如需暴露，取消下面两行注释
     # ports:
@@ -32,7 +33,7 @@ services:
       - app-network
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tokensapi}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tokensapi}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -42,23 +43,34 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    pull_policy: never
+      args:
+        # 0=容器内编译（默认，跨平台安全）；1=使用根目录 tokensbyte-server-bin（需 Linux ELF 且架构匹配）
+        USE_PREBUILT: ${USE_PREBUILT:-0}
+    pull_policy: missing
     container_name: ${PROJECT_NAME:-tokensbyte}-backend
     stop_grace_period: 120s
     environment:
       - HOST=0.0.0.0
       - PORT=3000
       - DATABASE_URL=${DATABASE_URL:-postgres://tokensapi:tokensapi@postgres:5432/tokensapi}
-      - JWT_SECRET=${JWT_SECRET:-tokensbyte-change-me-in-production}
+      - JWT_SECRET=${JWT_SECRET:-} # 可选：手动指定，留空则自动生成强随机密钥并持久化
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-} # 可选：手动指定，留空则自动生成随机密码并打印到控制台
+      # - CORS_ORIGINS=${CORS_ORIGINS}                    # 生产环境设置允许的前端域名（逗号分隔），如: https://example.com
       - REGISTER_ENABLED=${REGISTER_ENABLED:-true}
       - RUST_LOG=${RUST_LOG:-info}
       - DATA_DIR=/app/data
-    command: sh -c "/app/tokensbyte-server 2>&1 | tee -a /app/logs/backend.log"
+      - TZ=Asia/Shanghai
+      - LOG_DIR=/app/logs
+    command: /app/tokensbyte-server
     volumes:
       - ./data:/app/data
       - ./logs/backend:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "6"
     # 不暴露端口到宿主机，仅通过前端 nginx 反向代理访问
     networks:
       - app-network
@@ -67,7 +79,7 @@ services:
         condition: service_healthy
     restart: always
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health" ]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -86,7 +98,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    pull_policy: never
+    pull_policy: missing
     container_name: ${PROJECT_NAME:-tokensbyte}-frontend
     ports:
       - "${FRONTEND_PORT:-8080}:80"
@@ -100,7 +112,7 @@ services:
       - backend
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/ || exit 1"]
+      test: [ "CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/ || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3

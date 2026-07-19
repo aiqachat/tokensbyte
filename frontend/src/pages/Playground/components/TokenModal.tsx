@@ -2,7 +2,9 @@
  * API 密钥选择弹窗
  */
 import React from 'react';
-import { Modal, Button, message, Popconfirm } from 'antd';
+import { Modal, Button, Popconfirm } from 'antd';
+import toast from './PlaygroundToast';
+import { getSharedModalStyles } from '../utils/modalStyles';
 import { CloseOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { usePlayground } from '../context/PlaygroundContext';
@@ -39,7 +41,7 @@ const TokenModal: React.FC = React.memo(() => {
   React.useEffect(() => {
     if (showCreateForm) {
       const randChars = Array.from({ length: 4 }, () => 'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]).join('');
-      setNewName(`arkpg-${randChars}`);
+      setNewName(`arkpg ${randChars}`);
       setIsUnlimitedQuota(true);
       setQuotaLimit(100);
     }
@@ -48,7 +50,7 @@ const TokenModal: React.FC = React.memo(() => {
   const handleCreateToken = async () => {
     const tokenName = newName.trim();
     if (!tokenName) {
-      message.error('请输入密钥名称');
+      toast.error('请输入密钥名称');
       return;
     }
     setCreating(true);
@@ -61,7 +63,7 @@ const TokenModal: React.FC = React.memo(() => {
       };
       
       const res = await (request as any).post('/tokens', data, { skipErrorHandler: true });
-      message.success('创建并关联成功');
+      toast.success('创建并关联成功');
       
       const tokensRes = await (request.get('/tokens') as Promise<any>);
       if (tokensRes?.data && Array.isArray(tokensRes.data)) {
@@ -82,7 +84,7 @@ const TokenModal: React.FC = React.memo(() => {
       setIsTokenModalVisible(false);
     } catch (e: any) {
       const serverMsg = e?.response?.data?.error?.message || e?.message || '创建令牌失败';
-      message.error(serverMsg);
+      toast.error(serverMsg);
     } finally {
       setCreating(false);
     }
@@ -91,7 +93,7 @@ const TokenModal: React.FC = React.memo(() => {
   const handleDeleteToken = async (id: number) => {
     try {
       await request.delete(`/tokens/${id}`);
-      message.success('删除密钥成功');
+      toast.success('删除密钥成功');
       
       const tokensRes = await (request.get('/tokens') as Promise<any>);
       if (tokensRes?.data && Array.isArray(tokensRes.data)) {
@@ -105,8 +107,53 @@ const TokenModal: React.FC = React.memo(() => {
       }
     } catch (e: any) {
       const serverMsg = e?.response?.data?.error?.message || e?.message || '删除令牌失败';
-      message.error(serverMsg);
+      toast.error(serverMsg);
     }
+  };
+
+  // 渲染令牌操作（已被选中的展示打勾，未选中的展示删除按钮）
+  const renderTokenAction = (t: any) => {
+    if (selectedTokenKey === t.token_key) {
+      return <CheckCircleOutlined style={{ color: _isLight ? '#1677ff' : '#fff', fontSize: 16 }} />;
+    }
+    return (
+      <Popconfirm
+        title="确认删除密钥"
+        description={`您确定要删除密钥“${t.name}”吗？此操作不可逆。`}
+        onConfirm={() => handleDeleteToken(t.id)}
+        okText="确认"
+        cancelText="取消"
+        okButtonProps={{ danger: true }}
+      >
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+          style={{
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 4,
+            borderRadius: 4,
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = '#ff4d4f';
+            e.currentTarget.style.background = _isLight ? 'rgba(255, 77, 79, 0.08)' : 'rgba(255, 77, 79, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
+            e.currentTarget.style.background = 'transparent';
+          }}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </div>
+      </Popconfirm>
+    );
   };
 
   return (
@@ -120,20 +167,11 @@ const TokenModal: React.FC = React.memo(() => {
       }}
       footer={null}
       width={isMobile ? '95%' : 660}
+      {...getSharedModalStyles(_isLight)}
       styles={{
-        mask: { backgroundColor: 'rgba(0, 0, 0, 0.45)' },
+        ...getSharedModalStyles(_isLight).styles,
         body: { padding: isMobile ? '16px 12px' : '24px' },
-        content: { 
-          backgroundColor: _isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(28, 29, 31, 0.65)', 
-          backdropFilter: 'blur(32px) saturate(150%)', 
-          WebkitBackdropFilter: 'blur(32px) saturate(150%)',
-          borderRadius: 20, 
-          padding: 0, 
-          overflow: 'hidden',
-          border: _isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)',
-          boxShadow: _isLight ? '0 12px 40px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.5)' : '0 32px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)'
-        },
-      } as any}
+      }}
       closeIcon={<CloseOutlined style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }} />}
     >
       <div style={{ display: 'flex', justifyContent: apiTokens.length === 0 ? 'center' : 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: 24, flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : 0 }}>
@@ -243,7 +281,11 @@ const TokenModal: React.FC = React.memo(() => {
               return (
                 <div
                   key={t.token_key}
-                  onClick={() => {
+                  onClick={(e) => {
+                    // 阻止来自 Portal (如 Popconfirm 弹出层) 的 React 合成事件冒泡触发选中
+                    if (!e.currentTarget.contains(e.target as Node)) {
+                      return;
+                    }
                     if (selectedTokenKey === t.token_key) {
                       setSelectedTokenKey('');
                       localStorage.removeItem('playground_saved_token');
@@ -295,46 +337,7 @@ const TokenModal: React.FC = React.memo(() => {
                       
                       {isMobile && (
                         <div style={{ display: 'flex', justifyContent: 'flex-end', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
-                          {selectedTokenKey === t.token_key ? (
-                            <CheckCircleOutlined style={{ color: _isLight ? '#1677ff' : '#fff', fontSize: 16 }} />
-                          ) : (
-                            <Popconfirm
-                              title="确认删除密钥"
-                              description={`您确定要删除密钥“${t.name}”吗？此操作不可逆。`}
-                              onConfirm={() => handleDeleteToken(t.id)}
-                              okText="确认"
-                              cancelText="取消"
-                              okButtonProps={{ danger: true }}
-                            >
-                              <div
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                }}
-                                style={{
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  padding: 4,
-                                  borderRadius: 4,
-                                  transition: 'all 0.2s',
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.color = '#ff4d4f';
-                                  e.currentTarget.style.background = _isLight ? 'rgba(255, 77, 79, 0.08)' : 'rgba(255, 77, 79, 0.15)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
-                                  e.currentTarget.style.background = 'transparent';
-                                }}
-                              >
-                                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                                  <polyline points="3 6 5 6 21 6"></polyline>
-                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                </svg>
-                              </div>
-                            </Popconfirm>
-                          )}
+                          {renderTokenAction(t)}
                         </div>
                       )}
                     </div>
@@ -366,46 +369,7 @@ const TokenModal: React.FC = React.memo(() => {
                       <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 14 }}>{createdStr}</div>
                       <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 14 }}>{usedStr}</div>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
-                        {selectedTokenKey === t.token_key ? (
-                          <CheckCircleOutlined style={{ color: _isLight ? '#1677ff' : '#fff', fontSize: 16 }} />
-                        ) : (
-                          <Popconfirm
-                            title="确认删除密钥"
-                            description={`您确定要删除密钥“${t.name}”吗？此操作不可逆。`}
-                            onConfirm={() => handleDeleteToken(t.id)}
-                            okText="确认"
-                            cancelText="取消"
-                            okButtonProps={{ danger: true }}
-                          >
-                            <div
-                              onClick={(e) => {
-                                e.stopPropagation();
-                              }}
-                              style={{
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                padding: 4,
-                                borderRadius: 4,
-                                transition: 'all 0.2s',
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.color = '#ff4d4f';
-                                e.currentTarget.style.background = _isLight ? 'rgba(255, 77, 79, 0.08)' : 'rgba(255, 77, 79, 0.15)';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.color = _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)';
-                                e.currentTarget.style.background = 'transparent';
-                              }}
-                            >
-                              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="3 6 5 6 21 6"></polyline>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                              </svg>
-                            </div>
-                          </Popconfirm>
-                        )}
+                        {renderTokenAction(t)}
                       </div>
                     </>
                   )}

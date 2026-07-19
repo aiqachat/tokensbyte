@@ -43,7 +43,7 @@ const AudioNodeContent: React.FC<Props> = React.memo(({ resultData }) => {
           onMouseDown={(e) => e.stopPropagation()} // 防止点击进度条时触发节点拖拽
         />
       ) : (
-        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>音频地址无效</div>
+        <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>音频地址无效</div>
       )}
     </div>
   );

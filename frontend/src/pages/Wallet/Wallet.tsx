@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Card, Typography, Row, Col, Table, Button, Space, Statistic, Tag, Tooltip, message, Grid, theme, Tabs } from 'antd';
+import { Card, Typography, Row, Col, Table, Button, Space, Statistic, Tag, Tooltip, message, Grid, theme, Tabs, Input } from 'antd';
 import { SwapOutlined, HistoryOutlined, CopyOutlined, TeamOutlined, GiftOutlined, WalletOutlined, PlusOutlined, TagOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
@@ -24,6 +24,7 @@ const Wallet: React.FC = () => {
   const screens = useBreakpoint();
   
   const currencySymbol = settings?.currency?.currency_symbol || '$';
+  const currencyUnit = settings?.currency?.currency_unit || '元';
   
   const { themeMode } = useThemeStore();
   const isLight = themeMode === 'light';
@@ -31,7 +32,7 @@ const Wallet: React.FC = () => {
   const subText = isLight ? '#71717a' : '#a1a1aa'; // text-muted-foreground
   const mainText = isLight ? '#09090b' : '#fafafa'; // text-foreground
   const cardBg = isLight ? '#ffffff' : '#09090b';
-  const statCardBg = isLight ? '#f4f4f5' : '#18181b';
+  const statCardBg = isLight ? '#ffffff' : '#141414';
   const cardBorder = `1px solid ${isLight ? '#e4e4e7' : '#27272a'}`;
   const neutralBg = isLight ? '#f4f4f5' : '#27272a'; // background-muted
 
@@ -40,6 +41,13 @@ const Wallet: React.FC = () => {
   const [records, setRecords] = useState<RechargeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [redeemCode, setRedeemCode] = useState('');
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemCooldown, setRedeemCooldown] = useState(0);
+  const [redeemFeedback, setRedeemFeedback] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
+  const redeemLockRef = React.useRef(false);
+
+  const redemptionEnabled = !!settings?.marketing?.enable_redemption;
 
   const fetchData = async () => {
     setLoading(true);
@@ -86,6 +94,65 @@ const Wallet: React.FC = () => {
     }
   };
 
+  const handleRedeem = async () => {
+    if (redeemLockRef.current || redeeming || redeemCooldown > 0) return;
+
+    const code = redeemCode.trim();
+    if (!code) {
+      setRedeemFeedback({
+        type: 'warning',
+        text: isEn ? 'Please enter a redemption code' : '请输入兑换码',
+      });
+      return;
+    }
+
+    redeemLockRef.current = true;
+    setRedeeming(true);
+    setRedeemFeedback(null);
+    try {
+      const res = await (request.post('/redemptions/redeem', { code }, {
+        skipErrorHandler: true,
+      } as any) as any);
+      if (res?.success) {
+        const amount = Number(res.quota_added || 0);
+        setRedeemFeedback({
+          type: 'success',
+          text: isEn
+            ? `Redeemed successfully (+${currencySymbol}${amount.toFixed(2)})`
+            : `兑换成功，已充值 ${currencySymbol}${amount.toFixed(2)}`,
+        });
+        setRedeemCode('');
+        fetchData();
+      }
+    } catch (e: any) {
+      const data = e?.response?.data;
+      let serverMsg =
+        data?.error?.message ||
+        data?.message ||
+        (typeof data?.error === 'string' ? data.error : undefined) ||
+        (typeof data === 'string' ? data : undefined);
+      if (serverMsg === 'Invalid or already used redemption code') {
+        serverMsg = isEn ? 'Invalid or already used redemption code' : '兑换码无效或已被使用';
+      }
+      setRedeemFeedback({
+        type: 'error',
+        text: serverMsg || (isEn ? 'Redemption failed' : '兑换失败，请稍后重试'),
+      });
+    } finally {
+      setRedeeming(false);
+      setRedeemCooldown(3);
+      setTimeout(() => {
+        redeemLockRef.current = false;
+      }, 300);
+    }
+  };
+
+  useEffect(() => {
+    if (redeemCooldown <= 0) return;
+    const timer = setTimeout(() => setRedeemCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [redeemCooldown]);
+
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
@@ -114,7 +181,7 @@ const Wallet: React.FC = () => {
       render: (text: string) => <Text style={{ color: subText }}>{dayjs(text).format('YYYY/MM/DD HH:mm:ss')}</Text>,
     },
     {
-      title: t('wallet.amount'),
+      title: t('wallet.amount', { defaultValue: `金额 (${currencyUnit})`, unit: currencyUnit }),
       dataIndex: 'amount',
       key: 'amount',
       align: 'right' as const,
@@ -161,7 +228,13 @@ const Wallet: React.FC = () => {
           commission: isEn ? 'Commission' : '返佣',
           alipay: isEn ? 'Alipay' : '支付宝',
           wechat: isEn ? 'WeChat' : '微信',
+          allinpay_wechat: isEn ? 'Allinpay WeChat' : '通联微信',
+          'allinpay wechat': isEn ? 'Allinpay WeChat' : '通联微信',
+          allinpay_alipay: isEn ? 'Allinpay Alipay' : '通联支付宝',
+          'allinpay alipay': isEn ? 'Allinpay Alipay' : '通联支付宝',
+          stripe: 'Stripe',
           bonuspay: 'BonusPay',
+          hyperbc: 'HyperBC',
           redemption: isEn ? 'Redemption' : '兑换码',
           other: isEn ? 'Other' : '其它'
         };
@@ -172,7 +245,13 @@ const Wallet: React.FC = () => {
           commission: 'gold',
           alipay: 'blue',
           wechat: 'green',
+          allinpay_wechat: 'green',
+          'allinpay wechat': 'green',
+          allinpay_alipay: 'blue',
+          'allinpay alipay': 'blue',
+          stripe: 'purple',
           bonuspay: 'geekblue',
+          hyperbc: 'purple',
           redemption: 'orange',
           other: 'default'
         };
@@ -251,7 +330,7 @@ const Wallet: React.FC = () => {
   const totalAvailable = ((stats?.balance || 0) + (stats?.credit_limit || 0) + (stats?.gift_balance || 0)).toFixed(2);
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: screens.md ? '40px 0' : '24px 0' }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto', padding: screens.md ? '16px 0 40px 0' : '12px 0 24px 0' }}>
       
       {/* Header Area */}
       <div style={{ marginBottom: 32 }}>
@@ -354,8 +433,8 @@ const Wallet: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Affiliate Banner */}
-      {stats?.marketing_enabled && (
+      {/* Affiliate Banner：紧挨余额仪表盘，避免被兑换码挤到下面不易发现 */}
+      {(stats?.marketing_enabled || (stats?.commission_ratio ?? 0) > 0) && (
         <div style={{ 
           marginBottom: 32, 
           padding: '24px', 
@@ -384,28 +463,112 @@ const Wallet: React.FC = () => {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: screens.md ? 'auto' : '100%' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: screens.md ? 'center' : 'stretch', width: screens.md ? 'auto' : '100%', flex: screens.md ? 1 : undefined, minWidth: 0, justifyContent: 'flex-end' }}>
             <div style={{ 
               background: neutralBg, 
-              padding: '0 12px', 
+              padding: '10px 12px', 
               borderRadius: 6, 
               border: cardBorder,
               display: 'flex',
               alignItems: 'center',
-              height: 40,
-              maxWidth: 300,
-              flex: 1
+              flex: 1,
+              minWidth: 0,
+              maxWidth: '100%',
             }}>
-              <Text ellipsis style={{ color: mainText, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+              <Text
+                style={{
+                  color: mainText,
+                  fontSize: 13,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  wordBreak: 'break-all',
+                  whiteSpace: 'normal',
+                  lineHeight: 1.5,
+                }}
+              >
                 {window.location.origin}/register?aff={user?.uid}
               </Text>
             </div>
             <Button 
               icon={<CopyOutlined />} 
               onClick={copyInviteLink} 
-              style={{ height: 40, borderRadius: 6, border: cardBorder, color: mainText, background: cardBg, boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }} 
+              style={{ height: 40, borderRadius: 6, border: cardBorder, color: mainText, background: cardBg, boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)', flexShrink: 0 }} 
             >
               {isEn ? 'Copy' : '复制'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* 兑换码：管理后台开启兑换功能后显示 */}
+      {redemptionEnabled && (
+        <div
+          style={{
+            marginBottom: 32,
+            padding: '20px 24px',
+            borderRadius: 8,
+            border: cardBorder,
+            background: cardBg,
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <TagOutlined style={{ color: mainText, fontSize: 16 }} />
+            <Text style={{ fontSize: 15, fontWeight: 600, color: mainText }}>
+              {isEn ? 'Redeem Code' : '兑换码充值'}
+            </Text>
+            {redeemFeedback && (
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color:
+                    redeemFeedback.type === 'success'
+                      ? (isLight ? '#15803d' : '#4ade80')
+                      : redeemFeedback.type === 'warning'
+                        ? (isLight ? '#b45309' : '#fbbf24')
+                        : (isLight ? '#dc2626' : '#f87171'),
+                }}
+              >
+                {redeemFeedback.text}
+              </Text>
+            )}
+          </div>
+          <Text style={{ color: subText, fontSize: 13, display: 'block', marginBottom: 12 }}>
+            {isEn
+              ? 'Enter a valid redemption code to top up your wallet balance.'
+              : '输入有效兑换码，即可为钱包余额充值。'}
+          </Text>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', maxWidth: 520 }}>
+            <Input
+              value={redeemCode}
+              onChange={(e) => {
+                setRedeemCode(e.target.value);
+                if (redeemFeedback) setRedeemFeedback(null);
+              }}
+              onPressEnter={handleRedeem}
+              placeholder={isEn ? 'Enter redemption code' : '请输入兑换码'}
+              allowClear
+              status={redeemFeedback?.type === 'error' ? 'error' : undefined}
+              style={{ flex: 1, minWidth: 220, height: 40, borderRadius: 6 }}
+            />
+            <Button
+              type="primary"
+              loading={redeeming}
+              disabled={redeeming || redeemCooldown > 0 || !redeemCode.trim()}
+              onClick={handleRedeem}
+              style={{
+                height: 40,
+                borderRadius: 6,
+                fontWeight: 500,
+                background: isLight ? '#09090b' : '#fafafa',
+                color: isLight ? '#fafafa' : '#09090b',
+                borderWidth: 0,
+                opacity: (redeeming || redeemCooldown > 0 || !redeemCode.trim()) ? 0.55 : 1,
+              }}
+            >
+              {redeemCooldown > 0
+                ? (isEn ? `Wait ${redeemCooldown}s` : `${redeemCooldown}s 后可再试`)
+                : (isEn ? 'Redeem' : '立即兑换')}
             </Button>
           </div>
         </div>

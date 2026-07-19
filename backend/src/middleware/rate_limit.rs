@@ -1,13 +1,15 @@
-use std::sync::Arc;
 use dashmap::DashMap;
-use governor::{Quota, RateLimiter, state::InMemoryState, state::NotKeyed};
+use governor::{state::InMemoryState, state::NotKeyed, Quota, RateLimiter};
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 pub struct GlobalRateLimiter {
     // Key: TokenID, Value: Limiter (RPS)
-    token_rps_limits: DashMap<i64, Arc<RateLimiter<NotKeyed, InMemoryState, governor::clock::DefaultClock>>>,
+    token_rps_limits:
+        DashMap<i64, Arc<RateLimiter<NotKeyed, InMemoryState, governor::clock::DefaultClock>>>,
     // Key: TokenID, Value: Limiter (RPM)
-    token_rpm_limits: DashMap<i64, Arc<RateLimiter<NotKeyed, InMemoryState, governor::clock::DefaultClock>>>,
+    token_rpm_limits:
+        DashMap<i64, Arc<RateLimiter<NotKeyed, InMemoryState, governor::clock::DefaultClock>>>,
 }
 
 impl GlobalRateLimiter {

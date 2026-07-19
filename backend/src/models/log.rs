@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -24,6 +25,10 @@ pub struct RequestLog {
     pub upstream_url: Option<String>,
     #[sqlx(default)]
     pub channel_group_aid: Option<String>,
+    #[sqlx(default)]
+    pub yid: Option<String>, // 读路径由 JOIN channel_configs.yid 填充，非 logs 列
+    #[sqlx(default)]
+    pub channel_provider_type: Option<String>,
     #[sqlx(default)]
     pub request_content: Option<String>,
     #[sqlx(default)]
@@ -66,7 +71,16 @@ pub struct RequestLog {
     pub plugin_tag: Option<String>,
     #[sqlx(default)]
     pub action_type: Option<String>,
-    pub created_at: String,
+    /// 任务是否已终结(1=已完成,0=进行中或待结算)
+    #[sqlx(default)]
+    pub is_completed: i16,
+    #[sqlx(default)]
+    pub channel_config_id: Option<i32>,
+    #[sqlx(default)]
+    pub sub_channel_name: Option<String>,
+    #[sqlx(default)]
+    pub task_id: Option<String>,
+    pub created_at: DbTs,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -86,6 +100,8 @@ pub struct LogQuery {
     pub action_type: Option<String>,
     pub log_id: Option<String>,
     pub token_kid: Option<String>,
+    pub task_id: Option<String>,
+    pub search_keyword: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,6 +115,16 @@ pub struct LogListResponse {
     pub fail_count: i64,
     pub total_system_cost: Option<f64>,
     pub total_gift_cost: Option<f64>,
+}
+
+/// 日志详情大字段（列表不返回，展开时按需拉取）
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct LogDetailContent {
+    pub id: i64,
+    pub request_content: Option<String>,
+    pub response_content: Option<String>,
+    pub post_response: Option<String>,
+    pub upstream_req_content: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]

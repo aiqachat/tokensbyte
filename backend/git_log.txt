@@ -1,0 +1,10 @@
+ad8c6fd817fdd22ecada5fec0f1f0e09d5913794ad8c6fd8cgm5pm2026-07-20 00:03:42feat: 完善财务列表时区字段及管理员/用户等显示适配
+92a7e1027c15d67fadf0307241ba127e0fd575f092a7e102cgm5pm2026-07-19 23:40:54style: 优化 index.css 背景样式与动效配置
+8febc99531c18b641a192d0d59ac2a3299a763688febc995cgm5pm2026-07-19 23:34:04feat: 增加网格星空背景特效并优化 AuthLayout 和 DashboardLayout 布局样式
+83823153b407467234bb6b84215d9a0e3b1d7f7983823153cgm5pm2026-07-19 23:01:36feat: 完善登录、重置密码及注册流程，更新 UPDATE.md
+8e5b7012c1f8a6f27c7f1f3a35ce7a6e09d2c7408e5b7012cgm5pm2026-07-19 22:07:22feat: 重构实体与时间系统，完善日志面板时区过滤及 db_ts 设计
+d2320439cf4d5fa1edc2fe5b4056f8985309426dd2320439cgm5pm2026-07-19 21:16:39feat: 完善配额限制面板展示与多语言本地化配置，优化时区适配
+5ae422544571bb5bf4ab419cd5bb5bad1aad77915ae42254cgm5pm2026-07-19 18:27:58merge: 合并 origin/chenzs 的最新修改并解决冲突
+22807bf4a99677dcb10677bca907f0fd623a616a22807bf4bubyday2026-07-19 18:01:24fix: 收紧时区 format 拦截，修复 RangePicker 清空后 Invalid Date
+2e433fb2f06d5184681e8109df304602f0fa32912e433fb2cgm5pm2026-07-18 20:04:49feat: 完善日志与任务日志过滤功能，增加时区查询保护
+6f64e209862571cdc22f1de46d9d89232cb029eb6f64e209cgm5pm2026-07-18 18:14:39feat: 增加计费管道与时间系统设计，完善渠道配额逻辑

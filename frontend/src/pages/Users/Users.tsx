@@ -13,6 +13,7 @@ import { useThemeStore } from '../../store/theme';
 
 import type { User } from '../../types';
 import dayjs from 'dayjs';
+import { formatApiDateTime } from '../../utils/timedisplay';
 import { Resizable } from 'react-resizable';
 import type { ResizeCallbackData } from 'react-resizable';
 
@@ -136,7 +137,7 @@ const Users: React.FC = () => {
     username: 320,
     registration_info: 280,
     user_group: 150,
-    balance: 160,
+    balance: 320,
     actions: 120,
   });
 
@@ -327,7 +328,7 @@ const Users: React.FC = () => {
     rechargeForm.setFieldsValue({
       walletType: 'system',
       actionType: 'increase',
-      amount: 0,
+      amount: '',
       remark: '',
     });
     setIsRechargeModalVisible(true);
@@ -338,7 +339,7 @@ const Users: React.FC = () => {
     if (rechargeLoading) return;
     setRechargeLoading(true);
     try {
-      let finalAmount = values.amount;
+      let finalAmount = Number(values.amount);
       if (values.actionType === 'decrease') {
         finalAmount = -finalAmount;
       }
@@ -517,7 +518,7 @@ const Users: React.FC = () => {
           {isRealEmail(record.email) && <div style={{ display: 'flex' }}><Text type="secondary" style={{ whiteSpace: 'nowrap' }}>邮箱: </Text><Text type="secondary" style={{ marginLeft: 4, maxWidth: 220 }} ellipsis={{ tooltip: record.email }}>{record.email}</Text></div>}
           {record.mobile && <Text type="secondary">手机号: {record.mobile}</Text>}
           <Text type="secondary">注册 IP: {record.register_ip || '未知'}</Text>
-          <Text type="secondary">加入时间: {dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+          <Text type="secondary">加入时间: {formatApiDateTime(record.created_at)}</Text>
         </Space>
       ),
     },
@@ -572,6 +573,7 @@ const Users: React.FC = () => {
         </div>
       ),
       key: 'balance',
+      width: 320,
       render: (_: unknown, record: User) => (
         <WalletBalanceDisplay 
           record={record} 
@@ -830,7 +832,7 @@ const Users: React.FC = () => {
                   </div>
                 )}
                 <CardRow label="注册IP"><Text type="secondary" style={{ fontSize: 12 }}>{record.register_ip || '未知'}</Text></CardRow>
-                <CardRow label="加入时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('MM-DD HH:mm')}</Text></CardRow>
+                <CardRow label="加入时间"><Text type="secondary" style={{ fontSize: 12 }}>{formatApiDateTime(record.created_at, 'MM-DD HH:mm')}</Text></CardRow>
                 <CardActions>
                   {!isAdminPage && (
                     <>
@@ -893,7 +895,12 @@ const Users: React.FC = () => {
             label={t('users.username')}
             rules={[
               { required: true, message: '请输入用户名' },
-              { max: 48, message: '正确输入用户名限制为 48 字' }
+              {
+                validator: (_, val) =>
+                  (editingUser && val === editingUser.username) || !val || (val.length >= 5 && val.length <= 48)
+                    ? Promise.resolve()
+                    : Promise.reject(new Error(val.length < 5 ? '用户名长度不能少于 5 个字符' : '正确输入用户名限制为 48 字'))
+              }
             ]}
           >
             <Input placeholder={t('users.username')} />
@@ -996,11 +1003,11 @@ const Users: React.FC = () => {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 8 }}>
                         <div>
                           <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>注册时间:</Typography.Text>
-                          <Typography.Text>{editingUser.created_at ? dayjs(editingUser.created_at).format('YYYY-MM-DD HH:mm:ss') : '未知'}</Typography.Text>
+                          <Typography.Text>{editingUser.created_at ? formatApiDateTime(editingUser.created_at) : '未知'}</Typography.Text>
                         </div>
                         <div>
                           <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>最后活跃时间:</Typography.Text>
-                          <Typography.Text>{editingUser.updated_at ? dayjs(editingUser.updated_at).format('YYYY-MM-DD HH:mm:ss') : '未知'}</Typography.Text>
+                          <Typography.Text>{editingUser.updated_at ? formatApiDateTime(editingUser.updated_at) : '未知'}</Typography.Text>
                         </div>
                         <div>
                           <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>注册 IP:</Typography.Text>
@@ -1057,7 +1064,7 @@ const Users: React.FC = () => {
                                            <div style={{ paddingBottom: 4 }}>
                                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
                                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                                 {dayjs(log.created_at).format('YYYY-MM-DD HH:mm:ss')}
+                                                 {formatApiDateTime(log.created_at)}
                                                </Text>
                                                <Tag color={src.color === 'blue' ? 'blue' : src.color === 'purple' ? 'purple' : 'default'} style={{ fontSize: 11, margin: 0 }}>
                                                  {src.label}
@@ -1294,22 +1301,22 @@ const Users: React.FC = () => {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 32px' }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <Text type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>系统钱包余额</Text>
-              <Text strong style={{ color: '#1677ff', fontSize: 18, fontFamily: 'monospace' }}>{currencySymbol}{(rechargingUser?.balance || 0).toFixed(2)}</Text>
+              <Text strong style={{ color: '#1677ff', fontSize: 18, fontFamily: 'monospace' }}>{currencySymbol}{(rechargingUser?.balance || 0).toFixed(4)}</Text>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <Text type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>赠送钱包余额</Text>
-              <Text strong style={{ color: '#faad14', fontSize: 18, fontFamily: 'monospace' }}>🎁 {currencySymbol}{(rechargingUser?.gift_balance || 0).toFixed(2)}</Text>
+              <Text strong style={{ color: '#faad14', fontSize: 18, fontFamily: 'monospace' }}>🎁 {currencySymbol}{(rechargingUser?.gift_balance || 0).toFixed(4)}</Text>
             </div>
             {((rechargingUser?.credit_limit || 0) > 0) && (
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <Text type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>信控额度</Text>
-                <Text strong style={{ color: '#1890ff', fontSize: 18, fontFamily: 'monospace' }}>💳 {currencySymbol}{(rechargingUser?.credit_limit || 0).toFixed(2)}</Text>
+                <Text strong style={{ color: '#1890ff', fontSize: 18, fontFamily: 'monospace' }}>💳 {currencySymbol}{(rechargingUser?.credit_limit || 0).toFixed(4)}</Text>
               </div>
             )}
           </div>
         </div>
 
-        <Form form={rechargeForm} layout="vertical" onFinish={handleRechargeSave} initialValues={{ actionType: 'increase', amount: 0, walletType: 'system' }}>
+        <Form form={rechargeForm} layout="vertical" onFinish={handleRechargeSave} initialValues={{ actionType: 'increase', amount: '', walletType: 'system' }}>
           <Form.Item name="walletType" label={<Text strong>充值到哪个钱包</Text>} rules={[{ required: true }]}>
             <Radio.Group style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <Radio.Button value="system" style={{ borderRadius: 6 }}>系统钱包 (正常充值)</Radio.Button>
@@ -1332,15 +1339,31 @@ const Users: React.FC = () => {
           <Form.Item 
             name="amount" 
             label={<Text strong>{t('users.adjustment_amount')}</Text>} 
-            rules={[{ required: true, message: '请输入调整金额' }]}
+            rules={[
+              { required: true, message: '请输入调整金额' },
+              {
+                validator: async (_, value) => {
+                  if (value === undefined || value === null || value === '') {
+                    return Promise.resolve();
+                  }
+                  const num = Number(value);
+                  if (isNaN(num) || !isFinite(num)) {
+                    return Promise.reject(new Error('请输入有效的数字金额'));
+                  }
+                  const reg = /^-?\d+(\.\d{1,4})?$/;
+                  if (!reg.test(value.toString())) {
+                    return Promise.reject(new Error('请输入正确的金额格式（最多保留四位小数，可为负数）'));
+                  }
+                  return Promise.resolve();
+                }
+              }
+            ]}
           >
-            <InputNumber 
+            <Input 
               style={{ width: '100%' }} 
               size="large"
-              precision={2} 
-              min={0}
               prefix={<span style={{ color: 'var(--ant-color-text-secondary)', marginRight: 4 }}>{currencySymbol}</span>}
-              placeholder="0.00"
+              placeholder="0.0000"
             />
           </Form.Item>
           

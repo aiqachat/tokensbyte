@@ -1,19 +1,21 @@
+use crate::error::{AppError, AppResult};
+use crate::models::{Upstream, UpstreamRequest};
+use crate::providers::volcengine_billing;
+use crate::AppState;
 use axum::{
     extract::{Path, State},
     Json,
 };
 use std::sync::Arc;
-use crate::AppState;
-use crate::error::{AppError, AppResult};
-use crate::models::{Upstream, UpstreamRequest};
-use crate::providers::volcengine_billing;
 
-pub async fn list_upstreams(
-    State(state): State<Arc<AppState>>,
-) -> AppResult<Json<Vec<Upstream>>> {
-    let upstreams = sqlx::query_as(&state.db.format_query("SELECT * FROM upstreams ORDER BY sort_order ASC, id ASC"))
-        .fetch_all(&state.db.pool)
-        .await?;
+pub async fn list_upstreams(State(state): State<Arc<AppState>>) -> AppResult<Json<Vec<Upstream>>> {
+    let upstreams = sqlx::query_as(
+        &state
+            .db
+            .format_query("SELECT * FROM upstreams ORDER BY sort_order ASC, id ASC"),
+    )
+    .fetch_all(&state.db.pool)
+    .await?;
     Ok(Json(upstreams))
 }
 
@@ -23,17 +25,25 @@ pub async fn create_upstream(
 ) -> AppResult<Json<Upstream>> {
     req.name = req.name.trim().to_string();
     if req.name.is_empty() {
-        return Err(crate::error::AppError::BadRequest("名称不能为空".to_string()));
+        return Err(crate::error::AppError::BadRequest(
+            "名称不能为空".to_string(),
+        ));
     }
 
     // Check for duplicate name
-    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM upstreams WHERE name = ?"))
-        .bind(&req.name)
-        .fetch_optional(&state.db.pool)
-        .await?;
-    
+    let exists: Option<i64> = sqlx::query_scalar(
+        &state
+            .db
+            .format_query("SELECT id FROM upstreams WHERE name = ?"),
+    )
+    .bind(&req.name)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
     if exists.is_some() {
-        return Err(crate::error::AppError::Conflict("上游名称已存在".to_string()));
+        return Err(crate::error::AppError::Conflict(
+            "上游名称已存在".to_string(),
+        ));
     }
 
     let upstream = sqlx::query_as(
@@ -57,18 +67,26 @@ pub async fn update_upstream(
 ) -> AppResult<Json<Upstream>> {
     req.name = req.name.trim().to_string();
     if req.name.is_empty() {
-        return Err(crate::error::AppError::BadRequest("名称不能为空".to_string()));
+        return Err(crate::error::AppError::BadRequest(
+            "名称不能为空".to_string(),
+        ));
     }
 
     // Check for duplicate name
-    let exists: Option<i64> = sqlx::query_scalar(&state.db.format_query("SELECT id FROM upstreams WHERE name = ? AND id != ?"))
-        .bind(&req.name)
-        .bind(id)
-        .fetch_optional(&state.db.pool)
-        .await?;
-    
+    let exists: Option<i64> = sqlx::query_scalar(
+        &state
+            .db
+            .format_query("SELECT id FROM upstreams WHERE name = ? AND id != ?"),
+    )
+    .bind(&req.name)
+    .bind(id)
+    .fetch_optional(&state.db.pool)
+    .await?;
+
     if exists.is_some() {
-        return Err(crate::error::AppError::Conflict("上游名称已存在".to_string()));
+        return Err(crate::error::AppError::Conflict(
+            "上游名称已存在".to_string(),
+        ));
     }
 
     let upstream = sqlx::query_as(
@@ -102,7 +120,9 @@ pub async fn get_upstream_balance(
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     let upstream: Upstream = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM upstreams WHERE id = ?")
+        &state
+            .db
+            .format_query("SELECT * FROM upstreams WHERE id = ?"),
     )
     .bind(id)
     .fetch_one(&state.db.pool)
@@ -115,7 +135,8 @@ pub async fn get_upstream_balance(
                     config.get("api_key").and_then(|v| v.as_str()),
                     config.get("api_secret").and_then(|v| v.as_str()),
                 ) {
-                    let balance = volcengine_billing::query_balance(ak, sk).await
+                    let balance = volcengine_billing::query_balance(ak, sk)
+                        .await
                         .map_err(|e| AppError::Internal(e.to_string()))?;
                     return Ok(Json(serde_json::json!({
                         "balance": balance

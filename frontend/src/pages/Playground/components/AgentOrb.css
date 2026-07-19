@@ -1,0 +1,63 @@
+.agent-orb-wrapper {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 44px; /* 整体缩小 */
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  /* 移除原本的整体大阴影，只保留细微的悬浮感 */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.agent-orb-wrapper:hover {
+  transform: scale(1.1);
+}
+
+.agent-orb-wrapper.active {
+  transform: scale(0) rotate(45deg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 流体环形旋转效果 */
+.fluid-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    #ef4444,
+    #38bdf8,
+    #a855f7,
+    #ef4444
+  );
+  /* 使用 mask 裁剪出空心环形，宽度约 3px */
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 3px), black calc(100% - 2px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 3px), black calc(100% - 2px));
+  animation: ring-spin 2s linear infinite;
+}
+
+.orb-center-icon {
+  position: relative;
+  z-index: 10;
+  color: #a855f7; /* 采用配合环形的炫彩色系 */
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.5); /* 文字发光，非球体大发光 */
+  pointer-events: none;
+}
+
+@keyframes ring-spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}

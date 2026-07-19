@@ -4,7 +4,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use reqwest::Client;
 use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
 use rsa::sha2::Sha256;
-use rsa::signature::{Signer, SignatureEncoding, Verifier};
+use rsa::signature::{SignatureEncoding, Signer, Verifier};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 
 pub struct BonuspayClient {
@@ -47,7 +47,11 @@ impl BonuspayClient {
     }
 
     /// 使用 BonusPay 公钥验证回调签名
-    pub fn verify_signature(bonuspay_public_key_pem: &str, body: &str, sign_base64: &str) -> Result<bool> {
+    pub fn verify_signature(
+        bonuspay_public_key_pem: &str,
+        body: &str,
+        sign_base64: &str,
+    ) -> Result<bool> {
         let public_key = RsaPublicKey::from_public_key_pem(bonuspay_public_key_pem)
             .map_err(|e| anyhow!("解析 BonusPay 公钥失败: {}", e))?;
 
@@ -90,8 +94,8 @@ impl BonuspayClient {
             }
         });
 
-        let body_str = serde_json::to_string(&body)
-            .map_err(|e| anyhow!("序列化请求体失败: {}", e))?;
+        let body_str =
+            serde_json::to_string(&body).map_err(|e| anyhow!("序列化请求体失败: {}", e))?;
 
         // RSA 签名
         let sign = self.rsa_sign(&body_str)?;
@@ -141,15 +145,15 @@ impl BonuspayClient {
             let msg = data["head"]["msg"].as_str().unwrap_or("未知错误");
             return Err(anyhow!(
                 "BonusPay getAddress 失败: applyStatus={}, code={}, msg={}",
-                apply_status, code, msg
+                apply_status,
+                code,
+                msg
             ));
         }
 
         // 解析 body.wallet
-        let wallet: CustomerWallet = serde_json::from_value(
-            data["body"]["wallet"].clone(),
-        )
-        .map_err(|e| anyhow!("解析 wallet 失败: {} resp={}", e, resp_body))?;
+        let wallet: CustomerWallet = serde_json::from_value(data["body"]["wallet"].clone())
+            .map_err(|e| anyhow!("解析 wallet 失败: {} resp={}", e, resp_body))?;
 
         tracing::info!(
             "[BonusPay] ✅ getAddress 成功: address={:?}, cashierUrl={:?}",

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Form, Input, Button, InputNumber, message, Typography, Space, Switch, Radio, Tabs, Select, Tag, Alert, Table, Spin } from 'antd';
-import { CloudServerOutlined, ApiOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, InputNumber, message, Typography, Space, Switch, Radio, Tabs, Select, Tag, Alert, Table, Spin, Upload, Modal, DatePicker } from 'antd';
+import { CloudServerOutlined, ApiOutlined, DatabaseOutlined, UploadOutlined } from '@ant-design/icons';
 import * as Icons from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -8,6 +8,7 @@ import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
+import dayjs from 'dayjs';
 
 const { Text } = Typography;
 
@@ -44,6 +45,7 @@ const ALL_LANGUAGES = [
   { code: 'en', name: 'English', nativeName: '英语', flag: '🇺🇸' },
   { code: 'ja', name: '日本語', nativeName: '日语', flag: '🇯🇵' },
   { code: 'ko', name: '한국어', nativeName: '韩语', flag: '🇰🇷' },
+  { code: 'vi', name: 'Tiếng Việt', nativeName: '越南语', flag: '🇻🇳' },
   { code: 'fr', name: 'Français', nativeName: '法语', flag: '🇫🇷' },
   { code: 'de', name: 'Deutsch', nativeName: '德语', flag: '🇩🇪' },
   { code: 'es', name: 'Español', nativeName: '西班牙语', flag: '🇪🇸' },
@@ -51,6 +53,61 @@ const ALL_LANGUAGES = [
   { code: 'ru', name: 'Русский', nativeName: '俄语', flag: '🇷🇺' },
   { code: 'ar', name: 'العربية', nativeName: '阿拉伯语', flag: '🇸🇦' },
 ];
+
+// 登录页风格选择器组件 (卡片化缩略图选择)
+const LoginStyleSelector: React.FC<{
+  value?: 'split' | 'classic';
+  onChange?: (val: 'split' | 'classic') => void;
+}> = ({ value, onChange }) => {
+  const current = value || 'split';
+  return (
+    <div className="flex gap-4">
+      {/* 经典风格 */}
+      <div 
+        onClick={() => onChange?.('classic')}
+        className={`relative cursor-pointer rounded-lg border-2 p-2 w-[140px] flex flex-col items-center gap-2 select-none transition-all
+          ${current === 'classic' 
+            ? 'border-zinc-900 dark:border-zinc-100 bg-zinc-50 dark:bg-zinc-900/60 shadow-xs' 
+            : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-background'
+          }`}
+      >
+        {/* 缩略图 */}
+        <div className="w-full h-16 rounded border border-zinc-200 dark:border-zinc-800 bg-background/50 flex items-center justify-center relative overflow-hidden">
+          {/* 居中表单 */}
+          <div className="w-10 h-7 rounded border border-zinc-200 dark:border-zinc-700 bg-background flex flex-col gap-1 p-1 items-center justify-center">
+            <div className="w-6 h-1 bg-zinc-300 dark:bg-zinc-600 rounded-xs" />
+            <div className="w-6 h-1 bg-zinc-300 dark:bg-zinc-600 rounded-xs" />
+          </div>
+        </div>
+        <span className={`text-xs font-medium ${current === 'classic' ? 'text-zinc-900 dark:text-zinc-50' : 'text-zinc-500'}`}>经典风格</span>
+      </div>
+
+      {/* 左右风格 */}
+      <div 
+        onClick={() => onChange?.('split')}
+        className={`relative cursor-pointer rounded-lg border-2 p-2 w-[140px] flex flex-col items-center gap-2 select-none transition-all
+          ${current === 'split' 
+            ? 'border-zinc-900 dark:border-zinc-100 bg-zinc-50 dark:bg-zinc-900/60 shadow-xs' 
+            : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-background'
+          }`}
+      >
+        {/* 缩略图 */}
+        <div className="w-full h-16 rounded border border-zinc-200 dark:border-zinc-800 bg-background/50 flex relative overflow-hidden">
+          {/* 左侧广告 */}
+          <div className="w-[40%] h-full bg-zinc-200 dark:bg-zinc-800 border-r border-zinc-200 dark:border-zinc-800" />
+          {/* 右侧表单 */}
+          <div className="w-[60%] h-full flex items-center justify-center">
+            <div className="w-7 h-5 rounded border border-zinc-200 dark:border-zinc-700 bg-background flex flex-col gap-0.5 p-0.5 items-center justify-center scale-90">
+              <div className="w-4 h-0.5 bg-zinc-300 dark:bg-zinc-600 rounded-xs" />
+              <div className="w-4 h-0.5 bg-zinc-300 dark:bg-zinc-600 rounded-xs" />
+            </div>
+          </div>
+        </div>
+        <span className={`text-xs font-medium ${current === 'split' ? 'text-zinc-900 dark:text-zinc-50' : 'text-zinc-500'}`}>左右风格</span>
+      </div>
+    </div>
+  );
+};
 
 const timezoneOptions = (() => {
   const timezones = Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : [
@@ -90,7 +147,8 @@ const timezoneOptions = (() => {
 
 const Settings: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { updateStoreSettings } = useSettingsStore();
+  const { settings, updateStoreSettings } = useSettingsStore();
+  const adminPath = settings?.site?.admin_path || 'admin1688';
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const tab = searchParams.get('tab') || 'basic';
@@ -99,6 +157,8 @@ const Settings: React.FC = () => {
   const enableMultilingual = Form.useWatch('enable_multilingual', form);
   const supportedLanguages: string[] = Form.useWatch('supported_languages', form) || ['zh', 'en'];
   const defaultLanguage: string = Form.useWatch('default_language', form) || 'zh';
+  const logoUrl = Form.useWatch('logo', form);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [serverTimeInfo, setServerTimeInfo] = useState<{ timezone: string; time: string } | null>(null);
@@ -106,6 +166,34 @@ const Settings: React.FC = () => {
   const [dbSubTab, setDbSubTab] = useState('db');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [syncDates, setSyncDates] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null]);
+  const [syncingStats, setSyncingStats] = useState(false);
+
+  const handleManualSync = async () => {
+    const [start, end] = syncDates;
+    if (!start || !end) {
+      message.warning('请选择要同步的日期范围');
+      return;
+    }
+    
+    setSyncingStats(true);
+    try {
+      const startStr = start.format('YYYY-MM-DD');
+      const endStr = end.format('YYYY-MM-DD');
+      const r = await (request.post(`/settings/usage-stats/sync?start_date=${startStr}&end_date=${endStr}`) as any);
+      if (r.success) {
+        message.success(r.message || '手动同步任务已在后台异步启动，请在后台查看日志');
+        setSyncDates([null, null]);
+      } else {
+        message.error(r.message || '启动同步任务失败');
+      }
+    } catch (e) {
+      console.error(e);
+      message.error('启动后台同步任务失败');
+    } finally {
+      setSyncingStats(false);
+    }
+  };
   const [tosNetworkType, setTosNetworkType] = useState<'external' | 'internal'>('external');
   const [userLevels, setUserLevels] = useState<any[]>([]);
   const [menuItems, setMenuItems] = useState<any[]>([]);
@@ -150,21 +238,26 @@ const Settings: React.FC = () => {
       const defaultMenuItems = [
         { key: '/dashboard', label_zh: '系统概览', label_en: 'Dashboard', icon: 'DashboardOutlined', enabled: true, sort_order: 1, allowed_levels: 'all' },
         { key: '/playground', label_zh: '创作中心', label_en: 'Playground', icon: 'ExperimentOutlined', enabled: true, sort_order: 2, allowed_levels: 'all' },
-        { key: '/relay-api', label_zh: 'API教程', label_en: 'Relay API', icon: 'RocketOutlined', enabled: true, sort_order: 3, allowed_levels: 'all' },
+        { key: '/docs', label_zh: 'API教程', label_en: 'Relay API', icon: 'RocketOutlined', enabled: true, sort_order: 3, allowed_levels: 'all' },
         { key: '/tokens', label_zh: '令牌管理', label_en: 'Tokens', icon: 'KeyOutlined', enabled: true, sort_order: 4, allowed_levels: 'all' },
-        { key: '/logs', label_zh: '使用日志', label_en: 'Logs', icon: 'HistoryOutlined', enabled: true, sort_order: 5, allowed_levels: 'all' },
-        { key: '/task-logs', label_zh: '任务日志', label_en: 'Task Logs', icon: 'ScheduleOutlined', enabled: true, sort_order: 6, allowed_levels: 'all' },
+        { key: '/logs', label_zh: '日志记录', label_en: 'Logs', icon: 'HistoryOutlined', enabled: true, sort_order: 5, allowed_levels: 'all' },
+        { key: '/task-logs', label_zh: '任务列表', label_en: 'Task Logs', icon: 'ScheduleOutlined', enabled: true, sort_order: 6, allowed_levels: 'all' },
         { key: '/assets', label_zh: '素材管理', label_en: 'Assets', icon: 'PictureOutlined', enabled: true, sort_order: 7, allowed_levels: 'all' },
         { key: '/assets-intl', label_zh: '资产管理', label_en: 'Assets Intl', icon: 'FolderOpenOutlined', enabled: true, sort_order: 8, allowed_levels: 'all' },
-        { key: '/advanced-marketing', label_zh: '高级推广', label_en: 'Advanced Marketing', icon: 'TeamOutlined', enabled: true, sort_order: 9, allowed_levels: 'all' },
-        { key: '/smart-router', label_zh: '智能路由', label_en: 'Smart Router', icon: 'ApartmentOutlined', enabled: true, sort_order: 10, allowed_levels: 'all' },
+        { key: '/advanced-marketing', label_zh: '高级推广', label_en: 'Advanced Marketing', icon: 'TeamOutlined', enabled: true, sort_order: 10, allowed_levels: 'all' },
         { key: '/wallet', label_zh: '我的钱包', label_en: 'Wallet', icon: 'WalletOutlined', enabled: true, sort_order: 11, allowed_levels: 'all' },
+        { key: '/ark-video-monitor', label_zh: '视频监控', label_en: 'Ark Video Monitor', icon: 'VideoCameraOutlined', enabled: false, sort_order: 11.5, allowed_levels: 'all' },
         { key: '/profile', label_zh: '个人中心', label_en: 'Profile', icon: 'UserOutlined', enabled: true, sort_order: 12, allowed_levels: 'all' },
       ];
 
       let loadedItems = [];
       if (menu_config && menu_config.items && menu_config.items.length > 0) {
-        loadedItems = [...menu_config.items];
+        loadedItems = menu_config.items.map((item: any) => {
+          if (item.key === '/relay-api') {
+            return { ...item, key: '/docs' };
+          }
+          return item;
+        });
       } else {
         loadedItems = [...defaultMenuItems];
       }
@@ -179,11 +272,13 @@ const Settings: React.FC = () => {
       });
 
       const filteredItems = loadedItems.filter((item: any) => {
+        if (item.key === '/moderation-query') return false;
         if (item.key === '/playground') return isPluginActive('playground');
         if (item.key === '/assets') return isPluginActive('asset_manager');
         if (item.key === '/assets-intl') return isPluginActive('asset_manager_intl');
         if (item.key === '/advanced-marketing') return isPluginActive('team_marketing');
-        if (item.key === '/smart-router') return isPluginActive('router_flow');
+        if (item.key === '/ark-video-monitor') return isPluginActive('volcengine_ark_monitor');
+
         return true;
       });
 
@@ -191,6 +286,11 @@ const Settings: React.FC = () => {
 
       form.setFieldsValue({
         ...site,
+        default_timezone: site?.default_timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+        admin_path: site?.admin_path || 'admin1688',
+        login_style: site?.login_style || 'split',
+        login_quote: site?.login_quote || '',
+        show_timezone: site?.show_timezone !== false,
         login: login || {},
         registration: registration || {},
         smtp,
@@ -214,36 +314,68 @@ const Settings: React.FC = () => {
 
       if (tab === 'basic') {
         payload.site = {
+          ...settings?.site,
           name: values.name || '', logo: values.logo || '', title: values.title || '',
           keywords: values.keywords || '', description: values.description || '',
           favicon: values.favicon || '', login_title: values.login_title || '',
           login_subtitle: values.login_subtitle || '',
+          login_style: values.login_style || 'split',
+          login_quote: values.login_quote || '',
           enable_multilingual: values.enable_multilingual !== false,
           supported_languages: values.supported_languages || ['zh', 'en'],
           default_language: values.default_language || 'zh',
           enable_theme_toggle: values.enable_theme_toggle !== false,
           default_theme: values.default_theme || 'dark',
-          default_timezone: values.default_timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+          default_timezone: values.default_timezone || settings?.site?.default_timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+          show_timezone: values.show_timezone !== false,
           copyright: values.copyright || '',
+          admin_path: values.admin_path || 'admin1688',
         };
-        payload.login = values.login || {};
-        payload.registration = values.registration || {};
-        payload.agreement = values.agreement || {};
+        payload.login = {
+          ...settings?.login,
+          ...values.login,
+        };
+        payload.registration = {
+          ...settings?.registration,
+          ...values.registration,
+        };
+        payload.agreement = {
+          ...settings?.agreement,
+          ...values.agreement,
+        };
         payload.menu_config = {
+          ...settings?.menu_config,
           items: menuItems.map((item, idx) => ({
             ...item,
             sort_order: idx + 1
           }))
         };
       } else if (tab === 'database') {
-        payload.database = values.database;
-        payload.storage = values.storage;
+        // 根据子 Tab (dbSubTab) 细分提交字段以解耦各自的保存逻辑，避免非数据库 Tab 保存时受数据库校验的拦截
+        if (dbSubTab === 'db') {
+          payload.database = {
+            ...settings?.database,
+            ...values.database,
+          };
+        } else if (dbSubTab === 'storage' || dbSubTab === 'cleanup') {
+          payload.storage = {
+            ...settings?.storage,
+            ...values.storage,
+          };
+        }
       }
 
+      const oldAdminPath = settings?.site?.admin_path || 'admin1688';
       const updatedSettings = await (request.post('/settings', payload) as any);
       message.success(t('settings.save_success'));
       updateStoreSettings(updatedSettings);
       if (payload.site?.title) document.title = payload.site.title;
+
+      const newAdminPath = updatedSettings.site?.admin_path || 'admin1688';
+      if (oldAdminPath !== newAdminPath && tab === 'basic') {
+        const newUrl = window.location.pathname.replace(`/${oldAdminPath}`, `/${newAdminPath}`) + window.location.search;
+        window.location.replace(newUrl);
+      }
     } catch (error) {
       console.error('Failed to update settings:', error);
       // 全局拦截器已统一弹出错误提示
@@ -274,8 +406,62 @@ const Settings: React.FC = () => {
   const siteSettingsContent = (
     <div style={{ maxWidth: 600 }}>
       <Form.Item label={t('settings.site_name')} name="name" rules={[{ required: true }]}><Input placeholder="TokensByte" /></Form.Item>
-      <Form.Item label="站点 Logo" name="logo" extra={<Text type="secondary">支持图片链接，建议尺寸 32x32 或 40x40，留空则仅显示站点名称文字</Text>}>
-        <Input placeholder="https://example.com/logo.png" />
+      <Form.Item label="站点 Logo" extra={<Text type="secondary">支持图片链接，建议尺寸 32x32 或 40x40，留空则仅显示站点名称文字，也可以点击右侧按钮直接上传本地图片</Text>}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <Form.Item name="logo" noStyle>
+            <Input placeholder="https://example.com/logo.png" style={{ flex: 1 }} />
+          </Form.Item>
+          <Upload
+            accept="image/*"
+            showUploadList={false}
+            beforeUpload={async (file) => {
+              if (!file.type.startsWith('image/')) {
+                message.error('只支持上传图片格式的文件！');
+                return Upload.LIST_IGNORE;
+              }
+              if (file.size > 5 * 1024 * 1024) {
+                message.error('图片大小不能超过 5MB！');
+                return Upload.LIST_IGNORE;
+              }
+              try {
+                setUploadingLogo(true);
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('category', '站点设置');
+                formData.append('remark', '站点 Logo');
+                
+                const res = await (request.post('/assets/upload', formData, {
+                  headers: {
+                    'Content-Type': 'multipart/form-data',
+                    'x-plugin-ns': 'asset_manager',
+                  },
+                }) as Promise<any>);
+                
+                if (res?.asset?.file_url) {
+                  form.setFieldsValue({ logo: res.asset.file_url });
+                  message.success('Logo 上传成功！');
+                } else {
+                  message.error('上传成功，但未返回有效的图片链接');
+                }
+              } catch (err: any) {
+                console.error(err);
+                const errMsg = err.response?.data?.error?.message || err.message || '图片上传失败';
+                message.error(errMsg);
+              } finally {
+                setUploadingLogo(false);
+              }
+              return Upload.LIST_IGNORE;
+            }}
+          >
+            <Button icon={<UploadOutlined />} loading={uploadingLogo}>上传图片</Button>
+          </Upload>
+        </div>
+        {logoUrl && (
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>预览:</Text>
+            <img src={logoUrl} alt="Logo Preview" style={{ maxHeight: 32, maxWidth: 120, objectFit: 'contain', borderRadius: 4, border: '1px solid var(--ant-color-border)', padding: '2px', background: '#fff' }} />
+          </div>
+        )}
       </Form.Item>
       <Form.Item label={t('settings.site_title')} name="title" rules={[{ required: true }]}><Input placeholder="TokensByte - LLM API Gateway" /></Form.Item>
       <Form.Item label="站点图标 (Favicon)" name="favicon" extra={<Text type="secondary">支持 .ico / .png / .svg 格式的图片链接</Text>}>
@@ -361,30 +547,70 @@ const Settings: React.FC = () => {
           </div>
         );
       })()}
-      <Form.Item label="站点默认时区" name="default_timezone"
+      <Form.Item
+        label="站点默认时区"
+        name="default_timezone"
         extra={
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-            <Text type="secondary">系统未设置时区时以及系统全局统计使用的默认时区</Text>
+            <Text type="secondary">
+              用于全站统计归档、渠道额度日切、兑换码等共享业务的自然日；用户未设置个人时区时，也作为展示与计费日切的默认值。不影响底层数据存储（系统固定按 UTC 运行与落库）。
+            </Text>
             {serverTimeInfo && (
-              <div style={{ background: 'var(--ant-color-bg-layout)', padding: '6px 10px', borderRadius: 6, display: 'inline-block', width: 'fit-content', border: '1px solid var(--ant-color-border)' }}>
-                <Space size="large">
-                  <Text type="secondary" style={{ fontSize: 12 }}>🖥️ 服务器时区: <Text strong>{serverTimeInfo.timezone}</Text></Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>⏰ 服务器时间: <Text strong>{serverTimeInfo.time}</Text></Text>
+              <div
+                style={{
+                  background: 'var(--ant-color-bg-layout)',
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  display: 'inline-block',
+                  width: 'fit-content',
+                  border: '1px solid var(--ant-color-border)',
+                }}
+              >
+                <Space direction="vertical" size={2}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    系统运行时区（固定，不可改）：{' '}
+                    <Text strong>{serverTimeInfo.timezone || 'UTC'}</Text>
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    系统当前时间（UTC）：{' '}
+                    <Text strong>
+                      {serverTimeInfo.time}
+                      {serverTimeInfo.timezone === 'UTC' || !serverTimeInfo.timezone
+                        ? ' UTC'
+                        : ''}
+                    </Text>
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 11, opacity: 0.85 }}>
+                    灰框为系统底层时钟（固定 UTC，不可改）；上方下拉为站点业务时区（展示、统计与共享业务日切）。
+                  </Text>
                 </Space>
               </div>
             )}
           </div>
-        }>
+        }
+      >
         <Select
           style={{ width: 320 }}
           showSearch
-          placeholder="请选择时区"
+          placeholder="请选择站点默认时区（IANA）"
           options={timezoneOptions}
           filterOption={(input, option: any) =>
             (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase()) ||
             (option?.value as string ?? '').toLowerCase().includes(input.toLowerCase())
           }
         />
+      </Form.Item>
+      <Form.Item
+        label="显示时区后缀"
+        name="show_timezone"
+        valuePropName="checked"
+        extra={
+          <Text type="secondary">
+            开启后，用户端/管理端在展示绝对时间（含时分秒）时追加偏移标记，例如 (UTC+5)。仅影响展示，不改变存储与计费日切逻辑。
+          </Text>
+        }
+      >
+        <Switch />
       </Form.Item>
       <Form.Item label="允许主题切换" name="enable_theme_toggle" valuePropName="checked" extra={<Text type="secondary">开启后，用户可在页面右上角切换亮色/暗色模式；关闭后则始终使用默认主题</Text>}>
         <Switch />
@@ -401,6 +627,22 @@ const Settings: React.FC = () => {
     </div>
   );
 
+  const securitySettingsContent = (
+    <div style={{ maxWidth: 600 }}>
+      <Form.Item
+        label="管理后台访问路径"
+        name="admin_path"
+        rules={[
+          { required: true, message: '请输入管理后台访问路径' },
+          { pattern: /^[a-zA-Z0-9_\-]+$/, message: '路径仅支持字母、数字、下划线和中划线' }
+        ]}
+        extra={<Text type="secondary">修改后，管理后台的入口将更改为新的路径，例如：/admin1688。默认值为 admin1688。</Text>}
+      >
+        <Input placeholder="admin1688" />
+      </Form.Item>
+    </div>
+  );
+
   const loginSettingsContent = (
     <div style={{ maxWidth: 600 }}>
       <Form.Item label="登录页标题" name="login_title" extra={<Text type="secondary">留空则使用站点名称</Text>}>
@@ -409,6 +651,25 @@ const Settings: React.FC = () => {
       <Form.Item label="登录页副标题" name="login_subtitle" extra={<Text type="secondary">留空则使用默认文字</Text>}>
         <Input placeholder="例如：Next-gen LLM API Gateway" />
       </Form.Item>
+      <Form.Item label="登录页风格" name="login_style" extra={<Text type="secondary">配置登录和注册页面的布局结构。经典风格将输入表单直接居中显示，隐藏左侧装饰区域；左右风格则是两栏布局。</Text>}>
+        <LoginStyleSelector />
+      </Form.Item>
+
+      <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.login_style !== currentValues.login_style}>
+        {({ getFieldValue }) => {
+          const style = getFieldValue('login_style') || 'split';
+          if (style !== 'split') return null;
+          return (
+            <Form.Item 
+              label="左下角广告语" 
+              name="login_quote" 
+              extra={<Text type="secondary">配置“左右风格”左下角所显示的名言或广告语，留空时系统默认展示“下一代大语言模型 API 统一网关...”</Text>}
+            >
+              <Input.TextArea rows={3} placeholder="配置登录页左侧大背景底部所展示的宣传语，字数不宜过多" />
+            </Form.Item>
+          );
+        }}
+      </Form.Item>
 
       <Typography.Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>{t('settings.login_title')}</Typography.Title>
 
@@ -416,19 +677,19 @@ const Settings: React.FC = () => {
         <Switch />
       </Form.Item>
       <Form.Item label={t('settings.enable_mobile_login')} name={['login', 'enable_mobile_login']} valuePropName="checked"
-        extra={<Text type="secondary">{t('settings.login_hint_sms')}，<GoLink to="/admin0755/message-notification" text={t('settings.goto_settings')} /></Text>}>
+        extra={<Text type="secondary">{t('settings.login_hint_sms')}，<GoLink to={`/${adminPath}/message-notification`} text={t('settings.goto_settings')} /></Text>}>
         <Switch />
       </Form.Item>
       <Form.Item label={t('settings.enable_email_login')} name={['login', 'enable_email_login']} valuePropName="checked"
-        extra={<Text type="secondary">{t('settings.login_hint_email')}，<GoLink to="/admin0755/message-notification" text={t('settings.goto_settings')} /></Text>}>
+        extra={<Text type="secondary">{t('settings.login_hint_email')}，<GoLink to={`/${adminPath}/message-notification`} text={t('settings.goto_settings')} /></Text>}>
         <Switch />
       </Form.Item>
       <Form.Item label={t('settings.enable_wechat_login')} name={['login', 'enable_wechat_login']} valuePropName="checked"
-        extra={<Text type="secondary">{t('settings.login_hint_oauth')}，<GoLink to="/admin0755/oauth-settings" text={t('settings.goto_settings')} /></Text>}>
+        extra={<Text type="secondary">{t('settings.login_hint_oauth')}，<GoLink to={`/${adminPath}/oauth-settings`} text={t('settings.goto_settings')} /></Text>}>
         <Switch />
       </Form.Item>
       <Form.Item label={t('settings.enable_google_login')} name={['login', 'enable_google_login']} valuePropName="checked"
-        extra={<Text type="secondary">{t('settings.login_hint_oauth')}，<GoLink to="/admin0755/oauth-settings" text={t('settings.goto_settings')} /></Text>}>
+        extra={<Text type="secondary">{t('settings.login_hint_oauth')}，<GoLink to={`/${adminPath}/oauth-settings`} text={t('settings.goto_settings')} /></Text>}>
         <Switch />
       </Form.Item>
     </div>
@@ -439,7 +700,7 @@ const Settings: React.FC = () => {
       <Form.Item label={t('settings.enable_username_reg')} name={['registration', 'enable_username_registration']} valuePropName="checked"><Switch /></Form.Item>
       <Form.Item label={t('settings.enable_email_reg')} name={['registration', 'enable_email_registration']} valuePropName="checked"><Switch /></Form.Item>
       <Form.Item label={t('settings.enable_mobile_registration')} name={['registration', 'enable_mobile_registration']} valuePropName="checked"
-        extra={<Text type="secondary">{t('settings.login_hint_sms')}，<GoLink to="/admin0755/message-notification" text={t('settings.goto_settings')} /></Text>}>
+        extra={<Text type="secondary">{t('settings.login_hint_sms')}，<GoLink to={`/${adminPath}/message-notification`} text={t('settings.goto_settings')} /></Text>}>
         <Switch />
       </Form.Item>
       <Form.Item label={t('settings.enable_password_recovery')} name={['registration', 'enable_password_recovery']} valuePropName="checked"><Switch /></Form.Item>
@@ -480,6 +741,16 @@ const Settings: React.FC = () => {
 
   const agreementSettingsContent = (
     <div style={{ maxWidth: 800 }}>
+      <div style={{ marginBottom: 24, padding: '16px', background: 'var(--ant-color-bg-container)', border: '1px solid var(--ant-color-border-secondary)', borderRadius: '8px' }}>
+        <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 16 }}>全局协议控制 (Global Agreement Control)</Typography.Title>
+        <Form.Item label="启用服务条款" name={['agreement', 'tos_enabled']} valuePropName="checked" extra={<Typography.Text type="secondary">开启后，用户在登录和注册时会显示并需要同意服务条款</Typography.Text>}>
+          <Switch />
+        </Form.Item>
+        <Form.Item label="启用隐私协议" name={['agreement', 'privacy_enabled']} valuePropName="checked" extra={<Typography.Text type="secondary">开启后，用户在登录和注册时会显示并需要同意隐私协议</Typography.Text>}>
+          <Switch />
+        </Form.Item>
+      </div>
+
       <Tabs defaultActiveKey="zh">
         <Tabs.TabPane tab="简体中文 (默认)" key="zh">
           <Typography.Title level={5}>服务条款 (Terms of Service)</Typography.Title>
@@ -732,15 +1003,57 @@ const Settings: React.FC = () => {
         type="info"
         showIcon
         style={{ marginBottom: 20 }}
-        message="超过保留天数的使用日志，系统将在每天凌晨自动清理原始请求参数、上游请求参数和响应结果内容。日志记录本身及统计数据（费用、Token 数等）不受影响。"
+        message="两级策略：① 详情清理只清空请求/响应大字段，行仍留在热表；② 行归档把超期整行迁入 logs_archive 并从热表删除。仪表盘历史统计走 usage_daily_stats，归档前请先校准同步。"
       />
       <Form.Item
         label="日志详情保留天数"
         name={['storage', 'log_retention_days']}
-        extra={<Text type="secondary">设为 0 表示永不清理，日志详情将永久保留</Text>}
+        extra={<Text type="secondary">设为 0 表示永不清理大字段；默认 30 天</Text>}
+        style={{ marginBottom: 24 }}
       >
         <InputNumber min={0} max={3650} style={{ width: 200 }} addonAfter="天" placeholder="30" />
       </Form.Item>
+      <Form.Item
+        label="日志行归档天数（热表）"
+        name={['storage', 'log_row_retention_days']}
+        extra={
+          <Text type="secondary">
+            超期行迁入 logs_archive（系统自动 +2 天缓冲）。0=不归档（默认）。大数据量站点建议 90，且 ≥ 详情保留天数。
+          </Text>
+        }
+        style={{ marginBottom: 24 }}
+      >
+        <InputNumber min={0} max={3650} style={{ width: 200 }} addonAfter="天" placeholder="0" />
+      </Form.Item>
+
+      <Card 
+        title="历史使用数据每日统计校准与补录" 
+        size="small" 
+        style={{ borderRadius: 8, marginTop: 16 }}
+      >
+        <div style={{ marginBottom: 12 }}>
+          <Text type="secondary" style={{ fontSize: 13, display: 'block' }}>
+            系统在每天凌晨会自动增量同步历史日志到汇总表。如果您发现某些天的费用或Token数统计有误，或者想补录过去某段时间的数据，可以在下方选择日期范围手动触发同步（在后台静默分批处理，不影响网站使用）。
+          </Text>
+        </div>
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <DatePicker.RangePicker
+            style={{ width: '100%' }}
+            value={syncDates}
+            onChange={(val) => setSyncDates(val ? [val[0], val[1]] : [null, null])}
+            disabledDate={(current) => current && current > dayjs().endOf('day')}
+            placeholder={['开始日期', '结束日期']}
+          />
+          <Button 
+            type="primary" 
+            onClick={handleManualSync} 
+            loading={syncingStats}
+            disabled={!syncDates[0] || !syncDates[1]}
+          >
+            开始同步与校准
+          </Button>
+        </Space>
+      </Card>
     </div>
   );
 
@@ -858,6 +1171,65 @@ const Settings: React.FC = () => {
         <Button onClick={async () => {
           try { const r = await (request.post('/settings/database/backup') as any); r.success ? message.success(r.message) : message.error(r.message); } catch { /* 全局拦截器已统一处理 */ }
         }}>执行备份</Button>
+        <Button
+          danger
+          onClick={() => {
+            Modal.confirm({
+              title: '异常计费订单自动订正',
+              content: '系统将扫描最近5000条计费状态为200成功且计费明细包含“冻结”字样、但实际上上游返回失败的异常模型订单。确认要一键退还用户余额，并扣减对应的令牌、渠道用量吗？此操作包含并发防重锁定，不会重复扣减或退费。',
+              okText: '确认订正',
+              cancelText: '取消',
+              onOk: async () => {
+                try {
+                  const r = await (request.post('/settings/repair-logs') as any);
+                  if (r.success) {
+                    Modal.success({
+                      title: '自动订正成功',
+                      width: 650,
+                      content: (
+                        <div>
+                          <div style={{ marginBottom: 16 }}>
+                            共计修复异常失败账单: <strong>{r.repaired_count}</strong> 笔，已退回用户普通余额: <strong>{r.refunded_balance}</strong>，退回赠送余额: <strong>{r.refunded_gift_balance}</strong>。同时已自动回滚对应的渠道与令牌的已用额度占用。
+                          </div>
+                          {r.details && r.details.length > 0 && (
+                            <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: '8px 12px', background: '#fafafa' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                <thead>
+                                  <tr style={{ borderBottom: '2px solid #e8e8e8', color: '#595959', fontWeight: 600 }}>
+                                    <th style={{ padding: '6px 4px', textAlign: 'left' }}>用户 ID</th>
+                                    <th style={{ padding: '6px 4px', textAlign: 'left' }}>退回余额</th>
+                                    <th style={{ padding: '6px 4px', textAlign: 'left' }}>退回赠送</th>
+                                    <th style={{ padding: '6px 4px', textAlign: 'left' }}>异常原因</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {r.details.map((detail: any, idx: number) => (
+                                    <tr key={idx} style={{ borderBottom: '1px solid #e8e8e8' }}>
+                                      <td style={{ padding: '6px 4px', fontFamily: 'monospace', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={detail.user_id}>{detail.user_id}</td>
+                                      <td style={{ padding: '6px 4px', color: '#52c41a', fontWeight: 'bold' }}>+{detail.refund_balance.toFixed(4)}</td>
+                                      <td style={{ padding: '6px 4px', color: '#1890ff', fontWeight: 'bold' }}>+{detail.refund_gift.toFixed(4)}</td>
+                                      <td style={{ padding: '6px 4px', color: '#ff4d4f', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={detail.error_message}>{detail.error_message}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    });
+                  } else {
+                    message.error(r.message || '订正失败');
+                  }
+                } catch (e) {
+                  message.error('请求接口失败');
+                }
+              }
+            });
+          }}
+        >
+          异常计费订正
+        </Button>
       </Space>
     </div>
   );
@@ -884,6 +1256,7 @@ const Settings: React.FC = () => {
         {tab === 'basic' && (
           <Tabs activeKey={basicSubTab} onChange={setBasicSubTab} items={[
             { key: 'site', label: '站点信息', children: siteSettingsContent },
+            { key: 'security', label: '站点安全', children: securitySettingsContent },
             { key: 'login', label: '登录设置', children: loginSettingsContent },
             { key: 'registration', label: '注册设置', children: registrationSettingsContent },
             { key: 'agreement', label: '站点协议', children: agreementSettingsContent },

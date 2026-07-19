@@ -8,19 +8,372 @@
 //!
 //! 后台定时器每 2 分钟自动检查未完成计费的异步任务，确保计费正确落地。
 
-use axum::{extract::{State, Extension, Path, Query, OriginalUri}, response::Response};
-use std::sync::Arc;
-use std::collections::HashMap;
-use crate::{AppState, error::{AppError, AppResult}};
-use crate::models::ApiToken;
-use super::{proxy, forward};
 use super::url_utils::join_url;
+use super::{forward, proxy};
+use crate::models::ApiToken;
+use crate::{
+    error::{AppError, AppResult},
+    AppState,
+};
+use axum::{
+    extract::{Extension, OriginalUri, Path, Query, State},
+    response::Response,
+};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+/// 异步任务轮询 / 后台同步共用的日志快照。
+/// 用 `FromRow` 替代元组，不受 sqlx 元组 ≤16 列限制；后续加字段只改本结构 + SELECT。
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct TaskRelayLogRow {
+    id: i64,
+    channel_id: i64,
+    model: String,
+    response_content: String,
+    request_content: String,
+    endpoint: String,
+    action_type: String,
+    plugin_tag: String,
+    upstream_req_content: String,
+    post_response: String,
+    is_completed: i16,
+    status_code: i32,
+    cost: f64,
+    pre_deduct_gift: f64,
+    channel_config_id: Option<i32>,
+    task_id: String,
+    user_id: String,
+    #[sqlx(default)]
+    token_id: Option<i64>,
+}
+
+/// 与 [`TaskRelayLogRow`] 字段一一对应（COALESCE + AS 保证命名映射与空串语义）
+const TASK_RELAY_LOG_COLS: &str = "\
+id, channel_id, model, \
+COALESCE(response_content, '') AS response_content, \
+COALESCE(request_content, '') AS request_content, \
+COALESCE(endpoint, '') AS endpoint, \
+COALESCE(action_type, '') AS action_type, \
+COALESCE(plugin_tag, '') AS plugin_tag, \
+COALESCE(upstream_req_content, '') AS upstream_req_content, \
+COALESCE(post_response, '') AS post_response, \
+is_completed, status_code, cost, pre_deduct_gift, channel_config_id, \
+COALESCE(task_id, '') AS task_id, \
+user_id, token_id";
+
+#[inline]
+fn format_task_relay_sql(state: &AppState, where_clause: &str) -> String {
+    state.db.format_query(&format!(
+        "SELECT {TASK_RELAY_LOG_COLS} FROM logs WHERE {where_clause}"
+    ))
+}
+
+#[inline]
+async fn load_task_relay_log_by_task_id(
+    state: &AppState,
+    task_id: &str,
+) -> Option<TaskRelayLogRow> {
+    sqlx::query_as::<_, TaskRelayLogRow>(&format_task_relay_sql(
+        state,
+        "task_id = ? ORDER BY id DESC LIMIT 1",
+    ))
+    .bind(task_id)
+    .fetch_optional(&state.db.pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+#[inline]
+async fn load_task_relay_log_by_id(
+    state: &AppState,
+    log_id: i64,
+) -> anyhow::Result<Option<TaskRelayLogRow>> {
+    Ok(
+        sqlx::query_as::<_, TaskRelayLogRow>(&format_task_relay_sql(state, "id = ?"))
+            .bind(log_id)
+            .fetch_optional(&state.db.pool)
+            .await?,
+    )
+}
 
 /// 从 logs.plugin_tag 解析插件实际模型（用于轮询时模型替换）
 fn resolve_plugin_model(plugin_tag: &str) -> Option<String> {
-    if !plugin_tag.contains("happyhorse") { return None; }
+    if !plugin_tag.contains("happyhorse") {
+        return None;
+    }
     let tag: serde_json::Value = serde_json::from_str(plugin_tag).ok()?;
     tag["actual_model"].as_str().map(|s| s.to_string())
+}
+
+/// 级联阶段二进行中：对外返回阶段一 POST 提交态（处理中）。
+/// 禁止返回 S1 成功产物（含视频 URL）或 S2 增强接口原始响应。
+async fn cascade_s2_client_processing(
+    pool: &sqlx::PgPool,
+    raw_path: &str,
+    category: &str,
+    stage1_submit: &serde_json::Value,
+    task_id: &str,
+) -> String {
+    let mut s = crate::relay::response_formatter::apply_format(
+        pool,
+        raw_path,
+        category,
+        &stage1_submit.to_string(),
+        true,
+        Some(task_id),
+    )
+    .await;
+    let trimmed = s.trim();
+    if trimmed.is_empty() || trimmed == "{}" {
+        return serde_json::json!({"id": task_id, "status": "running"}).to_string();
+    }
+    if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&s) {
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert("id".to_string(), serde_json::json!(task_id));
+            // 仅官方 /api/：POST ack 常无 status；缺省或终态补 running（OpenAI 已由 apply_format 给出 pending）
+            if !crate::relay::response_formatter::is_openai_compatible_path(raw_path) {
+                let st = obj.get("status").and_then(|x| x.as_str()).unwrap_or("");
+                // 复用全局状态归一化：succeeded/failed（含 success/completed/cancelled 等同义）
+                if st.is_empty() || matches!(normalize_task_status(st), "succeeded" | "failed") {
+                    obj.insert("status".to_string(), serde_json::json!("running"));
+                }
+            }
+            s = serde_json::to_string(&v).unwrap_or(s);
+        }
+    }
+    s
+}
+
+/// JSON 指针取非空字符串并规范为小写（级联分辨率共用）
+fn cascade_json_str(json: &str, pointer: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|v| {
+            v.pointer(pointer)?
+                .as_str()
+                .map(|s| s.trim().to_ascii_lowercase())
+        })
+        .filter(|s| !s.is_empty())
+}
+
+/// 级联目标分辨率：plugin_tag.cascade.resolution → 720p
+fn cascade_target_resolution(plugin_tag: &str) -> String {
+    cascade_json_str(plugin_tag, "/cascade/resolution").unwrap_or_else(|| "720p".into())
+}
+
+/// 从阶段二增强响应提取帧率（result.fps / 顶层 fps）
+fn cascade_s2_fps(s2: &serde_json::Value) -> Option<i64> {
+    s2.pointer("/result/fps")
+        .or_else(|| s2.get("fps"))
+        .and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_u64().map(|u| u as i64))
+                .or_else(|| v.as_f64().map(|f| f as i64))
+        })
+        .filter(|&f| f > 0)
+}
+
+/// 递归覆写已存在的同名 string / number 字段（不凭空插入）
+fn patch_json_fields_by_key(
+    value: &mut serde_json::Value,
+    str_patches: &[(&str, &str)],
+    num_patches: &[(&str, i64)],
+) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for &(key, val) in str_patches {
+                if map.get(key).is_some_and(|v| v.is_string()) {
+                    map.insert(key.to_string(), serde_json::json!(val));
+                }
+            }
+            for &(key, val) in num_patches {
+                if map.get(key).is_some_and(|v| v.is_number()) {
+                    map.insert(key.to_string(), serde_json::json!(val));
+                }
+            }
+            for (_, child) in map.iter_mut() {
+                patch_json_fields_by_key(child, str_patches, num_patches);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for child in arr.iter_mut() {
+                patch_json_fields_by_key(child, str_patches, num_patches);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// 级联成功对外：S1 官方骨架对齐 S2 产物（URL / 目标分辨率 / 帧率；ratio·duration·usage 保持）
+/// 无增强产物 URL 时不改元数据，避免分辨率/帧率与底座视频不一致
+fn cascade_s1_with_s2_url(
+    s1: &serde_json::Value,
+    s2: &serde_json::Value,
+    plugin_tag: &str,
+) -> serde_json::Value {
+    let old_url = super::response_formatter::find_urls(s1)
+        .into_iter()
+        .next()
+        .unwrap_or_default();
+    let new_url = super::response_formatter::find_urls(s2)
+        .into_iter()
+        .next()
+        .unwrap_or_default();
+    let mut out = s1.clone();
+    if new_url.is_empty() {
+        return out;
+    }
+
+    if !old_url.is_empty() {
+        replace_exact_url_in_json(&mut out, &old_url, &new_url);
+    } else {
+        // S1 未解析到旧链时，直接覆写已有 video_url（如 content.video_url）
+        patch_json_fields_by_key(&mut out, &[("video_url", new_url.as_str())], &[]);
+    }
+
+    let target_res = cascade_target_resolution(plugin_tag);
+    let fps = cascade_s2_fps(s2).unwrap_or(60);
+    patch_json_fields_by_key(
+        &mut out,
+        &[("resolution", target_res.as_str())],
+        &[("framespersecond", fps), ("fps", fps)],
+    );
+    out
+}
+
+/// 强制 JSON 响应的 id 为用户侧 task_id（级联对外契约）
+fn force_json_task_id(s: &mut String, task_id: &str) {
+    if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(s) {
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert("id".to_string(), serde_json::json!(task_id));
+            *s = serde_json::to_string(&v).unwrap_or_else(|_| s.clone());
+        }
+    }
+}
+
+/// 级联落库：stage1 + stage2 原始串 → combined JSON
+fn cascade_combine_stages(s1: &serde_json::Value, s2_raw: &str) -> String {
+    let s2: serde_json::Value = serde_json::from_str(s2_raw).unwrap_or(serde_json::json!(s2_raw));
+    serde_json::json!({ "stage1": s1, "stage2": s2 }).to_string()
+}
+
+/// 阶段二成功：stage1 usage × res_mul（返回 / 落库 / 结算共用）
+fn apply_cascade_res_mul_to_stage1(
+    s1: &mut serde_json::Value,
+    res_mul: &std::collections::HashMap<String, f64>,
+    plugin_tag: &str,
+) {
+    let res = cascade_target_resolution(plugin_tag);
+    forward::scale_usage_in_json(s1, forward::lookup_res_mul(res_mul, &res));
+}
+
+/// 构造即梦轮询上下文：优先使用日志中的原始请求内容，enable_log=0 时从 plugin_tag.jimeng_poll 恢复
+fn build_jimeng_poll_ctx<'a>(
+    target_type: &str,
+    log_upstream_req: &'a str,
+    log_request_content: &'a str,
+    plugin_tag: &str,
+    fallback_buf: &'a mut Option<String>,
+) -> Option<(&'a str, &'a str)> {
+    if !target_type.starts_with("jimeng_") {
+        return None;
+    }
+    let req: &str = if log_request_content.is_empty() {
+        *fallback_buf = serde_json::from_str::<serde_json::Value>(plugin_tag)
+            .ok()
+            .and_then(|pt| pt.get("jimeng_poll").map(|jp| jp.to_string()));
+        fallback_buf.as_deref().unwrap_or("")
+    } else {
+        log_request_content
+    };
+    let upstream = if log_upstream_req.is_empty() {
+        ""
+    } else {
+        log_upstream_req
+    };
+    Some((upstream, req))
+}
+
+/// 从 plugin_tag.cascade 还原阶段二轮询目标（渠道 + 转发配置 + 模型）
+fn cascade_stage2_poll_target(
+    channel: &crate::models::Channel,
+    resolved: &forward::ResolvedForward,
+    plugin_tag: &str,
+    stage2_task_id: &str,
+) -> (crate::models::Channel, forward::ResolvedForward, String) {
+    let tag_json: serde_json::Value =
+        serde_json::from_str(plugin_tag).unwrap_or(serde_json::json!({}));
+    let cascade_info = tag_json
+        .get("cascade")
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
+
+    let mut ch = channel.clone();
+    ch.id = cascade_info
+        .get("ch_id")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(channel.id);
+    ch.name = cascade_info
+        .get("ch_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&channel.name)
+        .to_string();
+    ch.base_url = cascade_info
+        .get("base_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&channel.base_url)
+        .to_string();
+    ch.api_key = cascade_info
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&channel.api_key)
+        .to_string();
+    ch.rate = cascade_info
+        .get("rate")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(channel.rate);
+
+    let mut res = resolved.clone();
+    res.mid = cascade_info
+        .get("mid")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    res.auth_type = cascade_info
+        .get("auth_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&resolved.auth_type)
+        .to_string();
+    res.upstream_path = cascade_info
+        .get("upstream_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&resolved.upstream_path)
+        .to_string();
+    res.target_type = cascade_info
+        .get("target_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&resolved.target_type)
+        .to_string();
+    res.poll_path = cascade_info
+        .get("poll_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let final_model = cascade_info
+        .get("final_model")
+        .and_then(|v| v.as_str())
+        .or_else(|| cascade_info.get("mid").and_then(|v| v.as_str()))
+        .unwrap_or("vve-sd")
+        .to_string();
+
+    tracing::debug!(
+        "[Cascade S2] 轮询目标: stage2_id={}, ch={}, mid={:?}, final_model={}",
+        stage2_task_id,
+        ch.name,
+        res.mid,
+        final_model
+    );
+    (ch, res, final_model)
 }
 
 /// 类别推断：优先 action_type（POST 阶段精准写入），兜底 endpoint 推断，最后查 DB
@@ -34,26 +387,25 @@ async fn infer_category(
     if !action_type.is_empty() {
         return action_type.to_string();
     }
-    if endpoint.contains("/video/") || endpoint.contains("/videos/") || endpoint.contains("/v1/video") {
-        return "视频".to_string();
+    if let Some(cat) = super::proxy::action_type_from_path(endpoint) {
+        return cat.to_string();
     }
-    if endpoint.contains("/image/") || endpoint.contains("/images/") || endpoint.contains("/v1/image") {
-        return "图片".to_string();
-    }
-    sqlx::query_scalar(
-        &db.format_query(
-            "SELECT COALESCE(t.name, '') FROM models m \
+    sqlx::query_scalar(&db.format_query(
+        "SELECT COALESCE(t.name, '') FROM models m \
              LEFT JOIN model_types t ON m.type_id = t.id \
-             WHERE m.model_id = ? ORDER BY m.id LIMIT 1"
-        )
-    ).bind(model).fetch_optional(pool).await
-        .unwrap_or(None).unwrap_or_default()
+             WHERE m.model_id = ? ORDER BY m.id LIMIT 1",
+    ))
+    .bind(model)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None)
+    .unwrap_or_default()
 }
 
 /// 类别到默认入口路径的映射
 fn category_to_entry_path(category: &str) -> &'static str {
     match category {
-        "视频" => "/v1/video/generations",
+        "视频" | "视频增强" => "/v1/video/generations",
         "图片" => "/v1/images/generations",
         _ => "/v1/tasks",
     }
@@ -72,250 +424,619 @@ pub async fn task_status(
     Query(params): Query<HashMap<String, String>>,
 ) -> AppResult<Response> {
     let raw_path = uri.path();
-    let mut model_name = params.get("model").map(|s| s.as_str()).unwrap_or("").to_string();
-    let ctx = proxy::get_user_context(&state, &token.user_id).await?;
+    let mut model_name = params
+        .get("model")
+        .map(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
 
-    // 从日志中查找原始渠道信息（含 action_type 用于精准类别推断）
-    let log_query = state.db.format_query("SELECT id, channel_id, model, response_content, COALESCE(request_content, ''), billing_detail, COALESCE(endpoint, ''), COALESCE(billing_features, ''), COALESCE(action_type, ''), COALESCE(plugin_tag, ''), COALESCE(upstream_req_content, '') FROM logs WHERE task_id = ? ORDER BY id DESC LIMIT 1");
-    let mut db_log_id: Option<i64> = None;
+    // 从日志中查找原始渠道信息（含 action_type 用于精准类别推断，is_completed 用于快速返回判断）
+    let log_row = load_task_relay_log_by_task_id(&state, &task_id).await;
 
-    let mut billing_features_str: Option<String> = None;
-    let mut already_settled = false;  // 已成功结算（billing_detail 不含"冻结"且不含"退回"）
-    let mut was_refunded = false;     // 已退款（billing_detail 含"退回"）
-    let mut log_endpoint: Option<String> = None;
-    let mut log_response_content: Option<String> = None;
-    let mut log_action_type = String::new();
-    let mut log_plugin_tag = String::new();
-    let mut log_request_content = String::new();
-    let mut log_upstream_req = String::new();
-    let log_row: Option<(i64, i64, String, String, String, Option<String>, String, String, String, String, String)> = sqlx::query_as(&log_query)
-        .bind(&task_id)
-        .fetch_optional(&state.db.pool)
-        .await
-        .unwrap_or(None);
+    let (
+        db_log_id,
+        log_channel_id,
+        model_name_db,
+        log_response_content,
+        log_request_content,
+        log_endpoint,
+        log_action_type,
+        log_plugin_tag,
+        log_upstream_req,
+        log_post_response,
+        log_is_completed,
+        log_status_code,
+        log_cost,
+        log_pre_deduct_gift,
+        log_cfg_id,
+    ) = match log_row {
+        Some(r) => (
+            Some(r.id),
+            r.channel_id,
+            r.model,
+            r.response_content,
+            r.request_content,
+            r.endpoint,
+            r.action_type,
+            r.plugin_tag,
+            r.upstream_req_content,
+            r.post_response,
+            r.is_completed,
+            r.status_code,
+            r.cost,
+            r.pre_deduct_gift,
+            r.channel_config_id,
+        ),
+        None => (
+            None,
+            0,
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            0i16,
+            200i32,
+            0.0,
+            0.0,
+            None,
+        ),
+    };
+    // 日志表的 model 优先（保证数据一致性），仅日志为空时使用请求参数的 model
+    if !model_name_db.is_empty() {
+        model_name = model_name_db;
+    }
+    let log_response_content: Option<String> = if log_response_content.is_empty() {
+        None
+    } else {
+        Some(log_response_content)
+    };
 
-    let channel_opt: Option<crate::models::Channel> = if let Some((l_id, cid, m_name, resp_content, req_content, b_detail, ep, bf_str, at, pt, upstream_req)) = log_row {
-        if !resp_content.is_empty() { log_response_content = Some(resp_content); }
-        db_log_id = Some(l_id);
-        // 日志表的 model 优先（保证数据一致性），仅日志为空时使用请求参数的 model
-        if !m_name.is_empty() {
-            model_name = m_name;
-        }
-        if !ep.is_empty() {
-            log_endpoint = Some(ep);
-        }
-        if !at.is_empty() {
-            log_action_type = at;
-        }
-        if !pt.is_empty() {
-            log_plugin_tag = pt;
-        }
-        if !req_content.is_empty() {
-            log_request_content = req_content;
-        }
-        if !upstream_req.is_empty() {
-            log_upstream_req = upstream_req;
-        }
-        if let Some(ref detail) = b_detail {
-            if !detail.is_empty() && !detail.contains("冻结") {
-                if detail.contains("退回") {
-                    // 已退款状态：后续若上游返回成功，应重新结算
-                    was_refunded = true;
+    // 💡 已完成任务快速返回（前置优化：非级联场景无需查询渠道/规则，直接返回缓存）
+    if log_is_completed == 1 {
+        if let Some(ref content) = log_response_content {
+            let cached_json: serde_json::Value =
+                serde_json::from_str(content).unwrap_or(serde_json::json!({}));
+            if cached_json.is_object() && !cached_json.as_object().map_or(true, |m| m.is_empty()) {
+                // 通过 response_content 结构判断是否为级联（有 stage1+stage2 = 级联）
+                let is_cascade_resp =
+                    cached_json.get("stage1").is_some() && cached_json.get("stage2").is_some();
+                let final_response_str = if is_cascade_resp && log_status_code == 200 {
+                    // 级联成功已完成：按级联规则替换 URL 后返回 stage1 格式
+                    let s1_json = cached_json
+                        .get("stage1")
+                        .cloned()
+                        .unwrap_or(serde_json::json!({}));
+                    let s2_json = cached_json
+                        .get("stage2")
+                        .cloned()
+                        .unwrap_or(serde_json::json!({}));
+                    let new_stage1 = cascade_s1_with_s2_url(&s1_json, &s2_json, &log_plugin_tag);
+                    let category = infer_category(
+                        &state.db.pool,
+                        &state.db,
+                        &log_action_type,
+                        &log_endpoint,
+                        &model_name,
+                    )
+                    .await;
+                    let mut formatted = crate::relay::response_formatter::apply_format(
+                        &state.db.pool,
+                        raw_path,
+                        &category,
+                        &new_stage1.to_string(),
+                        false,
+                        Some(&task_id),
+                    )
+                    .await;
+                    force_json_task_id(&mut formatted, &task_id);
+                    formatted
                 } else {
-                    // 已成功结算：不再重复扣费
-                    already_settled = true;
-                }
+                    // 非级联已完成 或 级联失败已完成：直接格式化返回
+                    let category = infer_category(
+                        &state.db.pool,
+                        &state.db,
+                        &log_action_type,
+                        &log_endpoint,
+                        &model_name,
+                    )
+                    .await;
+                    let formatted = crate::relay::response_formatter::apply_format(
+                        &state.db.pool,
+                        raw_path,
+                        &category,
+                        content,
+                        false,
+                        Some(&task_id),
+                    )
+                    .await;
+                    // 图片模型双向格式对齐
+                    if category.contains("图片") {
+                        let rf = serde_json::from_str::<serde_json::Value>(&log_request_content)
+                            .ok()
+                            .and_then(|v| {
+                                v.get("response_format")
+                                    .and_then(|f| f.as_str())
+                                    .map(|s| s.to_string())
+                            });
+                        super::tos_persist::align_response_format(&state, &formatted, rf.as_deref())
+                            .await
+                    } else {
+                        formatted
+                    }
+                };
+                tracing::info!(
+                    "[Task Poll] task_id={}, is_completed=1, 直接返回缓存响应, status_code={}",
+                    task_id,
+                    log_status_code
+                );
+                return Ok(Response::builder()
+                    .header("Content-Type", "application/json")
+                    .body(axum::body::Body::from(final_response_str))
+                    .unwrap());
             }
+        }
+        // is_completed=1 但 response_content 无效，降级到上游轮询
+        tracing::warn!(
+            "[Task Poll] task_id={}, is_completed=1 但 response_content 无效，降级轮询上游",
+            task_id
+        );
+    }
+
+    if model_name.is_empty() {
+        return Err(AppError::BadRequest(
+            "Missing model parameter and cannot infer from task_id".to_string(),
+        ));
+    }
+
+    // Plugin: happyhorse_router — 从 plugin_tag 解析实际模型
+    if let Some(actual) = resolve_plugin_model(&log_plugin_tag) {
+        tracing::info!("[小马] 轮询模型替换: {} → {}", model_name, actual);
+        model_name = actual;
+    }
+
+    // 与选渠同源水合（channel_config_id 还原 HA 子配）；无日志时 channel_id=0 → None
+    let channel = super::router::fetch_channel(&state, log_channel_id, log_cfg_id)
+        .await
+        .ok_or_else(|| {
+            AppError::BadRequest("任务对应的渠道不存在或已被删除，无法查询任务状态".to_string())
+        })?;
+
+    let category = infer_category(
+        &state.db.pool,
+        &state.db,
+        &log_action_type,
+        &log_endpoint,
+        &model_name,
+    )
+    .await;
+    let default_entry = category_to_entry_path(&category);
+
+    // 一次性查询模型数据，供转发规则解析和计费结算共同复用（避免两次 models 表查询）
+    let cat_hint = if category.is_empty() {
+        None
+    } else {
+        Some(category.as_str())
+    };
+    let db_model =
+        super::proxy::find_active_model_exact(&state, &model_name, cat_hint, Some(&channel)).await;
+
+    // 根据渠道绑定的转发规则解析实际物理路径（复用已查询的 model）
+    let resolved = match forward::resolve_forward_rule(
+        &state,
+        &model_name,
+        &category,
+        default_entry,
+        Some(&channel),
+        db_model.as_ref(),
+    )
+    .await
+    {
+        Some(r) => r,
+        None => forward::infer_forward_from_base_url(&channel.base_url, &category, None),
+    };
+
+    // 级联阶段判定：cascade_stage: 0=非级联, 1=阶段一, 2=阶段二
+    let post_resp_json: serde_json::Value = if resolved.is_cascade {
+        serde_json::from_str(&log_post_response).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    let cascade_stage: u8 = if !resolved.is_cascade {
+        0
+    } else if post_resp_json.get("stage2").is_some() {
+        2
+    } else {
+        1
+    };
+
+    // 💡 级联阶段二：替换轮询目标（独立增强渠道 + stage2 任务ID），其余复用 send_poll_request
+    let cascade_ctx: Option<(
+        Option<crate::models::Channel>,
+        String,
+        super::forward::ResolvedForward,
+        String,
+    )> = if cascade_stage == 2 {
+        let stage2_val = &post_resp_json["stage2"];
+        let s2_id = super::response_formatter::find_id(stage2_val);
+        if s2_id.is_empty() {
+            // stage2 存的就是上游原始响应（提交失败时），直接通过 apply_format 返回
+            let err_raw = if stage2_val.is_string() {
+                stage2_val.as_str().unwrap_or("").to_string()
+            } else {
+                stage2_val.to_string()
+            };
+            let final_err = crate::relay::response_formatter::apply_format(
+                &state.db.pool,
+                raw_path,
+                &category,
+                &err_raw,
+                false,
+                None,
+            )
+            .await;
+            return Ok(Response::builder()
+                .status(400)
+                .header("Content-Type", "application/json")
+                .body(axum::body::Body::from(final_err))
+                .unwrap());
         }
 
-        if !bf_str.is_empty() { billing_features_str = Some(bf_str); }
-        if let Ok(Some(mut ch)) = sqlx::query_as::<_, crate::models::Channel>(&state.db.format_query("SELECT * FROM channels WHERE id = ?"))
-            .bind(cid)
-            .fetch_optional(&state.db.pool)
-            .await
-        {
-            if let Some(pid) = ch.preset_id {
-                if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(&state.db.format_query("SELECT * FROM channel_configs WHERE id = ?"))
-                    .bind(pid)
-                    .fetch_optional(&state.db.pool)
-                    .await
-                {
-                    ch.base_url = preset.base_url;
-                    ch.api_key = preset.api_key;
-                }
-            }
-            Some(ch)
-        } else {
-            None
-        }
+        // 从 plugin_tag.cascade 反序列化预先缓存的增强渠道信息
+        let (ch, res, final_model) =
+            cascade_stage2_poll_target(&channel, &resolved, &log_plugin_tag, &s2_id);
+        Some((Some(ch), s2_id, res, final_model))
     } else {
         None
     };
 
-    if model_name.is_empty() {
-        return Err(AppError::BadRequest("Missing model parameter and cannot infer from task_id".to_string()));
-    }
-
-    // Plugin: happyhorse_router — 从 plugin_tag 解析实际模型（复用已查询的 logs 数据，无需额外 DB 查询）
-    let mut upstream_model_name = model_name.clone();
-    let mut billing_model_name = model_name.clone();
-    if let Some(actual) = resolve_plugin_model(&log_plugin_tag) {
-        tracing::info!("[小马] 轮询模型替换: {} → {}", model_name, actual);
-        upstream_model_name = actual.clone();
-        billing_model_name = actual;
-    }
-
-    // 直接使用日志中记录的渠道，不重新走渠道选择（避免依赖用户分组，且不同渠道无法查询原任务）
-    let channel = match channel_opt {
-        Some(ch) => ch,
-        None => return Err(AppError::BadRequest(
-            "任务对应的渠道不存在或已被删除，无法查询任务状态".to_string()
-        )),
+    let (poll_channel, poll_resolved, poll_task_id, poll_model): (
+        &crate::models::Channel,
+        std::borrow::Cow<'_, super::forward::ResolvedForward>,
+        &str,
+        &str,
+    ) = if let Some((ref ch_opt, ref s2_id, ref s2_resolved, ref fm)) = cascade_ctx {
+        (
+            ch_opt.as_ref().unwrap_or(&channel),
+            std::borrow::Cow::Borrowed(s2_resolved),
+            s2_id.as_str(),
+            fm.as_str(),
+        )
+    } else {
+        (
+            &channel,
+            std::borrow::Cow::Borrowed(&resolved),
+            &task_id,
+            &model_name,
+        )
     };
 
-    let category = infer_category(
-        &state.db.pool, &state.db, &log_action_type,
-        log_endpoint.as_deref().unwrap_or(""), &upstream_model_name,
-    ).await;
-    let default_entry = category_to_entry_path(&category);
+    let is_tencent =
+        resolved.target_type == "tencent_vod_video" || resolved.target_type == "tencent_vod_image";
 
-    // 解析转发规则决定查询路径（传入渠道确保同名模型精确匹配绑定的转发规则）
-    let resolved = match forward::resolve_forward_rule(&state, &upstream_model_name, &category, default_entry, Some(&channel), None).await {
-        Some(r) => r,
-        None => forward::infer_forward_from_base_url(&channel.base_url, &category)
-    };
-
-    let is_tencent = resolved.target_type == "tencent_vod_video" || resolved.target_type == "tencent_vod_image";
-
-    // 构造轮询上下文（即梦等需要额外参数的厂商）
-    let jimeng_ctx = if resolved.target_type.starts_with("jimeng_") {
-        Some((log_upstream_req.as_str(), log_request_content.as_str()))
-    } else { None };
+    // 构造轮询上下文（即梦等需要额外参数的厂商，enable_log=0 时从 plugin_tag 恢复）
+    let mut jimeng_fb = None;
+    let jimeng_ctx = build_jimeng_poll_ctx(
+        &resolved.target_type,
+        &log_upstream_req,
+        &log_request_content,
+        &log_plugin_tag,
+        &mut jimeng_fb,
+    );
     let (url, get_resp_str) = send_poll_request(
-        &state.http_client, &channel, &resolved, &task_id, &upstream_model_name, jimeng_ctx,
-    ).await.map_err(|e| AppError::UpstreamError(e))?;
-    let resp_json: serde_json::Value = serde_json::from_str(&get_resp_str).unwrap_or(serde_json::json!({}));
+        &state.http_client,
+        poll_channel,
+        &poll_resolved,
+        poll_task_id,
+        poll_model,
+        jimeng_ctx,
+    )
+    .await
+    .map_err(|e| AppError::UpstreamError(e))?;
+    let resp_json: serde_json::Value =
+        serde_json::from_str(&get_resp_str).unwrap_or(serde_json::json!({}));
 
     // 提前解析任务状态，决定是否需要 TOS 替换
     let raw_status = extract_raw_status(&resp_json);
     let task_status = normalize_task_status(&raw_status);
-    tracing::info!("[Task Poll] task_id={}, model={}, category={}, status={}, already_settled={}, was_refunded={}, resp_len={}",
-        task_id, upstream_model_name, category, task_status, already_settled, was_refunded, get_resp_str.len());
+    tracing::info!(
+        "[Task Poll] task_id={}, model={}, category={}, status={}, cascade_stage={}, resp_len={}",
+        task_id,
+        model_name,
+        category,
+        task_status,
+        cascade_stage,
+        get_resp_str.len()
+    );
+
+    // 💡 级联阶段一特殊处理：succeeded 触发阶段二提交, failed/pending 继续走主流程
+    if cascade_stage == 1 {
+        if task_status == "succeeded" {
+            let base_video_url = super::response_formatter::find_urls(&resp_json)
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            tracing::info!(
+                "[Cascade S1] 底座成功，准备触发阶段二。task_id={}, base_video_url_len={}",
+                task_id,
+                base_video_url.len()
+            );
+            if let Some(log_id) = db_log_id {
+                match cascade_stage2_submit(
+                    &state,
+                    &token.user_id,
+                    Some(token.id),
+                    &task_id,
+                    log_id,
+                    &log_post_response,
+                    &log_request_content,
+                    &log_upstream_req,
+                    log_cost,
+                    log_pre_deduct_gift,
+                    &channel,
+                    &base_video_url,
+                    &log_plugin_tag,
+                    &get_resp_str,
+                )
+                .await
+                {
+                    Ok(_stage2_id) => {
+                        // 内存中仍是原始 POST ack（DB 已写为 {stage1,stage2}）；不可再取 .stage1（旧结构无此键 → {}）
+                        let stage1_ack =
+                            serde_json::from_str::<serde_json::Value>(&log_post_response)
+                                .unwrap_or(serde_json::json!({}));
+                        let final_resp = cascade_s2_client_processing(
+                            &state.db.pool,
+                            raw_path,
+                            &category,
+                            &stage1_ack,
+                            &task_id,
+                        )
+                        .await;
+                        return Ok(Response::builder()
+                            .header("Content-Type", "application/json")
+                            .body(axum::body::Body::from(final_resp))
+                            .unwrap());
+                    }
+                    Err(e) => return Err(AppError::UpstreamError(e)),
+                }
+            }
+        }
+        // pending/failed → 继续走主流程（计费/退款条件不满足会自动跳过）
+    }
 
     // 腾讯云：统一转为 OpenAI 格式；非腾讯：保持原始格式
     let store_body = if is_tencent {
-        let object_type = if category == "视频" { "video.generation" } else { "image.generation" };
-        convert_tencent_poll_to_store(&resp_json, &task_id, &get_resp_str, object_type)
+        super::response_formatter::format_openai(&category, &get_resp_str, false, Some(&task_id))
     } else {
         get_resp_str.clone()
     };
 
-    // 渠道 TOS 存储：仅在任务首次成功时执行（含退款后重新成功场景，避免重复上传）
-    let store_body = if task_status == "succeeded" && !already_settled {
+    let rf = serde_json::from_str::<serde_json::Value>(&log_request_content)
+        .ok()
+        .and_then(|v| {
+            v.get("response_format")
+                .and_then(|f| f.as_str())
+                .map(|s| s.to_string())
+        });
+    let rf_ref = rf.as_deref();
+
+    // 渠道 TOS 存储：仅在非级联阶段一 且 任务成功时执行
+    let store_body = if task_status == "succeeded" && cascade_stage != 1 {
         if let Some(days) = channel.tos_storage() {
-            let fallback_type = if category.contains("视频") { "video" } else { "image" };
+            let fallback_type = if category.contains("视频") {
+                "video"
+            } else {
+                "image"
+            };
             super::tos_persist::persist_response_resources(
-                &state, &store_body, channel.id, days, None, Some(fallback_type),
-            ).await
+                &state,
+                &store_body,
+                channel.id,
+                days,
+                rf_ref,
+                Some(fallback_type),
+            )
+            .await
         } else {
             store_body
         }
-    } else if already_settled {
-        // 已结算：复用初始查询已获取的 response_content（已含 TOS URL），避免重复上传和重复查询
-        log_response_content.take().unwrap_or(store_body)
+    } else {
+        store_body
+    };
+
+    // 级联阶段二：提取 stage1 数据用于 combined body 构建和返回格式化
+    let mut s1_json: serde_json::Value = if cascade_stage == 2 {
+        if let Some(ref content) = log_response_content {
+            let parsed: serde_json::Value =
+                serde_json::from_str(content).unwrap_or(serde_json::json!({}));
+            parsed.get("stage1").cloned().unwrap_or(parsed)
+        } else {
+            serde_json::json!({})
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    // 阶段二成功：stage1 usage × res_mul
+    if cascade_stage == 2 && task_status == "succeeded" {
+        apply_cascade_res_mul_to_stage1(&mut s1_json, &resolved.res_mul, &log_plugin_tag);
+    }
+
+    let store_body = if cascade_stage == 2 && task_status == "succeeded" {
+        cascade_combine_stages(&s1_json, &store_body)
     } else {
         store_body
     };
 
     if let Some(log_id) = db_log_id {
-        // 仅在任务尚未成功结算时更新日志响应内容（成功时同步清空之前临时失败的 error_message）
-        if !already_settled {
-            if task_status == "succeeded" {
-                let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ?, error_message = NULL WHERE id = ?"))
-                    .bind(&store_body)
-                    .bind(log_id)
-                    .execute(&state.db.pool).await;
-            } else if task_status == "failed" {
-                let err_text = proxy::extract_error_message(&store_body);
-                let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ?, error_message = ? WHERE id = ?"))
-                    .bind(&store_body)
-                    .bind(&err_text)
-                    .bind(log_id)
-                    .execute(&state.db.pool).await;
-            } else {
-                let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ? WHERE id = ?"))
-                    .bind(&store_body)
-                    .bind(log_id)
-                    .execute(&state.db.pool).await;
+        // 清理级联 plugin_tag 中的敏感信息
+        if (task_status == "succeeded" || task_status == "failed")
+            && log_plugin_tag.contains("\"cascade\"")
+        {
+            if let Ok(mut pt) = serde_json::from_str::<serde_json::Value>(&log_plugin_tag) {
+                if let Some(cascade) = pt.get_mut("cascade").and_then(|v| v.as_object_mut()) {
+                    if cascade.remove("api_key").is_some() {
+                        let updated_tag = pt.to_string();
+                        let _ = sqlx::query(
+                            &state
+                                .db
+                                .format_query("UPDATE logs SET plugin_tag = ? WHERE id = ?"),
+                        )
+                        .bind(&updated_tag)
+                        .bind(log_id)
+                        .execute(&state.db.pool)
+                        .await;
+                    }
+                }
             }
         }
 
-        // 任务完成时执行计费（使用 billing_model_name 进行计费）
-        // 支持两种场景：
-        //   1. 首次成功（冻结状态）→ 正常结算
-        //   2. 退款后重新成功（之前轮询失败已退款，现在上游返回成功）→ 重新扣费
-        if task_status == "succeeded" && !already_settled {
-            let usage = crate::relay::usage_extractor::parse_usage(&store_body);
-
-            let cat_hint = if category.is_empty() { None } else { Some(category.as_str()) };
-            let db_model = proxy::find_active_model_exact(&state, &billing_model_name, cat_hint, Some(&channel)).await;
-
-            let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
-                if let Some(rule_id) = m.billing_rule_id {
-                    sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
-                        .bind(rule_id).fetch_optional(&state.db.pool).await.unwrap_or(None)
-                } else { None }
-            } else { None };
-
-            let features = build_poll_settlement_features(
-                &billing_features_str, &resp_json, &store_body, &category
+        if task_status == "succeeded" {
+            // 先结算再落库：避免结算失败重试时对已写入的倍率 usage 再次 × res_mul
+            settle_success(
+                &state,
+                log_id,
+                &model_name,
+                &store_body,
+                &resp_json,
+                &url,
+                &category,
+                &channel,
+                cascade_stage,
+                &log_plugin_tag,
+                db_model.as_ref(),
+                &resolved.res_mul,
+            )
+            .await;
+            let _ = sqlx::query(&state.db.format_query(
+                "UPDATE logs SET response_content = ?, error_message = NULL WHERE id = ?",
+            ))
+            .bind(&store_body)
+            .bind(log_id)
+            .execute(&state.db.pool)
+            .await;
+            tracing::info!(
+                "[Task Billing] log_id={}, model={}, cascade_stage={}, url={}",
+                log_id,
+                model_name,
+                cascade_stage,
+                url
             );
-
-            // 折扣策略: MIN(用户模型折扣, 全站折扣, 等级折扣), 受折扣限价约束
-            let umd = db_model.as_ref().and_then(|m| crate::relay::proxy::parse_user_model_discount(&ctx.model_discounts, &m.mid));
-            let (final_discount, discount_source) = crate::relay::proxy::resolve_discount(db_model.as_ref(), ctx.discount, umd);
-            let (cost, mut detail) = crate::relay::compute_cost(db_model.as_ref(), db_rule.as_ref(), &usage, final_discount, &features);
-            detail.push_str(&format!(" | {}", discount_source));
-            let (resolved_model, mapping_source) = crate::relay::router::resolve_model(&channel, &upstream_model_name, db_model.as_ref());
-            if let Some(src) = mapping_source {
-                detail.push_str(&format!(" | {}: {} ➞ {}", src, upstream_model_name, resolved_model));
-            }
-
-            // 退款后重新成功：预扣费已退回，视为 0（全额从余额扣除）
-            // 首次成功（冻结状态）：正常从预扣费中抵扣
-            let (pre_deduction, pre_deduct_gift): (f64, f64) = if was_refunded {
-                detail.push_str(" | [退款后重新结算]");
-                (0.0, 0.0)
-            } else {
-                sqlx::query_as(&state.db.format_query("SELECT cost, pre_deduct_gift FROM logs WHERE id = ?"))
-                    .bind(log_id).fetch_one(&state.db.pool).await.unwrap_or((0.0, 0.0))
-            };
-
-            execute_settlement_tx(&state, log_id, &token.user_id, Some(token.id), Some(channel.id),
-                usage.prompt, usage.completion, cost, pre_deduction, pre_deduct_gift, &detail).await;
-            tracing::info!("[Task Billing] log_id={}, model={}, cost={:.6}, pre_deduction={:.6}, tokens={}+{}={}, images={:?}, url={}",
-                log_id, billing_model_name, cost, pre_deduction, usage.prompt, usage.completion, usage.total, features.image_count, url);
-        } else if task_status == "failed" && !already_settled && !was_refunded {
-            let (pre_deduction, pre_deduct_gift): (f64, f64) = sqlx::query_as(&state.db.format_query("SELECT cost, pre_deduct_gift FROM logs WHERE id = ?"))
-                .bind(log_id).fetch_one(&state.db.pool).await.unwrap_or((0.0, 0.0));
-            let detail = if pre_deduction > 0.0 { "任务失败，预扣费已退回" } else { "任务失败，该请求无冻结费用" };
-
+        } else if task_status == "failed" {
             let err_text = proxy::extract_error_message(&store_body);
-            let status_code = proxy::infer_error_status_code(&err_text);
-
-            execute_refund_tx(&state, log_id, &token.user_id, Some(token.id), Some(channel.id),
-                pre_deduction, pre_deduct_gift, detail, status_code).await;
-            tracing::info!("[Task Refund] log_id={}, model={}, refunded={:.6}, url={}, inferred_status={}", log_id, model_name, pre_deduction, url, status_code);
+            if cascade_stage == 2 {
+                tracing::warn!(
+                    "[Cascade S2] 画质增强失败: log_id={}, err={}",
+                    log_id,
+                    err_text
+                );
+                let updated = serde_json::json!({
+                    "stage1": post_resp_json["stage1"],
+                    "stage2": &err_text
+                })
+                .to_string();
+                let resp_content = cascade_combine_stages(&s1_json, &store_body);
+                let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ?, error_message = ?, post_response = ? WHERE id = ?"))
+                    .bind(&resp_content).bind(&err_text).bind(&updated).bind(log_id)
+                    .execute(&state.db.pool).await;
+            } else {
+                let _ = sqlx::query(&state.db.format_query(
+                    "UPDATE logs SET response_content = ?, error_message = ? WHERE id = ?",
+                ))
+                .bind(&store_body)
+                .bind(&err_text)
+                .bind(log_id)
+                .execute(&state.db.pool)
+                .await;
+            }
+            let status_code = proxy::infer_error_status_code_from_str(&store_body);
+            settle_failure(&state, log_id, &url, status_code, cascade_stage).await;
+            tracing::info!(
+                "[Task Refund] log_id={}, model={}, cascade_stage={}, url={}, status={}",
+                log_id,
+                model_name,
+                cascade_stage,
+                url,
+                status_code
+            );
+        } else {
+            let db_store_body = if cascade_stage == 2 {
+                cascade_combine_stages(&s1_json, &store_body)
+            } else {
+                store_body.clone()
+            };
+            let _ = sqlx::query(
+                &state
+                    .db
+                    .format_query("UPDATE logs SET response_content = ? WHERE id = ?"),
+            )
+            .bind(&db_store_body)
+            .bind(log_id)
+            .execute(&state.db.pool)
+            .await;
         }
     }
 
-    // 返回格式化：腾讯云已是 OpenAI 格式，非腾讯走 apply_format
-    let final_response_str = if is_tencent {
+    // 返回格式化：
+    // - 级联 S2 成功：S1 骨架 + S2 产物 URL
+    // - 级联 S2 进行中：阶段一 POST 处理中形态（禁止 S2 原始响应 / S1 成功产物）
+    // - 其余：腾讯已是 OpenAI；其它走 apply_format
+    let mut final_response_str = if cascade_stage == 2 && task_status == "succeeded" {
+        let resp_json: serde_json::Value =
+            serde_json::from_str(&store_body).unwrap_or(serde_json::json!({}));
+        let s1_json = resp_json
+            .get("stage1")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
+        let s2_json = resp_json
+            .get("stage2")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
+        let new_stage1 = cascade_s1_with_s2_url(&s1_json, &s2_json, &log_plugin_tag);
+        crate::relay::response_formatter::apply_format(
+            &state.db.pool,
+            raw_path,
+            &category,
+            &new_stage1.to_string(),
+            false,
+            Some(&task_id),
+        )
+        .await
+    } else if cascade_stage == 2 && task_status != "failed" {
+        let stage1_ack = post_resp_json
+            .get("stage1")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
+        cascade_s2_client_processing(&state.db.pool, raw_path, &category, &stage1_ack, &task_id)
+            .await
+    } else if is_tencent {
         store_body
     } else {
         crate::relay::response_formatter::apply_format(
-            &state.db.pool, raw_path, &category, &store_body, false, Some(&task_id)
-        ).await
+            &state.db.pool,
+            raw_path,
+            &category,
+            &store_body,
+            false,
+            Some(&task_id),
+        )
+        .await
+    };
+
+    // 级联阶段二终态：确保对外 id 仍是用户轮询的原始 task_id（进行中路径已在 helper 内写入）
+    if cascade_stage == 2 && (task_status == "succeeded" || task_status == "failed") {
+        force_json_task_id(&mut final_response_str, &task_id);
+    }
+
+    // 仅对图片模型进行双向格式对齐，视频模型只返回 URL，跳过以避免大 JSON 反序列化开销
+    let final_response_str = if category.contains("图片") {
+        super::tos_persist::align_response_format(&state, &final_response_str, rf_ref).await
+    } else {
+        final_response_str
     };
 
     Ok(Response::builder()
@@ -327,7 +1048,10 @@ pub async fn task_status(
 // ── 后台定时轮询器 ──────────────────────────────────────────────
 
 /// 启动后台轮询定时任务（支持优雅关闭：收到 shutdown 信号后完成当前轮询再退出）
-pub fn start(state: Arc<AppState>, mut shutdown: tokio::sync::watch::Receiver<bool>) -> tokio::task::JoinHandle<()> {
+pub fn start(
+    state: Arc<AppState>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // 启动后等待 30 秒再开始第一次轮询，让系统初始化完毕
         tokio::select! {
@@ -356,68 +1080,98 @@ pub fn start(state: Arc<AppState>, mut shutdown: tokio::sync::watch::Receiver<bo
 /// 连续轮询失败超过 4 次的任务将被标记为失败并退还预扣费
 async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
     // 通用条件：billing_detail 含"冻结"即为待结算异步任务
-    // 不硬编码 endpoint，自动覆盖视频、图片等所有异步场景
-    // task_id 直接从 logs 表获取（POST 阶段已写入），不再从 response_content 解析
-    // （response_content 后期会被终态内容或 TOS URL 覆盖，不可靠）
-    let rows: Vec<(i64, i64, String, Option<String>, String)> = sqlx::query_as(
-        &state.db.format_query(
+    // 提示：测试渠道日志（不扣费）在 INSERT 及迁移中已全部将 is_completed 置为 1，
+    // 因此这里无需在 SQL 中对 billing_detail 进行低效的 LIKE '%冻结%' 模糊过滤，
+    // 仅通过 is_completed = 0 即可极其高效地命中部分索引，完全排除所有测试日志。
+    let rows: Vec<(i64, i64, String, Option<String>, String)> =
+        sqlx::query_as(&state.db.format_query(
             "SELECT id, channel_id, model, error_message, COALESCE(task_id, '') FROM logs \
-             WHERE billing_detail LIKE '%冻结%' \
+             WHERE is_completed = 0 \
              AND status_code = 200 \
-             AND created_at::timestamptz > CURRENT_TIMESTAMP - INTERVAL '24 hours' \
-             ORDER BY id DESC LIMIT 50"
-        )
-    )
-    .fetch_all(&state.db.pool)
-    .await?;
+             AND created_at > CURRENT_TIMESTAMP - INTERVAL '24 hours' \
+             ORDER BY id DESC LIMIT 50",
+        ))
+        .fetch_all(&state.db.pool)
+        .await?;
 
-    if rows.is_empty() { return Ok(()); }
+    if rows.is_empty() {
+        return Ok(());
+    }
     tracing::info!("[TaskPoller] 发现 {} 条待轮询任务", rows.len());
 
     for (log_id, _, model, error_message, db_task_id) in rows {
         // 解析已有的失败次数（格式：[POLL_FAIL:N] 错误内容）
-        let prev_fail_count = error_message.as_deref()
+        let prev_fail_count = error_message
+            .as_deref()
             .and_then(|m| m.strip_prefix("[POLL_FAIL:"))
             .and_then(|m| m.split(']').next())
             .and_then(|n| n.parse::<u32>().ok())
             .unwrap_or(0);
 
         // 已达失败上限，跳过（理论上不应出现，因为第 4 次已执行退款终结）
-        if prev_fail_count >= 4 { continue; }
-
-        // task_id 直接从日志表获取，无需从 response_content 解析
-        if db_task_id.is_empty() {
-            tracing::warn!("[TaskPoller] log_id={}, model={} 日志中无 task_id", log_id, model);
+        if prev_fail_count >= 4 {
             continue;
         }
 
-        tracing::info!("[TaskPoller] 开始轮询 log_id={}, model={}, task_id={}", log_id, model, db_task_id);
+        // task_id 直接从日志表获取，无需从 response_content 解析
+        if db_task_id.is_empty() {
+            tracing::warn!(
+                "[TaskPoller] log_id={}, model={} 日志中无 task_id",
+                log_id,
+                model
+            );
+            continue;
+        }
+
+        tracing::info!(
+            "[TaskPoller] 开始轮询 log_id={}, model={}, task_id={}",
+            log_id,
+            model,
+            db_task_id
+        );
         if let Err(e) = sync_single_task(state, log_id).await {
             let fail_count = prev_fail_count + 1;
             let err_msg = e.to_string();
-            tracing::warn!("[TaskPoller] log_id={} 自动轮询失败 ({}/4): {}", log_id, fail_count, err_msg);
+            tracing::warn!(
+                "[TaskPoller] log_id={} 自动轮询失败 ({}/4): {}",
+                log_id,
+                fail_count,
+                err_msg
+            );
 
             if fail_count >= 4 {
                 // 超过 4 次失败，记录真实错误原因并执行退款终结
-                let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE logs SET error_message = ? WHERE id = ?"
-                ))
+                let _ = sqlx::query(
+                    &state
+                        .db
+                        .format_query("UPDATE logs SET error_message = ? WHERE id = ?"),
+                )
                 .bind(&format!("[POLL_FAIL:{}] {}", fail_count, err_msg))
                 .bind(log_id)
-                .execute(&state.db.pool).await;
+                .execute(&state.db.pool)
+                .await;
 
                 let poll_url = format!("auto_poll_fail:{}", err_msg);
-                let status_code = proxy::infer_error_status_code(&err_msg);
-                settle_failure(state, log_id, &poll_url, status_code).await;
-                tracing::error!("[TaskPoller] log_id={} 连续 {} 次轮询失败，已终止并退款: {}, 推断状态码: {}", log_id, fail_count, err_msg, status_code);
+                let status_code = proxy::infer_error_status_code_from_str(&err_msg);
+                settle_failure(state, log_id, &poll_url, status_code, 0).await;
+                tracing::error!(
+                    "[TaskPoller] log_id={} 连续 {} 次轮询失败，已终止并退款: {}, 推断状态码: {}",
+                    log_id,
+                    fail_count,
+                    err_msg,
+                    status_code
+                );
             } else {
                 // 更新失败次数和最近错误原因，下次轮询时继续尝试
-                let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE logs SET error_message = ? WHERE id = ?"
-                ))
+                let _ = sqlx::query(
+                    &state
+                        .db
+                        .format_query("UPDATE logs SET error_message = ? WHERE id = ?"),
+                )
                 .bind(&format!("[POLL_FAIL:{}] {}", fail_count, err_msg))
                 .bind(log_id)
-                .execute(&state.db.pool).await;
+                .execute(&state.db.pool)
+                .await;
             }
         }
     }
@@ -427,19 +1181,34 @@ async fn poll_pending_tasks(state: &Arc<AppState>) -> anyhow::Result<()> {
 
 // ── sync_single_task ────────────────────────────────────────────
 
-/// 执行单条任务的同步轮询（支持手动或定时调用）
+/// 执行单条任务的同步轮询（支持手动或定时调用，含完整级联支持）
 pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Result<String> {
-    // task_id 直接从 logs 表获取（POST 阶段已写入），不再从 response_content 解析
-    let row: Option<(i64, String, String, String, String, String, String, String)> = sqlx::query_as(
-        &state.db.format_query(
-            "SELECT channel_id, model, COALESCE(endpoint, ''), COALESCE(action_type, ''), COALESCE(plugin_tag, ''), COALESCE(upstream_req_content, ''), COALESCE(request_content, ''), COALESCE(task_id, '') FROM logs WHERE id = ?"
-        )
-    ).bind(log_id).fetch_optional(&state.db.pool).await?;
+    let TaskRelayLogRow {
+        channel_id,
+        model: mut model_name,
+        endpoint,
+        action_type,
+        plugin_tag,
+        upstream_req_content: log_upstream_req,
+        request_content: log_request_content,
+        task_id,
+        post_response: log_post_response,
+        response_content: log_resp_content,
+        is_completed,
+        user_id,
+        token_id,
+        cost: log_cost,
+        pre_deduct_gift: log_pre_deduct_gift,
+        channel_config_id: log_cfg_id,
+        ..
+    } = load_task_relay_log_by_id(state, log_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("任务记录不存在"))?;
 
-    let (channel_id, mut model_name, endpoint, action_type, plugin_tag, log_upstream_req, log_request_content, task_id) = match row {
-        Some(r) => r,
-        None => return Err(anyhow::anyhow!("任务记录不存在")),
-    };
+    // 已完成任务无需再轮询
+    if is_completed == 1 {
+        return Ok("任务已完成，无需轮询".to_string());
+    }
 
     // Plugin: happyhorse_router — 若 plugin_tag 包含 happyhorse，则用实际模型替换 model_name 用于转发规则/计费
     if let Some(actual) = resolve_plugin_model(&plugin_tag) {
@@ -452,33 +1221,142 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
         return Err(anyhow::anyhow!("该记录无 task_id，可能不是异步任务"));
     }
 
-    let channel = match fetch_channel(state, channel_id).await {
-        Some(ch) => ch,
-        None => return Err(anyhow::anyhow!("渠道不存在或已被删除")),
-    };
+    let channel = super::router::fetch_channel(state, channel_id, log_cfg_id)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("渠道不存在或已被删除"))?;
 
     let category = infer_category(
-        &state.db.pool, &state.db, &action_type, &endpoint, &model_name,
-    ).await;
+        &state.db.pool,
+        &state.db,
+        &action_type,
+        &endpoint,
+        &model_name,
+    )
+    .await;
     let entry_path = category_to_entry_path(&category);
-    let resolved = forward::resolve_forward_rule(state, &model_name, &category, entry_path, Some(&channel), None)
-        .await
-        .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, &category));
 
-    let jimeng_ctx = if resolved.target_type.starts_with("jimeng_") {
-        Some((log_upstream_req.as_str(), log_request_content.as_str()))
-    } else { None };
-    let (url, body) = match send_poll_request(&state.http_client, &channel, &resolved, &task_id, &model_name, jimeng_ctx).await {
+    // 一次性查询模型数据，供转发规则解析和计费结算共同复用（避免两次 models 表查询）
+    let cat_hint = if category.is_empty() {
+        None
+    } else {
+        Some(category.as_str())
+    };
+    let db_model =
+        super::proxy::find_active_model_exact(state, &model_name, cat_hint, Some(&channel)).await;
+
+    // 根据渠道绑定的转发规则解析实际物理路径（复用已查询的 model）
+    let resolved = forward::resolve_forward_rule(
+        state,
+        &model_name,
+        &category,
+        entry_path,
+        Some(&channel),
+        db_model.as_ref(),
+    )
+    .await
+    .unwrap_or_else(|| forward::infer_forward_from_base_url(&channel.base_url, &category, None));
+
+    // 💡 级联阶段判定（与 task_status 保持一致）
+    let post_resp_json: serde_json::Value = if resolved.is_cascade {
+        serde_json::from_str(&log_post_response).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    let cascade_stage: u8 = if !resolved.is_cascade {
+        0
+    } else if post_resp_json.get("stage2").is_some() {
+        2
+    } else {
+        1
+    };
+
+    // 💡 级联阶段二：替换轮询目标（增强渠道 + stage2 任务ID）
+    let cascade_ctx: Option<(
+        Option<crate::models::Channel>,
+        String,
+        super::forward::ResolvedForward,
+        String,
+    )> = if cascade_stage == 2 {
+        let stage2_val = &post_resp_json["stage2"];
+        let s2_id = super::response_formatter::find_id(stage2_val);
+        if s2_id.is_empty() {
+            // stage2 提交失败，直接退款终结
+            settle_failure(
+                state,
+                log_id,
+                "级联阶段二提交失败，无有效任务ID",
+                500,
+                cascade_stage,
+            )
+            .await;
+            return Ok("级联阶段二失败: 无有效任务ID".to_string());
+        }
+        // 从 plugin_tag.cascade 反序列化增强渠道信息
+        let (ch, res, final_model) =
+            cascade_stage2_poll_target(&channel, &resolved, &plugin_tag, &s2_id);
+        Some((Some(ch), s2_id, res, final_model))
+    } else {
+        None
+    };
+
+    // 选择轮询目标：级联阶段二用增强渠道，其余用原始渠道
+    let (poll_channel, poll_resolved, poll_task_id, poll_model) =
+        if let Some((ref ch_opt, ref s2_id, ref s2_resolved, ref fm)) = cascade_ctx {
+            (
+                ch_opt.as_ref().unwrap_or(&channel),
+                std::borrow::Cow::Borrowed(s2_resolved),
+                s2_id.as_str(),
+                fm.as_str(),
+            )
+        } else {
+            (
+                &channel,
+                std::borrow::Cow::Borrowed(&resolved),
+                task_id.as_str(),
+                model_name.as_str(),
+            )
+        };
+
+    // 构造即梦轮询上下文（enable_log=0 时从 plugin_tag 恢复轮询参数）
+    let mut jimeng_fb = None;
+    let jimeng_ctx = build_jimeng_poll_ctx(
+        &resolved.target_type,
+        &log_upstream_req,
+        &log_request_content,
+        &plugin_tag,
+        &mut jimeng_fb,
+    );
+    let (url, body) = match send_poll_request(
+        &state.http_client,
+        poll_channel,
+        &poll_resolved,
+        poll_task_id,
+        poll_model,
+        jimeng_ctx,
+    )
+    .await
+    {
         Ok(r) => r,
         Err(e) => {
-            // 区分错误类型：上游明确返回 HTTP 错误码 → 终态失败（直接退款）；网络超时/连接失败 → 继续重试
+            // 区分错误类型：上游明确返回 HTTP 错误码 → 终态失败；网络超时 → 继续重试
             if e.starts_with("渠道返回错误状态码") {
-                // 上游明确回复了错误（如 500+业务错误码），再轮询也不会恢复
                 let _ = sqlx::query(&state.db.format_query(
-                    "UPDATE logs SET error_message = ?, response_content = ? WHERE id = ?"
-                )).bind(&e).bind(&e).bind(log_id).execute(&state.db.pool).await;
-                let status_code = proxy::infer_error_status_code(&e);
-                settle_failure(state, log_id, &format!("poll_upstream_error:{}", e), status_code).await;
+                    "UPDATE logs SET error_message = ?, response_content = ? WHERE id = ?",
+                ))
+                .bind(&e)
+                .bind(&e)
+                .bind(log_id)
+                .execute(&state.db.pool)
+                .await;
+                let status_code = proxy::infer_error_status_code_from_str(&e);
+                settle_failure(
+                    state,
+                    log_id,
+                    &format!("poll_upstream_error:{}", e),
+                    status_code,
+                    cascade_stage,
+                )
+                .await;
                 return Ok(format!("任务终态失败（上游错误）: {}", e));
             }
             return Err(anyhow::anyhow!("{}", e));
@@ -488,64 +1366,213 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
     let is_tencent = resolved.target_type.starts_with("tencent_vod");
     let resp_json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
 
-    // 腾讯云：完整响应记录 to tracing，方便开发者查看排查对照
+    // 腾讯云：完整响应记录 to tracing
     if is_tencent {
-        tracing::info!("[TaskPoller] 腾讯云原始响应 task_id={}, body={}", task_id, body);
+        tracing::info!(
+            "[TaskPoller] 腾讯云原始响应 task_id={}, body={}",
+            task_id,
+            body
+        );
     }
 
-    // 提取任务状态：调用统一的多厂商状态提取函数
     let raw_status = extract_raw_status(&resp_json);
     let task_status = normalize_task_status(&raw_status);
+
+    // 💡 级联阶段一：succeeded 触发阶段二提交
+    if cascade_stage == 1 && task_status == "succeeded" {
+        let base_video_url = super::response_formatter::find_urls(&resp_json)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        tracing::info!(
+            "[Cascade S1 BG] 底座成功，准备触发阶段二。task_id={}, base_video_url_len={}",
+            task_id,
+            base_video_url.len()
+        );
+        match cascade_stage2_submit(
+            state,
+            &user_id,
+            token_id,
+            &task_id,
+            log_id,
+            &log_post_response,
+            &log_request_content,
+            &log_upstream_req,
+            log_cost,
+            log_pre_deduct_gift,
+            &channel,
+            &base_video_url,
+            &plugin_tag,
+            &body,
+        )
+        .await
+        {
+            Ok(stage2_id) => return Ok(format!("级联阶段二已提交，stage2_id={}", stage2_id)),
+            Err(e) => return Err(anyhow::anyhow!("{}", e)),
+        }
+    }
 
     if task_status != "succeeded" && task_status != "failed" {
         return Ok(format!("当前状态: {}", task_status));
     }
 
-    // 腾讯云：构造 OpenAI 格式响应存 DB（成功提取 URL，失败携带错误信息）
+    // 腾讯云：构造 OpenAI 格式响应（复用 response_formatter 统一逻辑）
     let final_body = if is_tencent {
-        if task_status == "succeeded" {
-            convert_tencent_to_openai(&resp_json, &task_id).unwrap_or_else(|| body.clone())
+        let category_str = if category.contains("视频") {
+            "视频"
         } else {
-            let object_type = if category.contains("视频") { "video.generation" } else { "image.generation" };
-            let err_msg = extract_tencent_error_message(&resp_json)
-                .unwrap_or_else(|| "generation failed".to_string());
-            build_tencent_error_response(&task_id, object_type, &err_msg)
-        }
+            "图片"
+        };
+        super::response_formatter::format_openai(&category_str, &body, false, Some(&task_id))
     } else {
         body.clone()
     };
 
+    // 级联阶段二：提取 stage1 数据用于 combined body 构建
+    let mut s1_json: serde_json::Value = if cascade_stage == 2 && !log_resp_content.is_empty() {
+        let parsed: serde_json::Value =
+            serde_json::from_str(&log_resp_content).unwrap_or(serde_json::json!({}));
+        parsed.get("stage1").cloned().unwrap_or(parsed)
+    } else {
+        serde_json::json!({})
+    };
+
+    // 阶段二成功：stage1 usage × res_mul
+    if cascade_stage == 2 && task_status == "succeeded" {
+        apply_cascade_res_mul_to_stage1(&mut s1_json, &resolved.res_mul, &plugin_tag);
+    }
+
     let final_body = if task_status == "succeeded" {
-        if let Some(days) = channel.tos_storage() {
-            let fallback_type = if category.contains("视频") { "video" } else { "image" };
-            super::tos_persist::persist_response_resources(state, &final_body, channel.id, days, None, Some(fallback_type)).await
+        let rf = serde_json::from_str::<serde_json::Value>(&log_request_content)
+            .ok()
+            .and_then(|v| {
+                v.get("response_format")
+                    .and_then(|f| f.as_str())
+                    .map(|s| s.to_string())
+            });
+        let rf_ref = rf.as_deref();
+
+        // TOS 存储（级联阶段一已在上方 return，此处不会执行到）
+        let body_after_tos = if let Some(days) = channel.tos_storage() {
+            let fallback_type = if category.contains("视频") {
+                "video"
+            } else {
+                "image"
+            };
+            super::tos_persist::persist_response_resources(
+                state,
+                &final_body,
+                channel.id,
+                days,
+                rf_ref,
+                Some(fallback_type),
+            )
+            .await
         } else {
             final_body
+        };
+
+        // 图片模型双向格式对齐
+        let aligned = if category.contains("图片") {
+            super::tos_persist::align_response_format(state, &body_after_tos, rf_ref).await
+        } else {
+            body_after_tos
+        };
+
+        // 级联阶段二成功：包装 combined body
+        if cascade_stage == 2 {
+            cascade_combine_stages(&s1_json, &aligned)
+        } else {
+            aligned
         }
     } else {
+        // 级联阶段二失败：更新 post_response.stage2 为错误文本
+        if cascade_stage == 2 {
+            let err_text = proxy::extract_error_message(&final_body);
+            tracing::warn!(
+                "[Cascade S2 BG] 画质增强失败: log_id={}, err={}",
+                log_id,
+                err_text
+            );
+            let updated = serde_json::json!({
+                "stage1": post_resp_json["stage1"],
+                "stage2": &err_text
+            })
+            .to_string();
+            let resp_content = cascade_combine_stages(&s1_json, &final_body);
+            let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ?, error_message = ?, post_response = ? WHERE id = ?"))
+                .bind(&resp_content).bind(&err_text).bind(&updated).bind(log_id)
+                .execute(&state.db.pool).await;
+        }
         final_body
     };
 
-    // 更新日志响应内容为最终结果（成功时同步清空之前临时失败的 error_message）
-    let mut inferred_status = 400;
-    if task_status == "succeeded" {
-        let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ?, error_message = NULL WHERE id = ?"))
-            .bind(&final_body).bind(log_id).execute(&state.db.pool).await;
+    // 失败路径：更新日志；成功路径延后到结算之后再写 response_content（防级联 usage 二次倍率）
+    let inferred_status: u16 = if task_status == "succeeded" {
+        200
     } else {
         let err_text = proxy::extract_error_message(&final_body);
-        inferred_status = proxy::infer_error_status_code(&err_text);
-        let _ = sqlx::query(&state.db.format_query("UPDATE logs SET response_content = ?, error_message = ? WHERE id = ?"))
-            .bind(&final_body).bind(&err_text).bind(log_id).execute(&state.db.pool).await;
+        let status = proxy::infer_error_status_code_from_str(&final_body);
+        if cascade_stage != 2 {
+            let _ = sqlx::query(&state.db.format_query(
+                "UPDATE logs SET response_content = ?, error_message = ? WHERE id = ?",
+            ))
+            .bind(&final_body)
+            .bind(&err_text)
+            .bind(log_id)
+            .execute(&state.db.pool)
+            .await;
+        }
+        status
+    };
+
+    // 清理级联 plugin_tag 中的敏感信息
+    if (task_status == "succeeded" || task_status == "failed") && plugin_tag.contains("\"cascade\"")
+    {
+        if let Ok(mut pt) = serde_json::from_str::<serde_json::Value>(&plugin_tag) {
+            if let Some(cascade) = pt.get_mut("cascade").and_then(|v| v.as_object_mut()) {
+                if cascade.remove("api_key").is_some() {
+                    let updated_tag = pt.to_string();
+                    let _ = sqlx::query(
+                        &state
+                            .db
+                            .format_query("UPDATE logs SET plugin_tag = ? WHERE id = ?"),
+                    )
+                    .bind(&updated_tag)
+                    .bind(log_id)
+                    .execute(&state.db.pool)
+                    .await;
+                }
+            }
+        }
     }
 
     if task_status == "succeeded" {
-        let settle_body = &final_body;
-        // 腾讯云：传原始 resp_json（含 Response.AigcVideoTask 路径）以便提取实际视频时长
-        // 其他厂商：同样使用原始 resp_json
-        settle_success(state, log_id, &model_name, settle_body, &resp_json, &url, &category, &channel).await;
+        settle_success(
+            state,
+            log_id,
+            &model_name,
+            &final_body,
+            &resp_json,
+            &url,
+            &category,
+            &channel,
+            cascade_stage,
+            &plugin_tag,
+            db_model.as_ref(),
+            &resolved.res_mul,
+        )
+        .await;
+        let _ = sqlx::query(&state.db.format_query(
+            "UPDATE logs SET response_content = ?, error_message = NULL WHERE id = ?",
+        ))
+        .bind(&final_body)
+        .bind(log_id)
+        .execute(&state.db.pool)
+        .await;
         Ok("任务已成功落地并计费".to_string())
     } else {
-        settle_failure(state, log_id, &url, inferred_status).await;
+        settle_failure(state, log_id, &url, inferred_status, cascade_stage).await;
         Ok("任务已失败，预扣费已退回".to_string())
     }
 }
@@ -553,28 +1580,62 @@ pub async fn sync_single_task(state: &Arc<AppState>, log_id: i64) -> anyhow::Res
 // ── 结算辅助函数 ────────────────────────────────────────────────
 
 /// 任务成功：提取 token、计费、余额结算
-async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &str, resp_json: &serde_json::Value, poll_url: &str, category: &str, channel: &crate::models::Channel) {
-    let usage = super::usage_extractor::parse_usage(body);
+/// cascade_stage: 级联阶段（0=非级联, 1=阶段一, 2=阶段二）
+/// log_plugin_tag: 日志 plugin_tag，级联阶段二从 cascade.input_duration 获取预缓存的输入视频时长
+/// res_mul: 级联分辨率倍率（stage2：有 tokens 则已乘入用量，否则乘费用）
+async fn settle_success(
+    state: &AppState,
+    log_id: i64,
+    model_name: &str,
+    body: &str,
+    resp_json: &serde_json::Value,
+    poll_url: &str,
+    category: &str,
+    channel: &crate::models::Channel,
+    cascade_stage: u8,
+    log_plugin_tag: &str,
+    caller_model: Option<&crate::models::Model>,
+    res_mul: &std::collections::HashMap<String, f64>,
+) {
+    // 级联阶段二用量取自 stage1（成功路径 usage 已 × res_mul）
+    let usage_str: String;
+    let usage = if cascade_stage == 2 {
+        let parsed: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::json!({}));
+        let s1 = parsed.get("stage1").cloned().unwrap_or(parsed.clone());
+        usage_str = s1.to_string();
+        super::usage_extractor::parse_usage(&usage_str)
+    } else {
+        super::usage_extractor::parse_usage(body)
+    };
 
-    let cat_hint = if category.is_empty() { None } else { Some(category) };
-    let db_model = super::proxy::find_active_model_exact(state, model_name, cat_hint, Some(channel)).await;
+    // 复用调用方已查询的 Model，避免重复查询 models 表
+    let owned_model;
+    let db_model: Option<&crate::models::Model> = if let Some(m) = caller_model {
+        Some(m)
+    } else {
+        let cat_hint = if category.is_empty() {
+            None
+        } else {
+            Some(category)
+        };
+        owned_model =
+            super::proxy::find_active_model_exact(state, model_name, cat_hint, Some(channel)).await;
+        owned_model.as_ref()
+    };
 
-    let db_rule: Option<crate::models::BillingRule> = if let Some(ref m) = db_model {
-        if let Some(rule_id) = m.billing_rule_id {
-            sqlx::query_as(&state.db.format_query("SELECT * FROM billing_rules WHERE id = ? AND is_active = 1"))
-                .bind(rule_id).fetch_optional(&state.db.pool).await.unwrap_or(None)
-        } else { None }
-    } else { None };
+    let mut db_rule =
+        super::proxy::get_model_billing_rule(state, model_name, Some(&channel), db_model).await;
 
-    // 获取原始预扣费、billing_detail 及关联 ID（用于结算和折扣查询）
-    let log_data: Option<(f64, f64, String, Option<i64>, Option<i64>, Option<String>)> = sqlx::query_as(
-        &state.db.format_query("SELECT cost, pre_deduct_gift, user_id, token_id, channel_id, billing_detail FROM logs WHERE id = ?")
+    // 获取原始预扣费、billing_detail、billing_features 及关联 ID（一次查询替代两次主键查询）
+    let log_data: Option<(f64, f64, String, Option<i64>, Option<i64>, Option<String>, String)> = sqlx::query_as(
+        &state.db.format_query("SELECT cost, pre_deduct_gift, user_id, token_id, channel_id, billing_detail, COALESCE(billing_features, '') FROM logs WHERE id = ?")
     ).bind(log_id).fetch_optional(&state.db.pool).await.unwrap_or(None);
 
-    let (mut pre_deduction, mut pre_deduct_gift, uid, token_id, channel_id, b_detail) = match log_data {
-        Some(d) => d,
-        None => (0.0, 0.0, "".to_string(), None, None, None),
-    };
+    let (mut pre_deduction, mut pre_deduct_gift, uid, token_id, channel_id, b_detail, bf_str) =
+        match log_data {
+            Some(d) => d,
+            None => (0.0, 0.0, "".to_string(), None, None, None, String::new()),
+        };
 
     // 退款后重新成功：预扣费已退回用户，视为 0（全额从余额扣除）
     if b_detail.as_deref().map_or(false, |d| d.contains("退回")) {
@@ -584,321 +1645,230 @@ async fn settle_success(state: &AppState, log_id: i64, model_name: &str, body: &
     let user_id = if uid.is_empty() { None } else { Some(uid) };
 
     // 获取用户折扣和模型单独折扣
-    let (user_discount, user_model_discounts): (f64, Option<String>) = if let Some(ref uid) = user_id {
-        let row: Option<(String, Option<String>)> = sqlx::query_as(
-            &state.db.format_query("SELECT user_group, model_discounts FROM users WHERE id = ?")
-        ).bind(uid).fetch_optional(&state.db.pool).await.unwrap_or(None);
-        if let Some((group, md)) = row {
-            let d = if group.is_empty() { 1.0 } else {
-                sqlx::query_scalar::<_, f64>(
-                    &state.db.format_query("SELECT discount FROM user_levels WHERE group_key = ?")
-                ).bind(&group).fetch_optional(&state.db.pool).await.unwrap_or(None).unwrap_or(1.0)
-            };
-            (d, md)
+    let (user_discount, user_model_discounts): (f64, Option<String>) =
+        if let Some(ref uid) = user_id {
+            let row: Option<(String, Option<String>)> = sqlx::query_as(
+                &state
+                    .db
+                    .format_query("SELECT user_group, model_discounts FROM users WHERE id = ?"),
+            )
+            .bind(uid)
+            .fetch_optional(&state.db.pool)
+            .await
+            .unwrap_or(None);
+            if let Some((group, md)) = row {
+                let d = if group.is_empty() {
+                    1.0
+                } else {
+                    sqlx::query_scalar::<_, f64>(
+                        &state
+                            .db
+                            .format_query("SELECT discount FROM user_levels WHERE group_key = ?"),
+                    )
+                    .bind(&group)
+                    .fetch_optional(&state.db.pool)
+                    .await
+                    .unwrap_or(None)
+                    .unwrap_or(1.0)
+                };
+                (d, md)
+            } else {
+                (1.0, None)
+            }
         } else {
             (1.0, None)
-        }
-    } else { (1.0, None) };
+        };
 
     // 计费特征恢复：复用 build_poll_settlement_features 统一逻辑（内部已含 image_count 提取）
-    let billing_features_str: Option<String> = sqlx::query_scalar::<_, String>(
-        &state.db.format_query("SELECT COALESCE(billing_features, '') FROM logs WHERE id = ?")
-    ).bind(log_id).fetch_optional(&state.db.pool).await
-        .ok().flatten().filter(|s| !s.is_empty());
-    let features = build_poll_settlement_features(
-        &billing_features_str, resp_json, body, category,
-    );
-
-    // 折扣策略: MIN(用户模型折扣, 全站折扣, 等级折扣), 受折扣限价约束
-    let umd = db_model.as_ref().and_then(|m| super::proxy::parse_user_model_discount(&user_model_discounts, &m.mid));
-    let (final_discount, discount_source) = super::proxy::resolve_discount(db_model.as_ref(), user_discount, umd);
-
-    let is_ha_plugin_enabled = crate::api::plugins::is_plugin_enabled(state, "high_availability_channel").await;
-    let applied_discount = if is_ha_plugin_enabled {
-        final_discount * channel.rate
+    let billing_features_str: Option<String> = if bf_str.is_empty() {
+        None
     } else {
-        final_discount
+        Some(bf_str)
     };
+    let mut features =
+        build_poll_settlement_features(&billing_features_str, resp_json, body, category);
 
-    let (cost, mut detail) = super::compute_cost(db_model.as_ref(), db_rule.as_ref(), &usage, applied_discount, &features);
-    detail.push_str(&format!(" | {}", discount_source));
-    if is_ha_plugin_enabled && channel.rate != 1.0 {
-        detail.push_str(&format!(" | 渠道倍率: {}x", channel.rate));
+    // 级联阶段二：一次解析 plugin_tag，复用 cascade 节点（时长叠加 + 分辨率兜底，避免 clone）
+    let plugin_tag_val = if cascade_stage == 2 {
+        serde_json::from_str::<serde_json::Value>(log_plugin_tag).ok()
+    } else {
+        None
+    };
+    let cascade = plugin_tag_val.as_ref().and_then(|v| v.get("cascade"));
+    if let Some(cascade) = cascade {
+        let in_dur = cascade
+            .get("input_duration")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        if in_dur > 0.0 {
+            if let Some(dur) = features.duration_seconds.as_mut() {
+                *dur += in_dur;
+            } else {
+                features.duration_seconds = Some(in_dur);
+            }
+        }
     }
-    // 映射记录（与用户手动轮询 task_status 保持一致）
-    let (resolved_model, mapping_source) = crate::relay::router::resolve_model(channel, model_name, db_model.as_ref());
-    if let Some(src) = mapping_source {
-        detail.push_str(&format!(" | {}: {} ➞ {}", src, model_name, resolved_model));
+
+    // 映射记录
+    let (resolved_model, mapping_source) =
+        crate::relay::router::resolve_model(channel, model_name, db_model);
+
+    let (mut cost, mut detail) = super::calculate_relay_cost(
+        state,
+        db_model,
+        db_rule.as_mut(),
+        channel,
+        user_discount,
+        &user_model_discounts,
+        &usage,
+        &features,
+        mapping_source,
+        model_name,
+        &resolved_model,
+    )
+    .await;
+
+    // 级联阶段二：有 P/C tokens 则倍率已在用量中；无则乘底座费用（分辨率优先用 cascade 原始目标）
+    if cascade_stage == 2 {
+        let has_tokens = usage.prompt > 0 || usage.completion > 0;
+        if !has_tokens {
+            let target_res = cascade
+                .and_then(|c| c.get("resolution").and_then(|r| r.as_str()))
+                .or(features.resolution.as_deref())
+                .unwrap_or("720p");
+            (cost, detail) = super::scale_cost_by_res_mul(cost, detail, res_mul, target_res);
+        }
     }
-    detail.push_str(" | [后台自动轮询结算]");
 
     let final_uid = user_id.as_deref().unwrap_or("");
-    execute_settlement_tx(state, log_id, final_uid, token_id, channel_id,
-        usage.prompt, usage.completion, cost, pre_deduction, pre_deduct_gift, &detail).await;
+    let updated_bf = serde_json::to_string(&features).ok();
+    execute_settlement_tx(
+        state,
+        log_id,
+        final_uid,
+        token_id,
+        channel_id,
+        usage.prompt,
+        usage.completion,
+        cost,
+        pre_deduction,
+        pre_deduct_gift,
+        &detail,
+        updated_bf.as_deref(),
+    )
+    .await;
     tracing::info!("[TaskPoller Billing] log_id={}, model={}, cost={:.6}, pre_deduction={:.6}, tokens={}+{}={}, images={:?}, url={}",
         log_id, model_name, cost, pre_deduction, usage.prompt, usage.completion, usage.total, features.image_count, poll_url);
 }
 
 /// 任务失败：按预扣费钱包来源精准退还
-async fn settle_failure(state: &AppState, log_id: i64, poll_url: &str, status_code: u16) {
-    let log_data: Option<(f64, f64, String, Option<i64>, Option<i64>)> = sqlx::query_as(
-        &state.db.format_query("SELECT cost, pre_deduct_gift, user_id, token_id, channel_id FROM logs WHERE id = ?")
-    ).bind(log_id).fetch_optional(&state.db.pool).await.unwrap_or(None);
+/// cascade_stage: 级联阶段（0=非级联, 2=阶段二）
+async fn settle_failure(
+    state: &AppState,
+    log_id: i64,
+    poll_url: &str,
+    status_code: u16,
+    cascade_stage: u8,
+) {
+    let log_data: Option<(f64, f64, String, Option<i64>, Option<i64>)> =
+        sqlx::query_as(&state.db.format_query(
+            "SELECT cost, pre_deduct_gift, user_id, token_id, channel_id FROM logs WHERE id = ?",
+        ))
+        .bind(log_id)
+        .fetch_optional(&state.db.pool)
+        .await
+        .unwrap_or(None);
 
     let (pre_deduction, pre_deduct_gift, uid, token_id, channel_id) = match log_data {
         Some(d) => d,
         None => (0.0, 0.0, "".to_string(), None, None),
     };
 
-    let detail = if pre_deduction > 0.0 {
-        "任务失败，预扣费已退回 | [后台自动轮询]"
+    let detail = if cascade_stage == 2 {
+        if pre_deduction > 0.0 {
+            "画质增强失败，预扣费已退回"
+        } else {
+            "画质增强失败"
+        }
     } else {
-        "任务失败，该请求无冻结费用 | [后台自动轮询]"
+        if pre_deduction > 0.0 {
+            "任务失败，预扣费已退回"
+        } else {
+            "任务失败，该请求无冻结费用"
+        }
     };
 
-    execute_refund_tx(state, log_id, &uid, token_id, channel_id, pre_deduction, pre_deduct_gift, detail, status_code).await;
-    tracing::info!("[TaskPoller Failure] log_id={}, refunded={:.6}, url={}, status_code={}", log_id, pre_deduction, poll_url, status_code);
-}
-
-/// 获取渠道信息（含 preset 覆盖）
-async fn fetch_channel(state: &AppState, channel_id: i64) -> Option<crate::models::Channel> {
-    let mut ch: crate::models::Channel = sqlx::query_as(
-        &state.db.format_query("SELECT * FROM channels WHERE id = ?")
-    ).bind(channel_id).fetch_optional(&state.db.pool).await.ok()??;
-
-    if let Some(pid) = ch.preset_id {
-        if let Ok(Some(preset)) = sqlx::query_as::<_, crate::models::ChannelConfig>(
-            &state.db.format_query("SELECT * FROM channel_configs WHERE id = ?")
-        ).bind(pid).fetch_optional(&state.db.pool).await {
-            ch.base_url = preset.base_url;
-            ch.api_key = preset.api_key;
-        }
-    }
-    Some(ch)
+    execute_refund_tx(
+        state,
+        log_id,
+        &uid,
+        token_id,
+        channel_id,
+        pre_deduction,
+        pre_deduct_gift,
+        detail,
+        status_code,
+    )
+    .await;
+    tracing::info!(
+        "[TaskPoller Failure] log_id={}, cascade_stage={}, refunded={:.6}, url={}, status_code={}",
+        log_id,
+        cascade_stage,
+        pre_deduction,
+        poll_url,
+        status_code
+    );
 }
 
 // ── 公共结算工具函数 ────────────────────────────────────────────
 
-/// 从提交响应 JSON 字符串中提取 task_id（复用 response_formatter::find_id 统一搜索路径）
+/// 从提交响应 JSON 字符串中提取 task_id（复用 response_formatter::extract_async_task_id 统一搜索路径）
 pub fn extract_task_id(response: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(response).ok()?;
-    let id = super::response_formatter::find_id(&v);
-    if id.is_empty() { None } else { Some(id) }
+    let id = super::response_formatter::extract_async_task_id(&v);
+    if id.is_empty() {
+        None
+    } else {
+        Some(id)
+    }
 }
 
 // ── 状态归一化 ──────────────────────────────────────────────────
 
 /// 统一任务状态归一化：将各厂商返回的状态字符串映射为 succeeded / failed / 原值
 pub(super) fn normalize_task_status(raw: &str) -> &str {
-    match raw.to_lowercase().as_str() {
-        "completed" | "succeeded" | "succeed" | "success" | "finish" | "done" => "succeeded",
-        "failed" | "canceled" | "cancelled" | "unknown" | "error" | "timeout" | "fail" | "abort" | "not_found" | "expired" => "failed",
-        _ => if raw.is_empty() { "pending" } else { return raw; },
+    let standard = super::response_formatter::parse_raw_status_to_standard(raw);
+    match standard {
+        "completed" => "succeeded",
+        "failed" => "failed",
+        "pending" => "pending",
+        "in_progress" => "in_progress",
+        _ => {
+            if raw.is_empty() {
+                "pending"
+            } else {
+                raw
+            }
+        }
     }
 }
 
-/// 从响应 JSON 中提取原始状态字符串（兼容多种厂商响应结构）
-/// 腾讯云特殊处理：Status="FINISH" 时需校验任务节点的 ErrCode，非 0 视为 FAILED
-/// 即梦AI特殊处理：data.status="done" 时需检查外层 code，10000 为成功，否则失败
+/// 从响应 JSON 中提取原始状态字符串（兼容多种厂商响应结构，复用 response_formatter::extract_raw_status）
 pub(super) fn extract_raw_status(json: &serde_json::Value) -> String {
-    // 腾讯云 DescribeTaskDetail 特殊处理
-    if let Some(resp) = json.get("Response") {
-        if let Some(status) = resp.get("Status").and_then(|s| s.as_str()) {
-            // FINISH 不等于成功，需检查任务节点内的 ErrCode
-            if status.eq_ignore_ascii_case("FINISH") {
-                if let Some(err_code) = find_tencent_task_field(resp, "ErrCode").and_then(|v| v.as_i64()) {
-                    if err_code != 0 {
-                        return "FAILED".to_string();
-                    }
-                }
-            }
-            return status.to_string();
-        }
-    }
-
-    // 即梦AI特殊处理：data.status="done" 时需检查外层 code 判定成功或失败
-    if let Some(status) = json.pointer("/data/status").and_then(|s| s.as_str()) {
-        if status == "done" {
-            // code == 10000 → 成功，其他 → 失败（错误信息为外层 message）
-            let code = json.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
-            return if code == 10000 { "done".to_string() } else { "FAILED".to_string() };
-        }
-    }
-
-    json.get("status")
-        .or_else(|| json.get("data").and_then(|d| d.get("status")))
-        .or_else(|| json.get("data").and_then(|d| d.get("task_status")))
-        .or_else(|| json.get("final_result").and_then(|fr| fr.get("status")))
-        .or_else(|| json.get("output").and_then(|o| o.get("task_status")))
-        .and_then(|s| s.as_str())
-        .unwrap_or("")
-        .to_string()
+    super::response_formatter::extract_raw_status(json)
 }
 
 // ── 腾讯云转换函数 ──────────────────────────────────────────────
 
-/// 提取腾讯云任务节点中的错误信息（ErrCode 非 0 时的 Message 字段）
-pub(super) fn extract_tencent_error_message(json: &serde_json::Value) -> Option<String> {
-    let resp = json.get("Response")?;
-    let msg = find_tencent_task_field(resp, "Message")?.as_str()?;
-    if msg.is_empty() { None } else { Some(msg.to_string()) }
-}
-
-/// 在 Response 下的腾讯云任务节点中查找指定字段
-/// 扫描 AigcVideoTask / AigcImageTask / SceneAigcImageTask 等已知任务类型
-fn find_tencent_task_field<'a>(response_obj: &'a serde_json::Value, field: &str) -> Option<&'a serde_json::Value> {
-    const TASK_KEYS: &[&str] = &["AigcVideoTask", "AigcImageTask", "SceneAigcImageTask"];
-    for key in TASK_KEYS {
-        if let Some(task) = response_obj.get(*key) {
-            if let Some(val) = task.get(field) {
-                return Some(val);
-            }
-        }
-    }
-    // 兜底：按 TaskType 字段动态查找
-    if let Some(task_type) = response_obj.get("TaskType").and_then(|t| t.as_str()) {
-        if let Some(task) = response_obj.get(task_type) {
-            return task.get(field);
-        }
-    }
-    None
-}
-
-/// 腾讯云 DescribeTaskDetail 原始响应 → 简洁 OpenAI 格式。
-/// 统一提取 Response.{TaskType}.Output.FileInfos 中的 FileUrl/Url。
-/// 返回 None 表示无法识别的 TaskType，调用方应保留原始响应。
-pub fn convert_tencent_to_openai(resp_json: &serde_json::Value, task_id: &str) -> Option<String> {
-    let response_obj = resp_json.get("Response")?;
-    let task_type = response_obj.get("TaskType")?.as_str()?;
-    let now = chrono::Utc::now().timestamp();
-
-    // 统一提取 URL 列表：路径 /{TaskType}/Output/FileInfos，字段 FileUrl / Url
-    let path = format!("/{}/Output/FileInfos", task_type);
-    let urls: Vec<String> = response_obj.pointer(&path)
-        .and_then(|f| f.as_array())
-        .map(|arr| {
-            arr.iter().filter_map(|fi| {
-                fi.get("FileUrl").and_then(|u| u.as_str())
-                    .or_else(|| fi.get("Url").and_then(|u| u.as_str()))
-                    .filter(|u| !u.is_empty())
-                    .map(String::from)
-            }).collect()
-        })
-        .unwrap_or_default();
-
-    if task_type.contains("Video") {
-        // 视频：取第一个 URL
-        let url_val = urls.first()
-            .map(|u| serde_json::json!(u))
-            .unwrap_or(serde_json::json!(null));
-        Some(serde_json::json!({
-            "id": task_id,
-            "object": "video.generation",
-            "status": "completed",
-            "created": now,
-            "data": [{ "url": url_val }]
-        }).to_string())
-    } else {
-        // 图片及其他：所有 URL
-        let items: Vec<serde_json::Value> = urls.iter()
-            .map(|u| serde_json::json!({ "url": u }))
-            .collect();
-        Some(serde_json::json!({
-            "id": task_id,
-            "object": "image.generation",
-            "status": "completed",
-            "created": now,
-            "data": items
-        }).to_string())
-    }
-}
-
-/// 构建腾讯云非终态（处理中/排队等）的 OpenAI 标准格式响应
-/// 将 task_id → id，补充 object/created 字段，status 使用标准化值
-pub fn build_tencent_pending_response(task_id: &str, normalized_status: &str, object_type: &str) -> String {
-    let now = chrono::Utc::now().timestamp_millis();
-    serde_json::json!({
-        "id": task_id,
-        "object": object_type,
-        "status": normalized_status,
-        "created": now,
-    }).to_string()
-}
-
-/// 构建腾讯云任务失败的 OpenAI 标准格式响应（含 error.message）
-pub fn build_tencent_error_response(task_id: &str, object_type: &str, error_msg: &str) -> String {
-    let now = chrono::Utc::now().timestamp_millis();
-    serde_json::json!({
-        "id": task_id,
-        "object": object_type,
-        "status": "failed",
-        "created": now,
-        "error": { "message": error_msg }
-    }).to_string()
-}
-
-/// 检测腾讯云 API 级别错误（Response.Error），返回格式化错误信息
-/// 与任务级别的 ErrCode 不同，这是请求参数错误等场景下直接返回的错误
-fn extract_tencent_api_error(resp_json: &serde_json::Value) -> Option<String> {
-    let err = resp_json.pointer("/Response/Error")?;
-    let code = err.get("Code").and_then(|v| v.as_str()).unwrap_or("UnknownError");
-    let message = err.get("Message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
-    Some(format!("{}: {}", code, message))
-}
-
-/// 腾讯云 POST 响应统一转换：原始响应 → OpenAI 格式
+/// 腾讯云 POST 响应统一转换：原始响应 → OpenAI 格式（复用 response_formatter::format_openai 统一逻辑）
 /// 返回 (转换后的响应字符串, 是否为错误)
-/// - API 级错误（Response.Error）→ failed
-/// - 任务级失败（ErrCode != 0）→ failed
-/// - 任务成功 → succeeded（仅图片 POST 可能即时完成）
-/// - 其他 → pending
-pub fn convert_tencent_post_response(raw_response: &str, object_type: &str) -> (String, bool) {
-    let resp_json: serde_json::Value = serde_json::from_str(raw_response).unwrap_or(serde_json::json!({}));
-    // 优先检测 API 级别错误（Response.Error）
-    if let Some(api_err) = extract_tencent_api_error(&resp_json) {
-        return (build_tencent_error_response("", object_type, &api_err), true);
-    }
-    let task_id = resp_json.pointer("/Response/TaskId")
-        .and_then(|v| v.as_str()).unwrap_or_default();
-    let raw_status = extract_raw_status(&resp_json);
-    let task_status = normalize_task_status(&raw_status);
-    match task_status {
-        "succeeded" => {
-            let converted = convert_tencent_to_openai(&resp_json, task_id)
-                .unwrap_or_else(|| raw_response.to_string());
-            (converted, false)
-        }
-        "failed" => {
-            let err_msg = extract_tencent_error_message(&resp_json)
-                .unwrap_or_else(|| "generation failed".to_string());
-            (build_tencent_error_response(task_id, object_type, &err_msg), true)
-        }
-        _ => (build_tencent_pending_response(task_id, &task_status, object_type), false),
-    }
+pub fn convert_tencent_post_response(raw_response: &str, category: &str) -> (String, bool) {
+    let formatted = super::response_formatter::format_openai(category, raw_response, true, None);
+    let is_error = formatted.contains("\"error\":");
+    (formatted, is_error)
 }
 
-// ── 用户请求轮询共用的结算辅助函数 ────────────────────────────────
-
-/// 腾讯云轮询响应统一转换：根据任务状态生成 OpenAI 格式的存储/返回内容
-/// 供 video.rs 和本模块的用户请求轮询复用
-pub(super) fn convert_tencent_poll_to_store(
-    resp_json: &serde_json::Value,
-    task_id: &str,
-    raw_resp: &str,
-    object_type: &str,
-) -> String {
-    let raw_status = extract_raw_status(resp_json);
-    let task_status = normalize_task_status(&raw_status);
-    if task_status == "succeeded" {
-        convert_tencent_to_openai(resp_json, task_id).unwrap_or_else(|| raw_resp.to_string())
-    } else if task_status == "failed" {
-        let err_msg = extract_tencent_error_message(resp_json)
-            .unwrap_or_else(|| "generation failed".to_string());
-        build_tencent_error_response(task_id, object_type, &err_msg)
-    } else {
-        build_tencent_pending_response(task_id, &task_status, object_type)
-    }
-}
+// ── 用户请求轮询共用的结算辅助函数 ──
 
 /// 构建异步任务终态结算所需的计费特征
 /// billing_features 快照为优先（POST 阶段保存），然后叠加终态响应中的实际数据
@@ -923,10 +1893,27 @@ pub(super) fn build_poll_settlement_features(
     if let Some(tc_dur) = super::usage_extractor::extract_tencent_vod_video_duration(resp_json) {
         features.duration_seconds = Some(tc_dur);
     }
+    // 自动从火山 MediaKit 异步回调的 result 节点中提取视频的实际时长 (duration)、分辨率 (resolution) 及帧率 (fps)，用于精确计费扣减结算
+    if let Some(result) = resp_json.get("result") {
+        if let Some(duration) = result.get("duration").and_then(|v| v.as_f64()) {
+            features.duration_seconds = Some(duration);
+        }
+        if let Some(res) = result.get("resolution").and_then(|v| v.as_str()) {
+            features.resolution = Some(res.to_string());
+        }
+        if let Some(fps) = result.get("fps").and_then(|v| v.as_f64()) {
+            features.fps = Some(fps);
+        } else if let Some(fps) = result.get("fps").and_then(|v| v.as_i64()) {
+            features.fps = Some(fps as f64);
+        }
+    }
     // 视频模型 duration 兜底
-    if category == "视频" && features.duration_seconds.is_none() {
+    if category.contains("视频") && features.duration_seconds.is_none() {
         features.duration_seconds = Some(5.0);
     }
+    // 从异步任务的终态响应中提取并合并可能新出现的特征（如火山图片模型的 input_images 与 size 分辨率）
+    let resp_features = super::usage_extractor::extract_request_features(resp_json);
+    features.merge(resp_features);
     // 终态图片数量覆盖
     if let Some(resp_count) = super::usage_extractor::count_response_images(store_body) {
         features.image_count = Some(resp_count);
@@ -949,6 +1936,7 @@ pub(super) async fn execute_settlement_tx(
     pre_deduction: f64,
     pre_deduct_gift: f64,
     detail: &str,
+    billing_features: Option<&str>, // 新增参数：更新后的计费特征快照JSON
 ) {
     let apply_balance = cost - pre_deduction;
 
@@ -957,9 +1945,10 @@ pub(super) async fn execute_settlement_tx(
             // 原子 CAS：仅当 billing_detail 含"冻结"（首次结算）或"退回"（退款后重新结算）时才更新，
             // 且排除用户已取消(499)的记录，防止取消后轮询到 succeeded 覆盖状态码
             // 同时将 status_code 恢复为 200（退款后重新成功场景需要从 400 恢复）
+            // 使用 COALESCE(?, billing_features) 绑定，如传入 None 则不修改原有特征快照值
             let result = sqlx::query(&state.db.format_query(
-                "UPDATE logs SET status_code = 200, prompt_tokens = ?, completion_tokens = ?, cached_tokens = 0, cost = ?, billing_detail = ?, error_message = NULL, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ? AND (billing_detail LIKE '%冻结%' OR billing_detail LIKE '%退回%') AND status_code != 499"
-            )).bind(prompt_tokens).bind(completion_tokens).bind(cost).bind(detail).bind(log_id)
+                "UPDATE logs SET status_code = 200, prompt_tokens = ?, completion_tokens = ?, cached_tokens = 0, cost = ?, billing_detail = ?, billing_features = COALESCE(?, billing_features), error_message = NULL, is_completed = 1, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) * 1000 AS INTEGER) WHERE id = ? AND (billing_detail LIKE '%冻结%' OR billing_detail LIKE '%退回%') AND status_code != 499"
+            )).bind(prompt_tokens).bind(completion_tokens).bind(cost).bind(detail).bind(billing_features).bind(log_id)
             .execute(&mut *tx).await;
 
             let affected = match &result {
@@ -1009,41 +1998,59 @@ pub(super) async fn execute_settlement_tx(
                 }
 
                 if apply_balance != 0.0 {
+                    // 渠道/预设：站点时区；令牌：所属用户 timedisplay（与 proxy/中间件一致）
+                    let (site_tz, _) = crate::relay::get_cached_config(state).await;
                     if let Some(tid) = token_id {
-                        let now_t = chrono::Local::now();
-                        let now_day = now_t.format("%Y-%m-%d").to_string();
-                        let now_week = now_t.format("%Y-%U").to_string();
-                        let now_month = now_t.format("%Y-%m").to_string();
-                        let now_str = now_t.format("%Y-%m-%d %H:%M:%S").to_string();
+                        let user_td = crate::api::date_helper::resolve_user_timedisplay_name(
+                            &state.db, user_id, &site_tz,
+                        )
+                        .await;
+                        crate::relay::token_quota::apply_delta_with_memory(
+                            state, &mut tx, tid, apply_balance, &user_td,
+                        )
+                        .await?;
                         sqlx::query(&state.db.format_query(
-                            "UPDATE api_tokens SET \
-                             quota_used = quota_used + ?, \
-                             daily_quota_used = CASE WHEN last_reset_day <> ? THEN ? ELSE daily_quota_used + ? END, \
-                             weekly_quota_used = CASE WHEN last_reset_week <> ? THEN ? ELSE weekly_quota_used + ? END, \
-                             monthly_quota_used = CASE WHEN last_reset_month <> ? THEN ? ELSE monthly_quota_used + ? END, \
-                             last_reset_day = ?, \
-                             last_reset_week = ?, \
-                             last_reset_month = ?, \
-                             last_used_at = ?, \
-                             updated_at = CURRENT_TIMESTAMP \
-                             WHERE id = ?"
+                            "UPDATE api_tokens SET last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
                         ))
-                        .bind(apply_balance)
-                        .bind(&now_day).bind(apply_balance).bind(apply_balance)
-                        .bind(&now_week).bind(apply_balance).bind(apply_balance)
-                        .bind(&now_month).bind(apply_balance).bind(apply_balance)
-                        .bind(&now_day)
-                        .bind(&now_week)
-                        .bind(&now_month)
-                        .bind(&now_str)
                         .bind(tid)
-                        .execute(&mut *tx).await?;
+                        .execute(&mut *tx)
+                        .await?;
                     }
                     if let Some(cid) = channel_id {
-                        sqlx::query(&state.db.format_query(
-                            "UPDATE channels SET quota_used = quota_used + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(apply_balance).bind(cid)
-                        .execute(&mut *tx).await?;
+                        if apply_balance > 0.0 {
+                            crate::relay::channel_quota::consume_channel(
+                                &state.db, &mut tx, cid, apply_balance, &site_tz,
+                            )
+                            .await?;
+                        } else {
+                            crate::relay::channel_quota::refund_channel(
+                                &state.db, &mut tx, cid, -apply_balance, &site_tz,
+                            )
+                            .await?;
+                        }
+                    }
+                    // 从日志取上游预设 ID 以便同步累加/退回预设额度
+                    let cfg_id: Option<i32> = sqlx::query_scalar(
+                        &state.db.format_query("SELECT channel_config_id FROM logs WHERE id = ?")
+                    )
+                    .bind(log_id)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .flatten();
+                    if let Some(cfg_id) = cfg_id {
+                        if cfg_id > 0 {
+                            if apply_balance > 0.0 {
+                                crate::relay::channel_quota::consume_config(
+                                    &state.db, &mut tx, cfg_id as i64, apply_balance, &site_tz,
+                                )
+                                .await?;
+                            } else {
+                                crate::relay::channel_quota::refund_config(
+                                    &state.db, &mut tx, cfg_id as i64, -apply_balance, &site_tz,
+                                )
+                                .await?;
+                            }
+                        }
                     }
                 }
                 Ok(())
@@ -1056,7 +2063,12 @@ pub(super) async fn execute_settlement_tx(
                 if let Err(e) = tx.commit().await {
                     tracing::error!("[Settlement] 提交事务失败: {:?}", e);
                 } else {
-                    tracing::info!("[Settlement] log_id={}, cost={:.6}, applied={:.6}", log_id, cost, apply_balance);
+                    tracing::info!(
+                        "[Settlement] log_id={}, cost={:.6}, applied={:.6}",
+                        log_id,
+                        cost,
+                        apply_balance
+                    );
                 }
             }
         }
@@ -1084,7 +2096,7 @@ pub(crate) async fn execute_refund_tx(
         Ok(mut tx) => {
             // 原子 CAS：仅当 billing_detail 仍含"冻结"且未被用户取消(499)时才更新，防止并发双重退款
             let result = sqlx::query(&state.db.format_query(
-                "UPDATE logs SET status_code = ?, cost = 0.0, pre_deduct_gift = 0.0, billing_detail = ?, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at::timestamptz)) * 1000 AS INTEGER) WHERE id = ? AND billing_detail LIKE '%冻结%' AND status_code != 499"
+                "UPDATE logs SET status_code = ?, cost = 0.0, pre_deduct_gift = 0.0, billing_detail = ?, is_completed = 1, latency_ms = CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) * 1000 AS INTEGER) WHERE id = ? AND billing_detail LIKE '%冻结%' AND status_code != 499"
             )).bind(status_code as i32).bind(detail).bind(log_id)
             .execute(&mut *tx).await;
 
@@ -1104,46 +2116,70 @@ pub(crate) async fn execute_refund_tx(
             }
 
             // 更新用户退款余额、令牌配额和渠道已用额度，任何异常都会触发事务安全回滚
-            let res: Result<(), sqlx::Error> = async {
-                if pre_deduction > 0.0 {
-                    let balance_refund = pre_deduction - pre_deduct_gift;
-                    sqlx::query(&state.db.format_query(
+            let res: Result<(), sqlx::Error> =
+                async {
+                    if pre_deduction > 0.0 {
+                        let balance_refund = pre_deduction - pre_deduct_gift;
+                        sqlx::query(&state.db.format_query(
                         "UPDATE users SET balance = balance + ?, gift_balance = gift_balance + ?, \
                          updated_at = CURRENT_TIMESTAMP WHERE id = ?"
                     )).bind(balance_refund).bind(pre_deduct_gift).bind(user_id)
                     .execute(&mut *tx).await?;
 
-                    if let Some(tid) = token_id {
-                        let now_t = chrono::Local::now();
-                        let now_day = now_t.format("%Y-%m-%d").to_string();
-                        let now_week = now_t.format("%Y-%U").to_string();
-                        let now_month = now_t.format("%Y-%m").to_string();
-
-                        sqlx::query(&state.db.format_query(
-                            "UPDATE api_tokens SET \
-                             quota_used = quota_used - ?, \
-                             daily_quota_used = CASE WHEN last_reset_day = ? THEN daily_quota_used - ? ELSE daily_quota_used END, \
-                             weekly_quota_used = CASE WHEN last_reset_week = ? THEN weekly_quota_used - ? ELSE weekly_quota_used END, \
-                             monthly_quota_used = CASE WHEN last_reset_month = ? THEN monthly_quota_used - ? ELSE monthly_quota_used END, \
-                             updated_at = CURRENT_TIMESTAMP \
-                             WHERE id = ?"
-                        ))
-                        .bind(pre_deduction)
-                        .bind(&now_day).bind(pre_deduction)
-                        .bind(&now_week).bind(pre_deduction)
-                        .bind(&now_month).bind(pre_deduction)
-                        .bind(tid)
-                        .execute(&mut *tx).await?;
+                        let (site_tz, _) = crate::relay::get_cached_config(state).await;
+                        if let Some(tid) = token_id {
+                            let user_td = crate::api::date_helper::resolve_user_timedisplay_name(
+                                &state.db, user_id, &site_tz,
+                            )
+                            .await;
+                            crate::relay::token_quota::refund(
+                                &state.db,
+                                &mut tx,
+                                tid,
+                                pre_deduction,
+                                &user_td,
+                            )
+                            .await?;
+                            state
+                                .quota_memory
+                                .apply_refund_ensured(&state.db, tid, &user_td, pre_deduction)
+                                .await;
+                        }
+                        if let Some(cid) = channel_id {
+                            crate::relay::channel_quota::refund_channel(
+                                &state.db,
+                                &mut tx,
+                                cid,
+                                pre_deduction,
+                                &site_tz,
+                            )
+                            .await?;
+                        }
+                        let cfg_id: Option<i32> = sqlx::query_scalar(
+                            &state
+                                .db
+                                .format_query("SELECT channel_config_id FROM logs WHERE id = ?"),
+                        )
+                        .bind(log_id)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .flatten();
+                        if let Some(cfg_id) = cfg_id {
+                            if cfg_id > 0 {
+                                crate::relay::channel_quota::refund_config(
+                                    &state.db,
+                                    &mut tx,
+                                    cfg_id as i64,
+                                    pre_deduction,
+                                    &site_tz,
+                                )
+                                .await?;
+                            }
+                        }
                     }
-                    if let Some(cid) = channel_id {
-                        sqlx::query(&state.db.format_query(
-                            "UPDATE channels SET quota_used = quota_used - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-                        )).bind(pre_deduction).bind(cid)
-                        .execute(&mut *tx).await?;
-                    }
+                    Ok(())
                 }
-                Ok(())
-            }.await;
+                .await;
 
             if let Err(e) = res {
                 tracing::error!("[Refund] 更新退款余额或配额失败，事务回滚: {:?}", e);
@@ -1173,7 +2209,7 @@ async fn send_poll_request(
     resolved: &super::forward::ResolvedForward,
     task_id: &str,
     model: &str,
-    jimeng_ctx: Option<(&str, &str)>,  // (upstream_req_content, request_content)
+    jimeng_ctx: Option<(&str, &str)>, // (upstream_req_content, request_content)
 ) -> Result<(String, String), String> {
     let is_tencent = resolved.target_type.starts_with("tencent_vod");
     let is_jimeng = resolved.target_type.starts_with("jimeng_");
@@ -1183,8 +2219,12 @@ async fn send_poll_request(
         let (ak, sk) = forward::parse_jimeng_key(&channel.api_key);
         // req_key 从 upstream_req_content 提取
         let (upstream_req_str, request_content_str) = jimeng_ctx.unwrap_or(("", ""));
-        let jimeng_req_key = serde_json::from_str::<serde_json::Value>(upstream_req_str).ok()
-            .and_then(|v| v.get("req_key").and_then(|r| r.as_str().map(|s| s.to_string())))
+        let jimeng_req_key = serde_json::from_str::<serde_json::Value>(upstream_req_str)
+            .ok()
+            .and_then(|v| {
+                v.get("req_key")
+                    .and_then(|r| r.as_str().map(|s| s.to_string()))
+            })
             .unwrap_or_else(|| model.to_string());
         let mut poll_body = serde_json::json!({
             "req_key": jimeng_req_key,
@@ -1203,33 +2243,58 @@ async fn send_poll_request(
             } else {
                 let mut assembled = serde_json::Map::new();
                 // return_url：有 response_format 按参数定义，没有则兜底为 true
-                let return_url = if let Some(rf) = req.get("response_format").and_then(|v| v.as_str()) {
-                    rf != "b64_json"  // b64_json 返回 base64，其他（url 等）返回 URL
-                } else {
-                    true  // 未指定时默认返回 URL
-                };
+                let return_url =
+                    if let Some(rf) = req.get("response_format").and_then(|v| v.as_str()) {
+                        rf != "b64_json" // b64_json 返回 base64，其他（url 等）返回 URL
+                    } else {
+                        true // 未指定时默认返回 URL
+                    };
                 assembled.insert("return_url".to_string(), serde_json::json!(return_url));
-                if req.get("watermark").and_then(|v| v.as_bool()).unwrap_or(false) {
-                    assembled.insert("logo_info".to_string(), serde_json::json!({"add_logo": true}));
+                if req
+                    .get("watermark")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    assembled.insert(
+                        "logo_info".to_string(),
+                        serde_json::json!({"add_logo": true}),
+                    );
                 }
-                poll_body["req_json"] = serde_json::json!(serde_json::to_string(&serde_json::json!(assembled)).unwrap_or_default());
+                poll_body["req_json"] = serde_json::json!(serde_json::to_string(
+                    &serde_json::json!(assembled)
+                )
+                .unwrap_or_default());
             }
         } else {
             // request_content 解析失败时仍兜底 return_url
             poll_body["req_json"] = serde_json::json!("{\"return_url\":true}");
         }
         let body_str = serde_json::to_string(&poll_body).unwrap_or_default();
-        let headers = forward::build_jimeng_headers(ak, sk, "CVSync2AsyncGetResult", &body_str, &channel.base_url);
-        let poll_url = format!("{}/?Action=CVSync2AsyncGetResult&Version=2022-08-31",
-            channel.base_url.trim_end_matches('/'));
+        let headers = forward::build_jimeng_headers(
+            ak,
+            sk,
+            "CVSync2AsyncGetResult",
+            &body_str,
+            &channel.base_url,
+        );
+        let poll_url = format!(
+            "{}/?Action=CVSync2AsyncGetResult&Version=2022-08-31",
+            channel.base_url.trim_end_matches('/')
+        );
         tracing::info!("轮询 url={}", poll_url);
-        let mut builder = http_client.post(&poll_url)
+        let mut builder = http_client
+            .post(&poll_url)
             .header("Content-Type", "application/json")
             .timeout(std::time::Duration::from_secs(30));
-        for (k, v) in headers { builder = builder.header(k, v); }
+        for (k, v) in headers {
+            builder = builder.header(k, v);
+        }
         // 使用已签名的 body_str 发送，避免 .json() 重新序列化导致签名不匹配
-        let resp = builder.body(body_str).send().await
-            .map_err(|e| format!("请求渠道失败: {}", e))?;
+        let resp = builder
+            .body(body_str)
+            .send()
+            .await
+            .map_err(|e| proxy::sanitize_error_message(&format!("请求渠道失败: {}", e)))?;
         if !resp.status().is_success() {
             let status = resp.status();
             let err_body = resp.text().await.unwrap_or_default();
@@ -1249,8 +2314,13 @@ async fn send_poll_request(
     let poll_path = if is_tencent {
         "/".to_string()
     } else if let Some(ref custom_path) = resolved.poll_path {
-        custom_path.replace("${task_id}", task_id).replace("${model}", model)
-    } else if resolved.target_type.is_empty() || resolved.target_type == "openai" || resolved.target_type == "apimart" {
+        custom_path
+            .replace("${task_id}", task_id)
+            .replace("${model}", model)
+    } else if resolved.target_type.is_empty()
+        || resolved.target_type == "openai"
+        || resolved.target_type == "apimart"
+    {
         format!("/v1/tasks/{}", task_id)
     } else {
         let path = resolved.upstream_path.replace("${model}", model);
@@ -1268,19 +2338,28 @@ async fn send_poll_request(
         let (ak, sk, sub_app_id) = forward::parse_tencent_vod_key(&channel.api_key);
         let tc_body = serde_json::json!({ "TaskId": task_id, "SubAppId": sub_app_id });
         let body_str = serde_json::to_string(&tc_body).unwrap_or_default();
-        let tc_headers = forward::build_tencent_vod_headers(ak, sk, "DescribeTaskDetail", &body_str);
-        let mut builder = http_client.post(&url).timeout(std::time::Duration::from_secs(30));
-        for (k, v) in tc_headers { builder = builder.header(k, v); }
+        let tc_headers =
+            forward::build_tencent_vod_headers(ak, sk, "DescribeTaskDetail", &body_str);
+        let mut builder = http_client
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(30));
+        for (k, v) in tc_headers {
+            builder = builder.header(k, v);
+        }
         // 使用已签名的 body_str 发送，避免 .json() 重新序列化导致签名不匹配
         builder.body(body_str).send().await
     } else {
         let auth = forward::build_auth_headers(resolved, &channel.api_key);
-        let mut builder = http_client.get(&url).timeout(std::time::Duration::from_secs(30));
-        for (k, v) in auth { builder = builder.header(k, v); }
+        let mut builder = http_client
+            .get(&url)
+            .timeout(std::time::Duration::from_secs(30));
+        for (k, v) in auth {
+            builder = builder.header(k, v);
+        }
         builder.send().await
     };
 
-    let resp = resp.map_err(|e| format!("请求渠道失败: {}", e))?;
+    let resp = resp.map_err(|e| proxy::sanitize_error_message(&format!("请求渠道失败: {}", e)))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let err_body = resp.text().await.unwrap_or_default();
@@ -1313,7 +2392,7 @@ pub async fn poll_task_result(
     model: &str,
     category: &str,
     timeout_secs: u64,
-    jimeng_ctx: Option<(&str, &str)>,  // 轮询上下文：(upstream_req_content, request_content)，即梦等厂商需要
+    jimeng_ctx: Option<(&str, &str)>, // 轮询上下文：(upstream_req_content, request_content)，即梦等厂商需要
 ) -> Option<(String, String)> {
     let is_tencent = resolved.target_type.starts_with("tencent_vod");
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
@@ -1321,7 +2400,11 @@ pub async fn poll_task_result(
     let mut consecutive_errors: u32 = 0;
     let mut attempt: u32 = 0;
 
-    tracing::info!("[PollTask] 开始轮询 task_id={}, timeout={}s", task_id, timeout_secs);
+    tracing::info!(
+        "[PollTask] 开始轮询 task_id={}, timeout={}s",
+        task_id,
+        timeout_secs
+    );
 
     loop {
         // 剩余时间不足以完成下一轮轮询则退出
@@ -1335,27 +2418,47 @@ pub async fn poll_task_result(
         match send_poll_request(http_client, channel, resolved, task_id, model, jimeng_ctx).await {
             Ok((_url, body)) => {
                 consecutive_errors = 0;
-                let resp_json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
+                let resp_json: serde_json::Value =
+                    serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
                 let raw_status = extract_raw_status(&resp_json);
                 let task_status = normalize_task_status(&raw_status).to_string();
 
-                tracing::info!("[PollTask] 轮询第 {} 次, task_id={}, status={}", attempt, task_id, task_status);
+                tracing::info!(
+                    "[PollTask] 轮询第 {} 次, task_id={}, status={}",
+                    attempt,
+                    task_id,
+                    task_status
+                );
 
                 if task_status == "succeeded" || task_status == "failed" {
-                    tracing::info!("[PollTask] 终态 task_id={}, status={}, body_len={}", task_id, task_status, body.len());
+                    tracing::info!(
+                        "[PollTask] 终态 task_id={}, status={}, body_len={}",
+                        task_id,
+                        task_status,
+                        body.len()
+                    );
                     let store_body = if is_tencent {
                         tracing::info!("[{}] 腾讯云原始响应: {}", category, resp_json);
-                        let object_type = if category.contains("视频") { "video.generation" } else { "image.generation" };
-                        convert_tencent_poll_to_store(&resp_json, task_id, &body, object_type)
+                        super::response_formatter::format_openai(
+                            &category,
+                            &body,
+                            false,
+                            Some(task_id),
+                        )
                     } else {
                         body
                     };
                     return Some((store_body, task_status));
                 }
-            },
+            }
             Err(e) => {
                 consecutive_errors += 1;
-                tracing::warn!("[PollTask] 轮询请求失败 ({}/3): {} (task_id={})", consecutive_errors, e, task_id);
+                tracing::warn!(
+                    "[PollTask] 轮询请求失败 ({}/3): {} (task_id={})",
+                    consecutive_errors,
+                    e,
+                    task_id
+                );
                 if consecutive_errors >= 3 {
                     tracing::error!("[PollTask] 连续 3 次请求失败，放弃轮询 task_id={}", task_id);
                     return None;
@@ -1372,6 +2475,296 @@ pub async fn poll_task_result(
         };
     }
 
-    tracing::warn!("[PollTask] 轮询超时 task_id={}, 已尝试 {} 次", task_id, attempt);
+    tracing::warn!(
+        "[PollTask] 轮询超时 task_id={}, 已尝试 {} 次",
+        task_id,
+        attempt
+    );
     None
+}
+
+/// 级联阶段二提交核心：阶段一底座视频成功后，向画质增强服务提交超分任务
+/// 返回 Ok(stage2_id) 或 Err(err_msg)，调用方根据返回值决定 HTTP 响应或日志记录
+/// 手动轮询（task_status）和后台轮询（sync_single_task）共用此函数
+async fn cascade_stage2_submit(
+    state: &Arc<AppState>,
+    user_id: &str,
+    token_id: Option<i64>,
+    task_id: &str,
+    db_log_id: i64,
+    log_post_response: &str,
+    log_request_content: &str,
+    log_upstream_req: &str,
+    pre_deduction: f64,
+    pre_deduct_gift: f64,
+    stage1_channel: &crate::models::Channel,
+    base_video_url: &str,
+    log_plugin_tag: &str,
+    stage1_response: &str,
+) -> Result<String, String> {
+    let post_resp: serde_json::Value =
+        serde_json::from_str(log_post_response).unwrap_or(serde_json::json!({}));
+
+    // 预先擦除 plugin_tag 中包含的 API 秘钥
+    let mut updated_tag_opt: Option<String> = None;
+    if !log_plugin_tag.is_empty() {
+        if let Ok(mut pt) = serde_json::from_str::<serde_json::Value>(log_plugin_tag) {
+            if let Some(cascade) = pt.get_mut("cascade").and_then(|v| v.as_object_mut()) {
+                if cascade.remove("api_key").is_some() {
+                    updated_tag_opt = Some(pt.to_string());
+                }
+            }
+        }
+    }
+    let s1_json: serde_json::Value =
+        serde_json::from_str(stage1_response).unwrap_or(serde_json::json!({}));
+
+    // 错误退款 + DB更新 内部辅助闭包（减少重复 SQL 写入代码）
+    let write_error = |state: &Arc<AppState>,
+                       err_msg: &str,
+                       post_resp_json: &serde_json::Value,
+                       s1: &serde_json::Value,
+                       s2_raw: &str,
+                       tag: &Option<String>| {
+        let state = state.clone();
+        let err = err_msg.to_string();
+        let updated = serde_json::json!({"stage1": post_resp_json, "stage2": s2_raw}).to_string();
+        let s2_json: serde_json::Value =
+            serde_json::from_str(s2_raw).unwrap_or(serde_json::json!(s2_raw));
+        let resp_content = serde_json::json!({"stage1": s1, "stage2": s2_json}).to_string();
+        let tag = tag.clone();
+        let db_id = db_log_id;
+        async move {
+            let _ = sqlx::query(&state.db.format_query(
+                "UPDATE logs SET post_response = ?, response_content = ?, error_message = ?, plugin_tag = COALESCE(?, plugin_tag) WHERE id = ?"
+            )).bind(&updated).bind(&resp_content).bind(&err).bind(&tag).bind(db_id).execute(&state.db.pool).await;
+        }
+    };
+
+    if base_video_url.is_empty() {
+        let err_msg = "底座视频生成成功但未能获取到视频直链地址";
+        execute_refund_tx(
+            state,
+            db_log_id,
+            user_id,
+            token_id,
+            Some(stage1_channel.id),
+            pre_deduction,
+            pre_deduct_gift,
+            err_msg,
+            500,
+        )
+        .await;
+        write_error(
+            state,
+            err_msg,
+            &post_resp,
+            &s1_json,
+            err_msg,
+            &updated_tag_opt,
+        )
+        .await;
+        return Err(err_msg.to_string());
+    }
+
+    // 与轮询侧共用 cascade 解析（缺省与原先硬编码一致：volcengine_sign / enhance-video）
+    let seed_resolved = forward::ResolvedForward {
+        target_type: "volcengine_media_enhance".to_string(),
+        upstream_path: "/api/v1/tools/enhance-video".to_string(),
+        auth_type: "volcengine_sign".to_string(),
+        ..Default::default()
+    };
+    let (enhance_ch, mut volc_resolved, final_model) =
+        cascade_stage2_poll_target(stage1_channel, &seed_resolved, log_plugin_tag, task_id);
+    // mid 缺省时仍带 Some("vve-sd")，供鉴权/路径使用（与历史提交逻辑一致）
+    let volc_model_mid = volc_resolved
+        .mid
+        .get_or_insert_with(|| "vve-sd".to_string())
+        .clone();
+
+    // 优先 cascade 已校验分辨率；无则回退请求体（旧日志兼容）
+    let target_resolution = cascade_json_str(log_plugin_tag, "/cascade/resolution")
+        .or_else(|| cascade_json_str(log_request_content, "/resolution"))
+        .unwrap_or_else(|| "720p".into());
+    let volc_url = forward::build_upstream_url(
+        &enhance_ch.base_url,
+        &volc_resolved,
+        &final_model,
+        &enhance_ch.api_key,
+    );
+    tracing::info!(
+        "[Cascade S2 POST] log_id={}, mid={}, final_model={}, ch={}, res={}, url={}",
+        db_log_id,
+        volc_model_mid,
+        final_model,
+        enhance_ch.name,
+        target_resolution,
+        volc_url
+    );
+
+    // 级联阶段二：仅走 vve-ft / vve-sd；tool_version 复用 MediaKit 映射（标准版需要）
+    let mut volc_payload = serde_json::json!({"video_url": base_video_url, "resolution": target_resolution, "fps": 30});
+    if let Some(tv) = forward::volc_enhance_tool_version(&volc_model_mid) {
+        volc_payload["tool_version"] = serde_json::json!(tv);
+    }
+    // 阶段二提交：临时错误最多 5 次，间隔 2 分钟
+    let max_attempts = 5u32;
+    let retry_delay = std::time::Duration::from_secs(120);
+    let mut attempt = 0u32;
+
+    let (stage2_id, post_json) = loop {
+        attempt += 1;
+        let mut volc_body = volc_payload.clone();
+        let builder = state
+            .http_client
+            .post(&volc_url)
+            .header("Content-Type", "application/json");
+        let builder = forward::apply_request_auth(
+            builder,
+            &volc_resolved,
+            &enhance_ch.api_key,
+            &mut volc_body,
+            &enhance_ch.base_url,
+        );
+
+        let (should_retry, err_msg, err_status, raw_text) = match builder.send().await {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                let text = resp.text().await.unwrap_or_default();
+                if status == 200 {
+                    let post_json: serde_json::Value =
+                        serde_json::from_str(&text).unwrap_or(serde_json::json!({}));
+                    let stage2_id = super::response_formatter::find_id(&post_json);
+                    if !stage2_id.is_empty() {
+                        break (stage2_id, post_json);
+                    }
+                    (
+                        false,
+                        "火山增强提交成功但未能解析到超分任务 ID".to_string(),
+                        500,
+                        text,
+                    )
+                } else {
+                    let err_text_raw = proxy::extract_error_message(&text);
+                    let err_text = if err_text_raw.is_empty() {
+                        format!("火山增强提交失败 HTTP {}", status)
+                    } else {
+                        err_text_raw
+                    };
+                    const RETRY_CODES: &[&str] = &[
+                        "requestlimitexceeded",
+                        "internalserviceerror",
+                        "downloadfileerror",
+                        "abilityprocessingerror",
+                        "serviceinitializingerror",
+                        "internalservicetimeout",
+                    ];
+                    let retry = matches!(status, 429 | 500 | 503 | 504)
+                        || serde_json::from_str::<serde_json::Value>(&text)
+                            .ok()
+                            .and_then(|v| {
+                                super::response_formatter::extract_error_code_from_value(&v)
+                            })
+                            .is_some_and(|code| {
+                                let c = code.to_lowercase();
+                                RETRY_CODES.iter().any(|&k| c.contains(k))
+                            });
+                    (retry, err_text, status, text)
+                }
+            }
+            Err(e) => (
+                true,
+                proxy::sanitize_error_message(&format!("火山增强接口提交连接失败: {:?}", e)),
+                502,
+                String::new(),
+            ),
+        };
+
+        if should_retry && attempt < max_attempts {
+            tracing::warn!(
+                "[Cascade S2 POST] 临时错误 {}/{}，休息 2 分钟后重试: {}",
+                attempt,
+                max_attempts,
+                err_msg
+            );
+            tokio::time::sleep(retry_delay).await;
+        } else {
+            tracing::error!(
+                "[Cascade S2 POST] 终态失败 ({}/{}): log_id={}, status={}, err={}",
+                attempt,
+                max_attempts,
+                db_log_id,
+                err_status,
+                err_msg
+            );
+            execute_refund_tx(
+                state,
+                db_log_id,
+                user_id,
+                token_id,
+                Some(stage1_channel.id),
+                pre_deduction,
+                pre_deduct_gift,
+                &err_msg,
+                err_status,
+            )
+            .await;
+            write_error(
+                state,
+                &err_msg,
+                &post_resp,
+                &s1_json,
+                &raw_text,
+                &updated_tag_opt,
+            )
+            .await;
+            return Err(err_msg);
+        }
+    };
+
+    // 阶段二提交成功：重组 post_response 并暂存底座完整响应
+    let updated = serde_json::json!({"stage1": post_resp, "stage2": post_json}).to_string();
+    // 尊重 enable_log 开关：log_upstream_req 为空说明模型未开启上下文记录，阶段二出参也不写入
+    let upstream_combined: Option<String> = if log_upstream_req.is_empty() {
+        None
+    } else {
+        let s1_req: serde_json::Value =
+            serde_json::from_str(log_upstream_req).unwrap_or(serde_json::json!({}));
+        Some(serde_json::json!({"stage1": s1_req, "stage2": volc_payload}).to_string())
+    };
+    let _ = sqlx::query(&state.db.format_query("UPDATE logs SET post_response = ?, response_content = ?, upstream_req_content = COALESCE(?, upstream_req_content) WHERE id = ?"))
+        .bind(&updated).bind(stage1_response).bind(&upstream_combined).bind(db_log_id).execute(&state.db.pool).await;
+
+    tracing::info!(
+        "[Cascade] 阶段二已提交。Stage1 ID: {}, Stage2 ID: {}, mid: {}",
+        task_id,
+        stage2_id,
+        volc_model_mid
+    );
+    Ok(stage2_id)
+}
+
+/// 在 JSON 中递归且精准地替换旧 URL 为新 URL
+fn replace_exact_url_in_json(value: &mut serde_json::Value, old_url: &str, new_url: &str) {
+    if old_url.is_empty() || new_url.is_empty() {
+        return;
+    }
+    match value {
+        serde_json::Value::Object(map) => {
+            for (_, val) in map.iter_mut() {
+                replace_exact_url_in_json(val, old_url, new_url);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for val in arr.iter_mut() {
+                replace_exact_url_in_json(val, old_url, new_url);
+            }
+        }
+        serde_json::Value::String(s) => {
+            if s == old_url {
+                *s = new_url.to_string();
+            }
+        }
+        _ => {}
+    }
 }

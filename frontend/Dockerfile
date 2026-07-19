@@ -18,6 +18,7 @@ RUN echo 'map $http_x_forwarded_proto $forwarded_proto { \
     server { \
     listen 80; \
     client_max_body_size 512m; \
+    proxy_next_upstream off; \
     # 门户路径代理到后端
     location /home { \
     proxy_pass http://backend:3000; \

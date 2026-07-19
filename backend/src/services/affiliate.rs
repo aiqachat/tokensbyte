@@ -1,5 +1,5 @@
-use sqlx::{Postgres, Transaction};
 use anyhow::Result;
+use sqlx::{Postgres, Transaction};
 
 pub async fn award_commission(
     db: &crate::db::Database,
@@ -9,10 +9,11 @@ pub async fn award_commission(
     amount: f64,
 ) -> Result<()> {
     // 1. Get user and their inviter
-    let user: Option<(Option<String>,)> = sqlx::query_as(&db.format_query("SELECT referred_by FROM users WHERE id = ?"))
-        .bind(user_id)
-        .fetch_optional(&mut **tx)
-        .await?;
+    let user: Option<(Option<String>,)> =
+        sqlx::query_as(&db.format_query("SELECT referred_by FROM users WHERE id = ?"))
+            .bind(user_id)
+            .fetch_optional(&mut **tx)
+            .await?;
 
     if let Some((Some(referred_by),)) = user {
         // 2. Get inviter and their level

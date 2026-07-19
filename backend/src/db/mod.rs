@@ -1,8 +1,9 @@
 pub mod migrations;
 
-use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
-use crate::config::AppConfig;
 use crate::auth;
+use crate::config::AppConfig;
+use crate::time_system::DbTs;
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -13,7 +14,10 @@ impl Database {
     pub async fn new(database_url: &str) -> anyhow::Result<Self> {
         let mut attempts = 0;
         let max_attempts = 15;
-        eprintln!("⏳ Attempting database connection (attempt {})...", attempts);
+        eprintln!(
+            "⏳ Attempting database connection (attempt {})...",
+            attempts
+        );
         let mut actual_url = database_url.to_string();
         if actual_url.starts_with("postgres://") && !actual_url.contains("sslmode=") {
             actual_url = format!("{}?sslmode=disable", actual_url);
@@ -24,6 +28,15 @@ impl Database {
             match PgPoolOptions::new()
                 .max_connections(20)
                 .acquire_timeout(std::time::Duration::from_secs(5))
+                .after_connect(|conn, _meta| {
+                    Box::pin(async move {
+                        // timesystem：每个连接强制 UTC，与进程 TZ=UTC 对齐
+                        sqlx::query("SET TIME ZONE 'UTC'")
+                            .execute(&mut *conn)
+                            .await?;
+                        Ok(())
+                    })
+                })
                 .connect(&actual_url)
                 .await
             {
@@ -31,17 +44,31 @@ impl Database {
                 Err(e) => {
                     eprintln!("⚠️ Database connection error: {:?}", e);
                     if attempts >= max_attempts {
-                        tracing::error!("❌ Failed to connect to database after {} attempts: {}", max_attempts, e);
-                        return Err(anyhow::anyhow!("Database connection failed after {} attempts: {}", max_attempts, e));
+                        tracing::error!(
+                            "❌ Failed to connect to database after {} attempts: {}",
+                            max_attempts,
+                            e
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Database connection failed after {} attempts: {}",
+                            max_attempts,
+                            e
+                        ));
                     }
                     let delay = std::cmp::min(attempts * 2, 10);
-                    tracing::warn!("⏳ Database connection attempt {}/{} failed: {}. Retrying in {}s...", attempts, max_attempts, e, delay);
+                    tracing::warn!(
+                        "⏳ Database connection attempt {}/{} failed: {}. Retrying in {}s...",
+                        attempts,
+                        max_attempts,
+                        e,
+                        delay
+                    );
                     tokio::time::sleep(tokio::time::Duration::from_secs(delay as u64)).await;
                 }
             }
         };
 
-        eprintln!("✅ Database connection established.");
+        eprintln!("✅ Database connection established (TIME ZONE=UTC).");
         Ok(Self { pool })
     }
 
@@ -61,7 +88,7 @@ impl Database {
         // Convert ? to $1, $2, ... for PostgreSQL
         let mut result = String::with_capacity(sql_new.len() + 10);
         let mut count = 1;
-        
+
         for c in sql_new.chars() {
             if c == '?' {
                 result.push_str(&format!("${}", count));
@@ -84,12 +111,14 @@ impl Database {
                     rng.gen_range(0..10_000_000)
                 };
                 let uid = format!("{}{:07}", prefix, suffix);
-                
-                let count: i64 = sqlx::query_scalar(&self.format_query("SELECT COUNT(*) FROM users WHERE uid = ?"))
-                    .bind(&uid)
-                    .fetch_one(&self.pool)
-                    .await?;
-                
+
+                let count: i64 = sqlx::query_scalar(
+                    &self.format_query("SELECT COUNT(*) FROM users WHERE uid = ?"),
+                )
+                .bind(&uid)
+                .fetch_one(&self.pool)
+                .await?;
+
                 if count == 0 {
                     return Ok(uid);
                 }
@@ -129,7 +158,7 @@ impl Database {
     pub async fn seed_admin(&self, config: &AppConfig) -> anyhow::Result<()> {
         // Check if admin exists
         let exists_count: i64 = sqlx::query_scalar(
-            &self.format_query("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+            &self.format_query("SELECT COUNT(*) FROM users WHERE role = 'admin'"),
         )
         .fetch_one(&self.pool)
         .await?;
@@ -138,9 +167,9 @@ impl Database {
             let password_hash = auth::hash_password(&config.admin_password)?;
             let id = uuid::Uuid::new_v4().to_string();
             let uid = self.generate_unique_uid().await?;
-            
-            let now = chrono::Local::now().to_rfc3339();
-            
+
+            let now = DbTs::now();
+
             sqlx::query(
                 &self.format_query(r#"INSERT INTO users (id, uid, username, email, password_hash, role, balance, user_group, is_active, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, 'admin', 100.0, 'default', 1, ?, ?)"#)
@@ -155,7 +184,11 @@ impl Database {
             .execute(&self.pool)
             .await?;
 
-            tracing::info!("Default admin user '{}' created with UID {}", config.admin_username, uid);
+            tracing::info!(
+                "Default admin user '{}' created with UID {}",
+                config.admin_username,
+                uid
+            );
         }
 
         Ok(())

@@ -1,5 +1,13 @@
 #![allow(dead_code)]
+use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
+
+/// 令牌周期额度键：按 **timedisplay**（用户/站点显示时区）计算自然日/周/月。
+/// 底层时钟仍为 UTC（timesystem）；切勿传入进程 Local。
+pub fn quota_period_keys(tz_name: &str) -> (String, String, String) {
+    let keys = crate::time_system::local_period_keys(tz_name);
+    (keys.day, keys.week, keys.month)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ApiToken {
@@ -9,19 +17,19 @@ pub struct ApiToken {
     #[sqlx(default)]
     pub kid: Option<String>,
     pub name: String,
-    pub quota_limit: f64,   // -1 = unlimited
+    pub quota_limit: f64, // -1 = unlimited
     pub quota_used: f64,
-    pub allowed_models: String,  // JSON array
+    pub allowed_models: String, // JSON array
     pub allowed_ips: String,
     pub rps_limit: i32,
     pub rpm_limit: i32,
-    pub expires_at: Option<String>,
+    pub expires_at: Option<DbTs>,
 
     pub is_active: i64,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
     #[sqlx(default)]
-    pub last_used_at: Option<String>,
+    pub last_used_at: Option<DbTs>,
     #[sqlx(default)]
     pub only_playground: i64,
     #[sqlx(default)]
@@ -44,6 +52,16 @@ pub struct ApiToken {
     pub last_reset_week: Option<String>,
     #[sqlx(default)]
     pub last_reset_month: Option<String>,
+    /// 当前日周期有效已用（非 DB 列，列表/详情由后端填充）
+    #[sqlx(default)]
+    #[serde(default)]
+    pub current_daily_quota_used: Option<f64>,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub current_weekly_quota_used: Option<f64>,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub current_monthly_quota_used: Option<f64>,
 }
 
 impl ApiToken {
@@ -75,29 +93,130 @@ impl ApiToken {
         self.quota_used < self.quota_limit
     }
 
-    pub fn check_quota_limits(&self, now_day: &str, now_week: &str, now_month: &str) -> Result<(), String> {
+    pub fn effective_daily_used(&self, now_day: &str) -> f64 {
+        if self.last_reset_day.as_deref().unwrap_or("") != now_day {
+            0.0
+        } else {
+            self.daily_quota_used
+        }
+    }
+
+    pub fn effective_weekly_used(&self, now_week: &str) -> f64 {
+        if self.last_reset_week.as_deref().unwrap_or("") != now_week {
+            0.0
+        } else {
+            self.weekly_quota_used
+        }
+    }
+
+    pub fn effective_monthly_used(&self, now_month: &str) -> f64 {
+        if self.last_reset_month.as_deref().unwrap_or("") != now_month {
+            0.0
+        } else {
+            self.monthly_quota_used
+        }
+    }
+
+    pub fn fill_current_period_usage(&mut self, now_day: &str, now_week: &str, now_month: &str) {
+        self.current_daily_quota_used = Some(self.effective_daily_used(now_day));
+        self.current_weekly_quota_used = Some(self.effective_weekly_used(now_week));
+        self.current_monthly_quota_used = Some(self.effective_monthly_used(now_month));
+    }
+
+    pub fn check_quota_limits(
+        &self,
+        now_day: &str,
+        now_week: &str,
+        now_month: &str,
+    ) -> Result<(), String> {
         if self.quota_limit >= 0.0 && self.quota_used >= self.quota_limit {
             return Err("总额度已耗尽".to_string());
         }
         if self.daily_quota_limit >= 0.0 {
-            let used = if self.last_reset_day.as_deref().unwrap_or("") != now_day { 0.0 } else { self.daily_quota_used };
+            let used = self.effective_daily_used(now_day);
             if used >= self.daily_quota_limit {
                 return Err("今日额度已耗尽".to_string());
             }
         }
         if self.weekly_quota_limit >= 0.0 {
-            let used = if self.last_reset_week.as_deref().unwrap_or("") != now_week { 0.0 } else { self.weekly_quota_used };
+            let used = self.effective_weekly_used(now_week);
             if used >= self.weekly_quota_limit {
                 return Err("本周额度已耗尽".to_string());
             }
         }
         if self.monthly_quota_limit >= 0.0 {
-            let used = if self.last_reset_month.as_deref().unwrap_or("") != now_month { 0.0 } else { self.monthly_quota_used };
+            let used = self.effective_monthly_used(now_month);
             if used >= self.monthly_quota_limit {
                 return Err("本月额度已耗尽".to_string());
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_token() -> ApiToken {
+        ApiToken {
+            id: 1,
+            user_id: "u1".into(),
+            token_key: "sk-test".into(),
+            kid: None,
+            name: "t".into(),
+            quota_limit: 10.0,
+            quota_used: 1.0,
+            allowed_models: "[]".into(),
+            allowed_ips: String::new(),
+            rps_limit: 0,
+            rpm_limit: 0,
+            expires_at: None,
+            is_active: 1,
+            created_at: DbTs::default(),
+            updated_at: DbTs::default(),
+            last_used_at: None,
+            only_playground: 0,
+            high_availability: 0,
+            daily_quota_limit: 5.0,
+            daily_quota_used: 2.5,
+            weekly_quota_limit: 10.0,
+            weekly_quota_used: 3.0,
+            monthly_quota_limit: 20.0,
+            monthly_quota_used: 4.0,
+            last_reset_day: Some("2026-07-17".into()),
+            last_reset_week: Some("2026-28".into()),
+            last_reset_month: Some("2026-07".into()),
+            current_daily_quota_used: None,
+            current_weekly_quota_used: None,
+            current_monthly_quota_used: None,
+        }
+    }
+
+    #[test]
+    fn effective_used_resets_when_period_key_changes() {
+        let token = sample_token();
+        assert!((token.effective_daily_used("2026-07-17") - 2.5).abs() < f64::EPSILON);
+        assert!((token.effective_daily_used("2026-07-18") - 0.0).abs() < f64::EPSILON);
+        assert!((token.effective_weekly_used("2026-28") - 3.0).abs() < f64::EPSILON);
+        assert!((token.effective_weekly_used("2026-29") - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn fill_current_period_usage_sets_options() {
+        let mut token = sample_token();
+        token.fill_current_period_usage("2026-07-17", "2026-29", "2026-07");
+        assert_eq!(token.current_daily_quota_used, Some(2.5));
+        assert_eq!(token.current_weekly_quota_used, Some(0.0));
+        assert_eq!(token.current_monthly_quota_used, Some(4.0));
+    }
+
+    #[test]
+    fn quota_period_keys_uses_timezone() {
+        let (day, week, month) = quota_period_keys("Asia/Shanghai");
+        assert_eq!(day.len(), 10);
+        assert!(week.contains('-'));
+        assert_eq!(month.len(), 7);
     }
 }
 

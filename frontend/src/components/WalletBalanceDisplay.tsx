@@ -95,17 +95,25 @@ const WalletBalanceDisplay: React.FC<WalletBalanceDisplayProps> = ({
   // 可用余额 = 系统余额 + 信控额度
   const availableBalance = balance + creditLimit;
 
+  // 格式化信控额度显示：整数不带小数，有小数则保留最多4位并去除多余零
+  const formatCreditLimit = (val: number) => {
+    if (Number.isInteger(val)) {
+      return val.toString();
+    }
+    return parseFloat(val.toFixed(4)).toString();
+  };
+
   return (
     <div style={containerStyle}>
       {/* 系统钱包 */}
       <div style={itemStyle} onClick={handleWalletClick}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 2, gap: 4 }}>
-          <Text style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 11 }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 6px', marginBottom: 2 }}>
+          <Text style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 11, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {displaySystemLabel}
           </Text>
           {/* 关闭支付标识 */}
           {record.pay_enabled === 0 && (
-            <Tag color="error" style={{ fontSize: 10, padding: '0 4px', margin: 0, lineHeight: '16px', border: 'none' }}>
+            <Tag color="error" style={{ fontSize: 10, padding: '0 4px', margin: 0, lineHeight: '16px', border: 'none', whiteSpace: 'nowrap' }}>
               关闭支付
             </Tag>
           )}
@@ -113,15 +121,15 @@ const WalletBalanceDisplay: React.FC<WalletBalanceDisplayProps> = ({
           {creditLimit > 0 && (
             <Tooltip title={
               <div style={{ fontSize: 12, lineHeight: '20px' }}>
-                <div>系统余额: {currencySymbol}{balance.toFixed(2)}</div>
-                <div>信控额度: {currencySymbol}{creditLimit.toFixed(2)}</div>
+                <div>系统余额: {currencySymbol}{balance.toFixed(4)}</div>
+                <div>信控额度: {currencySymbol}{creditLimit.toFixed(4)}</div>
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.2)', marginTop: 4, paddingTop: 4, fontWeight: 500 }}>
-                  可用余额: {currencySymbol}{availableBalance.toFixed(2)}
+                  可用余额: {currencySymbol}{availableBalance.toFixed(4)}
                 </div>
               </div>
             }>
-              <Tag color="blue" style={{ fontSize: 10, padding: '0 4px', margin: 0, lineHeight: '16px', cursor: 'pointer', border: 'none' }}>
-                💳 信控 {currencySymbol}{creditLimit.toFixed(0)}
+              <Tag color="blue" style={{ fontSize: 10, padding: '0 4px', margin: 0, lineHeight: '16px', cursor: 'pointer', border: 'none', whiteSpace: 'nowrap' }}>
+                💳 信控 {currencySymbol}{formatCreditLimit(creditLimit)}
               </Tag>
             </Tooltip>
           )}
@@ -129,11 +137,11 @@ const WalletBalanceDisplay: React.FC<WalletBalanceDisplayProps> = ({
         <div style={{ lineHeight: 1.2, marginBottom: 4 }}>
           <div style={{ fontSize: 12, fontWeight: 500 }}>
             <span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 11, marginRight: 4 }}>余额</span>
-            {currencySymbol}{balance.toFixed(2)}
+            {currencySymbol}{balance.toFixed(4)}
           </div>
           <div style={{ fontSize: 11, marginTop: 2, color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
             <span style={{ marginRight: 4 }}>{labelPrefix}</span>
-            {currencySymbol}{displayTotal.toFixed(2)}
+            {currencySymbol}{displayTotal.toFixed(4)}
           </div>
         </div>
         <Progress 
@@ -148,24 +156,24 @@ const WalletBalanceDisplay: React.FC<WalletBalanceDisplayProps> = ({
 
       {/* 赠送钱包 */}
       <div style={itemStyle} onClick={handleWalletClick}>
-        <Text style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 11, display: 'block', marginBottom: 2 }}>
+        <Text style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 11, display: 'block', marginBottom: 2, whiteSpace: 'nowrap' }}>
           {displayGiftLabel}
         </Text>
         <div style={{ lineHeight: 1.2, marginBottom: 4, opacity: displayGiftTotal > 0 || gift > 0 ? 1 : 0.6 }}>
           <div style={{ fontSize: 12, fontWeight: 500 }}>
             <span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 11, marginRight: 4 }}>余额</span>
-            {currencySymbol}{gift.toFixed(2)}
+            {currencySymbol}{gift.toFixed(4)}
           </div>
           <div style={{ fontSize: 11, marginTop: 2, color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>
             <span style={{ marginRight: 4 }}>{labelPrefix}</span>
-            {currencySymbol}{displayGiftTotal.toFixed(2)}
+            {currencySymbol}{displayGiftTotal.toFixed(4)}
           </div>
         </div>
         <Progress 
           percent={gift_percent} 
           showInfo={false} 
           size="small" 
-          strokeColor={gift > 0 ? '#1677ff' : '#ff4d4f'} 
+          strokeColor={gift > 0 ? (isLight ? '#18181b' : '#fafafa') : '#ff4d4f'} 
           trailColor={isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)'} 
           style={{ margin: 0, lineHeight: 1 }} 
         />

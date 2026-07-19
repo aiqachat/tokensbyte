@@ -36,6 +36,10 @@ export interface User {
   credit_limit?: number;
   /** 是否允许在线支付：1-允许，0-禁止 */
   pay_enabled?: number;
+  /** 用户头像 URL */
+  avatar?: string;
+  /** 用户通知订阅偏好(JSON) */
+  notification_preferences?: string;
 }
 
 export interface UserLevel {
@@ -53,6 +57,7 @@ export interface UserLevel {
   allow_view_log_details: number;
   description: string;
   created_at: string;
+  user_count?: number;
 }
 
 
@@ -62,6 +67,7 @@ export interface AdminGroup {
   permissions: string; // JSON string from backend
   description?: string;
   sort_order?: number;
+  user_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -182,8 +188,7 @@ export interface Channel {
   exclude_user_groups?: string[];
   group_aid?: string;
   preset_id?: number | null;
-  pool_id?: number | null;   // 关联的火山引擎卡池ID
-  gptimage_pool_id?: number | null; // 关联的GPT-Image卡池ID
+  category_id?: number | null;
   sort_order: number;
   priority: number;
   weight: number;
@@ -191,10 +196,30 @@ export interface Channel {
   balance?: number;
   quota_limit: number; // -1 = unlimited
   quota_used: number;
+  daily_quota_limit?: number;
+  daily_quota_used?: number;
+  weekly_quota_limit?: number;
+  weekly_quota_used?: number;
+  monthly_quota_limit?: number;
+  monthly_quota_used?: number;
+  last_reset_day?: string;
+  last_reset_week?: string;
+  last_reset_month?: string;
   config?: string | any;
   rate: number;
   created_at: string;
   updated_at?: string;
+}
+
+export interface ChannelCategory {
+  id: number;
+  name: string;
+  name_en?: string;
+  sort_order: number;
+  is_active: number | boolean;
+  is_system?: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ApiToken {
@@ -227,6 +252,10 @@ export interface ApiToken {
   last_reset_day?: string;
   last_reset_week?: string;
   last_reset_month?: string;
+  /** 后端按站点时区计算的当期有效已用 */
+  current_daily_quota_used?: number;
+  current_weekly_quota_used?: number;
+  current_monthly_quota_used?: number;
 }
 
 export interface Redemption {
@@ -239,6 +268,14 @@ export interface Redemption {
   used_by?: string;
   created_at: string;
   updated_at: string;
+  /** 过期时间，空/null = 长期有效 */
+  expires_at?: string | null;
+  /** 单兑换码兑换次数，-1 = 不限（兼容历史 0） */
+  max_uses?: number;
+  /** 已兑换次数（按单个兑换码累计） */
+  used_count?: number;
+  /** 单兑换码单用户兑换次数，-1 = 不限（兼容历史 0） */
+  per_user_limit?: number;
 }
 
 export interface RequestLog {
@@ -259,6 +296,8 @@ export interface RequestLog {
   error_message?: string;
   upstream_url?: string;
   channel_group_aid?: string;
+  channel_provider_type?: string;
+  yid?: string;
   channel_name?: string;
   user_nickname?: string;
   user_uid?: string;
@@ -275,6 +314,9 @@ export interface RequestLog {
   billing_pid?: string;
   forward_eid?: string;
   plugin_tag?: string;
+  channel_config_id?: number;
+  sub_channel_name?: string;
+  task_id?: string;
   created_at: string;
 }
 
@@ -346,6 +388,11 @@ interface SiteSettings {
   copyright?: string;
   supported_languages?: string[];
   default_language?: string;
+  admin_path?: string;
+  login_style?: 'split' | 'classic';
+  login_quote?: string;
+  default_timezone?: string;
+  show_timezone?: boolean;
 }
 
 interface AuxiliaryCurrency {
@@ -361,6 +408,8 @@ interface CurrencySettings {
   currency_unit: string;
   token_ratio: number;
   auxiliary_currencies?: AuxiliaryCurrency[];
+  quick_amounts?: number[];
+  min_recharge_amount?: number;
 }
 
 interface LoginSettings {
@@ -413,6 +462,8 @@ interface WechatOAuthSettings {
 
 export interface MarketingSettings {
   enable_registration_gift: boolean;
+  /** 是否开启用户端兑换码功能 */
+  enable_redemption?: boolean;
   // 以下字段仅管理后台完整接口返回，公开接口不包含
   gift_mode?: 'fixed' | 'random';
   fixed_amount?: number;
@@ -433,6 +484,8 @@ interface AgreementSettings {
   privacy_content_en: string;
   privacy_link: string;
   privacy_link_en: string;
+  tos_enabled: boolean;
+  privacy_enabled: boolean;
 }
 
 /**
@@ -441,6 +494,7 @@ interface AgreementSettings {
  * 管理后台设置页使用独立 request.get('/settings') 走 admin 路由获取完整数据。
  */
 export interface AllSettings {
+  is_open_source?: boolean;
   site: SiteSettings;
   currency: CurrencySettings;
   login: LoginSettings;
@@ -452,6 +506,8 @@ export interface AllSettings {
     alipay_enabled: boolean;
     stripe_enabled: boolean;
     bonuspay_enabled: boolean;
+    hyperbc_enabled: boolean;
+    allinpay_enabled: boolean;
   };
   agreement?: AgreementSettings;
   /** 微信 OAuth app_id（前端扫码需要），公开接口仅返回此字段，不含 secret */
@@ -469,6 +525,28 @@ export interface AllSettings {
       allowed_levels: string;
     }[];
   };
+  notification?: {
+    site_notification_enabled: boolean;
+    sms_balance_notification: boolean;
+    email_balance_notification: boolean;
+    web_notification_enabled?: boolean;
+    push_notification_enabled?: boolean;
+    do_not_disturb_enabled?: boolean;
+    low_balance_threshold: number;
+    /** 余额不足邮件主题，变量 {{site_name}} {{balance}} {{threshold}} */
+    low_balance_email_subject?: string;
+    /** 余额不足邮件 HTML，变量同上 */
+    low_balance_email_html?: string;
+  };
+  database?: any;
+  storage?: any;
+  payment_wechat?: any;
+  payment_alipay?: any;
+  payment_stripe?: any;
+  payment_bonuspay?: any;
+  payment_hyperbc?: any;
+  google_oauth?: any;
+  wechat_oauth?: any;
 }
 
 export interface ChannelConfig {
@@ -481,6 +559,20 @@ export interface ChannelConfig {
   has_api_key?: boolean;
   sort_order?: number;
   rate?: number;
+  priority?: number;
+  weight?: number;
+  yid?: string;
+  quota_limit?: number;
+  quota_used?: number;
+  daily_quota_limit?: number;
+  daily_quota_used?: number;
+  weekly_quota_limit?: number;
+  weekly_quota_used?: number;
+  monthly_quota_limit?: number;
+  monthly_quota_used?: number;
+  last_reset_day?: string;
+  last_reset_week?: string;
+  last_reset_month?: string;
   created_at: string;
   updated_at: string;
 }
@@ -506,7 +598,7 @@ export interface Plugin {
   description: string;
   is_enabled: number;
   allowed_levels: string;
-  category: string;   // user=用户增强插件, system=系统增强插件
+  category: string;   // user=用户增强插件, system=系统增强插件, system_builtin=系统内置
   created_at: string;
   updated_at: string;
 }

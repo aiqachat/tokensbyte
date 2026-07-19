@@ -3,15 +3,21 @@
 //! 兼容 OpenAI 标准格式和各厂商原生格式（可灵、火山方舟、阿里百炼、Gemini 等）。
 //! 供 image.rs、video.rs、task.rs 共同调用。
 
-use sha2::Digest;
-use crate::AppState;
 use crate::services::tos::{self, TosConfig};
+use crate::time_system::DbTs;
+use crate::AppState;
+use sha2::Digest;
 
 /// 从系统存储设置加载 TosConfig（供所有需要系统级 TOS 的模块复用）
 pub async fn load_system_tos_config(state: &AppState) -> Option<TosConfig> {
     let val: String = sqlx::query_scalar(
-        &state.db.format_query("SELECT value FROM settings WHERE key = 'storage_settings'")
-    ).fetch_optional(&state.db.pool).await.ok()??;
+        &state
+            .db
+            .format_query("SELECT value FROM settings WHERE key = 'storage_settings'"),
+    )
+    .fetch_optional(&state.db.pool)
+    .await
+    .ok()??;
 
     let s: crate::models::StorageSettings = serde_json::from_str(&val).ok()?;
     if s.tos_access_key.is_empty() || s.tos_endpoint.is_empty() || s.tos_bucket.is_empty() {
@@ -63,7 +69,16 @@ pub async fn persist_response_resources(
     // 策略一：OpenAI 标准格式（data[].url / b64_json）
     if let Some(items) = root.get_mut("data").and_then(|d| d.as_array_mut()) {
         for item in items.iter_mut() {
-            if persist_openai_item(state, &tos_config, item, channel_id, storage_days, fallback_type).await {
+            if persist_openai_item(
+                state,
+                &tos_config,
+                item,
+                channel_id,
+                storage_days,
+                fallback_type,
+            )
+            .await
+            {
                 changed = true;
             }
         }
@@ -74,21 +89,37 @@ pub async fn persist_response_resources(
         let urls = super::response_formatter::find_urls(&root);
         if !urls.is_empty() {
             // 构建 原始URL → TOS URL 映射表
-            let mut url_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            let mut url_map: std::collections::HashMap<String, String> =
+                std::collections::HashMap::new();
             for found in &urls {
                 if found.starts_with("data:") {
                     // Gemini base64：解码上传 TOS
-                    let raw_b64 = found.find(',').map(|pos| &found[pos + 1..]).unwrap_or(found);
+                    let raw_b64 = found
+                        .find(',')
+                        .map(|pos| &found[pos + 1..])
+                        .unwrap_or(found);
                     let file_data = match base64_decode(found) {
                         Ok(d) => d,
                         Err(_) => continue,
                     };
                     let ext = detect_image_ext(&file_data);
-                    if let Some(tos_url) = upload_and_record(state, &tos_config, &file_data, &ext, channel_id, storage_days, Some("base64_data")).await {
+                    if let Some(tos_url) = upload_and_record(
+                        state,
+                        &tos_config,
+                        &file_data,
+                        &ext,
+                        channel_id,
+                        storage_days,
+                        Some("base64_data"),
+                    )
+                    .await
+                    {
                         url_map.insert(raw_b64.to_string(), tos_url);
                     }
                 } else if found.starts_with("http://") || found.starts_with("https://") {
-                    if tos_config.extract_object_key(found).is_some() { continue; }
+                    if tos_config.extract_object_key(found).is_some() {
+                        continue;
+                    }
                     let (file_data, ext) = match download_url(&state.http_client, found).await {
                         Ok(data) => (data, guess_ext(found, fallback_type.unwrap_or("image"))),
                         Err(e) => {
@@ -96,7 +127,17 @@ pub async fn persist_response_resources(
                             continue;
                         }
                     };
-                    if let Some(tos_url) = upload_and_record(state, &tos_config, &file_data, &ext, channel_id, storage_days, Some(found)).await {
+                    if let Some(tos_url) = upload_and_record(
+                        state,
+                        &tos_config,
+                        &file_data,
+                        &ext,
+                        channel_id,
+                        storage_days,
+                        Some(found),
+                    )
+                    .await
+                    {
                         url_map.insert(found.clone(), tos_url);
                     }
                 }
@@ -116,29 +157,77 @@ pub async fn persist_response_resources(
     }
 }
 
-/// b64_json 模式：将 apply_format 后的 OpenAI data[].url 下载转为 base64 返回
-pub async fn convert_openai_urls_to_b64(state: &AppState, response_str: &str) -> String {
+/// 双向响应格式对齐：根据用户 response_format 规格将 data[].url 转换为 b64_json，或反向将 b64_json 转换为 Data URL
+pub async fn align_response_format(
+    state: &AppState,
+    response_str: &str,
+    response_format: Option<&str>,
+) -> String {
     let mut root: serde_json::Value = match serde_json::from_str(response_str) {
         Ok(v) => v,
         Err(_) => return response_str.to_string(),
     };
     let mut changed = false;
+    let is_b64_json = response_format == Some("b64_json");
+
     if let Some(items) = root.get_mut("data").and_then(|d| d.as_array_mut()) {
         for item in items.iter_mut() {
-            let b64 = item.get("b64_json").and_then(|v| v.as_str()).unwrap_or("");
-            if !b64.is_empty() && b64 != "base64数据" { continue; }
-            let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            if url.is_empty() { continue; }
-            let data = match download_url(&state.http_client, &url).await {
-                Ok(d) => d,
-                Err(e) => { tracing::warn!("[TosPersist] URL转base64下载失败: {}", e); continue; }
-            };
-            use base64::Engine;
-            item["b64_json"] = serde_json::json!(base64::engine::general_purpose::STANDARD.encode(&data));
-            item.as_object_mut().map(|obj| obj.remove("url"));
-            changed = true;
+            let b64 = item
+                .get("b64_json")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let url = item
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if is_b64_json {
+                if b64.is_empty() && !url.is_empty() {
+                    if url == "base64数据" {
+                        continue;
+                    }
+                    let data = match download_url(&state.http_client, &url).await {
+                        Ok(d) => d,
+                        Err(e) => {
+                            tracing::warn!("[TosPersist] url 转换为 base64 失败: {}", e);
+                            continue;
+                        }
+                    };
+                    use base64::Engine;
+                    item["b64_json"] =
+                        serde_json::json!(base64::engine::general_purpose::STANDARD.encode(&data));
+                    item.as_object_mut().map(|obj| obj.remove("url"));
+                    changed = true;
+                }
+            } else {
+                if url.is_empty() && !b64.is_empty() {
+                    if b64 == "base64数据" {
+                        continue;
+                    }
+                    let data_url = if b64.starts_with("data:") {
+                        b64
+                    } else {
+                        let ext = match base64_decode(&b64) {
+                            Ok(data) => detect_image_ext(&data),
+                            Err(_) => "png".to_string(),
+                        };
+                        let mime = if ext == "jpg" || ext == "jpeg" {
+                            "image/jpeg".to_string()
+                        } else {
+                            format!("image/{}", ext)
+                        };
+                        format!("data:{};base64,{}", mime, b64)
+                    };
+                    item["url"] = serde_json::json!(data_url);
+                    item.as_object_mut().map(|obj| obj.remove("b64_json"));
+                    changed = true;
+                }
+            }
         }
     }
+
     if changed {
         serde_json::to_string(&root).unwrap_or_else(|_| response_str.to_string())
     } else {
@@ -155,33 +244,76 @@ async fn persist_openai_item(
     storage_days: i32,
     fallback_type: Option<&str>,
 ) -> bool {
-    let b64 = item.get("b64_json").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let b64 = item
+        .get("b64_json")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let url = item
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
 
-    if b64.is_empty() && url.is_empty() { return false; }
-    if b64 == "base64数据" { return false; }
-    if !url.is_empty() && tos_config.extract_object_key(&url).is_some() { return false; }
+    if b64.is_empty() && url.is_empty() {
+        return false;
+    }
+    if b64 == "base64数据" {
+        return false;
+    }
+    if !url.is_empty() && tos_config.extract_object_key(&url).is_some() {
+        return false;
+    }
 
     let (file_data, ext) = if !b64.is_empty() {
         match base64_decode(&b64) {
-            Ok(data) => { let ext = detect_image_ext(&data); (data, ext) }
-            Err(e) => { tracing::warn!("[TosPersist] base64 解码失败: {}", e); return false; }
+            Ok(data) => {
+                let ext = detect_image_ext(&data);
+                (data, ext)
+            }
+            Err(e) => {
+                tracing::warn!("[TosPersist] base64 解码失败: {}", e);
+                return false;
+            }
         }
     } else if url.starts_with("data:") {
         match base64_decode(&url) {
-            Ok(data) => { let ext = detect_image_ext(&data); (data, ext) }
-            Err(e) => { tracing::warn!("[TosPersist] url base64 解码失败: {}", e); return false; }
+            Ok(data) => {
+                let ext = detect_image_ext(&data);
+                (data, ext)
+            }
+            Err(e) => {
+                tracing::warn!("[TosPersist] url base64 解码失败: {}", e);
+                return false;
+            }
         }
     } else {
         match download_url(&state.http_client, &url).await {
             Ok(data) => (data, guess_ext(&url, fallback_type.unwrap_or("image"))),
-            Err(e) => { tracing::warn!("[TosPersist] 下载失败 url={}: {}", url, e); return false; }
+            Err(e) => {
+                tracing::warn!("[TosPersist] 下载失败 url={}: {}", url, e);
+                return false;
+            }
         }
     };
 
     // 记录原始来源用于日志输出
-    let source = if !url.is_empty() { url.as_str() } else { "base64_data" };
-    let tos_url = match upload_and_record(state, tos_config, &file_data, &ext, channel_id, storage_days, Some(source)).await {
+    let source = if !url.is_empty() {
+        url.as_str()
+    } else {
+        "base64_data"
+    };
+    let tos_url = match upload_and_record(
+        state,
+        tos_config,
+        &file_data,
+        &ext,
+        channel_id,
+        storage_days,
+        Some(source),
+    )
+    .await
+    {
         Some(url) => url,
         None => return false,
     };
@@ -209,7 +341,15 @@ async fn upload_and_record(
     let object_key = tos_config.full_key(&relative_path);
     let content_type = ext_to_mime(ext);
 
-    let tos_url = match tos::upload_file(tos_config, &object_key, file_data.to_vec(), content_type, None).await {
+    let tos_url = match tos::upload_file(
+        tos_config,
+        &object_key,
+        file_data.to_vec(),
+        content_type,
+        None,
+    )
+    .await
+    {
         Ok(url) => url,
         Err(e) => {
             tracing::warn!("[TosPersist] TOS 上传失败 key={}: {}", object_key, e);
@@ -218,7 +358,8 @@ async fn upload_and_record(
     };
 
     if storage_days > 0 {
-        let expire_at = (chrono::Utc::now() + chrono::Duration::days(storage_days as i64)).to_rfc3339();
+        let expire_at =
+            DbTs::from_utc(chrono::Utc::now() + chrono::Duration::days(storage_days as i64));
         let _ = sqlx::query(
             "INSERT INTO tos_temp_files (object_key, channel_id, source, expire_at) VALUES ($1, $2, 'channel', $3)"
         )
@@ -230,7 +371,11 @@ async fn upload_and_record(
     }
 
     // 输出完整映射：原始地址 => TOS 地址，方便开发者追溯
-    tracing::info!("[TosPersist] {} => {}", source_url.unwrap_or("unknown"), tos_url);
+    tracing::info!(
+        "[TosPersist] {} => {}",
+        source_url.unwrap_or("unknown"),
+        tos_url
+    );
     Some(tos_url)
 }
 
@@ -261,8 +406,11 @@ pub async fn cleanup_expired_files(state: &AppState) {
 
     loop {
         let rows: Vec<(i64, String)> = match sqlx::query_as(
-            "SELECT id, object_key FROM tos_temp_files WHERE expire_at::timestamptz <= NOW() LIMIT 100"
-        ).fetch_all(&state.db.pool).await {
+            "SELECT id, object_key FROM tos_temp_files WHERE expire_at <= NOW() LIMIT 100",
+        )
+        .fetch_all(&state.db.pool)
+        .await
+        {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("[TosCleanup] 查询过期文件失败: {}", e);
@@ -288,10 +436,15 @@ pub async fn cleanup_expired_files(state: &AppState) {
                     continue;
                 }
                 // 对象已不存在（404），视为已清理，继续删除数据库记录
-                tracing::debug!("[TosCleanup] TOS 对象已不存在 key={}，清理数据库记录", object_key);
+                tracing::debug!(
+                    "[TosCleanup] TOS 对象已不存在 key={}，清理数据库记录",
+                    object_key
+                );
             }
             let _ = sqlx::query("DELETE FROM tos_temp_files WHERE id = $1")
-                .bind(id).execute(&state.db.pool).await;
+                .bind(id)
+                .execute(&state.db.pool)
+                .await;
             total_cleaned += 1;
         }
 
@@ -302,13 +455,20 @@ pub async fn cleanup_expired_files(state: &AppState) {
     }
 
     if total_cleaned > 0 || total_failed > 0 {
-        tracing::info!("[TosCleanup] 过期文件清理完成: 成功={}, 失败={}", total_cleaned, total_failed);
+        tracing::info!(
+            "[TosCleanup] 过期文件清理完成: 成功={}, 失败={}",
+            total_cleaned,
+            total_failed
+        );
     }
 }
 
 /// 基于 JSON 结构精确替换 URL 值（替代全局字符串替换，防止输入字段中的 URL 被污染）。
 /// 跳过 input/request/task_input/original_input 等请求输入相关字段。
-fn replace_urls_in_json(v: &mut serde_json::Value, url_map: &std::collections::HashMap<String, String>) {
+fn replace_urls_in_json(
+    v: &mut serde_json::Value,
+    url_map: &std::collections::HashMap<String, String>,
+) {
     match v {
         serde_json::Value::String(s) => {
             // 精确匹配：整个字符串值是映射中的 key
@@ -337,7 +497,9 @@ fn replace_urls_in_json(v: &mut serde_json::Value, url_map: &std::collections::H
                 }
                 // 书虫格式清理：替换后 ![...](data:...;base64,TOS_URL) → TOS_URL
                 if replaced.contains("data:") && replaced.contains(";base64,http") {
-                    let re_md = regex::Regex::new(r"!\[.*?\]\(data:[^;]+;base64,(https?://[^\)]+)\)").unwrap();
+                    let re_md =
+                        regex::Regex::new(r"!\[.*?\]\(data:[^;]+;base64,(https?://[^\)]+)\)")
+                            .unwrap();
                     replaced = re_md.replace_all(&replaced, "$1").to_string();
                 }
                 if replaced != *s {
@@ -367,20 +529,28 @@ fn replace_urls_in_json(v: &mut serde_json::Value, url_map: &std::collections::H
 
 /// 下载远程文件
 async fn download_url(http_client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
-    let resp = http_client.get(url)
+    let resp = http_client
+        .get(url)
         .timeout(std::time::Duration::from_secs(200))
-        .send().await
+        .send()
+        .await
         .map_err(|e| format!("请求失败: {}", e))?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
-    resp.bytes().await.map(|b| b.to_vec()).map_err(|e| format!("读取失败: {}", e))
+    resp.bytes()
+        .await
+        .map(|b| b.to_vec())
+        .map_err(|e| format!("读取失败: {}", e))
 }
 
 /// Base64 解码（支持 data:xxx;base64, 前缀）
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     use base64::Engine;
-    let data = input.find(',').map(|pos| &input[pos + 1..]).unwrap_or(input);
+    let data = input
+        .find(',')
+        .map(|pos| &input[pos + 1..])
+        .unwrap_or(input);
     base64::engine::general_purpose::STANDARD
         .decode(data)
         .map_err(|e| format!("Base64 解码失败: {}", e))
@@ -388,11 +558,17 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 
 /// 从文件头字节检测图片格式
 fn detect_image_ext(data: &[u8]) -> String {
-    if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) { "png".to_string() }
-    else if data.starts_with(&[0xFF, 0xD8, 0xFF]) { "jpg".to_string() }
-    else if data.starts_with(b"RIFF") && data.len() > 12 && &data[8..12] == b"WEBP" { "webp".to_string() }
-    else if data.starts_with(b"GIF8") { "gif".to_string() }
-    else { "png".to_string() }
+    if data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+        "png".to_string()
+    } else if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        "jpg".to_string()
+    } else if data.starts_with(b"RIFF") && data.len() > 12 && &data[8..12] == b"WEBP" {
+        "webp".to_string()
+    } else if data.starts_with(b"GIF8") {
+        "gif".to_string()
+    } else {
+        "png".to_string()
+    }
 }
 
 /// 从 URL 推断文件扩展名

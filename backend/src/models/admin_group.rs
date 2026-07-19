@@ -1,3 +1,4 @@
+use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -8,8 +9,10 @@ pub struct AdminGroup {
     pub description: Option<String>,
     #[sqlx(default)]
     pub sort_order: i32,
-    pub created_at: String,
-    pub updated_at: String,
+    #[sqlx(default)]
+    pub user_count: Option<i64>,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
 }
 
 #[derive(Debug, Deserialize)]

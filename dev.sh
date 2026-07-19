@@ -1,117 +1,69 @@
 #!/bin/bash
-
-# TokensByte 开发环境启动脚本 (macOS / Linux)
 # ──────────────────────────────────────────────────
-
+# TokensByte 本地核心代码后台启动脚本 (已简化优化)
+# ──────────────────────────────────────────────────
 set -e
 
-# 项目名称配置：优先使用环境变量PROJECT_NAME，否则读取当前目录名
-PROJECT_NAME=${PROJECT_NAME:-$(basename "$PWD")}
+PROJECT_NAME="tokensbyte-ws"
+export POSTGRES_PORT=5432
+export DATABASE_URL="postgres://tokensapi:tokensapi@localhost:${POSTGRES_PORT}/tokensapi"
+export RUST_LOG="info"
 
-echo ""
-echo "═══════════════════════════════════════════════════"
-echo "  🛠  ${PROJECT_NAME} 开发环境启动器"
-echo "═══════════════════════════════════════════════════"
-echo ""
-echo "  [1] 本地开发  (推荐，编译速度快)"
-echo "      Postgres 在 Docker 中运行"
-echo "      后端 cargo watch + 前端 Vite HMR 在本地运行"
-echo ""
-echo "  [2] Docker 开发  (全容器热重载)"
-echo "      所有服务在 Docker 中运行"
-echo "      源码挂载到容器，自动热更新"
-echo ""
-echo "═══════════════════════════════════════════════════"
-echo ""
-printf "请选择开发模式 [1/2] (默认 1): "
-read -r choice
+echo "🚀 正在后台启动本地开发环境..."
 
-case "${choice:-1}" in
-  2)
-    # ── Docker 全容器开发模式 ──────────────────────────
-    echo ""
-    echo "🐳 正在启动 Docker 全容器开发环境 (热重载)..."
-    echo "   后端: cargo watch (容器内编译)"
-    echo "   前端: Vite HMR (容器内运行)"
-    echo "   数据库: Postgres 16"
-    echo ""
-    echo "   后端地址: http://localhost:3000"
-    echo "   前端地址: http://localhost:${FRONTEND_PORT:-5173}"
-    echo ""
-    echo "   按 Ctrl+C 停止所有服务"
-    echo ""
+# 1. 启动 Docker 中的 Postgres
+export PROJECT_NAME="${PROJECT_NAME}"
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
 
-    # 导出项目名环境变量
-        export PROJECT_NAME="${PROJECT_NAME}"
-        docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-    ;;
-
-  1|"")
-    # ── 本地开发模式 ──────────────────────────────────
-    echo ""
-    echo "🚀 正在启动本地开发环境 (数据库在 Docker 中运行)..."
-
-    # 1. 启动 Docker 中的 Postgres（合并 dev.yml 以获取端口映射）
-        export PROJECT_NAME="${PROJECT_NAME}"
-        docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
-
-        echo "⏳ 等待数据库就绪..."
-        # 等待 Postgres 健康检查通过
-        for i in $(seq 1 30); do
-            if docker exec "${PROJECT_NAME}-postgres" pg_isready -U tokensapi &>/dev/null; then
-            echo "✅ 数据库已就绪"
-            break
-        fi
-        if [ "$i" -eq 30 ]; then
-            echo "❌ 数据库启动超时，请检查 Docker"
-            exit 1
-        fi
-        sleep 1
-    done
-
-    # 2. 如果没有安装 cargo watch，提示用户
-    if ! command -v cargo-watch &> /dev/null; then
-        echo "⚠️ 未找到 cargo-watch，正在尝试自动安装 (这可能需要一小段时间)..."
-        cargo install cargo-watch
+echo "⏳ 等待数据库就绪..."
+for i in $(seq 1 30); do
+    if docker exec "${PROJECT_NAME}-postgres" pg_isready -U tokensapi &>/dev/null; then
+        echo "✅ 数据库已就绪"
+        break
     fi
-
-    # 3. 检查并安装前端依赖
-    if [ ! -d "frontend/node_modules" ]; then
-        echo "📦 正在安装前端依赖..."
-        cd frontend && npm install && cd ..
+    if [ "$i" -eq 30 ]; then
+        echo "❌ 数据库启动超时，请检查 Docker"
+        exit 1
     fi
+    sleep 1
+done
 
-    # 4. 导出环境变量，让本地 backend 连接到 localhost
-    export POSTGRES_PORT=${POSTGRES_PORT:-5432}
-    export DATABASE_URL="postgres://tokensapi:tokensapi@localhost:${POSTGRES_PORT}/tokensapi"
-    export RUST_LOG="info"
+# 2. 检查并安装前端依赖
+if [ ! -d "frontend/node_modules" ]; then
+    echo "📦 正在安装前端依赖 (使用国内镜像源)..."
+    cd frontend && npm install --registry=https://registry.npmmirror.com && cd ..
+fi
 
-    echo ""
-    echo "🧹 正在清理可能残留的后台进程与端口..."
-    # 清理占用 3000 端口和 5173 端口的进程，防止 EADDRINUSE 或由于僵尸进程导致的服务异常
-    lsof -ti:3000 | xargs kill -9 2>/dev/null || true
-    lsof -ti:5173 | xargs kill -9 2>/dev/null || true
-    pkill -f cargo-watch 2>/dev/null || true
+# 3. 清理可能残留的后台进程与端口
+echo "🧹 正在清理冲突进程与端口..."
+lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+lsof -ti:5173 | xargs kill -9 2>/dev/null || true
+pkill -f cargo-watch 2>/dev/null || true
+pkill -f tokensbyte-server 2>/dev/null || true
+pkill -f vite 2>/dev/null || true
 
-    echo "✅ 准备就绪，同时拉起后端和前端服务..."
-    echo "   后端地址: http://localhost:3000"
-    echo "   前端地址: http://localhost:5173"
-    echo ""
-    echo "   按 Ctrl+C 停止所有服务"
-    echo ""
+# 4. 在后台启动后端和前端服务，日志输出到相应 log 文件中
+echo "⚙️ 启动后台 Rust 服务 (watch模式)..."
+nohup sh -c "cd backend && cargo watch -w src -x run" > backend_dev.log 2>&1 &
+disown
 
-    # 捕获退出信号，确保子进程一并终止
-    trap 'echo ""; echo "🛑 正在停止所有服务..."; kill 0; wait 2>/dev/null' EXIT INT TERM
+echo "⚙️ 启动后台 Vite 服务..."
+nohup sh -c "cd frontend && npm run dev" > frontend_dev.log 2>&1 &
+disown
 
-    # 使用 shell 后台进程同时运行前后端，带日志前缀
-    (cd backend && cargo watch -w src -x run) 2>&1 | sed $'s/^/\033[36m[Rust]\033[0m /' &
-    (cd frontend && npm run dev) 2>&1 | sed $'s/^/\033[34m[Vite]\033[0m /' &
+# 5. 循环等待端口就绪，成功后脚本即刻退出
+echo "⏳ 等待后端 (3000) 和前端 (5173) 服务响应..."
+for i in $(seq 1 120); do
+    # 只要 5173 (Vite) 和 3000 (Rust) 端口都被监听，就代表启动成功
+    if lsof -i:3000 -t >/dev/null && lsof -i:5173 -t >/dev/null; then
+        echo "🎉 本地开发测试环境已在后台顺利拉起！"
+        echo "   👉 前端面板: http://localhost:5173"
+        echo "   👉 后端 API: http://localhost:3000"
+        echo "   (日志分别保存在 backend_dev.log 和 frontend_dev.log 中)"
+        exit 0
+    fi
+    sleep 1
+done
 
-    wait
-    ;;
-
-  *)
-    echo "❌ 无效选项，请输入 1 或 2"
-    exit 1
-    ;;
-esac
+echo "❌ 启动超时，请检查 backend_dev.log / frontend_dev.log 日志内容。"
+exit 1

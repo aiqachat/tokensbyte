@@ -28,13 +28,22 @@
 .hf-filter-item.active .hf-filter-count { background: rgba(22, 100, 255, 0.25); color: var(--brand-secondary); }
 
 /* Cards Grid */
-.hf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-.hf-card { display: flex; flex-direction: column; padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); transition: all 0.2s; text-decoration: none; color: var(--text-primary); cursor: pointer; height: 130px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-.hf-card:hover { border-color: var(--brand-secondary); transform: translateY(-2px); box-shadow: var(--shadow-md); }
-.hf-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.hf-card-icon { width: 32px; height: 32px; background: transparent; display: flex; align-items: center; justify-content: center; font-size: 20px; }
-.hf-card-title { font-weight: 600; font-size: 15px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-.hf-card-meta { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-muted); margin-top: auto; }
+.hf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 20px; }
+.hf-card { display: flex; flex-direction: column; padding: 20px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); transition: all 0.2s; text-decoration: none; color: var(--text-primary); cursor: pointer; min-height: 168px; height: auto; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-sizing: border-box; }
+.hf-card:hover { border-color: var(--brand-secondary); transform: translateY(-2px); box-shadow: 0 12px 20px -10px rgba(0,0,0,0.1); }
+.hf-card-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 4px; }
+.hf-card-icon { width: 32px; height: 32px; background: transparent; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.hf-card-title-container { display: flex; align-items: center; justify-content: space-between; flex: 1; min-width: 0; }
+.hf-card-title { font-weight: 600; font-size: 16px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
+.hf-card-badges { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 8px; }
+.hf-badge-variant { font-size: 11px; font-weight: 500; line-height: 18px; padding: 0 8px; border-radius: 9999px; background: rgba(128,128,128,0.1); color: var(--text-secondary); border: 1px solid var(--border-color); }
+.hf-badge-discount { font-size: 11px; font-weight: 600; line-height: 18px; padding: 0 8px; border-radius: 9999px; background: linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%); color: #fff; box-shadow: 0 2px 4px rgba(255,77,79,0.2); }
+.hf-card-alias-row { display: flex; align-items: center; gap: 4px; margin-top: 4px; margin-bottom: 12px; padding-left: 44px; }
+.hf-card-alias-code { background: rgba(128,128,128,0.06); padding: 2px 8px; border-radius: 4px; font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; border: 1px solid var(--border-color); }
+.hf-card-price-row { display: flex; align-items: center; gap: 6px; margin-top: auto; margin-bottom: 12px; padding-left: 44px; font-size: 12.5px; font-weight: 500; color: var(--text-primary); font-family: var(--font-mono, monospace); min-height: 24px; }
+.hf-card-price-row svg { color: var(--text-muted); flex-shrink: 0; }
+.hf-card-meta { display: flex; align-items: center; font-size: 12px; color: var(--text-muted); margin-top: auto; padding-top: 10px; border-top: 1px dashed var(--border-color); }
+.hf-card-footer-info { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: space-between; }
 .hf-card-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; background: rgba(128,128,128,0.1); color: var(--text-secondary); font-size: 12px; font-weight: 500; border: 1px solid var(--border-color); }
 .hf-card-provider { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); }
 .hf-card-provider svg { width: 14px; height: 14px; fill: currentColor; }
@@ -47,6 +56,70 @@
     .hf-container { flex-direction: column; }
     .hf-sidebar { width: 100%; }
 }
+
+{% if style and style.current_style == "tech" %}
+.hf-card {
+  border-radius: 0px !important;
+  border: 1px solid var(--brand-primary) !important;
+  background: #09090b !important;
+}
+.hf-card:hover {
+  box-shadow: var(--shadow-glow) !important;
+  transform: translateY(-2px) !important;
+}
+.hf-search input {
+  border-radius: 0px !important;
+  border: 1px solid var(--brand-primary) !important;
+  background: #09090b !important;
+}
+.hf-filter-item {
+  border-radius: 0px !important;
+}
+.hf-filter-item.active {
+  background: rgba(6, 182, 212, 0.15) !important;
+  color: var(--brand-primary) !important;
+}
+.hf-filter-count {
+  border-radius: 0px !important;
+  border: 1px solid var(--brand-primary) !important;
+}
+{% elif style and style.current_style == "dark_gradient" %}
+.hf-card {
+  background: rgba(255, 255, 255, 0.02) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+}
+[data-theme="light"] .hf-card {
+  background: rgba(255, 255, 255, 0.75) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+.hf-card:hover {
+  border-color: var(--brand-primary) !important;
+  box-shadow: 0 10px 30px rgba(236, 72, 153, 0.2) !important;
+  transform: translateY(-4px) !important;
+}
+.hf-search input {
+  border-radius: 9999px !important;
+  border-color: rgba(236, 72, 153, 0.2) !important;
+}
+.hf-search input:focus {
+  border-color: var(--brand-primary) !important;
+  box-shadow: 0 0 15px rgba(236, 72, 153, 0.15) !important;
+}
+.hf-filter-item {
+  border-radius: 9999px !important;
+}
+.hf-filter-item.active {
+  background: var(--brand-gradient) !important;
+  color: #fff !important;
+}
+.hf-filter-count {
+  border-radius: 9999px !important;
+}
+{% endif %}
 </style>
 
 <div class="hf-container">
@@ -94,7 +167,7 @@
  
         <div class="hf-grid" id="models-grid">
             {% for model in models %}
-            <a href="/home/model/{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.model_id }}{% endif %}" class="hf-card" data-id="{{ model.model_id | lower }}" data-name="{{ model.model_name | lower }}" data-mid="{{ model.mid | lower }}" data-type="{{ model.model_type | default(value='综合') }}" data-provider="{{ model.provider | default(value='其他') }}" data-type-logo="{{ model.type_logo | default(value='') }}" data-provider-logo="{{ model.provider_logo | default(value='') }}">
+            <a href="/home/model/{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.model_id }}{% endif %}" class="hf-card" data-id="{{ model.model_id | lower }}" data-name="{{ model.model_name | lower }}" data-mid="{{ model.mid | lower }}" data-type="{{ model.model_type | default(value='综合') }}" data-provider="{{ model.provider | default(value='其他') }}" data-type-logo="{{ model.type_logo | default(value='') }}" data-provider-logo="{{ model.provider_logo | default(value='') }}" data-index="{{ loop.index0 }}">
                 <div class="hf-card-header">
                     <div class="hf-card-icon">
                         {% if model.logo and model.logo | length > 0 %}
@@ -103,19 +176,25 @@
                         {% if "gpt" in model.mid %}🟢{% elif "claude" in model.mid %}🟣{% elif "gemini" in model.mid %}🔵{% elif "deepseek" in model.mid %}🐳{% else %}🤖{% endif %}
                         {% endif %}
                     </div>
-                    <div class="hf-card-title">{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.model_id }}{% endif %}</div>
+                    <div class="hf-card-title-container">
+                        <span class="hf-card-title">{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.model_id }}{% endif %}</span>
+                        <div class="hf-card-badges" id="badges-{{ loop.index0 }}"></div>
+                    </div>
                 </div>
-                <div style="font-family: monospace; font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ model.model_id }}</span>
-                    <span class="hf-copy-btn" data-clipboard-text="{{ model.model_id }}" title="复制模型ID">
+                <div class="hf-card-alias-row">
+                    <span class="hf-card-alias-code">{% if model.original_id and model.variants and model.variants | length > 0 %}{{ model.variants.0.model_id }}{% else %}{{ model.model_id }}{% endif %}</span>
+                    <span class="hf-copy-btn" data-clipboard-text="{% if model.original_id and model.variants and model.variants | length > 0 %}{{ model.variants.0.model_id }}{% else %}{{ model.model_id }}{% endif %}" title="复制模型ID">
                         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
                     </span>
                 </div>
+                <div class="hf-card-price-row" id="price-{{ loop.index0 }}"></div>
                 <div class="hf-card-meta">
-                    <span class="hf-card-tag" data-i18n-dynamic="{{ model.model_type | default(value="综合") }}">{{ model.model_type | default(value="综合") }}</span>
-                    <div class="hf-card-provider">
-                        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
-                        <span data-i18n-dynamic="{{ model.provider | default(value="其他") }}">{{ model.provider | default(value="其他") }}</span>
+                    <div class="hf-card-footer-info">
+                        <span id="footer-info-{{ loop.index0 }}"></span>
+                        <div class="hf-card-provider">
+                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
+                            <span data-i18n-dynamic="{{ model.provider | default(value="其他") }}">{{ model.provider | default(value="其他") }}</span>
+                        </div>
                     </div>
                 </div>
             </a>
@@ -165,7 +244,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (lower.includes('视频') || lower.includes('video')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>';
         if (lower.includes('音频') || lower.includes('audio')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>';
         if (lower.includes('聊天') || lower.includes('chat') || lower.includes('text') || lower.includes('对话')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-        if (lower.includes('embedding') || lower.includes('向量')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.12 7.04-6-4.66A2 2 0 0 0 13.88 2H10A2 2 0 0 0 8 2.82l-6 4.66A2 2 0 0 0 1 9v6a2 2 0 0 0 1 1.54l6 4.66A2 2 0 0 0 9.24 22h3.52a2 2 0 0 0 1.24-.44l6-4.66A2 2 0 0 0 23 15V9a2 2 0 0 0-1.88-1.96ZM10 2v20M2 7l10 5-10 5M22 7l-10 5 10 5M12 12v10"/></svg>';
+        if (lower.includes('embedding') || lower.includes('向量')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.12 7.04-6-4.66a2 2 0 0 0-2.24 0l-6 4.66A2 2 0 0 0 6 8.66V15.3a2 2 0 0 0 .88 1.62l6 4.66a2 2 0 0 0 2.24 0l6-4.66a2 2 0 0 0 .88-1.62V8.66a2 2 0 0 0-.88-1.62z"/><path d="M12 2v20"/><path d="m2 7 10 5 10-5"/><path d="M12 12v10"/></svg>';
+        if (lower.includes('rerank') || lower.includes('排序')) return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" x2="21" y1="6" y2="6"/><line x1="10" x2="21" y1="12" y2="12"/><line x1="10" x2="21" y1="18" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>';
         return null;
     };
 
@@ -178,13 +258,21 @@ document.addEventListener("DOMContentLoaded", () => {
             li.dataset[dataKey] = key;
             
             let logoHtml = null;
-            if (obj.logo && obj.logo !== '') {
+            // For model type sidebar filters, we prioritize the built-in system icon (just like the admin backend panel)
+            if (dataKey === 'type') {
+                logoHtml = getSystemIcon(key);
+            }
+            
+            // If it's not 'type' or if no system icon matched, fallback to configured logo
+            if (!logoHtml && obj.logo && obj.logo !== '') {
                 let logoUrl = obj.logo;
                 if (!logoUrl.startsWith('http') && !logoUrl.startsWith('/')) {
                     logoUrl = `/assets/icons/lobe/${logoUrl}.svg`;
                 }
                 logoHtml = `<img class="hf-smart-icon" src="${logoUrl}" style="width: 16px; height: 16px; object-fit: contain; border-radius: 4px;" onload="makeIconSmart(this)" onerror="this.style.display='none'">`;
             }
+            
+            // Absolute fallback (e.g. for provider default or fallback system icon)
             if (!logoHtml) {
                 logoHtml = getSystemIcon(key) || '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="opacity: 0.5;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>';
             }
@@ -286,6 +374,288 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
     });
+
+    // ==========================================
+    // 精致价格与打折信息展示与多语言动态渲染支持
+    // ==========================================
+    const modelsData = {{ models | json_encode | safe }};
+    const currencySettings = {{ currency | json_encode | safe }};
+
+    function getFallbackBilling(model) {
+        if (model.billing) return model.billing;
+        const mid = model.mid || '';
+        const typeName = model.model_type || '';
+        
+        if (mid.startsWith('vve-') || mid.startsWith('vvs-')) {
+            const isErase = mid.startsWith('vvs-');
+            return {
+                billing_type: 'duration',
+                billing_rule: isErase ? 'per_second' : 'video_quality',
+                fixed_rate: 0,
+                duration_rate: 0,
+                pricing_tiers: '[]',
+                extended_config: '{}',
+            };
+        }
+        if (typeName.includes('图') || typeName.includes('画') || typeName.includes('Image') || typeName.includes('image')) {
+            return {
+                billing_type: 'requests',
+                billing_rule: 'per_image',
+                fixed_rate: 0,
+                pricing_tiers: '[]',
+                extended_config: '{}',
+            };
+        }
+        if (typeName.includes('视频') || typeName.includes('Video') || typeName.includes('video')) {
+            return {
+                billing_type: 'duration',
+                billing_rule: 'video_resolution',
+                fixed_rate: 0,
+                duration_rate: 0,
+                pricing_tiers: '[]',
+                extended_config: '{}',
+            };
+        }
+        return {
+            billing_type: 'tokens',
+            billing_rule: 'standard',
+            prompt_rate: 0,
+            completion_rate: 0,
+            pricing_tiers: '[]',
+            extended_config: '{}',
+        };
+    }
+
+    function formatPrice(price, discountModel, lang) {
+        if (price === undefined || price === null || price === '') return '-';
+        const num = Number(price);
+        if (isNaN(num)) return String(price);
+
+        const dict = locales[lang] || locales['zh'];
+        const symbol = currencySettings.currency_symbol || '¥';
+        const formatNumber = (val) => parseFloat(val.toFixed(4));
+        
+        const raw = `${symbol}${formatNumber(num)}`;
+        
+        const hasDiscount = discountModel && 
+                            discountModel.global_discount_enabled === 1 && 
+                            discountModel.global_discount !== undefined && 
+                            discountModel.global_discount > 0 && 
+                            discountModel.global_discount < 1;
+                            
+        if (hasDiscount) {
+            const discountedNum = num * discountModel.global_discount;
+            const discountedRaw = `${symbol}${formatNumber(discountedNum)}`;
+            return `<span style="text-decoration: line-through; color: var(--text-muted); font-size: 0.85em; font-weight: 400; opacity: 0.7; margin-right: 6px;">${raw}</span><span style="color: #ff4d4f; font-weight: 700;">${discountedRaw}</span>`;
+        }
+        return `<span>${raw}</span>`;
+    }
+
+    function getDiscountLabel(discount, lang) {
+        if (lang === 'en') {
+            const pct = Math.round((1 - discount) * 100);
+            return `${pct}% off`;
+        }
+        return `${Number((discount * 10).toFixed(1))}折`;
+    }
+
+    function renderCardPrice(model, lang) {
+        const billing = model.billing || getFallbackBilling(model);
+        if (!billing) return '';
+        
+        const { billing_type, prompt_rate, completion_rate, fixed_rate, duration_rate, billing_rule, extended_config, pricing_tiers } = billing;
+        const dict = locales[lang] || locales['zh'];
+        
+        let ext = {};
+        if (extended_config) {
+            try { ext = typeof extended_config === 'string' ? JSON.parse(extended_config) : extended_config; } catch (e) {}
+        }
+        let tiers = [];
+        if (pricing_tiers) {
+            try { tiers = typeof pricing_tiers === 'string' ? JSON.parse(pricing_tiers) : pricing_tiers; } catch (e) {}
+        }
+        
+        const freeBadge = `<span class="hf-badge-variant" style="padding: 2px 6px; border-radius: 4px;">${dict['models_price_free'] || '免费'}</span>`;
+        
+        const renderMinPrice = (rates, unitKey) => {
+            const activeRates = rates.map(r => Number(r)).filter(r => !isNaN(r) && r > 0);
+            if (activeRates.length > 0) {
+                const minVal = Math.min(...activeRates);
+                const unit = dict[unitKey] || '/1M';
+                const fromLabel = dict['models_price_from'] || '起价: ';
+                return `<span>${fromLabel}${formatPrice(minVal, model, lang)}${unit}</span>`;
+            }
+            return '';
+        };
+        
+        let priceHtml = '';
+        
+        if (billing_type === 'tokens') {
+            if ((billing_rule === 'tiered' || billing_rule === 'doubao_chat') && Array.isArray(tiers) && tiers.length > 0) {
+                const firstTier = tiers[0];
+                const pRate = firstTier.prompt_rate !== undefined && firstTier.prompt_rate !== null ? Number(firstTier.prompt_rate) : 0;
+                const cRate = firstTier.completion_rate !== undefined && firstTier.completion_rate !== null ? Number(firstTier.completion_rate) : 0;
+                
+                const parts = [];
+                if (pRate > 0) {
+                    parts.push(`<span>${dict['models_price_input'] || '输入: '}${formatPrice(pRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                if (cRate > 0) {
+                    parts.push(`<span>${dict['models_price_output'] || '输出: '}${formatPrice(cRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                priceHtml = parts.join('<span style="margin: 0 6px; opacity: 0.4;">|</span>');
+            } else if (billing_rule === 'multimodal') {
+                const pRate = prompt_rate !== undefined && prompt_rate !== null ? Number(prompt_rate) : 0;
+                const imgRate = ext.image_prompt_rate !== undefined && ext.image_prompt_rate !== null ? Number(ext.image_prompt_rate) : 0;
+                
+                const parts = [];
+                if (pRate > 0) {
+                    parts.push(`<span>文P: ${formatPrice(pRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                if (imgRate > 0) {
+                    parts.push(`<span>图P: ${formatPrice(imgRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                priceHtml = parts.join('<span style="margin: 0 6px; opacity: 0.4;">|</span>');
+            } else if (billing_rule === 'seedance2.0' && ext.resolution_rates) {
+                const rates = ext.resolution_rates || {};
+                const values = [];
+                Object.keys(rates).forEach(k => {
+                    if (rates[k]) {
+                        values.push(rates[k].with_video, rates[k].without_video);
+                    }
+                });
+                priceHtml = renderMinPrice(values, 'models_unit_1m');
+            } else if (billing_rule === 'seedance1.5pro') {
+                priceHtml = renderMinPrice([ext.base_rate, ext.audio_rate], 'models_unit_1m');
+            } else if (billing_rule === 'seedance1.0') {
+                priceHtml = renderMinPrice([ext.online_rate, ext.offline_rate], 'models_unit_1m');
+            } else if (billing_rule === 'volcengine') {
+                priceHtml = renderMinPrice([ext.volc_base_rate, ext.volc_audio_rate, ext.volc_video_rate], 'models_unit_1m');
+            } else {
+                const pRate = prompt_rate !== undefined && prompt_rate !== null ? Number(prompt_rate) : 0;
+                const cRate = completion_rate !== undefined && completion_rate !== null ? Number(completion_rate) : 0;
+                if (pRate === 0 && cRate === 0) {
+                    return freeBadge;
+                }
+                const parts = [];
+                if (pRate > 0) {
+                    parts.push(`<span>${dict['models_price_input'] || '输入: '}${formatPrice(pRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                if (cRate > 0) {
+                    parts.push(`<span>${dict['models_price_output'] || '输出: '}${formatPrice(cRate, model, lang)}${dict['models_unit_1m'] || '/1M'}</span>`);
+                }
+                priceHtml = parts.join('<span style="margin: 0 6px; opacity: 0.4;">|</span>');
+            }
+        } else if (billing_type === 'requests') {
+            if (billing_rule === 'image_resolution' && Array.isArray(tiers) && tiers.length > 0) {
+                priceHtml = renderMinPrice(tiers.filter(t => t.enabled !== false).map(t => t.rate), 'models_unit_image');
+            } else if (billing_rule === 'image_size_pixel' && Array.isArray(tiers) && tiers.length > 0) {
+                const rates = [];
+                tiers.filter(t => t.enabled !== false).forEach(t => {
+                    rates.push(t.quality_pricing ? t.rate_low : t.rate);
+                });
+                priceHtml = renderMinPrice(rates, 'models_unit_image');
+            } else if (billing_rule === 'vidu_image') {
+                const pt = ext.price_table || {};
+                const disabledKeys = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
+                const values = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k)).map(([, v]) => v);
+                priceHtml = renderMinPrice(values, 'models_unit_image');
+            } else if (billing_rule === 'characters') {
+                const fRate = fixed_rate !== undefined && fixed_rate !== null ? Number(fixed_rate) : 0;
+                if (fRate === 0) return freeBadge;
+                priceHtml = `<span>${formatPrice(fRate, model, lang)}${dict['models_unit_thousand_chars'] || '/万字符'}</span>`;
+            } else {
+                const fRate = fixed_rate !== undefined && fixed_rate !== null ? Number(fixed_rate) : 0;
+                if (fRate === 0) return freeBadge;
+                const isImageRule = ['per_image', 'vidu_image', 'image_resolution', 'image_size_pixel'].includes(billing_rule || '') || 
+                                    (billing_rule || '').includes('image') || 
+                                    (model.model_type || '').includes('图片') || 
+                                    (model.model_type || '').includes('图像') ||
+                                    (model.model_type || '').includes('Image');
+                const unitKey = isImageRule ? 'models_unit_image' : 'models_unit_request';
+                priceHtml = `<span>${formatPrice(fRate, model, lang)}${dict[unitKey] || '/次'}</span>`;
+            }
+        } else if (billing_type === 'duration') {
+            if (billing_rule === 'video_resolution' && Array.isArray(tiers) && tiers.length > 0) {
+                priceHtml = renderMinPrice(tiers.filter(t => t.enabled !== false).map(t => t.rate), 'models_unit_second');
+            } else if (billing_rule === 'kling_video') {
+                const pt = ext.price_table || {};
+                const disabledKeys = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
+                const values = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k)).map(([, v]) => v);
+                priceHtml = renderMinPrice(values, 'models_unit_second');
+            } else if (billing_rule === 'vidu_video') {
+                const pt = ext.price_table || {};
+                const disabledKeys = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
+                const values = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k)).map(([, v]) => v);
+                priceHtml = renderMinPrice(values, 'models_unit_second');
+            } else if (billing_rule === 'video_quality' && Array.isArray(tiers) && tiers.length > 0) {
+                priceHtml = renderMinPrice(tiers.filter(t => t.enabled !== false).map(t => t.rate), 'models_unit_second');
+            } else {
+                const dRate = duration_rate !== undefined && duration_rate !== null ? Number(duration_rate) : 0;
+                if (dRate === 0) return freeBadge;
+                priceHtml = `<span>${formatPrice(dRate, model, lang)}${dict['models_unit_second'] || '/秒'}</span>`;
+            }
+        }
+        
+        if (priceHtml) {
+            return `<svg class="price-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="16"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/></svg>${priceHtml}`;
+        }
+        return '';
+    }
+
+    function updateAllCards(lang) {
+        const dict = locales[lang] || locales['zh'];
+        modelsData.forEach((model, idx) => {
+            // 1. Badges
+            const badgesContainer = document.getElementById(`badges-${idx}`);
+            if (badgesContainer) {
+                let badgesHtml = '';
+                if (model.variant_count > 1) {
+                    const plansLabel = dict['models_pricing_plans'] || ' 种定价';
+                    badgesHtml += `<span class="hf-badge-variant">${model.variant_count}${plansLabel}</span>`;
+                }
+                const validDiscounts = (model.variants || [model])
+                    .filter(v => v.global_discount_enabled === 1 && v.global_discount !== undefined && v.global_discount > 0 && v.global_discount < 1)
+                    .map(v => Number(v.global_discount));
+                if (validDiscounts.length > 0) {
+                    const minDiscount = Math.min(...validDiscounts);
+                    badgesHtml += `<span class="hf-badge-discount">${getDiscountLabel(minDiscount, lang)}</span>`;
+                }
+                badgesContainer.innerHTML = badgesHtml;
+            }
+            
+            // 2. Price
+            const priceContainer = document.getElementById(`price-${idx}`);
+            if (priceContainer) {
+                priceContainer.innerHTML = renderCardPrice(model, lang);
+            }
+            
+            // 3. Footer
+            const footerContainer = document.getElementById(`footer-info-${idx}`);
+            if (footerContainer) {
+                const mType = model.model_type || '综合';
+                const typeText = dict[mType] || mType;
+                
+                const billing = model.billing || getFallbackBilling(model);
+                const billingType = billing ? billing.billing_type : 'tokens';
+                
+                let billingTextKey = 'Tokens 计费';
+                if (billingType === 'requests') billingTextKey = '按次计费';
+                else if (billingType === 'duration') billingTextKey = '时长计费';
+                
+                const billingText = dict[billingTextKey] || billingTextKey;
+                
+                footerContainer.innerHTML = `${typeText} · ${billingText}`;
+            }
+        });
+    }
+
+    window.addEventListener('languageChanged', (e) => {
+        updateAllCards(e.detail.lang);
+    });
+
+    const currentLang = localStorage.getItem('site_portal_lang') || 'zh';
+    updateAllCards(currentLang);
 });
 </script>
 {% endblock %}

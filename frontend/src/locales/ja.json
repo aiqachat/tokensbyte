@@ -88,8 +88,7 @@
     "system_about": "システムについて",
     "channel_groups": "モデルチャネルのグループ化",
     "channel_configs": "アップストリームチャネル構成",
-    "model_marketplace": "モデルスクエア",
-    "smart_router": "インテリジェントなルーティング"
+    "model_marketplace": "モデルスクエア"
   },
   "dashboard": {
     "title": "システム概要",
@@ -99,7 +98,7 @@
     "active_tokens": "アクティブなトークン",
     "recent_activity": "最近の活動",
     "model_distribution": "モデルの分布 (コスト別)",
-    "auto_refresh": "自動更新: 30秒",
+    "auto_refresh": "自動更新: 3分",
     "no_data": "まだデータがありません"
   },
   "login": {
@@ -272,7 +271,8 @@
     "total_records": "共 {{total}} 条",
     "export_success": "导出成功",
     "export_fail": "导出失败",
-    "search_log_id": "ログIDで検索"
+    "search_log_id": "ログIDで検索",
+    "search_task_id": "タスクIDで検索"
   },
   "redemptions": {
     "title": "兑换管理",
@@ -464,14 +464,14 @@
     "total_calls": "总调用次数",
     "success_calls": "成功调用",
     "recharge_records": "充值记录",
-    "amount": "金额 (元)",
+    "amount": "金额 ({{unit}})",
     "remark": "备注",
     "time": "时间",
     "copy_invite_link_success": "邀请链接已复制到剪贴板",
     "copy_failed": "复制失败，请手动选择复制",
     "payment_success": "支付已完成，余额稍后到账",
     "payment_cancelled": "支付已取消",
-    "system_balance": "系统主余额",
+    "system_balance": "系统总余额",
     "gift_balance": "赠送金余额",
     "priority_deduction": "优先扣除",
     "invite_friends": "邀请好友获返利",
@@ -501,7 +501,8 @@
     "recharge_type_commission": "邀请返佣",
     "recharge_type_alipay": "支付宝充值",
     "recharge_type_wechat": "微信充值",
-    "recharge_type_bonuspay": "BonusPay充值",
+    "recharge_type_allinpay_wechat": "通聯微信",
+    "recharge_type_allinpay_alipay": "通聯支付宝",
     "recharge_type_gift": "赠送金",
     "recharge_type_other": "其它",
     "operator": "操作人"
@@ -561,6 +562,37 @@
     "mobile_required": "请输入手机号",
     "sms_code_sent": "验证码已发送到您的手机",
     "admin_success": "认证成功，欢迎，操作员。"
+  },
+  "moderation_query": {
+    "tip_desc": "有効化後・直近14日以内の画像/動画/音声ブロックのみ照会可能。テキスト未対応。約10回/分。",
+    "id_type": "ID 種別",
+    "id": "照会 ID",
+    "id_placeholder": "例: asset-xxx / cgt-xxx / request_id",
+    "id_required": "照会する ID を入力してください",
+    "id_too_long": "ID が長すぎます",
+    "query": "照会",
+    "result_title": "照会結果",
+    "hit_count": "{{count}} 件のブロック理由",
+    "status_hits": "照会成功：ブロック理由 {{count}} 件",
+    "status_empty": "照会成功：ブロック理由なし（未ブロック、14日超過、または詳細なし）",
+    "query_failed": "照会に失敗しました",
+    "copy_success": "コピーしました",
+    "copy_failed": "コピーに失敗しました",
+    "type_asset_id": "素材ライブラリ ID",
+    "type_task_id": "タスク ID",
+    "type_request_id": "推論リクエスト ID",
+    "col_label": "大分類",
+    "col_sub_label": "小分類",
+    "col_detail": "詳細",
+    "label_Safety": "安全リスク",
+    "label_Copyright": "著作権",
+    "label_Celebrity": "著名人",
+    "label_Deepfake": "実人人顔",
+    "sub_Safety": "安全リスク",
+    "sub_IP": "IP ビジュアル作品",
+    "sub_Other": "その他の著作権",
+    "sub_Celebrity": "著名人",
+    "sub_RealHuman": "実人人顔"
   },
   "assets": {
     "my_assets": "我的素材库",
@@ -736,7 +768,8 @@
     "bonuspay_tip": "💡 充值金额以实际链上到账金额为准，通常需要几分钟确认",
     "recharge_again": "再次充值",
     "close": "关闭",
-    "select_amount": "选择金额 (元)",
+    "select_amount": "选择金额 ({{unit}})",
+    "min_amount_error": "充值金额不能小于 {{limit}} {{unit}}",
     "custom": "自定义",
     "input_amount": "输入金额",
     "crypto_recharge": "加密货币充值",
@@ -746,14 +779,20 @@
     "payment_method": "支付方式",
     "alipay": "支付宝",
     "wechat_pay": "微信支付",
+    "allinpay_wechat": "通聯微信",
+    "allinpay_alipay": "通聯支付宝",
     "payable_amount": "应付金额",
     "get_address": "获取充值地址",
     "go_stripe": "去 Stripe 支付",
     "go_alipay": "去支付宝支付",
     "gen_wechat_qr": "生成微信支付码",
+    "gen_alipay_qr": "生成支付宝支付码",
     "trust_badge": "资金安全保障 · 充值后即时到账 · 正规支付渠道",
     "not_available": "在线充值暂不可用",
-    "not_available_desc": "管理员尚未开启或正确配置在线支付功能"
+    "not_available_desc": "管理员尚未开启或正确配置在线支付功能",
+    "hyperbc_select_pay": "支払通貨とネットワークを選択してください",
+    "hyperbc_tip": "💡 対応するチェーンと通貨をサポートするウォレットを使用して、正確な金額を送金してください。通常数秒から数分で到着します。送金が成功すると、このページは自動的に更新されます。ポップアップを閉じないでください。",
+    "go_hyperbc": "HyperBC で支払う"
   },
   "task_logs": {
     "fetch_fail": "获取任务日志失败",
@@ -781,7 +820,8 @@
     "refresh": "刷新",
     "total_records": "共 {{total}} 条",
     "export_success": "导出成功",
-    "export_fail": "导出失败"
+    "export_fail": "导出失败",
+    "search_task_id": "タスクIDで検索"
   },
   "marketplace": {
     "model_desc": "模型简介",

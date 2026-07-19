@@ -3,7 +3,8 @@ use reqwest::Client;
 pub async fn query_balance(ak: &str, sk: &str) -> anyhow::Result<f64> {
     #[cfg(not(feature = "commercial_plugins"))]
     {
-        let _ = ak; let _ = sk;
+        let _ = ak;
+        let _ = sk;
         anyhow::bail!("火山引擎余额查询未启用（商业插件未安装）")
     }
     #[cfg(feature = "commercial_plugins")]
@@ -17,7 +18,7 @@ pub async fn query_balance(ak: &str, sk: &str) -> anyhow::Result<f64> {
         // 调用公共签名函数
         let query_str = format!("Action={}&Version={}", action, version);
         let (auth_header, x_date, payload_hash) = crate::services::volcengine::volcengine_sign(
-            ak, sk, "GET", host, "/", &query_str, service, region, b""
+            ak, sk, "GET", host, "/", &query_str, service, region, b"",
         );
 
         // 发起请求
@@ -43,8 +44,12 @@ pub async fn query_balance(ak: &str, sk: &str) -> anyhow::Result<f64> {
             if let Some(err) = meta.get("Error") {
                 anyhow::bail!(
                     "Volcengine API error: Code={}, Message={}",
-                    err.get("Code").and_then(|v| v.as_str()).unwrap_or("unknown"),
-                    err.get("Message").and_then(|v| v.as_str()).unwrap_or("unknown")
+                    err.get("Code")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown"),
+                    err.get("Message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
                 );
             }
         }

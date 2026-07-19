@@ -2,18 +2,12 @@
 name = "tokensbyte-server"
 version = "0.1.0"
 edition = "2021"
+default-run = "tokensbyte-server"
 description = "TokensByte - Next-gen LLM API Distribution & Management Platform"
-
 [features]
-default = ["plugin_site_icons"]
-plugin_happyhorse = []       # 快乐小马智能路由插件
-plugin_volcengine_pool = []  # 火山引擎卡池插件
-plugin_gptimage_pool = []    # GPT-Image 卡池插件
+default = ["plugin_site_icons", "plugin_site_portal"]
 plugin_site_icons = []       # 站点图标管理插件
-plugin_router_flow = []      # 智能路由流插件
 plugin_site_portal = []      # 站点门户插件
-commercial_plugins = []      # 开源脱敏商业插件门控
-
 
 [dependencies]
 # Web framework
@@ -32,10 +26,10 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres",
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 
 # HTTP client (for upstream providers)
-reqwest = { version = "0.12", features = ["json", "stream", "gzip"] }
+reqwest = { version = "0.12", features = ["json", "stream", "gzip", "multipart"] }
 eventsource-stream = "0.2"
 
 # Auth
@@ -50,6 +44,7 @@ dotenvy = "0.15"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
@@ -80,7 +75,9 @@ hex = "0.4"
 urlencoding = "2.1"
 form_urlencoded = "1"
 url = "2"
-rsa = { version = "0.9", features = ["sha2", "pem"] }
+rsa = { version = "0.9", features = ["sha1", "sha2", "pem"] }
+sha1 = { version = "0.10", default-features = false, features = ["oid"] }
+md-5 = "0.10"
 
 # Volcengine TOS Object Storage
 ve-tos-rust-sdk = { version = "2.9", features = ["tokio-runtime"] }

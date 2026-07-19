@@ -8,7 +8,8 @@
  * - 裁剪后预览与保存
  */
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Modal, Tooltip, message } from 'antd';
+import { Modal, Tooltip } from 'antd';
+import toast from './PlaygroundToast';
 import {
   PlayCircleOutlined, PauseCircleOutlined,
   UndoOutlined, ExpandOutlined, CompressOutlined,
@@ -276,7 +277,7 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
 
     // 有裁剪 → Canvas + MediaRecorder
     setExporting(true);
-    message.loading({ content: '正在导出裁剪视频...', key: 'vid-export', duration: 0 });
+    toast.info('正在导出裁剪视频...');
 
     try {
       const startTime = ts * dur;
@@ -331,12 +332,12 @@ const VideoEditorModal: React.FC<VideoEditorModalProps> = ({ open, videoUrl, onC
       const blob = new Blob(chunks, { type: mimeType });
       const url = URL.createObjectURL(blob);
       const file = new File([blob], `trimmed_${Date.now()}.webm`, { type: mimeType });
-      message.destroy('vid-export');
-      message.success('裁剪导出完成');
+
+      toast.success('裁剪导出完成');
       onSave(url, file);
     } catch (err: any) {
-      message.destroy('vid-export');
-      message.error(err?.message || '导出失败');
+
+      toast.error(err?.message || '导出失败');
     } finally {
       setExporting(false);
     }

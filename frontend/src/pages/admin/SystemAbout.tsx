@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Typography, Spin, message, Tag, Timeline, Badge, Button } from 'antd';
-import { GitlabOutlined, UserOutlined, CalendarOutlined, TagOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
+import { Spin, message } from 'antd';
+import { GitCommit, User, Calendar, Tag as TagIcon, ChevronDown, ChevronUp, MonitorPlay } from 'lucide-react';
 import request from '../../utils/request';
 import { useThemeStore } from '../../store/theme';
-
-const { Title, Text } = Typography;
 
 interface Commit {
   index: number;
@@ -19,14 +17,14 @@ interface Commit {
 
 const SystemAbout: React.FC = () => {
   const { themeMode } = useThemeStore();
-  const _isLight = themeMode === 'light';
+  const isLight = themeMode === 'light';
   const [loading, setLoading] = useState(true);
   const [commits, setCommits] = useState<Commit[]>([]);
   const [current, setCurrent] = useState<Commit | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
-    const fetch = async () => {
+    const fetchInfo = async () => {
       try {
         const res = await request.get('/system/about') as any;
         if (res?.success) {
@@ -41,152 +39,164 @@ const SystemAbout: React.FC = () => {
         setLoading(false);
       }
     };
-    fetch();
+    fetchInfo();
   }, []);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Spin size="large" />
+      </div>
+    );
+  }
+
   return (
-    <div style={{ maxWidth: 860, margin: '0 auto' }}>
-      {/* 当前版本卡片 */}
-      {current && !loading && (
-        <Card
-          bordered={false}
-          style={{
-            marginBottom: 24,
-            background: _isLight ? 'linear-gradient(135deg, #f0f5ff 0%, #e6f4ff 100%)' : 'linear-gradient(135deg, #1a2a4a 0%, #0d1b35 100%)',
-            border: _isLight ? '1px solid rgba(22, 119, 255, 0.15)' : '1px solid rgba(22, 119, 255, 0.35)',
-            borderRadius: 12,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{
-              width: 56, height: 56, borderRadius: 12, background: 'rgba(22, 119, 255, 0.2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <GitlabOutlined style={{ fontSize: 28, color: '#4096ff' }} />
+    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+      {current && (
+        <div className={`rounded-xl border shadow-sm p-6 flex flex-col md:flex-row gap-6 items-start md:items-center justify-between transition-colors ${
+          isLight ? 'bg-white border-zinc-200' : 'bg-zinc-900 border-zinc-800'
+        }`}>
+          <div className="flex items-center gap-5">
+            <div className={`w-14 h-14 rounded-full flex items-center justify-center shrink-0 ${
+              isLight ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-800 text-zinc-100'
+            }`}>
+              <MonitorPlay className="w-7 h-7" />
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                <Title level={4} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff' }}>当前版本</Title>
-                <Badge
-                  count="LATEST"
-                  style={{ backgroundColor: '#1677ff', fontSize: 11, fontWeight: 600, borderRadius: 4 }}
-                />
+            <div>
+              <div className="flex items-center gap-3 mb-1.5">
+                <h2 className={`text-lg font-semibold m-0 ${isLight ? 'text-zinc-900' : 'text-zinc-100'}`}>
+                  系统当前版本
+                </h2>
+                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                  isLight ? 'bg-zinc-900 text-zinc-50' : 'bg-zinc-100 text-zinc-900'
+                }`}>
+                  LATEST
+                </span>
               </div>
-              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                <Tag icon={<TagOutlined />} color="blue" style={{ fontSize: 13, padding: '2px 10px' }}>
+              <div className="flex items-center gap-3">
+                <span className={`inline-flex items-center gap-1 text-sm font-medium ${
+                  isLight ? 'text-zinc-600' : 'text-zinc-300'
+                }`}>
+                  <TagIcon className="w-3.5 h-3.5" />
                   {current.version}
-                </Tag>
-                <Tag color="default" style={{ fontFamily: 'monospace', fontSize: 13 }}>
+                </span>
+                <span className={`px-2 py-0.5 rounded text-xs font-mono ${
+                  isLight ? 'bg-zinc-100 text-zinc-600' : 'bg-zinc-800 text-zinc-400'
+                }`}>
                   {current.short_hash}
-                </Tag>
-              </div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ color: _isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: 500, marginBottom: 4 }}>
-                {current.message}
-              </div>
-              <div style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', fontSize: 13 }}>
-                <UserOutlined style={{ marginRight: 5 }} />{current.author}
-                <CalendarOutlined style={{ marginLeft: 12, marginRight: 5 }} />{current.date}
+                </span>
               </div>
             </div>
           </div>
-        </Card>
+          <div className="text-left md:text-right w-full md:w-auto">
+            <div className={`text-sm font-medium mb-2 ${isLight ? 'text-zinc-800' : 'text-zinc-200'}`}>
+              {current.message}
+            </div>
+            <div className={`flex items-center md:justify-end gap-4 text-xs ${
+              isLight ? 'text-zinc-500' : 'text-zinc-400'
+            }`}>
+              <span className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> {current.author}</span>
+              <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> {current.date}</span>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* 更新记录时间线 */}
-      <Card
-        title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <CalendarOutlined style={{ color: '#1677ff' }} />
-            <span>最近更新记录</span>
-            <Tag color="default" style={{ fontSize: 11 }}>最近 10 次</Tag>
-          </div>
-        }
-        bordered={false}
-        style={{ borderRadius: 12 }}
-      >
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200 }}>
-            <Spin size="large" />
-          </div>
-        ) : (
-          <>
-            <Timeline
-              style={{ paddingTop: 8, paddingBottom: expanded ? 0 : 16 }}
-              items={(expanded ? commits : commits.slice(0, 3)).map((c) => ({
-                color: c.is_current ? '#1677ff' : 'gray',
-                dot: c.is_current ? (
-                  <div style={{
-                    width: 12, height: 12, borderRadius: '50%',
-                    background: '#1677ff',
-                    boxShadow: '0 0 0 4px rgba(22, 119, 255, 0.2)',
-                  }} />
-                ) : undefined,
-                children: (
-                  <div
-                    style={{
-                      padding: '12px 16px',
-                      borderRadius: 10,
-                      marginBottom: 4,
-                      background: c.is_current
-                        ? 'rgba(22, 119, 255, 0.06)'
-                        : (_isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)'),
-                      border: c.is_current
-                        ? '1px solid rgba(22, 119, 255, 0.25)'
-                        : (_isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.04)'),
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                      <Tag
-                        color={c.is_current ? 'blue' : 'default'}
-                        icon={<TagOutlined />}
-                        style={{ fontWeight: 600 }}
-                      >
-                        {c.version}
-                      </Tag>
-                      <Tag style={{ fontFamily: 'monospace', fontSize: 11 }}>
-                        {c.short_hash}
-                      </Tag>
-                      {c.is_current && (
-                        <Tag color="success" style={{ fontSize: 10 }}>当前版本</Tag>
-                      )}
-                    </div>
-                    <div style={{
-                      fontSize: 14,
-                      fontWeight: c.is_current ? 600 : 400,
-                      color: c.is_current 
-                        ? (_isLight ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)') 
-                        : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.75)'),
-                      marginBottom: 6,
-                    }}>
-                      {c.message || '(无提交说明)'}
-                    </div>
-                    <div style={{ fontSize: 12, color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.38)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                      <span><UserOutlined style={{ marginRight: 4 }} />{c.author}</span>
-                      <span><CalendarOutlined style={{ marginRight: 4 }} />{c.date}</span>
-                    </div>
+      <div className={`rounded-xl border shadow-sm overflow-hidden transition-colors ${
+        isLight ? 'bg-white border-zinc-200' : 'bg-zinc-900 border-zinc-800'
+      }`}>
+        <div className={`px-6 py-4 border-b flex items-center gap-2 ${
+          isLight ? 'border-zinc-100' : 'border-zinc-800'
+        }`}>
+          <GitCommit className={`w-5 h-5 ${isLight ? 'text-zinc-500' : 'text-zinc-400'}`} />
+          <h3 className={`font-semibold m-0 ${isLight ? 'text-zinc-900' : 'text-zinc-100'}`}>
+            更新记录
+          </h3>
+          <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+            isLight ? 'bg-zinc-100 text-zinc-500' : 'bg-zinc-800 text-zinc-400'
+          }`}>
+            最近 10 次提交
+          </span>
+        </div>
+
+        <div className="p-6">
+          <div className="relative border-l-2 ml-3 border-zinc-200 dark:border-zinc-800 space-y-8">
+            {(expanded ? commits : commits.slice(0, 3)).map((c, idx) => (
+              <div key={c.hash} className="relative pl-6">
+                {/* Timeline dot */}
+                <div className={`absolute -left-[9px] top-1.5 w-4 h-4 rounded-full border-4 ${
+                  isLight ? 'border-white' : 'border-zinc-900'
+                } ${
+                  c.is_current 
+                    ? 'bg-zinc-900 dark:bg-zinc-100' 
+                    : (isLight ? 'bg-zinc-300' : 'bg-zinc-700')
+                }`} />
+
+                <div className={`p-4 rounded-lg border transition-colors ${
+                  c.is_current
+                    ? (isLight ? 'bg-zinc-50 border-zinc-200' : 'bg-zinc-800/50 border-zinc-700')
+                    : (isLight ? 'bg-white border-zinc-100' : 'bg-zinc-900 border-zinc-800/50')
+                }`}>
+                  <div className="flex flex-wrap items-center gap-3 mb-2">
+                    <span className={`inline-flex items-center gap-1 text-sm font-semibold ${
+                      c.is_current ? (isLight ? 'text-zinc-900' : 'text-zinc-100') : (isLight ? 'text-zinc-700' : 'text-zinc-300')
+                    }`}>
+                      <TagIcon className="w-3.5 h-3.5" />
+                      {c.version}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-xs font-mono ${
+                      isLight ? 'bg-zinc-100 text-zinc-500' : 'bg-zinc-800 text-zinc-400'
+                    }`}>
+                      {c.short_hash}
+                    </span>
+                    {c.is_current && (
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        isLight ? 'bg-zinc-900 text-zinc-50' : 'bg-zinc-100 text-zinc-900'
+                      }`}>
+                        当前版本
+                      </span>
+                    )}
                   </div>
-                ),
-              }))}
-            />
-            {commits.length > 3 && (
-              <div style={{ textAlign: 'center', marginTop: 8 }}>
-                <Button 
-                  type="dashed" 
-                  ghost
-                  style={{ borderRadius: 20, padding: '0 24px', borderColor: 'rgba(255,255,255,0.15)', color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }}
-                  icon={expanded ? <UpOutlined /> : <DownOutlined />} 
-                  onClick={() => setExpanded(!expanded)}
-                >
-                  {expanded ? '收起历史记录' : `展开更多记录 (${commits.length - 3})`}
-                </Button>
+                  
+                  <p className={`text-sm mb-3 ${
+                    c.is_current 
+                      ? (isLight ? 'text-zinc-800 font-medium' : 'text-zinc-200 font-medium')
+                      : (isLight ? 'text-zinc-600' : 'text-zinc-400')
+                  }`}>
+                    {c.message || '(无提交说明)'}
+                  </p>
+
+                  <div className={`flex flex-wrap items-center gap-4 text-xs ${
+                    isLight ? 'text-zinc-500' : 'text-zinc-400'
+                  }`}>
+                    <span className="flex items-center gap-1.5"><User className="w-3.5 h-3.5" /> {c.author}</span>
+                    <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> {c.date}</span>
+                  </div>
+                </div>
               </div>
-            )}
-          </>
-        )}
-      </Card>
+            ))}
+          </div>
+
+          {commits.length > 3 && (
+            <div className="mt-8 text-center">
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                  isLight 
+                    ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200' 
+                    : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                }`}
+              >
+                {expanded ? (
+                  <>收起历史记录 <ChevronUp className="w-4 h-4" /></>
+                ) : (
+                  <>展开更多记录 ({commits.length - 3}) <ChevronDown className="w-4 h-4" /></>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

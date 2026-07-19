@@ -5,7 +5,8 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, TrophyOutline
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
-import dayjs from 'dayjs';
+import useSettingsStore from '../../store/settings';
+import { formatApiDateTime } from '../../utils/timedisplay';
 import type { UserLevel } from '../../types';
 
 const { Title, Text } = Typography;
@@ -17,6 +18,8 @@ const UserLevels: React.FC = () => {
   const { t } = useTranslation();
   const screens = useBreakpoint();
   const navigate = useNavigate();
+  const { settings } = useSettingsStore();
+  const adminPath = settings?.site?.admin_path || 'admin1688';
   const [levels, setLevels] = useState<UserLevel[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,11 +40,11 @@ const UserLevels: React.FC = () => {
   }, []);
 
   const handleAdd = () => {
-    navigate('/admin0755/user-levels/new');
+    navigate(`/${adminPath}/user-levels/new`);
   };
 
   const handleEdit = (record: UserLevel) => {
-    navigate(`/admin0755/user-levels/${record.id}`);
+    navigate(`/${adminPath}/user-levels/${record.id}`);
   };
 
   const handleDelete = async (id: number) => {
@@ -76,6 +79,14 @@ const UserLevels: React.FC = () => {
             <Text type="secondary" style={{ fontSize: 12 }}>标志: {record.group_key}</Text>
           </div>
         </div>
+      ),
+    },
+    {
+      title: '用户数',
+      dataIndex: 'user_count',
+      key: 'user_count',
+      render: (val: number) => (
+        <Tag color="blue">{val || 0}</Tag>
       ),
     },
     {
@@ -133,7 +144,7 @@ const UserLevels: React.FC = () => {
       title: t('user_levels.created_at'),
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (text: string) => dayjs(text).format('YYYY-MM-DD'),
+      render: (text: string) => formatApiDateTime(text, 'YYYY-MM-DD'),
     },
     {
       title: t('common.actions'),
@@ -192,6 +203,9 @@ const UserLevels: React.FC = () => {
                 }
                 extra={null}
               >
+                <CardRow label="用户数">
+                  <Tag color="blue">{record.user_count || 0}</Tag>
+                </CardRow>
                 <CardRow label="折扣倍率">
                   <Space>
                     <Text>{record.discount.toFixed(2)}x</Text>
@@ -208,7 +222,7 @@ const UserLevels: React.FC = () => {
                 </CardRow>
                 {record.description && <CardRow label="说明"><Text type="secondary" style={{ fontSize: 12 }}>{record.description}</Text></CardRow>}
                 <CardRow label="排序"><Text type="secondary" style={{ fontSize: 12 }}>{record.sort_order || 0}</Text></CardRow>
-                <CardRow label="创建时间"><Text type="secondary" style={{ fontSize: 12 }}>{dayjs(record.created_at).format('YYYY-MM-DD')}</Text></CardRow>
+                <CardRow label="创建时间"><Text type="secondary" style={{ fontSize: 12 }}>{formatApiDateTime(record.created_at, 'YYYY-MM-DD')}</Text></CardRow>
                 <CardActions>
                   <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
                   <Popconfirm title={t('user_levels.delete_confirm')} onConfirm={() => handleDelete(record.id)} disabled={record.group_key === 'default'}>

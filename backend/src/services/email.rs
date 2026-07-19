@@ -1,8 +1,8 @@
-use lettre::transport::smtp::authentication::Credentials;
-use lettre::message::{SinglePart, Mailbox};
-use lettre::{Message, SmtpTransport, Transport};
-use crate::models::SMTPSettings;
 use crate::error::AppResult;
+use crate::models::SMTPSettings;
+use lettre::message::{Mailbox, SinglePart};
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::{Message, SmtpTransport, Transport};
 
 pub struct EmailService {
     transport: SmtpTransport,
@@ -27,7 +27,12 @@ impl EmailService {
         })
     }
 
-    pub async fn send_verification_code(&self, to_email: &str, code: &str, purpose: &str) -> AppResult<()> {
+    pub async fn send_verification_code(
+        &self,
+        to_email: &str,
+        code: &str,
+        purpose: &str,
+    ) -> AppResult<()> {
         let (action_text, subject_prefix) = match purpose {
             "register" => ("注册账号", "注册验证码"),
             "reset_password" => ("找回密码", "找回密码验证码"),
@@ -56,8 +61,14 @@ impl EmailService {
         );
 
         let from_mailbox = Mailbox::new(
-            if self.from_name.trim().is_empty() { None } else { Some(self.from_name.clone()) },
-            self.from_address.parse().map_err(|e| crate::error::AppError::BadRequest(format!("Invalid From address: {}", e)))?
+            if self.from_name.trim().is_empty() {
+                None
+            } else {
+                Some(self.from_name.clone())
+            },
+            self.from_address.parse().map_err(|e| {
+                crate::error::AppError::BadRequest(format!("Invalid From address: {}", e))
+            })?,
         );
 
         let email = Message::builder()
@@ -67,7 +78,9 @@ impl EmailService {
             .singlepart(SinglePart::html(html_body))
             .map_err(|e| crate::error::AppError::BadRequest(e.to_string()))?;
 
-        self.transport.send(&email).map_err(|e| crate::error::AppError::BadRequest(format!("邮件发送失败: {}", e)))?;
+        self.transport
+            .send(&email)
+            .map_err(|e| crate::error::AppError::BadRequest(format!("邮件发送失败: {}", e)))?;
 
         Ok(())
     }
@@ -93,8 +106,14 @@ impl EmailService {
         );
 
         let from_mailbox = Mailbox::new(
-            if self.from_name.trim().is_empty() { None } else { Some(self.from_name.clone()) },
-            self.from_address.parse().map_err(|e| crate::error::AppError::BadRequest(format!("Invalid From address: {}", e)))?
+            if self.from_name.trim().is_empty() {
+                None
+            } else {
+                Some(self.from_name.clone())
+            },
+            self.from_address.parse().map_err(|e| {
+                crate::error::AppError::BadRequest(format!("Invalid From address: {}", e))
+            })?,
         );
 
         let email = Message::builder()
@@ -104,9 +123,56 @@ impl EmailService {
             .singlepart(SinglePart::html(html_body))
             .map_err(|e| crate::error::AppError::BadRequest(e.to_string()))?;
 
-        self.transport.send(&email).map_err(|e| crate::error::AppError::BadRequest(format!("邮件发送失败: {}", e)))?;
+        self.transport
+            .send(&email)
+            .map_err(|e| crate::error::AppError::BadRequest(format!("邮件发送失败: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 余额不足提醒邮件（使用可配置模版，变量：{{site_name}} {{balance}} {{threshold}}）
+    pub async fn send_low_balance_alert(
+        &self,
+        to_email: &str,
+        balance: &str,
+        threshold: &str,
+        subject_tpl: &str,
+        html_tpl: &str,
+    ) -> AppResult<()> {
+        let site_name = if self.from_name.trim().is_empty() {
+            "TokensByte"
+        } else {
+            self.from_name.as_str()
+        };
+        let subject =
+            crate::models::render_low_balance_template(subject_tpl, site_name, balance, threshold);
+        let html_body =
+            crate::models::render_low_balance_template(html_tpl, site_name, balance, threshold);
+
+        let from_mailbox = Mailbox::new(
+            if self.from_name.trim().is_empty() {
+                None
+            } else {
+                Some(self.from_name.clone())
+            },
+            self.from_address.parse().map_err(|e| {
+                crate::error::AppError::BadRequest(format!("Invalid From address: {}", e))
+            })?,
+        );
+
+        let email = Message::builder()
+            .from(from_mailbox)
+            .to(to_email.parse().map_err(|e| {
+                crate::error::AppError::BadRequest(format!("Invalid To address: {}", e))
+            })?)
+            .subject(subject)
+            .singlepart(SinglePart::html(html_body))
+            .map_err(|e| crate::error::AppError::BadRequest(e.to_string()))?;
+
+        self.transport
+            .send(&email)
+            .map_err(|e| crate::error::AppError::BadRequest(format!("邮件发送失败: {}", e)))?;
 
         Ok(())
     }
 }
-

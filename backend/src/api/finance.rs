@@ -1,13 +1,14 @@
+use crate::error::AppResult;
+use crate::time_system::DbTs;
+use crate::AppState;
 use axum::{
     extract::{Query, State},
     Json,
 };
-use std::sync::Arc;
-use crate::AppState;
-use crate::error::AppResult;
-use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Deserialize)]
@@ -22,6 +23,7 @@ pub struct FinanceQuery {
     pub payment_method: Option<String>,
     pub exclude_type: Option<String>,
     pub wallet_type: Option<String>,
+    pub referrer: Option<String>,
 }
 
 // ========== 充值记录（recharge_records）==========
@@ -32,6 +34,10 @@ pub struct FinanceRechargeRecord {
     pub user_id: String,
     pub username: String,
     pub uid: String,
+    #[sqlx(default)]
+    pub referrer_uid: Option<String>,
+    #[sqlx(default)]
+    pub referrer_username: Option<String>,
     pub amount: f64,
     pub recharge_type: String,
     pub remark: Option<String>,
@@ -39,7 +45,7 @@ pub struct FinanceRechargeRecord {
     pub operator: Option<String>,
     #[sqlx(default)]
     pub wallet_type: Option<String>,
-    pub created_at: String,
+    pub created_at: DbTs,
 }
 
 #[derive(Debug, Serialize)]
@@ -57,7 +63,8 @@ pub async fn list_recharges(
     let per_page = query.per_page.unwrap_or(20);
     let offset = (page - 1) * per_page;
 
-    let mut sql = "SELECT rr.*, u.username, u.uid FROM recharge_records rr JOIN users u ON rr.user_id = u.id".to_string();
+    let base_from = "FROM recharge_records rr JOIN users u ON rr.user_id = u.id LEFT JOIN users inviter ON u.referred_by = inviter.id";
+    let mut sql = format!("SELECT rr.*, u.username, u.uid, inviter.uid as referrer_uid, inviter.username as referrer_username {}", base_from);
     let mut where_clause = " WHERE 1=1".to_string();
     let mut binds: Vec<String> = Vec::new();
 
@@ -84,18 +91,24 @@ pub async fn list_recharges(
     }
 
     if let Some(ref start) = query.start_time {
-        where_clause.push_str(" AND rr.created_at >= ?");
+        where_clause.push_str(" AND rr.created_at >= ?::timestamptz");
         binds.push(start.clone());
     }
 
     if let Some(ref end) = query.end_time {
-        where_clause.push_str(" AND rr.created_at <= ?");
+        where_clause.push_str(" AND rr.created_at <= ?::timestamptz");
         binds.push(end.clone());
+    }
+
+    if let Some(ref ref_search) = query.referrer {
+        where_clause.push_str(" AND (inviter.uid = ? OR inviter.username LIKE ?)");
+        binds.push(ref_search.clone());
+        binds.push(format!("%{}%", ref_search));
     }
 
     sql.push_str(&where_clause);
 
-    let count_sql = format!("SELECT COUNT(*) FROM recharge_records rr JOIN users u ON rr.user_id = u.id{}", where_clause);
+    let count_sql = format!("SELECT COUNT(*) {}{}", base_from, where_clause);
     let count_query_str = state.db.format_query(&count_sql);
     let mut count_q = sqlx::query_scalar::<_, i64>(&count_query_str);
     for val in &binds {
@@ -106,7 +119,10 @@ pub async fn list_recharges(
         e
     })?;
 
-    sql.push_str(&format!(" ORDER BY rr.created_at DESC LIMIT {} OFFSET {}", per_page, offset));
+    sql.push_str(&format!(
+        " ORDER BY rr.created_at DESC LIMIT {} OFFSET {}",
+        per_page, offset
+    ));
     let formatted_data_sql = state.db.format_query(&sql);
     let mut data_q = sqlx::query_as::<_, FinanceRechargeRecord>(&formatted_data_sql);
     for val in &binds {
@@ -117,7 +133,10 @@ pub async fn list_recharges(
         e
     })?;
 
-    let total_amount_sql = format!("SELECT COALESCE(SUM(rr.amount), 0.0) FROM recharge_records rr JOIN users u ON rr.user_id = u.id{}", where_clause);
+    let total_amount_sql = format!(
+        "SELECT COALESCE(SUM(rr.amount), 0.0) {}{}",
+        base_from, where_clause
+    );
     let total_amount_query_str = state.db.format_query(&total_amount_sql);
     let mut amount_q = sqlx::query_scalar::<_, f64>(&total_amount_query_str);
     for val in &binds {
@@ -125,7 +144,11 @@ pub async fn list_recharges(
     }
     let total_amount = amount_q.fetch_one(&state.db.pool).await.unwrap_or(0.0);
 
-    Ok(Json(FinanceRechargeResponse { data, total, total_amount }))
+    Ok(Json(FinanceRechargeResponse {
+        data,
+        total,
+        total_amount,
+    }))
 }
 
 // ========== 支付订单（orders 表）==========
@@ -141,8 +164,8 @@ pub struct FinanceOrderRecord {
     pub amount: f64,
     pub status: String,
     pub trade_no: Option<String>,
-    pub created_at: String,
-    pub paid_at: Option<String>,
+    pub created_at: DbTs,
+    pub paid_at: Option<DbTs>,
 }
 
 #[derive(Debug, Serialize)]
@@ -160,7 +183,8 @@ pub async fn list_orders(
     let per_page = query.per_page.unwrap_or(20);
     let offset = (page - 1) * per_page;
 
-    let mut sql = "SELECT o.*, u.username, u.uid FROM orders o JOIN users u ON o.user_id = u.id".to_string();
+    let mut sql =
+        "SELECT o.*, u.username, u.uid FROM orders o JOIN users u ON o.user_id = u.id".to_string();
     let mut where_clause = " WHERE 1=1".to_string();
     let mut binds: Vec<String> = Vec::new();
 
@@ -182,18 +206,21 @@ pub async fn list_orders(
     }
 
     if let Some(ref start) = query.start_time {
-        where_clause.push_str(" AND o.created_at >= ?");
+        where_clause.push_str(" AND o.created_at >= ?::timestamptz");
         binds.push(start.clone());
     }
 
     if let Some(ref end) = query.end_time {
-        where_clause.push_str(" AND o.created_at <= ?");
+        where_clause.push_str(" AND o.created_at <= ?::timestamptz");
         binds.push(end.clone());
     }
 
     sql.push_str(&where_clause);
 
-    let count_sql = format!("SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id{}", where_clause);
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id{}",
+        where_clause
+    );
     let count_query_str = state.db.format_query(&count_sql);
     let mut count_q = sqlx::query_scalar::<_, i64>(&count_query_str);
     for val in &binds {
@@ -204,7 +231,10 @@ pub async fn list_orders(
         e
     })?;
 
-    sql.push_str(&format!(" ORDER BY o.created_at DESC LIMIT {} OFFSET {}", per_page, offset));
+    sql.push_str(&format!(
+        " ORDER BY o.created_at DESC LIMIT {} OFFSET {}",
+        per_page, offset
+    ));
     let formatted_data_sql = state.db.format_query(&sql);
     let mut data_q = sqlx::query_as::<_, FinanceOrderRecord>(&formatted_data_sql);
     for val in &binds {
@@ -223,22 +253,28 @@ pub async fn list_orders(
     }
     let total_amount = amount_q.fetch_one(&state.db.pool).await.unwrap_or(0.0);
 
-    Ok(Json(FinanceOrderResponse { data, total, total_amount }))
+    Ok(Json(FinanceOrderResponse {
+        data,
+        total,
+        total_amount,
+    }))
 }
 
 pub async fn list_recharge_types(
     State(state): State<Arc<AppState>>,
 ) -> AppResult<Json<Vec<String>>> {
-    let types: Vec<String> = sqlx::query_scalar(&state.db.format_query("SELECT DISTINCT recharge_type FROM recharge_records WHERE recharge_type IS NOT NULL"))
-        .fetch_all(&state.db.pool)
-        .await?;
+    let types: Vec<String> = sqlx::query_scalar(&state.db.format_query(
+        "SELECT DISTINCT recharge_type FROM recharge_records WHERE recharge_type IS NOT NULL",
+    ))
+    .fetch_all(&state.db.pool)
+    .await?;
 
     Ok(Json(types))
 }
 
 // ========== 数据分析 ==========
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct FinanceDataAnalysisQuery {
     pub start_date: Option<String>,
     pub end_date: Option<String>,
@@ -308,7 +344,8 @@ pub struct FinanceAnalysisResponse {
     pub model_stats: Vec<FinanceModelStatWithHistory>,
 }
 
-static DAILY_STATS_CACHE: OnceLock<DashMap<String, (Instant, FinanceAnalysisResponse)>> = OnceLock::new();
+static DAILY_STATS_CACHE: OnceLock<DashMap<String, (Instant, FinanceAnalysisResponse)>> =
+    OnceLock::new();
 
 fn get_daily_stats_cache() -> &'static DashMap<String, (Instant, FinanceAnalysisResponse)> {
     DAILY_STATS_CACHE.get_or_init(|| DashMap::new())
@@ -316,60 +353,185 @@ fn get_daily_stats_cache() -> &'static DashMap<String, (Instant, FinanceAnalysis
 
 pub async fn get_daily_stats(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Query(query): Query<FinanceDataAnalysisQuery>,
 ) -> AppResult<Json<FinanceAnalysisResponse>> {
-    let cache_key = format!("{}_{}", query.start_date.as_deref().unwrap_or(""), query.end_date.as_deref().unwrap_or(""));
-    
-    // 检查缓存（60秒过期）
+    let header_tz = headers
+        .get("x-timezone")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    // 财务聚合与 usage_daily_stats 归档一致：默认站点时区；header 可覆盖预览
+    let (site_tz_name, _) = crate::relay::get_cached_config(&state).await;
+    let tz_src = if header_tz.trim().is_empty() {
+        site_tz_name.as_str()
+    } else {
+        header_tz
+    };
+    let tz = crate::time_system::parse_timedisplay(tz_src);
+    let cache_key = format!(
+        "{}_{}_{}",
+        tz.name(),
+        query.start_date.as_deref().unwrap_or(""),
+        query.end_date.as_deref().unwrap_or("")
+    );
+
+    // Stale-While-Revalidate (SWR) 缓存验证机制：保障财务图表永远秒开
     if let Some(entry) = get_daily_stats_cache().get(&cache_key) {
-        if entry.value().0.elapsed() < Duration::from_secs(60) {
-            return Ok(Json(entry.value().1.clone()));
+        let (timestamp, cached_res) = entry.value();
+        if timestamp.elapsed() < Duration::from_secs(300) {
+            return Ok(Json(cached_res.clone()));
+        } else {
+            // 缓存已过期，释放读锁，尝试通过写锁抢占“重算令牌”以防止并发击穿
+            drop(entry);
+
+            if let Some(mut write_entry) = get_daily_stats_cache().get_mut(&cache_key) {
+                if write_entry.value().0.elapsed() >= Duration::from_secs(300) {
+                    // 更新时间戳，延长生命周期防止并发请求重复触发后台计算
+                    write_entry.value_mut().0 = Instant::now();
+
+                    let state_clone = state.clone();
+                    let query_clone = query.clone();
+                    let cache_key_clone = cache_key.clone();
+                    let tz_clone = tz.clone();
+
+                    tokio::spawn(async move {
+                        match calculate_finance_stats(state_clone, query_clone, tz_clone).await {
+                            Ok(new_res) => {
+                                get_daily_stats_cache()
+                                    .insert(cache_key_clone, (Instant::now(), new_res));
+                                tracing::info!("✅ [SWR] 后台异步更新财务统计缓存成功");
+                            }
+                            Err(e) => {
+                                tracing::error!("❌ [SWR] 后台异步更新财务统计缓存失败: {:?}", e);
+                            }
+                        }
+                    });
+                }
+            }
+
+            // 立即秒回缓存中的旧数据，完全消灭被卡死的等待体验
+            if let Some(entry) = get_daily_stats_cache().get(&cache_key) {
+                return Ok(Json(entry.value().1.clone()));
+            }
         }
     }
 
-    let mut sql = "
-        SELECT 
-            TO_CHAR(DATE(created_at), 'YYYY-MM-DD') as date, 
-            COUNT(*) as total_requests,
-            COALESCE(CAST(SUM(prompt_tokens + completion_tokens) AS BIGINT), 0) as total_tokens,
-            COALESCE(SUM(cost), 0.0) as total_cost,
-            COALESCE(SUM(GREATEST(cost - pre_deduct_gift, 0.0)), 0.0) as system_cost,
-            COUNT(DISTINCT token_id) as active_tokens,
-            COUNT(DISTINCT user_id) as active_users
-        FROM logs
-        WHERE 1=1
-    ".to_string();
-    
-    let mut binds: Vec<String> = Vec::new();
+    // 缓存首次加载时同步计算
+    let stats = calculate_finance_stats(state.clone(), query, tz).await?;
+    get_daily_stats_cache().insert(cache_key, (Instant::now(), stats.clone()));
+    Ok(Json(stats))
+}
 
-    if let Some(ref start) = query.start_date {
-        sql.push_str(" AND created_at >= ?");
-        binds.push(format!("{} 00:00:00", start));
+/// 采用 Lambda 增量聚合架构（历史汇总表 + 今日日志表分段合并）的高性能财务分析核心函数
+async fn calculate_finance_stats(
+    state: Arc<AppState>,
+    query: FinanceDataAnalysisQuery,
+    tz: chrono_tz::Tz,
+) -> AppResult<FinanceAnalysisResponse> {
+    use chrono::{Duration, NaiveDate};
+    let bounds = crate::api::date_helper::get_timezone_time_bounds(tz);
+    let today_date = bounds.today;
+
+    let start_naive = crate::api::date_helper::parse_to_naive_date(
+        query.start_date.as_deref(),
+        NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(),
+        tz,
+    );
+
+    let slices = crate::api::date_helper::calculate_query_slices(
+        query.start_date.as_deref(),
+        query.end_date.as_deref(),
+        tz,
+    );
+
+    let mut daily_stats_raw: Vec<DailyStat> = Vec::new();
+
+    // 1. 加载历史每日趋势统计 (从 usage_daily_stats 秒级获取)
+    if slices.has_history_days {
+        let sql = format!(
+            "SELECT 
+                stat_date::text as date, 
+                CAST(SUM(total_requests) AS BIGINT) as total_requests,
+                CAST(SUM(total_tokens) AS BIGINT) as total_tokens,
+                SUM(total_cost) as total_cost,
+                COUNT(DISTINCT token_id) FILTER (WHERE token_id != -1) as active_tokens,
+                COUNT(DISTINCT user_id) as active_users,
+                SUM(GREATEST(total_cost - total_pre_deduct_gift, 0.0)) as system_cost
+             FROM usage_daily_stats
+             WHERE {}
+             GROUP BY stat_date
+             ORDER BY stat_date ASC",
+            slices.history_cond("stat_date")
+        );
+        let hist_rows: Vec<DailyStat> = sqlx::query_as(&state.db.format_query(&sql))
+            .bind(slices.hist_start_date)
+            .bind(slices.hist_end_date)
+            .fetch_all(&state.db.pool)
+            .await?;
+
+        daily_stats_raw.extend(hist_rows);
     }
 
-    if let Some(ref end) = query.end_date {
-        sql.push_str(" AND created_at <= ?");
-        binds.push(format!("{} 23:59:59", end));
+    // 2. 加载实时段及碎片趋势
+    for r_slice in slices.realtime_slices() {
+        let sql = format!(
+            "
+            SELECT 
+                COUNT(*),
+                COALESCE(SUM(prompt_tokens + completion_tokens), 0),
+                COALESCE(SUM(cost), 0.0),
+                COUNT(DISTINCT token_id),
+                COUNT(DISTINCT user_id),
+                COALESCE(SUM(GREATEST(cost - pre_deduct_gift, 0.0)), 0.0)
+            FROM logs
+            WHERE {}
+        ",
+            r_slice.sql_cond("created_at")
+        );
+        let formatted_sql = state.db.format_query(&sql);
+        let (reqs, toks, cost, active_t, active_u, sys_c) =
+            sqlx::query_as::<_, (i64, i64, f64, i64, i64, f64)>(&formatted_sql)
+                .bind(&r_slice.start)
+                .bind(&r_slice.end)
+                .fetch_one(&state.db.pool)
+                .await?;
+
+        let date_str = r_slice.start[..10].to_string();
+        daily_stats_raw.push(DailyStat {
+            date: date_str,
+            total_requests: reqs,
+            total_tokens: toks,
+            total_cost: cost,
+            active_tokens: active_t,
+            active_users: active_u,
+            system_cost: sys_c,
+            new_users: 0,
+            total_users: 0,
+            system_recharge_total: 0.0,
+            system_cost_total: 0.0,
+            system_retained_total: 0.0,
+            online_recharge: 0.0,
+            daily_system_balance: 0.0,
+            daily_gift_recharge: 0.0,
+            daily_system_recharge: 0.0,
+        });
     }
 
-    sql.push_str(" GROUP BY DATE(created_at) ORDER BY DATE(created_at) ASC");
-
-    let formatted_sql = state.db.format_query(&sql);
-    let mut q = sqlx::query_as::<_, DailyStat>(&formatted_sql);
-    for val in &binds {
-        q = q.bind(val);
-    }
-    let daily_stats_raw = q.fetch_all(&state.db.pool).await.map_err(|e| {
-        tracing::error!("Finance daily stats error: {:?}", e);
-        e
-    })?;
+    let start_ts = query.start_date.as_deref().map(|s| {
+        let (ts, _) = crate::api::date_helper::parse_and_get_bounds(s, false);
+        ts
+    });
+    let end_ts = query.end_date.as_deref().map(|e| {
+        let (ts, _) = crate::api::date_helper::parse_and_get_bounds(e, true);
+        ts
+    });
 
     // 第三步：获取起始时间前的平台总用户数（Base Users）
     let mut base_users_sql = "SELECT COUNT(*) FROM users".to_string();
     let mut base_binds = Vec::new();
-    if let Some(ref start) = query.start_date {
-        base_users_sql.push_str(" WHERE created_at < ?");
-        base_binds.push(format!("{} 00:00:00", start));
+    if let Some(ref start) = start_ts {
+        base_users_sql.push_str(" WHERE created_at < ?::timestamptz");
+        base_binds.push(start.clone());
     }
     let formatted_base = state.db.format_query(&base_users_sql);
     let mut base_q = sqlx::query_scalar::<_, i64>(&formatted_base);
@@ -378,80 +540,99 @@ pub async fn get_daily_stats(
     }
     let mut cumulative_users = base_q.fetch_one(&state.db.pool).await.unwrap_or(0);
 
-    // 第四步：获取每天的新增用户数
-    let mut new_users_sql = "
-        SELECT TO_CHAR(DATE(created_at), 'YYYY-MM-DD') as date, COUNT(*) as new_users
-        FROM users WHERE 1=1
-    ".to_string();
+    // 第四步：获取每天的新增用户数（按查询 timedisplay 自然日分桶）
+    let date_bucket = crate::api::date_helper::sql_date_bucket("created_at", tz);
+    let mut new_users_sql =
+        format!("SELECT {date_bucket} as date, COUNT(*) as new_users FROM users WHERE 1=1");
     let mut new_users_binds = Vec::new();
-    if let Some(ref start) = query.start_date {
-        new_users_sql.push_str(" AND created_at >= ?");
-        new_users_binds.push(format!("{} 00:00:00", start));
+    if let Some(ref start) = start_ts {
+        new_users_sql.push_str(" AND created_at >= ?::timestamptz");
+        new_users_binds.push(start.clone());
     }
-    if let Some(ref end) = query.end_date {
-        new_users_sql.push_str(" AND created_at <= ?");
-        new_users_binds.push(format!("{} 23:59:59", end));
+    if let Some(ref end) = end_ts {
+        new_users_sql.push_str(" AND created_at <= ?::timestamptz");
+        new_users_binds.push(end.clone());
     }
-    new_users_sql.push_str(" GROUP BY DATE(created_at)");
+    new_users_sql.push_str(&format!(" GROUP BY {date_bucket}"));
 
     #[derive(sqlx::FromRow)]
-    struct NewUserStat { date: String, new_users: i64 }
+    struct NewUserStat {
+        date: String,
+        new_users: i64,
+    }
     let formatted_nu = state.db.format_query(&new_users_sql);
     let mut nu_q = sqlx::query_as::<_, NewUserStat>(&formatted_nu);
     for val in &new_users_binds {
         nu_q = nu_q.bind(val);
     }
     let new_users_list = nu_q.fetch_all(&state.db.pool).await.unwrap_or_default();
-    
+
     // 第五步：获取充值数据（基础充值 + 每日充值）
-    let mut base_recharge_sql = "SELECT COALESCE(SUM(amount), 0.0) FROM recharge_records".to_string();
+    let mut base_recharge_sql =
+        "SELECT COALESCE(SUM(amount), 0.0) FROM recharge_records".to_string();
     let mut base_recharge_binds = Vec::new();
-    if let Some(ref start) = query.start_date {
-        base_recharge_sql.push_str(" WHERE created_at < ?");
-        base_recharge_binds.push(format!("{} 00:00:00", start));
+    if let Some(ref start) = start_ts {
+        base_recharge_sql.push_str(" WHERE created_at < ?::timestamptz");
+        base_recharge_binds.push(start.clone());
     }
     let formatted_base_recharge = state.db.format_query(&base_recharge_sql);
     let mut br_q = sqlx::query_scalar::<_, f64>(&formatted_base_recharge);
-    for val in &base_recharge_binds { br_q = br_q.bind(val); }
+    for val in &base_recharge_binds {
+        br_q = br_q.bind(val);
+    }
     let mut cumulative_recharge = br_q.fetch_one(&state.db.pool).await.unwrap_or(0.0);
 
-    let mut base_cost_sql = "SELECT COALESCE(SUM(cost), 0.0) FROM logs".to_string();
+    // 历史累计消费 base_cost 100% 属于历史段，直接从小落地表统计，消灭在 logs 上的超慢全表扫描
+    let mut base_cost_sql =
+        "SELECT COALESCE(SUM(total_cost), 0.0) FROM usage_daily_stats".to_string();
     let mut base_cost_binds = Vec::new();
-    if let Some(ref start) = query.start_date {
-        base_cost_sql.push_str(" WHERE created_at < ?");
-        base_cost_binds.push(format!("{} 00:00:00", start));
+    if query.start_date.is_some() {
+        base_cost_sql.push_str(" WHERE stat_date < ?");
+        base_cost_binds.push(start_naive);
     }
     let formatted_base_cost = state.db.format_query(&base_cost_sql);
     let mut bc_q = sqlx::query_scalar::<_, f64>(&formatted_base_cost);
-    for val in &base_cost_binds { bc_q = bc_q.bind(val); }
+    for val in &base_cost_binds {
+        bc_q = bc_q.bind(val);
+    }
     let mut cumulative_cost = bc_q.fetch_one(&state.db.pool).await.unwrap_or(0.0);
 
-    let mut daily_wallet_recharge_sql = "
+    let mut daily_wallet_recharge_sql = format!(
+        "
         SELECT 
-            TO_CHAR(DATE(created_at), 'YYYY-MM-DD') as date, 
+            {date_bucket} as date, 
             CASE WHEN wallet_type = 'gift' THEN 'gift' ELSE 'system' END as wallet_group,
             COALESCE(SUM(amount), 0.0) as amount
         FROM recharge_records 
         WHERE (wallet_type = 'gift')
            OR (wallet_type = 'system' AND recharge_type = 'manual')
            OR (recharge_type IN ('wechat', 'alipay', 'stripe', 'bonuspay'))
-    ".to_string();
+    "
+    );
     let mut daily_wallet_recharge_binds = Vec::new();
-    if let Some(ref start) = query.start_date {
-        daily_wallet_recharge_sql.push_str(" AND created_at >= ?");
-        daily_wallet_recharge_binds.push(format!("{} 00:00:00", start));
+    if let Some(ref start) = start_ts {
+        daily_wallet_recharge_sql.push_str(" AND created_at >= ?::timestamptz");
+        daily_wallet_recharge_binds.push(start.clone());
     }
-    if let Some(ref end) = query.end_date {
-        daily_wallet_recharge_sql.push_str(" AND created_at <= ?");
-        daily_wallet_recharge_binds.push(format!("{} 23:59:59", end));
+    if let Some(ref end) = end_ts {
+        daily_wallet_recharge_sql.push_str(" AND created_at <= ?::timestamptz");
+        daily_wallet_recharge_binds.push(end.clone());
     }
-    daily_wallet_recharge_sql.push_str(" GROUP BY DATE(created_at), CASE WHEN wallet_type = 'gift' THEN 'gift' ELSE 'system' END");
+    daily_wallet_recharge_sql.push_str(&format!(
+        " GROUP BY {date_bucket}, CASE WHEN wallet_type = 'gift' THEN 'gift' ELSE 'system' END"
+    ));
 
     #[derive(sqlx::FromRow)]
-    struct DailyWalletRechargeStat { date: String, wallet_group: String, amount: f64 }
+    struct DailyWalletRechargeStat {
+        date: String,
+        wallet_group: String,
+        amount: f64,
+    }
     let formatted_dwr = state.db.format_query(&daily_wallet_recharge_sql);
     let mut dwr_q = sqlx::query_as::<_, DailyWalletRechargeStat>(&formatted_dwr);
-    for val in &daily_wallet_recharge_binds { dwr_q = dwr_q.bind(val); }
+    for val in &daily_wallet_recharge_binds {
+        dwr_q = dwr_q.bind(val);
+    }
     let daily_wallet_recharges = dwr_q.fetch_all(&state.db.pool).await.unwrap_or_default();
 
     let mut daily_sys_recharge_map = std::collections::HashMap::new();
@@ -460,84 +641,99 @@ pub async fn get_daily_stats(
         if dwr.wallet_group == "gift" {
             daily_gift_recharge_map.insert(dwr.date.clone(), dwr.amount);
         } else {
-            *daily_sys_recharge_map.entry(dwr.date.clone()).or_insert(0.0) += dwr.amount;
+            *daily_sys_recharge_map
+                .entry(dwr.date.clone())
+                .or_insert(0.0) += dwr.amount;
         }
     }
 
-    let mut daily_recharge_sql = "
+    let mut daily_recharge_sql = format!(
+        "
         SELECT 
-            TO_CHAR(DATE(created_at), 'YYYY-MM-DD') as date, 
+            {date_bucket} as date, 
             COALESCE(SUM(amount), 0.0) as amount,
             COALESCE(SUM(CASE WHEN recharge_type IN ('wechat', 'alipay', 'stripe', 'bonuspay') THEN amount ELSE 0.0 END), 0.0) as online_amount
         FROM recharge_records WHERE 1=1
-    ".to_string();
+    "
+    );
     let mut daily_recharge_binds = Vec::new();
-    if let Some(ref start) = query.start_date {
-        daily_recharge_sql.push_str(" AND created_at >= ?");
-        daily_recharge_binds.push(format!("{} 00:00:00", start));
+    if let Some(ref start) = start_ts {
+        daily_recharge_sql.push_str(" AND created_at >= ?::timestamptz");
+        daily_recharge_binds.push(start.clone());
     }
-    if let Some(ref end) = query.end_date {
-        daily_recharge_sql.push_str(" AND created_at <= ?");
-        daily_recharge_binds.push(format!("{} 23:59:59", end));
+    if let Some(ref end) = end_ts {
+        daily_recharge_sql.push_str(" AND created_at <= ?::timestamptz");
+        daily_recharge_binds.push(end.clone());
     }
-    daily_recharge_sql.push_str(" GROUP BY DATE(created_at)");
+    daily_recharge_sql.push_str(&format!(" GROUP BY {date_bucket}"));
 
     #[derive(sqlx::FromRow)]
-    struct DailyRechargeStat { date: String, amount: f64, online_amount: f64 }
+    struct DailyRechargeStat {
+        date: String,
+        amount: f64,
+        online_amount: f64,
+    }
     let formatted_dr = state.db.format_query(&daily_recharge_sql);
     let mut dr_q = sqlx::query_as::<_, DailyRechargeStat>(&formatted_dr);
-    for val in &daily_recharge_binds { dr_q = dr_q.bind(val); }
+    for val in &daily_recharge_binds {
+        dr_q = dr_q.bind(val);
+    }
     let daily_recharges = dr_q.fetch_all(&state.db.pool).await.unwrap_or_default();
-    
+
     // 合并数据
-    let mut stats_map: std::collections::BTreeMap<String, DailyStat> = std::collections::BTreeMap::new();
+    let mut stats_map: std::collections::BTreeMap<String, DailyStat> =
+        std::collections::BTreeMap::new();
     for stat in daily_stats_raw {
         stats_map.insert(stat.date.clone(), stat);
     }
 
     for nu_stat in new_users_list {
-        let stat = stats_map.entry(nu_stat.date.clone()).or_insert_with(|| DailyStat {
-            date: nu_stat.date,
-            total_requests: 0,
-            total_tokens: 0,
-            total_cost: 0.0,
-            active_tokens: 0,
-            active_users: 0,
-            new_users: 0,
-            total_users: 0,
-            system_recharge_total: 0.0,
-            system_cost_total: 0.0,
-            system_retained_total: 0.0,
-            online_recharge: 0.0,
-            system_cost: 0.0,
-            daily_system_balance: 0.0,
-            daily_gift_recharge: 0.0,
-            daily_system_recharge: 0.0,
-        });
+        let stat = stats_map
+            .entry(nu_stat.date.clone())
+            .or_insert_with(|| DailyStat {
+                date: nu_stat.date,
+                total_requests: 0,
+                total_tokens: 0,
+                total_cost: 0.0,
+                active_tokens: 0,
+                active_users: 0,
+                new_users: 0,
+                total_users: 0,
+                system_recharge_total: 0.0,
+                system_cost_total: 0.0,
+                system_retained_total: 0.0,
+                online_recharge: 0.0,
+                system_cost: 0.0,
+                daily_system_balance: 0.0,
+                daily_gift_recharge: 0.0,
+                daily_system_recharge: 0.0,
+            });
         stat.new_users = nu_stat.new_users;
     }
 
     let mut daily_recharge_map = std::collections::HashMap::new();
     for dr in daily_recharges {
         daily_recharge_map.insert(dr.date.clone(), (dr.amount, dr.online_amount));
-        stats_map.entry(dr.date.clone()).or_insert_with(|| DailyStat {
-            date: dr.date,
-            total_requests: 0,
-            total_tokens: 0,
-            total_cost: 0.0,
-            active_tokens: 0,
-            active_users: 0,
-            new_users: 0,
-            total_users: 0,
-            system_recharge_total: 0.0,
-            system_cost_total: 0.0,
-            system_retained_total: 0.0,
-            online_recharge: 0.0,
-            system_cost: 0.0,
-            daily_system_balance: 0.0,
-            daily_gift_recharge: 0.0,
-            daily_system_recharge: 0.0,
-        });
+        stats_map
+            .entry(dr.date.clone())
+            .or_insert_with(|| DailyStat {
+                date: dr.date,
+                total_requests: 0,
+                total_tokens: 0,
+                total_cost: 0.0,
+                active_tokens: 0,
+                active_users: 0,
+                new_users: 0,
+                total_users: 0,
+                system_recharge_total: 0.0,
+                system_cost_total: 0.0,
+                system_retained_total: 0.0,
+                online_recharge: 0.0,
+                system_cost: 0.0,
+                daily_system_balance: 0.0,
+                daily_gift_recharge: 0.0,
+                daily_system_recharge: 0.0,
+            });
     }
 
     let mut daily_stats: Vec<DailyStat> = stats_map.into_values().collect();
@@ -545,7 +741,10 @@ pub async fn get_daily_stats(
         cumulative_users += stat.new_users;
         stat.total_users = cumulative_users;
 
-        let (dr, online_dr) = daily_recharge_map.get(&stat.date).copied().unwrap_or((0.0, 0.0));
+        let (dr, online_dr) = daily_recharge_map
+            .get(&stat.date)
+            .copied()
+            .unwrap_or((0.0, 0.0));
         cumulative_recharge += dr;
         cumulative_cost += stat.total_cost;
 
@@ -554,90 +753,75 @@ pub async fn get_daily_stats(
         stat.system_retained_total = cumulative_recharge - cumulative_cost;
         stat.online_recharge = online_dr;
 
-        stat.daily_system_recharge = daily_sys_recharge_map.get(&stat.date).copied().unwrap_or(0.0);
-        stat.daily_gift_recharge = daily_gift_recharge_map.get(&stat.date).copied().unwrap_or(0.0);
+        stat.daily_system_recharge = daily_sys_recharge_map
+            .get(&stat.date)
+            .copied()
+            .unwrap_or(0.0);
+        stat.daily_gift_recharge = daily_gift_recharge_map
+            .get(&stat.date)
+            .copied()
+            .unwrap_or(0.0);
     }
 
-    // 第二个查询：按模型汇总统计（不按日期分组）
-    let mut model_sql = "
-        SELECT 
+    // 第二个查询：按模型汇总统计（调用公共高可用聚合 API）
+    let slice_model_map =
+        crate::relay::usage_stats::query_model_stats_by_slices(&state.db, None, &slices).await?;
+
+    let mut model_stats: Vec<FinanceModelStat> = slice_model_map
+        .into_iter()
+        .map(|(model, (count, total_cost, _))| FinanceModelStat {
             model,
-            COUNT(*) as count,
-            COALESCE(SUM(cost), 0.0) as total_cost
-        FROM logs
-        WHERE 1=1
-    ".to_string();
+            count,
+            total_cost,
+        })
+        .collect();
+    model_stats.sort_by(|a, b| {
+        b.total_cost
+            .partial_cmp(&a.total_cost)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let model_stats_top10: Vec<FinanceModelStat> = model_stats.into_iter().take(10).collect();
 
-    let mut model_binds: Vec<String> = Vec::new();
-    if let Some(ref start) = query.start_date {
-        model_sql.push_str(" AND created_at >= ?");
-        model_binds.push(format!("{} 00:00:00", start));
-    }
-    if let Some(ref end) = query.end_date {
-        model_sql.push_str(" AND created_at <= ?");
-        model_binds.push(format!("{} 23:59:59", end));
-    }
-    model_sql.push_str(" GROUP BY model ORDER BY total_cost DESC LIMIT 10");
-
-    let formatted_model_sql = state.db.format_query(&model_sql);
-    let mut mq = sqlx::query_as::<_, FinanceModelStat>(&formatted_model_sql);
-    for val in &model_binds {
-        mq = mq.bind(val);
-    }
-    let model_stats = mq.fetch_all(&state.db.pool).await.unwrap_or_default();
-
-    // 计算最近 3 天的单独数据
-    let end_naive = query.end_date.as_deref()
-        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-        .unwrap_or_else(|| chrono::Local::now().date_naive());
-    
-    let day_0 = end_naive;
-    let day_1 = day_0.pred_opt().unwrap_or(day_0);
-    let day_2 = day_1.pred_opt().unwrap_or(day_1);
-
+    // 计算最近 3 天的每日数据 (前天, 昨天, 今天)
+    let day_0 = today_date;
+    let day_1 = day_0 - Duration::days(1);
+    let day_2 = day_0 - Duration::days(2);
     let date_str_0 = day_0.format("%Y-%m-%d").to_string();
     let date_str_1 = day_1.format("%Y-%m-%d").to_string();
     let date_str_2 = day_2.format("%Y-%m-%d").to_string();
 
-    #[derive(Debug, Serialize, Clone, sqlx::FromRow)]
-    struct FinanceModelDailyRaw {
-        pub date: String,
-        pub model: String,
-        pub count: i64,
-        pub total_cost: f64,
-    }
+    // 分别计算这三天的时区切片，高精度提取每天的财务模型消耗统计
+    let slices_0 =
+        crate::api::date_helper::calculate_query_slices(Some(&date_str_0), Some(&date_str_0), tz);
+    let stats_0 =
+        crate::relay::usage_stats::query_model_stats_by_slices(&state.db, None, &slices_0).await?;
 
-    let history_sql = "
-        SELECT 
-            TO_CHAR(DATE(created_at), 'YYYY-MM-DD') as date, 
-            model,
-            COUNT(*) as count,
-            COALESCE(SUM(cost), 0.0) as total_cost
-        FROM logs
-        WHERE created_at >= ? AND created_at <= ?
-        GROUP BY DATE(created_at), model
-    ".to_string();
-    let formatted_history = state.db.format_query(&history_sql);
-    let history_stats: Vec<FinanceModelDailyRaw> = sqlx::query_as::<_, FinanceModelDailyRaw>(&formatted_history)
-        .bind(format!("{} 00:00:00", date_str_2))
-        .bind(format!("{} 23:59:59", date_str_0))
-        .fetch_all(&state.db.pool)
-        .await
-        .unwrap_or_default();
+    let slices_1 =
+        crate::api::date_helper::calculate_query_slices(Some(&date_str_1), Some(&date_str_1), tz);
+    let stats_1 =
+        crate::relay::usage_stats::query_model_stats_by_slices(&state.db, None, &slices_1).await?;
+
+    let slices_2 =
+        crate::api::date_helper::calculate_query_slices(Some(&date_str_2), Some(&date_str_2), tz);
+    let stats_2 =
+        crate::relay::usage_stats::query_model_stats_by_slices(&state.db, None, &slices_2).await?;
 
     let mut model_stats_with_history = Vec::new();
-    for m in model_stats {
+    for m in model_stats_top10 {
         let mut last_three_days = Vec::new();
-        // 按照 chronological order: day_2 (T-2), day_1 (T-1), day_0 (T)
-        for target_date in [date_str_2.clone(), date_str_1.clone(), date_str_0.clone()] {
-            let found = history_stats.iter().find(|h| h.model == m.model && h.date == target_date);
+        for (target_date, day_stats) in [
+            (date_str_2.clone(), &stats_2),
+            (date_str_1.clone(), &stats_1),
+            (date_str_0.clone(), &stats_0),
+        ] {
+            let found = day_stats.get(&m.model);
             last_three_days.push(FinanceModelDailyStatInfo {
                 date: target_date,
-                count: found.map(|f| f.count).unwrap_or(0),
-                total_cost: found.map(|f| f.total_cost).unwrap_or(0.0),
+                count: found.map(|f| f.0).unwrap_or(0),
+                total_cost: found.map(|f| f.1).unwrap_or(0.0),
             });
         }
-        
+
         model_stats_with_history.push(FinanceModelStatWithHistory {
             model: m.model,
             count: m.count,
@@ -651,13 +835,11 @@ pub async fn get_daily_stats(
         model_stats: model_stats_with_history,
     };
 
-    // 写入缓存
-    get_daily_stats_cache().insert(cache_key, (Instant::now(), response.clone()));
-
-    Ok(Json(response))
+    Ok(response)
 }
 
 #[derive(Debug, Deserialize)]
+
 pub struct WalletStatsBatchRequest {
     pub user_ids: Vec<String>,
     pub start_date: Option<String>,
@@ -685,7 +867,12 @@ pub async fn get_wallet_stats_batch(
         return Ok(Json(std::collections::HashMap::new()));
     }
 
-    let placeholders = req.user_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let placeholders = req
+        .user_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
     let mut sql = format!(
         "SELECT user_id, wallet_type, COALESCE(SUM(amount), 0.0) as amount \
          FROM recharge_records \
@@ -695,11 +882,11 @@ pub async fn get_wallet_stats_batch(
     let mut binds: Vec<String> = req.user_ids.clone();
 
     if let Some(ref start) = req.start_date {
-        sql.push_str(" AND created_at >= ?");
+        sql.push_str(" AND created_at >= ?::timestamptz");
         binds.push(start.clone());
     }
     if let Some(ref end) = req.end_date {
-        sql.push_str(" AND created_at <= ?");
+        sql.push_str(" AND created_at <= ?::timestamptz");
         binds.push(end.clone());
     }
     sql.push_str(" GROUP BY user_id, wallet_type");
@@ -712,9 +899,12 @@ pub async fn get_wallet_stats_batch(
 
     let rows = query.fetch_all(&state.db.pool).await?;
 
-    let mut result: std::collections::HashMap<String, WalletStatsResponseItem> = std::collections::HashMap::new();
+    let mut result: std::collections::HashMap<String, WalletStatsResponseItem> =
+        std::collections::HashMap::new();
     for row in rows {
-        let entry = result.entry(row.user_id.clone()).or_insert_with(WalletStatsResponseItem::default);
+        let entry = result
+            .entry(row.user_id.clone())
+            .or_insert_with(WalletStatsResponseItem::default);
         if let Some(wt) = row.wallet_type {
             if wt == "system" {
                 entry.recharge_amount += row.amount;

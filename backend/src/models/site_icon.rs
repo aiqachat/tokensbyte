@@ -1,3 +1,4 @@
+use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -6,13 +7,13 @@ pub struct SiteIcon {
     pub id: i64,
     pub name: String,
     pub title: String,
-    pub file_path: String,         // 相对路径，如 icons/openai.svg
-    pub source: String,            // lobe-icons / custom
-    pub category: String,          // AI品牌 / 自定义
-    pub tags: String,              // JSON 数组
+    pub file_path: String, // 相对路径，如 icons/openai.svg
+    pub source: String,    // lobe-icons / custom
+    pub category: String,  // AI品牌 / 自定义
+    pub tags: String,      // JSON 数组
     pub is_active: i64,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -23,7 +24,7 @@ pub struct SiteIconSyncLog {
     pub total_updated: i64,
     pub status: String,
     pub error_message: Option<String>,
-    pub created_at: String,
+    pub created_at: DbTs,
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,7 +33,7 @@ pub struct CreateSiteIconReq {
     pub title: Option<String>,
     pub category: Option<String>,
     pub tags: Option<Vec<String>>,
-    pub svg_content: String,       // 前端传 SVG 字符串，后端写文件
+    pub svg_content: String, // 前端传 SVG 字符串，后端写文件
 }
 
 #[derive(Debug, Deserialize)]

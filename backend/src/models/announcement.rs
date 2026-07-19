@@ -1,3 +1,4 @@
+use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -8,8 +9,8 @@ pub struct Announcement {
     pub content: String,
     pub is_pinned: i32,
     pub is_active: i32,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: DbTs,
+    pub updated_at: DbTs,
 }
 
 #[derive(Debug, Deserialize)]

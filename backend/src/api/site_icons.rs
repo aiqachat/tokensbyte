@@ -1,16 +1,17 @@
 use axum::{
-    extract::{State, Path, Query},
+    extract::{Path, Query, State},
     routing::{get, post, put},
     Json, Router,
 };
-use std::sync::Arc;
 use serde_json::json;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::{
-    AppState,
-    models::{SiteIcon, SiteIconSyncLog, CreateSiteIconReq, UpdateSiteIconReq, SiteIconQuery},
     error::AppError,
+    models::{CreateSiteIconReq, SiteIcon, SiteIconQuery, SiteIconSyncLog, UpdateSiteIconReq},
+    time_system::DbTs,
+    AppState,
 };
 
 /// 同步进度追踪器
@@ -126,7 +127,11 @@ pub async fn list_icons(
 
     if let Some(ref q) = params.q {
         if !q.is_empty() {
-            conditions.push(format!("(name ILIKE ${} OR title ILIKE ${})", binds.len() + 1, binds.len() + 2));
+            conditions.push(format!(
+                "(name ILIKE ${} OR title ILIKE ${})",
+                binds.len() + 1,
+                binds.len() + 2
+            ));
             binds.push(format!("%{}%", q));
             binds.push(format!("%{}%", q));
         }
@@ -148,15 +153,21 @@ pub async fn list_icons(
 
     let count_sql = format!("SELECT COUNT(*) FROM site_icons WHERE {}", where_clause);
     let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
-    for b in &binds { count_query = count_query.bind(b); }
+    for b in &binds {
+        count_query = count_query.bind(b);
+    }
     let total: i64 = count_query.fetch_one(&state.db.pool).await?;
 
     let data_sql = format!(
         "SELECT * FROM site_icons WHERE {} ORDER BY source ASC, name ASC LIMIT ${} OFFSET ${}",
-        where_clause, binds.len() + 1, binds.len() + 2
+        where_clause,
+        binds.len() + 1,
+        binds.len() + 2
     );
     let mut data_query = sqlx::query_as::<_, SiteIcon>(&data_sql);
-    for b in &binds { data_query = data_query.bind(b); }
+    for b in &binds {
+        data_query = data_query.bind(b);
+    }
     data_query = data_query.bind(size).bind(offset);
     let icons: Vec<SiteIcon> = data_query.fetch_all(&state.db.pool).await?;
 
@@ -183,7 +194,11 @@ pub async fn list_icons_public(
 
     if let Some(ref q) = params.q {
         if !q.is_empty() {
-            where_parts.push(format!("(name ILIKE ${} OR title ILIKE ${})", binds.len() + 1, binds.len() + 2));
+            where_parts.push(format!(
+                "(name ILIKE ${} OR title ILIKE ${})",
+                binds.len() + 1,
+                binds.len() + 2
+            ));
             binds.push(format!("%{}%", q));
             binds.push(format!("%{}%", q));
         }
@@ -199,15 +214,21 @@ pub async fn list_icons_public(
 
     let count_sql = format!("SELECT COUNT(*) FROM site_icons WHERE {}", where_clause);
     let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
-    for b in &binds { cq = cq.bind(b); }
+    for b in &binds {
+        cq = cq.bind(b);
+    }
     let total: i64 = cq.fetch_one(&state.db.pool).await?;
 
     let data_sql = format!(
         "SELECT * FROM site_icons WHERE {} ORDER BY source ASC, name ASC LIMIT ${} OFFSET ${}",
-        where_clause, binds.len() + 1, binds.len() + 2
+        where_clause,
+        binds.len() + 1,
+        binds.len() + 2
     );
     let mut dq = sqlx::query_as::<_, SiteIcon>(&data_sql);
-    for b in &binds { dq = dq.bind(b); }
+    for b in &binds {
+        dq = dq.bind(b);
+    }
     dq = dq.bind(size).bind(offset);
     let icons: Vec<SiteIcon> = dq.fetch_all(&state.db.pool).await?;
 
@@ -230,18 +251,21 @@ pub async fn create_icon(
     }
 
     let file_name = format!("{}.svg", payload.name.to_lowercase().replace(' ', "_"));
-    let data_dir = &state.config.data_dir;
-    let dir = format!("{}/assets/icons/custom", data_dir);
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| AppError::Internal(format!("创建目录失败: {}", e)))?;
+    let assets_dir = &state.config.assets_dir;
+    let dir = format!("{}/icons/custom", assets_dir);
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| AppError::Internal(format!("创建目录失败: {}", e)))?;
     let file_path = format!("icons/custom/{}", file_name);
-    let full_path = format!("{}/assets/{}", data_dir, file_path);
-    tokio::fs::write(&full_path, &payload.svg_content).await
+    let full_path = format!("{}/{}", assets_dir, file_path);
+    tokio::fs::write(&full_path, &payload.svg_content)
+        .await
         .map_err(|e| AppError::Internal(format!("写入 SVG 文件失败: {}", e)))?;
 
     let title = payload.title.unwrap_or_else(|| payload.name.clone());
     let category = payload.category.unwrap_or_else(|| "自定义".to_string());
     let tags_json = serde_json::to_string(&payload.tags.unwrap_or_default()).unwrap_or("[]".into());
-    let now = chrono::Local::now().to_rfc3339();
+    let now = DbTs::now();
 
     let icon: SiteIcon = sqlx::query_as(
         "INSERT INTO site_icons (name, title, file_path, source, category, tags, is_active, created_at, updated_at) \
@@ -272,32 +296,38 @@ pub async fn update_icon(
     Path(id): Path<i64>,
     Json(payload): Json<UpdateSiteIconReq>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let current: SiteIcon = sqlx::query_as(
-        "SELECT * FROM site_icons WHERE id = $1"
-    )
-    .bind(id)
-    .fetch_optional(&state.db.pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("图标不存在".into()))?;
+    let current: SiteIcon = sqlx::query_as("SELECT * FROM site_icons WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.db.pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("图标不存在".into()))?;
 
     let name = payload.name.unwrap_or(current.name);
     let title = payload.title.unwrap_or(current.title);
     let category = payload.category.unwrap_or(current.category);
-    let tags = payload.tags
+    let tags = payload
+        .tags
         .map(|t| serde_json::to_string(&t).unwrap_or("[]".into()))
         .unwrap_or(current.tags);
     let is_active = payload.is_active.unwrap_or(current.is_active);
-    let now = chrono::Local::now().to_rfc3339();
+    let now = DbTs::now();
 
     let file_path = if let Some(ref svg) = payload.svg_content {
         let file_name = format!("{}.svg", name.to_lowercase().replace(' ', "_"));
-        let sub_dir = if current.source == "custom" { "icons/custom" } else { "icons/lobe" };
-        let data_dir = &state.config.data_dir;
-        let dir = format!("{}/assets/{}", data_dir, sub_dir);
-        tokio::fs::create_dir_all(&dir).await.map_err(|e| AppError::Internal(format!("创建目录失败: {}", e)))?;
+        let sub_dir = if current.source == "custom" {
+            "icons/custom"
+        } else {
+            "icons/lobe"
+        };
+        let assets_dir = &state.config.assets_dir;
+        let dir = format!("{}/{}", assets_dir, sub_dir);
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .map_err(|e| AppError::Internal(format!("创建目录失败: {}", e)))?;
         let fp = format!("{}/{}", sub_dir, file_name);
-        let full = format!("{}/assets/{}", data_dir, fp);
-        tokio::fs::write(&full, svg).await
+        let full = format!("{}/{}", assets_dir, fp);
+        tokio::fs::write(&full, svg)
+            .await
             .map_err(|e| AppError::Internal(format!("写入 SVG 文件失败: {}", e)))?;
         fp
     } else {
@@ -330,15 +360,13 @@ pub async fn delete_icon(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let icon: Option<SiteIcon> = sqlx::query_as(
-        "SELECT * FROM site_icons WHERE id = $1"
-    )
-    .bind(id)
-    .fetch_optional(&state.db.pool)
-    .await?;
+    let icon: Option<SiteIcon> = sqlx::query_as("SELECT * FROM site_icons WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.db.pool)
+        .await?;
 
     if let Some(ref icon) = icon {
-        let full = format!("{}/assets/{}", state.config.data_dir, icon.file_path);
+        let full = format!("{}/{}", state.config.assets_dir, icon.file_path);
         tokio::fs::remove_file(&full).await.ok();
     }
 
@@ -357,11 +385,10 @@ pub async fn delete_icon(
 pub async fn list_sync_logs(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let logs: Vec<SiteIconSyncLog> = sqlx::query_as(
-        "SELECT * FROM site_icon_sync_logs ORDER BY id DESC LIMIT 50"
-    )
-    .fetch_all(&state.db.pool)
-    .await?;
+    let logs: Vec<SiteIconSyncLog> =
+        sqlx::query_as("SELECT * FROM site_icon_sync_logs ORDER BY id DESC LIMIT 50")
+            .fetch_all(&state.db.pool)
+            .await?;
 
     Ok(Json(json!({
         "success": true,
@@ -413,13 +440,16 @@ pub async fn sync_from_github(
 /// 实际同步逻辑（在后台线程执行）
 async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
     let progress = &state.icon_sync_progress;
-    let now = chrono::Local::now().to_rfc3339();
+    let now = DbTs::now();
 
     // 1. 从 GitHub API 获取 src 目录列表
-    progress.log("📡 正在请求 GitHub API 获取图标目录列表...".into()).await;
+    progress
+        .log("📡 正在请求 GitHub API 获取图标目录列表...".into())
+        .await;
 
     let github_url = "https://api.github.com/repos/lobehub/lobe-icons/contents/src";
-    let resp = match state.http_client
+    let resp = match state
+        .http_client
         .get(github_url)
         .header("User-Agent", "TokensByte-IconSync/1.0")
         .header("Accept", "application/vnd.github.v3+json")
@@ -438,7 +468,11 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        let msg = format!("GitHub API 返回 {}: {}", status, &body[..body.len().min(200)]);
+        let msg = format!(
+            "GitHub API 返回 {}: {}",
+            status,
+            &body[..body.len().min(200)]
+        );
         progress.fail(msg.clone()).await;
         write_sync_log(&state, 0, 0, 0, "failed", Some(&msg), &now).await;
         return Ok(());
@@ -454,7 +488,8 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
         }
     };
 
-    let icon_names: Vec<(String, String)> = dirs.iter()
+    let icon_names: Vec<(String, String)> = dirs
+        .iter()
         .filter(|d| d["type"].as_str() == Some("dir"))
         .filter_map(|d| {
             let name = d["name"].as_str()?.to_string();
@@ -464,11 +499,16 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
 
     let total_count = icon_names.len() as i64;
     progress.start(total_count).await;
-    progress.log(format!("✅ GitHub API 返回成功，发现 {} 个图标目录", total_count)).await;
+    progress
+        .log(format!(
+            "✅ GitHub API 返回成功，发现 {} 个图标目录",
+            total_count
+        ))
+        .await;
 
     // 2. 创建 icons/lobe 目录
-    let data_dir = &state.config.data_dir;
-    let dir = format!("{}/assets/icons/lobe", data_dir);
+    let assets_dir = &state.config.assets_dir;
+    let dir = format!("{}/icons/lobe", assets_dir);
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         let msg = format!("创建图标目录失败: {}", e);
         progress.fail(msg.clone()).await;
@@ -494,13 +534,26 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
         );
 
         progress.progress((idx + 1) as i64).await;
-        progress.log(format!("⬇️  [{}/{}] 正在下载: {} ...", idx + 1, total_count, original_name)).await;
+        progress
+            .log(format!(
+                "⬇️  [{}/{}] 正在下载: {} ...",
+                idx + 1,
+                total_count,
+                original_name
+            ))
+            .await;
 
         let mut svg_content = String::new();
         let mut download_success = false;
 
         // Try color version first
-        if let Ok(resp) = state.http_client.get(&cdn_color_url).header("User-Agent", "TokensByte-IconSync/1.0").send().await {
+        if let Ok(resp) = state
+            .http_client
+            .get(&cdn_color_url)
+            .header("User-Agent", "TokensByte-IconSync/1.0")
+            .send()
+            .await
+        {
             if resp.status().is_success() {
                 if let Ok(text) = resp.text().await {
                     if text.contains("<svg") {
@@ -513,7 +566,13 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
 
         // Fallback to default version if color version failed
         if !download_success {
-            if let Ok(resp) = state.http_client.get(&cdn_default_url).header("User-Agent", "TokensByte-IconSync/1.0").send().await {
+            if let Ok(resp) = state
+                .http_client
+                .get(&cdn_default_url)
+                .header("User-Agent", "TokensByte-IconSync/1.0")
+                .send()
+                .await
+            {
                 if resp.status().is_success() {
                     if let Ok(text) = resp.text().await {
                         if text.contains("<svg") {
@@ -523,7 +582,15 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
                     }
                 } else {
                     total_skipped += 1;
-                    progress.log(format!("⏭️  [{}/{}] {} CDN 返回 {}，已跳过", idx + 1, total_count, original_name, resp.status())).await;
+                    progress
+                        .log(format!(
+                            "⏭️  [{}/{}] {} CDN 返回 {}，已跳过",
+                            idx + 1,
+                            total_count,
+                            original_name,
+                            resp.status()
+                        ))
+                        .await;
                     continue;
                 }
             } else {
@@ -536,13 +603,20 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
 
         if !download_success {
             total_skipped += 1;
-            progress.log(format!("⏭️  [{}/{}] {} 无效的 SVG，已跳过", idx + 1, total_count, original_name)).await;
+            progress
+                .log(format!(
+                    "⏭️  [{}/{}] {} 无效的 SVG，已跳过",
+                    idx + 1,
+                    total_count,
+                    original_name
+                ))
+                .await;
             continue;
         }
 
         let file_name = format!("{}.svg", slug);
         let file_path = format!("icons/lobe/{}", file_name);
-        let full_path = format!("{}/assets/{}", data_dir, file_path);
+        let full_path = format!("{}/{}", assets_dir, file_path);
 
         if let Err(e) = tokio::fs::write(&full_path, &svg_content).await {
             let err_msg = format!("{}: 写入文件失败 {}", original_name, e);
@@ -568,7 +642,14 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
             Ok(_) => {
                 total_synced += 1;
                 _total_new += 1;
-                progress.log(format!("✅ [{}/{}] {} 同步成功", idx + 1, total_count, original_name)).await;
+                progress
+                    .log(format!(
+                        "✅ [{}/{}] {} 同步成功",
+                        idx + 1,
+                        total_count,
+                        original_name
+                    ))
+                    .await;
             }
             Err(e) => {
                 let err_msg = format!("{}: 数据库写入失败 {}", original_name, e);
@@ -579,21 +660,42 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
     }
 
     // 统计
-    let existing_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM site_icons WHERE source = 'lobe-icons'")
-        .fetch_one(&state.db.pool)
-        .await
-        .unwrap_or(0);
+    let existing_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM site_icons WHERE source = 'lobe-icons'")
+            .fetch_one(&state.db.pool)
+            .await
+            .unwrap_or(0);
 
-    let status_str = if errors.is_empty() { "success" } else { "partial" };
-    let error_msg = if errors.is_empty() { None } else { Some(errors.join("; ")) };
+    let status_str = if errors.is_empty() {
+        "success"
+    } else {
+        "partial"
+    };
+    let error_msg = if errors.is_empty() {
+        None
+    } else {
+        Some(errors.join("; "))
+    };
 
     let summary = format!(
         "🎉 同步完成！成功 {} 个，跳过 {} 个，失败 {} 个，库中共 {} 个图标",
-        total_synced, total_skipped, errors.len(), existing_count
+        total_synced,
+        total_skipped,
+        errors.len(),
+        existing_count
     );
     progress.finish(summary.clone()).await;
 
-    write_sync_log(&state, total_synced, existing_count, total_synced, status_str, error_msg.as_deref(), &now).await;
+    write_sync_log(
+        &state,
+        total_synced,
+        existing_count,
+        total_synced,
+        status_str,
+        error_msg.as_deref(),
+        &now,
+    )
+    .await;
 
     tracing::info!("{}", summary);
     Ok(())
@@ -602,25 +704,23 @@ async fn do_sync(state: Arc<AppState>) -> anyhow::Result<()> {
 /// 启动时自动检查图标文件完整性，缺失则自动恢复同步
 pub async fn auto_recover_on_startup(state: Arc<AppState>) {
     // 检查插件是否已启用
-    let enabled: Option<i64> = sqlx::query_scalar(
-        "SELECT is_enabled FROM plugins WHERE name = 'site_icons'"
-    )
-    .fetch_optional(&state.db.pool)
-    .await
-    .ok()
-    .flatten();
+    let enabled: Option<i64> =
+        sqlx::query_scalar("SELECT is_enabled FROM plugins WHERE name = 'site_icons'")
+            .fetch_optional(&state.db.pool)
+            .await
+            .ok()
+            .flatten();
 
     if enabled != Some(1) {
         return; // 插件未启用，跳过
     }
 
     // 查询数据库中 lobe-icons 来源的图标数量
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM site_icons WHERE source = 'lobe-icons'"
-    )
-    .fetch_one(&state.db.pool)
-    .await
-    .unwrap_or(0);
+    let total: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM site_icons WHERE source = 'lobe-icons'")
+            .fetch_one(&state.db.pool)
+            .await
+            .unwrap_or(0);
 
     if total == 0 {
         return; // 数据库中没有图标记录，无需检查
@@ -628,16 +728,16 @@ pub async fn auto_recover_on_startup(state: Arc<AppState>) {
 
     // 抽样检查前 20 个图标的文件是否存在
     let sample_paths: Vec<String> = sqlx::query_scalar(
-        "SELECT file_path FROM site_icons WHERE source = 'lobe-icons' ORDER BY name ASC LIMIT 20"
+        "SELECT file_path FROM site_icons WHERE source = 'lobe-icons' ORDER BY name ASC LIMIT 20",
     )
     .fetch_all(&state.db.pool)
     .await
     .unwrap_or_default();
 
     let mut missing = 0;
-    let data_dir = &state.config.data_dir;
+    let assets_dir = &state.config.assets_dir;
     for fp in &sample_paths {
-        let full = format!("{}/assets/{}", data_dir, fp);
+        let full = format!("{}/{}", assets_dir, fp);
         if tokio::fs::metadata(&full).await.is_err() {
             missing += 1;
         }
@@ -647,7 +747,9 @@ pub async fn auto_recover_on_startup(state: Arc<AppState>) {
     if missing > sample_paths.len() / 2 {
         tracing::warn!(
             "🔄 站点图标文件缺失 ({}/{} 抽样缺失, 数据库共 {} 条)，自动触发恢复同步...",
-            missing, sample_paths.len(), total
+            missing,
+            sample_paths.len(),
+            total
         );
         let state_clone = state.clone();
         tokio::spawn(async move {
@@ -660,7 +762,9 @@ pub async fn auto_recover_on_startup(state: Arc<AppState>) {
     } else {
         tracing::info!(
             "✅ 站点图标文件完整性检查通过 ({} 条记录, {}/{} 抽样文件存在)",
-            total, sample_paths.len() - missing, sample_paths.len()
+            total,
+            sample_paths.len() - missing,
+            sample_paths.len()
         );
     }
 }
@@ -673,7 +777,7 @@ async fn write_sync_log(
     total_updated: i64,
     status: &str,
     error_message: Option<&str>,
-    now: &str,
+    now: &DbTs,
 ) {
     sqlx::query(
         "INSERT INTO site_icon_sync_logs (total_synced, total_new, total_updated, status, error_message, created_at) \

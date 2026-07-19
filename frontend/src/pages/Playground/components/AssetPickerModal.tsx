@@ -4,7 +4,9 @@
  * 支持分类切换、文件夹浏览、搜索、点击选中素材
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Modal, Spin, Segmented, Empty, Input, message } from 'antd';
+import { Modal, Spin, Segmented, Empty, Input } from 'antd';
+import toast from './PlaygroundToast';
+import { getSharedModalStyles } from '../utils/modalStyles';
 import {
   FolderFilled, PictureOutlined, VideoCameraOutlined,
   AudioOutlined, ArrowLeftOutlined, SearchOutlined,
@@ -158,7 +160,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
 
   const handleConfirm = () => {
     if (selectedAssets.length === 0) {
-      message.warning('请先至少选择一个素材');
+      toast.warning('请先至少选择一个素材');
       return;
     }
     onSelect(selectedAssets.map(a => ({ asset: a, fullUrl: getFullUrl(a.file_url) })));
@@ -170,7 +172,7 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
       const exists = prev.find(a => a.id === asset.id);
       if (exists) return prev.filter(a => a.id !== asset.id);
       if (prev.length >= 10) {
-        message.warning('最多只能选择 10 个素材');
+        toast.warning('最多只能选择 10 个素材');
         return prev;
       }
       return [...prev, asset];
@@ -202,15 +204,12 @@ const AssetPickerModal: React.FC<AssetPickerModalProps> = ({ open, onClose, onSe
       width={760}
       centered
       destroyOnHidden
+      {...getSharedModalStyles(_isLight)}
       styles={{
-        body: { padding: 0, background: _isLight ? '#fff' : '#131416', borderRadius: 16, overflow: 'hidden' },
+        ...getSharedModalStyles(_isLight).styles,
+        body: { padding: 0, background: 'transparent', overflow: 'hidden' },
         header: { display: 'none' },
       }}
-      modalRender={(node) => (
-        <div style={{ background: _isLight ? '#fff' : '#131416', borderRadius: 16, border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', padding: 0 }}>
-          {node}
-        </div>
-      )}
       closable={false}
       mask={{ closable: true }}
     >

@@ -87,14 +87,15 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           request.get('/model-api-providers') as any,
           request.get('/model-types') as any,
         ]);
-        // 与模型列表和渠道页对齐：模型不做 is_active 过滤，服务商/类型仅保留启用项
-        const models = modelsResp?.data || modelsResp || [];
+        // 与模型列表和渠道页对齐：仅保留已激活的模型，服务商/类型仅保留启用项
+        const rawModels = modelsResp?.data || modelsResp || [];
+        const models = rawModels.filter((m: any) => m.is_active === 1);
         setAvailableModels(models);
         setAllProviders((providers || []).filter((p: any) => p.is_active));
         setAllApiProviders((apiProviders || []).filter((p: any) => p.is_active));
         setAllTypes((types || []).filter((t: any) => t.is_active));
         // 通知父组件模型数据已加载
-        onModelsLoaded?.(models);
+        onModelsLoaded?.(rawModels);
       } catch (e) {
         console.error('ModelSelector: 数据加载失败', e);
       } finally {

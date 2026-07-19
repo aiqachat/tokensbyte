@@ -9,8 +9,8 @@ import AdminLogin from './pages/AdminLogin/AdminLogin';
 import LegalPage from './pages/Legal/LegalPage';
 import DashboardLayout from './layouts/DashboardLayout';
 import Dashboard from './pages/Dashboard/Dashboard';
-import RelayAPI from './pages/RelayAPI/RelayAPI';
 import Channels from './pages/Channels/Channels';
+import ModelChannelsDisplay from './pages/Channels/ModelChannelsDisplay';
 import ChannelTest from './pages/Channels/ChannelTest';
 import ChannelConfigs from './pages/Channels/ChannelConfigs';
 import Models from './pages/Models/Models';
@@ -25,17 +25,20 @@ import UserLevelEdit from './pages/Users/UserLevelEdit';
 import AdminGroups from './pages/Users/AdminGroups';
 import Logs from './pages/Logs/Logs';
 import TaskLogs from './pages/Logs/TaskLogs';
-import PluginsList from './pages/Plugins/PluginsList';
-import PluginConfig from './pages/Plugins/PluginConfig';
-import UserAssets from './pages/UserAssets/UserAssets';
-import AdvancedMarketing from './pages/AdvancedMarketing/AdvancedMarketing';
 import Playground from './pages/Playground/Playground';
 import PlaygroundHome from './pages/Playground/PlaygroundHome';
 import ModelMarketplace from './pages/ModelMarketplace/ModelMarketplace';
-import SmartRouter from './pages/SmartRouter/SmartRouter';
-
+import {
+  RelayAPI,
+  PluginsList,
+  PluginConfig,
+  ArkUserDashboard,
+  UserAssets,
+  AdvancedMarketing,
+} from './plugins-registry';
 import Redemptions from './pages/Redemptions/Redemptions';
 import Profile from './pages/Profile/Profile';
+import NotificationSubscription from './pages/Profile/NotificationSubscription';
 import Wallet from './pages/Wallet/Wallet';
 import RechargeRecords from './pages/Finance/RechargeRecords';
 import GiftRecords from './pages/Finance/GiftRecords';
@@ -54,38 +57,52 @@ import useSettingsStore from './store/settings';
 
 const PrivateRoute = ({ children, adminOnly = false, userOnly = false }: { children: React.ReactNode, adminOnly?: boolean, userOnly?: boolean }) => {
   const { token, user } = useAuthStore();
+  const adminPath = localStorage.getItem('tokensbyte_admin_path') || 'admin1688';
   if (!token) return <Navigate to="/login" />;
   if (adminOnly && user?.role !== 'admin') return <Navigate to="/dashboard" />;
-  if (userOnly && user?.role === 'admin') return <Navigate to="/admin0755/dashboard" />;
+  if (userOnly && user?.role === 'admin') return <Navigate to={`/${adminPath}/dashboard`} />;
   return <>{children}</>;
 };
 
-const PluginRoute = ({ children, pluginName }: { children: React.ReactNode, pluginName: string }) => {
+const PluginRoute = ({
+  children,
+  pluginName,
+  allowGuest = false,
+}: {
+  children: React.ReactNode;
+  pluginName: string;
+  allowGuest?: boolean;
+}) => {
   const [loading, setLoading] = React.useState(true);
   const [isActive, setIsActive] = React.useState(false);
   const { user } = useAuthStore();
-  
+
   React.useEffect(() => {
     const checkPlugin = async () => {
       try {
         const response: any = await request.get('/plugins/active');
-        const plugin = response?.active_plugins?.find((p: any) => p.name === pluginName);
-        if (!plugin) {
+        const plugins: any[] = response?.active_plugins || [];
+        const matched = plugins.find((p: any) => p.name === pluginName);
+        if (!matched) {
           setIsActive(false);
           return;
         }
-        if (plugin.allowed_levels === 'all' || user?.role === 'admin') {
+        if (allowGuest && matched.mp_allow_guest) {
           setIsActive(true);
           return;
         }
-        const allowed = plugin.allowed_levels.split(',');
+        if (!user) {
+          setIsActive(false);
+          return;
+        }
+        if (user?.role === 'admin' || matched.allowed_levels === 'all') {
+          setIsActive(true);
+          return;
+        }
         const userGroup = user?.user_group || '';
         const levelId = user?.level_id != null ? String(user.level_id) : '';
-        if (allowed.includes(userGroup) || (levelId !== '' && allowed.includes(levelId))) {
-          setIsActive(true);
-        } else {
-          setIsActive(false);
-        }
+        const levels = String(matched.allowed_levels || '').split(',');
+        setIsActive(levels.includes(userGroup) || (levelId !== '' && levels.includes(levelId)));
       } catch (e) {
         setIsActive(false);
       } finally {
@@ -93,17 +110,22 @@ const PluginRoute = ({ children, pluginName }: { children: React.ReactNode, plug
       }
     };
     checkPlugin();
-  }, [pluginName, user]);
+  }, [pluginName, user, allowGuest]);
 
   if (loading) return <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>加载中...</div>;
-  if (!isActive) return <Navigate to="/dashboard" replace />;
+  if (!isActive) {
+    if (!user) {
+      return <Navigate to="/login" replace />;
+    }
+    return <Navigate to="/dashboard" replace />;
+  }
   return <>{children}</>;
 };
 
 /**
  * UserEndRoute – 用户端根路由守卫
  * 当 site_portal 插件已启用时，访问精确的 '/' 路径会跳转到后端渲染的门户首页 '/home'。
- * 其他子路径（如 /tokens, /relay-api 等）仍需登录后才能访问。
+ * 其他子路径（如 /tokens, /docs 等）仍需登录后才能访问。
  */
 const UserEndRoute = () => {
   const { token, user } = useAuthStore();
@@ -133,14 +155,16 @@ const UserEndRoute = () => {
   }
   // 精确 '/' 路径，仍在检测中 → 展示空白避免闪烁
   if (isRootPath && checking) return null;
+  const adminPath = localStorage.getItem('tokensbyte_admin_path') || 'admin1688';
   // 非根路径或门户未启用 → 走常规鉴权逻辑
   if (!token) return <Navigate to="/login" />;
-  if (user?.role === 'admin') return <Navigate to="/admin0755/dashboard" />;
+  if (user?.role === 'admin') return <Navigate to={`/${adminPath}/dashboard`} />;
   return <DashboardLayout isUserEnd={true} />;
 };
 
 const App: React.FC = () => {
   const { fetchSettings } = useSettingsStore();
+  const adminPath = localStorage.getItem('tokensbyte_admin_path') || 'admin1688';
   const { i18n } = useTranslation();
 
   useEffect(() => {
@@ -177,12 +201,13 @@ const App: React.FC = () => {
 
   return (
     <Router>
-      <Routes>
+      <React.Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: '#666' }}>Loading...</div>}>
+        <Routes>
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/admin0755" element={<AdminLogin />} />
+        <Route path={`/${adminPath}`} element={<AdminLogin />} />
         <Route path="/legal/:type" element={<LegalPage />} />
 
         <Route
@@ -211,21 +236,35 @@ const App: React.FC = () => {
         <Route
           path="/models"
           element={
-            <PrivateRoute>
-              <PluginRoute pluginName="model_marketplace">
-                <ModelMarketplace />
-              </PluginRoute>
-            </PrivateRoute>
+            <PluginRoute pluginName="model_marketplace" allowGuest={true}>
+              <ModelMarketplace />
+            </PluginRoute>
           }
         />
 
         {/* API Reference Route (Full Screen, Independent) */}
         <Route
-          path="/relay-api"
+          path="/docs"
           element={
-            <PrivateRoute>
+            <PluginRoute pluginName="docs_api" allowGuest={true}>
               <RelayAPI />
-            </PrivateRoute>
+            </PluginRoute>
+          }
+        />
+        <Route
+          path="/docs/:id"
+          element={
+            <PluginRoute pluginName="docs_api" allowGuest={true}>
+              <RelayAPI />
+            </PluginRoute>
+          }
+        />
+        <Route
+          path="/docs/:category/:id"
+          element={
+            <PluginRoute pluginName="docs_api" allowGuest={true}>
+              <RelayAPI />
+            </PluginRoute>
           }
         />
 
@@ -245,13 +284,15 @@ const App: React.FC = () => {
           <Route path="assets" element={<PluginRoute pluginName="asset_manager"><UserAssets key="asset_manager" pluginNs="asset_manager" /></PluginRoute>} />
           <Route path="assets-intl" element={<PluginRoute pluginName="asset_manager_intl"><UserAssets key="asset_manager_intl" pluginNs="asset_manager_intl" /></PluginRoute>} />
           <Route path="advanced-marketing" element={<PluginRoute pluginName="team_marketing"><AdvancedMarketing /></PluginRoute>} />
-          <Route path="smart-router" element={<PluginRoute pluginName="router_flow"><SmartRouter /></PluginRoute>} />
+
+          <Route path="ark-video-monitor" element={<PluginRoute pluginName="volcengine_ark_monitor"><ArkUserDashboard /></PluginRoute>} />
           <Route path="profile" element={<Profile />} />
+          <Route path="profile/notifications" element={<NotificationSubscription />} />
         </Route>
 
-        {/* System End Routes (/admin0755) */}
+        {/* System End Routes */}
         <Route
-          path="/admin0755"
+          path={`/${adminPath}`}
           element={
             <PrivateRoute adminOnly={true}>
               <DashboardLayout isUserEnd={false} />
@@ -259,10 +300,13 @@ const App: React.FC = () => {
           }
         >
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="relay-api" element={<RelayAPI />} />
+          <Route path="docs" element={<RelayAPI />} />
+          <Route path="docs/:id" element={<RelayAPI />} />
+          <Route path="docs/:category/:id" element={<RelayAPI />} />
           <Route path="upstreams" element={<Upstreams />} />
           <Route path="channel-configs" element={<ChannelConfigs />} />
           <Route path="channels" element={<Channels />} />
+          <Route path="channels/model-display" element={<ModelChannelsDisplay />} />
           <Route path="channels/test/:id" element={<ChannelTest />} />
           <Route path="models" element={<Models />} />
           <Route path="forward-rules" element={<ForwardRules />} />
@@ -295,7 +339,8 @@ const App: React.FC = () => {
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </React.Suspense>
     </Router>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch, Grid, Radio, Empty, Pagination } from 'antd';
+import { Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Card, Typography, Select, Row, Col, Switch, Grid, Radio, Empty, Pagination, Tooltip } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, SearchOutlined, RightOutlined, DownOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseOutlined, FilterOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SyncOutlined, SearchOutlined, RightOutlined, DownOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseOutlined, FilterOutlined, FolderOutlined, UnorderedListOutlined, SettingOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
@@ -126,18 +126,34 @@ const renderModelLogo = (logo?: string | null, fallbackName?: string) => {
   );
 };
 
+// ===== 生成模型组 GMID (6位数字，以5开头) =====
+const getGmid = (originalId: string): string => {
+  if (!originalId || originalId.trim() === '') return '';
+  let hash = 0;
+  for (let i = 0; i < originalId.length; i++) {
+    hash = (hash << 5) - hash + originalId.charCodeAt(i);
+    hash |= 0;
+  }
+  const suffix = (Math.abs(hash) % 100000).toString().padStart(5, '0');
+  return `5${suffix}`;
+};
+
 // ===== 分组展示组件 =====
-const GroupedModelTable: React.FC<{
-  group: { key: string; model_id: string; children: ModelModel[]; count: number };
-  columns: any[];
-  showHeader: boolean;
-  getProviderName: (id?: number) => string | null;
-  allBillingRules: any[];
-  currencySymbol: string;
-  t: any;
-  isLight: boolean;
-}> = ({ group, columns, showHeader, getProviderName, allBillingRules, currencySymbol, t, isLight }) => {
+const GroupedModelTable: React.FC<{ group: { key: string; model_id: string; children: ModelModel[]; count: number }; columns: any[]; showHeader: boolean; getProviderName: (id?: number) => string | null; allBillingRules: any[]; currencySymbol: string; t: any; isLight: boolean; forceCollapsed?: boolean; onRefresh?: () => void; setModels?: React.Dispatch<React.SetStateAction<ModelModel[]>> }> = ({ group, columns, showHeader, getProviderName, allBillingRules, currencySymbol, t, isLight, forceCollapsed, onRefresh, setModels }) => {
+  const { settings } = useSettingsStore();
+  const adminPath = settings?.site?.admin_path || 'admin1688';
   const [expanded, setExpanded] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [desc, setDesc] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (forceCollapsed) {
+      setExpanded(false);
+    } else {
+      setExpanded(true);
+    }
+  }, [forceCollapsed]);
 
 
   // 汇总信息
@@ -150,6 +166,45 @@ const GroupedModelTable: React.FC<{
     }).filter(Boolean)
   ));
   const firstChild = group.children[0];
+
+  const [groupDesc, setGroupDesc] = useState(firstChild?.description || '');
+
+  useEffect(() => {
+    setGroupDesc(firstChild?.description || '');
+  }, [firstChild?.description]);
+
+  const handleOpenModal = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDesc(firstChild?.description || '');
+    setModalVisible(true);
+  };
+
+  const handleSaveDescription = async () => {
+    // 1. 立即关闭弹窗并更新前端本地简介和父状态，提供即时无感响应
+    setGroupDesc(desc);
+    setModalVisible(false);
+    if (setModels) {
+      const childrenIds = new Set(group.children.map(c => c.id));
+      setModels(prev => prev.map(m => {
+        if (childrenIds.has(m.id)) {
+          return { ...m, description: desc };
+        }
+        return m;
+      }));
+    }
+
+    // 2. 后台异步调用 API 进行持久化，不让页面刷新或闪烁
+    try {
+      await Promise.all(
+        group.children.map(m =>
+          request.put(`/models/${m.id}`, { description: desc })
+        )
+      );
+    } catch (err: any) {
+      console.error('更新模型组简介失败:', err);
+      message.error(err.message || '后台同步更新模型组简介失败');
+    }
+  };
 
   return (
     <div 
@@ -179,7 +234,39 @@ const GroupedModelTable: React.FC<{
         }
       }}
     >
-      {/* Removed 侧边强调色 to reduce visual clutter */}
+      <Modal
+        title="设置模型组简介说明"
+        open={modalVisible}
+        onCancel={(e) => {
+          e.stopPropagation();
+          setModalVisible(false);
+        }}
+        footer={[
+          <Button key="cancel" onClick={(e) => { e.stopPropagation(); setModalVisible(false); }}>
+            取消
+          </Button>,
+          <Button key="submit" type="primary" loading={saving} onClick={(e) => { e.stopPropagation(); handleSaveDescription(); }}>
+            保存
+          </Button>
+        ]}
+        destroyOnClose
+        centered
+        width={500}
+      >
+        <div style={{ padding: '12px 0' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ marginBottom: 8 }}>
+            <Text type="secondary">此说明将同步应用到模型组 {group.model_id} 下的所有模型变体 ({group.count} 个)：</Text>
+          </div>
+          <Input.TextArea
+            rows={4}
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder="请输入模型组的简介说明..."
+            maxLength={1000}
+            showCount
+          />
+        </div>
+      </Modal>
 
       {/* 组头 */}
       <div
@@ -234,41 +321,57 @@ const GroupedModelTable: React.FC<{
                 color: isLight ? '#595959' : '#a6a6a6',
                 border: isLight ? '1px solid #e8e8e8' : '1px solid #303030'
               }}>
+                GMID: {getGmid(group.model_id)}
+              </span>
+              <span style={{
+                fontSize: 12, fontWeight: 500, lineHeight: '20px',
+                padding: '0 8px', borderRadius: 4,
+                background: isLight ? '#f5f5f5' : '#1f1f1f', 
+                color: isLight ? '#595959' : '#a6a6a6',
+                border: isLight ? '1px solid #e8e8e8' : '1px solid #303030'
+              }}>
                 {group.count} 个变体
               </span>
             </div>
 
-            {/* 供应商与计费概要 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary, #8c8c8c)', flexWrap: 'wrap' }}>
-              {providers.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ opacity: 0.7 }}>供应商:</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {providers.slice(0, 3).map((p, i) => (
-                      <span key={i} style={{ color: 'var(--text-color, inherit)', fontWeight: 500 }}>{p}{i < Math.min(providers.length, 3) - 1 ? ',' : ''}</span>
-                    ))}
-                    {providers.length > 3 && <span>等 {providers.length} 家</span>}
-                  </div>
-                </div>
-              )}
-              {providers.length > 0 && billingNames.length > 0 && <span style={{ opacity: 0.2, fontWeight: 300 }}>|</span>}
-              {billingNames.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ opacity: 0.7 }}>计费模板:</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {billingNames.slice(0, 2).map((n, i) => (
-                      <span key={i} style={{ color: 'var(--text-color, inherit)', fontWeight: 500 }}>{n}{i < Math.min(billingNames.length, 2) - 1 ? ',' : ''}</span>
-                    ))}
-                    {billingNames.length > 2 && <span>等</span>}
-                  </div>
-                </div>
-              )}
-            </div>
+
+            {groupDesc && (
+              <div 
+                style={{ 
+                  fontSize: 12, 
+                  color: 'var(--text-secondary, #8c8c8c)', 
+                  marginTop: 4, 
+                  whiteSpace: 'nowrap', 
+                  overflow: 'hidden', 
+                  textOverflow: 'ellipsis', 
+                  maxWidth: '500px'
+                }}
+                title={groupDesc}
+              >
+                简介: {groupDesc}
+              </div>
+            )}
           </div>
         </div>
 
         {/* 状态 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 8 }}>
+          <Tooltip title="设置模型组简介说明">
+            <Button
+              type="text"
+              icon={<SettingOutlined style={{ fontSize: 16 }} />}
+              onClick={handleOpenModal}
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                color: isLight ? '#8c8c8c' : '#8c8c8c',
+              }}
+            />
+          </Tooltip>
           {activeCount === group.count ? (
             <div style={{ 
               padding: '2px 8px', borderRadius: 4, fontWeight: 500, fontSize: 12,
@@ -430,16 +533,19 @@ const Models: React.FC = () => {
   const [pageSize, setPageSize] = useState(30);
   const isEn = i18n.language === 'en';
   const { settings } = useSettingsStore();
+  const adminPath = settings?.site?.admin_path || 'admin1688';
   const { themeMode } = useThemeStore();
   const isLight = themeMode === 'light';
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const auxiliaryCurrencies = useMemo(() => {
-    return (settings?.currency?.auxiliary_currencies || []).filter((c: any) => c.enabled);
+    const list = settings?.currency?.auxiliary_currencies;
+    return Array.isArray(list) ? list.filter(c => c.enabled) : [];
   }, [settings?.currency?.auxiliary_currencies]);
   const [selectedCurrencyCode, setSelectedCurrencyCode] = useState<string>('');
   const [models, setModels] = useState<ModelModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [showGroupsOnly, setShowGroupsOnly] = useState(false);
   const [editingModel, setEditingModel] = useState<ModelModel | null>(null);
   const [billingType, setBillingType] = useState('tokens');
   const [saving, setSaving] = useState(false);
@@ -481,8 +587,11 @@ const Models: React.FC = () => {
         api_provider_id: selectedApiProvider,
         type_id: selectedType,
       };
-      if (searchKeyword.trim()) {
-        params.search = searchKeyword.trim();
+      const keyword = searchKeyword.trim();
+      const isGmid = keyword.length === 6 && keyword.startsWith('5') && /^\d+$/.test(keyword);
+      
+      if (keyword && !isGmid) {
+        params.search = keyword;
       }
       const resp = await (request.get('/models', { params }) as unknown as Promise<{ data: ModelModel[] }>);
       setModels(resp.data);
@@ -517,11 +626,11 @@ const Models: React.FC = () => {
         request.get('/forward-rules') as Promise<any>,
         request.get('/billing-rules') as Promise<any>
       ]);
-      setAllProviders((provResp as any[]).filter((p: any) => p.is_active));
-      setAllApiProviders((apiProvResp as any[]).filter((p: any) => p.is_active));
-      setAllTypes((typeResp as any[]).filter((t: any) => t.is_active));
-      setAllForwardRules((rules as any[]).filter((r: any) => r.is_active));
-      setAllBillingRules((brs as any[]).filter((b: any) => b.is_active === 1));
+      setAllProviders(Array.isArray(provResp) ? provResp.filter(p => p.is_active) : []);
+      setAllApiProviders(Array.isArray(apiProvResp) ? apiProvResp.filter(p => p.is_active) : []);
+      setAllTypes(Array.isArray(typeResp) ? typeResp.filter(t => t.is_active) : []);
+      setAllForwardRules(Array.isArray(rules) ? rules.filter(r => r.is_active) : []);
+      setAllBillingRules(Array.isArray(brs) ? brs.filter(b => b.is_active === 1) : []);
     } catch (e) {
       console.error(e);
     }
@@ -948,7 +1057,14 @@ const Models: React.FC = () => {
             <span style={{ fontSize: '11px', lineHeight: 1.2, margin: 0, color: 'var(--text-secondary, #595959)' }}>{t(`models.type_${type}`)}</span>
             {br && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                <Text type="secondary" style={{ fontSize: '11px', lineHeight: 1.2 }}>{br.name}</Text>
+                <a
+                  href={`/${settings?.site?.admin_path || 'admin1688'}/billing-rules?edit_id=${br.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ fontSize: '11px', lineHeight: 1.2, color: 'var(--text-secondary, #8c8c8c)', textDecoration: 'underline' }}
+                >
+                  {br.name}
+                </a>
                 {br.pid && <Text type="secondary" style={{ fontSize: '11px', lineHeight: 1.2 }}>PID: {br.pid}</Text>}
               </div>
             )}
@@ -963,6 +1079,7 @@ const Models: React.FC = () => {
       render: (_: any, record: ModelModel) => {
         const br = allBillingRules.find((b: any) => b.id === record.billing_rule_id);
         if (!br) return <Text type="secondary" italic>未挂载费用模板</Text>;
+
         return (
           <Space direction="vertical" size={0}>
             <RateDisplay rule={br} currencySymbol={currencySymbol} formatPrice={formatPrice} />
@@ -1006,17 +1123,32 @@ const Models: React.FC = () => {
       filterIcon: () => (
         <FilterOutlined style={{ color: tableStatusFilter !== 'all' ? '#1677ff' : undefined }} />
       ),
-      render: (active: boolean) => (
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '2px 6px', borderRadius: 4, fontSize: 12,
-          background: active ? 'rgba(128,128,128,0.06)' : 'transparent',
-          color: active ? 'var(--text-color, inherit)' : '#8c8c8c',
-          border: active ? '1px solid rgba(128,128,128,0.15)' : '1px dashed rgba(128,128,128,0.3)'
-        }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: active ? '#8c8c8c' : 'transparent', border: active ? 'none' : '1px solid #8c8c8c' }} />
-          {active ? t('common.active') : t('common.disabled')}
-        </span>
+      render: (active: boolean, record: ModelModel) => (
+        <Space direction="vertical" size={4} style={{ display: 'flex', alignItems: 'flex-start' }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '2px 6px', borderRadius: 4, fontSize: 12,
+            background: active ? 'rgba(128,128,128,0.06)' : 'transparent',
+            color: active ? 'var(--text-color, inherit)' : '#8c8c8c',
+            border: active ? '1px solid rgba(128,128,128,0.15)' : '1px dashed rgba(128,128,128,0.3)'
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: active ? '#8c8c8c' : 'transparent', border: active ? 'none' : '1px solid #8c8c8c' }} />
+            {active ? t('common.active') : t('common.disabled')}
+          </span>
+          {record.enable_log_content === 1 && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center',
+              padding: '1px 6px', borderRadius: 4, fontSize: 10,
+              background: 'rgba(22,119,255,0.08)',
+              color: '#1677ff',
+              border: '1px solid rgba(22,119,255,0.2)',
+              fontWeight: 500,
+              lineHeight: 1.2
+            }}>
+              上下文
+            </span>
+          )}
+        </Space>
       ),
     },
     {
@@ -1068,6 +1200,12 @@ const Models: React.FC = () => {
   const sortedModels = useMemo(() => {
     let list = [...models];
 
+    // 如果搜索关键词是 6 位以 5 开头的数字（GMID），在前端进行过滤
+    const keyword = searchKeyword.trim();
+    if (keyword.length === 6 && keyword.startsWith('5') && /^\d+$/.test(keyword)) {
+      list = list.filter(m => getGmid(m.original_id || '') === keyword);
+    }
+
     if (tableBillingTypeFilter !== 'all') {
       list = list.filter(m => {
         const br = allBillingRules.find(b => b.id === m.billing_rule_id);
@@ -1096,14 +1234,50 @@ const Models: React.FC = () => {
     return list;
   }, [models, sortType, tableBillingTypeFilter, tableStatusFilter, allBillingRules]);
 
+  // ===== 获取所有真实模型组 =====
+  const allModelGroups = useMemo(() => {
+    const map = new Map<string, ModelModel[]>();
+    const order: string[] = [];
+    sortedModels.forEach(m => {
+      if (m.original_id && m.original_id.trim() !== '') {
+        const key = m.original_id;
+        if (!map.has(key)) {
+          order.push(key);
+          map.set(key, []);
+        }
+        map.get(key)!.push(m);
+      }
+    });
+    return order
+      .map(key => ({
+        key,
+        model_id: key,
+        children: map.get(key)!,
+        count: map.get(key)!.length,
+        type: 'group' as const,
+      }))
+      .filter(g => g.count > 1);
+  }, [sortedModels]);
+
+  // ===== 获取总条数（用于分页） =====
+  const totalCount = useMemo(() => {
+    return showGroupsOnly ? allModelGroups.length : sortedModels.length;
+  }, [showGroupsOnly, allModelGroups.length, sortedModels.length]);
+
   // ===== 扁平模型分页切片 =====
   const pagedModels = useMemo(() => {
+    if (showGroupsOnly) return [];
     const startIndex = (currentPage - 1) * pageSize;
     return sortedModels.slice(startIndex, startIndex + pageSize);
-  }, [sortedModels, currentPage, pageSize]);
+  }, [sortedModels, currentPage, pageSize, showGroupsOnly]);
 
   // ===== 按 original_id / model_id 分组逻辑 =====
   const displayGroups = useMemo(() => {
+    if (showGroupsOnly) {
+      const startIndex = (currentPage - 1) * pageSize;
+      return allModelGroups.slice(startIndex, startIndex + pageSize);
+    }
+
     const map = new Map<string, ModelModel[]>();
     const order: string[] = [];
     pagedModels.forEach(m => {
@@ -1138,19 +1312,19 @@ const Models: React.FC = () => {
       result.push({ type: 'singles', children: currentSingles });
     }
     return result;
-  }, [pagedModels]);
+  }, [pagedModels, showGroupsOnly, allModelGroups, currentPage, pageSize]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [tableBillingTypeFilter, tableStatusFilter]);
+  }, [tableBillingTypeFilter, tableStatusFilter, showGroupsOnly]);
 
   // 防御性校准：当数据被删除或过滤导致总页数变小，且 currentPage 大于最大页数时，自动校准页码
   useEffect(() => {
-    const maxPage = Math.ceil(sortedModels.length / pageSize);
+    const maxPage = Math.ceil(totalCount / pageSize);
     if (maxPage > 0 && currentPage > maxPage) {
       setCurrentPage(maxPage);
     }
-  }, [sortedModels.length, pageSize, currentPage]);
+  }, [totalCount, pageSize, currentPage]);
 
   return (
     <Card variant="borderless" style={{ width: '100%', minWidth: 0 }}>
@@ -1265,7 +1439,12 @@ const Models: React.FC = () => {
                 ]}
               />
             )}
-            <Button icon={<SyncOutlined />} onClick={() => { fetchModels(); fetchClassificationsStats(); fetchAllClassifications(); }}>{t('common.refresh')}</Button>
+            <Button
+              icon={showGroupsOnly ? <UnorderedListOutlined /> : <FolderOutlined />}
+              onClick={() => setShowGroupsOnly(!showGroupsOnly)}
+            >
+              {showGroupsOnly ? "显示全部模型" : "显示模型组"}
+            </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('models.add_model')}</Button>
           </Space>
         </div>
@@ -1293,7 +1472,7 @@ const Models: React.FC = () => {
           pagination={{
             current: currentPage,
             pageSize: pageSize,
-            total: sortedModels.length,
+            total: totalCount,
             onChange: (page, size) => {
               setCurrentPage(page);
               setPageSize(size);
@@ -1388,7 +1567,14 @@ const Models: React.FC = () => {
                     <Tag color={colors[billingTypeVal]} style={{ margin: 0 }}>{t(`models.type_${billingTypeVal}`)}</Tag>
                     {br && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <Text type="secondary" style={{ fontSize: 11 }}>{br.name}</Text>
+                        <a
+                          href={`/${adminPath}/billing-rules?edit_id=${br.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: 11, color: 'var(--text-secondary, #8c8c8c)', textDecoration: 'underline' }}
+                        >
+                          {br.name}
+                        </a>
                         {br.pid && <Text type="secondary" style={{ fontSize: 11 }}>PID: {br.pid}</Text>}
                       </div>
                     )}
@@ -1502,6 +1688,8 @@ const Models: React.FC = () => {
                         currencySymbol={currencySymbol}
                         t={t}
                         isLight={isLight}
+                        forceCollapsed={showGroupsOnly}
+                        onRefresh={fetchModels}
                       />
                     );
                   })}
@@ -1510,12 +1698,12 @@ const Models: React.FC = () => {
             </div>
           </div>
           
-          {!loading && sortedModels.length > 0 && (
+          {!loading && totalCount > 0 && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 8px' }}>
               <Pagination
                 current={currentPage}
                 pageSize={pageSize}
-                total={sortedModels.length}
+                total={totalCount}
                 onChange={(page, size) => {
                   setCurrentPage(page);
                   setPageSize(size);
@@ -1555,13 +1743,42 @@ const Models: React.FC = () => {
             </Space>
           </div>
           <div style={{ width: '100%' }}>
-            <Form form={form} layout="vertical" onFinish={handleSave} onFinishFailed={() => setSaving(false)} initialValues={{ is_active: true, enable_log_content: 0, pre_deduction: 0 }}>
+            <Form 
+              form={form} 
+              layout="vertical" 
+              onFinish={handleSave} 
+              onFinishFailed={(info) => {
+                setSaving(false);
+                if (info.errorFields && info.errorFields.length > 0) {
+                  message.error(info.errorFields[0].errors[0]);
+                }
+              }} 
+              initialValues={{ is_active: true, enable_log_content: 0, pre_deduction: 0 }}
+            >
               {/* Hidden inputs to preserve form data for the custom fields */}
               <Form.Item name="provider_id" hidden><Input /></Form.Item>
               <Form.Item name="api_provider_id" hidden><Input /></Form.Item>
               <Form.Item name="type_id" hidden rules={[{ required: true, message: '请选择模型类型' }]}><Input /></Form.Item>
-              <Form.Item name="billing_rule_id" hidden rules={[{ required: true }]}><Input /></Form.Item>
-              <Form.Item name="forward_rule_ids" hidden><Input /></Form.Item>
+              <Form.Item name="billing_rule_id" hidden rules={[{ required: true, message: '请选择计费模版' }]}><Input /></Form.Item>
+              <Form.Item 
+                name="forward_rule_ids" 
+                hidden 
+                rules={[
+                  {
+                    validator: async (_, value) => {
+                      if (!value || !Array.isArray(value) || value.length === 0) {
+                        return Promise.reject(new Error('请选择挂载转发规则组合'));
+                      }
+                      if (value.length > 1) {
+                        return Promise.reject(new Error('只能选择一个转发规则组合'));
+                      }
+                      return Promise.resolve();
+                    }
+                  }
+                ]}
+              >
+                <Input />
+              </Form.Item>
 
               <Row gutter={24}>
                 {/* 左侧基本配置栏 */}
@@ -1710,7 +1927,14 @@ const Models: React.FC = () => {
                                   <span style={{ color: '#ff4d4f', marginRight: 4, fontFamily: 'SimSun, sans-serif' }}>*</span>计费模板
                                 </Text>
                                 <span style={{ fontSize: 13, color: isActive ? 'var(--text)' : 'var(--text-secondary)' }}>
-                                  {br ? br.name : <span style={{ opacity: 0.5 }}>点击选择</span>} <ArrowRightOutlined style={{ marginLeft: 4 }} />
+                                  {br ? (
+                                    <>
+                                      {br.name}
+                                      {br.pid && <span style={{ opacity: 0.6, marginLeft: 6 }}>(PID: {br.pid})</span>}
+                                    </>
+                                  ) : (
+                                    <span style={{ opacity: 0.5 }}>点击选择</span>
+                                  )} <ArrowRightOutlined style={{ marginLeft: 4 }} />
                                 </span>
                               </div>
                             </div>
@@ -1722,13 +1946,23 @@ const Models: React.FC = () => {
                       <Form.Item shouldUpdate={(prev, cur) => prev.forward_rule_ids !== cur.forward_rule_ids} noStyle>
                         {() => {
                           const val = form.getFieldValue('forward_rule_ids') || [];
+                          const selectedRule = allForwardRules.find(r => val.includes(r.id));
                           const isActive = activeRightPanel === 'forward_rules';
                           return (
                             <div onClick={() => setActiveRightPanel('forward_rules')} style={{ padding: '8px 12px', borderRadius: 6, marginBottom: 6, border: isActive ? '1px solid var(--text)' : (isLight ? '1px solid #e5e4e7' : '1px solid rgba(255,255,255,0.08)'), background: isActive ? (isLight ? '#f9fafb' : 'rgba(255,255,255,0.04)') : (isLight ? '#fff' : 'rgba(255,255,255,0.02)'), cursor: 'pointer', transition: 'all 0.2s' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Text strong={isActive} style={{ color: isActive ? 'var(--text)' : 'inherit' }}>转发规则组合包</Text>
+                                <Text strong={isActive} style={{ color: isActive ? 'var(--text)' : 'inherit' }}>
+                                  <span style={{ color: '#ff4d4f', marginRight: 4, fontFamily: 'SimSun, sans-serif' }}>*</span>挂载转发规则组合
+                                </Text>
                                 <span style={{ fontSize: 13, color: isActive ? 'var(--text)' : 'var(--text-secondary)' }}>
-                                  {val.length > 0 ? `已选 ${val.length} 个` : <span style={{ opacity: 0.5 }}>点击选择</span>} <ArrowRightOutlined style={{ marginLeft: 4 }} />
+                                  {selectedRule ? (
+                                    <>
+                                      {selectedRule.name}
+                                      {selectedRule.eid && <span style={{ opacity: 0.6, marginLeft: 6 }}>(EID: {selectedRule.eid})</span>}
+                                    </>
+                                  ) : (
+                                    <span style={{ opacity: 0.5 }}>点击选择</span>
+                                  )} <ArrowRightOutlined style={{ marginLeft: 4 }} />
                                 </span>
                               </div>
                             </div>
@@ -2045,8 +2279,7 @@ const Models: React.FC = () => {
                                     <div 
                                       key={r.id}
                                       onClick={() => {
-                                        const newVal = isSelected ? val.filter((id: number) => id !== r.id) : [...val, r.id];
-                                        form.setFieldsValue({ forward_rule_ids: newVal });
+                                        form.setFieldsValue({ forward_rule_ids: [r.id] });
                                       }}
                                       style={{ padding: '10px 16px', borderRadius: 8, cursor: 'pointer', border: isSelected ? '2px solid #1677ff' : (isLight ? '1px solid #e5e4e7' : '1px solid #303030'), background: isSelected ? 'rgba(22,119,255,0.05)' : (isLight ? '#fff' : '#141414'), display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.2s' }}
                                     >
@@ -2054,9 +2287,7 @@ const Models: React.FC = () => {
                                         <span style={{ fontWeight: isSelected ? 600 : 500, fontSize: 15, color: isSelected ? '#1677ff' : 'inherit' }}>{r.name}</span>
                                         <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>EID: {r.eid || '-'} | 规则类型: {r.rule_type}</span>
                                       </div>
-                                      <div style={{ width: 18, height: 18, borderRadius: 4, background: isSelected ? '#1677ff' : 'transparent', border: isSelected ? 'none' : '1px solid #d9d9d9', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
-                                        {isSelected && <span style={{ color: '#fff', fontSize: 12 }}>✓</span>}
-                                      </div>
+                                      <div style={{ width: 18, height: 18, borderRadius: '50%', border: isSelected ? '5px solid #1677ff' : '1px solid #d9d9d9', background: isSelected ? '#fff' : 'transparent', transition: 'all 0.2s', flexShrink: 0, marginLeft: 16 }} />
                                     </div>
                                   );
                                 }) : <Empty description="未找到匹配的转发规则" style={{ margin: '40px 0' }} />}

@@ -28,6 +28,9 @@ pub enum AppError {
     #[error("Upstream error: {0}")]
     UpstreamError(String),
 
+    #[error("Upstream HTTP error {0}: {1}")]
+    UpstreamHttpError(u16, String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 
@@ -44,6 +47,23 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
 }
 
+impl AppError {
+    /// 供 HA failover 等逻辑读取对外/上游关联状态码；未知则按网关错误 502
+    pub fn http_status(&self) -> u16 {
+        match self {
+            Self::UpstreamHttpError(s, _) => *s,
+            Self::Unauthorized | Self::AuthFailed(_) => 401,
+            Self::Forbidden(_) => 403,
+            Self::NotFound(_) => 404,
+            Self::BadRequest(_) => 400,
+            Self::Conflict(_) => 409,
+            Self::TooManyRequests(_) => 429,
+            Self::UpstreamError(_) | Self::Reqwest(_) => 502,
+            _ => 500,
+        }
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
@@ -55,25 +75,44 @@ impl IntoResponse for AppError {
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             AppError::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, msg.clone()),
             AppError::UpstreamError(msg) => (StatusCode::BAD_GATEWAY, msg.clone()),
+            AppError::UpstreamHttpError(status, msg) => {
+                let status_code = StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY);
+                (status_code, msg.clone())
+            }
             AppError::Internal(msg) => {
                 tracing::error!("Internal error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
             }
             AppError::Database(e) => {
                 tracing::error!("Database error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal database error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal database error".to_string(),
+                )
             }
             AppError::Reqwest(e) => {
                 tracing::error!("HTTP client error: {}", e);
-                (StatusCode::BAD_GATEWAY, "Upstream request failed".to_string())
+                (
+                    StatusCode::BAD_GATEWAY,
+                    "Upstream request failed".to_string(),
+                )
             }
             AppError::Anyhow(e) => {
                 tracing::error!("Error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
             }
             AppError::Json(e) => {
                 tracing::error!("JSON error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Serialization error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Serialization error".to_string(),
+                )
             }
         };
 
@@ -86,10 +125,13 @@ impl IntoResponse for AppError {
         });
 
         // 如果是上游错误且本身就是有效 JSON，则直接透传上游响应
-        if let AppError::UpstreamError(ref msg) = self {
-            if let Ok(json_msg) = serde_json::from_str::<serde_json::Value>(msg) {
-                body = json_msg;
+        match self {
+            AppError::UpstreamError(ref msg) | AppError::UpstreamHttpError(_, ref msg) => {
+                if let Ok(json_msg) = serde_json::from_str::<serde_json::Value>(msg) {
+                    body = json_msg;
+                }
             }
+            _ => {}
         }
 
         (status, axum::Json(body)).into_response()

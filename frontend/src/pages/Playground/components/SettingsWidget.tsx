@@ -13,6 +13,7 @@ import { useThemeStore } from '../../../store/theme';
 import useSettingsStore from '../../../store/settings';
 import RateDisplay from '../../Models/RateDisplay';
 import { getCategoryIcon, getCategoryLabel, getLucideCategoryIcon } from '../constants';
+import SmartSvgIcon from '../../../components/SmartSvgIcon';
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -164,15 +165,15 @@ const SettingsWidget: React.FC = React.memo(() => {
                     justifyContent: 'center',
                     cursor: 'pointer',
                     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    color: isLocked ? '#1677ff' : (_isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'),
+                    color: isLocked ? (_isLight ? '#1677ff' : '#ffffff') : (_isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)'),
                     transform: isLocked ? 'scale(1.1)' : 'scale(1)',
                     marginLeft: 2
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.color = isLocked ? '#4096ff' : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)');
+                    e.currentTarget.style.color = isLocked ? (_isLight ? '#4096ff' : 'rgba(255,255,255,0.85)') : (_isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)');
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.color = isLocked ? '#1677ff' : (_isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)');
+                    e.currentTarget.style.color = isLocked ? (_isLight ? '#1677ff' : '#ffffff') : (_isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)');
                   }}
                 >
                   {isLocked ? <LockFilled style={{ fontSize: 14 }} /> : <UnlockOutlined style={{ fontSize: 14 }} />}
@@ -220,12 +221,12 @@ const SettingsWidget: React.FC = React.memo(() => {
                     marginTop: 2
                   }}>
                     {currentModel.logo ? (
-                      <img 
+                      <SmartSvgIcon 
                         src={`/assets/icons/lobe/${currentModel.logo}.svg`} 
                         alt={currentModel.name} 
                         style={{ width: 24, height: 24, objectFit: 'contain', borderRadius: 4 }} 
                         onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
                         }}
                       />
                     ) : (
@@ -277,7 +278,7 @@ const SettingsWidget: React.FC = React.memo(() => {
                           </div>
                         </Tooltip>
                         <Tooltip title="开发文档" placement="bottom" overlayStyle={{ zIndex: 9999 }}>
-                          <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); window.open('/relay-api', '_blank'); }}>
+                          <div className="action-icon-btn" onClick={(e) => { e.stopPropagation(); window.open('/docs', '_blank'); }}>
                             <BookOutlined style={{ fontSize: 13.5 }} />
                           </div>
                         </Tooltip>
@@ -288,16 +289,15 @@ const SettingsWidget: React.FC = React.memo(() => {
                       {currentModel.model_id}
                     </div>
 
-                    <div style={{ color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {currentModel.description || currentModel.scheme_name || '选择适合的生成模型来处理你的工作流需求。'}
-                    </div>
+                    {currentModel.description && (
+                      <div style={{ color: _isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {currentModel.description}
+                      </div>
+                    )}
 
                     {currentModel.billing && (
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: _isLight ? '#5f6368' : '#9aa0a6', fontSize: 13, marginTop: 4 }}>
-                        <DollarOutlined style={{ marginTop: 2, fontSize: 14 }} />
-                        <div style={{ flex: 1, lineHeight: 1.5 }}>
-                          <RateDisplay rule={currentModel.billing} currencySymbol={currencySymbol} formatPrice={formatPrice} siteDiscount={currentModel.global_discount} siteDiscountEnabled={currentModel.global_discount_enabled} />
-                        </div>
+                      <div style={{ color: _isLight ? '#5f6368' : '#9aa0a6', fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
+                        <RateDisplay rule={currentModel.billing} currencySymbol={currencySymbol} formatPrice={formatPrice} siteDiscount={currentModel.global_discount} siteDiscountEnabled={currentModel.global_discount_enabled} />
                       </div>
                     )}
                   </div>
