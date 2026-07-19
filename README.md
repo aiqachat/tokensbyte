@@ -2,6 +2,10 @@
 
 基于 Rust + React 构建的高性能 LLM API 分发与管理平台，为企业和开发者提供统一、安全、高效的大模型接入和管理解决方案。
 
+> [!IMPORTANT]
+> **数据库强制要求：本项目唯一支持的数据库为 PostgreSQL 16+（内置开发测试环境已全面升级为 18.4 最新稳定版）。**
+> 所有数据库语句、迁移脚本均严格遵循 PostgreSQL 规范编写，不兼容 MySQL、SQLite 或其他数据库。
+> 整数 ID 字段统一使用 PostgreSQL `INT8`（`BIGINT`），对应 Rust 端 `i64` 类型，确保大规模数据场景下的 ID 安全。
 
 ---
 
@@ -12,7 +16,6 @@
 - [技术架构与栈](#-技术架构与栈)
 - [安装与配置指南](#-安装与配置指南)
 - [使用说明](#-使用说明)
-- [API 文档](#-api-文档)
 - [开发指南](#-开发指南)
 - [常见问题解答](#-常见问题解答)
 - [贡献指南](#-贡献指南)
@@ -261,99 +264,6 @@ chmod +x deploy.sh
    - 将 Base URL 设置为 `http://your-domain`
    - 使用生成的 API 密钥即可调用大模型能力
 
-### 使用示例
-
-#### Python 示例
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8080/v1",
-    api_key="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-)
-
-response = client.chat.completions.create(
-    model="gpt-3.5-turbo",
-    messages=[
-        {"role": "user", "content": "Hello!"}
-    ]
-)
-
-print(response.choices[0].message.content)
-```
-
-#### JavaScript 示例
-
-```javascript
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  baseURL: 'http://localhost:8080/v1',
-  apiKey: 'sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-});
-
-async function main() {
-  const stream = await openai.chat.completions.create({
-    model: 'gpt-3.5-turbo',
-    messages: [{ role: 'user', content: 'Hello!' }],
-    stream: true,
-  });
-  
-  for await (const chunk of stream) {
-    process.stdout.write(chunk.choices[0]?.delta?.content || '');
-  }
-}
-
-main();
-```
-
-#### cURL 示例
-
-```bash
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
-  -d '{
-    "model": "gpt-3.5-turbo",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
----
-
-## 🔌 API 文档
-
-### 公共 API 端点（兼容 OpenAI 规范）
-
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/v1/chat/completions` | POST | 聊天补全（支持流式） |
-| `/v1/completions` | POST | 文本补全 |
-| `/v1/embeddings` | POST | 嵌入向量生成 |
-| `/v1/images/generations` | POST | 图像生成 |
-| `/v1/videos/generations` | POST | 视频生成 |
-| `/v1/models` | GET | 获取可用模型列表 |
-
-### 管理后台 API 端点
-
-所有管理 API 位于 `/api/v1` 路径下，需要管理员 JWT token 认证：
-
-| 端点分类 | 描述 |
-|----------|------|
-| `/api/v1/auth/*` | 认证相关接口（登录、登出、权限验证） |
-| `/api/v1/users/*` | 用户管理接口 |
-| `/api/v1/channels/*` | 渠道管理接口 |
-| `/api/v1/models/*` | 模型管理接口 |
-| `/api/v1/tokens/*` | 令牌管理接口 |
-| `/api/v1/finance/*` | 财务和计费接口 |
-| `/api/v1/logs/*` | 日志查询接口 |
-| `/api/v1/settings/*` | 系统设置接口 |
-
-完整的 API 文档请参考部署后的 Swagger 文档：`http://your-domain/api/docs`
-
----
-
 ## 🛠️ 开发指南
 
 ### 开发环境搭建
@@ -428,7 +338,7 @@ npm run preview
 
 ```
 tokensbyte/
-├── backend/                 # 企业版/主工程 Rust 后端
+├── backend/                 # Rust 后端
 │   ├── src/
 │   │   ├── api/            # API 路由与业务控制器
 │   │   ├── auth/           # JWT 与身份验证鉴权
@@ -441,7 +351,7 @@ tokensbyte/
 │   │   └── main.rs         # 后端服务启动入口
 │   └── Cargo.toml          # 后端依赖配置
 │
-├── frontend/               # 企业版/主工程 React 前端
+├── frontend/               # React 前端
 │   ├── src/
 │   │   ├── components/     # UI 基础组件库
 │   │   ├── layouts/        # 管理后台全局页面框架
@@ -451,16 +361,10 @@ tokensbyte/
 │   │   └── App.tsx         # 路由分发与前端入口
 │   └── package.json        # 前端依赖配置
 │
-├── opensource/             # 独立开源版工程
-│   ├── backend/            # 开源版 Rust 后端 (支持独立端口与数据沙盒)
-│   └── frontend/           # 开源版 React 前端 (轻量独立部署)
-│
 ├── docker-compose.yml      # 容器化多服务编排配置 (包含默认 PostgreSQL 18.4)
 ├── docker-compose.dev.yml  # 本地热重载开发调试层
 ├── deploy.sh               # 一键交互式部署向导
-├── dev.sh                  # 主工程 (企业版) 一键后台极速启动脚本
-├── dev-os.sh               # 开源版一键后台极速启动脚本
-├── dev-all.sh              # 双版本一键全量后台启动脚本
+├── dev.sh                  # 一键后台极速启动脚本
 ├── README.md               # 项目主说明文档
 └── LICENSE                 # 开源许可证 (MIT)
 ```
