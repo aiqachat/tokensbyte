@@ -555,10 +555,9 @@ async fn query_by_url(state: &AppState, url: &str, plugin_ns: &str) -> Option<St
 
 /// 解码 base64 data URI，返回 (原始字节, 文件扩展名)
 fn decode_base64_data(data_uri: &str) -> Option<(Vec<u8>, String)> {
-    // 查找 base64 数据起始位置
     let comma_pos = data_uri.find(',')?;
     let header = &data_uri[..comma_pos];
-    let b64_data = &data_uri[comma_pos + 1..];
+    let b64_data = super::forward::b64_data(data_uri);
 
     // 根据 MIME 类型推断扩展名
     let ext = BASE64_MIME_EXT

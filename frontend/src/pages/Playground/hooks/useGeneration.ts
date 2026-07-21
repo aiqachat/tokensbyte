@@ -476,7 +476,7 @@ export const useGlobalTaskPolling = () => {
                 resultData: res,   // 暂存上游返回结果以供持久化使用
                 taskData: {
                   ...(origNode.taskData || {}),
-                  completed_at: Date.now(),
+                  completed_at: new Date().toISOString(),
                   is_sync_completed: true
                 }
               };
@@ -776,7 +776,7 @@ export const useGlobalTaskPolling = () => {
             if (alreadyPersisted) {
               setNodes(prev => prev.map(nd => {
                 if (nd.id === n.id) {
-                  return { ...nd, status: 'completed' as const, resultData, taskData: { ...(nd.taskData || {}), completed_at: Date.now() } };
+                  return { ...nd, status: 'completed' as const, resultData, taskData: { ...(nd.taskData || {}), completed_at: new Date().toISOString() } };
                 }
                 if (n.parentId && nd.id === n.parentId && nd.taskData?.node_type === 'volc_enhance') {
                   return {
@@ -795,7 +795,7 @@ export const useGlobalTaskPolling = () => {
                 ...n,
                 status: 'completed' as const, // 直接设为 completed 立刻显示！
                 resultData,
-                taskData: { ...(n.taskData || {}), completed_at: Date.now(), is_sync_completed: true }
+                taskData: { ...(n.taskData || {}), completed_at: new Date().toISOString(), is_sync_completed: true }
               };
               setNodes(prev => prev.map(nd => {
                 if (nd.id === n.id) return tempNode;
@@ -817,7 +817,7 @@ export const useGlobalTaskPolling = () => {
             }
           } else if (status === 'completed') {
             setNodes(prev => prev.map(nd =>
-              nd.id === n.id ? { ...nd, status: 'completed' as const, resultData: { message: res?.message || '已完成' }, taskData: { ...(nd.taskData || {}), completed_at: Date.now() } } : nd
+              nd.id === n.id ? { ...nd, status: 'completed' as const, resultData: { message: res?.message || '已完成' }, taskData: { ...(nd.taskData || {}), completed_at: new Date().toISOString() } } : nd
             ));
           } else if (status === 'failed') {
             setNodes(prev => prev.map(nd => {
@@ -1187,7 +1187,7 @@ export const useGeneration = () => {
             resultData: res,
             taskData: {
               ...(origNode.taskData || {}),
-              completed_at: Date.now(),
+              completed_at: new Date().toISOString(),
               task_id: res?.id || res?.task_id || origNode.taskData?.task_id,
               is_sync_completed: true,
               attached_url: finalAttachedUrls[0] || '',

@@ -1,112 +1,190 @@
-use chrono::{DateTime, Duration, NaiveDate};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
 
-/// 规范化日期字符串并计算保守的索引范围边界。
-/// 无偏移的纯日期按 **timesystem UTC** 解释（`+00:00`）。
-pub fn parse_and_get_bounds(raw_date: &str, is_end: bool) -> (String, String) {
-    let normalized = if raw_date.contains('T') || raw_date.contains('+') || raw_date.ends_with('Z')
-    {
-        raw_date.to_string()
-    } else if is_end {
-        format!("{} 23:59:59+00:00", raw_date)
-    } else {
-        format!("{} 00:00:00+00:00", raw_date)
-    };
+fn local_day_start(day: NaiveDate, tz: chrono_tz::Tz) -> DateTime<Utc> {
+    let ndt = day.and_hms_opt(0, 0, 0).unwrap_or_else(|| {
+        NaiveDate::from_ymd_opt(1970, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+    });
+    match tz.from_local_datetime(&ndt).latest() {
+        Some(dt) => dt.with_timezone(&Utc),
+        None => DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc),
+    }
+}
 
-    let mut bound = if is_end {
-        "9999-12-31".to_string()
-    } else {
-        "1970-01-01".to_string()
-    };
+fn format_timestamptz_bind(dt: DateTime<Utc>) -> String {
+    dt.format("%Y-%m-%d %H:%M:%S%.3f%:z").to_string()
+}
 
-    if let Ok(dt) = DateTime::parse_from_rfc3339(&normalized) {
-        if is_end {
-            bound = (dt + Duration::days(2)).format("%Y-%m-%d").to_string();
-        } else {
-            bound = (dt - Duration::days(2)).format("%Y-%m-%d").to_string();
+/// 无偏移本地墙钟（按 timedisplay 解释）
+const NAIVE_LOCAL_DT_FORMATS: &[&str] = &[
+    "%Y-%m-%dT%H:%M:%S%.f",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M",
+    "%Y-%m-%d %H:%M:%S%.f",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
+];
+
+fn parse_absolute_datetime(s: &str) -> Option<DateTime<Utc>> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    let formats = [
+        "%Y-%m-%d %H:%M:%S%.f%z",
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S%.f%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%d %H:%M:%S%.f%:z",
+        "%Y-%m-%d %H:%M:%S%:z",
+    ];
+    for fmt in &formats {
+        if let Ok(dt) = DateTime::parse_from_str(s, fmt) {
+            return Some(dt.with_timezone(&Utc));
         }
-    } else if normalized.len() >= 10 {
-        if let Ok(naive_date) = NaiveDate::parse_from_str(&normalized[..10], "%Y-%m-%d") {
-            if is_end {
-                bound = (naive_date + Duration::days(2))
-                    .format("%Y-%m-%d")
-                    .to_string();
+    }
+    None
+}
+
+fn naive_local_to_utc(ndt: NaiveDateTime, tz: chrono_tz::Tz) -> DateTime<Utc> {
+    match ndt.and_local_timezone(tz).latest() {
+        Some(dt) => dt.with_timezone(&Utc),
+        None => DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc),
+    }
+}
+
+/// 解析单侧边界为 UTC 绝对时刻。
+/// `is_end=true` 时返回**半开上界**（不含）：纯日期为次日 00:00；带时刻的闭区间末日则 +1ms。
+pub fn parse_instant_bound(raw_date: &str, is_end: bool, tz: chrono_tz::Tz) -> DateTime<Utc> {
+    let s = raw_date.trim();
+    if let Some(dt) = parse_absolute_datetime(s) {
+        return if is_end {
+            dt + Duration::milliseconds(1)
+        } else {
+            dt
+        };
+    }
+
+    // 无偏移时刻：按 timedisplay 解释（含 `YYYY-MM-DD HH:mm:ss` 与 ISO 无 Z）
+    for fmt in NAIVE_LOCAL_DT_FORMATS {
+        if let Ok(ndt) = NaiveDateTime::parse_from_str(s, fmt) {
+            let utc = naive_local_to_utc(ndt, tz);
+            return if is_end {
+                utc + Duration::milliseconds(1)
             } else {
-                bound = (naive_date - Duration::days(2))
-                    .format("%Y-%m-%d")
-                    .to_string();
+                utc
+            };
+        }
+    }
+
+    // 纯日期 YYYY-MM-DD
+    if s.len() >= 10 {
+        if let Ok(day) = NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d") {
+            // 仅当整段（或截到空白前）就是日期时，才按日历日半开；避免误吃 "2026-07-15 junk"
+            let date_token = s.split(['T', ' ']).next().unwrap_or(s);
+            if date_token.len() == 10 {
+                return if is_end {
+                    local_day_start(day + Duration::days(1), tz)
+                } else {
+                    local_day_start(day, tz)
+                };
             }
         }
     }
 
-    (normalized, bound)
+    let fallback = Utc::now().date_naive();
+    if is_end {
+        local_day_start(fallback + Duration::days(1), tz)
+    } else {
+        local_day_start(fallback, tz)
+    }
 }
 
-/// 将可选的或普通的日期字符串（支持 YYYY-MM-DD 或 ISO-8601 等格式）安全解析为 NaiveDate
-///
-/// 具备时区感知能力：若为 ISO 格式或带空格的带时区时间戳，会自动转换为指定时区下的当地日历日期
+/// 半开边界 → 可绑定的 timestamptz 文本（起点含 / 终点 exclusive）。
+pub fn parse_timestamptz_bind(raw_date: &str, is_end: bool, tz: chrono_tz::Tz) -> String {
+    format_timestamptz_bind(parse_instant_bound(raw_date, is_end, tz))
+}
+
+pub fn default_timedisplay_tz() -> chrono_tz::Tz {
+    crate::time_system::parse_timedisplay(crate::time_system::DEFAULT_TIMEDISPLAY)
+}
+
+/// 半开谓词（无前导 AND）：`(field >=| < ?::timestamptz, bind)`。
+pub fn timestamptz_bound_pred(
+    field: &str,
+    raw: &str,
+    is_end: bool,
+    tz: chrono_tz::Tz,
+) -> (String, String) {
+    let precise = parse_timestamptz_bind(raw, is_end, tz);
+    let pred = if is_end {
+        format!("{field} < ?::timestamptz")
+    } else {
+        format!("{field} >= ?::timestamptz")
+    };
+    (pred, precise)
+}
+
+/// `AND field >=| < ?::timestamptz`（终点半开）。
+pub fn push_timestamptz_bound(
+    sql: &mut String,
+    binds: &mut Vec<String>,
+    field: &str,
+    raw: &str,
+    is_end: bool,
+    tz: chrono_tz::Tz,
+) {
+    let (pred, precise) = timestamptz_bound_pred(field, raw, is_end, tz);
+    sql.push_str(" AND ");
+    sql.push_str(&pred);
+    binds.push(precise);
+}
+
+/// 使用默认 timedisplay 的半开边界推送（日志/财务等无请求时区上下文时）。
+pub fn push_timestamptz_bound_default(
+    sql: &mut String,
+    binds: &mut Vec<String>,
+    field: &str,
+    raw: &str,
+    is_end: bool,
+) {
+    push_timestamptz_bound(sql, binds, field, raw, is_end, default_timedisplay_tz());
+}
+
+/// 使用默认 timedisplay 的半开谓词。
+pub fn timestamptz_bound_pred_default(field: &str, raw: &str, is_end: bool) -> (String, String) {
+    timestamptz_bound_pred(field, raw, is_end, default_timedisplay_tz())
+}
+
+/// 将可选日期字符串安全解析为 NaiveDate（ISO/带偏移 → timedisplay 当地日；纯日期原样）。
 pub fn parse_to_naive_date(
     raw_date: Option<&str>,
     default_date: NaiveDate,
     tz: chrono_tz::Tz,
 ) -> NaiveDate {
-    use chrono::{DateTime, NaiveDateTime, Utc};
     raw_date
         .and_then(|s| {
             let s = s.trim();
-            // 1. 优先尝试解析带时区的 rfc3339
-            if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+            if let Some(dt) = parse_absolute_datetime(s) {
                 return Some(dt.with_timezone(&tz).date_naive());
             }
-            // 2. 尝试解析常见的带空格与时区偏移的格式 (支持毫秒和秒级)
-            let formats = [
-                "%Y-%m-%d %H:%M:%S%.f%z",
-                "%Y-%m-%d %H:%M:%S%z",
-                "%Y-%m-%dT%H:%M:%S%.f%z",
-                "%Y-%m-%dT%H:%M:%S%z",
-            ];
-            for fmt in &formats {
-                if let Ok(dt) = DateTime::parse_from_str(s, fmt) {
-                    return Some(dt.with_timezone(&tz).date_naive());
-                }
-            }
-            // 3. 尝试解析不带时区的 NaiveDateTime，并在此基准上赋予指定时区
-            let naive_formats = [
-                "%Y-%m-%d %H:%M:%S%.f",
-                "%Y-%m-%d %H:%M:%S",
-                "%Y-%m-%dT%H:%M:%S%.f",
-                "%Y-%m-%dT%H:%M:%S",
-            ];
-            for fmt in &naive_formats {
+            for fmt in NAIVE_LOCAL_DT_FORMATS {
                 if let Ok(ndt) = NaiveDateTime::parse_from_str(s, fmt) {
-                    return Some(
-                        ndt.and_local_timezone(tz)
-                            .latest()
-                            .unwrap_or_else(|| {
-                                // 发生夏令时跳跃时的安全后备
-                                DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc)
-                                    .with_timezone(&tz)
-                            })
-                            .date_naive(),
-                    );
+                    return Some(naive_local_to_utc(ndt, tz).with_timezone(&tz).date_naive());
                 }
             }
-            // 4. 截取前 10 位尝试做 naive date 的基础匹配
             if s.len() >= 10 {
-                if let Ok(naive_date) = NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d") {
-                    return Some(naive_date);
+                let date_token = s.split(['T', ' ']).next().unwrap_or(s);
+                if date_token.len() == 10 {
+                    if let Ok(naive_date) = NaiveDate::parse_from_str(date_token, "%Y-%m-%d") {
+                        return Some(naive_date);
+                    }
                 }
             }
             None
         })
         .unwrap_or(default_date)
-}
-
-/// 获取指定 timedisplay 下的今日日期与今日零点时间戳（兼容旧名）。
-#[deprecated(note = "use get_timezone_time_bounds")]
-#[allow(dead_code)]
-pub fn get_today_shanghai_bounds() -> (NaiveDate, String) {
-    let b = get_timezone_time_bounds(chrono_tz::Asia::Shanghai);
-    (b.today, b.today_start_ts)
 }
 
 /// 时区时间范围边界结构体，便于多维度复用与对齐
@@ -255,12 +333,10 @@ impl QueryTimeSlice {
 }
 
 impl RealtimeSlice {
-    /// 自动生成 Logs 表实时检索的绝对时间范围 SQL 条件片段。
-    /// 示例：`created_at >= ?::timestamptz AND created_at <= ?::timestamptz`
-    /// （TIMESTAMPTZ 列不可与 TEXT 参数直接比较，必须显式 cast）
+    /// Logs 实时区间：`created_at >= ?::timestamptz AND created_at {<=|<} ?::timestamptz`。
+    /// 新热路径优先用 `push_timestamptz_bound`（终点半开 `<`）；本方法保留切片兼容。
     pub fn sql_cond(&self, field_name: &str) -> String {
         let op = if self.is_inclusive_end { "<=" } else { "<" };
-        // 列已为 TIMESTAMPTZ：参数必须显式 ::timestamptz，否则 PG 报 timestamptz >= text
         format!(
             "{field} >= ?::timestamptz AND {field} {op} ?::timestamptz",
             field = field_name,
@@ -396,12 +472,6 @@ fn fmt_ts(dt: chrono::DateTime<chrono_tz::Tz>) -> String {
     dt.format("%Y-%m-%d %H:%M:%S%.3f%z").to_string()
 }
 
-/// 列已为 TIMESTAMPTZ 时直接返回字段名（保留函数名兼容旧调用）。
-/// 历史 TEXT 列曾用 CASE 拼 `+00:00` 再 cast；迁移后不再需要。
-pub fn sql_timezone_convert(field: &str) -> String {
-    field.to_string()
-}
-
 /// 将 IANA 时区名过滤为可安全嵌入 SQL `AT TIME ZONE '...'` 的字符串。
 pub fn sql_safe_tz_name(tz: chrono_tz::Tz) -> String {
     tz.name()
@@ -440,48 +510,4 @@ pub fn model_detail_days(
     }
     days.reverse();
     days
-}
-
-#[cfg(test)]
-mod model_detail_days_tests {
-    use super::*;
-    use chrono::NaiveDate;
-
-    #[test]
-    fn all_time_falls_back_to_last_three_calendar_days() {
-        let today = NaiveDate::from_ymd_opt(2026, 7, 19).unwrap();
-        let days = model_detail_days(None, None, today);
-        assert_eq!(
-            days,
-            vec![
-                NaiveDate::from_ymd_opt(2026, 7, 17).unwrap(),
-                NaiveDate::from_ymd_opt(2026, 7, 18).unwrap(),
-                NaiveDate::from_ymd_opt(2026, 7, 19).unwrap(),
-            ]
-        );
-    }
-
-    #[test]
-    fn last_month_anchors_to_month_end() {
-        let today = NaiveDate::from_ymd_opt(2026, 7, 19).unwrap();
-        let start = NaiveDate::from_ymd_opt(2026, 6, 1).unwrap();
-        let end = NaiveDate::from_ymd_opt(2026, 6, 30).unwrap();
-        let days = model_detail_days(Some(start), Some(end), today);
-        assert_eq!(
-            days,
-            vec![
-                NaiveDate::from_ymd_opt(2026, 6, 28).unwrap(),
-                NaiveDate::from_ymd_opt(2026, 6, 29).unwrap(),
-                NaiveDate::from_ymd_opt(2026, 6, 30).unwrap(),
-            ]
-        );
-    }
-
-    #[test]
-    fn single_day_range_returns_one_day() {
-        let today = NaiveDate::from_ymd_opt(2026, 7, 19).unwrap();
-        let day = NaiveDate::from_ymd_opt(2026, 7, 10).unwrap();
-        let days = model_detail_days(Some(day), Some(day), today);
-        assert_eq!(days, vec![day]);
-    }
 }

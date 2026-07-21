@@ -273,7 +273,7 @@ const NotificationSettingsForm: React.FC = () => {
             rules={[{ required: true, message: '请设置阈值' }]}
             extra="用户未自定义时使用该阈值，默认为 100"
           >
-            <InputNumber min={0} step={1} precision={2} style={{ width: '100%' }} placeholder="100" />
+            <InputNumber min={0} step={1} precision={6} style={{ width: '100%' }} placeholder="100" />
           </Form.Item>
         </Card>
       )}

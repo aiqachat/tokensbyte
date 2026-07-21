@@ -21,9 +21,9 @@ export function shouldShowTimezoneSuffix(): boolean {
 
 /**
  * 将后端返回的 UTC 朴素时间 / ISO / RFC3339 字符串解析为 Date。
- * 无偏移的 `YYYY-MM-DD HH:mm:ss` 按 UTC 解释（与 timesystem 对齐）。
+ * 无偏移的 `YYYY-MM-DD HH:mm:ss` / `YYYY-MM-DDTHH:mm:ss` 按 UTC 解释（与 timesystem 对齐）。
  */
-function parseApiTimeAsUtc(raw: string | number | Date | null | undefined): Date | null {
+export function parseApiTimeAsUtc(raw: string | number | Date | null | undefined): Date | null {
   if (raw == null || raw === '') return null;
   if (raw instanceof Date) return isNaN(raw.getTime()) ? null : raw;
   if (typeof raw === 'number') {
@@ -32,12 +32,12 @@ function parseApiTimeAsUtc(raw: string | number | Date | null | undefined): Date
   }
   const s = String(raw).trim();
   if (!s) return null;
-  // 已带偏移、Z，或 ISO T 分隔
-  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(s) || s.includes('T')) {
+  // 已带偏移或 Z
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) {
     const d = new Date(s);
     return isNaN(d.getTime()) ? null : d;
   }
-  // 朴素日期时间 → 视为 UTC
+  // 无偏移 ISO / 空格分隔 → 视为 UTC
   const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
   if (m) {
     const d = new Date(`${m[1]}T${m[2]}Z`);

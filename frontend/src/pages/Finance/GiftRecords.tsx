@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import { formatApiDateTime } from '../../utils/timedisplay';
+import { toTimeRangeParams } from '../../utils/dateRangeParams';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
@@ -52,8 +53,7 @@ const GiftRecords: React.FC = () => {
           user_id: search || undefined,
           referrer: referrerSearch || undefined,
           wallet_type: 'gift',
-          start_time: dateRange?.[0] || undefined,
-          end_time: dateRange?.[1] ? dateRange[1] + ' 23:59:59' : undefined,
+          ...toTimeRangeParams(dateRange),
         }
       }) as unknown as Promise<{ data: GiftRecord[]; total: number; total_amount: number }>);
       setData(resp.data);

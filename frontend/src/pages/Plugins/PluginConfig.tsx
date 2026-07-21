@@ -25,6 +25,7 @@ import { useThemeStore } from '../../store/theme';
 import useSettingsStore from '../../store/settings';
 import ClassificationFilter from '../../components/Models/ClassificationFilter';
 import { useTranslation } from 'react-i18next';
+import { formatApiDateTime } from '../../utils/timedisplay';
 
 // ── 物理级完全解耦动态插件扫描 ──
 const dynamicMeta = import.meta.glob('./**/plugin_meta.ts', { eager: true });
@@ -1988,7 +1989,7 @@ const PluginConfigInner: React.FC = () => {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 160,
-      render: (t: string) => t ? <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> : '-'
+      render: (t: string) => t ? <Text style={{ fontSize: 12 }}>{formatApiDateTime(t)}</Text> : '-'
     },
   ];
 
@@ -2037,7 +2038,7 @@ const PluginConfigInner: React.FC = () => {
                   <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>状态 (Status)</Text><br /><Tag color={info.Status === 'Active' ? 'success' : info.Status === 'Failed' ? 'error' : 'processing'}>{info.Status}</Tag></div>
                   <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>素材类型 (AssetType)</Text><br /><Text style={{ fontSize: 13 }}>{info.AssetType}</Text></div>
                   <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>项目名称 (ProjectName)</Text><br /><Text style={{ fontSize: 13 }}>{info.ProjectName}</Text></div>
-                  <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>创建时间 (CreateTime)</Text><br /><Text style={{ fontSize: 13 }}>{info.CreateTime ? new Date(info.CreateTime).toLocaleString('zh-CN') : '-'}</Text></div>
+                  <div><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>创建时间 (CreateTime)</Text><br /><Text style={{ fontSize: 13 }}>{info.CreateTime ? formatApiDateTime(info.CreateTime) : '-'}</Text></div>
                   <div style={{ gridColumn: '1 / -1' }}><Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>URL</Text><br /><Text copyable style={{ fontSize: 12, fontFamily: 'monospace', wordBreak: 'break-all' }}>{info.URL}</Text></div>
                 </div>
               </div>
@@ -2096,7 +2097,7 @@ const PluginConfigInner: React.FC = () => {
         return <Tag color="error">失败 ({s})</Tag>;
       }
     },
-    { title: '请求时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (t: string) => <Text style={{ fontSize: 12 }}>{new Date(t).toLocaleString('zh-CN')}</Text> },
+    { title: '请求时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (t: string) => <Text style={{ fontSize: 12 }}>{formatApiDateTime(t)}</Text> },
   ];
 
   const apiLogTab = (

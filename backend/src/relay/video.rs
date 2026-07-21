@@ -1,6 +1,9 @@
 //! Relay: POST /v1/video/generations
 //! OpenAI-compatible video generation task endpoint with forward-rule-driven protocol adaptation.
 
+use super::cascade::{
+    cascade_check_resolution, cascade_clamp_base_resolution, cascade_enhance_from_model,
+};
 use super::{forward, proxy, router};
 use crate::models::ApiToken;
 use crate::{
@@ -723,134 +726,4 @@ pub async fn video_generations(
     Err(ha.finish())
 }
 
-/// 级联增强档位：(billing version, 火山 mid)。模型 Id 含 fast → 极速，否则标准。
-fn cascade_enhance_from_model(model_id: &str) -> (&'static str, &'static str) {
-    if model_id.to_ascii_lowercase().contains("fast") {
-        ("fast", "vve-ft")
-    } else {
-        ("standard", "vve-sd")
-    }
-}
-
-fn cascade_is_res(s: &str) -> bool {
-    matches!(
-        s.trim().to_ascii_lowercase().as_str(),
-        "720p" | "1080p" | "2k" | "4k"
-    )
-}
-
-fn cascade_is_version(s: &str) -> bool {
-    matches!(s, "fast" | "standard" | "pro" | "ai")
-}
-
-/// 有分辨率计费时返回已启用集合；无则 None
-fn cascade_billing_enabled_resolutions(
-    rule: &crate::models::BillingRule,
-    cascade_version: &str,
-) -> Option<std::collections::HashSet<String>> {
-    let ext: serde_json::Value = serde_json::from_str(&rule.extended_config).unwrap_or_default();
-    let mut has_res_billing = false;
-    let mut enabled = std::collections::HashSet::new();
-
-    // Seedance 2.0：关闭项不会写入 resolution_rates
-    if let Some(rates) = ext.get("resolution_rates").and_then(|v| v.as_object()) {
-        has_res_billing = true;
-        for k in rates.keys().filter(|k| cascade_is_res(k)) {
-            enabled.insert(k.to_ascii_lowercase());
-        }
-    }
-
-    // price_table：version|res|… 或 attr|res；可灵 4k|off|no 不命中
-    if let Some(pt) = ext.get("price_table").and_then(|v| v.as_object()) {
-        let disabled: std::collections::HashSet<String> = ext
-            .get("price_table_disabled")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|x| x.as_str().map(|s| s.to_ascii_lowercase()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        for key in pt.keys() {
-            let lower = key.to_ascii_lowercase();
-            let parts: Vec<&str> = lower.split('|').collect();
-            let res = match parts.as_slice() {
-                [ver, res, ..] if cascade_is_version(ver) && cascade_is_res(res) => {
-                    has_res_billing = true;
-                    ver.eq_ignore_ascii_case(cascade_version).then_some(*res)
-                }
-                [attr, res] if !cascade_is_version(attr) && cascade_is_res(res) => {
-                    has_res_billing = true;
-                    Some(*res)
-                }
-                _ => None,
-            };
-            if let Some(res) = res {
-                if !disabled.contains(&lower) {
-                    enabled.insert(res.to_string());
-                }
-            }
-        }
-    }
-
-    if !rule.pricing_tiers.is_empty() && rule.pricing_tiers != "[]" {
-        if let Ok(tiers) = serde_json::from_str::<Vec<serde_json::Value>>(&rule.pricing_tiers) {
-            for tier in tiers {
-                let Some(res) = tier.get("resolution").and_then(|v| v.as_str()) else {
-                    continue;
-                };
-                if !cascade_is_res(res) {
-                    continue;
-                }
-                has_res_billing = true;
-                if tier
-                    .get("enabled")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true)
-                {
-                    enabled.insert(res.trim().to_ascii_lowercase());
-                }
-            }
-        }
-    }
-
-    has_res_billing.then_some(enabled)
-}
-
-/// 格式校验 + 计费启用校验（无分辨率计费则只做格式）
-fn cascade_check_resolution(
-    db_rule: Option<&crate::models::BillingRule>,
-    cascade_version: &str,
-    res_str: &str,
-) -> AppResult<()> {
-    let key = res_str.trim().to_ascii_lowercase();
-    if !cascade_is_res(&key) {
-        return Err(AppError::BadRequest(format!(
-            "此模型不支持的分辨率: {}",
-            res_str
-        )));
-    }
-    let Some(rule) = db_rule else {
-        return Ok(());
-    };
-    let Some(enabled) = cascade_billing_enabled_resolutions(rule, cascade_version) else {
-        return Ok(());
-    };
-    if enabled.contains(&key) {
-        return Ok(());
-    }
-    Err(AppError::BadRequest(format!(
-        "当前分辨率 {} 不支持",
-        res_str.trim()
-    )))
-}
-
-/// 目标超分分辨率 → 阶段一座底分辨率
-fn cascade_clamp_base_resolution(target: &str) -> &'static str {
-    match target {
-        "720p" => "480p",
-        "1080p" => "720p",
-        "2k" | "4k" => "1080p",
-        _ => "720p",
-    }
-}
+// 级联相关业务已统一移至 cascade.rs 模块中

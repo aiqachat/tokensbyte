@@ -994,11 +994,6 @@ fn register_templates(tera: &mut tera::Tera) {
     .expect("Failed to register portal templates");
 }
 
-#[allow(dead_code)]
-fn build_portal_css() -> String {
-    include_str!("../templates/portal/portal.css").to_string()
-}
-
 pub async fn auto_generate_portal_models_static(state: &AppState) -> Result<(), AppError> {
     let enabled: Option<i64> = sqlx::query_scalar(
         &state

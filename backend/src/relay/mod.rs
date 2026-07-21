@@ -1,6 +1,7 @@
 #[cfg(feature = "commercial_plugins")]
 pub mod asset_convert;
 pub mod billing_pipeline;
+pub mod cascade;
 pub mod channel_quota;
 pub mod forward;
 pub mod ha;

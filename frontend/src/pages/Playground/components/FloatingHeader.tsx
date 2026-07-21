@@ -19,6 +19,7 @@ import useAuthStore from '../../../store/auth';
 import request from '../../../utils/request';
 import toast from './PlaygroundToast';
 import { getSharedModalStyles } from '../utils/modalStyles';
+import { formatApiDateTime, parseApiTimeAsUtc } from '../../../utils/timedisplay';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const getFullUrl = (url: string) => {
@@ -435,7 +436,8 @@ const ProjectListPopover: React.FC<ProjectListPopoverProps> = ({
 
   const formatRelativeTime = (timeStr: string) => {
     try {
-      const date = new Date(timeStr);
+      const date = parseApiTimeAsUtc(timeStr);
+      if (!date) return '未知时间';
       const now = new Date();
       const diffMs = now.getTime() - date.getTime();
       const diffSec = Math.floor(diffMs / 1000);
@@ -452,7 +454,7 @@ const ProjectListPopover: React.FC<ProjectListPopoverProps> = ({
       const months = Math.floor(diffDay / 30);
       if (months < 12) return `${months} 个月前`;
       
-      return date.toLocaleDateString();
+      return formatApiDateTime(timeStr, 'YYYY-MM-DD');
     } catch (e) {
       return '未知时间';
     }

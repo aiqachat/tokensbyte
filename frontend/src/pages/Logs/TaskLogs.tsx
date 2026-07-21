@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Table, Tag, Button, Space, Typography, DatePicker, Input, Select, Row, Col, Form, message, Grid, Descriptions, Card, Tooltip, theme, Radio, Popconfirm, Modal, Image, Carousel, Spin } from 'antd';
 import MobileCardList, { MobileCard, CardRow } from '../../components/MobileCardList';
 import { RefreshCw, Search, Download, Image as ImageIcon, MessageSquare, Video, Wrench, LayoutGrid, CheckCircle2, XCircle, Cuboid, ListOrdered, Mic, MoreHorizontal } from 'lucide-react';
@@ -7,6 +7,8 @@ import { QueryGuard, isRequestAborted } from '../../utils/queryGuard';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import { formatApiDateTime } from '../../utils/timedisplay';
+import { toDateRangeParams } from '../../utils/dateRangeParams';
+import { useLogDetailLoader } from '../../hooks/useLogDetailLoader';
 dayjs.extend(utc);
 import { useTranslation } from 'react-i18next';
 import useAuthStore from '../../store/auth';
@@ -34,7 +36,10 @@ interface TaskLog {
   request_content: string | null;
   response_content: string | null;
   post_response?: string | null;
-  billing_detail: string | null;
+  billing_detail?: string | null;
+  billing_failed?: boolean;
+  billing_frozen?: boolean;
+  billing_present?: boolean;
   channel_name: string | null;
   channel_group_aid: string | null;
   channel_provider_type?: string | null;
@@ -79,7 +84,9 @@ const getAsyncFinalStatus = (r: TaskLog): 'pending' | 'succeeded' | 'failed' => 
     } catch { /* ignore */ }
   }
 
-  // 2. 兜底逻辑：通过计费明细判断（结算后"冻结"字样会被替换）
+  // 2. 列表标记优先；billing_detail 仅兼容旧缓存/展开合并
+  if (r.billing_failed) return 'failed';
+  if (r.billing_present && !r.billing_frozen) return 'succeeded';
   if (r.billing_detail) {
     if (r.billing_detail.includes('失败')) return 'failed';
     if (!r.billing_detail.includes('冻结')) return 'succeeded';
@@ -235,8 +242,15 @@ const TaskLogs: React.FC = () => {
   const [tempDefaultType, setTempDefaultType] = useState<string>('视觉');
   const queryGuardRef = useRef(new QueryGuard());
   const skipNextEffectFetchRef = useRef(false);
-  const [detailCache, setDetailCache] = useState<Record<number, Partial<TaskLog>>>({});
-  const [detailLoadingIds, setDetailLoadingIds] = useState<Record<number, boolean>>({});
+  const rowIds = useMemo(() => data.map((l) => l.id), [data]);
+  const {
+    detailCache,
+    detailLoadingIds,
+    expandedRowKeys,
+    loadLogDetail,
+    handleExpand,
+    resetDetailCache,
+  } = useLogDetailLoader(rowIds);
 
   useEffect(() => {
     const guard = queryGuardRef.current;
@@ -254,30 +268,6 @@ const TaskLogs: React.FC = () => {
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [previewType, setPreviewType] = useState<'图片' | '视频'>('图片');
 
-  const loadLogDetail = useCallback(async (id: number): Promise<Partial<TaskLog> | null> => {
-    if (detailCache[id]) return detailCache[id];
-    if (detailLoadingIds[id]) return null;
-    setDetailLoadingIds(prev => ({ ...prev, [id]: true }));
-    try {
-      const detail = await request.get(`/logs/${id}/detail`) as any;
-      const mapped = {
-        request_content: detail.request_content ?? null,
-        response_content: detail.response_content ?? null,
-        post_response: detail.post_response ?? null,
-      };
-      setDetailCache(prev => ({ ...prev, [id]: mapped }));
-      return mapped;
-    } catch (e) {
-      console.error(e);
-      return null;
-    } finally {
-      setDetailLoadingIds(prev => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-    }
-  }, [detailCache, detailLoadingIds]);
 
   const handlePreview = async (record: TaskLog) => {
     let content = detailCache[record.id]?.response_content ?? record.response_content;
@@ -316,14 +306,13 @@ const TaskLogs: React.FC = () => {
       if (v.model && v.model.trim()) params.model = v.model.trim();
       if (v.search_keyword && v.search_keyword.trim()) params.search_keyword = v.search_keyword.trim();
       if (v.user_id && v.user_id.trim()) params.user_id = v.user_id.trim();
-      if (v.dateRange?.[0]) params.start_date = v.dateRange[0].startOf('day').toISOString();
-      if (v.dateRange?.[1]) params.end_date = v.dateRange[1].endOf('day').toISOString();
+      Object.assign(params, toDateRangeParams(v.dateRange));
 
       const res = await (request.get('/task_logs', { params, signal }) as any);
       if (!queryGuardRef.current.isCurrent(signal)) return;
       setData(res.data);
       setTotal(res.total);
-      setDetailCache({});
+      resetDetailCache();
       if (res.allow_details !== undefined) {
         setAllowDetails(res.allow_details);
       }
@@ -341,11 +330,8 @@ const TaskLogs: React.FC = () => {
         setLoading(false);
       }
     }
-  }, [form, actionTypeFilter, subTypeFilter, t, page, pageSize]);
+  }, [form, actionTypeFilter, subTypeFilter, t, page, pageSize, resetDetailCache]);
 
-  const handleExpand = useCallback((expanded: boolean, record: TaskLog) => {
-    if (expanded) loadLogDetail(record.id);
-  }, [loadLogDetail]);
 
   const handleSyncTask = async (log_id: string) => {
     try {
@@ -383,8 +369,7 @@ const TaskLogs: React.FC = () => {
       if (v.model && v.model.trim()) params.model = v.model.trim();
       if (v.search_keyword && v.search_keyword.trim()) params.search_keyword = v.search_keyword.trim();
       if (v.user_id && v.user_id.trim()) params.user_id = v.user_id.trim();
-      if (v.dateRange?.[0]) params.start_date = v.dateRange[0].startOf('day').toISOString();
-      if (v.dateRange?.[1]) params.end_date = v.dateRange[1].endOf('day').toISOString();
+      Object.assign(params, toDateRangeParams(v.dateRange));
       const resp = await request.get('/task_logs/export', {
         params,
         responseType: 'blob',
@@ -868,7 +853,7 @@ const TaskLogs: React.FC = () => {
           loading={loading}
           expandable={
             allowDetails 
-              ? { expandedRowRender, onExpand: handleExpand, expandRowByClick: false } 
+              ? { expandedRowKeys, expandedRowRender, onExpand: handleExpand, expandRowByClick: false } 
               : undefined
           }
           pagination={{

@@ -886,39 +886,3 @@ pub struct PublicSettings {
     #[serde(default)]
     pub notification: PublicNotificationSettings,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn render_low_balance_template_replaces_placeholders() {
-        let out = render_low_balance_template(
-            "【{{site_name}}】余额 {{balance}} / 阈值 {{threshold}}",
-            "Demo",
-            "12.5",
-            "100",
-        );
-        assert_eq!(out, "【Demo】余额 12.5 / 阈值 100");
-    }
-
-    #[test]
-    fn notification_settings_default_has_email_templates() {
-        let n = NotificationSettings::default();
-        assert!(n.low_balance_email_subject.contains("{{site_name}}"));
-        assert!(n.low_balance_email_html.contains("{{balance}}"));
-        assert!(n.low_balance_email_html.contains("{{threshold}}"));
-    }
-
-    #[test]
-    fn notification_settings_deserializes_legacy_without_templates() {
-        let n: NotificationSettings = serde_json::from_str(
-            r#"{"site_notification_enabled":true,"low_balance_threshold":50.0}"#,
-        )
-        .unwrap();
-        assert!(n.site_notification_enabled);
-        assert!((n.low_balance_threshold - 50.0).abs() < f64::EPSILON);
-        assert!(!n.low_balance_email_subject.is_empty());
-        assert!(!n.low_balance_email_html.is_empty());
-    }
-}

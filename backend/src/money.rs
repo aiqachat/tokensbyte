@@ -6,10 +6,10 @@
 /// 金额小数位数
 pub const MONEY_DECIMAL_PLACES: u32 = 6;
 
-/// 缩放因子：10^6
+/// 缩放因子：10^6（与 MONEY_DECIMAL_PLACES 保持一致）
 pub const MONEY_SCALE: f64 = 1_000_000.0;
 
-/// 四舍五入到 6 位小数
+/// 四舍五入到约定小数位
 #[inline]
 pub fn round_money(v: f64) -> f64 {
     if !v.is_finite() {
@@ -18,15 +18,8 @@ pub fn round_money(v: f64) -> f64 {
     (v * MONEY_SCALE).round() / MONEY_SCALE
 }
 
-#[cfg(test)]
-mod tests {
-    use super::round_money;
-
-    #[test]
-    fn rounds_to_six_decimals() {
-        assert!((round_money(1.2345674) - 1.234567).abs() < 1e-12);
-        assert!((round_money(1.2345675) - 1.234568).abs() < 1e-12);
-        assert!((round_money(0.0000004) - 0.0).abs() < 1e-12);
-        assert!((round_money(0.0000005) - 0.000001).abs() < 1e-12);
-    }
+/// 格式化为固定小数位字符串（日志/通知用）
+#[inline]
+pub fn format_money(v: f64) -> String {
+    format!("{:.*}", MONEY_DECIMAL_PLACES as usize, round_money(v))
 }

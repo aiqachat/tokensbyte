@@ -29,29 +29,12 @@ import { getResultDisplayUrl } from '../utils/resultExtractor';
 import { useThemeStore } from '../../../store/theme';
 import { ErrorBoundary } from './ErrorBoundary';
 import request from '../../../utils/request';
+import { formatApiDateTime, parseApiTimeAsUtc } from '../../../utils/timedisplay';
 
 const { Text } = Typography;
 
-const safeParseDate = (dateStr?: string | null): Date => {
-  if (!dateStr) return new Date(NaN);
-  let s = String(dateStr).trim();
-  if (/^\d+$/.test(s)) {
-    return new Date(parseInt(s, 10));
-  }
-  if (s.includes(' ') && !s.includes('T')) {
-    s = s.replace(' ', 'T');
-  }
-  s = s.replace(/\.(\d{1,3})\d*(Z|[+-]\d{2}(?::?\d{2})?)?$/, (_, subSec, tz) => {
-    let normalizedTz = tz || '';
-    if (normalizedTz && normalizedTz !== 'Z' && !normalizedTz.includes(':') && normalizedTz.length === 3) {
-      normalizedTz = normalizedTz + ':00';
-    }
-    return `.${subSec}${normalizedTz}`;
-  });
-  if (!s.includes('.')) {
-    s = s.replace(/([+-]\d{2})$/, '$1:00');
-  }
-  return new Date(s);
+const safeParseDate = (dateStr?: string | number | null): Date => {
+  return parseApiTimeAsUtc(dateStr) ?? new Date(NaN);
 };
 
 const formatRelativeTime = (dateStr?: string) => {
@@ -678,12 +661,14 @@ const GenerationLogWidget: React.FC = React.memo(() => {
       }
       let durationSecs = 0;
       if (node.taskData?.created_at) {
-        const start = new Date(node.taskData.created_at).getTime();
+        const start = safeParseDate(node.taskData.created_at).getTime();
         let end = start;
-        if (node.taskData?.completed_at) {
-          end = new Date(node.taskData.completed_at).getTime();
+        if (node.taskData?.completed_at != null) {
+          end = safeParseDate(node.taskData.completed_at).getTime();
         } else if (node.resultData?.created) {
-          end = typeof node.resultData.created === 'number' ? node.resultData.created * 1000 : new Date(node.resultData.created).getTime();
+          end = typeof node.resultData.created === 'number'
+            ? node.resultData.created * 1000
+            : safeParseDate(node.resultData.created).getTime();
         }
         if (end > start) {
           durationSecs = Math.round((end - start) / 1000);
@@ -1558,7 +1543,7 @@ const GenerationLogWidget: React.FC = React.memo(() => {
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <Text style={{ color: _isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>创建时间</Text>
                       <Text style={{ color: _isLight ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-                        {new Date(selectedNode.taskData.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-')}
+                        {formatApiDateTime(selectedNode.taskData.created_at)}
                       </Text>
                     </div>
                   )}

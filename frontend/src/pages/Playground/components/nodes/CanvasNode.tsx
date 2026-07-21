@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons';
 import { usePlayground, useCanvas } from '../../context/PlaygroundContext';
 import { useThemeStore } from '../../../../store/theme';
+import { formatApiDateTime } from '../../../../utils/timedisplay';
 
 import type { CanvasNode as CanvasNodeType } from '../../types';
 import VideoNodeContent from './VideoNodeContent';
@@ -1235,7 +1236,7 @@ const CanvasNode: React.FC<Props> = React.memo(({
           </div>
           <div style={{ display: 'flex', borderBottom: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)', paddingBottom: 8 }}>
             <span style={{ width: 100, fontWeight: 600, color: _isLight ? '#555' : '#aaa' }}>创建时间</span>
-            <span style={{ flex: 1, color: _isLight ? '#000' : '#fff' }}>{node.taskData?.created_at ? new Date(node.taskData.created_at).toLocaleString() : '无'}</span>
+            <span style={{ flex: 1, color: _isLight ? '#000' : '#fff' }}>{node.taskData?.created_at ? formatApiDateTime(node.taskData.created_at) : '无'}</span>
           </div>
           <div style={{ display: 'flex', borderBottom: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)', paddingBottom: 8 }}>
             <span style={{ width: 100, fontWeight: 600, color: _isLight ? '#555' : '#aaa' }}>画布尺寸</span>

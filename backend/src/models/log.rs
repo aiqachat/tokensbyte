@@ -2,13 +2,28 @@
 use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+fn is_zero_i32(v: &i32) -> bool {
+    *v == 0
+}
+
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct RequestLog {
     pub id: i64,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub log_id: Option<String>,
     pub user_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub token_id: Option<i64>,
     pub model: String,
     pub prompt_tokens: i32,
@@ -20,44 +35,82 @@ pub struct RequestLog {
     pub latency_ms: i32,
     pub status_code: i32,
     pub endpoint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub upstream_url: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_group_aid: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub yid: Option<String>, // 读路径由 JOIN channel_configs.yid 填充，非 logs 列
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_provider_type: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub request_content: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub response_content: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub post_response: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub upstream_req_content: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_stream: Option<i32>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub token_name: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub token_kid: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_nickname: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_group: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_level_name: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_uid: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_name: Option<String>,
+    /// 列表通常为 None；全文走 detail
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_detail: Option<String>,
+    /// 列表轻量标记（不传 billing_detail 全文）
     #[sqlx(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub billing_refunded: bool,
+    #[sqlx(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub billing_failed: bool,
+    /// 列表用量数字（SQL 从 billing_detail 抽出）
+    #[sqlx(default)]
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub billing_cache_creation: i32,
+    #[sqlx(default)]
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub billing_cache_read: i32,
+    #[sqlx(default)]
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub billing_web_search: f64,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_pid: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub forward_eid: Option<String>,
     /// POST 阶段提取的计费特征快照 (JSON)，独立于 enable_log 开关
     #[sqlx(default)]
@@ -68,17 +121,22 @@ pub struct RequestLog {
     pub pre_deduct_gift: f64,
     /// 插件标记JSON，如快乐小马的路由信息
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin_tag: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub action_type: Option<String>,
     /// 任务是否已终结(1=已完成,0=进行中或待结算)
     #[sqlx(default)]
     pub is_completed: i16,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_config_id: Option<i32>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sub_channel_name: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
     pub created_at: DbTs,
 }
@@ -125,6 +183,7 @@ pub struct LogDetailContent {
     pub response_content: Option<String>,
     pub post_response: Option<String>,
     pub upstream_req_content: Option<String>,
+    pub billing_detail: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]

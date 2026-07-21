@@ -393,14 +393,9 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
         }
     }
 
-    // 分辨率统一转小写，确保与后台计费阶梯匹配一致
-    // 阿里返回大写 "720P" → "720p"；腾讯云 "1K" → "1k"；纯数字 "720" → "720p"
+    // 分辨率统一规范化，确保与后台计费阶梯匹配一致
     if let Some(ref mut res) = resolution {
-        *res = res.to_lowercase().replace("*", "x"); // 统一使用 x 分隔符匹配计费阶梯
-                                                     // 纯数字字符串自动加 p 后缀
-        if res.chars().all(|c| c.is_ascii_digit()) {
-            res.push('p');
-        }
+        *res = normalize_resolution_label(res);
     }
 
     // 图片 size 参数提取（用于按分辨率像素计费）
@@ -1090,39 +1085,87 @@ pub fn extract_usage_json_string(response: &str) -> Option<String> {
 /// 从可灵视频终态响应中提取实际生成时长（秒）。
 /// 路径: data.task_result.videos[0].duration（字符串，如 "5.1"）
 pub fn extract_kling_video_duration(resp: &Value) -> Option<f64> {
-    resp.get("data")
-        .and_then(|d| d.get("task_result"))
-        .and_then(|r| r.get("videos"))
-        .and_then(|v| v.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|v| {
-            v.get("duration").and_then(|d| {
-                d.as_str()
-                    .and_then(|s| s.parse::<f64>().ok())
-                    .or_else(|| d.as_f64())
-            })
-        })
+    resp.pointer("/data/task_result/videos/0/duration")
+        .and_then(parse_json_f64)
+        .filter(|&d| d > 0.0)
 }
 
-/// 从腾讯云 VOD DescribeTaskDetail 终态响应中提取实际视频时长（秒）。
-/// 路径: Response.AigcVideoTask.Output.FileInfos[0].Duration
-pub fn extract_tencent_vod_video_duration(resp: &Value) -> Option<f64> {
+/// 腾讯云 VOD 生视频任务节点（含场景化 / TaskType 动态字段）。
+fn tencent_vod_aigc_video_task(resp: &Value) -> Option<&Value> {
     let response = resp.get("Response")?;
-    let task = response.get("AigcVideoTask")?;
-    // 1. Output.FileInfos[0].MetaData.Duration — 部分模型可能在输出中返回
-    if let Some(d) = task
-        .pointer("/Output/FileInfos/0/MetaData/Duration")
-        .and_then(parse_duration_value)
+    if let Some(t) = response
+        .get("AigcVideoTask")
+        .or_else(|| response.get("SceneAigcVideoTask"))
     {
-        return Some(d);
+        return Some(t);
     }
-    None
+    let tt = response.get("TaskType").and_then(|v| v.as_str())?;
+    tt.contains("AigcVideo").then(|| response.get(tt)).flatten()
 }
-/// 解析 Duration 值（支持整数、浮点数、字符串格式）
-fn parse_duration_value(v: &Value) -> Option<f64> {
+
+/// 腾讯 VOD 生视频终态结算：仅用产出 `MetaData.Duration/Width/Height`（短边定档）。
+/// 不读 `Resolution`（终态常为空，且请求侧可能非法）。
+pub fn extract_tencent_vod_video_settlement(resp: &Value) -> (Option<f64>, Option<String>) {
+    let Some(meta) =
+        tencent_vod_aigc_video_task(resp).and_then(|t| t.pointer("/Output/FileInfos/0/MetaData"))
+    else {
+        return (None, None);
+    };
+    let duration = meta
+        .get("Duration")
+        .and_then(parse_json_f64)
+        .filter(|&d| d > 0.0);
+    let resolution = match (
+        meta.get("Width").and_then(parse_json_u64),
+        meta.get("Height").and_then(parse_json_u64),
+    ) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => {
+            let short = w.min(h);
+            Some(
+                if short <= 480 {
+                    "480p"
+                } else if short <= 720 {
+                    "720p"
+                } else if short <= 1080 {
+                    "1080p"
+                } else if short <= 1440 {
+                    "2k"
+                } else {
+                    "4k"
+                }
+                .to_string(),
+            )
+        }
+        _ => None,
+    };
+    (duration, resolution)
+}
+
+fn parse_json_u64(v: &Value) -> Option<u64> {
+    v.as_u64()
+        .or_else(|| v.as_i64().filter(|&i| i >= 0).map(|i| i as u64))
+        .or_else(|| {
+            v.as_f64()
+                .filter(|&f| f.is_finite() && f >= 0.0)
+                .map(|f| f as u64)
+        })
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+}
+
+fn parse_json_f64(v: &Value) -> Option<f64> {
     v.as_f64()
         .or_else(|| v.as_i64().map(|i| i as f64))
-        .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        .filter(|f| f.is_finite())
+}
+
+/// 分辨率标签规范化：`720P`→`720p`，`1K`→`1k`，纯数字 `720`→`720p`。
+fn normalize_resolution_label(raw: &str) -> String {
+    let mut res = raw.trim().to_lowercase().replace('*', "x");
+    if !res.is_empty() && res.chars().all(|c| c.is_ascii_digit()) {
+        res.push('p');
+    }
+    res
 }
 
 /// 从像素尺寸字符串识别分辨率等级（从 forward.rs 移入本特征提取模块）。

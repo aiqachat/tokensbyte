@@ -28,14 +28,13 @@ export function parseQuotaLimitInput(val: string | undefined): number {
   return Number.isFinite(n) ? n : -1;
 }
 
-/** 渠道/上游预设日·周·月周期键（与后端站点默认时区、`%Y-%U` 周键一致） */
-function getChannelPeriodKeys(tz?: string) {
-  const zone = tz || siteTimezone();
-  const now = dayjs().tz(zone);
+/** 日·周·月周期键（与后端 `%Y-%U` 周键一致；周日为一周起点） */
+export function getLocalPeriodKeys(tz: string) {
+  const now = dayjs().tz(tz);
   const nowDay = now.format('YYYY-MM-DD');
   const nowMonth = now.format('YYYY-MM');
   const year = now.year();
-  const janFirst = dayjs.tz(`${year}-01-01`, zone);
+  const janFirst = dayjs.tz(`${year}-01-01`, tz);
   const days = now.startOf('day').diff(janFirst.startOf('day'), 'day');
   const weekNum = Math.floor((days + janFirst.day()) / 7);
   const nowWeek = `${year}-${String(weekNum).padStart(2, '0')}`;
@@ -53,7 +52,7 @@ export function getEffectiveChannelPeriodUsed(
   },
   tz?: string,
 ) {
-  const { nowDay, nowWeek, nowMonth } = getChannelPeriodKeys(tz);
+  const { nowDay, nowWeek, nowMonth } = getLocalPeriodKeys(tz || siteTimezone());
   return {
     dailyUsed: record.last_reset_day === nowDay ? (record.daily_quota_used || 0) : 0,
     weeklyUsed: record.last_reset_week === nowWeek ? (record.weekly_quota_used || 0) : 0,

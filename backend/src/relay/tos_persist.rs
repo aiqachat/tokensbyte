@@ -94,10 +94,7 @@ pub async fn persist_response_resources(
             for found in &urls {
                 if found.starts_with("data:") {
                     // Gemini base64：解码上传 TOS
-                    let raw_b64 = found
-                        .find(',')
-                        .map(|pos| &found[pos + 1..])
-                        .unwrap_or(found);
+                    let raw_b64 = super::forward::b64_data(found);
                     let file_data = match base64_decode(found) {
                         Ok(d) => d,
                         Err(_) => continue,
@@ -475,9 +472,9 @@ fn replace_urls_in_json(
             if let Some(tos_url) = url_map.get(s.as_str()) {
                 *s = tos_url.clone();
             } else if s.starts_with("data:") {
-                // 精确匹配：如果是以 data: 开头，提取后面的纯 base64 部分匹配 url_map 进行替换，避免前缀残留
-                if let Some(pos) = s.find(',') {
-                    let raw_b64 = &s[pos + 1..];
+                // 精确匹配：纯 base64 部分匹配 url_map，避免前缀残留
+                let raw_b64 = super::forward::b64_data(s);
+                if raw_b64 != s.trim() {
                     if let Some(tos_url) = url_map.get(raw_b64) {
                         *s = tos_url.clone();
                     }
@@ -547,10 +544,7 @@ async fn download_url(http_client: &reqwest::Client, url: &str) -> Result<Vec<u8
 /// Base64 解码（支持 data:xxx;base64, 前缀）
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     use base64::Engine;
-    let data = input
-        .find(',')
-        .map(|pos| &input[pos + 1..])
-        .unwrap_or(input);
+    let data = super::forward::b64_data(input);
     base64::engine::general_purpose::STANDARD
         .decode(data)
         .map_err(|e| format!("Base64 解码失败: {}", e))

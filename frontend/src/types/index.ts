@@ -310,7 +310,15 @@ export interface RequestLog {
   post_response?: string;
   upstream_req_content?: string;
   is_stream?: number;
+  /** 列表通常不返回；展开 detail 拉取 */
   billing_detail?: string;
+  /** 列表轻量标记，替代传输 billing_detail 全文 */
+  billing_refunded?: boolean;
+  billing_failed?: boolean;
+  /** 列表用量：从计费明细抽出，避免传全文 */
+  billing_cache_creation?: number;
+  billing_cache_read?: number;
+  billing_web_search?: number;
   billing_pid?: string;
   forward_eid?: string;
   plugin_tag?: string;
@@ -352,6 +360,20 @@ export interface DashboardStats {
     requests: number;
     cost: number;
   }[];
+}
+
+/** 实时吞吐：QPS / RPM / TPM / Task */
+export interface LiveMetricsSnapshot {
+  qps: number;
+  rpm: number;
+  tpm: number;
+  task: number;
+}
+
+export interface LiveMetricsResponse {
+  metrics: LiveMetricsSnapshot;
+  scope: 'global' | 'self' | string;
+  ts: number;
 }
 
 interface ModelStat30d {

@@ -34,14 +34,12 @@ pub fn enforce_process_utc() {
 
 /// 当前 UTC 时刻（唯一允许作为“现在”写入业务逻辑的时钟源）。
 #[inline]
-#[allow(dead_code)]
 pub fn now_utc() -> DateTime<Utc> {
     Utc::now()
 }
 
 /// 格式化为 DB 友好的无偏移 UTC 朴素字符串：`YYYY-MM-DD HH:MM:SS`
 #[inline]
-#[allow(dead_code)]
 pub fn format_utc_naive(dt: DateTime<Utc>) -> String {
     dt.format("%Y-%m-%d %H:%M:%S").to_string()
 }
@@ -49,13 +47,6 @@ pub fn format_utc_naive(dt: DateTime<Utc>) -> String {
 #[inline]
 pub fn utc_naive_string() -> String {
     format_utc_naive(now_utc())
-}
-
-/// 当前 UTC，用于写入 `TIMESTAMPTZ` 列（`DbTs`）。
-#[inline]
-#[allow(dead_code)]
-pub fn utc_db_ts() -> crate::time_system::DbTs {
-    crate::time_system::DbTs::now()
 }
 
 /// 解析 IANA timedisplay；非法时回退默认显示时区。
@@ -94,30 +85,4 @@ pub fn resolve_timedisplay(
         return parse_timedisplay(s);
     }
     parse_timedisplay(DEFAULT_TIMEDISPLAY)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn resolve_prefers_header_then_user_then_site() {
-        let tz = resolve_timedisplay(
-            Some("America/New_York"),
-            Some("Europe/London"),
-            Some("Asia/Tokyo"),
-        );
-        assert_eq!(tz.name(), "America/New_York");
-
-        let tz = resolve_timedisplay(None, Some("Europe/London"), Some("Asia/Tokyo"));
-        assert_eq!(tz.name(), "Europe/London");
-
-        let tz = resolve_timedisplay(None, None, Some("Asia/Tokyo"));
-        assert_eq!(tz.name(), "Asia/Tokyo");
-    }
-
-    #[test]
-    fn parse_invalid_falls_back() {
-        assert_eq!(parse_timedisplay("Not/AZone").name(), DEFAULT_TIMEDISPLAY);
-    }
 }

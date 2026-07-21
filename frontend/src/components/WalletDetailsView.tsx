@@ -5,6 +5,8 @@ import { useThemeStore } from '../store/theme';
 import useSettingsStore from '../store/settings';
 import request from '../utils/request';
 import dayjs from 'dayjs';
+import { formatApiDateTime, parseApiTimeAsUtc } from '../utils/timedisplay';
+import { toDateRangeParams } from '../utils/dateRangeParams';
 
 const { Text } = Typography;
 
@@ -60,12 +62,7 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
   React.useEffect(() => {
     if (!user || !user.id) return;
     
-    let start_date = undefined;
-    let end_date = undefined;
-    if (filterRange && filterRange[0] && filterRange[1]) {
-      start_date = filterRange[0].format('YYYY-MM-DD');
-      end_date = filterRange[1].format('YYYY-MM-DD');
-    }
+    const { start_date, end_date } = toDateRangeParams(filterRange);
 
     setConsumedLoading(true);
 
@@ -149,9 +146,9 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
 
   const filteredRecharges = recharges.filter((r: any) => {
     if (!filterRange || !filterRange[0] || !filterRange[1]) return true;
-    const rDate = dayjs(r.created_at);
-    return (rDate.isAfter(filterRange[0].startOf('day')) || rDate.isSame(filterRange[0], 'day')) && 
-           (rDate.isBefore(filterRange[1].endOf('day')) || rDate.isSame(filterRange[1], 'day'));
+    const rMs = parseApiTimeAsUtc(r.created_at)?.getTime();
+    if (rMs == null) return false;
+    return rMs >= filterRange[0].startOf('day').valueOf() && rMs <= filterRange[1].endOf('day').valueOf();
   });
 
   const systemRecharges = filteredRecharges.filter((r: any) => (r.wallet_type || 'system') === 'system');
@@ -180,14 +177,29 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
   };
   const timePrefix = getFilterTextPrefix();
 
+  const statisticValueStyle = {
+    color: isLight ? '#1f2937' : '#fff',
+    fontSize: '18px',
+    whiteSpace: 'nowrap',
+    fontWeight: 500,
+  };
+
+  const getCreditValueStyle = () => ({
+    color: isLight ? '#1890ff' : '#69b1ff',
+    fontSize: '18px',
+    whiteSpace: 'nowrap',
+    fontWeight: 500,
+  });
+
   const rechargeColumns = [
     { title: t('recharge_id', 'ID'), dataIndex: 'id', key: 'id', width: 60 },
     {
       title: t('amount', '金额'),
       dataIndex: 'amount',
       key: 'amount',
+      width: 140,
       render: (amount: number) => (
-        <Text style={{ color: amount > 0 ? '#52c41a' : amount < 0 ? '#ff4d4f' : undefined, fontWeight: 500 }}>
+        <Text style={{ color: amount > 0 ? '#52c41a' : amount < 0 ? '#ff4d4f' : undefined, fontWeight: 500, whiteSpace: 'nowrap' }}>
           {amount > 0 ? '+' : (amount < 0 ? '-' : '')}{Math.abs(amount).toFixed(6)}
         </Text>
       ),
@@ -196,6 +208,7 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
       title: t('recharge_type', '类型'),
       dataIndex: 'recharge_type',
       key: 'recharge_type',
+      width: 120,
       render: (type: string, record: any) => {
         let manualText = t('type_manual', '手动操作');
         if (type === 'manual' && record.wallet_type === 'credit') {
@@ -218,26 +231,30 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
           'bonuspay': 'BonusPay',
           'redemption': t('type_redemption', '兑换码'),
         };
-        return <Tag>{typeMap[type] || type}</Tag>;
+        return <Tag style={{ whiteSpace: 'nowrap' }}>{typeMap[type] || type}</Tag>;
       },
     },
     {
       title: t('remark', '备注'),
       dataIndex: 'remark',
       key: 'remark',
-      render: (text: string) => text || '-',
+      width: 200,
+      ellipsis: true,
+      render: (text: string) => <span title={text}>{text || '-'}</span>,
     },
     {
       title: t('operator', '操作人'),
       dataIndex: 'operator',
       key: 'operator',
-      render: (text: string) => text || '-',
+      width: 100,
+      render: (text: string) => <Text style={{ whiteSpace: 'nowrap' }}>{text || '-'}</Text>,
     },
     {
       title: t('time', '时间'),
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (tVal: string) => <Text style={{ fontSize: 12 }}>{dayjs(tVal).format('YYYY/MM/DD HH:mm:ss')}</Text>,
+      width: 160,
+      render: (tVal: string) => <Text style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{formatApiDateTime(tVal, 'YYYY/MM/DD HH:mm:ss')}</Text>,
     },
   ];
 
@@ -289,22 +306,22 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
               <Row gutter={16} style={{ marginBottom: 16 }}>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前系统账户余额</span>} value={user.balance || 0} precision={6} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前系统账户余额</span>} value={user.balance || 0} precision={6} prefix={currencySymbol} valueStyle={statisticValueStyle} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}充值记录`}</span>} value={totalSystemRecharge} precision={6} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}充值记录`}</span>} value={totalSystemRecharge} precision={6} prefix={currencySymbol} valueStyle={statisticValueStyle} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}消费合计`}</span>} value={consumedSystem} precision={6} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} loading={consumedLoading} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}消费合计`}</span>} value={consumedSystem} precision={6} prefix={currencySymbol} valueStyle={statisticValueStyle} loading={consumedLoading} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>历史全部消费合计</span>} value={systemUsed} precision={6} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>历史全部消费合计</span>} value={systemUsed} precision={6} prefix={currencySymbol} valueStyle={statisticValueStyle} />
                   </Card>
                 </Col>
               </Row>
@@ -328,22 +345,22 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
               <Row gutter={16} style={{ marginBottom: 16 }}>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前赠送账户余额</span>} value={user.gift_balance || 0} precision={6} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前赠送账户余额</span>} value={user.gift_balance || 0} precision={6} prefix={currencySymbol} valueStyle={statisticValueStyle} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}获得赠送`}</span>} value={totalGiftRecharge} precision={6} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}获得赠送`}</span>} value={totalGiftRecharge} precision={6} prefix={currencySymbol} valueStyle={statisticValueStyle} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}使用赠送`}</span>} value={consumedGift} precision={6} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} loading={consumedLoading} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{`${timePrefix}使用赠送`}</span>} value={consumedGift} precision={6} prefix={currencySymbol} valueStyle={statisticValueStyle} loading={consumedLoading} />
                   </Card>
                 </Col>
                 <Col span={6}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>历史全部赠送使用</span>} value={giftUsed} precision={6} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>历史全部赠送使用</span>} value={giftUsed} precision={6} prefix={currencySymbol} valueStyle={statisticValueStyle} />
                   </Card>
                 </Col>
               </Row>
@@ -367,12 +384,12 @@ const WalletDetailsView: React.FC<WalletDetailsViewProps> = ({
               <Row gutter={16} style={{ marginBottom: 16 }}>
                 <Col span={12}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前信控额度</span>} value={creditLimit} precision={6} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1890ff' : '#69b1ff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>当前信控额度</span>} value={creditLimit} precision={6} prefix={currencySymbol} valueStyle={getCreditValueStyle()} />
                   </Card>
                 </Col>
                 <Col span={12}>
                   <Card size="small" style={{ background: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.02)', border: 'none' }}>
-                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{(filterRange && filterRange[0] && filterRange[1]) ? '筛选期内信控调整' : '累计信控调增'}</span>} value={totalCreditRecharge} precision={6} prefix={currencySymbol} valueStyle={{ color: isLight ? '#1f2937' : '#fff' }} />
+                    <Statistic title={<span style={{ color: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }}>{(filterRange && filterRange[0] && filterRange[1]) ? '筛选期内信控调整' : '累计信控调增'}</span>} value={totalCreditRecharge} precision={6} prefix={currencySymbol} valueStyle={statisticValueStyle} />
                   </Card>
                 </Col>
               </Row>

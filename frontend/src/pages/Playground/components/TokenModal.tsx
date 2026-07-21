@@ -8,10 +8,10 @@ import { getSharedModalStyles } from '../utils/modalStyles';
 import { CloseOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { usePlayground } from '../context/PlaygroundContext';
-import dayjs from 'dayjs';
 import { useThemeStore } from '../../../store/theme';
 import request from '../../../utils/request';
 import useSettingsStore from '../../../store/settings';
+import { formatApiDateTime } from '../../../utils/timedisplay';
 
 const TokenModal: React.FC = React.memo(() => {
   const {
@@ -259,8 +259,8 @@ const TokenModal: React.FC = React.memo(() => {
         ) : (
           <div style={{ border: _isLight ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden' }}>
             {apiTokens.map((t, index) => {
-              const createdStr = t.created_at ? dayjs(t.created_at).format('YYYY-MM-DD HH:mm') : '-';
-              const usedStr = t.last_used_at ? dayjs(t.last_used_at).format('YYYY-MM-DD HH:mm') : '从未';
+              const createdStr = t.created_at ? formatApiDateTime(t.created_at, 'YYYY-MM-DD HH:mm') : '-';
+              const usedStr = t.last_used_at ? formatApiDateTime(t.last_used_at, 'YYYY-MM-DD HH:mm') : '从未';
               const head = t.token_key.substring(0, 8);
               const tail = t.token_key.substring(t.token_key.length - 6);
               const maskedKey = `${head}......${tail}`;

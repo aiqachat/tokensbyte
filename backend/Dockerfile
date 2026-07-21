@@ -1,36 +1,43 @@
 # syntax=docker/dockerfile:1
-#
-# 双模式后端镜像（默认安全，可选加速）：
-#
-# 1) 默认 USE_PREBUILT=0 — 容器内多阶段编译（Win/Mac/Linux 打给云服务器都安全）
-#    docker compose build
-#
-# 2) 加速 USE_PREBUILT=1 — 使用仓库根目录预编译的 Linux 二进制 tokensbyte-server-bin
-#    须为目标平台的 Linux ELF（amd64 云服务器一般为 x86_64），架构不符会直接构建失败
-#    USE_PREBUILT=1 docker compose build
-#
-# 预编译示例（在 Linux 或交叉编译出 linux/amd64 后）：
-#   cp target/release/tokensbyte-server ./tokensbyte-server-bin
+# USE_PREBUILT=0 容器内编译；=1 用根目录 Linux ELF。JOBS/CACHE 由 compose/脚本注入。
 
 ARG USE_PREBUILT=0
+ARG ENABLE_CARGO_CACHE=1
+ARG CARGO_BUILD_JOBS=1
 
-# ── 源码编译（默认路径）──
-FROM rust:slim-bullseye AS build-from-source
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
-    make \
-    g++ \
-    perl \
+FROM rust:slim-bullseye AS build-deps
+ARG CARGO_BUILD_JOBS=1
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
+    CARGO_INCREMENTAL=0 \
+    RUSTFLAGS="-C link-arg=-fuse-ld=lld"
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config libssl-dev make g++ perl ca-certificates lld \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /usr/src/app
 COPY backend ./backend
 COPY frontend/src/pages/Plugins/SitePortal/locales/portal ./frontend/src/pages/Plugins/SitePortal/locales/portal
 WORKDIR /usr/src/app/backend
-RUN cargo build --release -j 2 \
-    && cp target/release/tokensbyte-server /tokensbyte-server
 
-# ── 预编译二进制（可选加速；校验 ELF + 架构，防止 Win/Mac 本机二进制误打进镜像）──
+# 无 cache：交叉架构（QEMU）更稳，避免 mount + qemu segfault
+FROM build-deps AS build-plain
+ARG CARGO_BUILD_JOBS=1
+RUN cargo build --release -j "${CARGO_BUILD_JOBS:-1}" \
+    && cp -f target/release/tokensbyte-server /tokensbyte-server
+
+# 有 cache：同架构重复构建更快
+FROM build-deps AS build-cached
+ARG CARGO_BUILD_JOBS=1
+ARG TARGETARCH
+RUN --mount=type=cache,id=tb-cargo-reg-${TARGETARCH},target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=tb-cargo-git-${TARGETARCH},target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=tb-cargo-tgt-${TARGETARCH},target=/usr/src/app/backend/target,sharing=locked \
+    cargo build --release -j "${CARGO_BUILD_JOBS:-1}" \
+    && cp -f target/release/tokensbyte-server /tokensbyte-server
+
+FROM build-plain AS src-0
+FROM build-cached AS src-1
+FROM src-${ENABLE_CARGO_CACHE} AS build-from-source
+
 FROM debian:bullseye-slim AS build-from-prebuilt
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends file \
@@ -47,19 +54,13 @@ RUN set -eu; \
     esac; \
     chmod +x /tokensbyte-server
 
-# 按 USE_PREBUILT 选择二进制来源（BuildKit 会跳过未用到的分支）
 FROM build-from-source AS binary-0
 FROM build-from-prebuilt AS binary-1
 FROM binary-${USE_PREBUILT} AS binary
 
-# ── 运行阶段 ──
 FROM debian:bullseye-slim
-RUN apt-get update && apt-get install -y \
-    libssl1.1 \
-    libsqlite3-0 \
-    ca-certificates \
-    postgresql-client \
-    wget \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl1.1 libsqlite3-0 ca-certificates postgresql-client wget \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=binary /tokensbyte-server /app/tokensbyte-server

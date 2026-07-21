@@ -1,165 +1,56 @@
-# TokensByte — 下一代大语言模型 (LLM) API 网关
+# TokensByte — LLM API 网关
 
-基于 Rust + React 构建的高性能 LLM API 分发与管理平台，为企业和开发者提供统一、安全、高效的大模型接入和管理解决方案。
+Rust + React 构建的高性能大模型 API 分发与管理平台：统一接入、计费、限流、审计。
 
-> [!IMPORTANT]
-> **数据库强制要求：本项目唯一支持的数据库为 PostgreSQL 16+（内置开发测试环境已全面升级为 18.4 最新稳定版）。**
-> 所有数据库语句、迁移脚本均严格遵循 PostgreSQL 规范编写，不兼容 MySQL、SQLite 或其他数据库。
-> 整数 ID 字段统一使用 PostgreSQL `INT8`（`BIGINT`），对应 Rust 端 `i64` 类型，确保大规模数据场景下的 ID 安全。
+> **数据库**：仅支持 **PostgreSQL 16+**（Compose 内置 **18.4-alpine**）。不兼容 MySQL / SQLite。整数 ID 统一 `BIGINT`（Rust `i64`）。
 
 ---
 
-## 📋 目录
+## 目录
 
-- [项目概述](#-项目概述)
-- [核心功能与特性](#-核心功能与特性)
-- [技术架构与栈](#-技术架构与栈)
-- [安装与配置指南](#-安装与配置指南)
-- [使用说明](#-使用说明)
-- [开发指南](#-开发指南)
-- [常见问题解答](#-常见问题解答)
-- [贡献指南](#-贡献指南)
-- [许可证](#-许可证)
-
----
-
-## 🎯 项目概述
-
-TokensByte 是一款面向企业级应用的 LLM API 网关，致力于解决多模型接入、流量管控、成本优化、安全审计等痛点问题。通过提供统一的 OpenAI 兼容接口，开发者无需修改业务代码即可快速切换不同大模型提供商，大幅降低集成和维护成本。
-
-### 适用场景
-
-- **企业 AI 中台**：统一管理企业内部所有大模型调用，实现权限控制、流量监控和成本分摊
-- **SaaS 服务提供商**：为客户提供多模型支持，降低接入成本，提高服务稳定性
-- **AI 应用开发者**：快速集成多种大模型能力，专注于业务逻辑开发
-- **研究机构**：统一管理大模型调用配额，实现团队资源共享和成本管控
-
-### 核心价值
-
-- **降低集成成本**：一次集成即可使用所有主流大模型能力
-- **提高服务稳定性**：智能负载均衡和故障转移，保障服务高可用
-- **优化使用成本**：动态路由到性价比最高的模型，降低整体调用成本
-- **增强安全合规**：完整的调用日志和审计能力，满足数据安全和合规要求
-- **精细化运营**：多维度数据统计和分析，助力业务决策
+- [功能概览](#功能概览)
+- [技术栈](#技术栈)
+- [快速部署](#快速部署)
+- [使用入门](#使用入门)
+- [本地开发](#本地开发)
+- [约定与运维要点](#约定与运维要点)
+- [常见问题](#常见问题)
+- [贡献与许可](#贡献与许可)
 
 ---
 
-## 🚀 核心功能与特性
+## 功能概览
 
-### 核心功能
-
-1. **多模型统一接入**
-   - 兼容 OpenAI 标准接口，无需修改业务代码
-   - 支持 OpenAI、Anthropic、Google、火山引擎等国内外主流大模型
-   - 支持文本生成、聊天补全、嵌入向量、图像生成、视频生成等多种能力
-
-2. **流量管控与调度**
-   - 智能路由策略，根据模型类型、成本、响应时间自动选择最优渠道
-   - 多级限流机制，支持用户级、应用级、渠道级流量控制
-   - 故障自动转移，保障服务高可用性
-   - 权重负载均衡，实现流量的精细分配
-   - 高级转发规则管理，支持拦截重写与自定义规则排序，适应多厂商复杂协议
-
-3. **安全与权限管理**
-   - 基于 JWT 的身份认证机制
-   - 细粒度的 API 密钥权限控制
-   - 完整的调用日志和审计追踪
-   - 敏感内容检测和过滤能力
-
-4. **成本与配额管理**
-   - 多租户架构，支持团队和用户级别的配额管理
-   - 灵活的计费规则配置，支持按排序优先级匹配，支持按 token、按次、按时间段等多种计费方式
-   - 实时消费统计和预警，避免成本超支
-   - 成本分析报表，优化模型使用策略
-
-5. **运营与监控**
-   - 可视化管理后台，轻松管理渠道、用户、配额和权限
-   - 实时监控大盘，展示系统运行状态和调用 metrics
-   - 多维度数据分析，支持按用户、模型、渠道等维度统计
-   - 异常告警机制，及时发现和处理问题
-
-### 核心特性
-
-- **极致性能**：基于 Rust、Axum 和 Tokio 构建的超高性能后端，单实例可支持数万并发请求
-- **端级隔离**：全新设计的双端架构，用户端和管理后台完全隔离，确保系统安全
-- **多语言支持**：完整支持简体中文与英文，适配国际化使用场景
-- **容器化部署**：支持 Docker Compose 一键部署，降低运维成本
-- **扩展性强**：模块化设计，易于扩展新的模型提供商和功能特性
-- **企业级稳定**：经过生产环境验证，支持高并发、高可用的部署要求
+| 能力 | 说明 |
+|------|------|
+| 统一接入 | OpenAI 兼容接口；文本 / 图像 / 视频 / 嵌入等多模态 |
+| 路由与 HA | 渠道权重、转发规则、故障转移、限流熔断 |
+| 计费与钱包 | 规则计费、预扣结算、系统/赠送/信控钱包、充值支付 |
+| 安全 | JWT、Admin/User 双端隔离、API Key、操作审计 |
+| 运营 | 仪表盘、日志/任务、财务统计、插件扩展 |
 
 ---
 
-## 🏗️ 技术架构与栈
+## 技术栈
 
-### 系统架构
+| 层 | 技术 |
+|----|------|
+| 后端 | Rust · Axum · Tokio · SQLx (PostgreSQL only) |
+| 前端 | React 19 · TypeScript · Ant Design 6 · Tailwind 4 · Zustand · Vite |
+| 部署 | Docker Compose · Nginx · PostgreSQL 18.4 |
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   客户端应用    │────▶│   API 网关层    │────▶│   大模型提供商  │
-│ (业务系统/SDK)  │     │ (路由/限流/鉴权)│     │ (OpenAI/Anthropic等)│
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                               │
-                               ▼
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   管理后台      │◀────│   业务逻辑层    │◀────│   数据存储层    │
-│ (运营/管理)     │     │ (配额/计费/统计)│     │ (PostgreSQL 18.4+)│
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+客户端 / SDK  ──▶  API 网关(鉴权/限流/路由)  ──▶  上游模型
+管理后台      ──▶  业务层(配额/计费/统计)    ──▶  PostgreSQL
 ```
-
-### 技术栈
-
-#### 后端技术栈
-
-| 技术 | 采用版本 | 核心用途与特性 |
-|------|------|------|
-| Rust | 1.75+ | 后端底层语言，提供极致的运行时性能与绝对内存安全保障 |
-| Axum | 0.8.x | 现代化异步高性能 Web 框架，多核事件驱动，用于极速 API 网关分发 |
-| Tokio | 1.x | 后端核心异步协程运行时，支持海量高并发文件与网络 I/O 调度 |
-| SQLx | 0.8.x | 仅支持 PostgreSQL 的纯异步 ORM，严格依赖其特有的高并发特性与 `postgres` 编译特性 |
-| jsonwebtoken | 9.x | 高性能安全 JWT 认证实现 |
-| serde | 1.x | 零拷贝 (Zero-copy) 极其高效的序列化与反序列化框架 |
-| reqwest | 0.12.x | 底层 HTTP Client，原生支持 HTTP/2 及高效流式流转 (Streaming) |
-| ve-tos-rust-sdk | 2.9.x | 火山引擎 TOS 对象存储官方 Rust SDK，保障云端多媒体文件存储连通性 |
-
-#### 前端技术栈
-
-| 技术 | 采用版本 | 核心用途与特性 |
-|------|------|------|
-| React | 19.2.x | 采用 React 19 最新特性，用于现代高响应式组件状态渲染 |
-| TypeScript | 6.0.x | 极强类型安全性保障，在 IDE 与编译阶段避免绝大部分 JavaScript 隐式错误 |
-| Ant Design | 6.3.x | 页面主核心 UI 框架，支撑复杂的数据报表、级联关系树、折叠卡片及系统核心表单 |
-| Tailwind CSS | 4.3.x | 基于 CSS-first 精简架构的极速样式引擎，搭配全新 `@tailwindcss/vite` |
-| Zustand | 5.0.x | 前端全局状态管理，轻量化并具备极强响应特性 |
-| React Router | 6.30.x | 单页应用 (SPA) 路由及权限跳转拦截器 |
-| i18next | 26.0.x | 全局国际化，提供主后台和开源版秒级语言无缝切换机制 |
-| Vite | 8.0.x | 现代极速前端构建引擎，提供毫秒级热重载 (HMR) 体验 |
-
-#### 部署与数据库运维
-
-| 技术 | 运行版本 | 核心功能与运行约束 |
-|------|------|------|
-| Docker | 20.10+ | 容器化底层支持，保障开发、测试、生产环境绝对一致性 |
-| Docker Compose | 2.x | 多容器拓扑编排（前后台、单机多实例数据库路由） |
-| Nginx | 1.25+ | 静态资源反向代理、路由分发与安全拦截器 |
-| PostgreSQL | **18.4-alpine** | **项目唯一支持数据库**，存储主版与开源版数据。内置一键 `dev.sh` / `dev-os.sh` 环境已全面升级至 **18.4 最新稳定版**。全部大整型字段强制遵循 INT8 (BIGINT) 标准以杜绝大并发 ID 溢出 |
-| GitHub Actions | - | CI/CD 自动化流水线，保障自动化编译与部署 |
 
 ---
 
-## 📦 安装与配置指南
+## 快速部署
 
-### 环境要求
+**环境**：Docker 20.10+、Compose 2.x；建议 4C / 8G / 50GB。
 
-- Docker 20.10+
-- Docker Compose 2.0+
-- 最低配置：2核 CPU、4GB 内存、20GB 磁盘空间
-- 推荐配置：4核 CPU、8GB 内存、50GB 磁盘空间
-
-### 快速部署
-
-#### 方式一：一键启动（最快体验）
-
-无需任何配置，直接运行即可启动全部服务（内置 PostgreSQL 18.4 + 默认配置）：
+### 1）一键启动
 
 ```bash
 git clone <repository-url>
@@ -167,300 +58,157 @@ cd tokensbyte
 docker compose up -d --build
 ```
 
-> [!NOTE]
-> 首次部署需要 `--build` 参数构建镜像，后续启动直接 `docker compose up -d` 即可（使用本地已有镜像）。默认配置仅供快速体验，生产环境请通过 `.env` 修改密码等安全项。
->
-> 成功启动后，浏览器访问 `http://localhost:8080/admin1688`，默认超管账号：`admin` / `admin`（如未在环境变量或 `.env` 中配置 `ADMIN_PASSWORD`，系统默认初始密码将自动初始化为 `admin` 并写入数据目录下的 `.admin_password` 文件中）。
+- 前台：`http://localhost:8080`
+- 管理端：`http://localhost:8080/admin1688`
+- 默认管理员：`admin` / `admin`（可用环境变量 `ADMIN_PASSWORD` 覆盖；未设置时可能写入 `data/.admin_password`）
 
+生产请务必修改 `.env` 中的数据库密码、JWT 密钥与管理员密码。
 
-#### 方式二：一键交互式部署（推荐新手）
-
-使用内置的部署脚本，自动引导配置环境变量并部署：
+### 2）交互式部署（推荐）
 
 ```bash
-chmod +x deploy.sh
-./deploy.sh
+chmod +x deploy.sh && ./deploy.sh
 ```
 
-脚本交互流程：
+引导生成 DB 密码、JWT、管理员密码，并可选开发/生产模式。
 
-1. **数据库密码** — 自动生成 16 位强密码（含大小写字母、数字、特殊字符）
-2. **JWT 密钥** — 自动生成 64 位随机密钥
-3. **管理员密码** — 手动输入（默认: `admin`）
-4. **注册开关** — 选择是否允许用户注册
+### 3）自定义 / 外部数据库
 
-配置完成后选择部署模式：
-- **开发环境** — 热重载（cargo-watch + Vite HMR），源码挂载，适合日常开发
-- **生产环境** — 内置 PostgreSQL，开箱即用
+```bash
+cp .env.example .env   # 按注释修改
+docker compose up -d
+```
 
-> [!TIP]
-> 如已有 `.env` 文件，脚本会显示当前配置并询问是否重新配置。也可直接编辑 `.env` 后运行 `docker compose up -d`。
+使用外部 PostgreSQL：改 `DATABASE_URL`，并在 `docker-compose.yml` 中停用内置 `postgres` 服务。
 
-#### 方式三：自定义配置部署（推荐生产环境）
+### 模式对照
 
-通过 `.env` 文件自定义配置，compose 内已提供全部默认值，`.env` 中只需覆盖需要修改的项：
+| 配置 | 场景 |
+|------|------|
+| `docker-compose.yml` | 生产 / 测试 |
+| `+ docker-compose.dev.yml` | 容器内热重载开发 |
+| `dev.sh` / `dev.ps1` | 本机前后端热重载（共用 Docker Postgres） |
+| `dev-os.sh` | 开源版本地启动 |
 
-1. **创建配置文件**：
-   ```bash
-   cp .env.example .env
-   # 根据注释修改 .env 中的安全项（密码、JWT 密钥等）
-   ```
+离线镜像导出：`./export-images.sh`（Windows：`.\export-images.ps1`）。Apple Silicon **不建议本机打 `linux/amd64`**（QEMU 跑 rustc 易 segfault）；M 系列请优先 `linux/arm64`，x86 云请在 Linux/CI 导出 amd64。
 
-2. **启动服务**：
-   ```bash
-   docker compose up -d
-   ```
-
-> [!TIP]
-> 如需使用外部 PostgreSQL（RDS/云数据库），只需修改 `.env` 中的 `DATABASE_URL` 指向外部数据库，并注释掉 `docker-compose.yml` 中的 `postgres` 服务即可。
-
-
-
-### 部署模式对比
-
-| 配置文件 | 数据库 | 适用场景 | 特点 |
-|---------|--------|---------|------|
-| `docker-compose.yml` | 内置 PostgreSQL（可切换外部） | 生产/测试 | 一键启动、首次需 --build 构建镜像，后续使用本地镜像 |
-| `docker-compose.yml` + `docker-compose.dev.yml` | 内置 PostgreSQL | 日常开发 | 源码挂载、热重载、增量编译 |
-
-### 数据库部署选择建议
-
-| 维度 | Docker内置 | 独立安装/外部数据库 |
-|------|-----------|-------------------|
-| **性能（Linux）** | 几乎无损（<2%） | 原生性能 |
-| **性能（Windows/Mac）** | I/O损耗 15-40% | 原生性能 |
-| **运维复杂度** | 低（一键部署） | 中（需手动管理） |
-| **数据备份** | 数据卷备份 | 原生pg_dump工具 |
-| **性能调优** | 受限 | 完全可控 |
-
-**推荐策略：**
-- ✅ **开发/测试环境**：Docker内置足够用
-- ✅ **Linux生产环境**（数据量<50GB）：Docker内置性能损耗可忽略
-- ✅ **Windows/Mac生产环境**：建议独立安装或使用云数据库（RDS等）
-- ✅ **大规模生产环境**（数据量>100GB）：建议独立安装并深度调优
+打包提速（不影响线上运行时逻辑）：同架构 + 保留 BuildKit cache；Mac 可 `EXPORT_FAST=1 ./export-images.sh`（需 Desktop ≥12GB）；仅重新打 tar 用 `SKIP_BUILD=1`；正式发版优先 CI 推镜像后服务器 `pull`。
 
 ---
 
-## 📖 使用说明
+## 使用入门
 
-### 快速开始
-
-1. **登录管理后台**
-   - 访问 `http://your-domain/admin1688`
-   - 使用管理员账号登录（默认：admin/admin）
-
-2. **配置模型渠道**
-   - 进入「渠道管理」页面
-   - 添加大模型提供商的 API 密钥和配置
-   - 测试渠道连通性
-
-3. **创建 API 密钥**
-   - 进入「令牌管理」页面
-   - 生成新的 API 密钥
-   - 配置密钥的权限和配额
-
-4. **接入业务系统**
-   - 使用 OpenAI 兼容的 SDK 或 HTTP 客户端
-   - 将 Base URL 设置为 `http://your-domain`
-   - 使用生成的 API 密钥即可调用大模型能力
-
-## 🛠️ 开发指南
-
-### 开发环境搭建
-
-#### 方式一：Docker 热重载开发模式（推荐）
-
-如果你在 Windows 等非原生 Linux 环境下开发，每次修改 Rust 会面临锁文件或编译缓慢的问题。我们提供了基于 Docker + `cargo-watch` 的**零配置热重载开发环境**：
-
-只需在工程根目录执行（一次性拉起前后端与数据库）：
-
-**Windows (PowerShell):**
-```powershell
-.\dev.ps1
-```
-
-**Linux/Mac:**
-```bash
-chmod +x dev.sh
-./dev.sh
-```
-
-*在开发模式下，当您保存任意 `backend/src/*.rs` 文件，后端即会在容器内秒级自动增量编译并热重载。`target` 缓存亦通过专用 Volume 隔离，不污染宿主机。*
-
-#### 方式二：传统原生单机模式
-
-需要你本地已安装完整的 Rust 和 Node.js 环境。
-
-**后端 (Backend):**
-
-后端采用 Rust 开发，配置管理遵循 **环境变量优先** 原则（配置优先级：系统环境变量 > `.env` 文件 > 内置默认值）。
-
-1. **配置文件加载**：
-   ```bash
-   cd backend
-   cp .env.example .env  # Windows使用 copy .env.example .env
-   # 根据注释修改 .env （可参考内置的 .env.example 文件）
-   ```
-
-2. **运行后端**：
-   ```bash
-   # 本地开发秒退（跳过计费管道 drain）：
-   APP_ENV=development cargo run
-   # 生产/默认：SIGTERM 时优雅关闭并 drain
-   cargo run
-   # 或构建生产版本: cargo build --release
-   ```
-
-**前端 (Frontend):**
+1. 登录管理端 → 配置渠道与模型  
+2. 用户端创建 API 令牌并设置额度  
+3. 业务侧将 Base URL 指向网关 `/v1`，使用令牌调用  
 
 ```bash
-cd frontend
-
-# 安装依赖
-npm install
-
-# 启动开发服务器（带热重载）
-npm run dev
-
-# 构建生产版本
-npm run build
-
-# 预览生产构建
-npm run preview
+curl http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer sk-xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-**前端开发服务器：**
-- 默认地址：http://localhost:5173
-- 自动代理 API 请求到后端 http://localhost:3000
-- 默认管理员账号：`admin` / `123456`
+健康检查：`GET /api/health`。
 
-### 项目结构
+常用管理 API 前缀：`/api/v1/auth`、`/users`、`/channels`、`/models`、`/tokens`、`/finance`、`/logs`、`/settings`。
+
+---
+
+## 本地开发
+
+```bash
+# 推荐：一键（默认后台；自动起/复用 Postgres；端口占用时顺延；多 checkout 可并行）
+./dev.sh              # Linux/Mac 后台
+./dev.sh fg           # Linux/Mac 前台看日志（Ctrl+C 停本实例）
+.\dev.ps1             # Windows 后台
+.\dev.ps1 1 fg        # Windows 前台看日志
+```
+
+可选环境变量：`BACKEND_PORT` / `FRONTEND_PORT` / `POSTGRES_PORT` / `DEV_WAIT_MAX` / `DEV_ATTACH=1`（前台日志）。增量编译由 Cargo 自身处理；`[profile.dev]` 已优化本地链接耗时。
+
+原生方式：
+
+```bash
+# 后端
+cd backend && cp .env.example .env
+APP_ENV=development cargo run   # 开发秒退，跳过计费 drain
+
+# 前端
+cd frontend && npm install && npm run dev
+# http://localhost:5173 → 代理到后端 :3000
+```
+
+**黄金三步（Rust CI）**：`cargo fmt --all` → `cargo clippy --all-targets --all-features -- -D warnings` → `cargo test --all-targets --all-features`。
+
+### 目录结构（精简）
 
 ```
 tokensbyte/
-├── backend/                 # Rust 后端
-│   ├── src/
-│   │   ├── api/            # API 路由与业务控制器
-│   │   ├── auth/           # JWT 与身份验证鉴权
-│   │   ├── db/             # 数据库模型与增量迁移
-│   │   ├── middleware/     # 中间件（高并发限流拦截等）
-│   │   ├── models/         # 核心数据对象结构体
-│   │   ├── providers/      # 大模型渠道集成接口 (OpenAI, Anthropic 等)
-│   │   ├── relay/          # 核心网关代理转发逻辑
-│   │   ├── services/       # 数据处理与业务服务层
-│   │   └── main.rs         # 后端服务启动入口
-│   └── Cargo.toml          # 后端依赖配置
-│
-├── frontend/               # React 前端
-│   ├── src/
-│   │   ├── components/     # UI 基础组件库
-│   │   ├── layouts/        # 管理后台全局页面框架
-│   │   ├── locales/        # 多语言 i18n 资源文件
-│   │   ├── pages/          # 业务视图页面 (仪表盘、财务、用户管理等)
-│   │   ├── store/          # Zustand 状态分发
-│   │   └── App.tsx         # 路由分发与前端入口
-│   └── package.json        # 前端依赖配置
-│
-├── docker-compose.yml      # 容器化多服务编排配置 (包含默认 PostgreSQL 18.4)
-├── docker-compose.dev.yml  # 本地热重载开发调试层
-├── deploy.sh               # 一键交互式部署向导
-├── dev.sh                  # 一键后台极速启动脚本
-├── README.md               # 项目主说明文档
-└── LICENSE                 # 开源许可证 (MIT)
+├── backend/src/     # api · relay · db · services · money …
+├── frontend/src/    # pages · components · store · utils
+├── docker-compose.yml
+├── docker-compose.dev.yml
+├── deploy.sh · dev.sh · export-images.sh
+├── README.md · CHANGELOG.md
+└── data/            # 持久化（本地）
 ```
-
-
-### 使用日志存储与归档
-
-- **详情清理**：配置 `storage_settings.log_retention_days`（默认 30 天）可清空超期行的请求/响应大字段以节省空间，调用基本行记录仍保留在 `logs` 表中。
-- **冷热归档**：配置 `storage_settings.log_row_retention_days` 可以把超期行归档迁入 `logs_archive` 表，并从热表删除，保持数据库查询高效稳定。
 
 ---
 
-## ❓ 常见问题解答
+## 约定与运维要点
 
-### Q: 项目支持哪些数据库？
+### 金额精度
 
-A: **本项目仅支持 PostgreSQL（16+），推荐使用 PostgreSQL 18.4。本项目不支持 MySQL、SQLite 或其他数据库。** 后端 `sqlx` 编译时仅启用了 `postgres` feature，所有 SQL 语句、迁移脚本和数据类型均严格遵循 PostgreSQL 规范。
+站点内部账本（日志 `cost`、扣费结算、余额 / 赠送金 / 信控、充值调账、额度）统一 **小数点后 6 位**（四舍五入）。
 
-- **内置 PostgreSQL**：`docker-compose.yml` 内置了 PostgreSQL 18.4-alpine 服务，支持 `docker compose up -d` 一键启动
-- **外部 PostgreSQL**：修改 `.env` 中的 `DATABASE_URL=postgres://user:password@host:port/dbname`，并注释掉 compose 文件中的 `postgres` 服务即可
+- 后端：`backend/src/money.rs` → `round_money` / `format_money`
+- 前端：展示层统一 `toFixed(6)` / `precision={6}`（与后端 6 位账本对齐）
+- **例外**：微信 / 支付宝等支付通道对外法币仍按通道要求（通常 2 位）
 
-> [!CAUTION]
-> 请勿尝试将 `DATABASE_URL` 指向非 PostgreSQL 数据库，系统将无法启动。
+### 时间与日志
 
-### Q: 为什么整数字段使用 INT8/BIGINT（i64）？
+- 业务时间列统一 `TIMESTAMPTZ`；范围查询使用 `?::timestamptz`
+- 日志详情清理：`storage_settings.log_retention_days`（默认 30）
+- 冷归档：`storage_settings.log_row_retention_days`（默认 0=关闭）→ `logs_archive`
 
-A: 项目统一采用 PostgreSQL `INT8`（即 `BIGINT`，对应 Rust `i64`）作为整数 ID 和计数字段的标准类型，这是出于以下考虑：
-- **ID 安全**：避免 INT4 在大规模数据（超过 21 亿条记录）时溢出
-- **一致性**：Rust 端统一使用 `i64`，前端 JavaScript `Number.MAX_SAFE_INTEGER` (2^53) 范围内完全安全
-- **前瞻性**：为分布式 ID、雪花算法等未来扩展预留空间
-- **PostgreSQL 原生高效**：INT8 在 PostgreSQL 中性能损耗极小，存储仅多 4 字节
+### 常用 Compose 命令
 
-### Q: Docker 内置 PostgreSQL 和独立安装有什么区别？
-
-A: 主要差异在于性能和运维管理：
-- **Linux 环境**：Docker 内置性能损耗极小（<2%），完全可用于生产
-- **Windows/Mac 环境**：Docker 文件系统映射会导致 15-40% 的 I/O 损耗，建议独立安装
-- **运维管理**：独立安装可以使用原生 pg_dump 工具，调优更灵活
-- **推荐使用**：开发测试用 Docker 内置，大规模生产用独立安装或云数据库
-
-### Q: 支持哪些模型？
-
-A: 支持 OpenAI、Anthropic、Google、火山引擎等主流大模型提供商，具体取决于您的渠道配置。系统设计为可扩展架构，支持快速接入新的模型提供商。
-
-### Q: 如何迁移与备份数据？
-
-A: 使用 PostgreSQL 原生工具 `pg_dump` 和 `pg_restore` 进行数据备份和迁移。系统在每次版本升级启动时，会自动执行内置的数据增量迁移脚本进行自动补全，通常无需进行繁琐的手动干预。
-
-### Q: 性能如何？
-
-A: 基于 Rust + Tokio 异步架构构建，单实例可处理数万并发请求，延迟比 go 实现低 50% 以上。实际性能取决于服务器配置和上游模型响应速度。在 4核8G 服务器上，单实例可支持 10000+ QPS 的并发请求。
-
-### Q: 如何监控服务状态？
-
-A: 访问 `/health` 端点查看健康状态，或通过管理后台的监控大盘查看实时运行指标。也可以通过日志命令查看详细运行日志：
 ```bash
-docker compose logs -f
+docker compose up -d          # 启动
+docker compose ps             # 状态
+docker compose logs -f backend
+docker compose down           # 停止（加 -v 会删数据卷）
+docker compose up -d --build  # 重建
 ```
 
+变更历史见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
-## 🤝 贡献指南
+## 常见问题
 
-欢迎提交 Issue 和 Pull Request！
+**只支持哪些数据库？**  
+仅 PostgreSQL。勿把 `DATABASE_URL` 指到其他引擎。
 
-### 开发流程
+**内置库还是外部库？**  
+开发 / 小规模 Linux 生产可用 Compose 内置；Windows/Mac 生产或大数据量建议外部 RDS / 独立安装。
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 提交 Pull Request
+**如何备份？**  
+`pg_dump` / `pg_restore`。应用启动会自动跑增量迁移。
 
-### 代码规范
-
-- **Rust**：遵循 `cargo fmt` 和 `clippy` 建议
-- **TypeScript**：遵循 ESLint 规则
-- **提交信息**：使用语义化提交信息，格式为 `type(scope): description [T-XXX]`
+**默认管理员密码对不上？**  
+Compose / `.env` 以 `ADMIN_PASSWORD` 为准；文档与示例默认为 `admin`。本地 Vite 开发若另行初始化，以控制台或 `data/.admin_password` 为准。
 
 ---
 
-## 📝 更新日志
+## 贡献与许可
 
-- **v1.0.0 (2026-07)**：第一次公开发布。采用全新的高性能 Rust 后端，彻底分离前后台，数据库完整升级至 PostgreSQL 18.4 并统一高精度金额处理。
+1. Fork → 特性分支 → PR  
+2. Rust：`fmt` + `clippy -D warnings` + `test`；前端遵循 ESLint  
+3. 提交信息建议：`type(scope): description`
 
----
+许可证：[MIT](LICENSE)
 
-## 🛡️ 许可证
-
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
-
----
-
-## 📞 联系方式
-
-- 项目问题：[GitHub Issues](https://github.com/your-org/tokensbyte/issues)
-- 商务合作：business@tokensbyte.com
-- 技术交流：加入我们的 Discord 社区或微信群
+问题反馈：GitHub Issues  
+变更记录：[CHANGELOG.md](CHANGELOG.md)

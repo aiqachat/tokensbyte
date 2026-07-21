@@ -31,6 +31,7 @@ import useSettingsStore from '../../store/settings';
 import useAuthStore from '../../store/auth';
 import UserAvatarMenu from '../../components/UserAvatarMenu';
 import { SunOutlined, MoonOutlined } from '@ant-design/icons';
+import { formatApiDateTime, parseApiTimeAsUtc } from '../../utils/timedisplay';
 
 interface Announcement {
   id: number;
@@ -438,7 +439,7 @@ const ModelMarketplace: React.FC = () => {
     } else if (sortBy === 'name') {
       result.sort((a, b) => (a.original_id || a.name).localeCompare(b.original_id || b.name));
     } else if (sortBy === 'newest') {
-      result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      result.sort((a, b) => (parseApiTimeAsUtc(b.created_at)?.getTime() ?? 0) - (parseApiTimeAsUtc(a.created_at)?.getTime() ?? 0));
     }
 
     return result;
@@ -1261,9 +1262,7 @@ const ModelMarketplace: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: c.text3, fontSize: 12 }}>
                     <ScheduleOutlined />
-                    {new Date(item.created_at).toLocaleString(i18n.language === 'en' ? 'en-US' : (i18n.language === 'vi' ? 'vi-VN' : 'zh-CN'), {
-                      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-                    })}
+                    {formatApiDateTime(item.created_at, 'YYYY-MM-DD HH:mm')}
                   </div>
                 </div>
 
@@ -1787,7 +1786,7 @@ const ModelMarketplace: React.FC = () => {
                         </Tag>
                       </Descriptions.Item>
                       <Descriptions.Item label={tp('updated_at', '更新时间')}>
-                        {selectedModel.created_at ? new Date(selectedModel.created_at).toLocaleDateString('zh-CN') : '-'}
+                        {selectedModel.created_at ? formatApiDateTime(selectedModel.created_at, 'YYYY-MM-DD') : '-'}
                       </Descriptions.Item>
                     </Descriptions>
                   </div>
@@ -2198,7 +2197,7 @@ const ModelMarketplace: React.FC = () => {
                                 {viewMode !== 'grid' && (
                                   <>
                                     <span style={{ color: c.textMuted }}>•</span>
-                                    <span>Updated {new Date(model.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                    <span>{tp('updated_at', 'Updated')} {formatApiDateTime(model.created_at, 'YYYY-MM-DD')}</span>
                                   </>
                                 )}
 

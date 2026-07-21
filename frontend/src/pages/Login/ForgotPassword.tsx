@@ -31,6 +31,8 @@ const ForgotPassword: React.FC = () => {
   const [countdown, setCountdown] = useState(0);
   /** 同步锁：React state 更新前就能挡住连点 */
   const sendingCodeRef = useRef(false);
+  /** 冷却截止时间戳：避免 finally 解锁与 countdown state 提交之间的竞态 */
+  const cooldownUntilRef = useRef(0);
 
   // 表单状态值
   const [targetVal, setTargetVal] = useState('');
@@ -82,7 +84,7 @@ const ForgotPassword: React.FC = () => {
     setCodeVal('');
     setPasswordVal('');
     setConfirmVal('');
-    setCountdown(0);
+    // 不重置 countdown：切换找回方式不能绕过冷却
     setErrors({});
   }, [activeTab]);
 
@@ -92,11 +94,19 @@ const ForgotPassword: React.FC = () => {
     return () => clearTimeout(timer);
   }, [countdown]);
 
+  const startCooldown = (seconds: number) => {
+    cooldownUntilRef.current = Date.now() + seconds * 1000;
+    setCountdown(seconds);
+  };
+
+  const isBlocked = () =>
+    sendingCodeRef.current || Date.now() < cooldownUntilRef.current || countdown > 0;
+
   const currentTab = recoveryTabs.find(tab => tab.key === activeTab) || recoveryTabs[0];
 
   // 发送验证码逻辑（同步锁 + 成功/失败冷却，防连点刷弹窗）
   const onSendCode = async () => {
-    if (countdown > 0 || sendingCodeRef.current) return;
+    if (isBlocked()) return;
     if (!targetVal.trim()) {
       setErrors(prev => ({ ...prev, target: currentTab.key === 'email' ? t('auth.email_required') : t('auth.mobile_required') }));
       setShakeKey(k => k + 1);
@@ -118,10 +128,10 @@ const ForgotPassword: React.FC = () => {
         await request.post('/auth/send-sms-code', { mobile: targetVal.trim(), purpose: 'reset_password' }, { skipErrorHandler: true } as any);
       }
       message.success(t('auth.code_sent'));
-      setCountdown(CODE_COOLDOWN_SUCCESS);
+      startCooldown(CODE_COOLDOWN_SUCCESS);
     } catch (error: any) {
       message.error(error.response?.data?.error?.message || t('common.error'));
-      setCountdown(CODE_COOLDOWN_ERROR);
+      startCooldown(CODE_COOLDOWN_ERROR);
     } finally {
       sendingCodeRef.current = false;
       setSendingCode(false);

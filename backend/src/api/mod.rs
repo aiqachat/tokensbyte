@@ -23,6 +23,7 @@ pub mod docs_api;
 pub mod finance;
 pub mod forward_rules;
 pub mod logs;
+pub mod metrics;
 pub mod model_classifications;
 pub mod models;
 #[cfg(all(plugin_pay, plugin_payment))]
@@ -235,6 +236,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let mut management_routes: Router<Arc<AppState>> = Router::new()
         .route("/dashboard", get(dashboard::get_stats))
         .route("/dashboard/models_30d", get(dashboard::get_model_stats_30d))
+        .route("/metrics/live", get(metrics::get_live_metrics))
         .route("/channels", get(channels::list_channels))
         .route("/models", get(models::list_models))
         .route(

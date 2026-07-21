@@ -737,7 +737,7 @@ pub async fn test_channel(
             &task_id,
             &resolved_model,
             &category,
-            90,
+            180,
             None,
         )
         .await

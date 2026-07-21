@@ -8,6 +8,54 @@ use axum::{
     Json,
 };
 use std::sync::Arc;
+use std::time::Duration;
+
+/// 看板缓存条目存活上限：超过后由后台任务剔除，防止 DashMap 无限增长
+pub const DASHBOARD_CACHE_TTL: Duration = Duration::from_secs(30 * 60);
+/// 清理扫描间隔
+pub const DASHBOARD_CACHE_CLEANUP_INTERVAL_SECS: u64 = 300;
+
+/// 剔除超过 TTL 的看板缓存 key
+pub fn cleanup_stale_dashboard_cache(
+    cache: &dashmap::DashMap<String, crate::DashboardCacheEntry>,
+    ttl: Duration,
+) -> usize {
+    let stale_keys: Vec<String> = cache
+        .iter()
+        .filter(|entry| entry.timestamp.elapsed() >= ttl)
+        .map(|entry| entry.key().clone())
+        .collect();
+    let n = stale_keys.len();
+    for key in stale_keys {
+        cache.remove(&key);
+    }
+    n
+}
+
+/// 后台定期清理过期看板缓存
+pub async fn run_dashboard_cache_cleanup_loop(
+    state: Arc<AppState>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    let mut interval =
+        tokio::time::interval(Duration::from_secs(DASHBOARD_CACHE_CLEANUP_INTERVAL_SECS));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    interval.tick().await;
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
+                let removed = cleanup_stale_dashboard_cache(&state.dashboard_cache, DASHBOARD_CACHE_TTL);
+                if removed > 0 {
+                    tracing::info!("[DashboardCache] 已清理 {} 条过期缓存", removed);
+                }
+            }
+            _ = shutdown.changed() => {
+                tracing::info!("[DashboardCache] 过期缓存清理任务已退出");
+                return;
+            }
+        }
+    }
+}
 
 #[derive(Debug, serde::Deserialize, Clone)]
 pub struct DashboardParams {
@@ -314,14 +362,24 @@ async fn calculate_dashboard_stats(
     let mut recent_binds = Vec::new();
 
     if let Some(ref s) = params.start_date {
-        let (start_str, _b_start) = crate::api::date_helper::parse_and_get_bounds(s, false);
-        date_where.push_str(" AND l.created_at >= ?::timestamptz");
-        recent_binds.push(start_str);
+        crate::api::date_helper::push_timestamptz_bound(
+            &mut date_where,
+            &mut recent_binds,
+            "l.created_at",
+            s,
+            false,
+            tz,
+        );
     }
     if let Some(ref e) = params.end_date {
-        let (end_str, _b_end) = crate::api::date_helper::parse_and_get_bounds(e, true);
-        date_where.push_str(" AND l.created_at <= ?::timestamptz");
-        recent_binds.push(end_str);
+        crate::api::date_helper::push_timestamptz_bound(
+            &mut date_where,
+            &mut recent_binds,
+            "l.created_at",
+            e,
+            true,
+            tz,
+        );
     }
 
     // 最近活动：关联用户表填充昵称/UID，便于管理端区分调用方
@@ -352,6 +410,22 @@ async fn calculate_dashboard_stats(
         }
         q.fetch_all(&state.db.pool).await?
     };
+
+    // 与日志列表一致：仪表盘最近活动不带回大字段；非管理员再清 cascade 密钥
+    let mut recent_logs = recent_logs;
+    for log in &mut recent_logs {
+        log.request_content = None;
+        log.response_content = None;
+        log.upstream_req_content = None;
+        log.post_response = None;
+        if !is_admin {
+            crate::relay::cascade::cascade_scrub_plugin_tag_for_user(&mut log.plugin_tag);
+            log.channel_id = None;
+            log.channel_name = None;
+            log.sub_channel_name = None;
+            log.channel_group_aid = None;
+        }
+    }
 
     // 4. 各模型统计分析 (Model Stats)
     let user_filter = if is_admin { None } else { Some(user_id) };

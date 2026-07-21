@@ -15,27 +15,10 @@ import { isReferenceAssetUrl } from '../utils/nodeHelpers';
 import useSettingsStore from '../../../store/settings';
 import { message } from 'antd';
 import toast from '../components/PlaygroundToast';
+import { parseApiTimeAsUtc } from '../../../utils/timedisplay';
 
 const safeParseDate = (dateStr?: string | null): Date => {
-  if (!dateStr) return new Date(NaN);
-  let s = String(dateStr).trim();
-  if (/^\d+$/.test(s)) {
-    return new Date(parseInt(s, 10));
-  }
-  if (s.includes(' ') && !s.includes('T')) {
-    s = s.replace(' ', 'T');
-  }
-  s = s.replace(/\.(\d{1,3})\d*(Z|[+-]\d{2}(?::?\d{2})?)?$/, (_, subSec, tz) => {
-    let normalizedTz = tz || '';
-    if (normalizedTz && normalizedTz !== 'Z' && !normalizedTz.includes(':') && normalizedTz.length === 3) {
-      normalizedTz = normalizedTz + ':00';
-    }
-    return `.${subSec}${normalizedTz}`;
-  });
-  if (!s.includes('.')) {
-    s = s.replace(/([+-]\d{2})$/, '$1:00');
-  }
-  return new Date(s);
+  return parseApiTimeAsUtc(dateStr) ?? new Date(NaN);
 };
 
 // ============================================================
@@ -1605,7 +1588,7 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
               }
               // 按创建时间排序，确保时间匹配的准确性
               assetByPrompt.forEach(arr => arr.sort((a: any, b: any) =>
-                new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+                safeParseDate(a.created_at).getTime() - safeParseDate(b.created_at).getTime()
               ));
               // 记录已被匹配过的 asset ID，防止一个 asset 被多个节点重复匹配
               const matchedAssetIds = new Set<number>();
@@ -1615,7 +1598,7 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
                 if (n.status === 'loading' && n.taskData?.task_id) return n;
                 // 无 task_id 的 loading 节点 → 检查创建时间
                 if (n.status === 'loading' && !n.taskData?.task_id) {
-                  const createdAt = new Date(n.taskData?.created_at || 0).getTime();
+                  const createdAt = safeParseDate(n.taskData?.created_at).getTime();
                   const elapsedMs = Date.now() - createdAt;
                   if (elapsedMs < 30 * 60 * 1000) return { ...n, status: 'loading' };
                   return { ...n, status: 'error', resultData: { message: '生成任务超时，请重新生成' } };
@@ -1662,11 +1645,11 @@ export const PlaygroundProvider: React.FC<{ children: React.ReactNode; projectId
                 if (!match) {
                   const candidates = assetByPrompt.get(n.taskData?.prompt || '');
                   if (candidates) {
-                    const nodeTime = new Date(n.taskData?.created_at || 0).getTime();
+                    const nodeTime = safeParseDate(n.taskData?.created_at).getTime();
                     let bestDiff = Infinity;
                     for (const c of candidates) {
                       if (!c.file_url || matchedAssetIds.has(c.id)) continue;
-                      const diff = Math.abs(new Date(c.created_at || 0).getTime() - nodeTime);
+                      const diff = Math.abs(safeParseDate(c.created_at).getTime() - nodeTime);
                       if (diff < bestDiff) { bestDiff = diff; match = c; }
                     }
                   }

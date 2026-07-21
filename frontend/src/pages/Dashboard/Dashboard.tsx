@@ -11,7 +11,6 @@ import {
   BarChartOutlined,
   DatabaseOutlined,
   AccountBookOutlined,
-  KeyOutlined,
   FullscreenOutlined,
   FullscreenExitOutlined,
   CloseOutlined,
@@ -22,8 +21,9 @@ import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import useAuthStore from '../../store/auth';
 import { useThemeStore } from '../../store/theme';
-import type { DashboardStats, RequestLog, Announcement, ModelTrend30dResponse } from '../../types';
+import type { DashboardStats, RequestLog, Announcement, ModelTrend30dResponse, LiveMetricsResponse, LiveMetricsSnapshot } from '../../types';
 import dayjs from 'dayjs';
+import { toCalendarDateRangeParams } from '../../utils/dateRangeParams';
 import {
   LineChart,
   Line,
@@ -52,14 +52,20 @@ const Dashboard: React.FC = () => {
   const currencySymbol = settings?.currency?.currency_symbol || '$';
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [liveMetrics, setLiveMetrics] = useState<LiveMetricsSnapshot | null>(null);
   const [pinnedAnnouncement, setPinnedAnnouncement] = useState<Announcement | null>(null);
   const { RangePicker } = DatePicker;
   const isAdmin = user?.role === 'admin';
   const [dateRange, setDateRange] = useState<[any, any] | null>(() => [
-    dayjs().startOf('month'),
-    dayjs().endOf('month'),
+    dayjs().startOf('day'),
+    dayjs().endOf('day'),
   ]);
-  const [quickRange, setQuickRange] = useState<string>('month');
+  const [quickRange, setQuickRange] = useState<string>('today');
+
+  const applyTodayRange = () => {
+    setQuickRange('today');
+    setDateRange([dayjs().startOf('day'), dayjs().endOf('day')]);
+  };
 
   const handleQuickRangeChange = (e: any) => {
     const val = e.target.value;
@@ -77,17 +83,18 @@ const Dashboard: React.FC = () => {
         dayjs().subtract(1, 'month').startOf('month'),
         dayjs().subtract(1, 'month').endOf('month'),
       ]);
-    } else if (val === 'all') {
-      setDateRange(null);
     }
   };
 
   const handleDateRangeChange = (vals: any) => {
+    if (!vals?.[0] || !vals?.[1]) {
+      applyTodayRange();
+      return;
+    }
     setDateRange(vals);
-    setQuickRange(vals ? 'custom' : 'all');
+    setQuickRange('custom');
   };
 
-  const isAllTime = !dateRange?.[0] && !dateRange?.[1];
   const showDayComparison = quickRange === 'today' || quickRange === 'yesterday';
 
   const periodLabel = (() => {
@@ -102,8 +109,6 @@ const Dashboard: React.FC = () => {
         return t('dashboard.month');
       case 'last_month':
         return t('dashboard.last_month');
-      case 'all':
-        return t('dashboard.all');
       default:
         if (dateRange?.[0] && dateRange?.[1]) {
           const sameYear = dateRange[0].year() === dateRange[1].year();
@@ -114,21 +119,13 @@ const Dashboard: React.FC = () => {
     }
   })();
 
-  const requestsLabel = isAllTime
-    ? t('dashboard.total_requests')
-    : t('dashboard.period_requests', { period: periodLabel });
-  const tokensLabel = isAllTime
-    ? t('dashboard.total_tokens')
-    : t('dashboard.period_tokens', { period: periodLabel });
-  const costLabel = isAllTime
-    ? t('dashboard.estimated_cost')
-    : t('dashboard.period_cost', { period: periodLabel });
+  const requestsLabel = t('dashboard.period_requests', { period: periodLabel });
+  const tokensLabel = t('dashboard.period_tokens', { period: periodLabel });
+  const costLabel = t('dashboard.period_cost', { period: periodLabel });
   const scopeLabel = isAdmin
     ? t('dashboard.scope_admin')
     : t('dashboard.scope_user');
-  const modelDetailHint = isAllTime
-    ? t('dashboard.model_detail_recent')
-    : t('dashboard.model_detail_period', { period: periodLabel });
+  const modelDetailHint = t('dashboard.model_detail_period', { period: periodLabel });
   const [cardHeight, setCardHeight] = useState(580);
   const [isTrendModalVisible, setIsTrendModalVisible] = useState(false);
   const [isFullscreenTrend, setIsFullscreenTrend] = useState(false);
@@ -246,14 +243,24 @@ const Dashboard: React.FC = () => {
   const fetchStats = async () => {
     try {
       const params: any = {};
-      if (dateRange?.[0]) params.start_date = dateRange[0].startOf('day').toISOString();
-      if (dateRange?.[1]) params.end_date = dateRange[1].endOf('day').toISOString();
+      Object.assign(params, toCalendarDateRangeParams(dateRange));
       const data = await (request.get<DashboardStats>('/dashboard', { params }) as unknown as Promise<DashboardStats>);
       setStats(data);
     } catch (error) {
       console.error(error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchLiveMetrics = async () => {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    try {
+      const data = await (request.get<LiveMetricsResponse>('/metrics/live') as unknown as Promise<LiveMetricsResponse>);
+      setLiveMetrics(data.metrics);
+    } catch (error) {
+      // 实时指标失败不阻断看板
+      console.error(error);
     }
   };
 
@@ -289,6 +296,19 @@ const Dashboard: React.FC = () => {
     const timer = setInterval(fetchStats, 180000);
     return () => clearInterval(timer);
   }, [dateRange, user?.notification_preferences]);
+
+  useEffect(() => {
+    fetchLiveMetrics();
+    const timer = setInterval(fetchLiveMetrics, 5000);
+    const onVis = () => {
+      if (!document.hidden) fetchLiveMetrics();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
 
   const columns = [
     {
@@ -356,12 +376,41 @@ const Dashboard: React.FC = () => {
   ];
 
   const cardStyle: React.CSSProperties = {
-    height: screens.xs ? 160 : 200,
+    height: screens.xs ? 180 : 210,
     display: 'flex',
     flexDirection: 'column',
     position: 'relative',
     borderRadius: 12,
   };
+
+  const metricLabelStyle: React.CSSProperties = {
+    color: _isLight ? '#666' : '#888',
+    fontSize: screens.xs ? 11 : 13,
+    fontWeight: 500,
+  };
+
+  const metricValueStyle: React.CSSProperties = {
+    margin: '4px 0 0 0',
+    color: _isLight ? '#1f2937' : '#fff',
+    fontWeight: 500,
+    fontSize: screens.xs ? 18 : 26,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    lineHeight: 1.2,
+  };
+
+  const metricSubStyle: React.CSSProperties = {
+    color: _isLight ? '#666' : '#888',
+    fontSize: screens.xs ? 10 : 12,
+  };
+
+  const liveMetricItems = [
+    { key: 'qps', label: t('dashboard.live_qps'), tip: t('dashboard.live_qps_tip'), value: liveMetrics?.qps ?? 0 },
+    { key: 'rpm', label: t('dashboard.live_rpm'), tip: t('dashboard.live_rpm_tip'), value: liveMetrics?.rpm ?? 0 },
+    { key: 'tpm', label: t('dashboard.live_tpm'), tip: t('dashboard.live_tpm_tip'), value: liveMetrics?.tpm ?? 0 },
+    { key: 'task', label: t('dashboard.live_task'), tip: t('dashboard.live_task_tip'), value: liveMetrics?.task ?? 0 },
+  ];
 
   const backgroundIconStyle: React.CSSProperties = {
     position: 'absolute',
@@ -417,12 +466,11 @@ const Dashboard: React.FC = () => {
             <Radio.Button value="week">{t('dashboard.week', '本周')}</Radio.Button>
             <Radio.Button value="month">{t('dashboard.month', '本月')}</Radio.Button>
             <Radio.Button value="last_month">{t('dashboard.last_month', '上月')}</Radio.Button>
-            <Radio.Button value="all">{t('dashboard.all', '全部')}</Radio.Button>
           </Radio.Group>
           <RangePicker
             value={dateRange}
             onChange={handleDateRangeChange}
-            allowClear
+            allowClear={false}
             style={{ width: screens.xs ? '100%' : 260 }}
           />
         </div>
@@ -466,42 +514,15 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Main Stats Cards */}
+      {/* 概览仪表盘：消耗 Token | 预估成本 | 请求+令牌 | 实时吞吐 */}
       <Row gutter={[16, 16]}>
         <Col xs={12} sm={12} lg={6}>
-          <Card 
-            variant="borderless" 
-            style={cardStyle} 
+          <Card
+            variant="borderless"
+            style={cardStyle}
             styles={{ body: { padding: screens.xs ? 16 : 24, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' } }}
           >
-            {/* Background Icon */}
-            <BarChartOutlined style={backgroundIconStyle} />
-            
-            {/* Content Container */}
-            <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 12 : 14, fontWeight: 500 }}>{requestsLabel}</Text>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '8px 0 0 0' }}>
-                <Title level={2} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff', fontWeight: 500, fontSize: screens.xs ? 18 : 30, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={String(stats?.total_requests || 0)}>{stats?.total_requests || 0}</Title>
-                {showDayComparison && (
-                  <>
-                    <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 11 : 13 }}>{t('dashboard.today')}: {stats?.today_requests || 0}</Text>
-                    <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 11 : 13 }}>{t('dashboard.yesterday')}: {stats?.yesterday_requests || 0}</Text>
-                  </>
-                )}
-              </div>
-            </div>
-          </Card>
-        </Col>
-        <Col xs={12} sm={12} lg={6}>
-          <Card 
-            variant="borderless" 
-            style={cardStyle} 
-            styles={{ body: { padding: screens.xs ? 16 : 24, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' } }}
-          >
-            {/* Background Icon */}
             <DatabaseOutlined style={backgroundIconStyle} />
-            
-            {/* Content Container */}
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
               <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 12 : 14, fontWeight: 500 }}>{tokensLabel}</Text>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '8px 0 0 0' }}>
@@ -517,15 +538,12 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
         <Col xs={12} sm={12} lg={6}>
-          <Card 
-            variant="borderless" 
-            style={cardStyle} 
+          <Card
+            variant="borderless"
+            style={cardStyle}
             styles={{ body: { padding: screens.xs ? 16 : 24, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' } }}
           >
-            {/* Background Icon */}
             <AccountBookOutlined style={backgroundIconStyle} />
-            
-            {/* Content Container */}
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
               <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 12 : 14, fontWeight: 500 }}>{costLabel}</Text>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '8px 0 0 0' }}>
@@ -541,21 +559,82 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
         <Col xs={12} sm={12} lg={6}>
-          <Card 
-            variant="borderless" 
-            style={cardStyle} 
-            styles={{ body: { padding: screens.xs ? 16 : 24, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' } }}
+          <Card
+            variant="borderless"
+            style={cardStyle}
+            styles={{ body: { padding: screens.xs ? 14 : 20, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' } }}
           >
-            {/* Background Icon */}
-            <KeyOutlined style={backgroundIconStyle} />
-            
-            {/* Content Container */}
+            <BarChartOutlined style={backgroundIconStyle} />
+            <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <Text style={metricLabelStyle}>{requestsLabel}</Text>
+                <Title level={2} style={metricValueStyle} title={String(stats?.total_requests || 0)}>
+                  {stats?.total_requests || 0}
+                </Title>
+                {showDayComparison && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 10px', marginTop: 2 }}>
+                    <Text style={metricSubStyle}>{t('dashboard.today')}: {stats?.today_requests || 0}</Text>
+                    <Text style={metricSubStyle}>{t('dashboard.yesterday')}: {stats?.yesterday_requests || 0}</Text>
+                  </div>
+                )}
+              </div>
+              <Divider style={{ margin: 0, borderColor: _isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)' }} />
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <Text style={metricLabelStyle}>{t('dashboard.total_api_tokens', '总令牌')}</Text>
+                <Title level={2} style={{ ...metricValueStyle, fontSize: screens.xs ? 16 : 22 }} title={String(stats?.total_api_tokens || 0)}>
+                  {stats?.total_api_tokens || 0}
+                </Title>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 10px', marginTop: 2 }}>
+                  <Text style={metricSubStyle}>{t('dashboard.today_active')}: {stats?.today_active_tokens || 0}</Text>
+                  <Text style={metricSubStyle}>{t('dashboard.yesterday_active')}: {stats?.yesterday_active_tokens || 0}</Text>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={12} sm={12} lg={6}>
+          <Card
+            variant="borderless"
+            style={cardStyle}
+            styles={{ body: { padding: screens.xs ? 14 : 18, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' } }}
+          >
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 12 : 14, fontWeight: 500 }}>{t('dashboard.total_api_tokens', '总令牌')}</Text>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '8px 0 0 0' }}>
-                <Title level={2} style={{ margin: 0, color: _isLight ? '#1f2937' : '#fff', fontWeight: 500, fontSize: screens.xs ? 18 : 30, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={String(stats?.total_api_tokens || 0)}>{stats?.total_api_tokens || 0}</Title>
-                <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 11 : 13 }}>{t('dashboard.today_active')}: {stats?.today_active_tokens || 0}</Text>
-                <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 11 : 13 }}>{t('dashboard.yesterday_active')}: {stats?.yesterday_active_tokens || 0}</Text>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                <Text style={{ color: _isLight ? '#666' : '#888', fontSize: screens.xs ? 12 : 13, fontWeight: 500 }}>
+                  {t('dashboard.live_throughput')}
+                </Text>
+                <Tag style={{ margin: 0, lineHeight: '18px', fontSize: 11 }}>{t('dashboard.live_tag')}</Tag>
+              </div>
+              <div
+                style={{
+                  flex: 1,
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gridTemplateRows: '1fr 1fr',
+                  gap: screens.xs ? 8 : 10,
+                }}
+              >
+                {liveMetricItems.map((item) => (
+                  <AntTooltip key={item.key} title={item.tip}>
+                    <div style={{ minWidth: 0 }}>
+                      <Text style={metricSubStyle}>{item.label}</Text>
+                      <Title
+                        level={4}
+                        style={{
+                          margin: '2px 0 0 0',
+                          color: _isLight ? '#1f2937' : '#fff',
+                          fontWeight: 500,
+                          fontSize: screens.xs ? 15 : 20,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {Number(item.value).toLocaleString()}
+                      </Title>
+                    </div>
+                  </AntTooltip>
+                ))}
               </div>
             </div>
           </Card>

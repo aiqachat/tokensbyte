@@ -8,6 +8,13 @@
 2. 严禁直接修改存量的 CREATE TABLE 或 DDL 块。
 3. 必须在 `pg_migration_blocks!` 宏的【最尾部】新增一个独立的
    `once_migration!(pool, "unique_migration_id_vX", "SQL...");` 块。
+
+【线上兼容 / 避免业务中断】：
+1. 类型变更必须「已是目标类型则跳过」（见 timestamptz_unify_v1），禁止假定列为 TEXT。
+2. 大表建索引优先 `CREATE INDEX CONCURRENTLY IF NOT EXISTS`（不堵写入）。
+3. 失败不得写入 sys_migration_history（once_migration! 已保证），以便下次启动重试。
+4. 禁止在迁移里 DROP 仍可能被查询使用的 covering 索引；精简索引应运维确认 idx_scan 后再做。
+5. 并发建索引失败可能留下 INVALID 索引：重试前先 DROP INVALID，再重建。
 */
 
 // 开源版不再 noop 商业相关 SQL：库表/数据允许存在，插件中心由 is_plugin_compiled 过滤展示。
@@ -2389,8 +2396,8 @@ macro_rules! pg_migration_blocks {
           END LOOP;
         END;
         $mig$"#,
+        // 仅清理 TEXT 时代表达式索引；不再同步 CREATE date 索引（会锁大表，且查询多用站点时区桶）。
         "DROP INDEX IF EXISTS idx_logs_date_created_at",
-        "CREATE INDEX IF NOT EXISTS idx_logs_created_at_date ON logs ((timezone('UTC', created_at)::date))",
         "DROP FUNCTION IF EXISTS _tb_text_to_tstz(TEXT)"
     );
 
@@ -2415,6 +2422,124 @@ macro_rules! pg_migration_blocks {
     // 验证码防爆破：增加 attempts 计数列
     once_migration!(pool, "verification_codes_attempts_v1",
         "ALTER TABLE verification_codes ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0"
+    );
+
+    // ── 查询索引兼容加固（仅 expand：并发补缺 + 清理 INVALID/临时列孤儿索引；不删业务 covering）──
+    // 已收口 TIMESTAMPTZ / 已有同名索引的环境可安全重跑；失败不写 history，下次启动重试。
+    once_migration!(pool, "query_indexes_compat_v1",
+        r#"DO $inv$
+        DECLARE r RECORD;
+        BEGIN
+          FOR r IN
+            SELECT c.relname AS idxname
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_class t ON t.oid = i.indrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = 'public'
+              AND NOT i.indisvalid
+              AND t.relname IN ('logs', 'recharge_records', 'orders', 'users', 'logs_archive')
+          LOOP
+            EXECUTE format('DROP INDEX IF EXISTS %I', r.idxname);
+          END LOOP;
+        END
+        $inv$"#,
+        // expand-contract 临时列索引：列已不存在时清理，避免 planner/维护噪音
+        r#"DO $orphan$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'logs' AND column_name = 'created_at_new'
+          ) THEN
+            DROP INDEX IF EXISTS idx_logs_user_created_at_new;
+            DROP INDEX IF EXISTS idx_logs_created_at_new;
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'recharge_records' AND column_name = 'created_at_new'
+          ) THEN
+            DROP INDEX IF EXISTS idx_recharge_records_user_created_at_new;
+            DROP INDEX IF EXISTS idx_recharge_records_created_at_new;
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'created_at_new'
+          ) THEN
+            DROP INDEX IF EXISTS idx_orders_user_created_at_new;
+            DROP INDEX IF EXISTS idx_orders_created_at_new;
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'created_at_new'
+          ) THEN
+            DROP INDEX IF EXISTS idx_users_created_at_new;
+          END IF;
+        END
+        $orphan$"#,
+        // 表达式索引与业务时区桶不一致，且无查询依赖；并发删除避免锁表
+        "DROP INDEX CONCURRENTLY IF EXISTS idx_logs_created_at_date",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_recharge_records_user_created ON recharge_records (user_id, created_at DESC)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_orders_user_created ON orders (user_id, created_at DESC)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_referred_by ON users (referred_by) WHERE referred_by IS NOT NULL AND referred_by <> ''"
+    );
+
+    // ── logs 慢查询加固：日统计范围扫 + 视觉类列表有序深翻页 ──
+    // 与现网可能已手工建过的同名索引兼容（IF NOT EXISTS）；CONCURRENTLY 不堵写入。
+    once_migration!(pool, "logs_slow_query_indexes_v1",
+        r#"DO $inv$
+        DECLARE r RECORD;
+        BEGIN
+          FOR r IN
+            SELECT c.relname AS idxname
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_class t ON t.oid = i.indrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = 'public'
+              AND NOT i.indisvalid
+              AND c.relname IN (
+                'idx_logs_created_at_agg',
+                'idx_logs_vision_created_at_new'
+              )
+          LOOP
+            EXECUTE format('DROP INDEX IF EXISTS %I', r.idxname);
+          END LOOP;
+        END
+        $inv$"#,
+        // 启动回填 / Cron 按 created_at 半开区间聚合，避免仅靠 (action_type, created_at) 多段探测
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_logs_created_at_agg ON logs (created_at ASC)",
+        // 视觉筛选深翻页：按 created_at 有序，谓词与 SQL_VISION_ACTION_FILTER 对齐
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_logs_vision_created_at_new ON logs (created_at DESC) WHERE (action_type = ANY (ARRAY['图片'::text, '视频'::text, '视频增强'::text, '视觉模型'::text, '视觉'::text]))"
+    );
+
+    // 补齐 v1 未落成的 agg + 删冗余索引（v1 已上远程不可改，故独立 ID）
+    once_migration!(pool, "logs_created_at_agg_prune_v1",
+        r#"DO $inv$
+        DECLARE r RECORD;
+        BEGIN
+          FOR r IN
+            SELECT c.relname AS idxname
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_class t ON t.oid = i.indrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = 'public' AND NOT i.indisvalid
+              AND c.relname IN (
+                'idx_logs_created_at_agg',
+                'idx_logs_action_created_stats_new',
+                'idx_logs_created_at_timestamptz',
+                'idx_logs_created_at'
+              )
+          LOOP
+            EXECUTE format('DROP INDEX IF EXISTS %I', r.idxname);
+          END LOOP;
+        END
+        $inv$"#,
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_logs_created_at_agg ON logs (created_at ASC)",
+        "DROP INDEX CONCURRENTLY IF EXISTS idx_logs_action_created_stats_new",
+        "DROP INDEX CONCURRENTLY IF EXISTS idx_logs_created_at_timestamptz",
+        "DROP INDEX CONCURRENTLY IF EXISTS idx_logs_created_at",
+        "ANALYZE logs"
     );
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");

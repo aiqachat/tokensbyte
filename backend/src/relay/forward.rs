@@ -421,6 +421,7 @@ pub fn resolve_kling_dynamic_path(
 /// 优化点：零堆内存分配，使用 Rust 切片模式匹配（Slice Pattern Matching）实现超高性能魔数判定。
 fn parse_image_data(trimmed_url: &str) -> Option<(Vec<u8>, &str)> {
     use base64::Engine;
+    let trimmed_url = trimmed_url.trim();
     if trimmed_url.is_empty() {
         return None;
     }
@@ -432,12 +433,11 @@ fn parse_image_data(trimmed_url: &str) -> Option<(Vec<u8>, &str)> {
             .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(s))
     };
 
-    // 1. 优先尝试解析 Data URI
+    // 1. Data URI：必须含 ;base64,（与历史 GPT edits 一致）
     if let Some(rest) = trimmed_url.strip_prefix("data:") {
-        if let Some((mime, b64_data)) = rest.split_once(";base64,") {
-            if let Ok(bytes) = decode_b64(b64_data) {
-                return Some((bytes, mime));
-            }
+        let (meta, payload) = rest.split_once(";base64,")?;
+        if let Ok(bytes) = decode_b64(payload) {
+            return Some((bytes, meta));
         }
         return None;
     }
@@ -1954,27 +1954,19 @@ fn build_volcengine_content_body(model: &str, body: &serde_json::Value) -> serde
 /// 解析 data URI 为 Gemini inline_data 格式 {mime_type, data}。
 /// 支持 `data:image/png;base64,xxxx` 和纯 base64 字符串（默认 image/png）。
 fn parse_data_uri_to_inline_data(input: &str) -> Option<serde_json::Value> {
-    if input.starts_with("data:") {
-        // data:image/png;base64,xxxx
-        let rest = input.strip_prefix("data:")?;
+    let input = input.trim();
+    if let Some(rest) = input.strip_prefix("data:") {
         let (meta, data) = rest.split_once(',')?;
         let mime = meta
             .split(';')
             .next()
             .filter(|s| !s.is_empty())
             .unwrap_or("image/png");
-        Some(serde_json::json!({
-            "mime_type": mime,
-            "data": data
-        }))
-    } else if input.len() > 100 && !input.starts_with("http") {
-        // 无前缀纯 base64 → 默认 image/png
-        Some(serde_json::json!({
-            "mime_type": "image/png",
-            "data": input
-        }))
+        Some(serde_json::json!({ "mime_type": mime, "data": data }))
+    } else if is_b64(input, 101) {
+        Some(serde_json::json!({ "mime_type": "image/png", "data": input }))
     } else {
-        None // HTTP URL 需要异步下载，同步函数不处理
+        None
     }
 }
 
@@ -2143,13 +2135,13 @@ async fn resolve_image_urls(
     use std::collections::HashMap;
     let mut results: Vec<Option<serde_json::Value>> = vec![None; urls.len()];
     let mut http_tasks: Vec<(usize, String)> = Vec::new();
-    // data URI / 纯 base64 同步解析，HTTP URL 收集待并发下载
+    // data URI / 长纯 base64 同步解析；http 并发下载（min=101 = 历史 len>100）
     for (i, url) in urls.iter().enumerate() {
-        if url.starts_with("data:") || (url.len() > 100 && !url.starts_with("http")) {
-            // data URI 或无前缀纯 base64 字符串：同步解析
+        let url = url.trim();
+        if is_b64(url, 101) {
             results[i] = parse_data_uri_to_inline_data(url);
         } else if url.starts_with("http") {
-            http_tasks.push((i, url.clone()));
+            http_tasks.push((i, url.to_string()));
         }
     }
     // HTTP URL 去重后并发下载
@@ -2176,6 +2168,37 @@ async fn resolve_image_urls(
 }
 
 // ── 辅助函数 ──────────────────────────────────────────────────
+
+/// 是否 base64：`data:`，或非 `http` 且 len≥min（1=即梦/腾讯，101=谷歌/GPT 原 len>100）
+fn is_b64(s: &str, min: usize) -> bool {
+    let s = s.trim();
+    !s.is_empty() && (s.starts_with("data:") || (!s.starts_with("http") && s.len() >= min))
+}
+
+/// 去 `data:...,` 前缀得纯 base64；非 data URI 原样。各模块解码共用。
+pub(crate) fn b64_data(s: &str) -> &str {
+    let s = s.trim();
+    if s.starts_with("data:") {
+        s.find(',').map(|i| &s[i + 1..]).unwrap_or(s)
+    } else {
+        s
+    }
+}
+
+/// 腾讯 FileInfos 一项；extra 如 Usage/Category。
+fn tc_file(media: &str, extra: &[(&str, serde_json::Value)]) -> serde_json::Value {
+    let mut v = if is_b64(media, 1) {
+        serde_json::json!({ "Type": "Base64", "Base64": b64_data(media) })
+    } else {
+        serde_json::json!({ "Type": "Url", "Url": media.trim() })
+    };
+    if let Some(obj) = v.as_object_mut() {
+        for (k, val) in extra {
+            obj.insert((*k).into(), val.clone());
+        }
+    }
+    v
+}
 
 /// 从请求体中按字段优先级收集媒体对象数组（保留 role 等原始元数据）。
 /// 每个字段兼容：字符串、纯字符串数组、对象数组。
@@ -2822,16 +2845,13 @@ pub fn build_tencent_vod_image_body(
         tb["NegativePrompt"] = serde_json::json!(v);
     }
 
-    // FileInfos：透传或从 images/image_urls 构建 { Type: "Url", Url: "..." }
+    // FileInfos：用户已传则原样透传；否则从 images 构建（base64→Type=Base64，否则 Url）
     if let Some(fi) = body.get("FileInfos") {
         tb["FileInfos"] = fi.clone();
     } else {
         let urls = collect_image_urls(body, &["image", "image_urls", "image_list"]);
         if !urls.is_empty() {
-            let fi: Vec<_> = urls
-                .iter()
-                .map(|u| serde_json::json!({ "Type": "Url", "Url": u }))
-                .collect();
+            let fi: Vec<_> = urls.iter().map(|u| tc_file(u, &[])).collect();
             tb["FileInfos"] = serde_json::json!(fi);
         }
     }
@@ -2935,7 +2955,7 @@ pub fn build_tencent_vod_video_body(
         tb["NegativePrompt"] = serde_json::json!(v);
     }
 
-    // FileInfos：透传官方格式 或 从 images/image_urls 智能构建（带 role→Usage 映射）
+    // FileInfos：用户已传则原样透传；否则从 images 智能构建（base64→Type=Base64，否则 Url）
     if let Some(fi) = body.get("FileInfos") {
         tb["FileInfos"] = fi.clone();
     } else {
@@ -3008,21 +3028,38 @@ pub fn build_tencent_vod_video_body(
             if usage == "LastFrame" {
                 last_frame_url = Some(u);
             } else {
-                fi_arr.push(serde_json::json!({ "Type": "Url", "Url": u, "Usage": usage }));
+                fi_arr.push(tc_file(&u, &[("Usage", serde_json::json!(usage))]));
             }
         }
 
         // 视频参考输入
         for vu in &video_urls {
-            fi_arr.push(serde_json::json!({ "Type": "Url", "Url": vu, "Category": "Video", "Usage": "Reference" }));
+            fi_arr.push(tc_file(
+                vu,
+                &[
+                    ("Category", serde_json::json!("Video")),
+                    ("Usage", serde_json::json!("Reference")),
+                ],
+            ));
+        }
+
+        // 尾帧：URL 仍走 LastFrameUrl；base64 进 FileInfos（官方无 LastFrameBase64）
+        if let Some(url) = last_frame_url {
+            if is_b64(&url, 1) {
+                fi_arr.push(tc_file(&url, &[("Usage", serde_json::json!("LastFrame"))]));
+            } else {
+                tb["LastFrameUrl"] = serde_json::json!(url);
+            }
         }
 
         if !fi_arr.is_empty() {
             tb["FileInfos"] = serde_json::json!(fi_arr);
         }
-        if let Some(url) = last_frame_url {
-            tb["LastFrameUrl"] = serde_json::json!(url);
-        }
+    }
+
+    // 官方 LastFrameUrl：用户显式传入则原样透传（可与 FileInfos 并存；覆盖兼容字段推导结果）
+    if let Some(v) = body.get("LastFrameUrl") {
+        tb["LastFrameUrl"] = v.clone();
     }
 
     // OutputConfig
@@ -3325,24 +3362,12 @@ fn build_jimeng_video_body(model: &str, body: &serde_json::Value) -> serde_json:
     }
 
     // OpenAI images/image_urls → 判断数据类型：base64 用 binary_data_base64，URL 用 image_urls
-    // 优先级: images > image_urls
+    // 优先级: images > image_urls（判断/去前缀与腾讯云 FileInfos 共用）
     if fwd.get("binary_data_base64").is_none() && fwd.get("image_urls").is_none() {
         let images = collect_image_urls(body, &["images", "image_urls"]);
         if !images.is_empty() {
-            // 判断第一个元素是否为 base64 数据
-            let is_base64 = images[0].starts_with("data:") || !images[0].starts_with("http");
-            if is_base64 {
-                // 清理 data URI 前缀，即梦需要纯 base64 数据
-                let cleaned: Vec<String> = images
-                    .iter()
-                    .map(|s| {
-                        if let Some(pos) = s.find(",") {
-                            s[pos + 1..].to_string()
-                        } else {
-                            s.clone()
-                        }
-                    })
-                    .collect();
+            if is_b64(&images[0], 1) {
+                let cleaned: Vec<&str> = images.iter().map(|s| b64_data(s)).collect();
                 fwd["binary_data_base64"] = serde_json::json!(cleaned);
             } else {
                 fwd["image_urls"] = serde_json::json!(images);

@@ -3,6 +3,7 @@ import { Card, DatePicker, Row, Col, Typography, Spin, Segmented } from 'antd';
 import { useTranslation } from 'react-i18next';
 import request from '../../utils/request';
 import dayjs from 'dayjs';
+import { toCalendarDateParam } from '../../utils/dateRangeParams';
 import {
   LineChart,
   Line,
@@ -82,7 +83,9 @@ const FinanceDataAnalysis: React.FC = () => {
   const fetchData = async (start: string, end: string) => {
     setLoading(true);
     try {
-      const res: any = await request.get(`/finance/daily-stats?start_date=${start}&end_date=${end}`);
+      const res: any = await request.get(
+        `/finance/daily-stats?start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}`,
+      );
       if (res && res.daily_stats) {
         setData(res.daily_stats);
         setModelData(res.model_stats || []);
@@ -106,8 +109,8 @@ const FinanceDataAnalysis: React.FC = () => {
     try {
       let url = '/finance/daily-stats';
       if (mode === 'month') {
-        const start = dayjs().startOf('month').format('YYYY-MM-DD');
-        const end = dayjs().endOf('month').format('YYYY-MM-DD');
+        const start = encodeURIComponent(toCalendarDateParam(dayjs().startOf('month')));
+        const end = encodeURIComponent(toCalendarDateParam(dayjs().endOf('month')));
         url += `?start_date=${start}&end_date=${end}`;
       }
       // mode === 'all' 时不传日期参数
@@ -123,7 +126,7 @@ const FinanceDataAnalysis: React.FC = () => {
 
   useEffect(() => {
     if (dates && dates[0] && dates[1]) {
-      fetchData(dates[0].format('YYYY-MM-DD'), dates[1].format('YYYY-MM-DD'));
+      fetchData(toCalendarDateParam(dates[0]), toCalendarDateParam(dates[1]));
     }
   }, [dates]);
 

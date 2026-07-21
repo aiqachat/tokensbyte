@@ -132,7 +132,18 @@
     "total_spend": "总花费",
     "call_count": "调用次数",
     "count_times": "共 {{count}} 次",
-    "times": "{{count}}次"
+    "times": "{{count}}次",
+    "live_throughput": "实时吞吐",
+    "live_tag": "实时",
+    "live_refresh": "每 5 秒刷新",
+    "live_qps": "QPS",
+    "live_rpm": "RPM",
+    "live_tpm": "TPM",
+    "live_task": "Task",
+    "live_qps_tip": "最近 1 秒请求数",
+    "live_rpm_tip": "最近 60 秒请求数",
+    "live_tpm_tip": "最近 60 秒 Token 数",
+    "live_task_tip": "当前正在处理的并发请求数"
   },
   "login": {
     "title": "登录",

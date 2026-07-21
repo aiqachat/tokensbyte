@@ -27,6 +27,7 @@ import useAuthStore from '../../store/auth';
 import useSettingsStore from '../../store/settings';
 import UserAvatarMenu from '../../components/UserAvatarMenu';
 import CanvasParticles from './components/CanvasParticles';
+import { formatApiDateTime, parseApiTimeAsUtc, resolveTimedisplay } from '../../utils/timedisplay';
 
 interface ProjectItem {
   id: number;
@@ -49,19 +50,31 @@ const getFullUrl = (url: string) => {
   return url;
 };
 
-const formatDateZh = (dateStr: string) => {
-  const d = new Date(dateStr);
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
-};
+const formatDateZh = (dateStr: string) => formatApiDateTime(dateStr, 'YYYY年M月D日');
 
 const formatDateEn = (dateStr: string) => {
-  const d = new Date(dateStr);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  const d = parseApiTimeAsUtc(dateStr);
+  if (!d) return '-';
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      timeZone: resolveTimedisplay(),
+    }).format(d);
+  } catch {
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(d);
+  }
 };
 
 const getRelativeTimeAgo = (dateStr: string, currentLang: string) => {
-  const date = new Date(dateStr);
+  const date = parseApiTimeAsUtc(dateStr);
+  if (!date) return '';
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / (1000 * 60));
@@ -300,9 +313,7 @@ const PlaygroundHome: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: popoverTimeColor, fontSize: 12 }}>
                     <ScheduleOutlined />
-                    {new Date(item.created_at).toLocaleString(i18n.language === 'en' ? 'en-US' : (i18n.language === 'vi' ? 'vi-VN' : 'zh-CN'), {
-                      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-                    })}
+                    {formatApiDateTime(item.created_at, 'YYYY-MM-DD HH:mm')}
                   </div>
                 </div>
 
@@ -872,12 +883,7 @@ const PlaygroundHome: React.FC = () => {
     );
     if (sortBy === 'recent') {
       return list.sort((a, b) => {
-        const getMs = (dateStr: string) => {
-          if (!dateStr) return 0;
-          const normalized = typeof dateStr === 'string' ? dateStr.replace(' ', 'T') : dateStr;
-          const ms = new Date(normalized).getTime();
-          return isNaN(ms) ? 0 : ms;
-        };
+        const getMs = (dateStr: string) => parseApiTimeAsUtc(dateStr)?.getTime() ?? 0;
         const ta = getMs(a.created_at);
         const tb = getMs(b.created_at);
         if (ta !== tb) return tb - ta;
@@ -886,12 +892,7 @@ const PlaygroundHome: React.FC = () => {
     }
     if (sortBy === 'oldest') {
       return list.sort((a, b) => {
-        const getMs = (dateStr: string) => {
-          if (!dateStr) return 0;
-          const normalized = typeof dateStr === 'string' ? dateStr.replace(' ', 'T') : dateStr;
-          const ms = new Date(normalized).getTime();
-          return isNaN(ms) ? 0 : ms;
-        };
+        const getMs = (dateStr: string) => parseApiTimeAsUtc(dateStr)?.getTime() ?? 0;
         const ta = getMs(a.created_at);
         const tb = getMs(b.created_at);
         if (ta !== tb) return ta - tb;

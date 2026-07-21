@@ -160,7 +160,7 @@ const ChannelConfigs: React.FC = () => {
     const weeklyLimit = record.weekly_quota_limit ?? -1;
     const monthlyLimit = record.monthly_quota_limit ?? -1;
     const { dailyUsed, weeklyUsed, monthlyUsed } = getEffectiveChannelPeriodUsed(record, quotaTz);
-    const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+    const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(6));
     return (
       <div style={{ fontSize: 12, lineHeight: 1.4, whiteSpace: 'nowrap' }}>
         <div>{fmt(used)} / {limit < 0 ? '∞' : fmt(Number(limit))}</div>

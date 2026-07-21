@@ -2,6 +2,7 @@ use crate::api::date_helper;
 use crate::auth;
 use crate::error::{AppError, AppResult};
 use crate::models::{LogDetailContent, LogListResponse, LogQuery, RequestLog};
+use crate::relay::cascade::{cascade_sanitize_for_user, cascade_scrub_plugin_tag_for_user};
 use crate::AppState;
 use axum::extract::Path;
 use axum::http::{header, StatusCode};
@@ -12,7 +13,9 @@ use axum::{
 };
 use std::sync::Arc;
 
-pub(crate) const SQL_VISION_ACTION_FILTER: &str = " AND (l.action_type = '图片' OR l.action_type = '视频' OR l.action_type = '视频增强' OR l.action_type = '视觉模型' OR l.action_type = '视觉')";
+/// 与部分索引 `idx_logs_vision_created_at_new` 谓词对齐（数组成员勿随意改动）。
+pub(crate) const SQL_VISION_ACTION_FILTER: &str =
+    " AND l.action_type = ANY(ARRAY['图片','视频','视频增强','视觉模型','视觉'])";
 
 /// WHERE 只引用 `logs l`；跨表条件用 EXISTS，COUNT/stats 无需 JOIN。
 fn build_log_where(
@@ -127,20 +130,14 @@ fn build_log_where(
     (sql, binds)
 }
 
-/// 按 timestamptz 列做范围过滤（列已为 TIMESTAMPTZ，勿再对列做 ::timestamptz）
+/// 按 timestamptz 列做范围过滤：半开区间，纯日期按默认 timedisplay 展开。
 pub(crate) fn push_created_at_bound(
     sql: &mut String,
     binds: &mut Vec<String>,
     raw: &str,
     is_end: bool,
 ) {
-    let (normalized, _bound) = date_helper::parse_and_get_bounds(raw, is_end);
-    if is_end {
-        sql.push_str(" AND l.created_at <= ?::timestamptz");
-    } else {
-        sql.push_str(" AND l.created_at >= ?::timestamptz");
-    }
-    binds.push(normalized);
+    date_helper::push_timestamptz_bound_default(sql, binds, "l.created_at", raw, is_end);
 }
 
 const LOGS_LIST_JOINS: &str = " LEFT JOIN channels c ON l.channel_id = c.id \
@@ -153,14 +150,24 @@ const LOGS_EXPORT_JOINS: &str = " LEFT JOIN channels c ON l.channel_id = c.id \
          LEFT JOIN channel_configs cc ON l.channel_config_id = cc.id \
          LEFT JOIN users u ON l.user_id = u.id";
 
-/// 列表查询刻意排除 request/response 等大 TEXT，展开时走 get_log_detail
+/// 任务列表结算态：失败 / 冻结中 / 是否有计费明细（替代传 billing_detail 全文）。
+pub(crate) const SQL_BILLING_SETTLE_FLAGS: &str = "\
+COALESCE(l.billing_detail LIKE '%失败%', false) AS billing_failed, \
+COALESCE(l.billing_detail LIKE '%冻结%', false) AS billing_frozen, \
+(l.billing_detail IS NOT NULL AND btrim(l.billing_detail) <> '') AS billing_present";
+
+/// 列表不选大 TEXT（依赖 RequestLog 上 `#[sqlx(default)]` → None）；展开走 get_log_detail。
+/// 计费：布尔标记 + regexp 抽出用量数字，避免传输 billing_detail 全文。
 const LOGS_LIST_SELECT: &str = "SELECT l.id, l.log_id, l.user_id, l.channel_id, l.token_id, l.model, \
          l.prompt_tokens, l.completion_tokens, l.cached_tokens, l.cost, l.latency_ms, \
          l.status_code, l.endpoint, l.error_message, l.upstream_url, \
-         NULL::text AS request_content, NULL::text AS response_content, \
-         NULL::text AS post_response, NULL::text AS upstream_req_content, \
-         l.is_stream, l.billing_detail, l.billing_pid, l.forward_eid, \
-         NULL::text AS billing_features, l.pre_deduct_gift, l.plugin_tag, \
+         l.is_stream, \
+         COALESCE(l.billing_detail LIKE '%退回%', false) AS billing_refunded, \
+         COALESCE(l.billing_detail LIKE '%失败%', false) AS billing_failed, \
+         COALESCE((regexp_match(COALESCE(l.billing_detail, ''), '(\\d+)创建@'))[1]::int, 0) AS billing_cache_creation, \
+         COALESCE((regexp_match(COALESCE(l.billing_detail, ''), '(\\d+)读取@'))[1]::int, 0) AS billing_cache_read, \
+         COALESCE((regexp_match(COALESCE(l.billing_detail, ''), '联网搜索:\\s*([\\d.]+)次'))[1]::float8, 0) AS billing_web_search, \
+         l.billing_pid, l.forward_eid, l.pre_deduct_gift, l.plugin_tag, \
          l.action_type, l.is_completed, l.channel_config_id, l.task_id, l.created_at, \
          c.group_aid AS channel_group_aid, c.name AS channel_name, c.provider_type AS channel_provider_type, \
          cc.name AS sub_channel_name, cc.yid AS yid, \
@@ -202,16 +209,6 @@ pub(crate) async fn resolve_user_filter(
         .unwrap_or_else(|| "NOT_FOUND_USER".to_string()))
 }
 
-pub(crate) fn summarize_restricted_billing(detail: &str) -> String {
-    if detail.contains("失败") {
-        "失败".to_string()
-    } else if detail.contains("冻结") {
-        "冻结".to_string()
-    } else {
-        "成功".to_string()
-    }
-}
-
 pub(crate) async fn fetch_logs_count(
     db: &crate::db::Database,
     where_clause: &str,
@@ -225,24 +222,49 @@ pub(crate) async fn fetch_logs_count(
     q.fetch_one(&db.pool).await
 }
 
-async fn fetch_logs_stats(
+/// COUNT + 汇总一次扫描（条件相同时替代并行两次全表聚合）
+async fn fetch_logs_count_and_stats(
     db: &crate::db::Database,
     where_clause: &str,
     binds: &[String],
-) -> (f64, i64, i64, f64) {
+) -> Result<(i64, f64, i64, i64, f64), sqlx::Error> {
     let sql = db.format_query(&format!(
-        "SELECT COALESCE(SUM(l.cost), 0.0), \
+        "SELECT COUNT(*)::bigint, \
+         COALESCE(SUM(l.cost), 0.0), \
          COUNT(CASE WHEN l.status_code >= 200 AND l.status_code < 400 THEN 1 END), \
          COUNT(CASE WHEN l.status_code >= 400 OR l.status_code < 200 THEN 1 END), \
          COALESCE(SUM(l.pre_deduct_gift), 0.0) \
          FROM logs l{}",
         where_clause
     ));
-    let mut q = sqlx::query_as::<_, (f64, i64, i64, f64)>(&sql);
+    let mut q = sqlx::query_as::<_, (i64, f64, i64, i64, f64)>(&sql);
     for v in binds {
         q = q.bind(v);
     }
-    q.fetch_one(&db.pool).await.unwrap_or((0.0, 0, 0, 0.0))
+    q.fetch_one(&db.pool).await
+}
+
+async fn fetch_logs_stats(
+    db: &crate::db::Database,
+    where_clause: &str,
+    binds: &[String],
+) -> (f64, i64, i64, f64) {
+    match fetch_logs_count_and_stats(db, where_clause, binds).await {
+        Ok((_, cost, ok, fail, gift)) => (cost, ok, fail, gift),
+        Err(_) => (0.0, 0, 0, 0.0),
+    }
+}
+
+async fn fetch_logs_list_rows(
+    db: &crate::db::Database,
+    data_sql: &str,
+    binds: &[String],
+) -> Result<Vec<RequestLog>, sqlx::Error> {
+    let mut q = sqlx::query_as::<_, RequestLog>(data_sql);
+    for v in binds {
+        q = q.bind(v);
+    }
+    q.fetch_all(&db.pool).await
 }
 
 pub async fn list_logs(
@@ -308,30 +330,50 @@ pub async fn list_logs(
         None => (where_clause.as_str(), binds.as_slice()),
     };
 
-    let data_sql = state.db.format_query(&format!(
-        "{LOGS_LIST_SELECT} FROM logs l{LOGS_LIST_JOINS}{where_clause} \
-         ORDER BY l.created_at DESC LIMIT {per_page} OFFSET {offset}"
+    let data_sql = state.db.format_query(&deferred_join_page_sql(
+        LOGS_LIST_SELECT,
+        LOGS_LIST_JOINS,
+        &where_clause,
+        per_page,
+        offset,
     ));
     let binds_data = binds.clone();
     let db = state.db.clone();
     let stats_where_owned = stats_where.to_string();
     let stats_binds_owned = stats_binds.to_vec();
 
-    // COUNT / 列表 / 汇总并行，缩短大数据量下的接口等待
-    let (total_res, logs_res, stats) = tokio::join!(
-        fetch_logs_count(&state.db, &where_clause, &binds),
-        async {
-            let mut logs_q = sqlx::query_as::<_, RequestLog>(&data_sql);
-            for val in &binds_data {
-                logs_q = logs_q.bind(val);
-            }
-            logs_q.fetch_all(&db.pool).await
-        },
-        fetch_logs_stats(&state.db, &stats_where_owned, &stats_binds_owned),
-    );
-    let total = total_res?;
-    let mut logs = logs_res?;
-    let (total_cost, success_count, fail_count, total_gift_cost) = stats;
+    // 有显式日期时 COUNT 与汇总 WHERE 相同 → 合并为一次扫描；无日期时汇总仍限近 30 天，与分页 total 分离
+    let (total, mut logs, total_cost, success_count, fail_count, total_gift_cost) =
+        if stats_owned.is_none() {
+            let (agg_res, logs_res) = tokio::join!(
+                fetch_logs_count_and_stats(&state.db, &where_clause, &binds),
+                fetch_logs_list_rows(&db, &data_sql, &binds_data),
+            );
+            let (total, total_cost, success_count, fail_count, total_gift_cost) = agg_res?;
+            (
+                total,
+                logs_res?,
+                total_cost,
+                success_count,
+                fail_count,
+                total_gift_cost,
+            )
+        } else {
+            let (total_res, logs_res, stats) = tokio::join!(
+                fetch_logs_count(&state.db, &where_clause, &binds),
+                fetch_logs_list_rows(&db, &data_sql, &binds_data),
+                fetch_logs_stats(&state.db, &stats_where_owned, &stats_binds_owned),
+            );
+            let (total_cost, success_count, fail_count, total_gift_cost) = stats;
+            (
+                total_res?,
+                logs_res?,
+                total_cost,
+                success_count,
+                fail_count,
+                total_gift_cost,
+            )
+        };
 
     let mut allow_details = true;
     if claims.role != "admin" {
@@ -351,12 +393,8 @@ pub async fn list_logs(
             log.channel_group_aid = None;
             log.channel_name = None;
             log.sub_channel_name = None;
-            if !allow_details {
-                log.billing_detail = log
-                    .billing_detail
-                    .as_deref()
-                    .map(summarize_restricted_billing);
-            }
+            // 列表大字段已为 NULL；stage 体脱敏在 get_log_detail；此处清进行中 cascade 密钥
+            cascade_scrub_plugin_tag_for_user(&mut log.plugin_tag);
             if let Some(ref err) = log.error_message {
                 log.error_message = Some(crate::relay::proxy::sanitize_error_message(err));
             }
@@ -404,14 +442,15 @@ pub async fn get_log_detail(
         response_content: Option<String>,
         post_response: Option<String>,
         upstream_req_content: Option<String>,
+        billing_detail: Option<String>,
+        plugin_tag: Option<String>,
     }
 
-    let row: Option<DetailRow> = sqlx::query_as(
-        &state.db.format_query(
-            "SELECT user_id, status_code, request_content, response_content, post_response, upstream_req_content \
+    let row: Option<DetailRow> = sqlx::query_as(&state.db.format_query(
+        "SELECT user_id, status_code, request_content, response_content, post_response, \
+             upstream_req_content, billing_detail, plugin_tag \
              FROM logs WHERE id = ?",
-        ),
-    )
+    ))
     .bind(id)
     .fetch_optional(&state.db.pool)
     .await?;
@@ -464,6 +503,7 @@ pub async fn get_log_detail(
             response_content: None,
             post_response: None,
             upstream_req_content: None,
+            billing_detail: None,
         }));
     }
 
@@ -473,11 +513,21 @@ pub async fn get_log_detail(
         response_content: row.response_content,
         post_response: row.post_response,
         upstream_req_content: row.upstream_req_content,
+        billing_detail: row.billing_detail,
     };
 
-    if claims.role != "admin" && row.status_code != 200 {
-        if let Some(ref resp) = detail.response_content {
-            detail.response_content = Some(crate::relay::proxy::sanitize_error_message(resp));
+    if claims.role != "admin" {
+        // 与列表策略一致：隐藏级联 stage1/stage2 内部结构
+        cascade_sanitize_for_user(
+            &mut detail.upstream_req_content,
+            &mut detail.response_content,
+            &mut detail.post_response,
+            row.plugin_tag.as_deref(),
+        );
+        if row.status_code != 200 {
+            if let Some(ref resp) = detail.response_content {
+                detail.response_content = Some(crate::relay::proxy::sanitize_error_message(resp));
+            }
         }
     }
 
@@ -601,6 +651,26 @@ pub async fn export_logs(
         )
         .body(axum::body::Body::from(csv))
         .unwrap())
+}
+
+/// 深翻页：先取 id 再回表 JOIN（排序仅 `created_at DESC`，以走时间索引有序扫描）。
+pub(crate) fn deferred_join_page_sql(
+    select_sql: &str,
+    joins: &str,
+    where_clause: &str,
+    per_page: i64,
+    offset: i64,
+) -> String {
+    format!(
+        "{select_sql} FROM (
+            SELECT l.id FROM logs l{where_clause}
+            ORDER BY l.created_at DESC
+            LIMIT {per_page} OFFSET {offset}
+         ) page
+         INNER JOIN logs l ON l.id = page.id
+         {joins}
+         ORDER BY l.created_at DESC"
+    )
 }
 
 /// 将数据库存储的时间字符串格式化为可读的北京时间

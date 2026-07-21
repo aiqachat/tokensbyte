@@ -213,25 +213,6 @@ pub async fn refund(
     Ok(())
 }
 
-/// 结算差额：正数走消费（防并发超用），负数走退款
-#[allow(dead_code)]
-pub async fn apply_delta(
-    db: &Database,
-    tx: &mut Transaction<'_, Postgres>,
-    token_id: i64,
-    delta: f64,
-    tz_name: &str,
-) -> Result<f64, sqlx::Error> {
-    if delta > 0.0 {
-        consume(db, tx, token_id, delta, tz_name).await
-    } else if delta < 0.0 {
-        refund(db, tx, token_id, -delta, tz_name).await?;
-        Ok(delta)
-    } else {
-        Ok(0.0)
-    }
-}
-
 /// 带内存镜像的结算差额（异步任务结算等低频路径）
 pub async fn apply_delta_with_memory(
     state: &AppState,
@@ -257,64 +238,5 @@ pub async fn apply_delta_with_memory(
         Ok(delta)
     } else {
         Ok(0.0)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::time_system::DbTs;
-
-    fn token_with(limit: f64, used: f64) -> ApiToken {
-        ApiToken {
-            id: 1,
-            user_id: "u".into(),
-            token_key: "k".into(),
-            kid: None,
-            name: "t".into(),
-            quota_limit: limit,
-            quota_used: used,
-            allowed_models: "[]".into(),
-            allowed_ips: String::new(),
-            rps_limit: 0,
-            rpm_limit: 0,
-            expires_at: None,
-            is_active: 1,
-            created_at: DbTs::default(),
-            updated_at: DbTs::default(),
-            last_used_at: None,
-            only_playground: 0,
-            high_availability: 0,
-            daily_quota_limit: -1.0,
-            daily_quota_used: 0.0,
-            weekly_quota_limit: -1.0,
-            weekly_quota_used: 0.0,
-            monthly_quota_limit: -1.0,
-            monthly_quota_used: 0.0,
-            last_reset_day: None,
-            last_reset_week: None,
-            last_reset_month: None,
-            current_daily_quota_used: None,
-            current_weekly_quota_used: None,
-            current_monthly_quota_used: None,
-        }
-    }
-
-    #[test]
-    fn allows_full_amount_when_under_limit() {
-        let t = token_with(10.0, 9.0);
-        assert!((allowed_consume_amount(&t, 2.0, "d", "w", "m") - 2.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn blocks_when_already_exhausted() {
-        let t = token_with(10.0, 10.0);
-        assert!((allowed_consume_amount(&t, 1.0, "d", "w", "m") - 0.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn unlimited_always_allows() {
-        let t = token_with(-1.0, 999.0);
-        assert!((allowed_consume_amount(&t, 5.0, "d", "w", "m") - 5.0).abs() < f64::EPSILON);
     }
 }

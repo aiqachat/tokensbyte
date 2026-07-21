@@ -3,6 +3,7 @@ import { Typography, Input, Button, Space, Spin, message, Tag, Modal, Form, Sele
 import { PlusOutlined, SearchOutlined, DeleteOutlined, EditOutlined, CloudDownloadOutlined, HistoryOutlined, InboxOutlined, CloseOutlined } from '@ant-design/icons';
 import request from '../../../utils/request';
 import { useThemeStore } from '../../../store/theme';
+import { formatApiDateTime } from '../../../utils/timedisplay';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -304,8 +305,8 @@ const SiteIconsManager: React.FC = () => {
               <img src={getSvgUrl(previewIcon)} alt={previewIcon.name} style={{ maxWidth: 80, maxHeight: 80 }} />
             </div>
             <div style={{ textAlign: 'left', padding: '0 12px' }}>
-              {[['标识名', previewIcon.name], ['显示名称', previewIcon.title || '-'], ['分类', previewIcon.category], ['文件路径', previewIcon.file_path], ['更新时间', previewIcon.updated_at]].map(([label, val]) => (
-                <div key={label as string} style={{ marginBottom: 8 }}>
+              {([['标识名', previewIcon.name], ['显示名称', previewIcon.title || '-'], ['分类', previewIcon.category], ['文件路径', previewIcon.file_path], ['更新时间', formatApiDateTime(previewIcon.updated_at)]] as const).map(([label, val]) => (
+                <div key={label} style={{ marginBottom: 8 }}>
                   <Text style={{ color: _isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 12 }}>{label}</Text>
                   <Text style={{ color: val === previewIcon.file_path ? 'rgba(255,255,255,0.5)' : '#fff', display: 'block', fontSize: val === previewIcon.file_path ? 12 : 14, wordBreak: 'break-all' }}>{val}</Text>
                 </div>
@@ -325,7 +326,7 @@ const SiteIconsManager: React.FC = () => {
               <div key={log.id} style={{ background: _isLight ? '#fff' : '#141414', borderRadius: 6, border: _isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)', padding: '12px 16px', marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <Tag color={log.status === 'success' ? 'success' : log.status === 'partial' ? 'warning' : 'error'}>{log.status === 'success' ? '成功' : log.status === 'partial' ? '部分成功' : '失败'}</Tag>
-                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>{log.created_at}</Text>
+                  <Text style={{ color: _isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', fontSize: 12 }}>{formatApiDateTime(log.created_at)}</Text>
                 </div>
                 <Text style={{ color: _isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)', fontSize: 13 }}>同步 {log.total_synced} 个，库中共 {log.total_new} 个</Text>
                 {log.error_message && <div style={{ marginTop: 4 }}><Text style={{ color: 'rgba(255,77,79,0.8)', fontSize: 12, wordBreak: 'break-all' }}>{log.error_message.substring(0, 200)}</Text></div>}

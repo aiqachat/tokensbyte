@@ -6,6 +6,7 @@ import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
 import dayjs from 'dayjs';
 import { formatApiDateTime } from '../../utils/timedisplay';
+import { toTimeRangeParams } from '../../utils/dateRangeParams';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -82,8 +83,7 @@ const OrderDetails: React.FC = () => {
           user_id: search || undefined,
           status: statusFilter,
           payment_method: methodFilter,
-          start_time: dateRange?.[0] || undefined,
-          end_time: dateRange?.[1] ? dateRange[1] + ' 23:59:59' : undefined,
+          ...toTimeRangeParams(dateRange),
         }
       }) as unknown as Promise<{ data: OrderRecord[]; total: number; total_amount: number }>);
       setData(resp.data);

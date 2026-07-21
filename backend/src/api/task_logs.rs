@@ -1,6 +1,6 @@
 use crate::api::logs::{
-    fetch_logs_count, push_created_at_bound, resolve_user_filter, summarize_restricted_billing,
-    SQL_VISION_ACTION_FILTER,
+    deferred_join_page_sql, fetch_logs_count, push_created_at_bound, resolve_user_filter,
+    SQL_BILLING_SETTLE_FLAGS, SQL_VISION_ACTION_FILTER,
 };
 use crate::auth;
 use crate::error::{AppError, AppResult};
@@ -123,17 +123,19 @@ pub async fn list_task_logs(
         allow_details = perm.unwrap_or(1) == 1;
     }
 
-    // 列表不拉 request/response/post 大字段；展开/预览走 /logs/{id}/detail
-    let data_sql = state.db.format_query(&format!(
-        "SELECT l.id, l.log_id, l.user_id, l.channel_id, l.model, l.endpoint, \
-         l.prompt_tokens, l.completion_tokens, l.cached_tokens, l.cost, l.latency_ms, l.status_code, \
-         l.error_message, NULL::text AS request_content, NULL::text AS response_content, \
-         NULL::text AS post_response, l.billing_detail, \
-         c.name AS channel_name, c.group_aid AS channel_group_aid, c.provider_type AS channel_provider_type, \
-         COALESCE(u.nickname, u.username) AS user_nickname, u.uid AS user_uid, \
-         l.task_id, l.action_type, cc.yid AS yid, l.billing_pid, l.forward_eid, l.created_at \
-         FROM logs l{TASK_LIST_JOINS} \
-         {where_clause} ORDER BY l.created_at DESC LIMIT {per_page} OFFSET {offset}"
+    let data_sql = state.db.format_query(&deferred_join_page_sql(
+        &format!(
+            "SELECT l.id, l.log_id, l.user_id, l.channel_id, l.model, l.endpoint, \
+             l.prompt_tokens, l.completion_tokens, l.cached_tokens, l.cost, l.latency_ms, l.status_code, \
+             l.error_message, {SQL_BILLING_SETTLE_FLAGS}, \
+             c.name AS channel_name, c.group_aid AS channel_group_aid, c.provider_type AS channel_provider_type, \
+             COALESCE(u.nickname, u.username) AS user_nickname, u.uid AS user_uid, \
+             l.task_id, l.action_type, cc.yid AS yid, l.billing_pid, l.forward_eid, l.created_at"
+        ),
+        TASK_LIST_JOINS,
+        &where_clause,
+        per_page,
+        offset,
     ));
     let binds_data = binds.clone();
     let db = state.db.clone();
@@ -148,15 +150,6 @@ pub async fn list_task_logs(
         },);
     let total = total_res?;
     let mut data = data_res?;
-
-    if !allow_details {
-        for log in &mut data {
-            log.billing_detail = log
-                .billing_detail
-                .as_deref()
-                .map(summarize_restricted_billing);
-        }
-    }
 
     if claims.role != "admin" {
         for log in &mut data {

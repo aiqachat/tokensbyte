@@ -3,6 +3,7 @@ use crate::{
     auth,
     error::{AppError, AppResult},
     services::tos,
+    time_system::DbTs,
     AppState,
 };
 use axum::{
@@ -96,7 +97,19 @@ async fn list_projects(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let projects: Vec<(i64, String, String, String, String, String, i64, String, String, i64, i32)> = sqlx::query_as(
+    let projects: Vec<(
+        i64,
+        String,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        DbTs,
+        DbTs,
+        i64,
+        i32,
+    )> = sqlx::query_as(
         &state.db.format_query(&format!(
             "SELECT id, uid, name, description, cover_url, canvas_data, is_deleted, created_at, updated_at, \
              (SELECT COUNT(*) FROM playground_assets WHERE project_id = playground_projects.id AND is_deleted = 0 \
@@ -104,7 +117,7 @@ async fn list_projects(
              is_pinned \
              FROM playground_projects WHERE user_id = ? AND is_deleted = 0 ORDER BY created_at DESC",
             SQL_EXCLUDE_REFERENCE_ASSETS
-        ))
+        )),
     )
     .bind(&claims.sub)
     .fetch_all(&state.db.pool)
@@ -113,7 +126,6 @@ async fn list_projects(
     let list: Vec<serde_json::Value> = projects
         .iter()
         .map(|p| {
-            // 获取项目的资源数量（快速统计）
             json!({
                 "id": p.0,
                 "uid": p.1,
@@ -122,8 +134,8 @@ async fn list_projects(
                 "cover_url": p.4,
                 "canvas_data": p.5,
                 "is_deleted": p.6,
-                "created_at": p.7,
-                "updated_at": p.8,
+                "created_at": p.7.as_str(),
+                "updated_at": p.8.as_str(),
                 "asset_count": p.9,
                 "is_pinned": p.10,
             })
@@ -256,12 +268,20 @@ async fn get_project(
     Path(id): Path<i64>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let project: (i64, String, String, String, String, String, String, String, i32) = sqlx::query_as(
-        &state.db.format_query(
-            "SELECT id, uid, name, description, cover_url, canvas_data, created_at, updated_at, is_pinned \
-             FROM playground_projects WHERE id = ? AND user_id = ? AND is_deleted = 0"
-        )
-    )
+    let project: (
+        i64,
+        String,
+        String,
+        String,
+        String,
+        String,
+        DbTs,
+        DbTs,
+        i32,
+    ) = sqlx::query_as(&state.db.format_query(
+        "SELECT id, uid, name, description, cover_url, canvas_data, created_at, updated_at, is_pinned \
+             FROM playground_projects WHERE id = ? AND user_id = ? AND is_deleted = 0",
+    ))
     .bind(id)
     .bind(&claims.sub)
     .fetch_optional(&state.db.pool)
@@ -269,13 +289,26 @@ async fn get_project(
     .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
 
     // 获取该项目的资源列表
-    let assets: Vec<(i64, String, String, i64, String, String, String, String, String, String, f64, i64, i64, String)> = sqlx::query_as(
-        &state.db.format_query(
-            "SELECT id, asset_type, file_name, file_size, file_url, thumbnail_url, prompt, model_id, model_name, \
+    let assets: Vec<(
+        i64,
+        String,
+        String,
+        i64,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        f64,
+        i64,
+        i64,
+        DbTs,
+    )> = sqlx::query_as(&state.db.format_query(
+        "SELECT id, asset_type, file_name, file_size, file_url, thumbnail_url, prompt, model_id, model_name, \
              canvas_node_data, duration_seconds, width, height, created_at \
-             FROM playground_assets WHERE project_id = ? AND user_id = ? AND is_deleted = 0 ORDER BY id DESC"
-        )
-    )
+             FROM playground_assets WHERE project_id = ? AND user_id = ? AND is_deleted = 0 ORDER BY id DESC",
+    ))
     .bind(id)
     .bind(&claims.sub)
     .fetch_all(&state.db.pool)
@@ -298,7 +331,7 @@ async fn get_project(
                 "duration_seconds": a.10,
                 "width": a.11,
                 "height": a.12,
-                "created_at": a.13,
+                "created_at": a.13.as_str(),
             })
         })
         .collect();
@@ -311,8 +344,8 @@ async fn get_project(
             "description": project.3,
             "cover_url": project.4,
             "canvas_data": project.5,
-            "created_at": project.6,
-            "updated_at": project.7,
+            "created_at": project.6.as_str(),
+            "updated_at": project.7.as_str(),
             "is_pinned": project.8,
         },
         "assets": asset_list,
@@ -1144,12 +1177,7 @@ async fn get_user_playground_quotas(state: &AppState, user_id: &str) -> AppResul
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     use base64::Engine;
-    // 去掉可能的 data:xxx;base64, 前缀
-    let data = if let Some(pos) = input.find(",") {
-        &input[pos + 1..]
-    } else {
-        input
-    };
+    let data = crate::relay::forward::b64_data(input);
     base64::engine::general_purpose::STANDARD
         .decode(data)
         .map_err(|e| format!("Base64 解码失败: {}", e))
@@ -1372,52 +1400,61 @@ pub async fn cleanup_stale_playground_nodes(state: &crate::AppState) {
                 None => continue,
             };
 
-            // 创建时间 < 2 分钟的节点可能仍在处理中，跳过
-            if let Ok(ct) = chrono::DateTime::parse_from_rfc3339(created_at) {
-                let elapsed = chrono::Utc::now() - ct.with_timezone(&chrono::Utc);
-                if elapsed.num_seconds() < 120 {
+            // 画布 JSON 时间按 timesystem UTC 解析（兼容 RFC3339 / 朴素字符串）
+            let created_utc = match crate::time_system::db_ts::parse_flexible_ts(created_at) {
+                Some(dt) => dt,
+                None => {
+                    tracing::warn!(
+                        "[PlaygroundCleanup] 无法解析 created_at={}，跳过节点超时判定",
+                        created_at
+                    );
                     continue;
                 }
+            };
+            let created_db = DbTs::from_utc(created_utc);
+            let elapsed = chrono::Utc::now() - created_utc;
+            if elapsed.num_seconds() < 120 {
+                continue;
+            }
 
-                // 超时判断：有 task_id 的异步任务（视频等）允许更长时间，无 task_id 的同步任务 30 分钟超时
-                let timeout_secs = if !task_id_str.is_empty() {
-                    2 * 3600
-                } else {
-                    30 * 60
-                };
-                if elapsed.num_seconds() > timeout_secs {
-                    // 先查日志确认是否真的无结果
-                    let has_log: bool = if !task_id_str.is_empty() {
-                        sqlx::query_scalar(
+            // 超时判断：有 task_id 的异步任务（视频等）允许更长时间，无 task_id 的同步任务 30 分钟超时
+            let timeout_secs = if !task_id_str.is_empty() {
+                2 * 3600
+            } else {
+                30 * 60
+            };
+            if elapsed.num_seconds() > timeout_secs {
+                // 先查日志确认是否真的无结果
+                let has_log: bool = if !task_id_str.is_empty() {
+                    sqlx::query_scalar(
                             &state.db.format_query(
                                 "SELECT EXISTS(SELECT 1 FROM logs WHERE task_id = ? AND user_id = ? AND status_code > 0)"
                             )
                         )
-                        .bind(task_id_str)
-                        .bind(user_id)
-                        .fetch_one(&state.db.pool)
-                        .await
-                        .unwrap_or(false)
-                    } else {
-                        sqlx::query_scalar(&state.db.format_query(
-                            "SELECT EXISTS(SELECT 1 FROM logs \
+                    .bind(task_id_str)
+                    .bind(user_id)
+                    .fetch_one(&state.db.pool)
+                    .await
+                    .unwrap_or(false)
+                } else {
+                    sqlx::query_scalar(&state.db.format_query(
+                        "SELECT EXISTS(SELECT 1 FROM logs \
                                  WHERE user_id = ? AND model = ? AND status_code > 0 \
                                  AND created_at >= ?::timestamptz)",
-                        ))
-                        .bind(user_id)
-                        .bind(model_id)
-                        .bind(created_at)
-                        .fetch_one(&state.db.pool)
-                        .await
-                        .unwrap_or(false)
-                    };
+                    ))
+                    .bind(user_id)
+                    .bind(model_id)
+                    .bind(&created_db)
+                    .fetch_one(&state.db.pool)
+                    .await
+                    .unwrap_or(false)
+                };
 
-                    if !has_log {
-                        node["status"] = json!("error");
-                        node["resultData"] = json!({"message": "生成任务超时，请重新生成"});
-                        updated = true;
-                        continue;
-                    }
+                if !has_log {
+                    node["status"] = json!("error");
+                    node["resultData"] = json!({"message": "生成任务超时，请重新生成"});
+                    updated = true;
+                    continue;
                 }
             }
 
@@ -1437,9 +1474,7 @@ pub async fn cleanup_stale_playground_nodes(state: &crate::AppState) {
                     .unwrap_or(None)
                 } else {
                     // 同步任务：按 model + created_at 时间窗口匹配
-                    let created_after = chrono::DateTime::parse_from_rfc3339(created_at)
-                        .map(|dt| (dt - chrono::Duration::seconds(10)).to_rfc3339())
-                        .unwrap_or_else(|_| created_at.to_string());
+                    let created_after = DbTs::from_utc(created_utc - chrono::Duration::seconds(10));
                     sqlx::query_as(&state.db.format_query(
                         "SELECT id, status_code, response_content, endpoint, action_type \
                          FROM logs \
@@ -1704,7 +1739,7 @@ async fn list_model_configs(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<auth::Claims>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let configs: Vec<(i64, String, String, String, i32, String, String)> =
+    let configs: Vec<(i64, String, String, String, i32, DbTs, DbTs)> =
         sqlx::query_as(&state.db.format_query(
             "SELECT id, user_id, model_mid, param_values, is_locked, created_at, updated_at \
              FROM user_model_configs WHERE user_id = ?",
@@ -1722,8 +1757,8 @@ async fn list_model_configs(
                 "model_mid": c.2,
                 "param_values": c.3,
                 "is_locked": c.4,
-                "created_at": c.5,
-                "updated_at": c.6,
+                "created_at": c.5.as_str(),
+                "updated_at": c.6.as_str(),
             })
         })
         .collect();

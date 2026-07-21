@@ -5,29 +5,12 @@ import { useCanvas, usePlayground } from '../context/PlaygroundContext';
 import { useThemeStore } from '../../../store/theme';
 import { extractVideoUrl } from '../utils/resultExtractor';
 import JSZip from 'jszip';
+import { parseApiTimeAsUtc } from '../../../utils/timedisplay';
 
 const { Text } = Typography;
 
 const safeParseDate = (dateStr?: string | null): Date => {
-  if (!dateStr) return new Date(NaN);
-  let s = String(dateStr).trim();
-  if (/^\d+$/.test(s)) {
-    return new Date(parseInt(s, 10));
-  }
-  if (s.includes(' ') && !s.includes('T')) {
-    s = s.replace(' ', 'T');
-  }
-  s = s.replace(/\.(\d{1,3})\d*(Z|[+-]\d{2}(?::?\d{2})?)?$/, (_, subSec, tz) => {
-    let normalizedTz = tz || '';
-    if (normalizedTz && normalizedTz !== 'Z' && !normalizedTz.includes(':') && normalizedTz.length === 3) {
-      normalizedTz = normalizedTz + ':00';
-    }
-    return `.${subSec}${normalizedTz}`;
-  });
-  if (!s.includes('.')) {
-    s = s.replace(/([+-]\d{2})$/, '$1:00');
-  }
-  return new Date(s);
+  return parseApiTimeAsUtc(dateStr) ?? new Date(NaN);
 };
 
 // 缩放矢量图标以保障高级的视觉质感与高兼容性

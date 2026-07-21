@@ -1,8 +1,9 @@
 ﻿# TokensByte 开发环境启动脚本 (Windows PowerShell 5.1 / 7+)
 # ──────────────────────────────────────────────────
+# 默认后台：端口就绪后脚本退出，进程继续跑；前台日志：.\dev.ps1 1 fg（Ctrl+C 停本实例）
 # 多实例：共用 Postgres + 端口自动避让；中文路径：UTF-8 + CARGO_TARGET_DIR 重定向 + Start-Process
-# 停止：Ctrl+C / Ctrl+Z 均释放本实例端口；下次启动会回收本仓库残留
-# 可选：PROJECT_NAME / BACKEND_PORT / FRONTEND_PORT / POSTGRES_PORT / DATABASE_URL
+# 停止：前台模式下 Ctrl+C / Ctrl+Z 释放本实例端口；下次启动会回收本仓库残留
+# 可选：PROJECT_NAME / BACKEND_PORT / FRONTEND_PORT / POSTGRES_PORT / DATABASE_URL / DEV_ATTACH
 
 $ErrorActionPreference = "Stop"
 
@@ -235,34 +236,61 @@ $PostgresUser = if ($env:POSTGRES_USER) { $env:POSTGRES_USER } else { "tokensapi
 $PreferredBackendPort = if ($env:BACKEND_PORT) { [int]$env:BACKEND_PORT } else { 3000 }
 $PreferredFrontendPort = if ($env:FRONTEND_PORT) { [int]$env:FRONTEND_PORT } else { 5173 }
 
-Write-Host ""
-Write-Host "═══════════════════════════════════════════════════" -ForegroundColor White
-Write-Host "  🛠  $ProjectName 开发环境启动器" -ForegroundColor White
-Write-Host "═══════════════════════════════════════════════════" -ForegroundColor White
-Write-Host ""
-Write-Host "  [1] 本地开发  (推荐，编译速度快)" -ForegroundColor Cyan
-Write-Host "      共用 Docker Postgres；前后端端口自动避让；兼容中文路径" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  [2] Docker 开发  (全容器热重载)" -ForegroundColor Cyan
-Write-Host "      所有服务在 Docker 中运行，源码挂载热更新" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "═══════════════════════════════════════════════════" -ForegroundColor White
-Write-Host ""
+# 解析：.\dev.ps1 [1|2] [bg|fg]；DEV_ATTACH=1 等同 fg（默认后台 bg）
+$DevAttach = ($env:DEV_ATTACH -eq "1")
+$choice = $null
+foreach ($a in @($args)) {
+    $t = [string]$a
+    if ([string]::IsNullOrWhiteSpace($t)) { continue }
+    switch -Regex ($t.ToLowerInvariant()) {
+        '^[12]$' { $choice = $t }
+        '^(fg|foreground|attach|log)$' { $DevAttach = $true }
+        '^(bg|background|daemon)$' { $DevAttach = $false }
+        '^(-h|--help|help)$' {
+            Write-Host "用法: .\dev.ps1 [1|2] [bg|fg]"
+            Write-Host "  1 / 默认  本地开发（默认 bg 后台）"
+            Write-Host "  2         Docker 全容器"
+            Write-Host "  fg        前台输出日志，Ctrl+C 停止本实例"
+            Write-Host "  bg        后台运行（默认）"
+            exit 0
+        }
+        default {
+            Write-Host "❌ 无效参数: $t（可用: .\dev.ps1 [1|2] [bg|fg]）" -ForegroundColor Red
+            exit 1
+        }
+    }
+}
+if ([string]::IsNullOrWhiteSpace($choice)) {
+    if (![string]::IsNullOrWhiteSpace($env:DEV_MODE)) {
+        $choice = $env:DEV_MODE
+    } else {
+        Write-Host ""
+        Write-Host "═══════════════════════════════════════════════════" -ForegroundColor White
+        Write-Host "  🛠  $ProjectName 开发环境启动器" -ForegroundColor White
+        Write-Host "═══════════════════════════════════════════════════" -ForegroundColor White
+        Write-Host ""
+        Write-Host "  [1] 本地开发  (默认后台；前台日志: .\dev.ps1 1 fg)" -ForegroundColor Cyan
+        Write-Host "      共用 Docker Postgres；前后端端口自动避让；兼容中文路径" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  [2] Docker 开发  (全容器热重载)" -ForegroundColor Cyan
+        Write-Host "      所有服务在 Docker 中运行，源码挂载热更新" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "═══════════════════════════════════════════════════" -ForegroundColor White
+        Write-Host ""
+        if ($PathHasNonAscii) {
+            Write-Host "ℹ️  非 ASCII 路径兼容模式 · $AsciiProjectId" -ForegroundColor Cyan
+            Write-Host "   $RootDir" -ForegroundColor DarkGray
+            Write-Host ""
+        }
+        $choice = Read-Host "请选择开发模式 [1/2] (默认 1)"
+        if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
+    }
+}
 
-if ($PathHasNonAscii) {
+if ($PathHasNonAscii -and $choice -eq "2") {
     Write-Host "ℹ️  非 ASCII 路径兼容模式 · $AsciiProjectId" -ForegroundColor Cyan
     Write-Host "   $RootDir" -ForegroundColor DarkGray
     Write-Host ""
-}
-
-# 选择：.\dev.ps1 1|2 或 $env:DEV_MODE；否则交互询问
-if ($args.Count -ge 1 -and ![string]::IsNullOrWhiteSpace([string]$args[0])) {
-    $choice = [string]$args[0]
-} elseif (![string]::IsNullOrWhiteSpace($env:DEV_MODE)) {
-    $choice = $env:DEV_MODE
-} else {
-    $choice = Read-Host "请选择开发模式 [1/2] (默认 1)"
-    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
 }
 
 switch ($choice) {
@@ -286,7 +314,11 @@ switch ($choice) {
 
     "1" {
         Write-Host ""
-        Write-Host "🚀 正在启动本地开发环境..." -ForegroundColor Cyan
+        if ($DevAttach) {
+            Write-Host "🚀 正在前台启动本地开发环境（日志输出到本终端）..." -ForegroundColor Cyan
+        } else {
+            Write-Host "🚀 正在后台启动本地开发环境..." -ForegroundColor Cyan
+        }
         $env:PROJECT_NAME = $ProjectName
 
         Clear-RepoDevLeftovers
@@ -345,6 +377,8 @@ switch ($choice) {
             Write-Host "ℹ️  CARGO_TARGET_DIR -> $targetDir" -ForegroundColor Cyan
         }
 
+        if (-not $env:CARGO_INCREMENTAL) { $env:CARGO_INCREMENTAL = "1" }
+
         $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
         $hasVS = $false
         if (Test-Path -LiteralPath $vsWhere) {
@@ -386,21 +420,27 @@ switch ($choice) {
             Set-Content -LiteralPath $f -Value "" -Encoding utf8
         }
 
-        $cargoArgs = @("watch", "-c", "-w", "src", "-x", "run")
+        $cargoArgs = @("watch", "-w", "src", "-w", "Cargo.toml", "-w", "Cargo.lock", "-w", "build.rs", "-x", "run")
         if ($rustToolchain) { $cargoArgs = @($rustToolchain) + $cargoArgs }
 
         Write-Host ""
-        Write-Host "✅ 准备就绪（Ctrl+C / Ctrl+Z 都会停止并释放端口）" -ForegroundColor Green
         Write-Host "   项目: $ProjectName"
         Write-Host "   数据库: localhost:${PostgresPort} (共享)"
         Write-Host "   后端: http://localhost:${BackendPort}"
         Write-Host "   前端: http://localhost:${FrontendPort}"
         Write-Host "   API 代理: $($env:VITE_API_TARGET)"
-        Write-Host ""; Write-Host "   按 Ctrl+C 或 Ctrl+Z 停止本实例服务" -ForegroundColor Yellow; Write-Host ""
+        if ($DevAttach) {
+            Write-Host ""; Write-Host "📺 前台日志模式：Ctrl+C / Ctrl+Z 停止本实例" -ForegroundColor Yellow; Write-Host ""
+        } else {
+            Write-Host ""; Write-Host "   后台模式：就绪后本窗口退出，服务继续运行" -ForegroundColor DarkGray
+            Write-Host "   前台看日志: .\dev.ps1 1 fg" -ForegroundColor DarkGray; Write-Host ""
+        }
 
+        Write-Host "⚙️ 启动 Rust 服务 (watch, :${BackendPort})..." -ForegroundColor Cyan
         $backendProc = Start-Process -FilePath $cargoExe -ArgumentList $cargoArgs `
             -WorkingDirectory $BackendDir -PassThru -NoNewWindow `
             -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr
+        Write-Host "⚙️ 启动 Vite 服务 (:${FrontendPort})..." -ForegroundColor Cyan
         $frontendProc = Start-Process -FilePath $npmExe `
             -ArgumentList @("run", "dev", "--", "--port", "$FrontendPort", "--strictPort", "--host", "0.0.0.0") `
             -WorkingDirectory $FrontendDir -PassThru -NoNewWindow `
@@ -409,20 +449,53 @@ switch ($choice) {
 
         $backendOff = [ref]0; $backendErrOff = [ref]0
         $frontendOff = [ref]0; $frontendErrOff = [ref]0
+        $WaitMax = if ($env:DEV_WAIT_MAX -match '^\d+$') { [int]$env:DEV_WAIT_MAX } else { 600 }
+
+        if (-not $DevAttach) {
+            # 后台：等端口就绪后退出，不杀进程（与 macOS ./dev.sh 一致）
+            Write-Host "⏳ 等待后端 (${BackendPort}) 和前端 (${FrontendPort}) 就绪（最长 ${WaitMax}s）..." -ForegroundColor Yellow
+            $backendUp = $false; $frontendUp = $false
+            for ($i = 1; $i -le $WaitMax; $i++) {
+                if (-not $backendUp -and (Test-PortInUse $BackendPort)) {
+                    $backendUp = $true
+                    Write-Host "✅ 后端已监听 :${BackendPort}" -ForegroundColor Green
+                }
+                if (-not $frontendUp -and (Test-PortInUse $FrontendPort)) {
+                    $frontendUp = $true
+                    Write-Host "✅ 前端已监听 :${FrontendPort}" -ForegroundColor Green
+                }
+                if ($backendUp -and $frontendUp) {
+                    Write-Host "🎉 本地开发环境已在后台顺利拉起！" -ForegroundColor Green
+                    Write-Host "   👉 前端面板: http://localhost:${FrontendPort}"
+                    Write-Host "   👉 后端 API: http://localhost:${BackendPort}"
+                    Write-Host "   (日志目录: $logDir)"
+                    exit 0
+                }
+                if (($i % 15) -eq 0) {
+                    $tip = @()
+                    if (-not $backendUp) { $tip += "后端编译/启动中" }
+                    if (-not $frontendUp) { $tip += "前端未就绪" }
+                    Write-Host ("… {0}s / {1}s  {2}" -f $i, $WaitMax, ($tip -join '；')) -ForegroundColor DarkGray
+                }
+                Start-Sleep -Seconds 1
+            }
+            Write-Host "❌ 启动超时，请检查日志目录: $logDir" -ForegroundColor Red
+            exit 1
+        }
+
         $script:DevStopRequested = $false
         $script:DevStopped = $false
         $prevTreatCtrlC = $false
         try { $prevTreatCtrlC = [Console]::TreatControlCAsInput } catch {}
-        # 把 Ctrl+C 当普通按键，与 Ctrl+Z 一并在循环里处理（对齐 macOS 习惯）
         try { [Console]::TreatControlCAsInput = $true } catch {}
         $cancelHandler = {
             param($sender, $e)
-            # Ctrl+Break 等仍走此事件
             $e.Cancel = $true
             $script:DevStopRequested = $true
         }
         try { [Console]::add_CancelKeyPress($cancelHandler) } catch {}
         try {
+            Write-Host "📺 持续输出日志中..." -ForegroundColor Cyan
             while (-not $script:DevStopRequested) {
                 if (Test-DevStopKeyPressed) { break }
                 Write-NewLogLines $backendOut $backendOff "Rust" Cyan
@@ -436,13 +509,12 @@ switch ($choice) {
         } finally {
             try { [Console]::remove_CancelKeyPress($cancelHandler) } catch {}
             try { [Console]::TreatControlCAsInput = $prevTreatCtrlC } catch {}
-            # Ctrl+C / Ctrl+Z / Ctrl+Break / 异常退出：杀进程树 + 仅释放本实例端口
             Stop-LocalServices $backendProc $frontendProc $BackendPort $FrontendPort
         }
     }
 
     default {
-        Write-Host "❌ 无效选项，请输入 1 或 2" -ForegroundColor Red
+        Write-Host "❌ 无效选项，请使用: .\dev.ps1 [1|2] [bg|fg]" -ForegroundColor Red
         exit 1
     }
 }

@@ -14,6 +14,7 @@ import { useThemeStore } from '../../store/theme';
 import type { User } from '../../types';
 import dayjs from 'dayjs';
 import { formatApiDateTime } from '../../utils/timedisplay';
+import { toAbsoluteDateParam } from '../../utils/dateRangeParams';
 import { Resizable } from 'react-resizable';
 import type { ResizeCallbackData } from 'react-resizable';
 
@@ -112,12 +113,10 @@ const Users: React.FC = () => {
     if (users.length === 0) return;
     const userIds = users.map(u => u.id);
     if (walletTimeFilter === 'month') {
-      const startOfMonth = dayjs().startOf('month').format('YYYY-MM-DD HH:mm:ss');
-      const endOfMonth = dayjs().endOf('month').format('YYYY-MM-DD HH:mm:ss');
       request.post('/finance/recharges/stats_batch', {
         user_ids: userIds,
-        start_date: startOfMonth,
-        end_date: endOfMonth
+        start_date: toAbsoluteDateParam(dayjs().startOf('month')),
+        end_date: toAbsoluteDateParam(dayjs().endOf('month'), true),
       }).then((res: any) => {
         setMonthStatsMap(res || {});
       }).catch(console.error);

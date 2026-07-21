@@ -610,16 +610,14 @@ fn extract_usage(v: &Value) -> Value {
 // ── URL/Base64 → OpenAI data item 统一转换（build_openai_sync 和 build_openai_poll 共用）──
 fn build_data_item(u: &str) -> Value {
     if u.starts_with("data:") {
-        // data:image/png;base64,xxx → 拆分为 b64_json（纯 base64 时）或 url（TOS 替换后值为 URL 时）
-        if let Some(pos) = u.find(",") {
-            let payload = &u[pos + 1..];
-            if payload.starts_with("http://") || payload.starts_with("https://") {
-                json!({"url": payload})
-            } else {
-                json!({"b64_json": payload})
-            }
-        } else {
+        // data:image/png;base64,xxx → b64_json；TOS 替换后 payload 为 http → url
+        let payload = crate::relay::forward::b64_data(u);
+        if payload == u.trim() {
             json!({"url": u})
+        } else if payload.starts_with("http://") || payload.starts_with("https://") {
+            json!({"url": payload})
+        } else {
+            json!({"b64_json": payload})
         }
     } else {
         json!({"url": u})

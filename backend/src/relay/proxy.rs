@@ -1064,6 +1064,11 @@ pub async fn record_and_bill_inner(p: BillRecord<'_>) {
         plugin_tag,
         db_model,
     } = p;
+    // 实时 TPM 观测（与计费路径同点，零写库）
+    let live_total_tokens =
+        (prompt_tokens.max(0) as u64).saturating_add(completion_tokens.max(0) as u64);
+    crate::middleware::live_metrics::record_tokens(&token.user_id, token.id, live_total_tokens);
+
     let extracted_error_msg = error_msg.map(|msg| extract_error_message(msg));
     let db_error_msg = extracted_error_msg.as_deref();
     let channel_id = channel.id;

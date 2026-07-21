@@ -28,6 +28,7 @@ import { useThemeStore } from '../../../store/theme';
 import useSettingsStore from '../../../store/settings';
 import useAuthStore from '../../../store/auth';
 import UserAvatarMenu from '../../../components/UserAvatarMenu';
+import { formatApiDateTime } from '../../../utils/timedisplay';
 
 interface Announcement {
   id: number;
@@ -532,9 +533,7 @@ const RelayAPI: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: c.text3, fontSize: 12 }}>
                     <Terminal className="w-3.5 h-3.5" />
-                    {new Date(item.created_at).toLocaleString(i18n.language === 'en' ? 'en-US' : (i18n.language === 'vi' ? 'vi-VN' : 'zh-CN'), {
-                      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-                    })}
+                    {formatApiDateTime(item.created_at, 'YYYY-MM-DD HH:mm')}
                   </div>
                 </div>
                 <div dangerouslySetInnerHTML={{ __html: getAnnouncementLabel(item.content) }} style={{ color: c.text2, fontSize: 13, lineHeight: 1.6 }} />

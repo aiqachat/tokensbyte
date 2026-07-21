@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Table, Tag, Card, Typography, Space, Input, Button, Avatar, Row, Col, Descriptions, theme, Grid, Tooltip, DatePicker, message, Radio, Modal, Form, Spin } from 'antd';
 import MobileCardList, { MobileCard, CardRow, CardActions } from '../../components/MobileCardList';
@@ -13,6 +13,8 @@ import type { RequestLog, ModelModel } from '../../types';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import { formatApiDateTime } from '../../utils/timedisplay';
+import { toDateRangeParams } from '../../utils/dateRangeParams';
+import { useLogDetailLoader } from '../../hooks/useLogDetailLoader';
 dayjs.extend(utc);
 
 const { RangePicker } = DatePicker;
@@ -89,6 +91,15 @@ const ShadcnTabs = ({ value, onChange, options, isLight, themeToken }: any) => {
   );
 };
 
+
+/** 列表用量：轻量计费字段（不依赖 billing_detail 全文） */
+function billingUsageMetrics(record: RequestLog) {
+  const cacheCreation = record.billing_cache_creation ?? 0;
+  const cacheRead = record.billing_cache_read ?? 0;
+  const webSearch = record.billing_web_search ?? 0;
+  return { cacheCreation, cacheRead, webSearch, isClaude: cacheCreation > 0 || cacheRead > 0 };
+}
+
 const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
   const { t } = useTranslation();
   const { token: themeToken } = theme.useToken();
@@ -120,8 +131,14 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
   const [tempDefaultType, setTempDefaultType] = useState<string>('视觉');
   const queryGuardRef = useRef(new QueryGuard());
   const skipNextEffectFetchRef = useRef(false);
-  const [detailCache, setDetailCache] = useState<Record<number, Partial<RequestLog>>>({});
-  const [detailLoadingIds, setDetailLoadingIds] = useState<Record<number, boolean>>({});
+  const rowIds = useMemo(() => logs.map((l) => l.id), [logs]);
+  const {
+    detailCache,
+    detailLoadingIds,
+    expandedRowKeys,
+    handleExpand,
+    resetDetailCache,
+  } = useLogDetailLoader(rowIds);
 
   useEffect(() => {
     const guard = queryGuardRef.current;
@@ -148,8 +165,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
     if (channelFilter) params.channel_group_aid = channelFilter;
     if (statusFilter) params.status = statusFilter;
     if (kidFilter && kidFilter.trim()) params.token_kid = kidFilter.trim();
-    if (dateRange?.[0]) params.start_date = dateRange[0].startOf('day').toISOString();
-    if (dateRange?.[1]) params.end_date = dateRange[1].endOf('day').toISOString();
+    Object.assign(params, toDateRangeParams(dateRange));
     if (actionTypeFilter && actionTypeFilter !== '全部') {
       params.action_type = actionTypeFilter;
     }
@@ -191,15 +207,14 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
       if (channel) params.channel_group_aid = channel;
       if (status) params.status = status;
       if (kid && kid.trim()) params.token_kid = kid.trim();
-      if (range?.[0]) params.start_date = range[0].startOf('day').toISOString();
-      if (range?.[1]) params.end_date = range[1].endOf('day').toISOString();
+      Object.assign(params, toDateRangeParams(range));
       if (actionType && actionType !== '全部') params.action_type = actionType;
 
       const resp = await (request.get('/logs', { params, signal }) as unknown as Promise<{ data: RequestLog[]; total: number; allow_details?: boolean }>);
       if (!queryGuardRef.current.isCurrent(signal)) return;
       setLogs(resp.data);
       setTotal(resp.total);
-      setDetailCache({});
+      resetDetailCache();
       if (resp.allow_details !== undefined) {
         setAllowDetails(resp.allow_details);
       }
@@ -216,36 +231,8 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
         setLoading(false);
       }
     }
-  }, [page, pageSize, modelFilter, searchKeyword, userFilter, channelFilter, statusFilter, kidFilter, dateRange, routerEp, actionTypeFilter]);
+  }, [page, pageSize, modelFilter, searchKeyword, userFilter, channelFilter, statusFilter, kidFilter, dateRange, routerEp, actionTypeFilter, resetDetailCache]);
 
-  const loadLogDetail = useCallback(async (id: number) => {
-    if (detailCache[id] || detailLoadingIds[id]) return;
-    setDetailLoadingIds(prev => ({ ...prev, [id]: true }));
-    try {
-      const detail = await request.get(`/logs/${id}/detail`) as any;
-      setDetailCache(prev => ({
-        ...prev,
-        [id]: {
-          request_content: detail.request_content,
-          response_content: detail.response_content,
-          post_response: detail.post_response,
-          upstream_req_content: detail.upstream_req_content,
-        },
-      }));
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setDetailLoadingIds(prev => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-    }
-  }, [detailCache, detailLoadingIds]);
-
-  const handleExpand = useCallback((expanded: boolean, record: RequestLog) => {
-    if (expanded) loadLogDetail(record.id);
-  }, [loadLogDetail]);
 
   const handleReset = () => {
     const today: [any, any] = [dayjs().startOf('day'), dayjs().endOf('day')];
@@ -466,14 +453,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
       key: 'usage',
       width: 100,
       render: (_: any, record: RequestLog) => {
-        // 从 billing_detail 中提取 Claude 缓存创建/读取数量
-        const ccMatch = record.billing_detail?.match(/(\d+)创建@/);
-        const crMatch = record.billing_detail?.match(/(\d+)读取@/);
-        const wsMatch = record.billing_detail?.match(/联网搜索:\s*([\d.]+)次/);
-        const cacheCreation = ccMatch ? parseInt(ccMatch[1]) : 0;
-        const cacheRead = crMatch ? parseInt(crMatch[1]) : 0;
-        const webSearch = wsMatch ? parseFloat(wsMatch[1]) : 0;
-        const isClaude = cacheCreation > 0 || cacheRead > 0;
+        const { cacheCreation, cacheRead, webSearch, isClaude } = billingUsageMetrics(record);
         return (
           <Space direction="vertical" size={0}>
             <Text type="secondary" style={{ fontSize: 11 }}>{t('logs.input', '输入')}: {record.prompt_tokens}</Text>
@@ -498,11 +478,11 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
       width: 90,
       render: (val: number, record: RequestLog) => (
         <Space direction="vertical" size={0}>
-          {val === 0 || record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败')
+          {val === 0 || record.billing_refunded || record.billing_failed
             ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
             : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{val.toFixed(6)}</Text>
           }
-          {record.billing_detail?.includes('退回') && (
+          {record.billing_refunded && (
             <Tag color="orange" style={{ margin: 0, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}>{t('logs.refunded', '已退费')}</Tag>
           )}
         </Space>
@@ -568,7 +548,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
           <Descriptions.Item label={t('logs.error_msg', '错误信息')}>
             {(() => {
               if (!record.error_message) {
-                if (record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败')) {
+                if (record.billing_refunded || record.billing_failed) {
                   return <Text type="danger">{t('logs.see_response', '查看下方的响应结果')}</Text>;
                 }
                 return <Text type="secondary">{t('logs.none', '无')}</Text>;
@@ -616,16 +596,18 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
           </Descriptions.Item>
           <Descriptions.Item label={t('logs.billing_detail', '计费明细')}>
             <div>
-              {record.billing_detail ? (
-                <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.calc_basis', '计算依据')}: {record.billing_detail}</Text>
+              {merged.billing_detail ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>{t('logs.calc_basis', '计算依据')}: {merged.billing_detail}</Text>
               ) : (
-                <Text type="secondary" style={{ fontSize: 12 }}>{costFormula}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {loadingDetail ? t('logs.loading_detail', '加载详情中...') : costFormula}
+                </Text>
               )}
               <br />
-              <Text strong style={{ fontSize: 13, textDecoration: record.billing_detail?.includes('退回') ? 'line-through' : 'none' }}>
-                {record.billing_detail?.includes('退回') ? t('logs.pre_deduct', '预扣费') : t('logs.actual_deduct', '实际扣费')}: {currencySymbol}{record.cost.toFixed(6)}
+              <Text strong style={{ fontSize: 13, textDecoration: record.billing_refunded ? 'line-through' : 'none' }}>
+                {record.billing_refunded ? t('logs.pre_deduct', '预扣费') : t('logs.actual_deduct', '实际扣费')}: {currencySymbol}{record.cost.toFixed(6)}
               </Text>
-              {record.billing_detail?.includes('退回') && <Text type="danger" style={{ fontSize: 13, marginLeft: 8 }}>{t('logs.fully_refunded', '已全额退回')}</Text>}
+              {record.billing_refunded && <Text type="danger" style={{ fontSize: 13, marginLeft: 8 }}>{t('logs.fully_refunded', '已全额退回')}</Text>}
               <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>{t('logs.cost_priority', '（优先扣令牌配额，不足扣用户余额）')}</Text>
             </div>
           </Descriptions.Item>
@@ -914,10 +896,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
                   <Space direction="vertical" size={0} align="end">
                     <Text type="secondary" style={{ fontSize: 12 }}>输入:{record.prompt_tokens} / 输出:{record.completion_tokens}</Text>
                     {(() => {
-                      const ccM = record.billing_detail?.match(/(\d+)创建@/);
-                      const crM = record.billing_detail?.match(/(\d+)读取@/);
-                      const cc = ccM ? parseInt(ccM[1]) : 0;
-                      const cr = crM ? parseInt(crM[1]) : 0;
+                      const { cacheCreation: cc, cacheRead: cr } = billingUsageMetrics(record);
                       if (cc > 0 || cr > 0) {
                         return (
                           <>
@@ -932,11 +911,11 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
                 </CardRow>
                 <CardRow label={t('logs.cost', '成本')}>
                   <Space direction="vertical" size={0} align="end">
-                    {record.cost === 0 || record.billing_detail?.includes('退回') || record.billing_detail?.includes('失败')
+                    {record.cost === 0 || record.billing_refunded || record.billing_failed
                       ? <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
                       : <Text strong style={{ fontSize: 12, color: themeToken.colorError }}>{currencySymbol}{record.cost.toFixed(6)}</Text>
                     }
-                    {record.billing_detail?.includes('退回') && (
+                    {record.billing_refunded && (
                       <Tag color="orange" style={{ margin: 0, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}>{t('logs.refunded', '已退费')}</Tag>
                     )}
                   </Space>
@@ -953,6 +932,7 @@ const Logs: React.FC<{ routerEp?: string }> = ({ routerEp }) => {
           loading={loading}
           expandable={
             allowDetails ? {
+              expandedRowKeys,
               expandedRowRender,
               onExpand: handleExpand,
               expandRowByClick: false

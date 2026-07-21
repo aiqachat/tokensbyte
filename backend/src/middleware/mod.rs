@@ -1,3 +1,4 @@
+pub mod live_metrics;
 pub mod rate_limit;
 use std::sync::Arc;
 
@@ -44,6 +45,13 @@ pub async fn auth_middleware(
         Ok(c) => c,
         Err(_) => return AppError::Unauthorized.into_response(),
     };
+
+    // 高频只读观测接口：仅校验 JWT，跳过 is_active 查库（减轻看板轮询对连接池压力）
+    let path = request.uri().path();
+    if path.ends_with("/metrics/live") {
+        request.extensions_mut().insert(claims);
+        return next.run(request).await;
+    }
 
     // Verify user still exists and is active
     let is_active: Result<Option<i64>, sqlx::Error> = sqlx::query_scalar(
@@ -440,6 +448,15 @@ pub async fn api_key_middleware(
         }
     }
 
+    // 实时吞吐观测（QPS/RPM/Task）；Guard 挂到 Response 直至 body 结束
+    let (global_guard, user_guard) = live_metrics::begin_request(&token.user_id, token.id);
     request.extensions_mut().insert(token);
-    next.run(request).await
+    let mut response = next.run(request).await;
+    response
+        .extensions_mut()
+        .insert(live_metrics::LiveMetricsTaskGuards::new(
+            global_guard,
+            user_guard,
+        ));
+    response
 }

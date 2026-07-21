@@ -142,8 +142,8 @@ async fn check_and_notify_low_balance_inner(state: &Arc<AppState>, user_id: &str
         return Ok(());
     }
 
-    let balance_str = format!("{:.6}", total);
-    let threshold_str = format!("{:.6}", threshold);
+    let balance_str = crate::money::format_money(total);
+    let threshold_str = crate::money::format_money(threshold);
     let mut sent_any = false;
 
     if want_email {

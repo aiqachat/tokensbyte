@@ -134,7 +134,18 @@
     "total_spend": "Total Spend",
     "call_count": "Call Count",
     "count_times": "{{count}} times",
-    "times": "{{count}} times"
+    "times": "{{count}} times",
+    "live_throughput": "Live Throughput",
+    "live_tag": "Live",
+    "live_refresh": "Refreshes every 5s",
+    "live_qps": "QPS",
+    "live_rpm": "RPM",
+    "live_tpm": "TPM",
+    "live_task": "Task",
+    "live_qps_tip": "Requests in the last 1 second",
+    "live_rpm_tip": "Requests in the last 60 seconds",
+    "live_tpm_tip": "Tokens in the last 60 seconds",
+    "live_task_tip": "In-flight concurrent requests"
   },
   "login": {
     "title": "Login",

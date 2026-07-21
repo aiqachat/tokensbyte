@@ -36,6 +36,8 @@ pub struct AppState {
     pub ha_cooldown_auth: std::sync::atomic::AtomicI64,
     pub ha_cooldown_404: std::sync::atomic::AtomicI64,
     pub ha_meltdown_whitelist: std::sync::Arc<std::sync::RwLock<Vec<String>>>,
+    /// 级联阶段二进行中互斥（log_id → ()），防并发轮询重复裁剪/超分
+    pub cascade_s2_inflight: dashmap::DashMap<i64, ()>,
     /// 日限额内存拦截器（DashMap + DB hydration）
     pub quota_memory: relay::quota_memory::MemoryQuotaGuard,
     /// 异步计费事件投递（Worker 批量刷库；停机时 drain）
@@ -117,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
         ha_cooldown_auth: std::sync::atomic::AtomicI64::new(1800),
         ha_cooldown_404: std::sync::atomic::AtomicI64::new(3),
         ha_meltdown_whitelist: std::sync::Arc::new(std::sync::RwLock::new(Vec::new())),
+        cascade_s2_inflight: dashmap::DashMap::new(),
         quota_memory: relay::quota_memory::MemoryQuotaGuard::new(),
         billing_ingress,
     });
@@ -143,7 +146,17 @@ async fn main() -> anyhow::Result<()> {
     // 3. 启动后台异步任务轮询器（每 2 分钟自动检查未结算的视频/图片生成任务）
     bg_handles.push(relay::task::start(state.clone(), shutdown_rx.clone()));
 
-    // 4. 启动孤儿日志清理定时任务（每 5 分钟检查 status_code=0 超过 30 分钟的日志）
+    // 4. 实时指标冷用户清理（每 5 分钟，空闲 >1h 剔除）
+    bg_handles.push(tokio::spawn(middleware::live_metrics::run_cleanup_loop(
+        shutdown_rx.clone(),
+    )));
+
+    // 4b. 看板缓存 TTL 清理（每 5 分钟，条目 >30min 剔除）
+    bg_handles.push(tokio::spawn(
+        api::dashboard::run_dashboard_cache_cleanup_loop(state.clone(), shutdown_rx.clone()),
+    ));
+
+    // 5. 启动孤儿日志清理定时任务（每 5 分钟检查 status_code=0 超过 30 分钟的日志）
     bg_handles.push(spawn_cron_task(
         state.clone(),
         shutdown_rx.clone(),

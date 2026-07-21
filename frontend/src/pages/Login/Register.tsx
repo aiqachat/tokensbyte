@@ -33,6 +33,7 @@ const Register: React.FC = () => {
   const [countdown, setCountdown] = useState(0);
   const [sendingCode, setSendingCode] = useState(false);
   const sendingCodeRef = useRef(false);
+  const cooldownUntilRef = useRef(0);
   const [activeTab, setActiveTab] = useState('');
   
   // 密码显示状态
@@ -105,6 +106,14 @@ const Register: React.FC = () => {
     }
   }, [countdown]);
 
+  const startCooldown = (seconds: number) => {
+    cooldownUntilRef.current = Date.now() + seconds * 1000;
+    setCountdown(seconds);
+  };
+
+  const isBlocked = () =>
+    sendingCodeRef.current || Date.now() < cooldownUntilRef.current || countdown > 0;
+
   // 已登录用户点击团队邀请链接时自动加入团队
   const { token } = useAuthStore();
   useEffect(() => {
@@ -153,7 +162,7 @@ const Register: React.FC = () => {
 
   // 发送邮箱验证码
   const sendEmailCode = async () => {
-    if (countdown > 0 || sendingCodeRef.current) return;
+    if (isBlocked()) return;
     if (!emailVal.trim()) {
       setErrors(prev => ({ ...prev, email: t('auth.email_required') }));
       setShakeKey(k => k + 1);
@@ -171,10 +180,10 @@ const Register: React.FC = () => {
     try {
       await request.post('/auth/send-code', { email: emailVal.trim(), purpose: 'register' }, { skipErrorHandler: true } as any);
       message.success(t('auth.code_sent'));
-      setCountdown(CODE_COOLDOWN_SUCCESS);
+      startCooldown(CODE_COOLDOWN_SUCCESS);
     } catch (e: any) {
       message.error(e?.response?.data?.error?.message || t('common.error'));
-      setCountdown(CODE_COOLDOWN_ERROR);
+      startCooldown(CODE_COOLDOWN_ERROR);
     } finally {
       sendingCodeRef.current = false;
       setSendingCode(false);
@@ -183,7 +192,7 @@ const Register: React.FC = () => {
 
   // 发送手机验证码
   const sendSmsCode = async () => {
-    if (countdown > 0 || sendingCodeRef.current) return;
+    if (isBlocked()) return;
     if (!mobileVal.trim()) {
       setErrors(prev => ({ ...prev, mobile: t('auth.mobile_required') }));
       setShakeKey(k => k + 1);
@@ -195,10 +204,10 @@ const Register: React.FC = () => {
     try {
       await request.post('/auth/send-sms-code', { mobile: mobileVal.trim(), purpose: 'register' }, { skipErrorHandler: true } as any);
       message.success(t('auth.sms_code_sent'));
-      setCountdown(CODE_COOLDOWN_SUCCESS);
+      startCooldown(CODE_COOLDOWN_SUCCESS);
     } catch (e: any) {
       message.error(e?.response?.data?.error?.message || t('common.error'));
-      setCountdown(CODE_COOLDOWN_ERROR);
+      startCooldown(CODE_COOLDOWN_ERROR);
     } finally {
       sendingCodeRef.current = false;
       setSendingCode(false);

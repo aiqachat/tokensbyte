@@ -5,7 +5,6 @@
 
 pub mod core;
 pub mod db_ts;
-pub mod package;
 pub mod period;
 
 pub use core::{

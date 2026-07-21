@@ -8,6 +8,7 @@ import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import request from '../../utils/request';
 import useSettingsStore from '../../store/settings';
+import { toCalendarDateParam } from '../../utils/dateRangeParams';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;
@@ -178,8 +179,8 @@ const Settings: React.FC = () => {
     
     setSyncingStats(true);
     try {
-      const startStr = start.format('YYYY-MM-DD');
-      const endStr = end.format('YYYY-MM-DD');
+      const startStr = encodeURIComponent(toCalendarDateParam(start));
+      const endStr = encodeURIComponent(toCalendarDateParam(end));
       const r = await (request.post(`/settings/usage-stats/sync?start_date=${startStr}&end_date=${endStr}`) as any);
       if (r.success) {
         message.success(r.message || '手动同步任务已在后台异步启动，请在后台查看日志');

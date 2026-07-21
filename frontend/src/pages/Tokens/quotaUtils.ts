@@ -2,22 +2,10 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import type { ApiToken } from '../../types';
+import { getLocalPeriodKeys } from '../../utils/quotaPeriod';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
-
-/** 与后端 `%Y-%U` 一致：周日为一周起点 */
-function getQuotaPeriodKeys(tz = 'Asia/Shanghai') {
-  const now = dayjs().tz(tz);
-  const nowDay = now.format('YYYY-MM-DD');
-  const nowMonth = now.format('YYYY-MM');
-  const year = now.year();
-  const janFirst = dayjs.tz(`${year}-01-01`, tz);
-  const days = now.startOf('day').diff(janFirst.startOf('day'), 'day');
-  const weekNum = Math.floor((days + janFirst.day()) / 7);
-  const nowWeek = `${year}-${String(weekNum).padStart(2, '0')}`;
-  return { nowDay, nowWeek, nowMonth };
-}
 
 export function hasPeriodicLimits(token: Pick<ApiToken, 'daily_quota_limit' | 'weekly_quota_limit' | 'monthly_quota_limit'>) {
   return token.daily_quota_limit >= 0 || token.weekly_quota_limit >= 0 || token.monthly_quota_limit >= 0;
@@ -25,7 +13,7 @@ export function hasPeriodicLimits(token: Pick<ApiToken, 'daily_quota_limit' | 'w
 
 /** 优先用后端按用户 timedisplay 填充的当期已用；缺省时按传入时区本地推算 */
 export function getPeriodicUsed(token: ApiToken, tz = 'Asia/Shanghai') {
-  const keys = getQuotaPeriodKeys(tz);
+  const keys = getLocalPeriodKeys(tz);
   return {
     dailyUsed:
       token.current_daily_quota_used ??

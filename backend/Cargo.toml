@@ -90,5 +90,15 @@ iana-time-zone = "0.1.65"
 [build-dependencies]
 serde_json = "1"
 
+# 本地开发：减小调试信息以缩短链接耗时（macOS / Linux / Windows 均生效）
+# 不影响 release；业务逻辑与默认 cargo run 行为不变
+[profile.dev]
+debug = "line-tables-only"
+incremental = true
 
-
+[profile.release]
+# codegen-units=16：降低 Docker Desktop 上 LLVM 峰值内存（勿改回 1）
+opt-level = 3
+codegen-units = 16
+panic = 'abort'
+strip = true

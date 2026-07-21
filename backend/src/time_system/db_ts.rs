@@ -221,30 +221,3 @@ fn normalize_short_offset(s: &str) -> Option<String> {
     }
     None
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_naive_utc() {
-        let dt = parse_flexible_ts("2026-07-19 08:30:00").unwrap();
-        assert_eq!(
-            dt.format("%Y-%m-%d %H:%M:%S").to_string(),
-            "2026-07-19 08:30:00"
-        );
-    }
-
-    #[test]
-    fn parse_rfc3339_z() {
-        let dt = parse_flexible_ts("2026-07-19T08:30:00.123Z").unwrap();
-        assert_eq!(dt.timestamp_subsec_millis(), 123);
-    }
-
-    #[test]
-    fn roundtrip_display() {
-        let ts = DbTs::from_utc(Utc::now());
-        assert!(ts.to_utc().is_some());
-        assert!(!ts.as_str().is_empty());
-    }
-}

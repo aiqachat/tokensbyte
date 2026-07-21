@@ -1,6 +1,10 @@
 use crate::time_system::DbTs;
 use serde::{Deserialize, Serialize};
 
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
 /// 任务日志 — 直接映射 logs 表 JOIN channels/users 的结果集
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct TaskLog {
@@ -21,32 +25,56 @@ pub struct TaskLog {
     #[sqlx(default)]
     pub error_message: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub request_content: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub response_content: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub post_response: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_detail: Option<String>,
+    /// 列表结算标记（不传 billing_detail 全文）
     #[sqlx(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub billing_failed: bool,
+    #[sqlx(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub billing_frozen: bool,
+    #[sqlx(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub billing_present: bool,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_name: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_group_aid: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_provider_type: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_nickname: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_uid: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub action_type: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub yid: Option<String>, // JOIN channel_configs.yid，非 logs 列
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_pid: Option<String>,
     #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub forward_eid: Option<String>,
     pub created_at: DbTs,
 }

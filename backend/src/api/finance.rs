@@ -91,13 +91,23 @@ pub async fn list_recharges(
     }
 
     if let Some(ref start) = query.start_time {
-        where_clause.push_str(" AND rr.created_at >= ?::timestamptz");
-        binds.push(start.clone());
+        crate::api::date_helper::push_timestamptz_bound_default(
+            &mut where_clause,
+            &mut binds,
+            "rr.created_at",
+            start,
+            false,
+        );
     }
 
     if let Some(ref end) = query.end_time {
-        where_clause.push_str(" AND rr.created_at <= ?::timestamptz");
-        binds.push(end.clone());
+        crate::api::date_helper::push_timestamptz_bound_default(
+            &mut where_clause,
+            &mut binds,
+            "rr.created_at",
+            end,
+            true,
+        );
     }
 
     if let Some(ref ref_search) = query.referrer {
@@ -206,13 +216,23 @@ pub async fn list_orders(
     }
 
     if let Some(ref start) = query.start_time {
-        where_clause.push_str(" AND o.created_at >= ?::timestamptz");
-        binds.push(start.clone());
+        crate::api::date_helper::push_timestamptz_bound_default(
+            &mut where_clause,
+            &mut binds,
+            "o.created_at",
+            start,
+            false,
+        );
     }
 
     if let Some(ref end) = query.end_time {
-        where_clause.push_str(" AND o.created_at <= ?::timestamptz");
-        binds.push(end.clone());
+        crate::api::date_helper::push_timestamptz_bound_default(
+            &mut where_clause,
+            &mut binds,
+            "o.created_at",
+            end,
+            true,
+        );
     }
 
     sql.push_str(&where_clause);
@@ -517,14 +537,15 @@ async fn calculate_finance_stats(
         });
     }
 
-    let start_ts = query.start_date.as_deref().map(|s| {
-        let (ts, _) = crate::api::date_helper::parse_and_get_bounds(s, false);
-        ts
-    });
-    let end_ts = query.end_date.as_deref().map(|e| {
-        let (ts, _) = crate::api::date_helper::parse_and_get_bounds(e, true);
-        ts
-    });
+    // end_ts 为半开上界，配合 `<` 使用（勿再用 `<=`）
+    let start_ts = query
+        .start_date
+        .as_deref()
+        .map(|s| crate::api::date_helper::parse_timestamptz_bind(s, false, tz));
+    let end_ts = query
+        .end_date
+        .as_deref()
+        .map(|e| crate::api::date_helper::parse_timestamptz_bind(e, true, tz));
 
     // 第三步：获取起始时间前的平台总用户数（Base Users）
     let mut base_users_sql = "SELECT COUNT(*) FROM users".to_string();
@@ -550,7 +571,7 @@ async fn calculate_finance_stats(
         new_users_binds.push(start.clone());
     }
     if let Some(ref end) = end_ts {
-        new_users_sql.push_str(" AND created_at <= ?::timestamptz");
+        new_users_sql.push_str(" AND created_at < ?::timestamptz");
         new_users_binds.push(end.clone());
     }
     new_users_sql.push_str(&format!(" GROUP BY {date_bucket}"));
@@ -615,7 +636,7 @@ async fn calculate_finance_stats(
         daily_wallet_recharge_binds.push(start.clone());
     }
     if let Some(ref end) = end_ts {
-        daily_wallet_recharge_sql.push_str(" AND created_at <= ?::timestamptz");
+        daily_wallet_recharge_sql.push_str(" AND created_at < ?::timestamptz");
         daily_wallet_recharge_binds.push(end.clone());
     }
     daily_wallet_recharge_sql.push_str(&format!(
@@ -662,7 +683,7 @@ async fn calculate_finance_stats(
         daily_recharge_binds.push(start.clone());
     }
     if let Some(ref end) = end_ts {
-        daily_recharge_sql.push_str(" AND created_at <= ?::timestamptz");
+        daily_recharge_sql.push_str(" AND created_at < ?::timestamptz");
         daily_recharge_binds.push(end.clone());
     }
     daily_recharge_sql.push_str(&format!(" GROUP BY {date_bucket}"));
@@ -882,12 +903,22 @@ pub async fn get_wallet_stats_batch(
     let mut binds: Vec<String> = req.user_ids.clone();
 
     if let Some(ref start) = req.start_date {
-        sql.push_str(" AND created_at >= ?::timestamptz");
-        binds.push(start.clone());
+        crate::api::date_helper::push_timestamptz_bound_default(
+            &mut sql,
+            &mut binds,
+            "created_at",
+            start,
+            false,
+        );
     }
     if let Some(ref end) = req.end_date {
-        sql.push_str(" AND created_at <= ?::timestamptz");
-        binds.push(end.clone());
+        crate::api::date_helper::push_timestamptz_bound_default(
+            &mut sql,
+            &mut binds,
+            "created_at",
+            end,
+            true,
+        );
     }
     sql.push_str(" GROUP BY user_id, wallet_type");
 
