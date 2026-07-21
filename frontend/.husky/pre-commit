@@ -1,2 +1,0 @@
-echo "🔍 正在使用 knip 扫描未使用的代码和文件..."
-cd frontend && npm run knip
