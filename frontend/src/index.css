@@ -1,0 +1,1105 @@
+/*
+ * tokensbyte opensource
+ * (c) 2026 tokensbyte.ai
+ * @copyright      Copyright netbcloud/wstianxia 
+ * @license        MIT (https://www.tokensbyte.ai/)
+ */
+
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+@theme {
+  --color-border: var(--border-custom);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent-custom);
+  --color-accent-foreground: var(--accent-custom-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+:root {
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #fff;
+  --border: #e5e4e7;
+  --code-bg: #f4f3ec;
+  --accent: #09090b;
+  --accent-bg: rgba(9, 9, 11, 0.06);
+  --accent-border: rgba(9, 9, 11, 0.2);
+  --social-bg: rgba(244, 243, 236, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* 新增 Fumadocs / Shadcn HSL 变量 */
+  --background: hsl(0, 0%, 100%);
+  --foreground: hsl(240, 10%, 3.9%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(240, 10%, 3.9%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(240, 10%, 3.9%);
+  --primary: hsl(240, 5.9%, 10%);
+  --primary-foreground: hsl(0, 0%, 98%);
+  --secondary: hsl(240, 4.8%, 95.9%);
+  --secondary-foreground: hsl(240, 5.9%, 10%);
+  --muted: hsl(240, 4.8%, 95.9%);
+  --muted-foreground: hsl(240, 3.8%, 46.1%);
+  --accent-custom: hsl(240, 4.8%, 95.9%);
+  --accent-custom-foreground: hsl(240, 5.9%, 10%);
+  --border-custom: hsl(240, 5.9%, 90%);
+  --input: hsl(240, 5.9%, 90%);
+  --ring: hsl(240, 5.9%, 10%);
+  --radius: 0.5rem;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    font-size: 16px;
+  }
+}
+
+[data-theme='dark'] {
+  --text: #9ca3af;
+  --text-h: #f3f4f6;
+  --bg: #16171d;
+  --border: #2e303a;
+  --code-bg: #1f2028;
+  --accent: #fafafa;
+  --accent-bg: rgba(250, 250, 250, 0.12);
+  --accent-border: rgba(250, 250, 250, 0.3);
+  --social-bg: rgba(47, 48, 58, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+
+  /* 新增 Fumadocs / Shadcn HSL 变量 */
+  --background: hsl(240, 10%, 3.9%);
+  --foreground: hsl(0, 0%, 98%);
+  --card: hsl(240, 10%, 3.9%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --popover: hsl(240, 10%, 3.9%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --primary: hsl(0, 0%, 98%);
+  --primary-foreground: hsl(240, 5.9%, 10%);
+  --secondary: hsl(240, 3.7%, 15.9%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --muted: hsl(240, 3.7%, 15.9%);
+  --muted-foreground: hsl(240, 5%, 64.9%);
+  --accent-custom: hsl(240, 3.7%, 15.9%);
+  --accent-custom-foreground: hsl(0, 0%, 98%);
+  --border-custom: hsl(240, 3.7%, 15.9%);
+  --input: hsl(240, 3.7%, 15.9%);
+  --ring: hsl(240, 4.9%, 83.9%);
+}
+
+[data-theme='dark'] #social .button-icon {
+  filter: invert(1) brightness(2);
+}
+
+#root {
+  width: 100%;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: 56px;
+  letter-spacing: -1.68px;
+  margin: 32px 0;
+}
+
+@media (max-width: 1024px) {
+  h1 {
+    font-size: 36px;
+    margin: 20px 0;
+  }
+}
+
+h2 {
+  font-size: 24px;
+  line-height: 118%;
+  letter-spacing: -0.24px;
+  margin: 0 0 8px;
+}
+
+@media (max-width: 1024px) {
+  h2 {
+    font-size: 20px;
+  }
+}
+
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}
+
+/* 全局优雅滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  transition: background 0.3s;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+[data-theme='dark'] * {
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+[data-theme='dark'] *::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme='dark'] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* 修复 Ant Design Sider 内部 children 容器不撑满高度导致底部空白 */
+.custom-sider .ant-layout-sider-children {
+  height: 100% !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 修复亮色模式下 Radio.Button 选中状态（shadcn zinc，非蓝） */
+body[data-theme='light'] .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  color: #18181b !important;
+  background: #f4f4f5 !important;
+  border-color: #18181b !important;
+}
+
+body[data-theme='dark'] .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  color: #18181b !important;
+  background: #fafafa !important;
+  border-color: #fafafa !important;
+}
+
+/* 侧栏菜单选中：仅叶子项有背景；上级 submenu-title 无背景 */
+.custom-sider .ant-menu-light .ant-menu-item-selected {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+  color: #18181b !important;
+}
+
+.custom-sider .ant-menu-dark .ant-menu-item-selected,
+.custom-sider .ant-menu-dark.ant-menu-inline .ant-menu-item-selected {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+
+.custom-sider .ant-menu-light .ant-menu-submenu-selected > .ant-menu-submenu-title,
+.custom-sider .ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  background-color: transparent !important;
+}
+
+.custom-sider .ant-menu-light .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  color: #18181b !important;
+}
+
+.custom-sider .ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  color: #ffffff !important;
+}
+
+.custom-sider .ant-menu-dark .ant-menu-item:hover,
+.custom-sider .ant-menu-dark .ant-menu-submenu-title:hover,
+.custom-sider .ant-menu-dark .ant-menu-item-active,
+.custom-sider .ant-menu-dark .ant-menu-submenu-title:active {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+/* 上级标题悬停后离开，若仍为 submenu-selected，恢复无背景 */
+.custom-sider .ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title:not(:hover) {
+  background-color: transparent !important;
+}
+
+.custom-sider .ant-menu-light .ant-menu-submenu-selected > .ant-menu-submenu-title:not(:hover) {
+  background-color: transparent !important;
+}
+
+.custom-sider .ant-menu-dark .ant-menu-item:hover .anticon,
+.custom-sider .ant-menu-dark .ant-menu-submenu-title:hover .anticon,
+.custom-sider .ant-menu-dark .ant-menu-item:hover a,
+.custom-sider .ant-menu-dark .ant-menu-submenu-title:hover a {
+  color: #ffffff !important;
+}
+
+/* 二级菜单展开箭头：收起向右、展开向下（旋转动画） */
+.custom-sider .ant-menu-submenu-expand-icon > svg {
+  transition: transform 0.2s ease;
+}
+
+/*
+ * 二级菜单弹窗（折叠图标模式）— 与头像菜单同款 iOS 毛玻璃
+ * blur 打在定位根节点上，兼容 Chromium/Edge；内层透明避免双层底。
+ */
+.ant-menu-submenu-popup {
+  padding: 4px !important;
+  border-radius: 16px !important;
+  background: rgba(255, 255, 255, 0.28) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(200%) !important;
+  backdrop-filter: blur(28px) saturate(200%) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.45),
+    0 24px 48px rgba(0, 0, 0, 0.14) !important;
+  overflow: hidden !important;
+  filter: none !important;
+}
+
+body[data-theme='dark'] .ant-menu-submenu-popup {
+  background: rgba(30, 30, 32, 0.28) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.08),
+    0 24px 48px rgba(0, 0, 0, 0.55) !important;
+}
+
+.ant-menu-submenu-popup > .ant-menu {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  padding: 4px 0 !important;
+}
+
+/* 展开态内联二级：与侧栏同色，不再叠第二块更深底 */
+.ant-menu-dark.ant-menu-inline .ant-menu-sub.ant-menu-inline {
+  background: transparent !important;
+}
+
+.ant-menu-submenu-popup > .ant-menu .ant-menu-item {
+  margin-inline: 4px !important;
+  width: calc(100% - 8px) !important;
+  border-radius: 10px !important;
+  color: rgba(0, 0, 0, 0.65) !important;
+}
+
+body[data-theme='dark'] .ant-menu-submenu-popup > .ant-menu .ant-menu-item,
+.ant-menu-dark.ant-menu-submenu .ant-menu-item {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+.ant-menu-submenu-popup > .ant-menu .ant-menu-item:hover,
+.ant-menu-submenu-popup > .ant-menu .ant-menu-item-active {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+  color: #18181b !important;
+}
+
+body[data-theme='dark'] .ant-menu-submenu-popup > .ant-menu .ant-menu-item:hover,
+body[data-theme='dark'] .ant-menu-submenu-popup > .ant-menu .ant-menu-item-active,
+.ant-menu-dark.ant-menu-submenu .ant-menu-item:hover,
+.ant-menu-dark.ant-menu-submenu .ant-menu-item-active {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+.ant-menu-submenu-popup > .ant-menu .ant-menu-item-selected {
+  background-color: rgba(0, 0, 0, 0.07) !important;
+  color: #18181b !important;
+}
+
+body[data-theme='dark'] .ant-menu-submenu-popup > .ant-menu .ant-menu-item-selected,
+.ant-menu-dark.ant-menu-submenu .ant-menu-item-selected {
+  background-color: rgba(255, 255, 255, 0.14) !important;
+  color: #ffffff !important;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ant-menu-submenu-popup {
+    background: rgba(255, 255, 255, 0.92) !important;
+  }
+  body[data-theme='dark'] .ant-menu-submenu-popup {
+    background: rgba(30, 30, 32, 0.92) !important;
+  }
+}
+
+/* 折叠菜单 Tooltip：保证浅色字 */
+.ant-menu-inline-collapsed-tooltip .ant-tooltip-inner,
+.ant-menu-inline-collapsed-tooltip a {
+  color: #ffffff !important;
+}
+
+/* 暗色主题默认 Tooltip 文字保持白色（不覆盖业务里 color=#fff 的浅色气泡） */
+body[data-theme='dark'] .ant-tooltip:not(.ant-tooltip-blue):not(.ant-tooltip-green) .ant-tooltip-inner {
+  color: #ffffff !important;
+}
+
+/* 主按钮：暗色下近白底 + 深色字（与 shadcn primary 一致） */
+body[data-theme='dark'] .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous) {
+  color: #18181b !important;
+}
+
+body[data-theme='dark'] .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):hover {
+  color: #18181b !important;
+}
+
+/* Checkbox / Radio 选中描边跟主色（由 token 驱动，这里兜底去掉蓝倾向） */
+body[data-theme='light'] .ant-checkbox-checked .ant-checkbox-inner,
+body[data-theme='light'] .ant-radio-checked .ant-radio-inner {
+  background-color: #18181b !important;
+  border-color: #18181b !important;
+}
+
+body[data-theme='dark'] .ant-checkbox-checked .ant-checkbox-inner {
+  background-color: #fafafa !important;
+  border-color: #fafafa !important;
+}
+
+body[data-theme='dark'] .ant-checkbox-checked .ant-checkbox-inner::after {
+  border-color: #18181b !important;
+}
+
+body[data-theme='dark'] .ant-radio-checked .ant-radio-inner {
+  border-color: #fafafa !important;
+}
+
+body[data-theme='dark'] .ant-radio-checked .ant-radio-inner::after {
+  background-color: #fafafa !important;
+}
+
+/* 全局统一开关样式（AppSwitch / antd Switch — 与令牌页同一套灰阶） */
+.ant-switch {
+  min-width: 36px !important;
+  height: 20px !important;
+  line-height: 16px !important;
+  border-radius: 10px !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.ant-switch .ant-switch-handle {
+  width: 16px !important;
+  height: 16px !important;
+  top: 0px !important;
+  inset-inline-start: 0px !important;
+}
+
+.ant-switch.ant-switch-checked .ant-switch-handle {
+  inset-inline-start: calc(100% - 16px) !important;
+}
+
+.ant-switch .ant-switch-inner {
+  display: none !important;
+}
+
+.ant-switch .ant-switch-handle::before {
+  border-radius: 50% !important;
+  box-shadow: none !important;
+}
+
+/* ==================
+   COLORS (Dark Theme - default fallback)
+   AppSwitch / 令牌页等同款灰阶开关（index.css 为唯一视觉源）
+   ================== */
+.ant-switch {
+  background-color: transparent !important;
+  border: 2px solid #444746 !important;
+}
+
+.ant-switch.ant-switch-checked {
+  background-color: #e3e3e3 !important;
+  border: 2px solid #e3e3e3 !important;
+}
+
+.ant-switch:hover:not(.ant-switch-disabled) {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
+  background-color: #ffffff !important;
+}
+
+.ant-switch .ant-switch-handle::before {
+  background-color: #8e918f !important;
+}
+
+.ant-switch.ant-switch-checked .ant-switch-handle::before {
+  background-color: #1f1f1f !important;
+}
+
+/* ==================
+   COLORS (Light Theme)
+   ================== */
+body[data-theme='light'] .ant-switch {
+  background-color: #f1f3f4 !important;
+  border: 2px solid #dadce0 !important;
+}
+
+body[data-theme='light'] .ant-switch.ant-switch-checked {
+  background-color: #1f1f1f !important;
+  border: 2px solid #1f1f1f !important;
+}
+
+body[data-theme='light'] .ant-switch:hover:not(.ant-switch-disabled) {
+  background-color: #e4e7eb !important;
+}
+
+body[data-theme='light'] .ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
+  background-color: #333333 !important;
+}
+
+body[data-theme='light'] .ant-switch .ant-switch-handle::before {
+  background-color: #5f6368 !important;
+}
+
+body[data-theme='light'] .ant-switch.ant-switch-checked .ant-switch-handle::before {
+  background-color: #ffffff !important;
+}
+
+/* 自定义深色删除确认弹窗 */
+.dark-confirm-modal .ant-modal-content,
+.dark-confirm-modal.ant-modal-content,
+.ant-modal.dark-confirm-modal .ant-modal-content,
+.ant-modal-wrap.dark-confirm-modal .ant-modal-content {
+  background: #1e1f20 !important;
+  border: 1px solid #444746 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+}
+
+.dark-confirm-modal .ant-modal-confirm-title {
+  color: #e3e3e3 !important;
+}
+
+.dark-confirm-modal .ant-modal-confirm-content {
+  color: #c4c7c5 !important;
+}
+
+.dark-confirm-modal .ant-btn-default {
+  background: transparent !important;
+  border: 1px solid #444746 !important;
+  color: #e3e3e3 !important;
+  border-radius: 8px !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.dark-confirm-modal .ant-btn-default:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: #8ab4f8 !important;
+  color: #8ab4f8 !important;
+}
+
+.dark-confirm-modal .ant-btn-primary.ant-btn-dangerous {
+  background: rgba(255, 77, 79, 0.15) !important;
+  border: 1px solid rgba(255, 77, 79, 0.3) !important;
+  color: #ff4d4f !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.dark-confirm-modal .ant-btn-primary.ant-btn-dangerous:hover {
+  background: rgba(255, 77, 79, 0.25) !important;
+  border-color: rgba(255, 77, 79, 0.5) !important;
+}
+
+/* Typography Inline Edit Smooth Transition */
+.ant-typography-edit-content {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* 修复 Quill 富文本编辑器内容在亮色模式下残留深色内联背景的问题 */
+.quill-content * {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+/* 极致紧凑列表专用 */
+.compact-table .ant-table-cell {
+  padding: 4px 8px !important;
+}
+
+.compact-table .ant-table-tbody>tr>td {
+  padding: 4px 8px !important;
+}
+
+/* 当左侧菜单处于折叠（图标显示）模式时，使菜单项和子菜单项背景区域为正方形并水平居中 */
+.custom-sider .ant-menu-inline-collapsed .ant-menu-item,
+.custom-sider .ant-menu-inline-collapsed .ant-menu-submenu-title {
+  width: 46px !important;
+  height: 46px !important;
+  line-height: 46px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 8px !important;
+}
+
+/* 确保折叠状态下，菜单项的图标在正方形中居中且无多余的 inline 偏移 */
+.custom-sider .ant-menu-inline-collapsed .ant-menu-item .anticon,
+.custom-sider .ant-menu-inline-collapsed .ant-menu-submenu-title .anticon {
+  margin: 0 !important;
+  font-size: 22px !important;
+}
+
+/* 当模型广场的侧边栏折叠时，使筛选菜单项为 46px x 46px 的正方形并水平居中 */
+.custom-sider.ant-layout-sider-collapsed .mp-sidebar-item {
+  width: 46px !important;
+  height: 46px !important;
+  line-height: 46px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 8px !important;
+}
+
+/* 确保图标大小为 22px，并且无外边距偏移 */
+.custom-sider.ant-layout-sider-collapsed .mp-sidebar-item .anticon,
+.custom-sider.ant-layout-sider-collapsed .mp-sidebar-item > span {
+  margin: 0 !important;
+  font-size: 22px !important;
+}
+
+.tiptap-editor-container {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.tiptap-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--bg);
+}
+
+.tiptap-toolbar-divider {
+  width: 1px;
+  height: 16px;
+  background-color: var(--border);
+  margin: 0 4px;
+}
+
+.tiptap-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tiptap-toolbar-btn:hover {
+  background-color: var(--border);
+  color: var(--text-h);
+}
+
+.tiptap-toolbar-btn.is-active {
+  background-color: var(--accent-bg);
+  color: var(--accent);
+}
+
+.tiptap-toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tiptap-content {
+  min-height: 200px;
+  max-height: 500px;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.tiptap-content .ProseMirror {
+  outline: none;
+  min-height: 180px;
+}
+
+.tiptap-content .ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--text);
+  opacity: 0.4;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* TipTap Editor ProseMirror Typography */
+.tiptap-content .ProseMirror h1,
+.tiptap-content .ProseMirror h2,
+.tiptap-content .ProseMirror h3,
+.tiptap-content .ProseMirror h4 {
+  color: var(--text-h);
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+
+.tiptap-content .ProseMirror h1 { font-size: 1.5rem; }
+.tiptap-content .ProseMirror h2 { font-size: 1.25rem; }
+.tiptap-content .ProseMirror h3 { font-size: 1.125rem; }
+
+.tiptap-content .ProseMirror p {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+}
+
+.tiptap-content .ProseMirror ul,
+.tiptap-content .ProseMirror ol {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.tiptap-content .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.tiptap-content .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.tiptap-content .ProseMirror li {
+  margin-bottom: 0.25rem;
+}
+
+.tiptap-content .ProseMirror blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 1rem;
+  margin-left: 0;
+  margin-right: 0;
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  color: var(--text);
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.tiptap-content .ProseMirror pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  font-family: var(--mono);
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+}
+
+.tiptap-content .ProseMirror pre code {
+  background: none;
+  color: inherit;
+  font-size: 0.875rem;
+  padding: 0;
+  border-radius: 0;
+}
+
+.tiptap-content .ProseMirror code {
+  background: var(--code-bg);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.85em;
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+}
+
+.tiptap-content .ProseMirror a {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.tiptap-content .ProseMirror a:hover {
+  opacity: 0.8;
+}
+
+.tiptap-content .ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.5rem 0;
+}
+
+.tiptap-content .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 1rem 0;
+  display: block;
+}
+
+/* Fullscreen Editor Mode */
+.tiptap-editor-container.is-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 9999;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tiptap-editor-container.is-fullscreen .tiptap-content {
+  flex: 1;
+  max-height: none !important;
+  height: calc(100vh - 80px) !important;
+  overflow-y: auto;
+}
+
+/* Table Styles */
+.tiptap-content .ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 1.5rem 0;
+  overflow: hidden;
+}
+
+.tiptap-content .ProseMirror th,
+.tiptap-content .ProseMirror td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  min-width: 1em;
+  position: relative;
+  vertical-align: top;
+  box-sizing: border-box;
+}
+
+.tiptap-content .ProseMirror th {
+  background-color: var(--code-bg);
+  color: var(--text-h);
+  font-weight: 600;
+  text-align: left;
+}
+
+.tiptap-content .ProseMirror td p,
+.tiptap-content .ProseMirror th p {
+  margin: 0;
+}
+
+.tiptap-content .ProseMirror .selectedCell:after {
+  background: rgba(170, 59, 255, 0.08);
+  content: "";
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+
+.tiptap-content .ProseMirror .column-resize-handle {
+  background-color: var(--accent);
+  bottom: 0;
+  position: absolute;
+  right: -2px;
+  top: 0;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+/* Task List Styles */
+.tiptap-content .ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding: 0;
+}
+
+.tiptap-content .ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.tiptap-content .ProseMirror ul[data-type="taskList"] li > label {
+  margin-top: 4px;
+  user-select: none;
+}
+
+.tiptap-content .ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1;
+}
+
+.tiptap-content .ProseMirror ul[data-type="taskList"] input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+}
+
+/* Tiptap Custom Popovers in Dark Theme */
+.tiptap-dark-popover .ant-popover-content {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.5) !important;
+}
+.tiptap-dark-popover .ant-popover-inner {
+  background-color: #18181b !important;
+  border: 1px solid #27272a !important;
+  border-radius: 12px !important;
+  padding: 12px !important;
+  color: #fff !important;
+}
+.tiptap-dark-popover .ant-popover-arrow::before {
+  background-color: #18181b !important;
+  border-color: #27272a !important;
+}
+
+/* Link Popover (Pill shape) */
+.tiptap-link-popover .ant-popover-inner {
+  background-color: #18181b !important;
+  border: 1px solid #27272a !important;
+  border-radius: 9999px !important;
+  padding: 6px 12px !important;
+  color: #fff !important;
+}
+.tiptap-link-popover .ant-popover-content {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5) !important;
+}
+.tiptap-link-popover .ant-popover-arrow {
+  display: none !important;
+}
+
+.shadcn-auth-grid {
+  position: relative;
+  background-color: #09090b;
+}
+
+.shadcn-auth-grid::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(24, 24, 27, 0.2) 0%, #09090b 100%);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Interactive DOM Grid styles */
+.grid-container {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+  align-content: center;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: auto;
+  mask-image: radial-gradient(circle at 50% 50%, black 35%, transparent 95%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, black 35%, transparent 95%);
+}
+
+.grid-cell {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-right: 1px solid rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+  box-sizing: border-box;
+  transition: background-color 4.5s cubic-bezier(0.1, 0.9, 0.1, 1), 
+              box-shadow 4.5s cubic-bezier(0.1, 0.9, 0.1, 1);
+}
+
+/* Light up instantly on hover and when in the spotlight */
+.grid-cell:hover,
+.grid-cell.is-spotlight {
+  background-color: rgba(99, 102, 241, 0.18);
+  box-shadow: inset 0 0 12px rgba(99, 102, 241, 0.30);
+  transition: background-color 0.25s ease-out, box-shadow 0.25s ease-out !important;
+  z-index: 10;
+}
+
+/* Twinkling state using CSS transitions */
+.grid-cell.is-twinkling {
+  transition: background-color 1.2s ease-out, box-shadow 1.2s ease-out !important;
+}
+
+/* 表单校验错误抖动动画 */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+.animate-shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+/*
+ * Custom Premium Popover — iOS frosted glass
+ *
+ * Chromium / Edge: 毛玻璃打在带 overlayClassName 的弹出根节点上
+ *（与定位/动画同一层），内层 .ant-popover-container 保持透明。
+ * Ant Design 6 主类名为 .ant-popover-container（旧版 .ant-popover-inner 一并兼容）。
+ */
+.custom-premium-popover {
+  padding: 0 !important;
+  border-radius: 20px !important;
+  background: rgba(255, 255, 255, 0.28) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(200%) !important;
+  backdrop-filter: blur(28px) saturate(200%) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.55),
+    0 24px 48px rgba(0, 0, 0, 0.12) !important;
+  overflow: hidden !important;
+  /* 避免祖先 filter（如 drop-shadow）再次切断 backdrop */
+  filter: none !important;
+}
+
+[data-theme='dark'] .custom-premium-popover {
+  background: rgba(30, 30, 32, 0.28) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.08),
+    0 24px 48px rgba(0, 0, 0, 0.55) !important;
+}
+
+/* 内层去掉实色底与阴影，避免盖住根上的毛玻璃 */
+.custom-premium-popover .ant-popover-container,
+.custom-premium-popover .ant-popover-inner {
+  padding: 0 !important;
+  border-radius: 20px !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  overflow: visible !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  transform: none !important;
+}
+
+.custom-premium-popover .ant-popover-content {
+  background: transparent !important;
+}
+
+/*
+ * 关闭 zoom 的 opacity 动画（勿动 transform —— 若库仍用 transform 定位需保留）。
+ * Chromium 在祖先 opacity<1 时会切断子树 backdrop-filter。
+ */
+.custom-premium-popover.ant-zoom-big-enter,
+.custom-premium-popover.ant-zoom-big-appear,
+.custom-premium-popover.ant-zoom-big-leave,
+.custom-premium-popover.ant-zoom-big-enter-active,
+.custom-premium-popover.ant-zoom-big-appear-active,
+.custom-premium-popover.ant-zoom-big-leave-active {
+  animation: none !important;
+  opacity: 1 !important;
+}
+
+/* 不支持 backdrop-filter 时用更实的半透明底兜底（旧浏览器） */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .custom-premium-popover {
+    background: rgba(255, 255, 255, 0.88) !important;
+  }
+  [data-theme='dark'] .custom-premium-popover {
+    background: rgba(30, 30, 32, 0.88) !important;
+  }
+}
+
+/*
+ * 全站提示已统一走 GlobalToast（页面正中黑白灰风格）。
+ * 隐藏 antd 原生 message，避免偶发双弹或旧白底样式漏出。
+ */
+.ant-message {
+  display: none !important;
+}

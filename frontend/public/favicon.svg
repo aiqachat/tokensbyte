@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1890ff" />
+      <stop offset="100%" stop-color="#722ed1" />
+    </linearGradient>
+  </defs>
+  
+  <g transform="translate(50, 50)">
+    <!-- Circuit single hexagon -->
+    <path d="M0 -40 L-34.6 -20 L-34.6 20 L0 40 L34.6 20 L34.6 -20 Z" stroke="url(#gradient)" stroke-width="10" stroke-linejoin="round" />
+    
+    <!-- Three connecting lines to center -->
+    <path d="M0 0 L0 -40 M0 0 L-34.6 20 M0 0 L34.6 20" stroke="url(#gradient)" stroke-width="10" stroke-linecap="round" />
+    
+    <!-- Three outer nodes -->
+    <circle cx="0" cy="-40" r="8" fill="#00e8ff" />
+    <circle cx="-34.6" cy="20" r="8" fill="#1890ff" />
+    <circle cx="34.6" cy="20" r="8" fill="#722ed1" />
+    
+    <!-- Center Core -->
+    <circle cx="0" cy="0" r="14" fill="url(#gradient)" />
+    <circle cx="0" cy="0" r="6" fill="#fff" />
+  </g>
+</svg>

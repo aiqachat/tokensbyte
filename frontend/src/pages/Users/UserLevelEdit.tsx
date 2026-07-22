@@ -1,0 +1,306 @@
+/*
+ * tokensbyte opensource
+ * (c) 2026 tokensbyte.ai
+ * @copyright      Copyright netbcloud/wstianxia 
+ * @license        MIT (https://www.tokensbyte.ai/)
+ */
+
+import React, { useEffect, useState } from 'react';
+import { Card, Form, Input, InputNumber, Button, message, Space, Tabs, Spin, Switch } from 'antd';
+import { SaveOutlined, ArrowLeftOutlined, KeyOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import { useParams, useNavigate } from 'react-router-dom';
+import { pinyin } from 'pinyin-pro';
+import request from '../../utils/request';
+import useSettingsStore from '../../store/settings';
+import type { UserLevel } from '../../types';
+
+const { TabPane } = Tabs;
+
+const UserLevelEdit: React.FC = () => {
+  const { t } = useTranslation();
+  const { actionId } = useParams<{ actionId: string }>();
+  const navigate = useNavigate();
+  const { settings } = useSettingsStore();
+  const adminPath = settings?.site?.admin_path || 'admin1688';
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [marketingToggleLoading, setMarketingToggleLoading] = useState(false);
+  const [groupKeyManuallyEdited, setGroupKeyManuallyEdited] = useState(false);
+  const isAdd = actionId === 'new';
+
+  // 根据名称自动生成分组标识
+  const generateGroupKey = (name: string): string => {
+    if (!name.trim()) return '';
+    const hasChinese = /[\u4e00-\u9fa5]/.test(name);
+    if (hasChinese) {
+      const py = pinyin(name, { pattern: 'first', toneType: 'none', type: 'array' });
+      return py.join('').toLowerCase().replace(/[^a-z0-9]/g, '');
+    } else {
+      return name.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    }
+  };
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const name = e.target.value;
+    if (isAdd && !groupKeyManuallyEdited) {
+      form.setFieldValue('group_key', generateGroupKey(name));
+    }
+  };
+
+  useEffect(() => {
+    if (isAdd) {
+      setLoading(false);
+      form.setFieldsValue({
+        discount: 1.0,
+        commission_ratio: 0.0,
+        invite_reward_inviter: 0.0,
+        invite_reward_invitee: 0.0,
+        daily_invite_limit: 10,
+        marketing_enabled: false,
+        is_default: false,
+        max_token_count: 10,
+        allow_view_log_details: true,
+        sort_order: 0,
+      });
+      return;
+    }
+
+    const fetchLevel = async () => {
+      setLoading(true);
+      try {
+        const resp = await (request.get('/user_levels') as unknown as Promise<{ data: UserLevel[] }>);
+        const level = resp.data.find((l: UserLevel) => String(l.id) === actionId);
+        if (level) {
+          form.setFieldsValue({
+            ...level,
+            marketing_enabled: level.marketing_enabled === 1,
+            is_default: level.is_default === 1,
+            allow_view_log_details: level.allow_view_log_details === undefined ? true : level.allow_view_log_details === 1,
+          });
+        } else {
+          message.error('未找到对应等级记录');
+          navigate(`/${adminPath}/user-levels`);
+        }
+      } catch (e) {
+        console.error(e);
+        message.error('获取等级详情失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLevel();
+  }, [actionId, form, isAdd, navigate]);
+
+  const handleSave = async (values: any) => {
+    setSaving(true);
+    // Convert boolean switch back to number, guarding against undefined to prevent overwriting with 0
+    const payload = {
+      ...values,
+      marketing_enabled: values.marketing_enabled === undefined ? undefined : (values.marketing_enabled ? 1 : 0),
+      is_default: values.is_default === undefined ? undefined : (values.is_default ? 1 : 0),
+      allow_view_log_details: values.allow_view_log_details === undefined ? undefined : (values.allow_view_log_details ? 1 : 0),
+    };
+    // 新建时自动生成 group_key
+    if (isAdd && !payload.group_key) {
+      payload.group_key = generateGroupKey(values.name || '');
+    }
+    if (!payload.group_key) {
+      message.error('分组标识不能为空');
+      setSaving(false);
+      return;
+    }
+    try {
+      if (isAdd) {
+        await request.post('/user_levels', payload);
+        message.success(t('user_levels.success'));
+      } else {
+        await request.put(`/user_levels/${actionId}`, payload);
+        message.success(t('user_levels.success'));
+      }
+      navigate(`/${adminPath}/user-levels`);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** 专属推广开关：编辑模式下切换即生效，无需点保存配置 */
+  const handleMarketingEnabledChange = async (checked: boolean) => {
+    form.setFieldValue('marketing_enabled', checked);
+    if (isAdd) return;
+
+    setMarketingToggleLoading(true);
+    try {
+      await request.put(`/user_levels/${actionId}`, {
+        marketing_enabled: checked ? 1 : 0,
+      });
+      message.success(checked ? '专属推广模式已开启' : '专属推广模式已关闭');
+    } catch (e) {
+      console.error(e);
+      form.setFieldValue('marketing_enabled', !checked);
+    } finally {
+      setMarketingToggleLoading(false);
+    }
+  };
+
+  if (loading) {
+    return <div style={{ textAlign: 'center', marginTop: 100 }}><Spin size="large" /></div>;
+  }
+
+  const groupKey = form.getFieldValue('group_key');
+
+  return (
+    <Card 
+      title={
+        <Space>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/${adminPath}/user-levels`)} />
+          <span>{isAdd ? t('user_levels.add_level') : t('user_levels.edit_level')}</span>
+        </Space>
+      }
+      extra={
+        <Button type="primary" icon={<SaveOutlined />} onClick={() => form.submit()} loading={saving}>
+          保存配置
+        </Button>
+      }
+      bordered={false}
+    >
+      <Form form={form} layout="vertical" onFinish={handleSave} style={{ maxWidth: 800 }}>
+        <Tabs defaultActiveKey="1" type="card">
+          <TabPane tab="等级基本信息" key="1">
+            <Form.Item name="name" label={t('user_levels.name')} rules={[{ required: true }]}>
+              <Input placeholder="输入等级呈现的中文名称" onChange={handleNameChange} />
+            </Form.Item>
+            <Form.Item 
+              name="group_key" 
+              label={t('user_levels.group_key', '等级标志ID (Group Key)')} 
+              rules={[{ required: true }]}
+              extra="辅助的英文字母等级标识符（如 vip1）。系统底层已拥有永久不可变的【4位数字用户等级ID】作为安全兜底，您可以在需要的时候安全地修改本标识而不用担心数据解绑。"
+            >
+              <Input 
+                placeholder="e.g. vip, primary" 
+                disabled={!isAdd}
+                onChange={() => { if(isAdd) setGroupKeyManuallyEdited(true); }}
+              />
+            </Form.Item>
+            <Form.Item 
+              name="discount" 
+              label={t('user_levels.discount', '计费倍率 (Discount/Multiplier)')} 
+              rules={[{ required: true }]}
+              extra="设置用户计费的乘数。1 为原价不打折；小于1为折扣优惠（如 0.8 为 8折）；大于1为加倍收费（如 1.5 表明加价50%）。"
+            >
+              <InputNumber style={{ width: '100%' }} min={0.01} max={999} step={0.01} precision={2} />
+            </Form.Item>
+            <Form.Item name="description" label={t('user_levels.description')}>
+              <Input.TextArea rows={4} placeholder="描述该组特权或补充信息..." />
+            </Form.Item>
+            <Form.Item 
+              name="sort_order" 
+              label="排序（数字越大越靠前）" 
+              extra="数字大的将显示在列表前面"
+            >
+              <InputNumber style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item 
+              name="is_default" 
+              label="设为默认注册等级" 
+              valuePropName="checked"
+              extra="开启后，新用户注册时将自动成为该等级。同一时间只能有一个默认注册等级，设置后会覆盖之前的默认等级。"
+            >
+              <Switch />
+            </Form.Item>
+          </TabPane>
+
+          <TabPane tab="等级营销推广" key="2" forceRender>
+            <Form.Item 
+              name="marketing_enabled" 
+              label="开启专属推广模式 (高优先级)" 
+              valuePropName="checked"
+              extra={
+                isAdd
+                  ? '开启后，被邀请人注册时将不再发放站点的「全局注册好礼」，而是直接发放该等级配置的面额。邀请人也会根据日限制额度获得对应提成。新建等级需点击「保存配置」后生效。'
+                  : '开启后立即生效，无需点击「保存配置」。被邀请人注册时将不再发放站点的「全局注册好礼」，而是直接发放该等级配置的面额。邀请人也会根据日限制额度获得对应提成。'
+              }
+            >
+              <Switch
+                loading={marketingToggleLoading}
+                onChange={handleMarketingEnabledChange}
+              />
+            </Form.Item>
+
+            <Form.Item 
+              name="commission_ratio" 
+              label="返利比例 (邀请充值返现)" 
+              rules={[{ required: true }]}
+              extra="邀请的用户充值后，邀请人获得的奖金入账比例 (0-1)"
+            >
+              <InputNumber 
+                style={{ width: '100%' }} 
+                min={0} 
+                max={1} 
+                step={0.01} 
+                precision={2} 
+                formatter={value => `${Math.round((Number(value) || 0) * 100)}%`}
+                parser={value => (parseFloat(value?.replace('%', '') || '0') / 100) as any}
+              />
+            </Form.Item>
+
+            <Form.Item 
+              name="invite_reward_inviter" 
+              label="邀请成功送额度（给邀请人）" 
+              rules={[{ required: true }]}
+              extra="当受邀人成功注册并激活后，一次性赠送给【邀请人】的固定消费额度"
+            >
+              <InputNumber style={{ width: '100%' }} min={0} step={1} precision={2} />
+            </Form.Item>
+
+            <Form.Item 
+              name="invite_reward_invitee" 
+              label="走邀请链接注册送额度（给新客户/受邀人）" 
+              rules={[{ required: true }]}
+              extra="【受到邀请】而来的新用户，一经注册额外直接赠送的启动资金加成额度"
+            >
+              <InputNumber style={{ width: '100%' }} min={0} step={1} precision={2} />
+            </Form.Item>
+
+            <Form.Item 
+              name="daily_invite_limit" 
+              label="每日邀请人数上限 (0为无限)" 
+              rules={[{ required: true }]}
+              extra="限制每天最多有多少个有效下线名额可以获得固定额度奖励，防止机器批量注册撸羊毛（超出的邀请可能依然绑定但不支持送额度）"
+            >
+              <InputNumber style={{ width: '100%' }} min={0} step={1} precision={0} />
+            </Form.Item>
+          </TabPane>
+
+          <TabPane tab={<span><KeyOutlined /> 密钥配置</span>} key="3" forceRender>
+            <Form.Item 
+              name="max_token_count" 
+              label="最大密钥创建数量" 
+              rules={[{ required: true }]}
+              extra="限制该等级用户可以创建的 API 密钥数量上限。设为 0 表示禁止创建密钥。"
+            >
+              <InputNumber style={{ width: '100%' }} min={0} max={1000} step={1} precision={0} />
+            </Form.Item>
+          </TabPane>
+
+          <TabPane tab="日志配置" key="4" forceRender>
+            <Form.Item 
+              name="allow_view_log_details" 
+              label="查看日志详情" 
+              valuePropName="checked"
+              extra="设置关闭后，属于当前用户等级的用户在页面的使用日志和任务日志里只能看列表信息，无法点击下拉看详细内容（同时隐藏使用日志的详情文案和任务日志的加号图标），设置开启后才能看。"
+            >
+              <Switch />
+            </Form.Item>
+          </TabPane>
+        </Tabs>
+      </Form>
+    </Card>
+  );
+};
+
+export default UserLevelEdit;

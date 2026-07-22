@@ -1,0 +1,13 @@
+{
+  "plugin_title": "사이트 포털",
+  "plugin_desc": "사이트 콘텐츠 기본 소개 제공",
+  "nav_management": "내비 관리",
+  "home_management": "홈 관리",
+  "column_management": "컬럼 관리",
+  "static_generation": "정적 생성",
+  "other_config": "기타 설정",
+  "save": "저장",
+  "preview": "미리보기",
+  "custom_homepage": "사용자 정의 홈페이지",
+  "custom_homepage_desc": "활성화하면 포털 홈페이지에 HTML 코드가 직접 표시됩니다"
+}

@@ -1,0 +1,772 @@
+<!--
+  tokensbyte opensource
+  (c) 2026 tokensbyte.ai
+  @copyright      Copyright netbcloud/wstianxia 
+  @license        MIT (https://www.tokensbyte.ai/)
+-->
+
+{% extends "base.html" %}
+{% set current_page = "models" %}
+{% block title %}模型详情 - {{ nav.logo_text | default(value="TokensByte") }}{% endblock %}
+{% block content %}
+<style>
+/* Reset and basic Ant Design styles */
+.md-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: calc(var(--nav-height) + 24px) 32px 24px 32px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+@media (max-width: 768px) {
+    .md-container { padding: calc(var(--nav-height) + 16px) 16px 16px 16px; }
+}
+
+/* Breadcrumbs */
+.ant-breadcrumb {
+    color: rgba(0, 0, 0, 0.45);
+    font-size: 13px;
+    margin-bottom: 24px;
+}
+body.dark .ant-breadcrumb { color: rgba(255, 255, 255, 0.45); }
+.ant-breadcrumb a { color: inherit; text-decoration: none; cursor: pointer; transition: color 0.3s; }
+.ant-breadcrumb a:hover { color: rgba(0, 0, 0, 0.88); }
+body.dark .ant-breadcrumb a:hover { color: rgba(255, 255, 255, 0.85); }
+.breadcrumb-separator { margin: 0 8px; color: rgba(0,0,0,0.45); }
+body.dark .breadcrumb-separator { color: rgba(255,255,255,0.45); }
+.breadcrumb-current { color: rgba(0, 0, 0, 0.85); }
+body.dark .breadcrumb-current { color: rgba(255, 255, 255, 0.85); }
+
+/* Layout Blocks */
+.content-flex { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.left-details { 
+    flex: 1 1 500px; 
+    background: #ffffff; 
+    border: 1px solid #f0f0f0; 
+    border-radius: 12px; 
+    padding: 24px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.02);
+}
+@media (max-width: 768px) { .left-details { padding: 16px; } }
+body.dark .left-details { background: #141414; border-color: #303030; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+
+/* Header area */
+.header-flex { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+.logo-box {
+    width: 64px; height: 64px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    font-size: 32px; overflow: hidden; background: #f4f5f7; border: 1px solid #f0f0f0; flex-shrink: 0;
+}
+body.dark .logo-box { background: #18181b; border-color: #303030; }
+.logo-box img { width: 48px; height: 48px; object-fit: contain; }
+
+.title-line { display: flex; align-items: center; gap: 12px; }
+.title-text { margin: 0; font-size: 26px; font-weight: 700; color: rgba(0,0,0,0.85); }
+@media (max-width: 768px) { .title-text { font-size: 20px; } }
+body.dark .title-text { color: rgba(255,255,255,0.85); }
+
+.variant-badge {
+    font-size: 12px; font-weight: 500; line-height: 22px; padding: 0 10px; border-radius: 10px;
+    background: rgba(0,0,0,0.06); color: #1f2937; border: 1px solid rgba(0,0,0,0.08);
+}
+body.dark .variant-badge { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.88); border-color: rgba(255,255,255,0.15); }
+
+.sub-info { font-size: 15px; color: rgba(0,0,0,0.45); margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+body.dark .sub-info { color: rgba(255,255,255,0.45); }
+.provider-item { display: inline-flex; align-items: center; gap: 4px; }
+.dot-sep { width: 4px; height: 4px; border-radius: 50%; background: #d9d9d9; }
+body.dark .dot-sep { background: #424242; }
+
+.code-badge { background: rgba(150, 150, 150, 0.1); padding: 2px 8px; border-radius: 4px; font-size: 13px; color: #eb2f96; font-family: monospace; }
+body.dark .code-badge { background: rgba(255, 255, 255, 0.08); color: #f759ab; }
+.copy-btn { color: rgba(0,0,0,0.45); cursor: pointer; padding: 0 4px; border: none; background: transparent; transition: color 0.3s; }
+.copy-btn:hover { color: #1677ff; }
+body.dark .copy-btn { color: rgba(255,255,255,0.45); }
+body.dark .copy-btn:hover { color: #1668dc; }
+
+/* Sections */
+.section-title { font-size: 15px; font-weight: 600; color: rgba(0,0,0,0.85); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+body.dark .section-title { color: rgba(255,255,255,0.85); }
+.section-title svg { color: rgba(0,0,0,0.45); width: 16px; height: 16px; }
+body.dark .section-title svg { color: rgba(255,255,255,0.45); }
+
+.desc-text { font-size: 14px; color: rgba(0,0,0,0.65); line-height: 1.6; white-space: pre-wrap; }
+body.dark .desc-text { color: rgba(255,255,255,0.65); }
+
+.about-box {
+    margin-top: 16px; padding: 12px 16px; border-radius: 8px; border: 1px solid #f0f0f0;
+    background: rgba(0,0,0,0.015);
+}
+body.dark .about-box { background: rgba(255,255,255,0.015); border-color: #303030; }
+.about-box-title { font-size: 13px; font-weight: 600; color: rgba(0,0,0,0.85); margin-bottom: 6px; }
+body.dark .about-box-title { color: rgba(255,255,255,0.85); }
+.about-box-desc { font-size: 13px; color: rgba(0,0,0,0.45); line-height: 1.5; }
+body.dark .about-box-desc { color: rgba(255,255,255,0.45); }
+
+/* Descriptions Grid */
+.desc-grid {
+    border: 1px solid #f0f0f0; border-radius: 12px; overflow: hidden; margin-bottom: 24px;
+    display: grid; grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 768px) { .desc-grid { grid-template-columns: 1fr; } }
+body.dark .desc-grid { border-color: #303030; }
+.desc-item { display: flex; border-bottom: 1px solid #f0f0f0; }
+.desc-item:nth-last-child(1), .desc-item:nth-last-child(2) { border-bottom: none; }
+@media (max-width: 768px) { .desc-item:nth-last-child(2) { border-bottom: 1px solid #f0f0f0; } }
+body.dark .desc-item { border-color: #303030; }
+body.dark .desc-item:nth-last-child(2) { border-color: #303030; }
+.desc-label { 
+    background: #f9fafb; color: rgba(0,0,0,0.45); width: 100px; font-size: 13px; 
+    padding: 8px 16px; border-right: 1px solid #f0f0f0; display: flex; align-items: center;
+}
+body.dark .desc-label { background: transparent; color: rgba(255,255,255,0.45); border-color: #303030; }
+.desc-content { padding: 8px 16px; font-size: 13px; color: rgba(0,0,0,0.85); display: flex; align-items: center; flex: 1; }
+body.dark .desc-content { color: rgba(255,255,255,0.85); }
+
+.tag-borderless {
+    border-radius: 6px; padding: 2px 8px; background: rgba(0,0,0,0.04); color: rgba(0,0,0,0.65); border: 1px solid #f0f0f0; font-size: 12px;
+}
+body.dark .tag-borderless { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.65); border-color: #303030; }
+
+/* Pricing Table */
+.pricing-section { margin-top: 24px; }
+.pricing-header { font-size: 16px; font-weight: 600; color: rgba(0,0,0,0.85); margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px; letter-spacing: -0.3px; }
+body.dark .pricing-header { color: rgba(255,255,255,0.85); }
+.table-wrapper {
+    border: 1px solid #f0f0f0; border-radius: 12px; overflow: hidden; background: #ffffff;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.02);
+}
+body.dark .table-wrapper { border-color: #303030; background: transparent; box-shadow: none; }
+.responsive-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; min-width: 600px; }
+.responsive-table th {
+    padding: 16px 24px; font-weight: 600; color: rgba(0,0,0,0.45); white-space: nowrap; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    background: #fafafa; border-bottom: 1px solid #f0f0f0;
+}
+body.dark .responsive-table th { background: transparent; color: rgba(255,255,255,0.45); border-color: #303030; }
+.responsive-table td { padding: 20px 24px; vertical-align: middle; border-bottom: 1px solid #f0f0f0; transition: background 0.2s; color: rgba(0,0,0,0.85); }
+body.dark .responsive-table td { border-color: #303030; color: rgba(255,255,255,0.85); }
+.responsive-table tr:last-child td { border-bottom: none; }
+.responsive-table tr:hover td { background: #fafafa; }
+body.dark .responsive-table tr:hover td { background: transparent; }
+
+.provider-td-flex { display: flex; align-items: center; gap: 14px; }
+.provider-logo { width: 28px; height: 28px; object-fit: contain; border-radius: 4px; }
+.provider-name { font-weight: 600; font-size: 15px; letter-spacing: -0.2px; }
+.provider-variant { font-size: 12px; color: rgba(0,0,0,0.45); }
+body.dark .provider-variant { color: rgba(255,255,255,0.45); }
+.provider-model-id {
+    font-family: monospace; font-size: 11px; color: rgba(0,0,0,0.65); background: rgba(0,0,0,0.02);
+    padding: 1px 6px; border-radius: 4px; border: 1px solid #f0f0f0; display: inline-flex;
+}
+body.dark .provider-model-id { color: rgba(255,255,255,0.65); background: rgba(255,255,255,0.04); border-color: #303030; }
+
+.billing-tag {
+    border-radius: 6px; padding: 4px 10px; background: rgba(0,0,0,0.04); color: rgba(0,0,0,0.65);
+    border: 1px solid #f0f0f0; font-weight: 500; font-size: 12px; display: inline-flex;
+}
+body.dark .billing-tag { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.65); border-color: #303030; }
+
+/* Pricing JS Output classes */
+.price-box { font-family: monospace; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+.price-main { font-size: 16px; font-weight: 600; display: flex; align-items: baseline; gap: 6px; }
+.price-unit { font-size: 12px; color: rgba(0,0,0,0.45); font-weight: 500; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+body.dark .price-unit { color: rgba(255,255,255,0.45); }
+.price-sub { font-size: 11px; color: rgba(0,0,0,0.45); display: flex; align-items: center; gap: 4px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+body.dark .price-sub { color: rgba(255,255,255,0.45); }
+.price-sub-tag { margin: 0; padding: 0 4px; font-size: 10px; height: 16px; line-height: 14px; border-radius: 4px; border: 1px solid transparent; }
+.tag-blue { background: #e6f4ff; color: #1677ff; border-color: #91caff; }
+body.dark .tag-blue { background: #111a2c; color: #1677ff; border-color: #153450; }
+.tag-orange { background: #fff2e8; color: #fa541c; border-color: #ffbb96; }
+body.dark .tag-orange { background: #2b1611; color: #e8471c; border-color: #592316; }
+.tag-green { background: #f6ffed; color: #52c41a; border-color: #b7eb8f; }
+body.dark .tag-green { background: #162312; color: #49aa19; border-color: #274916; }
+.color-text-1 { color: rgba(0,0,0,0.85); font-weight: 600; font-size: 14px; }
+body.dark .color-text-1 { color: rgba(255,255,255,0.85); }
+.color-text-3 { color: rgba(0,0,0,0.45); font-size: 12px; }
+body.dark .color-text-3 { color: rgba(255,255,255,0.45); }
+.tag-image { background: rgba(0,0,0,0.02); border: 1px solid #f0f0f0; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+body.dark .tag-image { background: rgba(255,255,255,0.02); border-color: #303030; }
+
+.md-not-found { text-align: center; padding: 100px 20px; }
+.md-not-found h2 { font-size: 24px; color: rgba(0,0,0,0.85); margin-bottom: 16px; }
+body.dark .md-not-found h2 { color: rgba(255,255,255,0.85); }
+</style>
+
+<div class="md-container">
+    {% set found = false %}
+    {% for model in models %}
+        {% set model_target_id = model.model_id %}
+        {% if model.original_id and model.original_id | length > 0 %}
+            {% set model_target_id = model.original_id %}
+        {% endif %}
+        {% if not found and model_target_id == current_mid %}
+            {% set_global found = true %}
+                 <div class="ant-breadcrumb">
+                <a href="/home/models" data-i18n-dynamic="模型广场">模型广场</a>
+                <span class="breadcrumb-separator">/</span>
+                <span class="breadcrumb-current">{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.model_name }}{% endif %}</span>
+            </div>
+            
+            <div class="content-flex">
+                <div class="left-details">
+                    <div class="header-flex">
+                        <div class="logo-box">
+                            {% if model.logo and model.logo | length > 0 %}
+                                {% set m_logo = model.logo %}
+                                {% if not m_logo is starting_with("http") and not m_logo is starting_with("/") %}
+                                    {% set m_logo = "/assets/icons/lobe/" ~ m_logo ~ ".svg" %}
+                                {% endif %}
+                                <img src="{{ m_logo | safe }}" alt="logo" onerror="this.style.display='none'">
+                            {% elif model.provider_logo and model.provider_logo | length > 0 %}
+                                {% set prov_logo = model.provider_logo %}
+                                {% if not prov_logo is starting_with("http") and not prov_logo is starting_with("/") %}
+                                    {% set prov_logo = "/assets/icons/lobe/" ~ prov_logo ~ ".svg" %}
+                                {% endif %}
+                                <img src="{{ prov_logo | safe }}" alt="logo" onerror="this.style.display='none'">
+                            {% else %}
+                                <span style="color: rgba(0,0,0,0.45)">
+                                    {% if model.mid is containing("gpt") %}🟢{% elif model.mid is containing("claude") %}🟣{% elif model.mid is containing("gemini") %}🔵{% elif model.mid is containing("deepseek") %}🐳{% else %}🤖{% endif %}
+                                </span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <div class="title-line">
+                                <h1 class="title-text">{% if model.original_id and model.original_id | length > 0 %}{{ model.original_id }}{% else %}{{ model.model_name }}{% endif %}</h1>
+                                {% if model.variants and model.variants | length > 1 %}
+                                <span class="variant-badge">
+                                    <span style="font-family: monospace;">{{ model.variants | length }}</span>
+                                    <span data-i18n="model_detail_variants_suffix"> 种定价</span>
+                                </span>
+                                {% endif %}
+                            </div>
+                            <div class="sub-info">
+                                {% set_global seen_providers = "" %}
+                                {% set_global provider_count = 0 %}
+                                {% for v in model.variants %}
+                                    {% if v.provider_name and v.provider_name != "" and v.provider_name != "未知官方服务商" and v.provider_name != "未知服务商" and v.provider_name not in seen_providers %}
+                                        <span class="provider-item">
+                                            {% if provider_count > 0 %}<span class="dot-sep"></span>{% endif %}
+                                            {% if v.provider_logo %}
+                                                {% set sub_prov_logo = v.provider_logo %}
+                                                {% if not sub_prov_logo is starting_with("http") and not sub_prov_logo is starting_with("/") %}
+                                                    {% set sub_prov_logo = "/assets/icons/lobe/" ~ sub_prov_logo ~ ".svg" %}
+                                                {% endif %}
+                                                <img src="{{ sub_prov_logo | safe }}" style="width:16px;height:16px;" onerror="this.style.display='none'">
+                                            {% endif %}
+                                            <span data-i18n-dynamic="{{ v.provider_name }}">{{ v.provider_name }}</span>
+                                        </span>
+                                        {% set_global seen_providers = seen_providers ~ v.provider_name ~ "," %}
+                                        {% set_global provider_count = provider_count + 1 %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% if provider_count == 0 and model.provider and model.provider != "" and model.provider != "未知服务商" and model.provider != "未知官方服务商" %}
+                                    <span class="provider-item" data-i18n-dynamic="{{ model.provider }}">{{ model.provider }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h3 class="section-title">
+                            <svg viewBox="64 64 896 896"><path d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z"/><path d="M464 336a48 48 0 1 0 96 0 48 48 0 1 0-96 0zm72 112h-48c-4.4 0-8 3.6-8 8v272c0 4.4 3.6 8 8 8h48c4.4 0 8-3.6 8-8V456c0-4.4-3.6-8-8-8z"/></svg>
+                            <span data-i18n="model_detail_intro">模型简介</span>
+                        </h3>
+                        <div class="desc-text" data-i18n-dynamic="{{ model.description | default(value="该模型暂无详细描述信息。作为行业领先的 AI 模型，它能够提供高质量的生成结果。") }}">{{ model.description | default(value="该模型暂无详细描述信息。作为行业领先的 AI 模型，它能够提供高质量的生成结果。") }}</div>
+                        <div class="about-box">
+                            <div class="about-box-title" data-i18n="model_detail_about_title">关于该模型</div>
+                            <div class="about-box-desc" data-i18n="model_detail_about_desc">该模型目前已在全平台上线。您可以直接在 API 调用或控制台中使用。如果您有大规模调用需求，请联系客服获取专属优惠。</div>
+                        </div>
+                    </div>
+                    
+                    <div class="desc-grid">
+                        <div class="desc-item">
+                            <div class="desc-label" data-i18n="model_detail_label_type">能力分类</div>
+                            <div class="desc-content"><span class="tag-borderless" data-i18n-dynamic="{{ model.type_name | default(value="综合") }}">{{ model.type_name | default(value="综合") }}</span></div>
+                        </div>
+                        <div class="desc-item">
+                            <div class="desc-label" data-i18n="model_detail_label_provider">官方服务商</div>
+                            <div class="desc-content">
+                                {% if provider_count > 0 %}
+                                    {% set provider_list = seen_providers | split(pat=",") %}
+                                    {% set_global rendered_count = 0 %}
+                                    {% for prov in provider_list %}
+                                        {% if prov != "" %}
+                                            {% if rendered_count > 0 %}、{% endif %}<span data-i18n-dynamic="{{ prov }}">{{ prov }}</span>
+                                            {% set_global rendered_count = rendered_count + 1 %}
+                                        {% endif %}
+                                    {% endfor %}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="desc-item">
+                            <div class="desc-label" data-i18n="model_detail_label_variants">定价方案</div>
+                            <div class="desc-content">
+                                <span class="tag-borderless">
+                                    <span style="font-family: monospace;">{% if model.variants %}{{ model.variants | length }}{% else %}1{% endif %}</span>
+                                    <span data-i18n="model_detail_variants_count_suffix"> 种</span>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="desc-item">
+                            <div class="desc-label" data-i18n="model_detail_label_updated">更新时间</div>
+                            <div class="desc-content">{% if model.created_at %}{{ model.created_at | date(format="%Y-%m-%d") }}{% else %}-{% endif %}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="pricing-section">
+                <h3 class="pricing-header" data-i18n="model_detail_label_variants">Pricing</h3>
+                <div class="table-wrapper">
+                    <div style="overflow-x: auto;">
+                        <table class="responsive-table">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="model_detail_table_provider">PROVIDER</th>
+                                    <th data-i18n="model_detail_table_billing">BILLING TYPE</th>
+                                    <th data-i18n="model_detail_table_input">INPUT PRICE</th>
+                                    <th data-i18n="model_detail_table_output">OUTPUT PRICE</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for variant in model.variants %}
+                                <tr>
+                                    <td>
+                                        <div class="provider-td-flex">
+                                            {% if variant.provider_logo %}
+                                                {% set tbl_prov_logo = variant.provider_logo %}
+                                                {% if not tbl_prov_logo is starting_with("http") and not tbl_prov_logo is starting_with("/") %}
+                                                    {% set tbl_prov_logo = "/assets/icons/lobe/" ~ tbl_prov_logo ~ ".svg" %}
+                                                {% endif %}
+                                                <img src="{{ tbl_prov_logo | safe }}" class="provider-logo" onerror="this.style.display='none'">
+                                            {% endif %}
+                                            <div>
+                                                {% if variant.provider_name and variant.provider_name != "" and variant.provider_name != "未知官方服务商" and variant.provider_name != "未知服务商" %}
+                                                <div class="provider-name" data-i18n-dynamic="{{ variant.provider_name }}">{{ variant.provider_name }}</div>
+                                                {% endif %}
+                                                <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 4px;">
+                                                    {% if variant.name %}
+                                                    <div class="provider-variant">{{ variant.name }}</div>
+                                                    {% endif %}
+                                                    <div class="provider-model-id" style="gap: 4px;">
+                                                        {{ variant.model_id }}
+                                                        <button class="copy-btn" onclick="event.stopPropagation(); copyText('{{ variant.model_id }}')" data-i18n-title="model_detail_copy_id" title="复制模型ID" style="margin: 0; padding: 0; line-height: 1;">
+                                                            <svg viewBox="64 64 896 896" width="11" height="11" fill="currentColor"><path d="M832 64H296c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h496v688c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V96c0-17.7-14.3-32-32-32zM704 192H192c-17.7 0-32 14.3-32 32v530.7c0 8.5 3.4 16.6 9.4 22.6l173.3 173.3c6 6 14.1 9.4 22.6 9.4H704c17.7 0 32-14.3 32-32V224c0-17.7-14.3-32-32-32zM350 877.4L260.6 788H350v89.4zM664 888H414V736c0-22.1-17.9-40-40-40H224V264h440v624z"/></svg>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="billing-tag" id="billing-type-{{ variant.mid }}" data-i18n-dynamic="{% if variant.billing and variant.billing.billing_type == 'tokens' %}Tokens 计费{% elif variant.billing and variant.billing.billing_type == 'requests' %}按次计费{% elif variant.billing and variant.billing.billing_type == 'duration' %}时长计费{% else %}未配置{% endif %}">
+                                            {% if variant.billing and variant.billing.billing_type == 'tokens' %}Tokens 计费
+                                            {% elif variant.billing and variant.billing.billing_type == 'requests' %}按次计费
+                                            {% elif variant.billing and variant.billing.billing_type == 'duration' %}时长计费
+                                            {% else %}未配置{% endif %}
+                                        </div>
+                                    </td>
+                                    <td class="billing-input-cell" data-mid="{{ variant.mid }}">
+                                        -
+                                    </td>
+                                    <td class="billing-output-cell" data-mid="{{ variant.mid }}">
+                                        -
+                                    </td>
+                                    <!-- Embedded JSON for JS rendering -->
+                                    <script type="application/json" id="billing-data-{{ variant.mid }}">{{ variant.billing | json_encode() | safe }}</script>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+        {% endif %}
+    {% endfor %}
+ 
+    {% if not found %}
+    <div class="md-not-found">
+        <h2 data-i18n-dynamic="未找到该模型">未找到该模型</h2>
+        <p style="color: rgba(0,0,0,0.45); font-size: 15px; margin-bottom: 24px;" data-i18n-dynamic="模型可能已下线或不存在。请返回模型列表重新选择。">模型可能已下线或不存在。请返回模型列表重新选择。</p>
+        <a href="/home/models" style="display: inline-block; padding: 8px 16px; background: #1677ff; color: #fff; border-radius: 6px; text-decoration: none;" data-i18n-dynamic="返回模型列表">返回模型列表</a>
+    </div>
+    {% endif %}
+
+</div>
+
+<script>
+function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+        alert('已复制模型 ID');
+    } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try { document.execCommand('copy'); alert('已复制模型 ID'); } catch (e) {}
+        document.body.removeChild(textArea);
+    }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const currentLang = typeof normalizeLang !== 'undefined' ? normalizeLang(document.documentElement.lang) : (document.documentElement.lang || 'zh');
+    const isEn = currentLang !== 'zh';
+
+    // Dynamic Billing Rendering to mimic React
+    document.querySelectorAll('script[type="application/json"][id^="billing-data-"]').forEach(el => {
+        const mid = el.id.replace('billing-data-', '');
+        const tr = el.closest('tr');
+        if (!tr) return;
+        const inputCell = tr.querySelector('.billing-input-cell');
+        const outputCell = tr.querySelector('.billing-output-cell');
+        if (!inputCell || !outputCell) return;
+
+        let b;
+        try { b = JSON.parse(el.textContent); } catch { return; }
+        if (!b || !b.billing_type) {
+            inputCell.innerHTML = `<span class="color-text-3">${isEn ? 'Unconfigured' : '未配置'}</span>`;
+            return;
+        }
+
+        const br = b.billing_rule || 'standard';
+        let ext = {};
+        if (b.extended_config) {
+            if (typeof b.extended_config === 'string') {
+                try { ext = JSON.parse(b.extended_config); } catch {}
+            } else {
+                ext = b.extended_config;
+            }
+        }
+        let tiers = [];
+        if (b.pricing_tiers) {
+            if (typeof b.pricing_tiers === 'string') {
+                try { tiers = JSON.parse(b.pricing_tiers); } catch {}
+            } else if (Array.isArray(b.pricing_tiers)) {
+                tiers = b.pricing_tiers;
+            }
+        }
+
+        const currencySymbol = '{{ currency.currency_symbol | default(value="¥") }}';
+        const formatPrice = (price, model) => {
+            if (price === undefined || price === null || price === '') return '-';
+            const num = Number(price);
+            if (isNaN(num)) return String(price);
+
+            const getRaw = (n) => {
+                return currencySymbol + parseFloat(n.toFixed(4));
+            };
+
+            const raw = getRaw(num);
+
+            if (model && model.global_discount_enabled === 1 && model.global_discount !== undefined && model.global_discount > 0 && model.global_discount < 1) {
+                const discountedNum = num * model.global_discount;
+                const discountedRaw = getRaw(discountedNum);
+                return `
+                    <span style="display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap;">
+                        <span style="text-decoration: line-through; color: #9ca3af; font-size: 0.75em; font-weight: 400; opacity: 0.8;">${raw}</span>
+                        <span style="color: #ff4d4f; font-weight: 700;">${discountedRaw}</span>
+                    </span>
+                `;
+            }
+            return raw;
+        };
+
+        if (b.billing_type === 'tokens') {
+            if ((br === 'tiered' || br === 'doubao_chat') && tiers.length > 0) {
+                const unlimitedText = isEn ? 'Unlimited' : '无限制';
+                const hasFast = br === 'doubao_chat' && tiers.some(t => t.fast_prompt_rate > 0 || t.fast_completion_rate > 0);
+                
+                let inHtml = '<div class="price-box">';
+                tiers.forEach(t => {
+                    const label = t.max_prompt_tokens ? `≤${t.max_prompt_tokens}k` : unlimitedText;
+                    inHtml += `<div class="color-text-3">${label} (${isEn ? 'Input' : '输入'}): <span class="color-text-1">${formatPrice(t.prompt_rate, b)}</span>/1M`;
+                    if (t.cached_rate > 0) {
+                        inHtml += `<span style="font-size:11px;margin-left:4px;">(Cache: ${formatPrice(t.cached_rate, b)})</span>`;
+                    }
+                    if (hasFast && t.fast_prompt_rate > 0) {
+                        inHtml += `<span style="font-size:11px;margin-left:4px;">(Fast: ${formatPrice(t.fast_prompt_rate, b)})</span>`;
+                    }
+                    inHtml += '</div>';
+                });
+                inHtml += '</div>';
+
+                let outHtml = '<div class="price-box">';
+                tiers.forEach(t => {
+                    const label = t.max_completion_tokens ? `≤${t.max_completion_tokens}k` : unlimitedText;
+                    outHtml += `<div class="color-text-3">${label} (${isEn ? 'Output' : '输出'}): <span class="color-text-1">${formatPrice(t.completion_rate, b)}</span>/1M`;
+                    if (hasFast && t.fast_completion_rate > 0) {
+                        outHtml += `<span style="font-size:11px;margin-left:4px;">(Fast: ${formatPrice(t.fast_completion_rate, b)})</span>`;
+                    }
+                    outHtml += '</div>';
+                });
+                outHtml += '</div>';
+
+                inputCell.innerHTML = inHtml;
+                outputCell.innerHTML = outHtml;
+                return;
+            }
+            if (br === 'multimodal') {
+                const imgPromptRate = ext.image_prompt_rate !== undefined ? ext.image_prompt_rate : 0;
+                inputCell.innerHTML = `
+                    <div class="price-box">
+                        <div class="color-text-3">${isEn ? 'Text Input' : '文本输入'}: <span class="color-text-1">${formatPrice(b.prompt_rate, b)}</span>/1M</div>
+                        <div class="color-text-3">${isEn ? 'Image Input' : '图片输入'}: <span class="color-text-1">${formatPrice(imgPromptRate, b)}</span>/1M</div>
+                    </div>
+                `;
+                outputCell.innerHTML = `
+                    <div class="price-box">
+                        <div class="color-text-3">${isEn ? 'Text Output' : '文本输出'}: <span class="color-text-1">${formatPrice(b.completion_rate, b)}</span>/1M</div>
+                    </div>
+                `;
+                return;
+            }
+            if (br === 'seedance2.0') {
+                const rates = ext.resolution_rates || {};
+                const activeRes = Object.keys(rates).filter(k => ['480p', '720p', '1080p'].includes(k));
+                if (activeRes.length > 0) {
+                    const withVideoText = isEn ? '(with video)' : '(含视)';
+                    const withoutVideoText = isEn ? '(no video)' : '(无视)';
+                    inputCell.innerHTML = '<div class="price-box">' + activeRes.map(r => 
+                        `<div class="color-text-3">${r}: <span class="color-text-1">${formatPrice(rates[r].with_video, b)}</span>${withVideoText} / <span class="color-text-1">${formatPrice(rates[r].without_video, b)}</span>${withoutVideoText}</div>`
+                    ).join('') + '</div>';
+                } else {
+                    inputCell.innerHTML = `<span class="color-text-3">${isEn ? 'No resolution mapping (Auto fallback)' : '无独立分辨率设置(自动兜底)'}</span>`;
+                }
+                outputCell.innerHTML = '<span class="color-text-3">-</span>';
+                return;
+            }
+            if (br === 'seedance1.5pro') {
+                const baseRate = ext.base_rate !== undefined ? ext.base_rate : 0;
+                const audioRate = ext.audio_rate !== undefined ? ext.audio_rate : 0;
+                const offDiscount = ext.offline_discount !== undefined ? ext.offline_discount : 1;
+                let discountText = '';
+                if (offDiscount > 0 && offDiscount < 1) {
+                    discountText = `<div style="font-size:11px;color:#9ca3af;margin-top:2px;">${isEn ? 'Offline Disc: ×' : '离线折扣: ×'}${offDiscount}</div>`;
+                }
+                inputCell.innerHTML = `
+                    <div class="price-box">
+                        <div class="color-text-3">${isEn ? 'No Audio' : '无语音'}: <span class="color-text-1">${formatPrice(baseRate, b)}</span>/1M</div>
+                        <div class="color-text-3">${isEn ? 'With Audio' : '带语音'}: <span class="color-text-1">${formatPrice(audioRate, b)}</span>/1M</div>
+                        ${discountText}
+                    </div>
+                `;
+                outputCell.innerHTML = '<span class="color-text-3">-</span>';
+                return;
+            }
+            if (br === 'seedance1.0') {
+                const onlineRate = ext.online_rate !== undefined ? ext.online_rate : 0;
+                const offlineRate = ext.offline_rate !== undefined ? ext.offline_rate : 0;
+                inputCell.innerHTML = `
+                    <div class="price-box">
+                        <div class="color-text-3">${isEn ? 'Online' : '在线'}: <span class="color-text-1">${formatPrice(onlineRate, b)}</span>/1M</div>
+                        <div class="color-text-3">${isEn ? 'Offline' : '离线'}: <span class="color-text-1">${formatPrice(offlineRate, b)}</span>/1M</div>
+                    </div>
+                `;
+                outputCell.innerHTML = '<span class="color-text-3">-</span>';
+                return;
+            }
+            if (br === 'volcengine') {
+                let itemsHtml = '';
+                if (ext.volc_video_enabled) itemsHtml += `<div class="color-text-3">${isEn ? 'With Video' : '含视频'}: <span class="color-text-1">${formatPrice(ext.volc_video_rate, b)}</span>/1M</div>`;
+                if (ext.volc_audio_enabled) itemsHtml += `<div class="color-text-3">${isEn ? 'With Audio' : '含音频'}: <span class="color-text-1">${formatPrice(ext.volc_audio_rate, b)}</span>/1M</div>`;
+                if (ext.volc_base_enabled) itemsHtml += `<div class="color-text-3">${isEn ? 'Pure Text' : '纯文本'}: <span class="color-text-1">${formatPrice(ext.volc_base_rate, b)}</span>/1M</div>`;
+                inputCell.innerHTML = `<div class="price-box">${itemsHtml || '-'}</div>`;
+                outputCell.innerHTML = '<span class="color-text-3">-</span>';
+                return;
+            }
+
+            let inHtml = '<div class="price-box">';
+            inHtml += `<div class="price-main">${formatPrice(b.prompt_rate, b)} <span class="price-unit">/ 1M</span></div>`;
+            if (b.cached_rate > 0) {
+                const promptCacheText = isEn ? 'Prompt Cache' : '提示词缓存';
+                inHtml += `<div class="price-sub"><span class="price-sub-tag tag-blue">Cache</span> ${promptCacheText}: ${formatPrice(b.cached_rate, b)}/1M</div>`;
+            }
+            if (b.claude_cache_creation_rate > 0) {
+                const cacheWriteText = isEn ? 'Claude Cache Write' : 'Claude Write 缓存写入';
+                inHtml += `<div class="price-sub"><span class="price-sub-tag tag-orange">Claude Write</span> ${cacheWriteText}: ${formatPrice(b.claude_cache_creation_rate, b)}/1M</div>`;
+            }
+            if (b.claude_cache_read_rate > 0) {
+                const cacheReadText = isEn ? 'Claude Cache Read' : 'Claude Read 缓存读取';
+                inHtml += `<div class="price-sub"><span class="price-sub-tag tag-green">Claude Read</span> ${cacheReadText}: ${formatPrice(b.claude_cache_read_rate, b)}/1M</div>`;
+            }
+            inHtml += '</div>';
+            inputCell.innerHTML = inHtml;
+            outputCell.innerHTML = `<div class="price-box"><div class="price-main">${formatPrice(b.completion_rate, b)} <span class="price-unit">/ 1M</span></div></div>`;
+        } else if (b.billing_type === 'requests') {
+            if ((br === 'image_resolution' || br === 'image_size_pixel') && tiers.length > 0) {
+                const active = tiers.filter(t => t.enabled !== false);
+                const perImageText = isEn ? 'img' : '张';
+                let listHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+                active.forEach(t => {
+                    const label = t.resolution || t.size;
+                    if (t.quality_pricing) {
+                        listHtml += `<div class="tag-image">${label} (${isEn ? 'Low' : '低'}): <span style="font-weight:600;font-family:monospace;">${formatPrice(t.rate_low, b)}</span> / ${perImageText}</div>`;
+                        listHtml += `<div class="tag-image">${label} (${isEn ? 'Med' : '中'}): <span style="font-weight:600;font-family:monospace;">${formatPrice(t.rate_medium, b)}</span> / ${perImageText}</div>`;
+                        listHtml += `<div class="tag-image">${label} (${isEn ? 'High' : '高'}): <span style="font-weight:600;font-family:monospace;">${formatPrice(t.rate_high, b)}</span> / ${perImageText}</div>`;
+                    } else {
+                        listHtml += `<div class="tag-image">${label}: <span style="font-weight:600;font-family:monospace;">${formatPrice(t.rate, b)}</span> / ${perImageText}</div>`;
+                    }
+                });
+                listHtml += '</div>';
+                
+                const imgRefStr = ext.image_ref_multiplier && ext.image_ref_multiplier !== 1 ? ` (${isEn ? 'Img2Img' : '图生图'}×${ext.image_ref_multiplier})` : '';
+                if (imgRefStr) {
+                    listHtml += `<div style="font-size: 11px; color: #9ca3af; margin-top: 2px;">${imgRefStr}</div>`;
+                }
+                
+                inputCell.innerHTML = listHtml;
+                outputCell.innerHTML = '<span class="color-text-3">-</span>';
+                return;
+            }
+            if (br === 'vidu_image') {
+                const pt = ext.price_table || {};
+                const disabledKeys = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
+                const activeEntries = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k));
+                if (activeEntries.length > 0) {
+                    let listHtml = '';
+                    const perImageText = isEn ? 'img' : '张';
+                    activeEntries.forEach(([k, v]) => {
+                        listHtml += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; font-size: 11px;">
+                                <span style="font-weight: 500; color: #4b5563;">${k}</span>
+                                <span style="font-weight: 600; font-family: monospace;">${formatPrice(v, b)} / ${perImageText}</span>
+                            </div>
+                        `;
+                    });
+                    inputCell.innerHTML = `
+                        <div style="font-size: 11px; font-weight: 600; margin-bottom: 4px; text-align: left;">${isEn ? 'Vidu Image Details:' : '按属性×分辨率查表:'}</div>
+                        <div style="display: flex; flex-direction: column; width: 100%; min-width: 150px;">
+                            ${listHtml}
+                        </div>
+                    `;
+                    outputCell.innerHTML = '<span class="color-text-3">-</span>';
+                    return;
+                }
+            }
+            
+            const unit = br === 'per_image' ? (isEn ? 'img' : '张') : br === 'characters' ? (isEn ? '10k chars' : '万字符') : (isEn ? 'req' : '次');
+            const imgRefStr = ext.image_ref_multiplier && ext.image_ref_multiplier !== 1 ? ` (${isEn ? 'Img2Img' : '图生图'}×${ext.image_ref_multiplier})` : '';
+            
+            inputCell.innerHTML = `<div class="price-box"><div class="price-main">${formatPrice(b.fixed_rate, b)} <span class="price-unit">/ ${unit}</span></div>${imgRefStr ? `<div style="font-size: 11px; color: #9ca3af; margin-top: 2px;">${imgRefStr}</div>` : ''}</div>`;
+            outputCell.innerHTML = '<span class="color-text-3">-</span>';
+        } else if (b.billing_type === 'duration') {
+            if (br === 'video_resolution' && tiers.length > 0) {
+                const active = tiers.filter(t => t.enabled !== false);
+                const perSecondText = isEn ? 's' : '秒';
+                inputCell.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + active.map(t => 
+                    `<div class="tag-image">${t.resolution}: <span style="font-weight:600;font-family:monospace;">${formatPrice(t.rate, b)}</span> / ${perSecondText}</div>`
+                ).join('') + '</div>';
+                outputCell.innerHTML = '<span class="color-text-3">-</span>';
+                return;
+            }
+            if (br === 'kling_video') {
+                const pt = ext.price_table || {};
+                const ptKeys = Object.keys(pt);
+                if (ptKeys.length > 0) {
+                    const eMode = ext.enable_mode !== false;
+                    const eSound = ext.enable_sound !== false;
+                    const eVideo = ext.enable_video_ref === true;
+                    const disabledKeys = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
+                    const activeKeys = ptKeys.filter(key => {
+                        if (disabledKeys.includes(key)) return false;
+                        const parts = key.split('|');
+                        if (!eMode && parts[0] !== 'std') return false;
+                        if (!eSound && parts[1] !== 'off') return false;
+                        if (!eVideo && parts[2] !== 'no') return false;
+                        return true;
+                    });
+                    
+                    const modeMap = isEn ? { std: 'Standard', pro: 'Pro', '4k': '4K' } : { std: '标准', pro: '高品质', '4k': '4K' };
+                    const soundMap = isEn ? { on: 'Audio', off: 'Mute' } : { on: '有声', off: '无声' };
+                    const videoMap = isEn ? { yes: 'With Ref', no: 'No Ref' } : { yes: '带参考', no: '无参考' };
+                    
+                    let listHtml = '';
+                    activeKeys.forEach(k => {
+                        const parts = k.split('|');
+                        const m = modeMap[parts[0]] || parts[0];
+                        const s = soundMap[parts[1]] || parts[1];
+                        const v = videoMap[parts[2]] || parts[2];
+                        
+                        const labels = [];
+                        if (eMode) labels.push(m);
+                        if (eSound) labels.push(s);
+                        if (eVideo) labels.push(v);
+                        const labelStr = labels.join(' • ');
+                        const unitSec = isEn ? '/s' : '/秒';
+                        
+                        listHtml += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; font-size: 11px;">
+                                <span style="font-weight: 500; color: #4b5563;">${labelStr}</span>
+                                <span style="font-weight: 600; font-family: monospace;">${formatPrice(pt[k], b)}${unitSec}</span>
+                            </div>
+                        `;
+                    });
+                    
+                    const detailTitle = isEn ? 'Kling Precise Billing Details:' : '可灵精确计费明细:';
+                    inputCell.innerHTML = `
+                        <div style="font-size: 11px; font-weight: 600; margin-bottom: 4px; text-align: left;">${detailTitle}</div>
+                        <div style="display: flex; flex-direction: column; width: 100%;">
+                            ${listHtml}
+                        </div>
+                    `;
+                } else {
+                    const mm = ext.mode_multipliers || {};
+                    const sm = ext.sound_multipliers || {};
+                    const vm = ext.video_ref_multipliers || {};
+                    const baseRateText = isEn ? 'Base Rate' : '基准费率';
+                    const perSecText = isEn ? '/s' : '/秒';
+                    const modeText = isEn ? 'Mode' : '模式';
+                    const audioText = isEn ? 'Audio' : '音频';
+                    const soundOffText = isEn ? 'mute' : '无声';
+                    const soundOnText = isEn ? 'audio' : '有声';
+                    const refVideoText = isEn ? 'Ref Video' : '参考视频';
+                    const refNoText = isEn ? 'no' : '无';
+                    const refYesText = isEn ? 'yes' : '有';
+                    inputCell.innerHTML = `
+                        <div style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">${baseRateText}: <strong>${formatPrice(b.duration_rate, b)}</strong>${perSecText}</div>
+                        <div style="font-size: 11px; color: #4b5563; padding: 4px 0;">
+                            <div style="display:flex; justify-content:space-between; padding-bottom: 3px;"><span>${modeText}:</span><span>std×${mm.std ?? 1} / pro×${mm.pro ?? 1.33} / 4K×${mm['4k'] ?? 2}</span></div>
+                            <div style="display:flex; justify-content:space-between; padding: 3px 0;"><span>${audioText}:</span><span>${soundOffText}×${sm.off ?? 1} / ${soundOnText}×${sm.on ?? 1.5}</span></div>
+                            <div style="display:flex; justify-content:space-between; padding-top: 3px;"><span>${refVideoText}:</span><span>${refNoText}×${vm.no ?? 1} / ${refYesText}×${vm.yes ?? 1.5}</span></div>
+                        </div>
+                    `;
+                }
+                outputCell.innerHTML = '<span class="color-text-3">-</span>';
+                return;
+            }
+            if (br === 'vidu_video') {
+                const pt = ext.price_table || {};
+                const disabledKeys = Array.isArray(ext.price_table_disabled) ? ext.price_table_disabled : [];
+                const activeEntries = Object.entries(pt).filter(([k]) => !disabledKeys.includes(k));
+                if (activeEntries.length > 0) {
+                    let listHtml = '';
+                    const perSecondText = isEn ? 's' : '秒';
+                    activeEntries.forEach(([k, v]) => {
+                        listHtml += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; font-size: 11px;">
+                                <span style="font-weight: 500; color: #4b5563;">${k}</span>
+                                <span style="font-weight: 600; font-family: monospace;">${formatPrice(v, b)} / ${perSecondText}</span>
+                            </div>
+                        `;
+                    });
+                    inputCell.innerHTML = `
+                        <div style="font-size: 11px; font-weight: 600; margin-bottom: 4px; text-align: left;">${isEn ? 'Vidu Video Details:' : '唯读查表明细:'}</div>
+                        <div style="display: flex; flex-direction: column; width: 100%; min-width: 150px;">
+                            ${listHtml}
+                        </div>
+                    `;
+                    outputCell.innerHTML = '<span class="color-text-3">-</span>';
+                    return;
+                }
+            }
+
+            const perSecondText = isEn ? '/s' : '/秒';
+            inputCell.innerHTML = `<div class="price-box"><div class="price-main">${formatPrice(b.duration_rate, b)} <span class="price-unit">${perSecondText}</span></div></div>`;
+            outputCell.innerHTML = '<span class="color-text-3">-</span>';
+        }
+    });
+});
+</script>
+{% endblock %}
