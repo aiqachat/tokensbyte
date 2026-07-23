@@ -13,6 +13,7 @@
 # 可选环境变量：
 #   PROJECT_NAME / BACKEND_PORT / FRONTEND_PORT / POSTGRES_PORT
 #   DATABASE_URL / DEV_MODE(1|2) / RUST_LOG / DEV_WAIT_MAX / DEV_ATTACH
+#   TOKENSBYTE_FAST_LINK=0  关闭 Rust 链接加速（Linux mold/lld；Windows 见 .\dev.ps1）
 # 用法：./dev.sh [1|2] [bg|fg]   1=本地(默认后台)  2=Docker 全容器
 # ──────────────────────────────────────────────────
 set -e
@@ -130,6 +131,28 @@ kill_if_cwd() {
     [ -n "${pid}" ] && [ "${pid}" != "$$" ] || return 0
     [ "$(proc_cwd "${pid}")" = "${want}" ] || return 0
     hard_kill_pid "${pid}"
+}
+
+# Linux 可选链接加速（有 mold/lld 才用）；macOS 保持默认 ld64（mold -run 不支持）
+apply_dev_rust_link_accel() {
+    DEV_CARGO_WRAPPER=""
+    if [ "${TOKENSBYTE_FAST_LINK:-1}" = "0" ]; then
+        echo "ℹ️  已关闭 Rust 链接加速 (TOKENSBYTE_FAST_LINK=0)"
+        return 0
+    fi
+    [ "$(uname -s)" = "Linux" ] || return 0
+    if command -v mold >/dev/null 2>&1; then
+        DEV_CARGO_WRAPPER="mold -run"
+        echo "ℹ️  Rust 链接加速: mold"
+    elif command -v clang >/dev/null 2>&1 && command -v ld.lld >/dev/null 2>&1; then
+        case " ${RUSTFLAGS:-} " in
+            *" -fuse-ld="*) ;;
+            *)
+                export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-C linker=clang -C link-arg=-fuse-ld=lld"
+                echo "ℹ️  Rust 链接加速: lld"
+                ;;
+        esac
+    fi
 }
 
 # 回收本仓库残留前后端（不影响其它目录实例 / 共享 Postgres）
@@ -250,6 +273,7 @@ case "${choice}" in
     export BASE_URL="${BASE_URL:-http://localhost:${BACKEND_PORT}}"
     export VITE_API_TARGET="http://127.0.0.1:${BACKEND_PORT}"
     export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-1}"
+    apply_dev_rust_link_accel
 
     echo "⚙️ 启动 Rust 服务 (watch, :${BACKEND_PORT})..."
     : > backend_dev.log
@@ -258,8 +282,10 @@ case "${choice}" in
         "RUST_LOG=${RUST_LOG}" "BASE_URL=${BASE_URL}" "CARGO_INCREMENTAL=${CARGO_INCREMENTAL}"
     )
     [ -n "${CARGO_TARGET_DIR:-}" ] && BACKEND_ENV+=("CARGO_TARGET_DIR=${CARGO_TARGET_DIR}")
+    [ -n "${RUSTFLAGS:-}" ] && BACKEND_ENV+=("RUSTFLAGS=${RUSTFLAGS}")
+    # shellcheck disable=SC2086 # DEV_CARGO_WRAPPER 有意为可选前缀（mold -run）
     nohup env "${BACKEND_ENV[@]}" \
-        sh -c "cd backend && exec cargo watch -w src -w Cargo.toml -w Cargo.lock -w build.rs -x run" \
+        sh -c "cd backend && exec ${DEV_CARGO_WRAPPER} cargo watch -w src -w Cargo.toml -w Cargo.lock -w build.rs -x run" \
         > backend_dev.log 2>&1 &
     BACKEND_PID=$!
     disown "${BACKEND_PID}" 2>/dev/null || true

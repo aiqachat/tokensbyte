@@ -1,7 +1,7 @@
 /*
  * tokensbyte opensource
  * (c) 2026 tokensbyte.ai
- * @copyright      Copyright netbcloud/wstianxia 
+ * @copyright      Copyright netbcloud/wstianxia
  * @license        MIT (https://www.tokensbyte.ai/)
  */
 
@@ -96,6 +96,23 @@ const TASK_LIST_JOINS: &str = " LEFT JOIN channels c ON l.channel_id = c.id \
 const TASK_EXPORT_JOINS: &str = " LEFT JOIN channels c ON l.channel_id = c.id \
          LEFT JOIN users u ON l.user_id = u.id";
 
+/// 列表可预览类型（与前端预览按钮一致）；仅这些行读 response_content。
+fn preview_urls_from_response(raw: &str) -> Vec<String> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    // 级联 {stage1,stage2} 取产物 stage2，避免扫到 stage1 输入图
+    let root = match (v.get("stage1"), v.get("stage2")) {
+        (Some(_), Some(s2)) => s2,
+        _ => &v,
+    };
+    // 只回传 http(s)：日志里 base64 已脱敏为占位符，data: 无预览价值且易撑爆分页
+    crate::relay::response_formatter::find_urls(root)
+        .into_iter()
+        .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+        .collect()
+}
+
 /// 任务日志列表 — 基于 logs 表；仅成功(200)；管理员看全部，普通用户只看自己的
 pub async fn list_task_logs(
     State(state): State<Arc<AppState>>,
@@ -115,7 +132,7 @@ pub async fn list_task_logs(
 
     let (where_clause, binds) = build_task_log_where(&claims, &q);
 
-    // 先判定详情权限，无权限时不读请求体/后置响应大字段，减轻 IO
+    // allow_details 仅告知前端可否展开完整详情；媒体预览走下方 preview_urls，不依赖该开关
     let mut allow_details = true;
     if claims.role != "admin" {
         let perm: Option<i32> = sqlx::query_scalar(
@@ -130,11 +147,14 @@ pub async fn list_task_logs(
         allow_details = perm.unwrap_or(1) == 1;
     }
 
+    // 仅媒体类读 response_content，内存抽 preview_urls 后丢弃大字段（一次查询、不回传正文）
     let data_sql = state.db.format_query(&deferred_join_page_sql(
         &format!(
             "SELECT l.id, l.log_id, l.user_id, l.channel_id, l.model, l.endpoint, \
              l.prompt_tokens, l.completion_tokens, l.cached_tokens, l.cost, l.latency_ms, l.status_code, \
-             l.error_message, {SQL_BILLING_SETTLE_FLAGS}, \
+             l.error_message, \
+             CASE WHEN l.action_type IN ('图片','视频','视频增强') THEN l.response_content ELSE NULL END AS response_content, \
+             {SQL_BILLING_SETTLE_FLAGS}, \
              c.name AS channel_name, c.group_aid AS channel_group_aid, c.provider_type AS channel_provider_type, \
              COALESCE(u.nickname, u.username) AS user_nickname, u.uid AS user_uid, \
              l.task_id, l.action_type, cc.yid AS yid, l.billing_pid, l.forward_eid, l.created_at"
@@ -158,8 +178,12 @@ pub async fn list_task_logs(
     let total = total_res?;
     let mut data = data_res?;
 
-    if claims.role != "admin" {
-        for log in &mut data {
+    let is_admin = claims.role == "admin";
+    for log in &mut data {
+        if let Some(raw) = log.response_content.take() {
+            log.preview_urls = preview_urls_from_response(&raw);
+        }
+        if !is_admin {
             if let Some(ref err) = log.error_message {
                 log.error_message = Some(crate::relay::proxy::sanitize_error_message(err));
             }

@@ -460,7 +460,6 @@ pub fn extract_request_features(body: &Value) -> ExtractedFeatures {
     // 帧率提取：从请求体直接提取 fps 帧率值，用于火山引擎画质增强视频生成等计费场景
     let fps = body.get("fps").and_then(|v| v.as_f64());
 
-    // 级联画质增强版本：从请求体提取（由 video.rs 级联流程注入到 upstream_body）
     let version = body
         .get("version")
         .and_then(|v| v.as_str())

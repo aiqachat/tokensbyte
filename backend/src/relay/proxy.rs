@@ -1041,7 +1041,7 @@ pub struct BillRecord<'a> {
 /// 计费记录统一入口
 /// 【一条日志原则】pending_log_id 有值时 UPDATE 预记录行，无值时 INSERT 新行
 /// billing_model_hint: 插件解析后的实际模型（用于正确查询 billing_pid 等元信息），普通场景传 None
-/// plugin_tag: 插件标记JSON（仅 INSERT 新行时使用，UPDATE 不覆盖预记录值）
+/// plugin_tag: INSERT 时写入库；UPDATE 不覆盖库值，但可传入以补齐 billing_features（级联 version/resolution）
 /// db_model: 调用方已查询的 Model 记录，传入后 resolve_model_meta 走主键精确定位，避免重复查库
 /// channel: 已水合渠道（含最终 base_url/api_key/yid），禁止再查空父行覆盖
 pub async fn record_and_bill_inner(p: BillRecord<'_>) {
@@ -1124,6 +1124,15 @@ pub async fn record_and_bill_inner(p: BillRecord<'_>) {
             let usage = crate::relay::usage_extractor::parse_usage(resp);
             if usage.web_search > 0 {
                 feat.get_or_insert_with(Default::default).web_search = Some(usage.web_search);
+            }
+        }
+        // 级联：从 plugin_tag.cascade 补 version/resolution 到计费特征（不改用户入参）
+        if let Some(tag) = plugin_tag {
+            if let Some(ver) = crate::relay::cascade::cascade_json_str(tag, "/cascade/version") {
+                feat.get_or_insert_with(Default::default).version = Some(ver);
+            }
+            if let Some(res) = crate::relay::cascade::cascade_json_str(tag, "/cascade/resolution") {
+                feat.get_or_insert_with(Default::default).resolution = Some(res);
             }
         }
         feat.and_then(|f| serde_json::to_string(&f).ok())
@@ -1405,11 +1414,11 @@ pub async fn record_and_bill_inner(p: BillRecord<'_>) {
 /// 清理孤儿预记录日志（status_code=0 且超过指定时间）
 /// 定时调用，将超时日志标记为 408 并退还预扣费
 pub async fn cleanup_orphan_pending_logs(state: &Arc<AppState>) {
-    // 查找超过 30 分钟仍为"处理中"的孤儿日志
-    // cost 字段存储的是预扣费总额（pre_deduction），pre_deduct_gift 是赠送钱包扣除部分
+    // 预记录默认 is_completed=0，走 idx_logs_is_completed_pending，避免 logs 全表扫
     let orphans: Vec<(i64, String, f64, f64)> = match sqlx::query_as(&state.db.format_query(
         "SELECT id, user_id, cost, pre_deduct_gift FROM logs \
-             WHERE status_code = 0 AND created_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes'",
+             WHERE is_completed = 0 AND status_code = 0 \
+             AND created_at < CURRENT_TIMESTAMP - INTERVAL '30 minutes'",
     ))
     .fetch_all(&state.db.pool)
     .await
@@ -1501,9 +1510,12 @@ pub async fn cleanup_orphan_pending_logs(state: &Arc<AppState>) {
 /// 服务启动时恢复上次中断遗留的"处理中"日志
 /// 仅处理非异步冻结任务（异步任务由 task 模块后台轮询自动恢复，不重复调用上游）
 pub async fn recover_interrupted_logs(state: &Arc<AppState>) {
+    // 与 TaskPoller 同思路：预记录 is_completed=0 + status_code=0 命中部分索引；
+    // NOT LIKE 仅在极小候选集上排除误标冻结行（异步冻结一般为 status_code=200）。
     let orphans: Vec<(i64, String, f64, f64)> = match sqlx::query_as(&state.db.format_query(
         "SELECT id, user_id, cost, pre_deduct_gift FROM logs \
-             WHERE status_code = 0 AND billing_detail NOT LIKE '%冻结%'",
+             WHERE is_completed = 0 AND status_code = 0 \
+             AND billing_detail NOT LIKE '%冻结%'",
     ))
     .fetch_all(&state.db.pool)
     .await

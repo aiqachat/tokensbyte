@@ -46,10 +46,6 @@ services:
       args:
         # 0=容器内编译（默认，跨平台安全）；1=使用根目录 tokensbyte-server-bin（需 Linux ELF 且架构匹配）
         USE_PREBUILT: ${USE_PREBUILT:-0}
-        # 脚本会注入：Mac 默认 1、Windows 默认 2；交叉架构强制 1；可自行覆盖
-        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-1}
-        # 1=启用 Cargo BuildKit cache；交叉架构(QEMU)时导出脚本会置 0 防 segfault
-        ENABLE_CARGO_CACHE: ${ENABLE_CARGO_CACHE:-1}
     pull_policy: missing
     container_name: ${PROJECT_NAME:-tokensbyte}-backend
     stop_grace_period: 120s
@@ -59,7 +55,7 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://tokensapi:tokensapi@postgres:5432/tokensapi}
       - JWT_SECRET=${JWT_SECRET:-} # 可选：手动指定，留空则自动生成强随机密钥并持久化
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin} # 可选：手动指定，默认为 admin
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-} # 可选：手动指定，留空则自动生成随机密码并打印到控制台
       # - CORS_ORIGINS=${CORS_ORIGINS}                    # 生产环境设置允许的前端域名（逗号分隔），如: https://example.com
       - REGISTER_ENABLED=${REGISTER_ENABLED:-true}
       - RUST_LOG=${RUST_LOG:-info}

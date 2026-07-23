@@ -1,7 +1,7 @@
 /*
  * tokensbyte opensource
  * (c) 2026 tokensbyte.ai
- * @copyright      Copyright netbcloud/wstianxia 
+ * @copyright      Copyright netbcloud/wstianxia
  * @license        MIT (https://www.tokensbyte.ai/)
  */
 
@@ -13,6 +13,7 @@ pub mod oauth;
 pub mod payment;
 pub mod sms;
 pub mod tos;
+pub mod upstream_asset_client;
 #[cfg(feature = "commercial_plugins")]
 pub mod volc_ark_monitor;
 pub mod volcengine;

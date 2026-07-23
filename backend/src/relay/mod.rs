@@ -1,7 +1,7 @@
 /*
  * tokensbyte opensource
  * (c) 2026 tokensbyte.ai
- * @copyright      Copyright netbcloud/wstianxia 
+ * @copyright      Copyright netbcloud/wstianxia
  * @license        MIT (https://www.tokensbyte.ai/)
  */
 
@@ -34,6 +34,15 @@ pub mod asset_convert {
         _plugin_ns: &str,
         _body: &mut serde_json::Value,
         _moderation: bool,
+    ) -> (Vec<String>, Vec<String>) {
+        (Vec::new(), Vec::new())
+    }
+
+    pub async fn convert_content_urls_via_upstream(
+        _state: &AppState,
+        _user_id: &str,
+        _binding_id: i64,
+        _body: &mut serde_json::Value,
     ) -> (Vec<String>, Vec<String>) {
         (Vec::new(), Vec::new())
     }
@@ -935,7 +944,7 @@ fn compute_cost_raw(
                     }
                 }
             } else if rule.billing_rule == "volc_enhance_cascade" {
-                // 级联画质增强查表：version(fast|standard，由模型 Id 是否含 fast 推导)×分辨率×是否有视频输入
+                // 级联画质增强查表：version(fast|standard|pro|ai，优先规则 res_enhance，缺省 standard)×分辨率×是否有视频输入
                 detail_desc = format!("火山级联画质增强查表(基准: {})", rate);
                 if let Ok(ext) = serde_json::from_str::<serde_json::Value>(&rule.extended_config) {
                     let raw_version = features.version.as_deref().unwrap_or("standard");

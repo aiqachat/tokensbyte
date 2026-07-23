@@ -17,7 +17,7 @@
 
 use super::cascade::{
     apply_cascade_res_mul_to_stage1, cascade_combine_stages, cascade_ensure_standard_480p_video,
-    cascade_json_str, cascade_s1_with_s2_url, cascade_s2_client_processing,
+    cascade_json_str, cascade_s1_with_s2_url, cascade_s2_client_processing, cascade_scene_pair,
     cascade_scrub_plugin_tag_for_user, cascade_stage2_poll_target, cascade_stage_num,
     CascadeS2InflightGuard, CascadeS2SubmitOutcome,
 };
@@ -1491,7 +1491,7 @@ async fn settle_success(
     let mut features =
         build_poll_settlement_features(&billing_features_str, resp_json, body, category);
 
-    // 级联阶段二：一次解析 plugin_tag，复用 cascade 节点（时长叠加 + 分辨率兜底，避免 clone）
+    // 级联阶段二：一次解析 plugin_tag，复用 cascade 节点（时长叠加）
     let plugin_tag_val = if cascade_stage == 2 {
         serde_json::from_str::<serde_json::Value>(log_plugin_tag).ok()
     } else {
@@ -2424,10 +2424,21 @@ async fn cascade_stage2_submit(
         &enhance_ch.api_key,
     );
 
-    // 级联阶段二：仅走 vve-ft / vve-sd；tool_version 复用 MediaKit 映射（标准版需要）
-    let mut volc_payload = serde_json::json!({"video_url": base_video_url, "resolution": target_resolution, "fps": 24, "bitrate_level": "high"});
+    // 级联阶段二：mid/路径来自 cascade 标签；标准/专业共用端点时补 tool_version；scene 仅标准版
+    let mut volc_payload = serde_json::json!({
+        "video_url": base_video_url,
+        "resolution": target_resolution,
+        "fps": 24,
+        "bitrate_level": "high"
+    });
     if let Some(tv) = forward::volc_enhance_tool_version(&volc_model_mid) {
         volc_payload["tool_version"] = serde_json::json!(tv);
+        if tv == "standard" {
+            let scene = cascade_json_str(log_plugin_tag, "/cascade/scene")
+                .and_then(|s| cascade_scene_pair(&s))
+                .unwrap_or("common");
+            volc_payload["scene"] = serde_json::json!(scene);
+        }
     }
     // 阶段二提交：临时错误最多 5 次，间隔 2 分钟
     let max_attempts = 5u32;

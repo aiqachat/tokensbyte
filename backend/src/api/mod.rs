@@ -1,7 +1,7 @@
 /*
  * tokensbyte opensource
  * (c) 2026 tokensbyte.ai
- * @copyright      Copyright netbcloud/wstianxia 
+ * @copyright      Copyright netbcloud/wstianxia
  * @license        MIT (https://www.tokensbyte.ai/)
  */
 
@@ -334,6 +334,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         "/plugins/volcengine_ark_monitor",
         volc_ark_monitor::router(),
     );
+    #[cfg(feature = "commercial_plugins")]
+    let management_routes = management_routes.nest(
+        "/plugins/upstream_asset_relay",
+        upstream_asset_relay::router(),
+    );
     let management_routes = management_routes.route_layer(axum_middleware::from_fn_with_state(
         state.clone(),
         auth_middleware,
@@ -655,6 +660,8 @@ pub mod playground;
 pub mod plugins;
 #[cfg(feature = "commercial_plugins")]
 pub mod team_marketing;
+#[cfg(feature = "commercial_plugins")]
+pub mod upstream_asset_relay;
 // ── 插件模块声明（各插件均通过 feature flag 控制，移除对应 feature 后模块不编译） ──
 
 #[cfg(feature = "plugin_site_icons")]

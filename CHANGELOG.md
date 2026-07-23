@@ -1,5 +1,64 @@
 # UPDATE
 
+## 2026-07-23 — 本地后端增量编译/链接加速（兼容 Windows）
+
+- `[profile.dev]`：`debug = line-tables-only` + incremental。
+- Windows：`dev.ps1` 默认设 `rust-lld`；`TOKENSBYTE_FAST_LINK=0` 回退 `link.exe`（不新增 `.cargo/config.toml`）。
+- Linux：`dev.sh` 有 mold 则 `mold -run`，否则可选 `clang+lld`；macOS 不启用（`mold -run` 不支持）。
+- 不改业务逻辑；无额外单测残留。
+
+---
+
+## 2026-07-23 — 级联转发规则：每分辨率可配增强版本与底座
+
+- `config_json` 新增 `res_enhance`（fast|standard|pro|ai，默认 standard）、`res_scene`（标准版场景 common|ugc|short_series|aigc|old_film，默认 common）、`res_base`（阶段一座底，默认一级：720p→480p、1080p→720p、2k/4k→1080p）。
+- 管理端级联配置按分辨率设置倍率/增强/场景（仅标准版显示）/底座；阶段二标准增强透传并校验 `scene`。
+- 旧规则无新字段时增强默认标准、场景 common、底座一级，无需迁移；不保留级联相关验证单测残留。
+- 级联 `version` / 目标 `resolution` 只写入 `plugin_tag.cascade`，不改用户入参；预扣费时用已有 `cascade_json_str` 写入 `billing_features`，终态直接复用快照。
+
+---
+
+## 2026-07-22 — 任务列表预览：列表返回产物地址，不受详情权限限制
+
+根因：列表不带响应体，预览走详情接口；关闭「查看日志详情」时取不到媒体链。  
+处理：`/task_logs` **一次查询**仅对图片/视频/视频增强读 `response_content`，内存提取 `preview_urls`（级联取 stage2，复用 `find_urls`，只回传 http(s)；日志内 base64 本已脱敏占位）后丢弃大字段；前端优先用 `preview_urls`，无详情权限时不再打详情兜底。详情权限仍约束完整展开，预览不受影响。
+
+---
+
+## 2026-07-22 — 新增用户增强插件「上游素材中转」
+
+新增系统增强插件 `upstream_asset_relay`：可多条关联上游渠道与素材基础路径（路径可空），一键生成视频转发规则；模型选用后对请求内图片/音视频 URL 经渠道 Bearer 调用 CreateAsset/GetAsset 转为 `asset://`，带缓存与 `plugin_api_logs` 追溯。与现网 `asset_convert`（素材插件凭证）正交隔离，默认关闭，不影响原有行为。
+
+---
+
+## 2026-07-22 — 启动/定时清理：status_code=0 慢查询改走部分索引
+
+`recover_interrupted_logs` / `cleanup_orphan_pending_logs` 原 SQL 对 400 万行 `logs` 全表扫（`status_code=0` + `NOT ILIKE '%冻结%'`，约 2s）。  
+预记录默认 `is_completed=0`，改为先命中 `idx_logs_is_completed_pending` 再过滤；语义不变（异步冻结多为 `status_code=200`）。实测约亚毫秒级。
+
+---
+
+## 2026-07-22 — 修复 DbGate 卡 Loading structure（锁 + 损坏索引）
+
+根因：多实例 StartupBackfill 长事务占 `logs` 锁，迁移非并发 `DROP INDEX` 与 DbGate 结构查询一起等待；另有损坏索引 `idx_logs_action_created_stats_new`（pg_attribute 缺口）干扰元数据。  
+处理：运维侧已清损坏目录项并补齐 `idx_logs_created_at_agg`；`logs_indexes_reconcile_v1` 的 prune 增加 `lock_timeout=3s`，拿不到锁则跳过，不再堵库。
+
+---
+
+## 2026-07-22 — 去掉 migrations 验证单测
+
+删除 `idempotent_index_ddl_tests`（`#[cfg(test)]` 不影响线上，但仓库不留验证残留）；幂等判断内联为单一私有函数，迁移终态与行为不变。
+
+---
+
+## 2026-07-22 — logs 索引迁移收口为 logs_indexes_reconcile_v1
+
+- 旧 ID `logs_slow_query_indexes_v1` / `logs_created_at_agg_prune_v1` 改为 no-op（保留 history 兼容）。
+- 新迁移 `logs_indexes_reconcile_v1` 为唯一终态：清 INVALID → 建 `idx_logs_created_at_agg` / `idx_logs_vision_created_at_new` → 尽力删冗余/损坏旧索引 → `ANALYZE`。
+- `once_migration!` 仍对 CREATE 名冲突（23505）与 DROP 目录缺口（XX000）幂等跳过。重启后端执行一次即可。
+
+---
+
 ## 2026-07-21 — 今日改动复查收口
 
 - 腾讯视频：用户显式 `LastFrameUrl` 原样透传（可与 `FileInfos` 并存）

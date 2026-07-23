@@ -1,7 +1,7 @@
 /*
  * tokensbyte opensource
  * (c) 2026 tokensbyte.ai
- * @copyright      Copyright netbcloud/wstianxia 
+ * @copyright      Copyright netbcloud/wstianxia
  * @license        MIT (https://www.tokensbyte.ai/)
  */
 
@@ -83,6 +83,10 @@ pub struct TaskLog {
     #[sqlx(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forward_eid: Option<String>,
+    /// 列表直接返回产物媒体地址，供预览；不受 allow_view_log_details 限制
+    #[sqlx(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preview_urls: Vec<String>,
     pub created_at: DbTs,
 }
 

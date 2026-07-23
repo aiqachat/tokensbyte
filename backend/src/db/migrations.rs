@@ -1,7 +1,7 @@
 /*
  * tokensbyte opensource
  * (c) 2026 tokensbyte.ai
- * @copyright      Copyright netbcloud/wstianxia 
+ * @copyright      Copyright netbcloud/wstianxia
  * @license        MIT (https://www.tokensbyte.ai/)
  */
 
@@ -22,10 +22,38 @@
 3. 失败不得写入 sys_migration_history（once_migration! 已保证），以便下次启动重试。
 4. 禁止在迁移里 DROP 仍可能被查询使用的 covering 索引；精简索引应运维确认 idx_scan 后再做。
 5. 并发建索引失败可能留下 INVALID 索引：重试前先 DROP INVALID，再重建。
+6. PG quirk：`CREATE INDEX CONCURRENTLY IF NOT EXISTS` 在同名索引已存在时仍可能报
+   23505 / pg_class_relname_nsp_index；once_migration! 将其视为已成功（幂等）。
+7. 半截/损坏索引上 `DROP INDEX CONCURRENTLY` 可能报 XX000（pg_attribute catalog gap）；
+   冗余清理用非并发 DROP + EXCEPTION，或由 once_migration! 按成功跳过，避免卡死启动。
 */
 
 // 开源版不再 noop 商业相关 SQL：库表/数据允许存在，插件中心由 is_plugin_compiled 过滤展示。
 // 此前用 contains("plugin_config"|"playground"|...) 会误伤 HA / 创作中心 / 门户配置迁移。
+
+/// 索引 DDL 幂等：CREATE 名冲突(23505) / DROP 目录缺口(XX000) 可跳过；不吞业务唯一约束错误。
+fn is_idempotent_index_ddl_err(err: &sqlx::Error, stmt: &str) -> bool {
+    let sqlx::Error::Database(db) = err else {
+        return false;
+    };
+    // code() 返回临时 Cow，须先绑定再 as_deref，否则临时值提前释放
+    let code = db.code();
+    let code = code.as_deref();
+    let msg = db.message();
+    let upper = stmt.to_ascii_uppercase();
+    if upper.contains("CREATE INDEX")
+        && code == Some("23505")
+        && db
+            .constraint()
+            .map(|c| c == "pg_class_relname_nsp_index")
+            .unwrap_or_else(|| msg.contains("pg_class_relname_nsp_index"))
+    {
+        return true;
+    }
+    upper.contains("DROP INDEX")
+        && code == Some("XX000")
+        && msg.contains("pg_attribute catalog is missing")
+}
 
 /// 一次性迁移执行宏：通过 sys_migration_history 确保仅首次部署执行，后续重启自动跳过。
 /// 任一句失败则**不**写入 history，下次启动可重试（避免半成功被永久跳过）。
@@ -41,7 +69,14 @@ macro_rules! once_migration {
             $(
                 if _m_ok {
                     match sqlx::query($stmt).execute($pool).await {
-                        Ok(_) => {},
+                        Ok(_) => {}
+                        Err(e) if is_idempotent_index_ddl_err(&e, $stmt) => {
+                            tracing::warn!(
+                                "⚠️ [Migration] ID: {} 索引 DDL 已满足/目录异常可跳过. 语句: '{}'",
+                                $id,
+                                $stmt
+                            );
+                        }
                         Err(e) => {
                             _m_ok = false;
                             tracing::error!(
@@ -2495,9 +2530,13 @@ macro_rules! pg_migration_blocks {
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_referred_by ON users (referred_by) WHERE referred_by IS NOT NULL AND referred_by <> ''"
     );
 
-    // ── logs 慢查询加固：日统计范围扫 + 视觉类列表有序深翻页 ──
-    // 与现网可能已手工建过的同名索引兼容（IF NOT EXISTS）；CONCURRENTLY 不堵写入。
-    once_migration!(pool, "logs_slow_query_indexes_v1",
+    // 旧 ID 保留（已执行环境跳过）；逻辑已收口到 logs_indexes_reconcile_v1
+    once_migration!(pool, "logs_slow_query_indexes_v1", "SELECT 1");
+    once_migration!(pool, "logs_created_at_agg_prune_v1", "SELECT 1");
+
+    // ── logs 索引终态（唯一维护点）：确保 agg/vision；尽力删冗余/损坏旧索引 ──
+    once_migration!(pool, "logs_indexes_reconcile_v1",
+        // 半截并发构建留下的 INVALID：同名 IF NOT EXISTS 会跳过重建，先清掉
         r#"DO $inv$
         DECLARE r RECORD;
         BEGIN
@@ -2505,10 +2544,8 @@ macro_rules! pg_migration_blocks {
             SELECT c.relname AS idxname
             FROM pg_index i
             JOIN pg_class c ON c.oid = i.indexrelid
-            JOIN pg_class t ON t.oid = i.indrelid
-            JOIN pg_namespace n ON n.oid = t.relnamespace
-            WHERE n.nspname = 'public'
-              AND NOT i.indisvalid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND NOT i.indisvalid
               AND c.relname IN (
                 'idx_logs_created_at_agg',
                 'idx_logs_vision_created_at_new'
@@ -2518,40 +2555,65 @@ macro_rules! pg_migration_blocks {
           END LOOP;
         END
         $inv$"#,
-        // 启动回填 / Cron 按 created_at 半开区间聚合，避免仅靠 (action_type, created_at) 多段探测
+        // 日统计半开区间聚合
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_logs_created_at_agg ON logs (created_at ASC)",
-        // 视觉筛选深翻页：按 created_at 有序，谓词与 SQL_VISION_ACTION_FILTER 对齐
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_logs_vision_created_at_new ON logs (created_at DESC) WHERE (action_type = ANY (ARRAY['图片'::text, '视频'::text, '视频增强'::text, '视觉模型'::text, '视觉'::text]))"
-    );
-
-    // 补齐 v1 未落成的 agg + 删冗余索引（v1 已上远程不可改，故独立 ID）
-    once_migration!(pool, "logs_created_at_agg_prune_v1",
-        r#"DO $inv$
-        DECLARE r RECORD;
+        // 视觉深翻页；谓词与 SQL_VISION_ACTION_FILTER 对齐
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_logs_vision_created_at_new ON logs (created_at DESC) WHERE (action_type = ANY (ARRAY['图片'::text, '视频'::text, '视频增强'::text, '视觉模型'::text, '视觉'::text]))",
+        // 冗余/expand 残留；lock_timeout 避免与 StartupBackfill 互相堵死（曾导致 DbGate 卡 Checking model）
+        r#"DO $prune$
+        DECLARE idx text;
         BEGIN
-          FOR r IN
-            SELECT c.relname AS idxname
-            FROM pg_index i
-            JOIN pg_class c ON c.oid = i.indexrelid
-            JOIN pg_class t ON t.oid = i.indrelid
-            JOIN pg_namespace n ON n.oid = t.relnamespace
-            WHERE n.nspname = 'public' AND NOT i.indisvalid
-              AND c.relname IN (
-                'idx_logs_created_at_agg',
-                'idx_logs_action_created_stats_new',
-                'idx_logs_created_at_timestamptz',
-                'idx_logs_created_at'
-              )
+          PERFORM set_config('lock_timeout', '3s', true);
+          FOREACH idx IN ARRAY ARRAY[
+            'idx_logs_action_created_stats_new',
+            'idx_logs_created_at_timestamptz',
+            'idx_logs_created_at',
+            'idx_logs_user_created_at_new',
+            'idx_logs_created_at_new'
+          ]
           LOOP
-            EXECUTE format('DROP INDEX IF EXISTS %I', r.idxname);
+            BEGIN
+              EXECUTE format('DROP INDEX IF EXISTS %I', idx);
+            EXCEPTION WHEN OTHERS THEN
+              RAISE WARNING 'logs_indexes_reconcile_v1 skip drop %: %', idx, SQLERRM;
+            END;
           END LOOP;
         END
-        $inv$"#,
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_logs_created_at_agg ON logs (created_at ASC)",
-        "DROP INDEX CONCURRENTLY IF EXISTS idx_logs_action_created_stats_new",
-        "DROP INDEX CONCURRENTLY IF EXISTS idx_logs_created_at_timestamptz",
-        "DROP INDEX CONCURRENTLY IF EXISTS idx_logs_created_at",
+        $prune$"#,
         "ANALYZE logs"
+    );
+
+    // 上游素材中转插件：绑定「上游渠道配置」(channel_configs) + 系统增强插件种子
+    once_migration!(pool, "upstream_asset_relay_v1",
+        r#"CREATE TABLE IF NOT EXISTS upstream_asset_bindings (
+            id BIGSERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            channel_config_id BIGINT NOT NULL,
+            asset_base_path TEXT NOT NULL DEFAULT '',
+            forward_rule_id BIGINT,
+            group_id TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            remark TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )"#,
+        "CREATE INDEX IF NOT EXISTS idx_upstream_asset_bindings_config ON upstream_asset_bindings(channel_config_id)",
+        "CREATE INDEX IF NOT EXISTS idx_upstream_asset_bindings_rule ON upstream_asset_bindings(forward_rule_id)",
+        r#"INSERT INTO plugins (name, title, description, is_enabled, category, allowed_levels, created_at, updated_at)
+           VALUES (
+             'upstream_asset_relay',
+             '上游素材中转',
+             '关联上游渠道素材接口，生成转发规则并在中继时完成素材 URL→ID 转换',
+             0,
+             'system',
+             'all',
+             CURRENT_TIMESTAMP,
+             CURRENT_TIMESTAMP
+           )
+           ON CONFLICT (name) DO UPDATE SET
+             title = EXCLUDED.title,
+             description = EXCLUDED.description,
+             category = EXCLUDED.category"#
     );
 
     tracing::info!("PostgreSQL AnyPool migrations completed successfully");

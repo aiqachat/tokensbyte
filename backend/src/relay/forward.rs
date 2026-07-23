@@ -1,7 +1,7 @@
 /*
  * tokensbyte opensource
  * (c) 2026 tokensbyte.ai
- * @copyright      Copyright netbcloud/wstianxia 
+ * @copyright      Copyright netbcloud/wstianxia
  * @license        MIT (https://www.tokensbyte.ai/)
  */
 
@@ -28,6 +28,10 @@ pub struct ResolvedForward {
     pub asset_convert: bool,
     /// 素材转换使用的插件命名空间（默认 asset_manager，国际版可设为 asset_manager_intl）
     pub asset_convert_ns: String,
+    /// 是否启用上游渠道素材转换（与 asset_convert 正交，默认关闭）
+    pub upstream_asset_convert: bool,
+    /// 上游素材绑定 ID（upstream_asset_bindings.id）
+    pub upstream_asset_binding_id: Option<i64>,
     /// 异步任务轮询路径 (可选)，如果规则里配置了则优先使用
     pub poll_path: Option<String>,
     /// 是否启用免审核策略
@@ -42,6 +46,12 @@ pub struct ResolvedForward {
     pub content_to_prompt: bool,
     /// 级联分辨率倍率表（config_json.res_mul）；阶段二：有 usage 则乘入 token，否则乘费用；空表=1.0
     pub res_mul: HashMap<String, f64>,
+    /// 级联：目标分辨率 → 增强版本（fast|standard|pro|ai）；缺 key → 标准版
+    pub res_enhance: HashMap<String, String>,
+    /// 级联：目标分辨率 → 阶段一座底分辨率；缺 key / 非法则用默认一级底座
+    pub res_base: HashMap<String, String>,
+    /// 级联：目标分辨率 → 标准版增强场景（common|ugc|short_series|aigc|old_film）；仅 standard 生效
+    pub res_scene: HashMap<String, String>,
 }
 
 impl Default for ResolvedForward {
@@ -52,6 +62,8 @@ impl Default for ResolvedForward {
             auth_type: "bearer".to_string(),
             asset_convert: false,
             asset_convert_ns: "asset_manager".to_string(),
+            upstream_asset_convert: false,
+            upstream_asset_binding_id: None,
             poll_path: None,
             asset_moderation: false,
             eid: String::new(),
@@ -59,6 +71,9 @@ impl Default for ResolvedForward {
             is_cascade: false,
             content_to_prompt: false,
             res_mul: HashMap::new(),
+            res_enhance: HashMap::new(),
+            res_base: HashMap::new(),
+            res_scene: HashMap::new(),
         }
     }
 }
@@ -125,6 +140,22 @@ fn parse_res_mul(config: &serde_json::Value) -> HashMap<String, f64> {
         .filter_map(|(k, v)| {
             let rate = v.as_f64().filter(|&r| r > 0.0)?;
             Some((normalize_res_mul_key(k), rate))
+        })
+        .collect()
+}
+
+/// 解析级联字符串映射（res_enhance / res_base / res_scene）；非空值转小写，合法性在 cascade_resolve_* 校验
+fn parse_res_str_map(config: &serde_json::Value, field: &str) -> HashMap<String, String> {
+    let Some(obj) = config.get(field).and_then(|v| v.as_object()) else {
+        return HashMap::new();
+    };
+    obj.iter()
+        .filter_map(|(k, v)| {
+            let val = v.as_str()?.trim();
+            if val.is_empty() {
+                return None;
+            }
+            Some((normalize_res_mul_key(k), val.to_ascii_lowercase()))
         })
         .collect()
 }
@@ -1317,6 +1348,13 @@ pub fn parse_forward_config(
             .and_then(|v| v.as_str())
             .unwrap_or("asset_manager")
             .to_string(),
+        upstream_asset_convert: config
+            .get("upstream_asset_convert")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        upstream_asset_binding_id: config
+            .get("upstream_asset_binding_id")
+            .and_then(|v| v.as_i64()),
         poll_path: config
             .get("poll_path")
             .and_then(|v| v.as_str())
@@ -1336,6 +1374,55 @@ pub fn parse_forward_config(
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
         res_mul: parse_res_mul(config),
+        res_enhance: parse_res_str_map(config, "res_enhance"),
+        res_base: parse_res_str_map(config, "res_base"),
+        res_scene: parse_res_str_map(config, "res_scene"),
+    }
+}
+
+#[cfg(test)]
+mod upstream_asset_forward_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn old_asset_convert_rule_leaves_upstream_flags_default() {
+        let config = json!({
+            "mode": "transform",
+            "target_type": "volcengine",
+            "asset_convert": true,
+            "path_rewrite": {
+                "old": "/v1/video/generations",
+                "new": "/api/v3/contents/generations/tasks"
+            },
+            "auth_type": "bearer"
+        });
+        let r = parse_forward_config(&config, "/v1/video/generations", "10001", None);
+        assert!(r.asset_convert);
+        assert!(!r.upstream_asset_convert);
+        assert!(r.upstream_asset_binding_id.is_none());
+    }
+
+    #[test]
+    fn upstream_rule_parses_without_asset_convert() {
+        let config = json!({
+            "mode": "transform",
+            "target_type": "volcengine",
+            "path_rewrite": {
+                "old": "/v1/video/generations",
+                "new": "/api/v3/contents/generations/tasks"
+            },
+            "auth_type": "bearer",
+            "upstream_asset_convert": true,
+            "upstream_asset_binding_id": 12
+        });
+        let r = parse_forward_config(&config, "/v1/video/generations", "10002", None);
+        assert!(!r.asset_convert);
+        assert!(r.upstream_asset_convert);
+        assert_eq!(r.upstream_asset_binding_id, Some(12));
+        assert_eq!(r.upstream_path, "/api/v3/contents/generations/tasks");
+    }
+}
     }
 }
 

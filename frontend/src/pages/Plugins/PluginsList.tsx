@@ -21,7 +21,8 @@ import {
   MonitorPlay,
   Settings,
   RefreshCw,
-  Globe
+  Globe,
+  Share2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import request from '../../utils/request';
@@ -56,6 +57,7 @@ const pluginIcons: Record<string, React.ReactNode> = {
   docs_api: <BookOpen className="w-3.5 h-3.5" />,
   happyhorse_router: <Zap className="w-3.5 h-3.5" />,
   volcengine_ark_monitor: <MonitorPlay className="w-3.5 h-3.5" />,
+  upstream_asset_relay: <Share2 className="w-3.5 h-3.5" />,
 };
 
 // 系统增强插件使用不同的图标/徽章颜色样式，适配 shadcn ui 风格

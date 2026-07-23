@@ -1,14 +1,15 @@
-# tokensbyte opensource
+﻿# tokensbyte opensource
 # (c) 2026 tokensbyte.ai
 # @copyright      Copyright netbcloud/wstianxia 
 # @license        MIT (https://www.tokensbyte.ai/)
 
-﻿# TokensByte 开发环境启动脚本 (Windows PowerShell 5.1 / 7+)
+# TokensByte 开发环境启动脚本 (Windows PowerShell 5.1 / 7+)
 # ──────────────────────────────────────────────────
 # 默认后台：端口就绪后脚本退出，进程继续跑；前台日志：.\dev.ps1 1 fg（Ctrl+C 停本实例）
 # 多实例：共用 Postgres + 端口自动避让；中文路径：UTF-8 + CARGO_TARGET_DIR 重定向 + Start-Process
 # 停止：前台模式下 Ctrl+C / Ctrl+Z 释放本实例端口；下次启动会回收本仓库残留
 # 可选：PROJECT_NAME / BACKEND_PORT / FRONTEND_PORT / POSTGRES_PORT / DATABASE_URL / DEV_ATTACH
+#       TOKENSBYTE_FAST_LINK=0  关闭链接加速（默认 MSVC 设 rust-lld）
 
 $ErrorActionPreference = "Stop"
 
@@ -61,6 +62,39 @@ function Test-PortInUse([int]$Port) {
         $listener.Start(); $listener.Stop()
         return $false
     } catch { return $true }
+}
+
+# 本地链接加速：MSVC → rust-lld；GNU → 有 lld 才用；关闭则回退 link.exe
+function Apply-DevRustLinkAccel([string]$ToolchainArg = '') {
+    $msvcLinkers = @('CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER', 'CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER')
+    if ($env:TOKENSBYTE_FAST_LINK -eq '0') {
+        foreach ($name in $msvcLinkers) {
+            if (-not (Get-Item -Path "Env:$name" -ErrorAction SilentlyContinue)) {
+                Set-Item -Path "Env:$name" -Value 'link.exe'
+            }
+        }
+        Write-Host "ℹ️  已关闭 Rust 链接加速 (TOKENSBYTE_FAST_LINK=0)" -ForegroundColor DarkGray
+        return
+    }
+
+    $tc = $ToolchainArg
+    if ([string]::IsNullOrWhiteSpace($tc)) {
+        try { $tc = (rustup show active-toolchain 2>$null) } catch {}
+    }
+    if ($tc -match 'gnu') {
+        if (-not (Get-Command lld -ErrorAction SilentlyContinue)) { return }
+        if ($env:RUSTFLAGS -match 'fuse-ld') { return }
+        $extra = '-C link-arg=-fuse-ld=lld'
+        $env:RUSTFLAGS = if ([string]::IsNullOrWhiteSpace($env:RUSTFLAGS)) { $extra } else { "$($env:RUSTFLAGS) $extra" }
+        Write-Host "ℹ️  Rust 链接加速: lld (GNU)" -ForegroundColor Cyan
+        return
+    }
+
+    foreach ($name in $msvcLinkers) {
+        if (-not (Get-Item -Path "Env:$name" -ErrorAction SilentlyContinue)) {
+            Set-Item -Path "Env:$name" -Value 'rust-lld'
+        }
+    }
 }
 
 function Get-FreePort([int]$Start, [string]$Label) {
@@ -122,7 +156,14 @@ function Write-NewLogLines([string]$Path, [ref]$Offset, [string]$Prefix, [Consol
 
 function Stop-PidTree([int]$ProcessId) {
     if ($ProcessId -le 0) { return }
-    & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null
+    if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {
+        $oldPref = $ErrorActionPreference
+        $ErrorActionPreference = "SilentlyContinue"
+        try {
+            & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null
+        } catch {}
+        $ErrorActionPreference = $oldPref
+    }
 }
 
 function Stop-ProcessTree([System.Diagnostics.Process]$Proc) {
@@ -406,6 +447,8 @@ switch ($choice) {
                 Write-Warning "⚠️ 未检测到 MSVC/GNU 工具链，本地编译可能失败。"
             }
         }
+        # 工具链确定后再开链接加速（避免 MSVC/GNU 误配）
+        Apply-DevRustLinkAccel $rustToolchain
 
         $cargoCmd = Get-Command cargo -ErrorAction SilentlyContinue
         $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue

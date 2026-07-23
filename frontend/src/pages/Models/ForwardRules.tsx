@@ -18,11 +18,76 @@ const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
 const RES_MUL_KEYS = ['720p', '1080p', '2k', '4k'] as const;
+type ResKey = (typeof RES_MUL_KEYS)[number];
 
-const defaultResMul = (): Record<string, number> =>
-  Object.fromEntries(RES_MUL_KEYS.map((k) => [k, 1]));
+const ENHANCE_OPTIONS = [
+  { value: 'standard', label: '标准' },
+  { value: 'fast', label: '极速' },
+  { value: 'pro', label: '专业' },
+  { value: 'ai', label: '大模型' },
+] as const;
 
-/** 从 config.res_mul 解析四档倍率，非法/缺失回退 1 */
+/** 标准版场景（仅 standard 生效），默认 common */
+const SCENE_OPTIONS = [
+  { value: 'common', label: '通用' },
+  { value: 'ugc', label: 'UGC 短视频' },
+  { value: 'short_series', label: '短剧' },
+  { value: 'aigc', label: 'AIGC' },
+  { value: 'old_film', label: '老片修复' },
+] as const;
+
+/** 各目标分辨率允许的底座（首项为默认一级） */
+const BASE_OPTIONS: Record<ResKey, string[]> = {
+  '720p': ['480p'],
+  '1080p': ['720p', '480p'],
+  '2k': ['1080p', '720p', '480p'],
+  '4k': ['1080p', '720p', '480p'],
+};
+
+const ENHANCE_VALUES = new Set<string>(ENHANCE_OPTIONS.map((o) => o.value));
+const SCENE_VALUES = new Set<string>(SCENE_OPTIONS.map((o) => o.value));
+type SelectOpt = { value: string; label: string };
+const ENHANCE_SELECT = ENHANCE_OPTIONS as unknown as SelectOpt[];
+const SCENE_SELECT = SCENE_OPTIONS as unknown as SelectOpt[];
+
+const mapResKeys = <T,>(fn: (k: ResKey) => T): Record<string, T> =>
+  Object.fromEntries(RES_MUL_KEYS.map((k) => [k, fn(k)]));
+
+const defaultResMul = (): Record<string, number> => mapResKeys(() => 1);
+const defaultResEnhance = (): Record<string, string> => mapResKeys(() => 'standard');
+const defaultResScene = (): Record<string, string> => mapResKeys(() => 'common');
+const defaultResBase = (): Record<string, string> => mapResKeys((k) => BASE_OPTIONS[k][0]);
+
+/** 四档字符串映射：非法/缺失保留 defaults */
+const parseStrMap = (
+  raw: unknown,
+  defaults: () => Record<string, string>,
+  valid: Set<string> | ((k: ResKey, v: string) => boolean),
+): Record<string, string> => {
+  const out = defaults();
+  if (!raw || typeof raw !== 'object') return out;
+  const src = raw as Record<string, unknown>;
+  for (const k of RES_MUL_KEYS) {
+    const v = String(src[k] ?? '').trim().toLowerCase();
+    const ok = typeof valid === 'function' ? valid(k, v) : valid.has(v);
+    if (ok) out[k] = v;
+  }
+  return out;
+};
+
+/** 仅保留 keep 为真的档位；全默认则不落库 */
+const compactStrMap = (
+  raw: Record<string, string>,
+  keep: (k: ResKey, v: string) => boolean,
+): Record<string, string> | undefined => {
+  const out: Record<string, string> = {};
+  for (const k of RES_MUL_KEYS) {
+    const v = (raw[k] || '').trim().toLowerCase();
+    if (v && keep(k, v)) out[k] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
+};
+
 const parseResMul = (raw: unknown): Record<string, number> => {
   const out = defaultResMul();
   if (!raw || typeof raw !== 'object') return out;
@@ -33,6 +98,21 @@ const parseResMul = (raw: unknown): Record<string, number> => {
   }
   return out;
 };
+
+const parseResEnhance = (raw: unknown) => parseStrMap(raw, defaultResEnhance, ENHANCE_VALUES);
+const parseResScene = (raw: unknown) => parseStrMap(raw, defaultResScene, SCENE_VALUES);
+const parseResBase = (raw: unknown) =>
+  parseStrMap(raw, defaultResBase, (k, v) => BASE_OPTIONS[k].includes(v));
+
+const compactResEnhance = (raw: Record<string, string>) =>
+  compactStrMap(raw, (_k, v) => v !== 'standard');
+
+/** scene 已由 parseResScene 校验，此处只过滤非标准档与默认 common */
+const compactResScene = (enhance: Record<string, string>, scene: Record<string, string>) =>
+  compactStrMap(scene, (k, v) => (enhance[k] || 'standard') === 'standard' && v !== 'common');
+
+const compactResBase = (raw: Record<string, string>) =>
+  compactStrMap(raw, (k, v) => v !== BASE_OPTIONS[k][0]);
 
 interface ForwardRule {
   id: number;
@@ -114,6 +194,9 @@ const ForwardRules: React.FC = () => {
       sort_order: 0,
       is_cascade: false,
       res_mul: defaultResMul(),
+      res_enhance: defaultResEnhance(),
+      res_scene: defaultResScene(),
+      res_base: defaultResBase(),
     });
     setIsModalVisible(true);
   };
@@ -122,11 +205,17 @@ const ForwardRules: React.FC = () => {
     let pollPath = '';
     let isCascade = false;
     let resMul = defaultResMul();
+    let resEnhance = defaultResEnhance();
+    let resScene = defaultResScene();
+    let resBase = defaultResBase();
     try {
       const config = JSON.parse(item.config_json);
       pollPath = config.poll_path || '';
       isCascade = !!config.is_cascade;
       resMul = parseResMul(config.res_mul);
+      resEnhance = parseResEnhance(config.res_enhance);
+      resScene = parseResScene(config.res_scene);
+      resBase = parseResBase(config.res_base);
     } catch (e) { /* ignore */ }
 
     setEditingItem(item);
@@ -136,6 +225,9 @@ const ForwardRules: React.FC = () => {
       poll_path: pollPath,
       is_cascade: isCascade,
       res_mul: resMul,
+      res_enhance: resEnhance,
+      res_scene: resScene,
+      res_base: resBase,
       is_active: item.is_active === 1,
       sort_order: item.sort_order || 0,
     });
@@ -183,13 +275,24 @@ const ForwardRules: React.FC = () => {
         delete configObj.poll_path;
       }
 
-      // 级联开关与 res_mul（阶段二成功：有 usage 则 tokens×倍率，否则费用×倍率）
+      // 级联：res_mul / res_enhance / res_scene / res_base（缺省值不落库）
+      const putOpt = (key: string, val?: Record<string, string>) => {
+        if (val) configObj[key] = val;
+        else delete configObj[key];
+      };
       if (values.is_cascade) {
         configObj.is_cascade = true;
         configObj.res_mul = parseResMul(values.res_mul);
+        const enhanceMap = parseResEnhance(values.res_enhance);
+        putOpt('res_enhance', compactResEnhance(enhanceMap));
+        putOpt('res_scene', compactResScene(enhanceMap, parseResScene(values.res_scene)));
+        putOpt('res_base', compactResBase(parseResBase(values.res_base)));
       } else {
         delete configObj.is_cascade;
         delete configObj.res_mul;
+        delete configObj.res_enhance;
+        delete configObj.res_scene;
+        delete configObj.res_base;
       }
 
       const payload = {
@@ -202,6 +305,9 @@ const ForwardRules: React.FC = () => {
       delete payload.poll_path;
       delete payload.is_cascade;
       delete payload.res_mul;
+      delete payload.res_enhance;
+      delete payload.res_scene;
+      delete payload.res_base;
 
       if (editingItem) {
         await request.put(`/forward-rules/${editingItem.id}`, payload);
@@ -445,6 +551,25 @@ const ForwardRules: React.FC = () => {
         阶段二成功后：若 stage1 有 usage tokens，则 token（返回/列表/计费）× 倍率；否则底座费用 × 倍率。缺省 key 按 <CText>1.0</CText>。
       </>,
     },
+    {
+      n: '11',
+      body: <>
+        <CText>res_enhance</CText>：每目标分辨率的增强版本（<CText>fast|standard|pro|ai</CText>），缺省 <CText>standard</CText>。
+      </>,
+    },
+    {
+      n: '12',
+      body: <>
+        <CText>res_scene</CText>：标准版增强场景（<CText>common|ugc|short_series|aigc|old_film</CText>），缺省 <CText>common</CText>；仅增强为 standard 时生效。
+      </>,
+    },
+    {
+      n: '13',
+      body: <>
+        <CText>res_base</CText>：每目标分辨率的阶段一座底，如 <CText>{`{"1080p":"720p"}`}</CText>。
+        默认取一级（720p→480p、1080p→720p、2k/4k→1080p）；1080p 可调为 480p。
+      </>,
+    },
   ];
 
   const helpContent = (
@@ -466,7 +591,7 @@ const ForwardRules: React.FC = () => {
           <ParamNo key={p.n} n={p.n}>{p.body}</ParamNo>
         ))}
       </div>
-      <b>可选参数（4–10）</b>
+      <b>可选参数（4–13）</b>
       <div style={{ marginTop: 8 }}>
         {helpParams.slice(3).map((p) => (
           <ParamNo key={p.n} n={p.n}>{p.body}</ParamNo>
@@ -603,7 +728,7 @@ const ForwardRules: React.FC = () => {
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         onOk={() => form.submit()}
-        width={700}
+        width={860}
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="name" label={'规则标识名称 (例如: Anthropic 原生转换)'} rules={[{ required: true }]}>
@@ -642,19 +767,42 @@ const ForwardRules: React.FC = () => {
             <Switch />
           </Form.Item>
 
-          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.is_cascade !== cur.is_cascade}>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, cur) =>
+              prev.is_cascade !== cur.is_cascade ||
+              RES_MUL_KEYS.some((k) => prev?.res_enhance?.[k] !== cur?.res_enhance?.[k])
+            }
+          >
             {({ getFieldValue }) => getFieldValue('is_cascade') ? (
               <Form.Item
-                label={<Space>分辨率倍率 res_mul <Popover content="阶段二成功：stage1 有 usage 时 tokens×目标分辨率倍率；无 usage 时底座费用×倍率；未命中 key 按 1.0"><QuestionCircleOutlined /></Popover></Space>}
+                label={<Space>级联分辨率配置 <Popover content={<div style={{ maxWidth: 320 }}>每档可设：倍率、增强（默认标准）、场景（仅标准版，默认 common）、底座（默认一级，如 1080p→720p 可改 480p）。阶段二成功：有 usage 时 tokens×倍率，否则底座费用×倍率。</div>}><QuestionCircleOutlined /></Popover></Space>}
                 style={{ marginBottom: 8 }}
               >
-                <Space wrap size="middle">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {RES_MUL_KEYS.map((k) => (
-                    <Form.Item key={k} name={['res_mul', k]} label={k} style={{ marginBottom: 0 }} rules={[{ required: true }]}>
-                      <InputNumber min={0.01} step={0.1} precision={2} style={{ width: 100 }} />
-                    </Form.Item>
+                    <Space key={k} wrap size="middle" align="start">
+                      <Text strong style={{ width: 48, display: 'inline-block', lineHeight: '32px' }}>{k}</Text>
+                      <Form.Item name={['res_mul', k]} label="倍率" style={{ marginBottom: 0 }} rules={[{ required: true }]}>
+                        <InputNumber min={0.01} step={0.1} precision={2} style={{ width: 88 }} />
+                      </Form.Item>
+                      <Form.Item name={['res_enhance', k]} label="增强" style={{ marginBottom: 0 }}>
+                        <Select style={{ width: 100 }} options={ENHANCE_SELECT} />
+                      </Form.Item>
+                      {getFieldValue(['res_enhance', k]) === 'standard' ? (
+                        <Form.Item name={['res_scene', k]} label="场景" style={{ marginBottom: 0 }}>
+                          <Select style={{ width: 128 }} options={SCENE_SELECT} />
+                        </Form.Item>
+                      ) : null}
+                      <Form.Item name={['res_base', k]} label="底座" style={{ marginBottom: 0 }} rules={[{ required: true }]}>
+                        <Select
+                          style={{ width: 100 }}
+                          options={BASE_OPTIONS[k].map((b) => ({ value: b, label: b }))}
+                        />
+                      </Form.Item>
+                    </Space>
                   ))}
-                </Space>
+                </div>
               </Form.Item>
             ) : null}
           </Form.Item>

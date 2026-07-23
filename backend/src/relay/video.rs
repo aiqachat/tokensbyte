@@ -1,7 +1,7 @@
 /*
  * tokensbyte opensource
  * (c) 2026 tokensbyte.ai
- * @copyright      Copyright netbcloud/wstianxia 
+ * @copyright      Copyright netbcloud/wstianxia
  * @license        MIT (https://www.tokensbyte.ai/)
  */
 
@@ -9,7 +9,7 @@
 //! OpenAI-compatible video generation task endpoint with forward-rule-driven protocol adaptation.
 
 use super::cascade::{
-    cascade_check_resolution, cascade_clamp_base_resolution, cascade_enhance_from_model,
+    cascade_check_resolution, cascade_resolve_base, cascade_resolve_enhance, cascade_resolve_scene,
 };
 use super::{forward, proxy, router};
 use crate::models::ApiToken;
@@ -43,7 +43,6 @@ pub async fn video_generations(
     headers: axum::http::HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> AppResult<Response> {
-    let mut body = body;
     let start_time = std::time::Instant::now();
     let raw_path = uri.path();
     // 归一化
@@ -54,7 +53,7 @@ pub async fn video_generations(
     } else {
         raw_path.to_string()
     };
-    let mut request_content_str = serde_json::to_string(&body).unwrap_or_default();
+    let request_content_str = serde_json::to_string(&body).unwrap_or_default();
     let x_log_id = headers
         .get("x-log-id")
         .and_then(|v| v.to_str().ok())
@@ -221,11 +220,9 @@ pub async fn video_generations(
         )
         .await;
 
-        // 级联超分：档位仅由模型 Id 推导（含 fast→极速，否则标准）；忽略请求体 version
+        // 级联超分：增强档优先转发规则 res_enhance，缺省标准版；忽略请求体 version
         let mut cascade_tag_json = None;
         if resolved.is_cascade {
-            let (cascade_version, volc_mid) = cascade_enhance_from_model(billing_model);
-
             // 目标分辨率单一来源：请求体 → 上游体 → 720p（与 cascade 标签 / 计费缺省一致）
             let target_res = if let Some(v) = body.get("resolution") {
                 v.as_str()
@@ -236,21 +233,25 @@ pub async fn video_generations(
                     .and_then(|r| r.as_str())
                     .unwrap_or("720p")
             };
-            cascade_check_resolution(db_rule.as_ref(), cascade_version, target_res)?;
             let target_key = target_res.trim().to_ascii_lowercase();
-            // 规范化写入请求快照，供计费/阶段二与 cascade 标签同源
-            body["resolution"] = serde_json::json!(target_key);
+            let (cascade_version, volc_mid) =
+                cascade_resolve_enhance(&target_key, &resolved.res_enhance);
+            cascade_check_resolution(db_rule.as_ref(), cascade_version, &target_key)?;
 
-            // 阶段一座底截断；目标写入 cascade 标签
-            let base_res = cascade_clamp_base_resolution(&target_key);
+            // 阶段一座底：优先 res_base，否则默认一级；标准版场景供阶段二透传
+            // 目标分辨率只写入 cascade（计费/阶段二同源），不改写用户入参
+            let base_res = cascade_resolve_base(&target_key, &resolved.res_base);
+            let cascade_scene =
+                cascade_resolve_scene(cascade_version, &target_key, &resolved.res_scene);
             upstream_body["resolution"] = serde_json::json!(base_res);
             tracing::info!(
-                "[Cascade] 模型: {}, 增强: {}({}), 目标: {}, 底座: {}",
+                "[Cascade] 模型: {}, 增强: {}({}), 目标: {}, 底座: {}, 场景: {}",
                 billing_model,
                 cascade_version,
                 volc_mid,
                 target_key,
-                base_res
+                base_res,
+                cascade_scene.unwrap_or("-")
             );
 
             let volc_db_model = proxy::find_active_model_by_mid(&state, volc_mid)
@@ -306,10 +307,11 @@ pub async fn video_generations(
             let (volc_final_model, _) =
                 router::resolve_model(&volc_channel, volc_model_id, Some(&volc_db_model));
 
-            // cascade 标签供阶段二取 mid/渠道；version 只写入 body 供计费快照（task 侧不读 cascade.version）
+            // cascade：阶段二渠道信息；version/resolution 供预扣费写入 billing_features（不改用户入参）
             let mut cascade_val = serde_json::json!({
                 "mid": volc_mid,
                 "resolution": target_key,
+                "version": cascade_version,
                 "final_model": volc_final_model,
                 "base_url": volc_channel.base_url,
                 "api_key": volc_channel.api_key,
@@ -321,6 +323,9 @@ pub async fn video_generations(
                 "target_type": enhance_resolved.target_type,
                 "poll_path": enhance_resolved.poll_path,
             });
+            if let Some(scene) = cascade_scene {
+                cascade_val["scene"] = serde_json::json!(scene);
+            }
 
             // 仅 volc_enhance_cascade 预探测时长写入 input_duration，供阶段二结算
             if db_rule
@@ -342,8 +347,6 @@ pub async fn video_generations(
             }
 
             cascade_tag_json = Some(cascade_val);
-            body["version"] = serde_json::json!(cascade_version);
-            request_content_str = serde_json::to_string(&body).unwrap_or_default();
         }
 
         // 可灵动态路径：根据请求体内容调整实际端点（text2video/image2video/multi-image2video）
@@ -415,9 +418,72 @@ pub async fn video_generations(
             .await;
         }
 
-        // 素材转换：仅当转发规则启用 asset_convert 时，将 content 中的网络 URL 转换为素材 ID
+        // 素材转换：上游渠道转换优先；否则走现有插件凭证转换
         let mut asset_convert_log: Option<String> = None;
-        if resolved.asset_convert {
+        if resolved.upstream_asset_convert {
+            match resolved.upstream_asset_binding_id {
+                Some(binding_id) => {
+                    let (convert_logs, convert_errors) =
+                        super::asset_convert::convert_content_urls_via_upstream(
+                            &state,
+                            &token.user_id,
+                            binding_id,
+                            &mut upstream_body,
+                        )
+                        .await;
+                    if !convert_logs.is_empty() {
+                        asset_convert_log =
+                            Some(format!("上游素材转换: {}", convert_logs.join(" | ")));
+                    }
+                    if !convert_errors.is_empty() {
+                        let full_err = convert_errors.join("; ");
+                        let user_msg = convert_errors
+                            .iter()
+                            .map(|e| proxy::extract_error_message(e))
+                            .collect::<Vec<_>>()
+                            .join("; ");
+                        let latency_ms = start_time.elapsed().as_millis() as u32;
+                        let status_code = proxy::infer_error_status_code_from_str(&full_err);
+                        proxy::record_and_bill_inner(proxy::BillRecord {
+                            state: &state,
+                            token: &token,
+                            channel: &channel,
+                            model: model,
+                            prompt_tokens: 0,
+                            completion_tokens: 0,
+                            cached_tokens: 0,
+                            cost: 0.0,
+                            pre_deducted: 0.0,
+                            pre_deduct_gift: 0.0,
+                            status_code: status_code,
+                            endpoint: &ep,
+                            error_msg: Some(&full_err),
+                            latency_ms: latency_ms,
+                            is_stream: 0,
+                            request_content: Some(request_content_str.clone()),
+                            response_content: None,
+                            upstream_req_content: None,
+                            billing_detail: asset_convert_log.clone(),
+                            hint_category: Some(resolved_cat.as_str()),
+                            pending_log_id: ha.pending_log_id,
+                            billing_model_hint: Some(billing_model),
+                            plugin_tag: None,
+                            db_model: db_model.as_ref(),
+                        })
+                        .await;
+                        return Err(AppError::BadRequest(format!(
+                            "上游素材转换失败: {}",
+                            user_msg
+                        )));
+                    }
+                }
+                None => {
+                    return Err(AppError::BadRequest(
+                        "上游素材转换失败: 转发规则缺少 upstream_asset_binding_id".into(),
+                    ));
+                }
+            }
+        } else if resolved.asset_convert {
             let (convert_logs, convert_errors) = super::asset_convert::convert_content_urls(
                 &state,
                 &token.user_id,
@@ -496,6 +562,7 @@ pub async fn video_generations(
         let upstream_body_c = upstream_body.clone();
         let asset_convert_log_c = asset_convert_log.clone();
         let url_c = url.clone();
+        let plugin_tag_c = plugin_tag.clone();
 
         tokio::spawn(async move {
             let state = state_c;
@@ -506,6 +573,7 @@ pub async fn video_generations(
             let mut upstream_body = upstream_body_c;
             let asset_convert_log = asset_convert_log_c;
             let url = url_c;
+            let plugin_tag = plugin_tag_c;
 
             let result: Result<Response, AppError> = async {
                 let builder = state
@@ -685,7 +753,7 @@ pub async fn video_generations(
                     hint_category: Some(resolved_cat.as_str()),
                     pending_log_id: pending_log_id,
                     billing_model_hint: Some(&billing_model),
-                    plugin_tag: None,
+                    plugin_tag: plugin_tag.as_deref(),
                     db_model: dm.as_ref(),
                 })
                 .await;

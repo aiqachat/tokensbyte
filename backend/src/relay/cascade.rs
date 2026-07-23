@@ -11,13 +11,55 @@ use crate::models::{BillingRule, Channel};
 use crate::relay::{forward, response_formatter};
 use std::collections::{HashMap, HashSet};
 
-/// 级联增强档位：(billing version, 火山 mid)。模型 Id 含 fast → 极速，否则标准。
-pub(crate) fn cascade_enhance_from_model(model_id: &str) -> (&'static str, &'static str) {
-    if model_id.to_ascii_lowercase().contains("fast") {
-        ("fast", "vve-ft")
-    } else {
-        ("standard", "vve-sd")
+/// 增强版本 → (billing version, 火山 mid)；非法返回 None
+pub(crate) fn cascade_enhance_pair(version: &str) -> Option<(&'static str, &'static str)> {
+    match version.trim().to_ascii_lowercase().as_str() {
+        "fast" => Some(("fast", "vve-ft")),
+        "standard" => Some(("standard", "vve-sd")),
+        "pro" => Some(("pro", "vve-pf")),
+        "ai" => Some(("ai", "vve-gt")),
+        _ => None,
     }
+}
+
+/// 优先用转发规则 res_enhance[目标分辨率]；缺省/非法 → 标准版
+pub(crate) fn cascade_resolve_enhance(
+    target_res: &str,
+    res_enhance: &HashMap<String, String>,
+) -> (&'static str, &'static str) {
+    res_enhance
+        .get(&target_res.trim().to_ascii_lowercase())
+        .and_then(|ver| cascade_enhance_pair(ver))
+        .unwrap_or(("standard", "vve-sd"))
+}
+
+/// 标准版增强场景枚举（仅 tool_version=standard 生效）
+pub(crate) fn cascade_scene_pair(scene: &str) -> Option<&'static str> {
+    match scene.trim().to_ascii_lowercase().as_str() {
+        "common" => Some("common"),
+        "ugc" => Some("ugc"),
+        "short_series" => Some("short_series"),
+        "aigc" => Some("aigc"),
+        "old_film" => Some("old_film"),
+        _ => None,
+    }
+}
+
+/// 仅标准增强返回场景；配置合法则用配置，否则 common；非标准 → None
+pub(crate) fn cascade_resolve_scene(
+    cascade_version: &str,
+    target_res: &str,
+    res_scene: &HashMap<String, String>,
+) -> Option<&'static str> {
+    if cascade_version != "standard" {
+        return None;
+    }
+    Some(
+        res_scene
+            .get(&target_res.trim().to_ascii_lowercase())
+            .and_then(|s| cascade_scene_pair(s))
+            .unwrap_or("common"),
+    )
 }
 
 pub(crate) fn cascade_is_res(s: &str) -> bool {
@@ -27,8 +69,19 @@ pub(crate) fn cascade_is_res(s: &str) -> bool {
     )
 }
 
+/// 与 cascade_enhance_pair 同源，避免版本枚举双份维护
 pub(crate) fn cascade_is_version(s: &str) -> bool {
-    matches!(s, "fast" | "standard" | "pro" | "ai")
+    cascade_enhance_pair(s).is_some()
+}
+
+/// 目标分辨率允许的底座列表（首项为默认一级）
+pub(crate) fn cascade_allowed_bases(target: &str) -> &'static [&'static str] {
+    match target.trim().to_ascii_lowercase().as_str() {
+        "720p" => &["480p"],
+        "1080p" => &["720p", "480p"],
+        "2k" | "4k" => &["1080p", "720p", "480p"],
+        _ => &["720p"],
+    }
 }
 
 /// 有分辨率计费时返回已启用集合；无则 None
@@ -131,14 +184,31 @@ pub(crate) fn cascade_check_resolution(
     )))
 }
 
-/// 目标超分分辨率 → 阶段一座底分辨率
+/// 目标超分分辨率 → 默认一级底座（未配置 res_base 时）
 pub(crate) fn cascade_clamp_base_resolution(target: &str) -> &'static str {
-    match target {
-        "720p" => "480p",
-        "1080p" => "720p",
-        "2k" | "4k" => "1080p",
-        _ => "720p",
-    }
+    cascade_allowed_bases(target)
+        .first()
+        .copied()
+        .unwrap_or("720p")
+}
+
+/// 优先用转发规则 res_base[目标]；缺省/非法回退默认一级底座
+pub(crate) fn cascade_resolve_base(
+    target: &str,
+    res_base: &HashMap<String, String>,
+) -> &'static str {
+    let key = target.trim().to_ascii_lowercase();
+    let allowed = cascade_allowed_bases(&key);
+    res_base
+        .get(&key)
+        .and_then(|configured| {
+            let b = configured.trim().to_ascii_lowercase();
+            allowed
+                .iter()
+                .copied()
+                .find(|a| a.eq_ignore_ascii_case(&b))
+        })
+        .unwrap_or_else(|| cascade_clamp_base_resolution(&key))
 }
 
 /// 阶段一响应根字段 resolution=480p 且 ratio∈{16:9,9:16} → MediaKit 居中裁剪角点。

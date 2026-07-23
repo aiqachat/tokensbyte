@@ -10,7 +10,7 @@ Thumbs.db
 
 # Dependencies
 node_modules/
-target/
+target*/
 
 # Environment
 .env
@@ -39,7 +39,8 @@ build/
 *.dylib
 
 # Logs
-logs/
+/logs/
+/backend/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -50,9 +51,5 @@ yarn-error.log*
 /tmp/
 docker-images/
 backup/
-
-# Exclude specific toolings and workflows
-.antigravity/
-.github/workflows/
-.qoder/
-.sync/
+*.dump
+opensource/

@@ -1,1 +1,20 @@
-443052c3ce1ff570b84411ac264bfb5ba1e55589443052caqachatm5pm2026-07-22 17:59:26chore: release open source version
+9cbce37bf11281385a870f9a09dd58cb36c11f69 9cbce37b 镇松 2026-07-23 10:36:32 build: 优化后端 Dockerfile 构建缓存与 Dockerignore 配置
+224daabad0ee3d8c0c1871f1159c92257b816287 224daaba bubyday 2026-07-23 10:35:52 feat: 级联转发规则支持按分辨率配置增强版本、场景与底座
+9eecce6d6937e02f339b8896091f45e39793ea55 9eecce6d cgm5pm 2026-07-22 20:52:38 fix(gitignore): 修正 .gitignore 中的 logs/ 规则为绝对路径，杜绝误过滤前端 Logs 页面模块
+62ceb342bfda8b4046aba654a9e5856daf421595 62ceb342 cgm5pm 2026-07-22 20:09:27 chore: 同步合并远端最新代码并更新 .sync 配置与脚本
+ab378a74d03e9e08dc3bbbfbf069610db289f593 ab378a74 镇松 2026-07-22 18:51:17 chore: 优化部署构建脚本及 Docker 相关配置
+f946dc30cb3e72e671a96256f0f01459e2764669 f946dc30 bubyday 2026-07-22 17:00:38 feat: 添加任务日志预览功能，允许列表直接返回媒体地址
+b3be71e7018efc07ab9214e79c11cf1994e55495 b3be71e7 镇松 2026-07-22 12:25:20 build: limit release compilation configuration and link options to prevent docker compiler memory exhaustion
+7e0bbdbe59f6213eaa820104ca956b095a4d3c25 7e0bbdbe bubyday 2026-07-22 11:54:20 chore: 移除时区回填运维脚本 tz_fast_backfill
+c856a76ad82b322482a4cba1e39cf6e0b6a91316 c856a76a bubyday 2026-07-22 11:48:45 merge: 合并 origin/cgdev0714time 到 chenzs，保留双方功能
+6fc7950fd7d573f57672aba6acb1a0128c56002d 6fc7950f bubyday 2026-07-22 11:46:59 chore: 新增时区迁移分批回填脚本 tz_fast_backfill
+9f4aafb9e235d1368808e8c553079227920f5e7a 9f4aafb9 bubyday 2026-07-22 11:45:41 perf: 收口 logs 索引迁移并消除启动恢复全表慢查询
+0fac6482d88f718888513735b32edaf45e0b1eb7 0fac6482 cgm5pm 2026-07-22 00:12:14 feat: 重构前端 Playground 组件、插件注册表及系统设置与样式模板
+5ebb8dcb6062acada08e04c527c23304515352a6 5ebb8dcb cgm5pm 2026-07-22 00:05:37 chore: add target*/ to .gitignore to ignore custom target build directories
+4cc24329f26a92f589948c89838cfea93a4db263 4cc24329 cgm5pm 2026-07-22 00:02:14 feat: 调整后台配置注册默认逻辑，默认关闭 docs_api 插件并优化管理员登录细节
+c1eb580137e1a085e1df699b63fe60534a0bc975 c1eb5801 cgm5pm 2026-07-21 23:18:47 docs: rename UPDATE.md to CHANGELOG.md & exclude utility scripts in build-opensource.sh
+242908627d53a945c6deab36b360ad16367f4cad 24290862 bubyday 2026-07-21 19:17:35 feat: 腾讯 FileInfos 原样透传与 Base64 兼容，级联阶段二互斥防重复
+e2881aaf558efcf237f61aafda2cd9340c354ffe e2881aaf bubyday 2026-07-21 13:07:09 perf: 优化启动日统计与日志深翻页慢 SQL，并支持级联 480p 居中裁剪
+5ce182d93e9d0dd7aeee674a89ec89ce39994668 5ce182d9 bubyday 2026-07-21 10:23:45 merge: 合并 origin/cgdev0714time 监控看板与指标能力到 chenzs
+44ed0e54d7e87f12254cdac122d1c5913f4097cd 44ed0e54 bubyday 2026-07-21 10:22:03 fix: 修复 Mac Docker 打包并加固本地镜像构建
+d72ea79d2a99620cc09e4799c177c7c8dd6067c1 d72ea79d cgm5pm 2026-07-20 21:50:49 feat: 优化系统指标统计接口与看板图表布局，适配多语言词条

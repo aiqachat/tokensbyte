@@ -1,7 +1,7 @@
 /*
  * tokensbyte opensource
  * (c) 2026 tokensbyte.ai
- * @copyright      Copyright netbcloud/wstianxia 
+ * @copyright      Copyright netbcloud/wstianxia
  * @license        MIT (https://www.tokensbyte.ai/)
  */
 
@@ -530,12 +530,22 @@ async fn query_by_fingerprint(
     fingerprint: &str,
     plugin_ns: &str,
 ) -> Option<String> {
+    query_by_fingerprint_with_source(state, fingerprint, plugin_ns, "relay_convert").await
+}
+
+async fn query_by_fingerprint_with_source(
+    state: &AppState,
+    fingerprint: &str,
+    plugin_ns: &str,
+    source: &str,
+) -> Option<String> {
     sqlx::query_as::<_, (String,)>(
         &state.db.format_query(
-            "SELECT asset_id FROM plugin_assets WHERE meta_fingerprint = ? AND source = 'relay_convert' AND asset_id IS NOT NULL AND plugin_ns = ? LIMIT 1"
+            "SELECT asset_id FROM plugin_assets WHERE meta_fingerprint = ? AND source = ? AND asset_id IS NOT NULL AND plugin_ns = ? LIMIT 1"
         )
     )
     .bind(fingerprint)
+    .bind(source)
     .bind(plugin_ns)
     .fetch_optional(&state.db.pool)
     .await
@@ -546,12 +556,22 @@ async fn query_by_fingerprint(
 
 /// 基于 file_url 查询已有的素材 ID（兜底去重，兼容历史数据）
 async fn query_by_url(state: &AppState, url: &str, plugin_ns: &str) -> Option<String> {
+    query_by_url_with_source(state, url, plugin_ns, "relay_convert").await
+}
+
+async fn query_by_url_with_source(
+    state: &AppState,
+    url: &str,
+    plugin_ns: &str,
+    source: &str,
+) -> Option<String> {
     sqlx::query_as::<_, (String,)>(
         &state.db.format_query(
-            "SELECT asset_id FROM plugin_assets WHERE file_url = ? AND source = 'relay_convert' AND asset_id IS NOT NULL AND plugin_ns = ? LIMIT 1"
+            "SELECT asset_id FROM plugin_assets WHERE file_url = ? AND source = ? AND asset_id IS NOT NULL AND plugin_ns = ? LIMIT 1"
         )
     )
     .bind(url)
+    .bind(source)
     .bind(plugin_ns)
     .fetch_optional(&state.db.pool)
     .await
@@ -588,12 +608,22 @@ fn decode_base64_data(data_uri: &str) -> Option<(Vec<u8>, String)> {
 
 /// 基于 content_hash 查询已有的素材 ID（仅 base64 流程使用）
 async fn query_by_hash(state: &AppState, content_hash: &str, plugin_ns: &str) -> Option<String> {
+    query_by_hash_with_source(state, content_hash, plugin_ns, "relay_convert").await
+}
+
+async fn query_by_hash_with_source(
+    state: &AppState,
+    content_hash: &str,
+    plugin_ns: &str,
+    source: &str,
+) -> Option<String> {
     sqlx::query_as::<_, (String,)>(
         &state.db.format_query(
-            "SELECT asset_id FROM plugin_assets WHERE content_hash = ? AND source = 'relay_convert' AND asset_id IS NOT NULL AND plugin_ns = ? LIMIT 1"
+            "SELECT asset_id FROM plugin_assets WHERE content_hash = ? AND source = ? AND asset_id IS NOT NULL AND plugin_ns = ? LIMIT 1"
         )
     )
     .bind(content_hash)
+    .bind(source)
     .bind(plugin_ns)
     .fetch_optional(&state.db.pool)
     .await
@@ -613,16 +643,43 @@ async fn insert_asset_record_raw(
     meta_fingerprint: Option<&str>,
     plugin_ns: &str,
 ) {
+    insert_asset_record_with_source(
+        state,
+        user_id,
+        asset_type,
+        file_url,
+        asset_id,
+        content_hash,
+        meta_fingerprint,
+        plugin_ns,
+        "relay_convert",
+    )
+    .await;
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn insert_asset_record_with_source(
+    state: &AppState,
+    user_id: &str,
+    asset_type: &str,
+    file_url: &str,
+    asset_id: &str,
+    content_hash: Option<&str>,
+    meta_fingerprint: Option<&str>,
+    plugin_ns: &str,
+    source: &str,
+) {
     let at_lower = asset_type.to_lowercase();
     let fname = file_url.rsplit('/').next().unwrap_or("unknown").to_string();
     let _ = sqlx::query(
         &state.db.format_query(
             "INSERT INTO plugin_assets (user_id, asset_type, source, status, file_name, file_url, asset_id, category, content_hash, meta_fingerprint, plugin_ns) \
-             VALUES (?, ?, 'relay_convert', 'approved', ?, ?, ?, '转换素材', ?, ?, ?)"
+             VALUES (?, ?, ?, 'approved', ?, ?, ?, '转换素材', ?, ?, ?)"
         )
     )
     .bind(user_id)
     .bind(&at_lower)
+    .bind(source)
     .bind(&fname)
     .bind(file_url)
     .bind(asset_id)
@@ -885,4 +942,361 @@ async fn ensure_group_id(
             false
         }
     }
+}
+
+const UPSTREAM_SOURCE: &str = "upstream_relay_convert";
+const UPSTREAM_PLUGIN: &str = "upstream_asset_relay";
+
+/// 上游渠道素材转换：扫描 content[]，经绑定渠道 Bearer CreateAsset → asset://
+/// 与 convert_content_urls 正交；插件未启用时 soft-skip（errors 空）。
+pub async fn convert_content_urls_via_upstream(
+    state: &AppState,
+    user_id: &str,
+    binding_id: i64,
+    body: &mut serde_json::Value,
+) -> (Vec<String>, Vec<String>) {
+    let mut logs: Vec<String> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    let plugin_enabled: bool = sqlx::query_scalar::<_, i64>(
+        &state
+            .db
+            .format_query("SELECT is_enabled FROM plugins WHERE name = ?"),
+    )
+    .bind(UPSTREAM_PLUGIN)
+    .fetch_optional(&state.db.pool)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == 1)
+    .unwrap_or(false);
+
+    if !plugin_enabled {
+        tracing::debug!("[UpstreamAsset] 插件未启用，跳过素材转换");
+        logs.push("上游素材转换跳过: 插件未启用".to_string());
+        return (logs, errors);
+    }
+
+    #[derive(sqlx::FromRow)]
+    struct BindingRow {
+        is_active: i32,
+        asset_base_path: String,
+        group_id: Option<String>,
+        channel_config_id: i64,
+        base_url: String,
+        api_key: String,
+    }
+
+    let row: Option<BindingRow> = sqlx::query_as(&state.db.format_query(
+        "SELECT b.is_active, b.asset_base_path, b.group_id, b.channel_config_id, \
+                    c.base_url, c.api_key \
+             FROM upstream_asset_bindings b \
+             JOIN channel_configs c ON c.id = b.channel_config_id \
+             WHERE b.id = ?",
+    ))
+    .bind(binding_id)
+    .fetch_optional(&state.db.pool)
+    .await
+    .ok()
+    .flatten();
+
+    let Some(mut row) = row else {
+        errors.push(format!(
+            "上游素材转换失败: 绑定#{} 不存在或上游渠道配置已删除",
+            binding_id
+        ));
+        return (logs, errors);
+    };
+    if row.is_active != 1 {
+        logs.push(format!("上游素材转换跳过: 绑定#{} 已停用", binding_id));
+        return (logs, errors);
+    }
+    if row.base_url.trim().is_empty() || row.api_key.trim().is_empty() {
+        errors.push(format!(
+            "上游素材转换失败: 上游渠道配置#{} 缺少 base_url 或 api_key",
+            row.channel_config_id
+        ));
+        return (logs, errors);
+    }
+
+    let content_arr = match body.get_mut("content").and_then(|c| c.as_array_mut()) {
+        Some(arr) => arr,
+        None => return (logs, errors),
+    };
+
+    let plugin_ns = format!("uar:{}", binding_id);
+    let endpoint = crate::services::upstream_asset_client::build_asset_endpoint(
+        &row.base_url,
+        &row.asset_base_path,
+    );
+    let api_key = row.api_key.clone();
+    let call_ctx = crate::services::upstream_asset_client::UpstreamCallCtx {
+        http: &state.http_client,
+        db: &state.db,
+        user_id,
+        plugin_name: &plugin_ns,
+        endpoint_base: &endpoint,
+        api_key: &api_key,
+    };
+
+    // 确保 GroupId
+    if row
+        .group_id
+        .as_ref()
+        .map(|s| s.trim().is_empty())
+        .unwrap_or(true)
+    {
+        match ensure_upstream_group_id(state, &call_ctx, binding_id).await {
+            Ok(gid) => row.group_id = Some(gid),
+            Err(e) => {
+                errors.push(e);
+                return (logs, errors);
+            }
+        }
+    }
+
+    let mut tasks: Vec<(usize, String, String, String, String)> = Vec::new();
+    for (idx, item) in content_arr.iter().enumerate() {
+        let item_type = match item.get("type").and_then(|t| t.as_str()) {
+            Some(t) => t,
+            None => continue,
+        };
+        let (url_key, asset_type) = match URL_TYPE_MAP.iter().find(|(t, _, _)| *t == item_type) {
+            Some((_, uk, at)) => (*uk, *at),
+            None => continue,
+        };
+        let url_val = match item
+            .get(url_key)
+            .and_then(|u| u.get("url"))
+            .and_then(|u| u.as_str())
+        {
+            Some(u) => u.to_string(),
+            None => continue,
+        };
+        if url_val.starts_with("asset://") {
+            continue;
+        }
+        let url_short = if url_val.starts_with("data:") {
+            "base64数据".to_string()
+        } else if url_val.len() > 80 {
+            let pos = url_val
+                .char_indices()
+                .nth(80)
+                .map(|(i, _)| i)
+                .unwrap_or(url_val.len());
+            format!("{}...", &url_val[..pos])
+        } else {
+            url_val.clone()
+        };
+        tasks.push((
+            idx,
+            url_key.to_string(),
+            asset_type.to_string(),
+            url_val,
+            url_short,
+        ));
+    }
+
+    if tasks.is_empty() {
+        return (logs, errors);
+    }
+
+    let group_id = row.group_id.clone().unwrap_or_default();
+    for (idx, url_key, asset_type, url_val, url_short) in tasks {
+        if url_val.starts_with("data:") {
+            let msg = format!(
+                "[{}] {} ✗ 上游素材转换不支持 base64，请使用 http(s) URL",
+                asset_type, url_short
+            );
+            logs.push(msg.clone());
+            errors.push(msg);
+            continue;
+        }
+        if !(url_val.starts_with("http://") || url_val.starts_with("https://")) {
+            let msg = format!("[{}] {} ✗ 不支持的格式", asset_type, url_short);
+            logs.push(msg.clone());
+            errors.push(msg);
+            continue;
+        }
+
+        match convert_url_via_upstream(state, &call_ctx, &group_id, &url_val, &asset_type).await {
+            Ok((aid, cached)) => {
+                let asset_ref = format!("asset://{}", aid);
+                if let Some(url_obj) = content_arr
+                    .get_mut(idx)
+                    .and_then(|item| item.get_mut(&url_key))
+                    .and_then(|u| u.as_object_mut())
+                {
+                    url_obj.insert("url".to_string(), serde_json::Value::String(asset_ref));
+                }
+                let tag = if cached { " [命中缓存]" } else { "" };
+                logs.push(format!(
+                    "[{}] {} ✓ asset://{}{}",
+                    asset_type, url_short, aid, tag
+                ));
+            }
+            Err(reason) => {
+                logs.push(format!("[{}] {} ✗ {}", asset_type, url_short, reason));
+                errors.push(reason);
+            }
+        }
+    }
+
+    (logs, errors)
+}
+
+async fn ensure_upstream_group_id(
+    state: &AppState,
+    ctx: &crate::services::upstream_asset_client::UpstreamCallCtx<'_>,
+    binding_id: i64,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "Name": "tokensbyte_upstream_auto_group",
+        "Description": "由上游素材中转自动创建的素材组",
+        "GroupType": "AIGC"
+    });
+    let res =
+        crate::services::upstream_asset_client::call_action_logged(ctx, "CreateAssetGroup", &body)
+            .await
+            .map_err(|e| format!("创建上游素材组失败: {}", e))?;
+
+    let gid = crate::services::upstream_asset_client::extract_result_field(&res, "Id")
+        .ok_or_else(|| "创建上游素材组失败: 响应缺少 Id".to_string())?
+        .to_string();
+
+    let _ = sqlx::query(
+        &state.db.format_query(
+            "UPDATE upstream_asset_bindings SET group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        ),
+    )
+    .bind(&gid)
+    .bind(binding_id)
+    .execute(&state.db.pool)
+    .await;
+
+    tracing::info!(
+        "[UpstreamAsset] 自动创建素材组并回写绑定#{}: {}",
+        binding_id,
+        gid
+    );
+    Ok(gid)
+}
+
+async fn convert_url_via_upstream(
+    state: &AppState,
+    ctx: &crate::services::upstream_asset_client::UpstreamCallCtx<'_>,
+    group_id: &str,
+    url: &str,
+    asset_type: &str,
+) -> Result<(String, bool), String> {
+    let meta_fp = fetch_meta_fingerprint(ctx.http, url).await;
+    if let Some(ref fp) = meta_fp {
+        if let Some(aid) =
+            query_by_fingerprint_with_source(state, fp, ctx.plugin_name, UPSTREAM_SOURCE).await
+        {
+            return Ok((aid, true));
+        }
+    } else if let Some(aid) =
+        query_by_url_with_source(state, url, ctx.plugin_name, UPSTREAM_SOURCE).await
+    {
+        return Ok((aid, true));
+    }
+
+    let mut body = serde_json::json!({
+        "URL": url,
+        "AssetType": asset_type,
+        "GroupId": group_id,
+    });
+    if let Some(obj) = body.as_object_mut() {
+        if group_id.trim().is_empty() {
+            obj.remove("GroupId");
+        }
+    }
+
+    let create_res =
+        crate::services::upstream_asset_client::call_action_logged(ctx, "CreateAsset", &body)
+            .await
+            .map_err(|e| format!("素材注册失败: {}", e))?;
+
+    let asset_id = crate::services::upstream_asset_client::extract_result_field(&create_res, "Id")
+        .ok_or_else(|| "素材注册失败: 响应缺少 Id".to_string())?
+        .to_string();
+
+    poll_upstream_asset_active(ctx, &asset_id, asset_type).await?;
+
+    insert_asset_record_with_source(
+        state,
+        ctx.user_id,
+        asset_type,
+        url,
+        &asset_id,
+        None,
+        meta_fp.as_deref(),
+        ctx.plugin_name,
+        UPSTREAM_SOURCE,
+    )
+    .await;
+
+    Ok((asset_id, false))
+}
+
+async fn poll_upstream_asset_active(
+    ctx: &crate::services::upstream_asset_client::UpstreamCallCtx<'_>,
+    asset_id: &str,
+    asset_type: &str,
+) -> Result<(), String> {
+    let max_wait_secs: u64 = match asset_type {
+        "Image" => 60,
+        "Audio" => 120,
+        _ => 180,
+    };
+    const POLL_INTERVAL_SECS: u64 = 3;
+    let max_attempts = max_wait_secs / POLL_INTERVAL_SECS;
+    let mut last_err: Option<String> = None;
+
+    for attempt in 0..max_attempts {
+        tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
+        let body = serde_json::json!({ "Id": asset_id });
+        match crate::services::upstream_asset_client::call_action_logged(ctx, "GetAsset", &body)
+            .await
+        {
+            Ok(res) => {
+                let status =
+                    crate::services::upstream_asset_client::extract_result_field(&res, "Status")
+                        .unwrap_or("");
+                if status.eq_ignore_ascii_case("Active") {
+                    tracing::info!(
+                        "[UpstreamAsset] 素材就绪: {} ({}s)",
+                        asset_id,
+                        (attempt + 1) * POLL_INTERVAL_SECS
+                    );
+                    return Ok(());
+                }
+                if status.eq_ignore_ascii_case("Failed") {
+                    let reason = crate::services::upstream_asset_client::extract_result_field(
+                        &res,
+                        "FailReason",
+                    )
+                    .or_else(|| {
+                        res.pointer("/Result/Error/Message")
+                            .and_then(|v| v.as_str())
+                    })
+                    .unwrap_or("审核未通过");
+                    return Err(format!("素材处理失败({}): {}", asset_id, reason));
+                }
+            }
+            Err(e) => {
+                last_err = Some(e.to_string());
+            }
+        }
+    }
+
+    Err(if let Some(e) = last_err {
+        format!(
+            "素材处理超时({}s): {}, 错误: {}",
+            max_wait_secs, asset_id, e
+        )
+    } else {
+        format!("素材处理超时({}s): {}", max_wait_secs, asset_id)
+    })
 }

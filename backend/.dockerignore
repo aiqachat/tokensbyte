@@ -1,3 +1,10 @@
 target/
 debug/
-**/*.rs.bk
+data/
+logs/
+*.log
+*.db
+*.sqlite
+*.rs.bk
+.env
+.env.*
